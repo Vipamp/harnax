@@ -1,0 +1,53 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /admin
+
+spring:
+  application:
+    name: vipclaw-admin
+  
+  # 数据源配置
+  datasource:
+    url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      pool-name: VipClawHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+# MyBatis-Plus 配置
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+# Springdoc OpenAPI (Swagger) 配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    operations-sorter: alpha
+    tags-sorter: alpha
+  default-flat-param-object: true
+
+logging:
+  level:
+    root: INFO
+    com.example.vipclaw.admin: DEBUG
