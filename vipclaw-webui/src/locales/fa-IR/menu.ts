@@ -22,7 +22,6 @@ export default {
   'menu.form.step-form.result': 'فرم مرحله (تمام شده)',
   'menu.form.advanced-form': 'فرم پیشرفته',
   'menu.list': 'لیست',
-  'menu.list.table-list': 'جدول جستجو',
   'menu.list.basic-list': 'لیست اصلی',
   'menu.list.card-list': 'لیست کارت',
   'menu.list.search-list': 'لیست جستجو',

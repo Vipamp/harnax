@@ -4,14 +4,7 @@ import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
 import React from 'react';
-import {
-  AvatarDropdown,
-  AvatarName,
-  Footer,
-  Question,
-  SelectLang,
-} from '@/components';
-import { currentUser as queryCurrentUser } from '@/services/ant-design-pro/login';
+import { AvatarDropdown, AvatarName, Footer, Question, SelectLang } from '@/components';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
@@ -23,43 +16,50 @@ const loginPath = '/user/login';
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
  * */
 export async function getInitialState(): Promise<{
-  settings?: Partial<LayoutSettings>;
-  currentUser?: API.CurrentUser;
-  loading?: boolean;
-  fetchUserInfo?: () => Promise<API.CurrentUser | undefined>;
+ settings?: Partial<LayoutSettings>;
+ currentUser?: API.CurrentUser;
+ loading?: boolean;
 }> {
-  const fetchUserInfo = async () => {
-    try {
-      const msg = await queryCurrentUser({
-        skipErrorHandler: true,
-      });
-      if (msg.code === 200 && msg.data) {
-        return msg.data;
-      }
-      history.push(loginPath);
-    } catch (_error) {
-      history.push(loginPath);
+  // 从 localStorage 读取用户信息（刷新后恢复）
+ let currentUser: API.CurrentUser | undefined;
+ try {
+ const stored = localStorage.getItem('currentUser');
+  if (stored) {
+   currentUser = JSON.parse(stored);
+   
+    // 检查 token 是否过期
+ const tokenInfoStr = localStorage.getItem('tokenInfo');
+  if (tokenInfoStr) {
+ const tokenInfo = JSON.parse(tokenInfoStr);
+  if (tokenInfo.expiresAt) {
+   const now = Date.now();
+    if (now >= tokenInfo.expiresAt) {
+       // token 已过期，清除登录信息
+    console.warn('Token 已过期，自动退出登录');
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('tokenInfo');
+      currentUser= undefined;
+      
+       // 如果不在登录页，跳转到登录页
+   const { location } = history;
+   if (location.pathname !== '/user/login') {
+     history.replace({
+      pathname: '/user/login',
+     search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
+       });
+     }
     }
-    return undefined;
-  };
-  // 如果不是登录页面，执行
-  const { location } = history;
-  if (
-    ![loginPath, '/user/register', '/user/register-result'].includes(
-      location.pathname,
-    )
-  ) {
-    const currentUser = await fetchUserInfo();
-    return {
-      fetchUserInfo,
-      currentUser,
-      settings: defaultSettings as Partial<LayoutSettings>,
-    };
+   }
   }
-  return {
-    fetchUserInfo,
-    settings: defaultSettings as Partial<LayoutSettings>,
-  };
+ }
+ } catch (e) {
+ console.error('读取本地存储失败:', e);
+ }
+ 
+ return {
+  currentUser,
+  settings: defaultSettings as Partial<LayoutSettings>,
+ };
 }
 
 // ProLayout 支持的api https://procomponents.ant.design/components/layout

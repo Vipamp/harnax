@@ -1,8 +1,10 @@
 package com.vipclaw.admin.controller;
 
+import com.vipclaw.admin.dto.CaptchaResponse;
 import com.vipclaw.admin.dto.LoginRequest;
 import com.vipclaw.admin.dto.LoginResponse;
 import com.vipclaw.admin.service.AuthService;
+import com.vipclaw.admin.service.CaptchaService;
 import com.vipclaw.admin.vo.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final CaptchaService captchaService;
 
     /**
      * 用户登录
@@ -34,16 +37,6 @@ public class AuthController {
     }
 
     /**
-     * 获取当前用户信息
-     */
-    @GetMapping("/currentUser")
-    @Operation(summary = "获取当前用户信息", description = "获取已登录用户的详细信息")
-    public Result<LoginResponse.UserInfo> getCurrentUser() {
-        LoginResponse.UserInfo userInfo = authService.getCurrentUser();
-        return Result.success(userInfo);
-    }
-
-    /**
      * 退出登录
      */
     @PostMapping("/logout")
@@ -51,5 +44,20 @@ public class AuthController {
     public Result<Void> logout() {
         authService.logout();
         return Result.success();
+    }
+
+    /**
+     * 获取验证码
+     */
+    @GetMapping("/captcha")
+    @Operation(summary = "获取验证码", description = "获取图形验证码图片")
+    public Result<CaptchaResponse> getCaptcha() {
+        try {
+            CaptchaResponse captchaResponse = captchaService.generateCaptcha();
+            return Result.success(captchaResponse);
+        } catch (Exception e) {
+            log.error("获取验证码失败", e);
+            return Result.error(e.getMessage());
+        }
     }
 }

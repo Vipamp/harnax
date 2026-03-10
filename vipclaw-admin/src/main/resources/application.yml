@@ -50,4 +50,9 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.example.vipclaw.admin: DEBUG
+  com.example.vipclaw.admin: DEBUG
+
+# JWT 配置
+jwt:
+  secret: vipclaw-secret-key-2026-vipclaw-admin-backend-jwt-token-authentication
+  expiration: 7200000 # 2 小时（毫秒）

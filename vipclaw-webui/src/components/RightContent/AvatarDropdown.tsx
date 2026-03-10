@@ -20,7 +20,8 @@ export type GlobalHeaderRightProps = {
 export const AvatarName = () => {
   const { initialState } = useModel('@@initialState');
   const { currentUser } = initialState || {};
-  return <span className="anticon">{currentUser?.name}</span>;
+  // 优先显示昵称，没有则显示用户名
+ return <span className="anticon">{currentUser?.nickname || currentUser?.username}</span>;
 };
 
 const useStyles = createStyles(({ token }) => {
@@ -50,58 +51,64 @@ export const AvatarDropdown: React.FC<GlobalHeaderRightProps> = ({
    */
   const loginOut = async () => {
     await logout();
-    const { search, pathname } = window.location;
-    const urlParams = new URL(window.location.href).searchParams;
-    const searchParams = new URLSearchParams({
-      redirect: pathname + search,
-    });
-    /** 此方法会跳转到 redirect 参数所在的位置 */
-    const redirect = urlParams.get('redirect');
-    // Note: There may be security issues, please note
-    if (window.location.pathname !== '/user/login' && !redirect) {
-      history.replace({
-        pathname: '/user/login',
-        search: searchParams.toString(),
-      });
-    }
+ 
+ // 清除所有本地存储
+ localStorage.removeItem('currentUser');
+ localStorage.removeItem('tokenInfo');
+ 
+ const { search, pathname } = window.location;
+ const urlParams = new URL(window.location.href).searchParams;
+ const searchParams = new URLSearchParams({
+ redirect: pathname + search,
+ });
+  /** 此方法会跳转到 redirect 参数所在的位置 */
+ const redirect = urlParams.get('redirect');
+  // Note: There may be security issues, please note
+ if (window.location.pathname !== '/user/login' && !redirect) {
+ history.replace({
+ pathname: '/user/login',
+  search: searchParams.toString(),
+  });
+ }
   };
   const { styles } = useStyles();
 
   const { initialState, setInitialState } = useModel('@@initialState');
 
   const onMenuClick: MenuProps['onClick'] = (event) => {
-    const { key } = event;
-    if (key === 'logout') {
-      flushSync(() => {
-        setInitialState((s) => ({ ...s, currentUser: undefined }));
-      });
-      loginOut();
-      return;
-    }
-    history.push(`/account/${key}`);
-  };
+  const { key } = event;
+  if (key === 'logout') {
+   flushSync(() => {
+   setInitialState((s) => ({ ...s, currentUser: undefined }));
+   });
+  loginOut();
+ return;
+  }
+ history.push(`/account/${key}`);
+ };
 
   const loading = (
-    <span className={styles.action}>
-      <Spin
-        size="small"
-        style={{
-          marginLeft: 8,
-          marginRight: 8,
-        }}
-      />
-    </span>
-  );
+  <span className={styles.action}>
+   <Spin
+    size="small"
+   style={{
+     marginLeft: 8,
+      marginRight: 8,
+     }}
+   />
+ </span>
+ );
 
-  if (!initialState) {
-    return loading;
-  }
+ if (!initialState) {
+ return loading;
+ }
 
-  const { currentUser } = initialState;
+  const { currentUser} = initialState;
 
-  if (!currentUser || !currentUser.name) {
-    return loading;
-  }
+  // 检查用户是否已登录（使用 nickname 或 username 判断）
+ if (!currentUser || (!currentUser.nickname && !currentUser.username)) {
+ return loading;
+ }
 
   const menuItems = [
     ...(menu

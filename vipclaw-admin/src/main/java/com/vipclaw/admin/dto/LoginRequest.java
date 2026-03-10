@@ -19,6 +19,9 @@ public class LoginRequest {
     @Schema(description = "验证码", example = "1234")
     private String captcha;
 
+    @Schema(description = "验证码 key，获取验证码时返回", example = "uuid-xxx-xxx")
+    private String captchaKey;
+
     @Schema(description = "自动登录", example = "true")
     private Boolean autoLogin;
 }

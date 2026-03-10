@@ -12,14 +12,8 @@ import {
   ProFormCheckbox,
   ProFormText,
 } from '@ant-design/pro-components';
-import {
-  FormattedMessage,
-  Helmet,
-  SelectLang,
-  useIntl,
-  useModel,
-} from '@umijs/max';
-import { Alert, App, Tabs } from 'antd';
+import { FormattedMessage, Helmet, SelectLang, useIntl, useModel, history } from '@umijs/max';
+import { Alert, App, Image, Space, Spin, Tabs } from 'antd';
 import { createStyles } from 'antd-style';
 import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -110,44 +104,125 @@ const LoginMessage: React.FC<{
 };
 
 const Login: React.FC = () => {
-  const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
+ const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
   const [type, setType] = useState<string>('account');
   const { initialState, setInitialState } = useModel('@@initialState');
   const { styles } = useStyles();
   const { message } = App.useApp();
   const intl = useIntl();
 
-  const fetchUserInfo = async () => {
-    const userInfo = await initialState?.fetchUserInfo?.();
-    if (userInfo) {
-      flushSync(() => {
-        setInitialState((s) => ({
-          ...s,
-          currentUser: userInfo,
-        }));
-      });
+  // 验证码相关状态
+  const [captchaImage, setCaptchaImage] = useState<string>('');
+  const [captchaKey, setCaptchaKey] = useState<string>('');
+  const [loadingCaptcha, setLoadingCaptcha] = useState<boolean>(false);
+
+  // 检查用户是否已登录，如果已登录则跳转到欢迎页
+  React.useEffect(() => {
+    if (initialState?.currentUser) {
+     message.success('您已登录，正在跳转到首页...');
+     history.push('/welcome');
     }
-  };
+  }, [initialState?.currentUser, message]);
+
+  const fetchUserInfo = async () => {
+  const userInfo = await initialState?.fetchUserInfo?.();
+    if (userInfo) {
+    flushSync(() => {
+   setInitialState((s) => ({
+       ...s,
+       currentUser: userInfo,
+      }));
+    });
+   }
+ };
+
+  // 获取验证码
+  const getCaptchaImage = async () => {
+  try {
+  setLoadingCaptcha(true);
+  const result = await getCaptcha();
+    if (result.code === 200 && result.data) {
+   setCaptchaImage(result.data.imageBase64 || '');
+   setCaptchaKey(result.data.captchaKey || '');
+    }
+   } catch (error) {
+  console.error('获取验证码失败:', error);
+  message.error('获取验证码失败，请刷新重试');
+   } finally {
+  setLoadingCaptcha(false);
+   }
+ };
+
+  // 页面加载时获取验证码
+  React.useEffect(() => {
+   if (type === 'account') {
+    getCaptchaImage();
+   }
+ }, [type]);
 
   const handleSubmit = async (values: API.LoginParams) => {
-    try {
-      // 登录
-      const msg = await loginApi({ ...values, type });
-      if (msg.code === 200 && msg.data) {
-        const defaultLoginSuccessMessage = intl.formatMessage({
-          id: 'pages.login.success',
-          defaultMessage: '登录成功！',
-        });
-        message.success(defaultLoginSuccessMessage);
-        await fetchUserInfo();
-        const urlParams = new URL(window.location.href).searchParams;
-        window.location.href = urlParams.get('redirect') || '/';
-        return;
+ try {
+    // 登录
+   // 提交时包含 captchaKey，后端会校验验证码
+ const msg = await loginApi({ ...values, type, captchaKey });
+  if (msg.code === 200 && msg.data) {
+    const defaultLoginSuccessMessage = intl.formatMessage({
+     id: 'pages.login.success',
+      defaultMessage: '登录成功！',
+       });
+   message.success(defaultLoginSuccessMessage);
+     
+      // 直接从登录响应中提取用户信息并保存
+ const userInfo = msg.data.userInfo;
+ if (userInfo) {
+ const currentUser= {
+  userId: userInfo.userId,
+  username: userInfo.username,
+  nickname: userInfo.nickname,
+  avatar: userInfo.avatar,
+  email: userInfo.email,
+ phone: userInfo.phone,
+ gender: userInfo.gender,
+};
+  
+ // 保存到 React 状态
+ flushSync(() => {
+ setInitialState((s) => ({
+   ...s,
+ currentUser,
+ }));
+ });
+ 
+ // 保存到 localStorage 以便刷新后恢复
+ localStorage.setItem('currentUser', JSON.stringify(currentUser));
+ }
+  
+ // 保存 token 信息到 localStorage（用于后续请求认证）
+ if (msg.data.accessToken) {
+ const tokenInfo = {
+ accessToken: msg.data.accessToken,
+  tokenType: msg.data.tokenType || 'Bearer',
+ expiresIn: msg.data.expiresIn,
+ expiresAt: msg.data.expiresAt,
+};
+ localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
+ console.log('[登录成功] Token 已保存:', tokenInfo);
+ }
+     
+      // 使用 history 跳转而不是 window.location.href，避免页面刷新丢失状态
+  const urlParams = new URL(window.location.href).searchParams;
+  const redirect = urlParams.get('redirect');
+   if (redirect) {
+       window.location.href = redirect;
+      } else {
+   history.push('/');
       }
-      console.log(msg);
-      // 如果失败去设置用户错误信息
-      setUserLoginState(msg);
-    } catch (error) {
+  return;
+    }
+   console.log(msg);
+     // 如果失败去设置用户错误信息
+  setUserLoginState(msg);
+   } catch (error) {
       const defaultLoginFailureMessage = intl.formatMessage({
         id: 'pages.login.failure',
         defaultMessage: '登录失败，请重试！',
@@ -234,51 +309,89 @@ const Login: React.FC = () => {
           {type === 'account' && (
             <>
               <ProFormText
-                name="username"
+              name="username"
+                fieldProps={{
+                 size: 'large',
+               prefix: <UserOutlined />,
+                }}
+               placeholder={intl.formatMessage({
+               id: 'pages.login.username.placeholder',
+               defaultMessage: '用户名：admin or user',
+               })}
+               rules={[
+                 {
+                 required: true,
+                 message: (
+                     <FormattedMessage
+                     id="pages.login.username.required"
+                     defaultMessage="请输入用户名!"
+                     />
+                   ),
+                 },
+               ]}
+             />
+             <ProFormText.Password
+             name="password"
+               fieldProps={{
+                size: 'large',
+              prefix: <LockOutlined />,
+               }}
+               placeholder={intl.formatMessage({
+               id: 'pages.login.password.placeholder',
+               defaultMessage: '密码：ant.design',
+               })}
+               rules={[
+                 {
+                 required: true,
+                 message: (
+                     <FormattedMessage
+                     id="pages.login.password.required"
+                     defaultMessage="请输入密码！"
+                     />
+                   ),
+                 },
+               ]}
+             />
+             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ProFormText
+             name="captcha"
                 fieldProps={{
                   size: 'large',
-                  prefix: <UserOutlined />,
+                prefix: <LockOutlined />,
                 }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.username.placeholder',
-                  defaultMessage: '用户名: admin or user',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.username.required"
-                        defaultMessage="请输入用户名!"
-                      />
-                    ),
-                  },
-                ]}
-              />
-              <ProFormText.Password
-                name="password"
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.password.placeholder',
-                  defaultMessage: '密码: ant.design',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.password.required"
-                        defaultMessage="请输入密码！"
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </>
-          )}
+               placeholder={intl.formatMessage({
+               id: 'pages.login.captcha.placeholder',
+               defaultMessage: '请输入验证码',
+               })}
+               rules={[
+                 {
+                 required: true,
+                 message: (
+                     <FormattedMessage
+                     id="pages.login.captcha.required"
+                     defaultMessage="请输入验证码！"
+                     />
+                   ),
+                 },
+               ]}
+             />
+             <div
+               onClick={getCaptchaImage}
+             style={{ cursor: 'pointer', flexShrink: 0 }}
+             >
+               {loadingCaptcha ? (
+                 <Spin />
+               ) : captchaImage ? (
+                 <Image
+                  src={captchaImage}
+                 preview={false}
+                 style={{ height: '40px', borderRadius: '4px' }}
+                 />
+               ) : null}
+             </div>
+           </div>
+          </>
+        )}
 
           {status === 'error' && loginType === 'mobile' && (
             <LoginMessage content="验证码错误" />
@@ -317,51 +430,53 @@ const Login: React.FC = () => {
                 ]}
               />
               <ProFormCaptcha
-                fieldProps={{
-                  size: 'large',
-                  prefix: <LockOutlined />,
-                }}
-                captchaProps={{
-                  size: 'large',
-                }}
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.captcha.placeholder',
-                  defaultMessage: '请输入验证码',
-                })}
-                captchaTextRender={(timing, count) => {
-                  if (timing) {
-                    return `${count} ${intl.formatMessage({
-                      id: 'pages.getCaptchaSecondText',
-                      defaultMessage: '获取验证码',
-                    })}`;
-                  }
-                  return intl.formatMessage({
-                    id: 'pages.login.phoneLogin.getVerificationCode',
+               fieldProps={{
+                 size: 'large',
+               prefix: <LockOutlined />,
+               }}
+               captchaProps={{
+                 size: 'large',
+               }}
+               placeholder={intl.formatMessage({
+               id: 'pages.login.captcha.placeholder',
+               defaultMessage: '请输入验证码',
+               })}
+               captchaTextRender={(timing, count) => {
+                 if (timing) {
+                  return `${count} ${intl.formatMessage({
+                    id: 'pages.getCaptchaSecondText',
                     defaultMessage: '获取验证码',
-                  });
-                }}
-                name="captcha"
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.captcha.required"
-                        defaultMessage="请输入验证码！"
-                      />
-                    ),
-                  },
-                ]}
-                onGetCaptcha={async (phone) => {
-                  const result = await getCaptcha({
-                    phone,
-                  });
-                  if (!result) {
-                    return;
-                  }
-                  message.success('获取验证码成功！验证码为：1234');
-                }}
-              />
+                   })}`;
+                 }
+                return intl.formatMessage({
+                  id: 'pages.login.phoneLogin.getVerificationCode',
+                  defaultMessage: '获取验证码',
+                 });
+               }}
+              name="captcha"
+               rules={[
+                 {
+                 required: true,
+                 message: (
+                     <FormattedMessage
+                     id="pages.login.captcha.required"
+                     defaultMessage="请输入验证码！"
+                     />
+                   ),
+                 },
+               ]}
+          onGetCaptcha={async (phone) => {
+          const result = await getCaptcha();
+              if (!result || result.code !== 200) {
+           message.error('获取验证码失败');
+           return;
+              }
+              // 保存验证码 key（实际项目中应该验证）
+         setCaptchaKey(result.data?.captchaKey || '');
+         message.success('获取验证码成功！');
+            }}
+          />
+
             </>
           )}
           <div

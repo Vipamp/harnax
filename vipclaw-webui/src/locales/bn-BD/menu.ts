@@ -22,7 +22,6 @@ export default {
   'menu.form.step-form.result': 'পদক্ষেপ ফর্ম (সমাপ্ত)',
   'menu.form.advanced-form': 'উন্নত ফর্ম',
   'menu.list': 'তালিকা',
-  'menu.list.table-list': 'অনুসন্ধানের টেবিল',
   'menu.list.basic-list': 'বেসিক তালিকা',
   'menu.list.card-list': 'কার্ডের তালিকা',
   'menu.list.search-list': 'অনুসন্ধানের তালিকা',

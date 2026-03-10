@@ -25,6 +25,9 @@ public class LoginResponse {
     @Schema(description = "过期时间（秒）", example = "7200")
     private Long expiresIn;
 
+    @Schema(description = "过期时间戳（毫秒）", example = "1717020800000")
+    private Long expiresAt;
+
     @Schema(description = "用户信息")
     private UserInfo userInfo;
 

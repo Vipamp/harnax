@@ -35,8 +35,8 @@ public class SysUserController {
     public Result<Page<SysUserResponse>> getUserPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
             @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
-            @Parameter(description = "模糊查询字段") @RequestParam(required = false) String keyword,
-            @Parameter(description = "状态筛选字段") @RequestParam(required = false) Integer status) {
+            @Parameter(description = "模糊查询字段") @RequestParam(name = "keyword", required = false) String keyword,
+            @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) Integer status) {
         try {
             Page<SysUser> page = sysUserService.getUserPage(keyword, status, pageNum, pageSize);
             Page<SysUserResponse> responsePage = convertToResponsePage(page);
