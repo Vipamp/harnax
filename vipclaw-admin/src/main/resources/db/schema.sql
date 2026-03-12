@@ -21,3 +21,21 @@ CREATE TABLE `sys_user` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+
+-- MCP 服务表
+DROP TABLE IF EXISTS `mcp_server`;
+CREATE TABLE `mcp_server`
+(
+    `id`          BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'MCP ID',
+    `name`        VARCHAR(100) NOT NULL COMMENT 'MCP 名称',
+    `description` TEXT         DEFAULT NULL COMMENT 'MCP 描述',
+    `type`        VARCHAR(20)  NOT NULL COMMENT 'MCP 类型（stdio/sse/streamablehttp）',
+    `command`     VARCHAR(500) DEFAULT NULL COMMENT '执行命令（仅 stdio 类型生效）',
+    `url`         VARCHAR(500) DEFAULT NULL COMMENT '服务地址（sse/streamablehttp 类型生效）',
+    `status`      TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
+    `active`      TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `create_time` DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务表';

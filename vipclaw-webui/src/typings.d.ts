@@ -23,9 +23,8 @@ declare namespace API {
    * @zh-CN 用户对象
    */
  export type UserItem = {
-   userId?: number;
+   id?: number;
    username: string;
-   password?: string;
     nickname?: string;
     email?: string;
    phone?: string;
@@ -58,7 +57,6 @@ declare namespace API {
  export type SysUserUpdateRequest = {
     id: number;
    username?: string;
-   password?: string;
     nickname?: string;
     email?: string;
    phone?: string;
@@ -164,4 +162,44 @@ message?: string;
   };
   timestamp?: number;
  };
+
+  /**
+   * @zh-CN MCP 服务对象
+   */
+  export type McpServerItem = {
+    id?: number;
+    name: string;
+    description?: string;
+    type: 'stdio' | 'sse' | 'streamablehttp';
+    command?: string;
+    url?: string;
+    status?: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN MCP 服务创建请求
+   */
+  export type McpServerCreateRequest = {
+    name: string;
+    description?: string;
+    type: 'stdio' | 'sse' | 'streamablehttp';
+    command?: string;
+    url?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN MCP 服务更新请求
+   */
+  export type McpServerUpdateRequest = {
+    id?: number;
+    name?: string;
+    description?: string;
+    type?: 'stdio' | 'sse' | 'streamablehttp';
+    command?: string;
+    url?: string;
+    status?: number;
+  };
 }

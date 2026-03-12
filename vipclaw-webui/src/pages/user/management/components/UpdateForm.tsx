@@ -18,14 +18,26 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
   return (
     <Modal
       destroyOnClose
-      title={intl.formatMessage({
-        id: 'pages.user.management.edit',
-        defaultMessage: '编辑用户',
-      })}
-      width={800}
+      title={
+        <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
+          {intl.formatMessage({
+            id: 'pages.user.management.edit',
+            defaultMessage: '编辑用户',
+          })}
+        </span>
+      }
+      width={640}
       open={visible}
       footer={null}
       onCancel={() => onCancel()}
+      styles={{
+        body: { padding: '24px 28px', background: '#fafbff' },
+        header: {
+          background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
+          borderBottom: '1px solid #e8ecfb',
+          padding: '18px 24px',
+        },
+      }}
     >
       <ProForm<API.UserItem>
         onFinish={onSubmit}
@@ -43,7 +55,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           },
         }}
         initialValues={{
-          userId: values?.userId,
+          id: values?.id,
           username: values?.username,
           nickname: values?.nickname,
           email: values?.email,
@@ -79,18 +91,6 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
               }),
             },
           ]}
-        />
-
-        <ProFormText.Password
-          name="password"
-          label={intl.formatMessage({
-            id: 'pages.user.management.password',
-            defaultMessage: '密码',
-          })}
-          placeholder={intl.formatMessage({
-            id: 'pages.user.management.password.placeholder',
-            defaultMessage: '不修改请留空',
-          })}
         />
 
         <ProFormText

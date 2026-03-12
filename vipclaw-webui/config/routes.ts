@@ -27,29 +27,19 @@ export default [
    name: 'welcome',
    icon: 'smile',
    component: './Welcome',
-  },
-  {
-   path: '/admin',
-   name: 'admin',
-   icon: 'crown',
-    access: 'canAdmin',
-    routes: [
-      {
-       path: '/admin',
-       redirect: '/admin/sub-page',
-      },
-      {
-       path: '/admin/sub-page',
-       name: 'sub-page',
-       component: './Admin',
-      },
-    ],
+   hideInMenu: true,
   },
   {
    name: 'user.management',
    icon: 'user',
-   path: '/user/management',
+   path: '/admin/user',
    component: './user/management',
+  },
+  {
+    name: 'mcp',
+    icon: 'api',
+    path: '/admin/mcp',
+    component: './mcp',
   },
   {
    path: '/',

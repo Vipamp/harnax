@@ -40,19 +40,42 @@ const useStyles = createStyles(({ token }) => {
       lineHeight: '42px',
       position: 'fixed',
       right: 16,
+      top: 16,
       borderRadius: token.borderRadius,
+      zIndex: 100,
       ':hover': {
         backgroundColor: token.colorBgTextHover,
       },
     },
     container: {
       display: 'flex',
-      flexDirection: 'column',
       height: '100vh',
-      overflow: 'auto',
-      backgroundImage:
-        "url('https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/V-_oS6r-i7wAAAAAAAAAAAAAFl94AQBr')",
-      backgroundSize: '100% 100%',
+      overflow: 'hidden',
+    },
+    leftPanel: {
+      flex: '1',
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #4f6ef7 100%)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '60px 48px',
+      position: 'relative',
+      overflow: 'hidden',
+      '@media (max-width: 768px)': {
+        display: 'none',
+      },
+    },
+    rightPanel: {
+      width: '480px',
+      flexShrink: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: '#fff',
+      overflowY: 'auto',
+      '@media (max-width: 768px)': {
+        width: '100%',
+      },
     },
   };
 });
@@ -245,139 +268,243 @@ const Login: React.FC = () => {
         </title>
       </Helmet>
       <Lang />
-      <div
-        style={{
-          flex: '1',
-          padding: '32px 0',
-        }}
-      >
-        <LoginForm
-          contentStyle={{
-            minWidth: 280,
-            maxWidth: '75vw',
-          }}
-          logo={<img alt="logo" src="/logo.svg" />}
-          title="Ant Design"
-          subTitle={intl.formatMessage({
-            id: 'pages.layouts.userLayout.title',
-          })}
-          initialValues={{
-            autoLogin: true,
-          }}
-          actions={[
-            <FormattedMessage
-              key="loginWith"
-              id="pages.login.loginWith"
-              defaultMessage="其他登录方式"
-            />,
-            <ActionIcons key="icons" />,
-          ]}
-          onFinish={async (values) => {
-            await handleSubmit(values as API.LoginParams);
+
+      {/* 左侧装饰面板 */}
+      <div className={styles.leftPanel}>
+        {/* 背景装饰圆 */}
+        <div style={{
+          position: 'absolute', width: 400, height: 400,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(79,110,247,0.25) 0%, transparent 70%)',
+          top: '-100px', right: '-100px',
+        }} />
+        <div style={{
+          position: 'absolute', width: 300, height: 300,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(102,126,234,0.2) 0%, transparent 70%)',
+          bottom: '-80px', left: '-60px',
+        }} />
+
+        {/* 主内容 */}
+        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: '#fff' }}>
+          <div style={{
+            width: 72, height: 72,
+            borderRadius: '20px',
+            background: 'rgba(255,255,255,0.15)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            margin: '0 auto 32px',
+            fontSize: '32px',
+          }}>
+            🐾
+          </div>
+          <h1 style={{
+            fontSize: '36px',
+            fontWeight: 700,
+            color: '#fff',
+            margin: '0 0 16px',
+            letterSpacing: '-0.5px',
+          }}>
+            VipClaw
+          </h1>
+          <p style={{
+            fontSize: '16px',
+            color: 'rgba(255,255,255,0.7)',
+            lineHeight: 1.8,
+            maxWidth: '360px',
+            margin: '0 auto 48px',
+          }}>
+            整合多种大模型、工具、MCP、Skills 的智能体平台，为企业和开发者提供一站式解决方案
+          </p>
+          <div style={{ display: 'flex', gap: '24px', justifyContent: 'center' }}>
+            {['🤖 多模型集成', '🛠️ 工具平台', '⚡ 高效协同'].map((item) => (
+              <div key={item} style={{
+                padding: '10px 20px',
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(8px)',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.15)',
+                fontSize: '13px',
+                color: 'rgba(255,255,255,0.85)',
+                fontWeight: 500,
+              }}>
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 右侧登录面板 */}
+      <div className={styles.rightPanel}>
+        <div
+          style={{
+            flex: '1',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            padding: '48px 48px 32px',
           }}
         >
-          <Tabs
-            activeKey={type}
-            onChange={setType}
-            centered
-            items={[
-              {
-                key: 'account',
-                label: intl.formatMessage({
-                  id: 'pages.login.accountLogin.tab',
-                  defaultMessage: '账户密码登录',
-                }),
-              },
-              {
-                key: 'mobile',
-                label: intl.formatMessage({
-                  id: 'pages.login.phoneLogin.tab',
-                  defaultMessage: '手机号登录',
-                }),
-              },
-            ]}
-          />
+          {/* 登录标题 */}
+          <div style={{ marginBottom: 40 }}>
+            <h2 style={{
+              fontSize: '26px',
+              fontWeight: 700,
+              color: '#1a1a2e',
+              margin: '0 0 8px',
+            }}>
+              欢迎回来 👋
+            </h2>
+            <p style={{ fontSize: '15px', color: '#888', margin: 0 }}>
+              登录您的 VipClaw 账户
+            </p>
+          </div>
 
-          {status === 'error' && loginType === 'account' && (
-            <LoginMessage
-              content={intl.formatMessage({
-                id: 'pages.login.accountLogin.errorMessage',
-                defaultMessage: '账户或密码错误(admin/ant.design)',
-              })}
-            />
-          )}
-          {type === 'account' && (
-            <>
-              <ProFormText
-              name="username"
-                fieldProps={{
-                 size: 'large',
-               prefix: <UserOutlined />,
-                }}
-               placeholder={intl.formatMessage({
-               id: 'pages.login.username.placeholder',
-               defaultMessage: '用户名：admin or user',
-               })}
-               rules={[
-                 {
-                 required: true,
-                 message: (
-                     <FormattedMessage
-                     id="pages.login.username.required"
-                     defaultMessage="请输入用户名!"
-                     />
-                   ),
-                 },
-               ]}
-             />
-             <ProFormText.Password
-             name="password"
-               fieldProps={{
+          <LoginForm
+            contentStyle={{
+              minWidth: 280,
+              maxWidth: '100%',
+            }}
+            logo={null}
+            title={null}
+            subTitle={null}
+            initialValues={{
+              autoLogin: true,
+            }}
+            submitter={{
+              searchConfig: {
+                submitText: '登录',
+              },
+              submitButtonProps: {
                 size: 'large',
-              prefix: <LockOutlined />,
-               }}
-               placeholder={intl.formatMessage({
-               id: 'pages.login.password.placeholder',
-               defaultMessage: '密码：ant.design',
-               })}
-               rules={[
-                 {
-                 required: true,
-                 message: (
-                     <FormattedMessage
-                     id="pages.login.password.required"
-                     defaultMessage="请输入密码！"
-                     />
-                   ),
-                 },
-               ]}
-             />
-             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ProFormText
-             name="captcha"
-                fieldProps={{
+                style: {
+                  width: '100%',
+                  height: '48px',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
+                  border: 'none',
+                  boxShadow: '0 6px 20px rgba(79, 110, 247, 0.35)',
+                },
+              },
+            }}
+            onFinish={async (values) => {
+              await handleSubmit(values as API.LoginParams);
+            }}
+          >
+            <Tabs
+              activeKey={type}
+              onChange={setType}
+              centered
+              size="large"
+              items={[
+                {
+                  key: 'account',
+                  label: intl.formatMessage({
+                    id: 'pages.login.accountLogin.tab',
+                    defaultMessage: '账户密码登录',
+                  }),
+                },
+                {
+                  key: 'mobile',
+                  label: intl.formatMessage({
+                    id: 'pages.login.phoneLogin.tab',
+                    defaultMessage: '手机号登录',
+                  }),
+                },
+              ]}
+            />
+
+            {status === 'error' && loginType === 'account' && (
+              <LoginMessage
+                content={intl.formatMessage({
+                  id: 'pages.login.accountLogin.errorMessage',
+                  defaultMessage: '账户或密码错误(admin/ant.design)',
+                })}
+              />
+            )}
+            {type === 'account' && (
+              <>
+                <ProFormText
+                name="username"
+                  fieldProps={{
+                   size: 'large',
+                 prefix: <UserOutlined />,
+                  }}
+                 placeholder={intl.formatMessage({
+                 id: 'pages.login.username.placeholder',
+                 defaultMessage: '用户名：admin or user',
+                 })}
+                 rules={[
+                   {
+                   required: true,
+                   message: (
+                       <FormattedMessage
+                       id="pages.login.username.required"
+                       defaultMessage="请输入用户名!"
+                       />
+                     ),
+                   },
+                 ]}
+               />
+               <ProFormText.Password
+               name="password"
+                 fieldProps={{
                   size: 'large',
                 prefix: <LockOutlined />,
-                }}
-               placeholder={intl.formatMessage({
-               id: 'pages.login.captcha.placeholder',
-               defaultMessage: '请输入验证码',
-               })}
-               rules={[
-                 {
-                 required: true,
-                 message: (
-                     <FormattedMessage
-                     id="pages.login.captcha.required"
-                     defaultMessage="请输入验证码！"
-                     />
-                   ),
-                 },
-               ]}
-             />
-             <div
-               onClick={getCaptchaImage}
-             style={{ cursor: 'pointer', flexShrink: 0 }}
+                 }}
+                 placeholder={intl.formatMessage({
+                 id: 'pages.login.password.placeholder',
+                 defaultMessage: '密码：ant.design',
+                 })}
+                 rules={[
+                   {
+                   required: true,
+                   message: (
+                       <FormattedMessage
+                       id="pages.login.password.required"
+                       defaultMessage="请输入密码！"
+                       />
+                     ),
+                   },
+                 ]}
+               />
+               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <ProFormText
+               name="captcha"
+                  fieldProps={{
+                    size: 'large',
+                  prefix: <LockOutlined />,
+                  }}
+                 placeholder={intl.formatMessage({
+                 id: 'pages.login.captcha.placeholder',
+                 defaultMessage: '请输入验证码',
+                 })}
+                 rules={[
+                   {
+                   required: true,
+                   message: (
+                       <FormattedMessage
+                       id="pages.login.captcha.required"
+                       defaultMessage="请输入验证码！"
+                       />
+                     ),
+                   },
+                 ]}
+               />
+               <div
+                 onClick={getCaptchaImage}
+               style={{
+                 cursor: 'pointer',
+                 flexShrink: 0,
+                 borderRadius: '8px',
+                 overflow: 'hidden',
+                 border: '1px solid #e0e4f4',
+                 transition: 'box-shadow 0.2s',
+               }}
              >
                {loadingCaptcha ? (
                  <Spin />
@@ -385,7 +512,7 @@ const Login: React.FC = () => {
                  <Image
                   src={captchaImage}
                  preview={false}
-                 style={{ height: '40px', borderRadius: '4px' }}
+                 style={{ height: '42px', display: 'block' }}
                  />
                ) : null}
              </div>
@@ -481,7 +608,10 @@ const Login: React.FC = () => {
           )}
           <div
             style={{
-              marginBottom: 24,
+              marginBottom: 16,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
             }}
           >
             <ProFormCheckbox noStyle name="autoLogin">
@@ -490,11 +620,7 @@ const Login: React.FC = () => {
                 defaultMessage="自动登录"
               />
             </ProFormCheckbox>
-            <a
-              style={{
-                float: 'right',
-              }}
-            >
+            <a style={{ color: '#4f6ef7', fontWeight: 500 }}>
               <FormattedMessage
                 id="pages.login.forgotPassword"
                 defaultMessage="忘记密码"
@@ -502,8 +628,9 @@ const Login: React.FC = () => {
             </a>
           </div>
         </LoginForm>
+        </div>
+        <Footer />
       </div>
-      <Footer />
     </div>
   );
 };

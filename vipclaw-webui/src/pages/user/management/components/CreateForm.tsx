@@ -17,14 +17,26 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
   return (
     <Modal
       destroyOnClose
-      title={intl.formatMessage({
-        id: 'pages.user.management.add',
-        defaultMessage: '新建用户',
-      })}
-      width={800}
+      title={
+        <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
+          {intl.formatMessage({
+            id: 'pages.user.management.add',
+            defaultMessage: '新建用户',
+          })}
+        </span>
+      }
+      width={640}
       open={visible}
       footer={null}
       onCancel={() => onCancel()}
+      styles={{
+        body: { padding: '24px 28px', background: '#fafbff' },
+        header: {
+          background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
+          borderBottom: '1px solid #e8ecfb',
+          padding: '18px 24px',
+        },
+      }}
     >
       <ProForm<API.UserItem>
         onFinish={onSubmit}
@@ -168,12 +180,13 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             id: 'pages.user.management.gender',
             defaultMessage: '性别',
           })}
-          valueEnum={{
-            0: '女',
-            1: '男',
-            2: '保密',
-          }}
-          initialValue={2}
+          options={[
+            { label: '男', value: 1 },
+            { label: '女', value: 0 },
+            { label: '保密', value: 2 },
+          ]}
+          initialValue={1}
+          fieldProps={{ defaultValue: 1 }}
         />
 
         <ProFormSelect
@@ -182,11 +195,12 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             id: 'pages.user.management.status',
             defaultMessage: '状态',
           })}
-          valueEnum={{
-            0: '禁用',
-            1: '正常',
-          }}
+          options={[
+            { label: '正常', value: 1 },
+            { label: '禁用', value: 0 },
+          ]}
           initialValue={1}
+          fieldProps={{ defaultValue: 1 }}
         />
 
         <ProFormTextArea

@@ -1,11 +1,14 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useIntl, useRequest } from '@umijs/max';
-import { Button, Drawer, Input, message, Modal, Tag } from 'antd';
-import React, { useCallback, useRef, useState } from 'react';
+import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteUser, getUserPage, updateUser as updateUserApi, createUser } from '@/services/ant-design-pro/user';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
+
+const { Text } = Typography;
 
 const UserManagement: React.FC = () => {
   const actionRef = useRef<ActionType | null>(null);
@@ -13,9 +16,45 @@ const UserManagement: React.FC = () => {
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.UserItem>();
+  const [tableLoading, setTableLoading] = useState<boolean>(false);
+  const [data, setData] = useState<API.UserItem[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [current, setCurrent] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [keyword, setKeyword] = useState<string>('');
+  const [status, setStatus] = useState<number | undefined>(undefined);
 
   const intl = useIntl();
   const [messageApi, contextHolder] = message.useMessage();
+
+  /** 加载数据 */
+  const loadData = async (page = current, size = pageSize) => {
+    setTableLoading(true);
+    try {
+      const res = await getUserPage({
+        pageNum: page,
+        pageSize: size,
+        keyword: keyword || undefined,
+        status: status,
+      });
+      setData(res.data?.records || []);
+      setTotal(res.data?.total || 0);
+    } catch (error) {
+      messageApi.error('获取数据失败');
+    } finally {
+      setTableLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [current, pageSize]);
+
+  /** 搜索 */
+  const handleSearch = () => {
+    setCurrent(1);
+    loadData(1);
+  };
 
   /** 删除节点 */
   const handleRemove = async (userId: number) => {
@@ -48,7 +87,7 @@ const UserManagement: React.FC = () => {
               defaultMessage: '删除成功',
             }),
           );
-          actionRef.current?.reloadAndRest?.();
+          loadData();
         } catch (error) {
           hide();
           messageApi.error(
@@ -67,27 +106,6 @@ const UserManagement: React.FC = () => {
     // TODO: 实现批量删除逻辑
     messageApi.warning('批量删除功能开发中');
   }, []);
-
-  const { run: delRun, loading } = useRequest(deleteUser, {
-    manual: true,
-    onSuccess: () => {
-      actionRef.current?.reloadAndRest?.();
-      messageApi.success(
-        intl.formatMessage({
-          id: 'pages.user.management.deleteSuccess',
-          defaultMessage: '删除成功',
-        }),
-      );
-    },
-    onError: () => {
-      messageApi.error(
-        intl.formatMessage({
-          id: 'pages.user.management.deleteFailed',
-          defaultMessage: '删除失败，请重试',
-        }),
-      );
-    },
-  });
 
   const columns: ProColumns<API.UserItem>[] = [
     {
@@ -198,81 +216,132 @@ const UserManagement: React.FC = () => {
       valueType: 'option',
       key: 'option',
      render: (text, record) => (
-        <>
-          <a
-           onClick={() => {
-             setCurrentRow(record);
-             setUpdateModalVisible(true);
-            }}
-          >
-            {intl.formatMessage({
-              id: 'pages.user.management.edit',
-              defaultMessage: '编辑',
-            })}
-          </a>
-          <a
-           onClick={() => {
-              handleRemove(record.userId!);
-            }}
-           style={{ color: 'red', marginLeft: 8 }}
-          >
-            {intl.formatMessage({
-              id: 'pages.user.management.delete',
-              defaultMessage: '删除',
-            })}
-          </a>
-        </>
+        <Space size={4}>
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              style={{
+                color: '#4f6ef7',
+                borderRadius: '6px',
+                fontWeight: 500,
+              }}
+              onClick={() => {
+                setCurrentRow(record);
+                setUpdateModalVisible(true);
+              }}
+            >
+              {intl.formatMessage({
+                id: 'pages.user.management.edit',
+                defaultMessage: '编辑',
+              })}
+            </Button>
+          </Tooltip>
+          <Tooltip title="删除">
+            <Button
+              type="text"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              style={{ borderRadius: '6px', fontWeight: 500 }}
+              onClick={() => {
+                handleRemove(record.id!);
+              }}
+            >
+              {intl.formatMessage({
+                id: 'pages.user.management.delete',
+                defaultMessage: '删除',
+              })}
+            </Button>
+          </Tooltip>
+        </Space>
       ),
     },
   ];
 
   return (
-    <PageContainer>
+    <PageContainer
+      header={{
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+            <UserOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+            {intl.formatMessage({
+              id: 'pages.user.management.title',
+              defaultMessage: '用户管理',
+            })}
+          </span>
+        ),
+      }}
+    >
       {contextHolder}
+
+      {/* 搜索和工具栏 */}
+      <Card
+        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+        styles={{ body: { padding: '16px 20px' } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <Input
+            placeholder="搜索用户名或邮箱"
+            prefix={<SearchOutlined />}
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            onPressEnter={handleSearch}
+            style={{ width: 280, borderRadius: '8px' }}
+            allowClear
+          />
+          <Select
+            placeholder="状态筛选"
+            value={status}
+            onChange={(val) => setStatus(val)}
+            style={{ width: 140, borderRadius: '8px' }}
+            allowClear
+            options={[
+              { label: '启用', value: 1 },
+              { label: '禁用', value: 0 },
+            ]}
+          />
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
+            查询
+          </Button>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setCurrent(1); loadData(1); }} style={{ borderRadius: '8px' }}>
+            重置
+          </Button>
+          <div style={{ flex: 1 }} />
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setCreateModalVisible(true)}
+            style={{ borderRadius: '8px', fontWeight: 600 }}
+          >
+            {intl.formatMessage({
+              id: 'pages.user.management.add',
+              defaultMessage: '新建用户',
+            })}
+          </Button>
+        </div>
+      </Card>
+
       <ProTable<API.UserItem>
-       headerTitle={intl.formatMessage({
-         id: 'pages.user.management.title',
-          defaultMessage: '用户管理',
-        })}
-       actionRef={actionRef}
-       rowKey="userId"
-      search={{
-         labelWidth: 120,
-      }}
-      toolBarRender={() => [
-         <Button
-          type="primary"
-          key="create"
-         onClick={() => setCreateModalVisible(true)}
-        >
-          {intl.formatMessage({
-           id: 'pages.user.management.add',
-            defaultMessage: '新建',
-          })}
-        </Button>,
-      ]}
-     request={async (params) => {
-        try {
-          const res = await getUserPage({
-            pageNum: params.current,
-            pageSize: params.pageSize,
-             keyword: params.keyword,
-            status: params.status,
-           });
-         return {
-           data: res.data?.records || [],
-            success: true,
-            total: res.data?.total || 0,
-          };
-        } catch (error) {
-         messageApi.error('获取数据失败');
-         return {
-           data: [],
-            success: false,
-            total: 0,
-          };
-        }
-      }}
+        headerTitle={undefined}
+        rowKey="id"
+        loading={tableLoading}
+        pagination={{
+          current,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (page, size) => {
+            setCurrent(page);
+            if (size) setPageSize(size);
+          },
+        }}
+        dataSource={data}
+        search={false}
+        toolBarRender={false}
     columns={columns}
    />
 
@@ -284,7 +353,7 @@ const UserManagement: React.FC = () => {
             await createUser(values);
             messageApi.success('创建成功');
             setCreateModalVisible(false);
-            actionRef.current?.reloadAndRest?.();
+            loadData();
           } catch (error) {
             messageApi.error('创建失败，请重试');
           }
@@ -295,13 +364,13 @@ const UserManagement: React.FC = () => {
       {/* 更新用户弹窗 */}
       {currentRow && (
         <UpdateForm
-          onSubmit={async (values: API.UserItem) => {
+          onSubmit={async (values) => {
             try {
               await updateUserApi(currentRow.id || 0, values);
               messageApi.success('更新成功');
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
-              actionRef.current?.reloadAndRest?.();
+              loadData();
             } catch (error) {
               messageApi.error('更新失败，请重试');
             }

@@ -127,9 +127,6 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
 
         // 选择性更新字段
-        if (StringUtils.hasText(request.getPassword())) {
-            user.setPassword(request.getPassword());
-        }
         if (request.getNickname() != null) {
             user.setNickname(request.getNickname());
         }

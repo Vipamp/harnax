@@ -45,6 +45,7 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
+  font-size: 15px;
   font-family:
     AlibabaSans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans',
     sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
@@ -69,6 +70,151 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #1a1a2e;
+  background-color: #f5f6fa;
+}
+
+/* 全局卡片层级优化 */
+.ant-card {
+  border-radius: 10px !important;
+  box-shadow: 0 2px 12px rgba(79, 110, 247, 0.06) !important;
+  border: 1px solid #f0f0f8 !important;
+}
+
+/* 表格优化 */
+.ant-table {
+  font-size: 14px;
+
+  .ant-table-thead > tr > th {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a4a6a;
+    background: #f7f8ff !important;
+    padding: 14px 16px;
+    border-bottom: 2px solid #eef1fe;
+  }
+
+  .ant-table-tbody > tr > td {
+    padding: 14px 16px;
+    font-size: 14px;
+    color: #333;
+  }
+
+  .ant-table-tbody > tr:hover > td {
+    background: #f7f8ff !important;
+  }
+}
+
+/* 按鈕优化 */
+.ant-btn {
+  font-size: 14px;
+  border-radius: 7px;
+  height: 36px;
+  padding: 0 18px;
+  font-weight: 500;
+}
+
+.ant-btn-primary {
+  background: linear-gradient(135deg, #4f6ef7 0%, #667eea 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.3) !important;
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(79, 110, 247, 0.4) !important;
+  }
+}
+
+/* 输入框优化 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector {
+  border-radius: 7px !important;
+  font-size: 14px !important;
+  border-color: #e0e4f4 !important;
+  &:focus, &:hover {
+    border-color: #4f6ef7 !important;
+    box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.08) !important;
+  }
+}
+
+/* 导航栏阴影 */
+.ant-layout-header {
+  box-shadow: 0 1px 8px rgba(79, 110, 247, 0.08) !important;
+}
+
+/* 顶部菜单居中显示 - 多层级强制居中 */
+.ant-pro-top-menu,
+[data-mode="top"] .ant-pro-sider-menu,
+.ant-pro-sider-menu-horizontal,
+.ant-menu-horizontal {
+  justify-content: center !important;
+  text-align: center !important;
+  
+  & > ul {
+    justify-content: center !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  
+  & > .ant-menu-item {
+    float: none !important;
+    display: inline-block !important;
+  }
+}
+
+/* 确保菜单项水平排列 */
+.ant-menu-horizontal > .ant-menu-item,
+.ant-menu-horizontal > .ant-menu-submenu {
+  display: inline-block !important;
+  float: none !important;
+}
+
+/* 侧边栏阴影 */
+.ant-layout-sider {
+  box-shadow: 2px 0 12px rgba(79, 110, 247, 0.06) !important;
+}
+
+/* 分页器 */
+.ant-pagination .ant-pagination-item-active {
+  background: #4f6ef7 !important;
+  border-color: #4f6ef7 !important;
+  a {
+    color: #fff !important;
+  }
+}
+
+/* 模态框优化 */
+.ant-modal-content {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.ant-modal-header {
+  background: linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%) !important;
+  border-bottom: 1px solid #e8ecfb !important;
+  padding: 18px 24px !important;
+  .ant-modal-title {
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: #1a1a2e !important;
+  }
+}
+
+/* Tag 样式优化 */
+.ant-tag {
+  border-radius: 5px;
+  font-size: 13px;
+  padding: 2px 10px;
+  border: none;
+  font-weight: 500;
+}
+
+/* Pro 表格工具栏 */
+.ant-pro-table-list-toolbar-title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #1a1a2e !important;
 }
 
 ul,
