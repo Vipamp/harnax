@@ -230,17 +230,36 @@ const Login: React.FC = () => {
 };
  localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
  console.log('[登录成功] Token 已保存:', tokenInfo);
+ 
+ // 确保 token 已经持久化到 localStorage
+ try {
+  const savedToken = localStorage.getItem('tokenInfo');
+  if (savedToken) {
+   console.log('[登录成功] Token 验证成功，可以开始请求');
+  } else {
+   console.error('[登录成功] Token 保存失败！');
+  }
+ } catch (e) {
+  console.error('[登录成功] 验证 Token 失败:', e);
  }
-     
-      // 使用 history 跳转而不是 window.location.href，避免页面刷新丢失状态
-  const urlParams = new URL(window.location.href).searchParams;
-  const redirect = urlParams.get('redirect');
-   if (redirect) {
-       window.location.href = redirect;
-      } else {
-   history.push('/');
-      }
-  return;
+}
+    
+// 使用 history.push 进行跳转，避免页面刷新导致 token 丢失
+const urlParams = new URL(window.location.href).searchParams;
+const redirect = urlParams.get('redirect');
+if (redirect) {
+ // 给一个短暂的延迟，确保 localStorage 已经完全写入
+ setTimeout(() => {
+  console.log('[登录成功] 准备跳转到 redirect:', redirect);
+  history.push(redirect);
+ }, 100);
+} else {
+ setTimeout(() => {
+  console.log('[登录成功] 准备跳转到 /welcome');
+  history.push('/welcome');
+ }, 100);
+}
+return;
     }
    console.log(msg);
      // 如果失败去设置用户错误信息

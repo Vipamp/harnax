@@ -43,6 +43,7 @@ export const errorConfig: RequestConfig = {
   try {
  const tokenInfo = JSON.parse(tokenInfoStr);
  console.log('[请求拦截器] tokenInfo:', tokenInfo);
+ console.log('[请求拦截器] accessToken:', tokenInfo.accessToken);
  
   if (tokenInfo.accessToken) {
    // 在请求头中添加 Authorization
@@ -61,7 +62,7 @@ export const errorConfig: RequestConfig = {
  console.error('[请求拦截器] 解析 token 失败:', e);
  }
  }
- console.log('[请求拦截器] 未添加 Authorization，返回原始 options');
+ console.log('[请求拦截器] 未找到 tokenInfo，未添加 Authorization');
  return { url, options };
  },
  ],

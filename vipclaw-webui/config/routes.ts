@@ -12,12 +12,12 @@
  */
 export default [
   {
-   path: '/user',
+   path: '/login',
     layout: false,
     routes: [
       {
        name: 'login',
-       path: '/user/login',
+       path: '/login',
        component: './user/login',
       },
     ],
