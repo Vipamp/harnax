@@ -10,7 +10,7 @@ import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
 
 const isDev = process.env.NODE_ENV === 'development';
-const loginPath = '/user/login';
+const loginPath = '/login';
 
 /**
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
@@ -42,9 +42,9 @@ export async function getInitialState(): Promise<{
       
        // 如果不在登录页，跳转到登录页
    const { location } = history;
-   if (location.pathname !== '/user/login') {
+   if (location.pathname !== '/login') {
      history.replace({
-      pathname: '/user/login',
+      pathname: '/login',
      search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
        });
      }
@@ -56,6 +56,15 @@ export async function getInitialState(): Promise<{
  console.error('读取本地存储失败:', e);
  }
  
+  // 如果没有登录且不在登录页，跳转到登录页
+ const { location } = history;
+ if (!currentUser && location.pathname !== loginPath) {
+   history.replace({
+     pathname: loginPath,
+     search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
+   });
+ }
+
  return {
   currentUser,
   settings: defaultSettings as Partial<LayoutSettings>,

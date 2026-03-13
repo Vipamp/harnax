@@ -32,13 +32,13 @@ export default [
   {
    name: 'user.management',
    icon: 'user',
-   path: '/admin/user',
+   path: '/user',
    component: './user/management',
   },
   {
     name: 'mcp',
     icon: 'api',
-    path: '/admin/mcp',
+    path: '/mcp',
     component: './mcp',
   },
   {

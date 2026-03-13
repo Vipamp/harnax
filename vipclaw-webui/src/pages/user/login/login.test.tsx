@@ -34,7 +34,7 @@ describe('Login Page', () => {
       <TestBrowser
         historyRef={historyRef}
         location={{
-          pathname: '/user/login',
+          pathname: '/login',
         }}
       />,
     );
@@ -42,7 +42,7 @@ describe('Login Page', () => {
     await rootContainer.findAllByText('Ant Design');
 
     act(() => {
-      historyRef.current?.push('/user/login');
+      historyRef.current?.push('/login');
     });
 
     expect(
@@ -63,7 +63,7 @@ describe('Login Page', () => {
       <TestBrowser
         historyRef={historyRef}
         location={{
-          pathname: '/user/login',
+          pathname: '/login',
         }}
       />,
     );
