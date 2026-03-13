@@ -30,16 +30,22 @@ export default [
    hideInMenu: true,
   },
   {
-   name: 'user.management',
-   icon: 'user',
-   path: '/user',
-   component: './user/management',
+    name: 'model',
+    icon: 'robot',
+    path: '/model',
+    component: './model',
   },
   {
     name: 'mcp',
     icon: 'api',
     path: '/mcp',
     component: './mcp',
+  },
+  {
+   name: 'user.management',
+   icon: 'user',
+   path: '/user',
+   component: './user/management',
   },
   {
    path: '/',

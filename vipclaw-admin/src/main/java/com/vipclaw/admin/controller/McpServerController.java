@@ -33,11 +33,11 @@ public class McpServerController {
     @GetMapping("/page")
     @Operation(summary = "分页获取 MCP 服务列表", description = "分页查询 MCP 服务信息")
     public Result<Page<McpServerResponse>> getMcpServerPage(
-            @Parameter(description = "页码", example = "1") @RequestParam(defaultValue = "1") Integer current,
-            @Parameter(description = "每页大小", example = "10") @RequestParam(defaultValue = "10") Integer size,
-            @Parameter(description = "关键词（名称/描述）") @RequestParam(required = false) String keyword,
-            @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(required = false) Integer status,
-            @Parameter(description = "类型筛选（可多选，逗号分隔）") @RequestParam(required = false) String types) {
+            @Parameter(description = "页码", example = "1") @RequestParam(name = "current", defaultValue = "1") Integer current,
+            @Parameter(description = "每页大小", example = "10") @RequestParam(name = "size", defaultValue = "10") Integer size,
+            @Parameter(description = "关键词（名称/描述）") @RequestParam(name = "keyword", required = false) String keyword,
+            @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(name = "status", required = false) Integer status,
+            @Parameter(description = "类型筛选（可多选，逗号分隔）") @RequestParam(name = "types", required = false) String types) {
         try {
             Page<McpServer> page = mcpServerService.getMcpServerPage(keyword, status, types, current, size);
             Page<McpServerResponse> responsePage = convertToResponsePage(page);
@@ -91,7 +91,7 @@ public class McpServerController {
     @Operation(summary = "切换 MCP 服务启用状态", description = "启用或禁用 MCP 服务")
     public Result<Void> toggleMcpServer(
             @Parameter(description = "MCP ID") @PathVariable Long id,
-            @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam Integer status) {
+            @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") Integer status) {
         try {
             return mcpServerService.toggleMcpServerStatus(id, status) ? Result.success() : Result.error("切换状态失败");
         } catch (Exception e) {

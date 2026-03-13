@@ -90,7 +90,7 @@ public class SysUserController {
     @Operation(summary = "更新用户", description = "根据用户 ID 更新用户信息")
     public Result<Void> toggleUser(
             @Parameter(description = "用户 ID") @PathVariable Long userId,
-            @Parameter(description = "用户状态") @RequestParam Integer status) {
+            @Parameter(description = "用户状态") @RequestParam(name = "status") Integer status) {
         try {
             return sysUserService.toggleUserStatus(userId, status) ? Result.success() : Result.error("更新用户失败");
         } catch (Exception e) {

@@ -50,4 +50,5 @@ export default {
   'menu.editor.koni': '拓扑编辑器',
   'menu.user.management': '用户管理',
   'menu.mcp': 'MCP 服务',
+  'menu.model': '模型管理',
 };

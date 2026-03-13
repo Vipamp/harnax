@@ -98,4 +98,98 @@ declare namespace API {
     description?: string;
     type?: NoticeIconItemType;
   };
+
+  type Result<T> = {
+    code: number;
+    message?: string;
+    data?: T;
+  };
+
+  type PageResult<T> = {
+    records: T[];
+    total: number;
+    size: number;
+    current: number;
+    pages: number;
+  };
+
+  // 模型服务商相关类型
+  type ModelProviderItem = {
+    id: number;
+    name: string;
+    displayName: string;
+    apiKey?: string;
+    baseUrl?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type ModelProviderCreateRequest = {
+    name: string;
+    displayName: string;
+    apiKey?: string;
+    baseUrl?: string;
+    status?: number;
+  };
+
+  type ModelProviderUpdateRequest = {
+    id?: number;
+    name?: string;
+    displayName?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    status?: number;
+  };
+
+  // 模型相关类型
+  type ModelItem = {
+    id: number;
+    name: string;
+    modelName: string;
+    providerId: number;
+    providerName?: string;
+    description?: string;
+    modelType: string;
+    supportInternet: number;
+    supportReasoning: number;
+    supportTool: number;
+    supportMcp: number;
+    supportVision: number;
+    price?: number;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type ModelCreateRequest = {
+    name: string;
+    modelName: string;
+    providerId: number;
+    description?: string;
+    modelType: string;
+    supportInternet?: number;
+    supportReasoning?: number;
+    supportTool?: number;
+    supportMcp?: number;
+    supportVision?: number;
+    price?: number;
+    status?: number;
+  };
+
+  type ModelUpdateRequest = {
+    id?: number;
+    name?: string;
+    modelName?: string;
+    providerId?: number;
+    description?: string;
+    modelType?: string;
+    supportInternet?: number;
+    supportReasoning?: number;
+    supportTool?: number;
+    supportMcp?: number;
+    supportVision?: number;
+    price?: number;
+    status?: number;
+  };
 }

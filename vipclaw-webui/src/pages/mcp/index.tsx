@@ -118,7 +118,12 @@ const McpManagement: React.FC = () => {
     try {
       await toggleMcpServerStatus(id, newStatus);
       messageApi.success(newStatus === 1 ? '已启用' : '已禁用');
-      loadData();
+      // 只更新当前卡片状态，不重新加载整个列表
+      setData((prevData) =>
+        prevData.map((item) =>
+          item.id === id ? { ...item, status: newStatus } : item
+        )
+      );
     } catch (error) {
       messageApi.error('操作失败，请重试');
     }
@@ -156,8 +161,18 @@ const McpManagement: React.FC = () => {
           boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
           overflow: 'hidden',
           position: 'relative',
+          transition: 'all 0.3s ease',
+          transform: 'translateY(0)',
         }}
         styles={{ body: { padding: 0 } }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-4px)';
+          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)';
+        }}
       >
         {/* 顶部类型标识条 */}
         <div
@@ -207,11 +222,14 @@ const McpManagement: React.FC = () => {
               </Tag>
             </div>
             {/* 状态开关 */}
-            <Switch
-              checked={item.status === 1}
-              size="small"
-              onChange={(checked) => handleToggleStatus(item.id!, checked ? 1 : 0)}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>状态</Text>
+              <Switch
+                checked={item.status === 1}
+                size="small"
+                onChange={(checked) => handleToggleStatus(item.id!, checked ? 1 : 0)}
+              />
+            </div>
           </div>
 
           {/* 描述 */}
@@ -247,41 +265,39 @@ const McpManagement: React.FC = () => {
           </div>
 
           {/* 底部：创建时间 + 操作按钮 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {item.createTime?.replace('T', ' ')}
             </Text>
             <Space size={4}>
-              <Tooltip title="连通测试">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ThunderboltOutlined />}
-                  style={{ color: '#52c41a' }}
-                  onClick={() => handleConnectivityTest(item.id!, item.name)}
-                />
-              </Tooltip>
-              <Tooltip title="编辑">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EditOutlined />}
-                  style={{ color: '#4f6ef7' }}
-                  onClick={() => {
-                    setCurrentRow(item);
-                    setUpdateModalVisible(true);
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="删除">
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => handleRemove(item.id!)}
-                />
-              </Tooltip>
+              <Button
+                type="link"
+                size="small"
+                icon={<ThunderboltOutlined />}
+                onClick={() => handleConnectivityTest(item.id!, item.name)}
+              >
+                测试
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => {
+                  setCurrentRow(item);
+                  setUpdateModalVisible(true);
+                }}
+              >
+                编辑
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleRemove(item.id!)}
+              >
+                删除
+              </Button>
             </Space>
           </div>
         </div>

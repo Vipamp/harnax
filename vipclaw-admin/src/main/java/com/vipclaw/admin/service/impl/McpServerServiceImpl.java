@@ -30,7 +30,7 @@ public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer
 
     @Override
     public Page<McpServer> getMcpServerPage(@Nullable String keyword, @Nullable Integer status,
-                                             @Nullable String types, Integer current, Integer size) {
+                                            @Nullable String types, Integer current, Integer size) {
         log.info("分页查询 MCP 服务列表，current: {}, size: {}, keyword: {}, status: {}, types: {}", current, size, keyword, status, types);
 
         Page<McpServer> page = new Page<>(current, size);
@@ -54,7 +54,8 @@ public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer
         }
 
         wrapper.eq(McpServer::getActive, 1);
-        wrapper.orderByDesc(McpServer::getUpdateTime);
+        wrapper.orderByDesc(McpServer::getStatus)
+                .orderByDesc(McpServer::getUpdateTime);
         return this.page(page, wrapper);
     }
 
