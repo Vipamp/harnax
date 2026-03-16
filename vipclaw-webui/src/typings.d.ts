@@ -202,4 +202,79 @@ message?: string;
     url?: string;
     status?: number;
   };
+
+  /**
+   * @zh-CN 技能仓库对象
+   */
+  export type SkillRepositoryItem = {
+    id: number;
+    name: string;
+    url?: string;
+    description?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 技能仓库创建请求
+   */
+  export type SkillRepositoryCreateRequest = {
+    name: string;
+    url?: string;
+    description?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN 技能仓库更新请求
+   */
+  export type SkillRepositoryUpdateRequest = {
+    id?: number;
+    name?: string;
+    url?: string;
+    description?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN 技能对象
+   */
+  export type SkillItem = {
+    id: number;
+    name: string;
+    repositoryId: number;
+    repositoryName?: string;
+    description?: string;
+    skillmd?: string;
+    resources?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 技能创建请求
+   */
+  export type SkillCreateRequest = {
+    name: string;
+    repositoryId: number;
+    description?: string;
+    skillmd?: string;
+    resources?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN 技能更新请求
+   */
+  export type SkillUpdateRequest = {
+    id?: number;
+    name?: string;
+    repositoryId?: number;
+    description?: string;
+    skillmd?: string;
+    resources?: string;
+    status?: number;
+  };
 }

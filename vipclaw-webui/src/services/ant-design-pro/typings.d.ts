@@ -192,4 +192,109 @@ declare namespace API {
     price?: number;
     status?: number;
   };
+
+  // 技能仓库相关类型
+  type SkillRepositoryItem = {
+    id: number;
+    name: string;
+    url?: string;
+    description?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type SkillRepositoryCreateRequest = {
+    name: string;
+    url?: string;
+    description?: string;
+    status?: number;
+  };
+
+  type SkillRepositoryUpdateRequest = {
+    id?: number;
+    name?: string;
+    url?: string;
+    description?: string;
+    status?: number;
+  };
+
+  // 技能相关类型
+  type SkillItem = {
+    id: number;
+    name: string;
+    repositoryId: number;
+    repositoryName?: string;
+    skillmd?: string;
+    resources?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type SkillCreateRequest = {
+    name: string;
+    repositoryId: number;
+    skillmd?: string;
+    resources?: string;
+    status?: number;
+  };
+
+  type SkillUpdateRequest = {
+    id?: number;
+    name?: string;
+    repositoryId?: number;
+    skillmd?: string;
+    resources?: string;
+    status?: number;
+  };
+
+  // 定时任务相关类型
+  type JobItem = {
+    id?: number;
+    jobName?: string;
+    jobGroup?: string;
+    jobClass?: string;
+    cronExpression?: string;
+    jobStatus?: number;
+    concurrent?: number;
+    description?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type SysJobCreateRequest = {
+    jobName: string;
+    jobGroup?: string;
+    jobClass: string;
+    cronExpression: string;
+    concurrent?: number;
+    description?: string;
+  };
+
+  type SysJobUpdateRequest = {
+    id?: number;
+    jobName: string;
+    jobGroup?: string;
+    jobClass: string;
+    cronExpression: string;
+    concurrent?: number;
+    description?: string;
+  };
+
+  // 定时任务日志相关类型
+  type JobLogItem = {
+    id?: number;
+    jobId?: number;
+    jobName?: string;
+    jobGroup?: string;
+    invokeTarget?: string;
+    jobMessage?: string;
+    status?: number;
+    exceptionInfo?: string;
+    startTime?: string;
+    endTime?: string;
+    duration?: number;
+    createTime?: string;
+  };
 }

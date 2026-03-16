@@ -42,6 +42,29 @@ export default [
     component: './mcp',
   },
   {
+    name: 'skill',
+    icon: 'thunderbolt',
+    path: '/skill',
+    component: './skill',
+  },
+  {
+    name: 'job',
+    icon: 'schedule',
+    path: '/job',
+    routes: [
+      {
+        name: 'management',
+        path: '/job',
+        component: './job',
+      },
+      {
+        name: 'log',
+        path: '/job/log',
+        component: './job/log',
+      },
+    ],
+  },
+  {
    name: 'user.management',
    icon: 'user',
    path: '/user',

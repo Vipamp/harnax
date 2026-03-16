@@ -51,4 +51,5 @@ export default {
   'menu.user.management': 'User Management',
   'menu.mcp': 'MCP Services',
   'menu.model': 'Model Management',
+  'menu.skill': 'Skill Management',
 };

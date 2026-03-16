@@ -80,3 +80,75 @@ CREATE TABLE `model`
     PRIMARY KEY (`id`),
     KEY `idx_provider_id` (`provider_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型表';
+
+-- 定时任务表
+DROP TABLE IF EXISTS `sys_job`;
+CREATE TABLE `sys_job` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '任务ID',
+    `job_name` VARCHAR(100) NOT NULL COMMENT '任务名称',
+    `job_group` VARCHAR(100) NOT NULL DEFAULT 'DEFAULT' COMMENT '任务组名',
+    `job_class` VARCHAR(255) NOT NULL COMMENT '执行类全路径',
+    `cron_expression` VARCHAR(100) NOT NULL COMMENT 'Cron执行表达式',
+    `job_status` TINYINT(1) DEFAULT 0 COMMENT '状态（0-暂停，1-运行）',
+    `concurrent` TINYINT(1) DEFAULT 1 COMMENT '是否允许并发（0-禁止，1-允许）',
+    `description` VARCHAR(500) DEFAULT NULL COMMENT '任务描述',
+    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0-已删除，1-未删除）',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_job_name_group` (`job_name`, `job_group`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务表';
+
+-- 定时任务日志表
+DROP TABLE IF EXISTS `sys_job_log`;
+CREATE TABLE `sys_job_log` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '日志ID',
+    `job_id` BIGINT(20) NOT NULL COMMENT '任务ID',
+    `job_name` VARCHAR(100) NOT NULL COMMENT '任务名称',
+    `job_group` VARCHAR(100) NOT NULL COMMENT '任务组名',
+    `invoke_target` VARCHAR(255) DEFAULT NULL COMMENT '调用目标',
+    `job_message` VARCHAR(500) DEFAULT NULL COMMENT '执行信息',
+    `status` TINYINT(1) DEFAULT 0 COMMENT '执行状态（0-失败，1-成功）',
+    `exception_info` TEXT DEFAULT NULL COMMENT '异常信息',
+    `start_time` DATETIME DEFAULT NULL COMMENT '开始时间',
+    `end_time` DATETIME DEFAULT NULL COMMENT '结束时间',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_job_id` (`job_id`),
+    KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务日志表';
+
+-- 技能仓库表
+DROP TABLE IF EXISTS `skill_repository`;
+CREATE TABLE `skill_repository`
+(
+    `id`          BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `name`        VARCHAR(100) NOT NULL COMMENT '仓库名称',
+    `url`         VARCHAR(500) DEFAULT NULL COMMENT '仓库地址',
+    `description` TEXT         DEFAULT NULL COMMENT '仓库描述',
+    `status`      TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
+    `active`      TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `create_time` DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能仓库表';
+
+-- 技能表
+DROP TABLE IF EXISTS `skill`;
+CREATE TABLE `skill`
+(
+    `id`            BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `name`          VARCHAR(100) NOT NULL COMMENT '技能名称',
+    `repository_id` BIGINT(20)   NOT NULL COMMENT '仓库ID',
+    `description`   TEXT         DEFAULT NULL COMMENT '技能描述',
+    `skillmd`       TEXT         DEFAULT NULL COMMENT 'skill.md 内容',
+    `resources`     TEXT         DEFAULT NULL COMMENT '资源信息',
+    `status`        TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
+    `active`        TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `create_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_name` (`name`),
+    KEY `idx_repository_id` (`repository_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能表';

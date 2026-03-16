@@ -26,6 +26,22 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: VipClawScheduler
+            instanceId: AUTO
+          jobStore:
+            class: org.quartz.simpl.RAMJobStore
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+
+
 # MyBatis-Plus 配置
 mybatis-plus:
   configuration:
