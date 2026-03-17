@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest;
+import com.vipamp.vipclaw.admin.dto.SyncSkillResponse;
 import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.SkillRepositoryMapper;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -97,6 +99,7 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
         SkillRepository repository = new SkillRepository();
         repository.setName(request.getName());
         repository.setUrl(request.getUrl());
+        repository.setBranch(request.getBranch());
         repository.setDescription(request.getDescription());
         repository.setStatus(request.getStatus() != null ? request.getStatus() : 1); // 默认启用
         repository.setActive(1);  // 默认生效
@@ -134,6 +137,9 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
         // 选择性更新字段
         if (request.getUrl() != null) {
             repository.setUrl(request.getUrl());
+        }
+        if (request.getBranch() != null) {
+            repository.setBranch(request.getBranch());
         }
         if (request.getDescription() != null) {
             repository.setDescription(request.getDescription());
@@ -200,5 +206,42 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
                 .eq(SkillRepository::getActive, 1);
         wrapper.last("LIMIT 1");
         return getOne(wrapper);
+    }
+
+    @Override
+    public List<SyncSkillResponse> fetchRemoteSkills(Long repositoryId) {
+        log.info("获取远程技能列表，repositoryId: {}", repositoryId);
+        
+        // TODO: 实现真实的 Git 仓库拉取和 skill.md 解析逻辑
+        // 目前返回 Mock 测试数据
+        
+        List<SyncSkillResponse> mockData = new ArrayList<>();
+        
+        SyncSkillResponse skill1 = new SyncSkillResponse();
+        skill1.setName("Java 编程助手");
+        skill1.setDescription("提供 Java 编程相关的技能帮助，包括代码编写、调试、优化等");
+        skill1.setSkillmd("# Java 编程助手\n\n我可以帮助你：\n- Java 基础语法\n- Spring 框架\n- 多线程编程\n- JVM 调优");
+        skill1.setResources("[]");
+        skill1.setExists(false);
+        mockData.add(skill1);
+        
+        SyncSkillResponse skill2 = new SyncSkillResponse();
+        skill2.setName("Python 脚本专家");
+        skill2.setDescription("Python 脚本编写和问题解答，涵盖数据分析、自动化等领域");
+        skill2.setSkillmd("# Python 脚本专家\n\n擅长领域：\n- Python 基础\n- Django/Flask\n- 数据处理\n- 自动化脚本");
+        skill2.setResources("[]");
+        skill2.setExists(false);
+        mockData.add(skill2);
+        
+        SyncSkillResponse skill3 = new SyncSkillResponse();
+        skill3.setName("前端 UI 设计师");
+        skill3.setDescription("前端界面设计和样式咨询，精通 React、Vue 等主流框架");
+        skill3.setSkillmd("# 前端 UI 设计师\n\n专业技能：\n- React/Vue\n- CSS/Tailwind\n- 响应式设计\n- 用户体验优化");
+        skill3.setResources("[]");
+        skill3.setExists(true); // 模拟已存在的技能
+        mockData.add(skill3);
+        
+        log.info("Mock 数据返回，共 {} 个技能", mockData.size());
+        return mockData;
     }
 }

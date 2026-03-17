@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryResponse;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest;
+import com.vipamp.vipclaw.admin.dto.SyncSkillResponse;
 import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
 import com.vipamp.vipclaw.admin.vo.Result;
@@ -32,7 +33,7 @@ public class SkillRepositoryController {
 
     private final SkillRepositoryService skillRepositoryService;
 
-    @GetMapping("/list")
+    @GetMapping("/page")
     @Operation(summary = "分页获取技能仓库列表", description = "分页查询技能仓库信息")
     public Result<Page<SkillRepositoryResponse>> getRepositoryPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
@@ -67,7 +68,7 @@ public class SkillRepositoryController {
     @GetMapping("/{id}")
     @Operation(summary = "获取技能仓库详情", description = "根据技能仓库 ID 获取技能仓库信息")
     public Result<SkillRepositoryResponse> getRepositoryById(
-            @Parameter(description = "技能仓库 ID") @PathVariable Long id) {
+            @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") Long id) {
         try {
             SkillRepository repository = skillRepositoryService.getRepositoryById(id);
             return Result.success(SkillRepositoryResponse.fromEntity(repository));
@@ -92,7 +93,7 @@ public class SkillRepositoryController {
     @PutMapping("/update/{repositoryId}")
     @Operation(summary = "更新技能仓库", description = "根据技能仓库 ID 更新技能仓库信息")
     public Result<Void> updateRepository(
-            @Parameter(description = "技能仓库 ID") @PathVariable Long repositoryId,
+            @Parameter(description = "技能仓库 ID") @PathVariable(name = "repositoryId") Long repositoryId,
             @Valid @RequestBody SkillRepositoryUpdateRequest request) {
         try {
             request.setId(repositoryId);
@@ -106,7 +107,7 @@ public class SkillRepositoryController {
     @PutMapping("/toggle/{repositoryId}")
     @Operation(summary = "切换技能仓库状态", description = "根据技能仓库 ID 切换技能仓库状态")
     public Result<Void> toggleRepository(
-            @Parameter(description = "技能仓库 ID") @PathVariable Long repositoryId,
+            @Parameter(description = "技能仓库 ID") @PathVariable(name = "repositoryId") Long repositoryId,
             @Parameter(description = "技能仓库状态") @RequestParam(name = "status") Integer status) {
         try {
             return skillRepositoryService.toggleRepositoryStatus(repositoryId, status) ? Result.success() : Result.error("更新技能仓库失败");
@@ -119,7 +120,7 @@ public class SkillRepositoryController {
     @DeleteMapping("/{repositoryId}")
     @Operation(summary = "删除技能仓库", description = "根据技能仓库 ID 删除技能仓库")
     public Result<Void> deleteRepository(
-            @Parameter(description = "技能仓库 ID") @PathVariable Long repositoryId) {
+            @Parameter(description = "技能仓库 ID") @PathVariable(name = "repositoryId") Long repositoryId) {
         try {
             return skillRepositoryService.deleteRepository(repositoryId) ? Result.success() : Result.error("删除技能仓库失败");
         } catch (Exception e) {
@@ -128,16 +129,15 @@ public class SkillRepositoryController {
         }
     }
 
-    @PostMapping("/sync/{repositoryId}")
-    @Operation(summary = "同步技能仓库", description = "根据技能仓库 ID 同步技能仓库数据")
-    public Result<Void> syncRepository(
-            @Parameter(description = "技能仓库 ID") @PathVariable Long repositoryId) {
+    @GetMapping("/fetch/{repositoryId}")
+    @Operation(summary = "获取远程技能列表", description = "从远程仓库获取可同步的技能列表")
+    public Result<List<SyncSkillResponse>> fetchRemoteSkills(
+            @Parameter(description = "技能仓库 ID") @PathVariable(name = "repositoryId") Long repositoryId) {
         try {
-            // TODO: 实现同步逻辑
-            log.info("同步技能仓库，repositoryId: {}", repositoryId);
-            return Result.success();
+            List<SyncSkillResponse> skills = skillRepositoryService.fetchRemoteSkills(repositoryId);
+            return Result.success(skills);
         } catch (Exception e) {
-            log.error("同步技能仓库失败", e);
+            log.error("获取远程技能列表失败", e);
             return Result.error(e.getMessage());
         }
     }

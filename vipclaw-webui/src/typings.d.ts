@@ -210,6 +210,7 @@ message?: string;
     id: number;
     name: string;
     url?: string;
+    branch?: string;
     description?: string;
     status: number;
     createTime?: string;
@@ -222,6 +223,7 @@ message?: string;
   export type SkillRepositoryCreateRequest = {
     name: string;
     url?: string;
+    branch?: string;
     description?: string;
     status?: number;
   };
@@ -233,6 +235,7 @@ message?: string;
     id?: number;
     name?: string;
     url?: string;
+    branch?: string;
     description?: string;
     status?: number;
   };
@@ -275,6 +278,94 @@ message?: string;
     description?: string;
     skillmd?: string;
     resources?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN 远程技能响应（同步弹窗用）
+   */
+  export type SkillSyncItem = {
+    name: string;
+    description?: string;
+    skillmd?: string;
+    resources?: string;
+    exists?: boolean;
+  };
+
+  /**
+   * @zh-CN 远程技能列表响应
+   */
+  export type SkillResponse = {
+    records: SkillSyncItem[];
+  };
+
+  /**
+   * @zh-CN 智能体对象
+   */
+  export type AgentItem = {
+    id?: number;
+    name: string;
+    description?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    modelName?: string;  // 模型名称
+    mcpList?: AgentMcpConfig[];
+    skillList?: AgentSkillConfig[];
+    owner?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN MCP 配置对象
+   */
+  export type AgentMcpConfig = {
+    id?: number;
+    enable_skip?: string;
+    enableSkip?: string;
+    mcpId?: number;
+    mcpName?: string;
+    mcpDescription?: string;
+  };
+
+  /**
+   * @zh-CN 技能配置对象
+   */
+  export type AgentSkillConfig = {
+    repositoryId?: number;
+    repositoryName?: string;
+    skillId?: number;
+    skillName?: string;
+    skillDescription?: string;
+  };
+
+  /**
+   * @zh-CN 智能体创建请求
+   */
+  export type AgentCreateRequest = {
+    name: string;
+    description?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    mcpList?: AgentMcpConfig[];
+    skillList?: string;
+    owner?: string;
+    status?: number;
+  };
+
+  /**
+   * @zh-CN 智能体更新请求
+   */
+  export type AgentUpdateRequest = {
+    id?: number;
+    name?: string;
+    description?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    mcpList?: AgentMcpConfig[];
+    skillList?: string; // 逗号分隔的字符串 "1,2,3"
+    owner?: string;
     status?: number;
   };
 }

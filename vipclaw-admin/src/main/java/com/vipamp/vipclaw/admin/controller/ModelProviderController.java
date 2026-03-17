@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/model-provider")
+@RequestMapping("/model-providers")
 @Tag(name = "模型服务商管理", description = "模型服务商的增删改查接口")
 public class ModelProviderController {
 
@@ -48,9 +48,9 @@ public class ModelProviderController {
      * 获取模型服务商详情
      */
     @GetMapping("/{id}")
-    @Operation(summary = "获取模型服务商详情", description = "根据ID获取模型服务商详情")
+    @Operation(summary = "获取模型服务商详情", description = "根据 ID 获取模型服务商详情")
     public Result<ModelProviderResponse> getDetail(
-            @Parameter(description = "模型服务商ID") @PathVariable Long id) {
+            @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") Long id) {
         ModelProviderResponse response = modelProviderService.getDetail(id);
         return Result.success(response);
     }
@@ -72,7 +72,7 @@ public class ModelProviderController {
     @PutMapping("/update/{id}")
     @Operation(summary = "更新模型服务商", description = "更新模型服务商信息")
     public Result<ModelProviderResponse> update(
-            @Parameter(description = "模型服务商ID") @PathVariable Long id,
+            @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") Long id,
             @Valid @RequestBody ModelProviderUpdateRequest request) {
         request.setId(id);
         ModelProviderResponse response = modelProviderService.update(id, request);
@@ -85,7 +85,7 @@ public class ModelProviderController {
     @PutMapping("/toggle/{id}")
     @Operation(summary = "切换模型服务商状态", description = "启用/禁用模型服务商")
     public Result<ModelProviderResponse> toggle(
-            @Parameter(description = "模型服务商ID") @PathVariable Long id) {
+            @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") Long id) {
         ModelProviderResponse response = modelProviderService.toggle(id);
         return Result.success(response);
     }
@@ -96,7 +96,7 @@ public class ModelProviderController {
     @DeleteMapping("/{id}")
     @Operation(summary = "删除模型服务商", description = "删除指定的模型服务商")
     public Result<Void> delete(
-            @Parameter(description = "模型服务商ID") @PathVariable Long id) {
+            @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") Long id) {
         modelProviderService.removeProviderById(id);
         return Result.success();
     }
@@ -107,7 +107,7 @@ public class ModelProviderController {
     @PostMapping("/{id}/connectivity-test")
     @Operation(summary = "连接测试", description = "测试模型服务商连接是否正常")
     public Result<Boolean> connectivityTest(
-            @Parameter(description = "模型服务商ID") @PathVariable Long id) {
+            @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") Long id) {
         boolean result = modelProviderService.connectivityTest(id);
         return Result.success(result);
     }

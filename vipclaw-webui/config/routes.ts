@@ -48,6 +48,12 @@ export default [
     component: './skill',
   },
   {
+    name: 'agent',
+    icon: 'robot',
+    path: '/agent',
+    component: './agent',
+  },
+  {
     name: 'job',
     icon: 'schedule',
     path: '/job',

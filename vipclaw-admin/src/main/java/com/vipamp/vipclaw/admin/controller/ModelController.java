@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*;
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/model")
+@RequestMapping("/models")
 @Tag(name = "模型管理", description = "模型的增删改查接口")
 public class ModelController {
 
@@ -53,9 +53,9 @@ public class ModelController {
      * 获取模型详情
      */
     @GetMapping("/{id}")
-    @Operation(summary = "获取模型详情", description = "根据ID获取模型详情")
+    @Operation(summary = "获取模型详情", description = "根据 ID 获取模型详情")
     public Result<ModelResponse> getDetail(
-            @Parameter(description = "模型ID") @PathVariable Long id) {
+            @Parameter(description = "模型ID") @PathVariable(name = "id") Long id) {
         ModelResponse response = modelService.getDetail(id);
         return Result.success(response);
     }
@@ -77,7 +77,7 @@ public class ModelController {
     @PutMapping("/update/{id}")
     @Operation(summary = "更新模型", description = "更新模型信息")
     public Result<ModelResponse> update(
-            @Parameter(description = "模型ID") @PathVariable Long id,
+            @Parameter(description = "模型ID") @PathVariable(name = "id") Long id,
             @Valid @RequestBody ModelUpdateRequest request) {
         request.setId(id);
         ModelResponse response = modelService.update(id, request);
@@ -90,7 +90,7 @@ public class ModelController {
     @PutMapping("/toggle/{id}")
     @Operation(summary = "切换模型状态", description = "启用/禁用模型")
     public Result<ModelResponse> toggle(
-            @Parameter(description = "模型ID") @PathVariable Long id) {
+            @Parameter(description = "模型ID") @PathVariable(name = "id") Long id) {
         ModelResponse response = modelService.toggle(id);
         return Result.success(response);
     }
@@ -101,7 +101,7 @@ public class ModelController {
     @DeleteMapping("/{id}")
     @Operation(summary = "删除模型", description = "删除指定的模型")
     public Result<Void> delete(
-            @Parameter(description = "模型ID") @PathVariable Long id) {
+            @Parameter(description = "模型ID") @PathVariable(name = "id") Long id) {
         modelService.removeById(id);
         return Result.success();
     }

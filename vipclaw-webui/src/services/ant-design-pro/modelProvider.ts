@@ -9,7 +9,7 @@ export async function modelProviderPage(params: {
   name?: string;
   status?: number;
 }) {
-  return request<API.Result<API.PageResult<API.ModelProviderItem>>>('/admin/model-provider/page', {
+  return request<API.Result<API.PageResult<API.ModelProviderItem>>>('/admin/model-providers/page', {
     method: 'GET',
     params,
   });
@@ -19,7 +19,7 @@ export async function modelProviderPage(params: {
  * 获取模型服务商详情
  */
 export async function getModelProvider(id: number) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-provider/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/${id}`, {
     method: 'GET',
   });
 }
@@ -28,7 +28,7 @@ export async function getModelProvider(id: number) {
  * 创建模型服务商
  */
 export async function createModelProvider(data: API.ModelProviderCreateRequest) {
-  return request<API.Result<API.ModelProviderItem>>('/admin/model-provider', {
+  return request<API.Result<API.ModelProviderItem>>('/admin/model-providers', {
     method: 'POST',
     data,
   });
@@ -38,7 +38,7 @@ export async function createModelProvider(data: API.ModelProviderCreateRequest) 
  * 更新模型服务商
  */
 export async function updateModelProvider(id: number, data: API.ModelProviderUpdateRequest) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-provider/update/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/update/${id}`, {
     method: 'PUT',
     data,
   });
@@ -48,7 +48,7 @@ export async function updateModelProvider(id: number, data: API.ModelProviderUpd
  * 切换模型服务商状态
  */
 export async function toggleModelProvider(id: number) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-provider/toggle/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/toggle/${id}`, {
     method: 'PUT',
   });
 }
@@ -57,7 +57,7 @@ export async function toggleModelProvider(id: number) {
  * 删除模型服务商
  */
 export async function deleteModelProvider(id: number) {
-  return request<API.Result<void>>(`/admin/model-provider/${id}`, {
+  return request<API.Result<void>>(`/admin/model-providers/${id}`, {
     method: 'DELETE',
   });
 }
@@ -66,7 +66,7 @@ export async function deleteModelProvider(id: number) {
  * 连接测试
  */
 export async function connectivityTest(id: number) {
-  return request<API.Result<boolean>>(`/admin/model-provider/${id}/connectivity-test`, {
+  return request<API.Result<boolean>>(`/admin/model-providers/${id}/connectivity-test`, {
     method: 'POST',
   });
 }

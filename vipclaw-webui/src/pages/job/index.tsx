@@ -295,19 +295,15 @@ const JobManagement: React.FC = () => {
     }
   };
 
-  /** 查看日志 */
-  const handleViewLogs = (job: API.JobItem) => {
-    history.push(`/job/log?jobId=${job.id}&jobName=${encodeURIComponent(job.jobName || '')}`);
-  };
-
   const columns: ProColumns<API.JobItem>[] = [
     {
-      title: '任务ID',
+      title: '任务 ID',
       dataIndex: 'id',
       valueType: 'text',
       hideInForm: true,
       hideInSearch: true,
-      width: 80,
+      width: 60,
+      align: 'center',
     },
     {
       title: '任务名称',
@@ -315,6 +311,8 @@ const JobManagement: React.FC = () => {
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
+      width: 150,
+      align: 'center',
     },
     {
       title: '任务组名',
@@ -322,12 +320,15 @@ const JobManagement: React.FC = () => {
       valueType: 'text',
       hideInSearch: true,
       width: 120,
+      align: 'center',
     },
     {
-      title: 'Cron表达式',
+      title: 'Cron 表达式',
       dataIndex: 'cronExpression',
       valueType: 'text',
       hideInSearch: true,
+      width: 180,
+      align: 'center',
       render: (_, record) => (
         <Tooltip title={getNextExecutionHint(record.cronExpression || '')}>
           <Tag color="blue" style={{ fontFamily: 'monospace', cursor: 'help' }}>
@@ -343,6 +344,8 @@ const JobManagement: React.FC = () => {
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
+      width: 280,
+      align: 'center',
     },
     {
       title: '状态',
@@ -360,7 +363,8 @@ const JobManagement: React.FC = () => {
           <Tag color="default" icon={<PauseOutlined />}>暂停</Tag>
         );
       },
-      width: 100,
+      width: 80,
+      align: 'center',
     },
     {
       title: '并发',
@@ -374,6 +378,7 @@ const JobManagement: React.FC = () => {
         );
       },
       width: 80,
+      align: 'center',
     },
     {
       title: '描述',
@@ -381,6 +386,8 @@ const JobManagement: React.FC = () => {
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
+      width: 180,
+      align: 'center',
     },
     {
       title: '创建时间',
@@ -390,87 +397,63 @@ const JobManagement: React.FC = () => {
       hideInSearch: true,
       sorter: true,
       defaultSortOrder: 'descend',
-      width: 180,
+      width: 150,
+      align: 'center',
     },
     {
       title: '操作',
       valueType: 'option',
       key: 'option',
-      width: 220,
+      width: 200,
+      fixed: 'right',
+      align: 'center',
       render: (text, record) => (
-        <Space size={4}>
+        <Space size={8}>
           {record.jobStatus === 0 ? (
             <Tooltip title="启动">
               <Button
                 type="text"
                 size="small"
-                icon={<CaretRightOutlined />}
-                style={{ color: '#52c41a', borderRadius: '6px', fontWeight: 500 }}
+                icon={<CaretRightOutlined style={{ fontSize: 16, color: '#52c41a' }} />}
                 onClick={() => handleStart(record.id!)}
-              >
-                启动
-              </Button>
+              />
             </Tooltip>
           ) : (
             <Tooltip title="暂停">
               <Button
                 type="text"
                 size="small"
-                icon={<PauseOutlined />}
-                style={{ color: '#faad14', borderRadius: '6px', fontWeight: 500 }}
+                icon={<PauseOutlined style={{ fontSize: 16, color: '#faad14' }} />}
                 onClick={() => handlePause(record.id!)}
-              >
-                暂停
-              </Button>
+              />
             </Tooltip>
           )}
           <Tooltip title="立即执行">
             <Button
               type="text"
               size="small"
-              icon={<PlayCircleOutlined />}
-              style={{ color: '#1890ff', borderRadius: '6px', fontWeight: 500 }}
+              icon={<PlayCircleOutlined style={{ fontSize: 16, color: '#1890ff' }} />}
               onClick={() => handleRunOnce(record.id!)}
-            >
-              执行
-            </Button>
-          </Tooltip>
-          <Tooltip title="查看日志">
-            <Button
-              type="text"
-              size="small"
-              icon={<HistoryOutlined />}
-              style={{ color: '#722ed1', borderRadius: '6px', fontWeight: 500 }}
-              onClick={() => handleViewLogs(record)}
-            >
-              日志
-            </Button>
+            />
           </Tooltip>
           <Tooltip title="编辑">
             <Button
               type="text"
               size="small"
-              icon={<EditOutlined />}
-              style={{ color: '#4f6ef7', borderRadius: '6px', fontWeight: 500 }}
+              icon={<EditOutlined style={{ fontSize: 16, color: '#4f6ef7' }} />}
               onClick={() => {
                 setCurrentRow(record);
                 setUpdateModalVisible(true);
               }}
-            >
-              编辑
-            </Button>
+            />
           </Tooltip>
           <Tooltip title="删除">
             <Button
               type="text"
               size="small"
-              danger
-              icon={<DeleteOutlined />}
-              style={{ borderRadius: '6px', fontWeight: 500 }}
+              icon={<DeleteOutlined style={{ fontSize: 16, color: '#ff4d4f' }} />}
               onClick={() => handleRemove(record.id!)}
-            >
-              删除
-            </Button>
+            />
           </Tooltip>
         </Space>
       ),

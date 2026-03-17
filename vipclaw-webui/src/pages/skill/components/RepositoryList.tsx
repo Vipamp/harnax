@@ -1,6 +1,6 @@
 import React from 'react';
 import { List, Switch, Button, Space, Typography, Tag, Popconfirm, message, Tooltip } from 'antd';
-import { EditOutlined, DeleteOutlined, GithubOutlined, SyncOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, GithubOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons';
 import { deleteSkillRepository, toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
 
 const { Text, Paragraph } = Typography;
@@ -74,6 +74,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                       icon={<SyncOutlined />}
                       onClick={(e) => {
                         e.stopPropagation();
+                        onSelect(repository);
                         onSync(repository);
                       }}
                     />
@@ -81,8 +82,10 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   <Switch
                     size="small"
                     checked={repository.status === 1}
-                    onChange={(checked) => handleToggle(repository.id, checked ? 1 : 0)}
-                    onClick={(e) => e.stopPropagation()}
+                    onChange={(checked) => {
+                      onSelect(repository);
+                      handleToggle(repository.id, checked ? 1 : 0);
+                    }}
                   />
                   <Button
                     type="text"
@@ -90,6 +93,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                     icon={<EditOutlined />}
                     onClick={(e) => {
                       e.stopPropagation();
+                      onSelect(repository);
                       onEdit(repository);
                     }}
                   />
@@ -97,6 +101,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                     title="确定删除此仓库吗？"
                     onConfirm={(e) => {
                       e?.stopPropagation();
+                      onSelect(repository);
                       handleDelete(repository.id);
                     }}
                     onCancel={(e) => e?.stopPropagation()}
@@ -106,19 +111,36 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                       size="small"
                       danger
                       icon={<DeleteOutlined />}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect(repository);
+                      }}
                     />
                   </Popconfirm>
                 </Space>
               </div>
               {repository.url && (
-                <Paragraph
-                  type="secondary"
-                  style={{ fontSize: '12px', marginBottom: 0, marginTop: 4 }}
-                  ellipsis={{ rows: 1 }}
-                >
-                  {repository.url}
-                </Paragraph>
+                <div style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
+                  <a
+                    href={repository.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      fontSize: '12px',
+                      color: '#1890ff',
+                      textDecoration: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      maxWidth: '100%',
+                    }}
+                  >
+                    <LinkOutlined style={{ marginRight: 4, fontSize: '10px' }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {repository.url}
+                    </span>
+                  </a>
+                </div>
               )}
             </div>
           </div>

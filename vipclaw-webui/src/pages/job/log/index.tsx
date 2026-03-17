@@ -3,11 +3,10 @@ import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useSearchParams } from '@umijs/max';
 import { Button, Card, DatePicker, Input, message, Modal, Select, Space, Tag, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
-import { cleanJobLogs, getJobLogPage } from '@/services/ant-design-pro/job';
+import { getJobLogPage } from '@/services/ant-design-pro/job';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
-  DeleteOutlined,
   HistoryOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
@@ -64,25 +63,6 @@ const JobLog: React.FC = () => {
   const handleSearch = () => {
     setCurrent(1);
     loadData(1);
-  };
-
-  /** 清理日志 */
-  const handleCleanLogs = async () => {
-    Modal.confirm({
-      title: '清理日志',
-      content: '请选择要清理多少天前的日志',
-      okText: '确定',
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await cleanJobLogs(30);
-          messageApi.success('日志清理成功');
-          loadData();
-        } catch (error) {
-          messageApi.error('清理失败，请重试');
-        }
-      },
-    });
   };
 
   /** 查看异常详情 */
@@ -270,15 +250,6 @@ const JobLog: React.FC = () => {
             style={{ borderRadius: '8px' }}
           >
             重置
-          </Button>
-          <div style={{ flex: 1 }} />
-          <Button
-            danger
-            icon={<DeleteOutlined />}
-            onClick={handleCleanLogs}
-            style={{ borderRadius: '8px' }}
-          >
-            清理日志
           </Button>
         </div>
       </Card>

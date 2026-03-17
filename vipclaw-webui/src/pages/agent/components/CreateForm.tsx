@@ -1,0 +1,450 @@
+import { Modal, Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
+import React, { useState, useEffect } from 'react';
+// @ts-ignore
+import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
+import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
+// @ts-ignore
+import { useModel } from '@umijs/max';
+
+const { TextArea } = Input;
+const { Step } = Steps;
+
+interface CreateFormProps {
+  visible: boolean;
+  onCancel: () => void;
+  onSubmit: (values: API.AgentCreateRequest) => Promise<void>;
+}
+
+const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) => {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [form] = Form.useForm();
+  const { initialState } = useModel('@@initialState');
+  const currentUser = initialState?.currentUser;
+  const [mcpServers, setMcpServers] = useState<API.McpServerItem[]>([]);
+  const [repositories, setRepositories] = useState<API.SkillRepositoryItem[]>([]);
+  const [skills, setSkills] = useState<API.SkillItem[]>([]);
+  const [models, setModels] = useState<API.ModelItem[]>([]);
+  const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
+
+  // 初始化表单数据
+  useEffect(() => {
+    if (visible && currentUser) {
+      form.setFieldsValue({
+        owner: currentUser.username || currentUser.nickname,
+      });
+    }
+  }, [visible, currentUser]);
+  const [mcpConfigs, setMcpConfigs] = useState<Array<{ mcpId?: number; mcpName?: string; enableSkip?: boolean }>>([{}]);
+
+  // Skill 配置列表（支持动态添加）
+  const [skillConfigs, setSkillConfigs] = useState<Array<{ 
+    repositoryId?: number; 
+    repositoryName?: string;
+    skillId?: number; 
+    skillName?: string;
+  }>>([{}]);
+
+  // 加载 MCP 服务器列表
+  useEffect(() => {
+    if (visible) {
+      loadMcpServers();
+      loadRepositories();
+      loadModels();
+    }
+  }, [visible]);
+
+  const loadMcpServers = async () => {
+    try {
+      const res = await getMcpServerList({ pageNum: 1, pageSize: 100 });
+      // 只保留启用的 MCP
+      const enabledMcps = (res.data?.records || []).filter((item: any) => item.status === 1);
+      setMcpServers(enabledMcps);
+    } catch (error) {
+      console.error('加载 MCP 服务器列表失败', error);
+    }
+  };
+
+  const loadRepositories = async () => {
+    try {
+      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100 });
+      // 只保留启用的仓库
+      const enabledRepos = (res.data?.records || []).filter((item: any) => item.status === 1);
+      setRepositories(enabledRepos);
+    } catch (error) {
+      console.error('加载技能仓库列表失败', error);
+    }
+  };
+
+  const loadModels = async () => {
+    try {
+      const res = await getModelList({ pageNum: 1, pageSize: 100 });
+      // 只保留启用的对话模型
+      const enabledModels = (res.data?.records || []).filter((item: any) => 
+        item.status === 1 && item.modelType === 'chat'
+      );
+      setModels(enabledModels);
+    } catch (error) {
+      console.error('加载模型列表失败', error);
+    }
+  };
+
+  const loadSkills = async (repositoryId: number) => {
+    try {
+      const res = await getSkillListByRepository(repositoryId, { pageNum: 1, pageSize: 100 });
+      // 只保留启用的技能
+      const enabledSkills = (res.data?.records || []).filter((item: any) => item.status === 1);
+      setSkills(enabledSkills);
+    } catch (error) {
+      console.error('加载技能列表失败', error);
+      setSkills([]);
+    }
+  };
+
+  // 处理 MCP 配置变化
+  const handleMcpConfigChange = (index: number, field: string, value: any) => {
+    const newConfigs = [...mcpConfigs];
+    newConfigs[index] = { ...newConfigs[index], [field]: value };
+    setMcpConfigs(newConfigs);
+    
+    // 如果修改了 mcpId，自动填充 mcpName
+    if (field === 'mcpId' && value) {
+      const selectedMcp = mcpServers.find(mcp => mcp.id === value);
+      if (selectedMcp) {
+        newConfigs[index].mcpName = selectedMcp.name;
+        setMcpConfigs(newConfigs);
+      }
+    }
+  };
+
+  // 添加 MCP 配置
+  const addMcpConfig = () => {
+    setMcpConfigs([...mcpConfigs, {}]);
+  };
+
+  // 删除 MCP 配置
+  const removeMcpConfig = (index: number) => {
+    if (mcpConfigs.length === 1) {
+      message.warning('至少保留一个 MCP 配置');
+      return;
+    }
+    const newConfigs = mcpConfigs.filter((_, i) => i !== index);
+    setMcpConfigs(newConfigs);
+  };
+
+  // 处理技能配置变化
+  const handleSkillConfigChange = (index: number, field: string, value: any, repoId?: number) => {
+    const newConfigs = [...skillConfigs];
+    newConfigs[index] = { ...newConfigs[index], [field]: value };
+    
+    // 如果修改了仓库 ID，清空技能选择并加载新仓库的技能
+    if (field === 'repositoryId' && value) {
+      newConfigs[index].skillId = undefined;
+      newConfigs[index].skillName = undefined;
+      setSelectedRepoId(value);
+      loadSkills(value);
+      
+      // 设置仓库名称
+      const selectedRepo = repositories.find(repo => repo.id === value);
+      if (selectedRepo) {
+        newConfigs[index].repositoryName = selectedRepo.name;
+      }
+    }
+    
+    // 如果修改了 skillId，自动填充 skillName
+    if (field === 'skillId' && value) {
+      const selectedSkill = skills.find(skill => skill.id === value);
+      if (selectedSkill) {
+        newConfigs[index].skillName = selectedSkill.name;
+      }
+    }
+    
+    setSkillConfigs(newConfigs);
+  };
+
+  // 添加技能配置
+  const addSkillConfig = () => {
+    setSkillConfigs([...skillConfigs, {}]);
+  };
+
+  // 删除技能配置
+  const removeSkillConfig = (index: number) => {
+    if (skillConfigs.length === 1) {
+      message.warning('至少保留一个技能配置');
+      return;
+    }
+    const newConfigs = skillConfigs.filter((_, i) => i !== index);
+    setSkillConfigs(newConfigs);
+  };
+
+  // 下一步
+  const handleNext = async () => {
+    try {
+      if (currentStep === 0) {
+        // 验证第一步
+        await form.validateFields(['name', 'description', 'systemPrompt']);
+      } else if (currentStep === 1) {
+        // 验证第二步（MCP 配置）- 可选，允许跳过
+        // 不需要验证，可以直接跳过
+      } else if (currentStep === 2) {
+        // 验证第三步（Skill 配置）- 可选，允许跳过
+        // 提交表单
+        // 使用 getFieldValue 单独获取每个字段，确保都能获取到
+        const name = form.getFieldValue('name');
+        const description = form.getFieldValue('description');
+        const systemPrompt = form.getFieldValue('systemPrompt');
+        const modelId = form.getFieldValue('modelId');
+        const owner = form.getFieldValue('owner');
+        
+        console.log('提交表单数据:', { name, description, systemPrompt, modelId, owner });
+        console.log('MCP配置:', mcpConfigs);
+        console.log('Skill配置:', skillConfigs);
+        
+        const submitData: API.AgentCreateRequest = {
+          name,
+          description,
+          systemPrompt,
+          modelId,
+          owner,
+          status: 1,
+          // mcpList: [{"id":1, "enableSkip":"true"},{"id":2, "enableSkip":"false"}]
+          mcpList: mcpConfigs.filter(config => config.mcpId).map(config => ({
+            id: config.mcpId,
+            enableSkip: config.enableSkip ? 'true' : 'false',
+          })),
+          // skillList: "1,2,3,4" 只需要 skillId 数组
+          skillList: skillConfigs
+            .filter(config => config.skillId)
+            .map(config => config.skillId)
+            .join(','),
+        };
+        await onSubmit(submitData);
+        form.resetFields();
+        setCurrentStep(0);
+        setMcpConfigs([{}]);
+        setSkillConfigs([{}]);
+        return;
+      }
+      setCurrentStep(currentStep + 1);
+    } catch (error) {
+      console.error('验证失败', error);
+    }
+  };
+
+  // 上一步
+  const handlePrev = () => {
+    setCurrentStep(currentStep - 1);
+  };
+
+  // 关闭弹窗
+  const handleClose = () => {
+    form.resetFields();
+    setCurrentStep(0);
+    setMcpConfigs([{}]);
+    setSkillConfigs([{}]);
+    onCancel();
+  };
+
+  return (
+    <Modal
+      title="创建智能体"
+      open={visible}
+      onCancel={handleClose}
+      footer={null}
+      width={800}
+      destroyOnClose
+    >
+      <Steps current={currentStep} style={{ marginBottom: 24 }}>
+        <Step title="基本信息" />
+        <Step title="MCP 配置" />
+        <Step title="技能配置" />
+      </Steps>
+
+      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+        {/* 第一步：基本信息 */}
+        {currentStep === 0 && (
+          <>
+            <Form.Item
+              label="智能体名称"
+              name="name"
+              rules={[{ required: true, message: '请输入智能体名称' }]}
+            >
+              <Input placeholder="请输入智能体名称" />
+            </Form.Item>
+
+            <Form.Item
+              label="智能体描述"
+              name="description"
+              rules={[{ required: true, message: '请输入智能体描述' }]}
+            >
+              <TextArea rows={3} placeholder="请输入智能体描述" />
+            </Form.Item>
+
+            <Form.Item
+              label="系统提示词"
+              name="systemPrompt"
+              rules={[{ required: true, message: '请输入系统提示词' }]}
+            >
+              <TextArea 
+                rows={8} 
+                placeholder="请输入系统提示词，支持 Markdown 语法"
+                style={{ fontFamily: 'monospace' }}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="对话模型"
+              name="modelId"
+              rules={[{ required: true, message: '请选择对话模型' }]}
+            >
+              <Select
+                placeholder="请选择对话模型"
+                allowClear
+                options={models.map(model => ({
+                  label: `${model.modelName} - ${model.providerName || '未知供应商'} ¥${model.price || 0}/M`,
+                  value: model.id,
+                }))}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="所有者"
+              name="owner"
+            >
+              <Input 
+                placeholder="自动填充当前登录用户"
+                disabled
+              />
+            </Form.Item>
+          </>
+        )}
+
+        {/* 第二步：MCP 配置 */}
+        {currentStep === 1 && (
+          <div>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#666', fontSize: '14px' }}>
+                配置 MCP 服务（可选，可跳过）
+              </span>
+              <Button type="dashed" icon={<PlusOutlined />} onClick={addMcpConfig}>
+                添加 MCP
+              </Button>
+            </div>
+
+            {mcpConfigs.map((config, index) => (
+              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid #d9d9d9', borderRadius: '8px', background: '#fafafa' }} direction="vertical">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontWeight: 500 }}>MCP #{index + 1}</span>
+                  {mcpConfigs.length > 1 && (
+                    <Button 
+                      type="link" 
+                      danger 
+                      icon={<MinusOutlined />} 
+                      onClick={() => removeMcpConfig(index)}
+                      size="small"
+                    >
+                      删除
+                    </Button>
+                  )}
+                </div>
+                <Select
+                  placeholder="选择 MCP 服务（可跳过）"
+                  value={config.mcpId}
+                  onChange={(value) => handleMcpConfigChange(index, 'mcpId', value)}
+                  style={{ width: '100%' }}
+                  allowClear
+                  options={mcpServers.map(mcp => ({
+                    label: mcp.name,
+                    value: mcp.id,
+                  }))}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>允许跳过</span>
+                  <Switch
+                    size="small"
+                    checked={config.enableSkip}
+                    onChange={(checked) => handleMcpConfigChange(index, 'enableSkip', checked)}
+                  />
+                </div>
+              </Space>
+            ))}
+          </div>
+        )}
+
+        {/* 第三步：技能配置 */}
+        {currentStep === 2 && (
+          <div>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#666', fontSize: '14px' }}>
+                配置技能（可选，可跳过）
+              </span>
+              <Button type="dashed" icon={<PlusOutlined />} onClick={addSkillConfig}>
+                添加技能
+              </Button>
+            </div>
+
+            {skillConfigs.map((config, index) => (
+              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid #d9d9d9', borderRadius: '8px', background: '#fafafa' }} direction="vertical">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontWeight: 500 }}>技能 #{index + 1}</span>
+                  {skillConfigs.length > 1 && (
+                    <Button 
+                      type="link" 
+                      danger 
+                      icon={<MinusOutlined />} 
+                      onClick={() => removeSkillConfig(index)}
+                      size="small"
+                    >
+                      删除
+                    </Button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 16, width: '100%' }}>
+                  <Select
+                    placeholder="选择技能仓库"
+                    value={config.repositoryId}
+                    onChange={(value) => handleSkillConfigChange(index, 'repositoryId', value)}
+                    style={{ flex: 1 }}
+                    allowClear
+                    options={repositories.map(repo => ({
+                      label: repo.name,
+                      value: repo.id,
+                    }))}
+                  />
+                  <Select
+                    placeholder="选择技能"
+                    value={config.skillId}
+                    onChange={(value) => handleSkillConfigChange(index, 'skillId', value)}
+                    style={{ flex: 1 }}
+                    disabled={!config.repositoryId}
+                    allowClear
+                    options={skills.map(skill => ({
+                      label: skill.name,
+                      value: skill.id,
+                    }))}
+                  />
+                </div>
+              </Space>
+            ))}
+          </div>
+        )}
+      </Form>
+
+      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
+        <Button 
+          disabled={currentStep === 0} 
+          onClick={handlePrev}
+        >
+          上一步
+        </Button>
+        <Button 
+          type="primary" 
+          onClick={handleNext}
+        >
+          {currentStep === 2 ? '完成' : '下一步'}
+        </Button>
+      </div>
+    </Modal>
+  );
+};
+
+export default CreateForm;

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest;
+import com.vipamp.vipclaw.admin.dto.SyncSkillResponse;
 import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import jakarta.annotation.Nullable;
 
@@ -84,4 +85,12 @@ public interface SkillRepositoryService extends IService<SkillRepository> {
      * @return 技能仓库实体
      */
     SkillRepository getByName(String name);
+
+    /**
+     * 获取远程技能列表（从 Git 仓库同步）
+     *
+     * @param repositoryId 技能仓库 ID
+     * @return 远程技能列表
+     */
+    List<SyncSkillResponse> fetchRemoteSkills(Long repositoryId);
 }

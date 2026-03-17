@@ -13,10 +13,12 @@ enum ErrorShowType {
 }
 // 与后端约定的响应数据格式
 interface ResponseStructure {
-  success: boolean;
-  data: any;
+  success?: boolean;
+  code?: number;
+  data?: any;
   errorCode?: number;
   errorMessage?: string;
+  message?: string;
   showType?: ErrorShowType;
 }
 
@@ -74,12 +76,17 @@ export const errorConfig: RequestConfig = {
  errorConfig: {
   // 错误抛出
   errorThrower: (res) => {
-  const { success, data, errorCode, errorMessage, showType } =
+  const { success, code, data, errorCode, errorMessage, message, showType } =
       res as unknown as ResponseStructure;
-    if (!success) {
-    const error: any = new Error(errorMessage);
+    // 支持两种格式：success 字段或 code 字段
+    const isSuccess = success === true || code === 200;
+    const errorMsg = errorMessage || message;
+    const errorCodeValue = errorCode || code;
+    
+    if (!isSuccess) {
+    const error: any = new Error(errorMsg || '请求失败');
       error.name = 'BizError';
-      error.info = { errorCode, errorMessage, showType, data };
+      error.info = { errorCode: errorCodeValue, errorMessage: errorMsg, showType, data };
       throw error; // 抛出自制的错误
     }
   },
@@ -148,9 +155,10 @@ export const errorConfig: RequestConfig = {
  responseInterceptors: [
  (response) => {
      // 拦截响应数据，进行个性化处理
-   const { data } = response as unknown as ResponseStructure;
+   const { data, success, code } = response as unknown as ResponseStructure;
 
-     if (data?.success === false) {
+     // 支持两种格式：success 字段或 code 字段
+     if ((success === false) || (code && code !== 200)) {
        message.error('请求失败！');
      }
      return response;

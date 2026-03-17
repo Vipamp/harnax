@@ -762,7 +762,7 @@ public class SysUserController {
 
     private final SysUserService sysUserService;
 
-    @GetMapping("/list")
+    @GetMapping("/page")
     @Operation(summary = "分页获取用户列表", description = "分页查询用户信息")
     public Result<Page<SysUserResponse>> getUserPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,

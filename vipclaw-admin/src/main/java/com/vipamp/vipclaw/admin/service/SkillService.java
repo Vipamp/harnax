@@ -3,9 +3,12 @@ package com.vipamp.vipclaw.admin.service;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest;
+import com.vipamp.vipclaw.admin.dto.SkillResponse;
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest;
 import com.vipamp.vipclaw.admin.entity.Skill;
 import jakarta.annotation.Nullable;
+
+import java.util.List;
 
 /**
  * 技能服务接口
@@ -73,8 +76,18 @@ public interface SkillService extends IService<Skill> {
     /**
      * 根据技能名称查询技能
      *
-     * @param name 技能名称
+     * @param repositoryId 仓库 ID
+     * @param name         技能名称
      * @return 技能实体
      */
-    Skill getByName(String name);
+    Skill getByNameAndRepo(Long repositoryId, String name);
+
+    /**
+     * 批量保存技能（同步用）
+     *
+     * @param repositoryId 仓库 ID
+     * @param skills       技能列表
+     * @return 保存的技能数量
+     */
+    Integer batchSaveSkills(Long repositoryId, List<SkillResponse> skills);
 }

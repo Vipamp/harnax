@@ -31,6 +31,13 @@ public class SkillRepositoryCreateRequest {
     private String url;
 
     /**
+     * 分支名称
+     */
+    @Schema(description = "分支名称", example = "main")
+    @Size(max = 100, message = "分支名称长度不能超过 100")
+    private String branch;
+
+    /**
      * 仓库描述
      */
     @Schema(description = "仓库描述")

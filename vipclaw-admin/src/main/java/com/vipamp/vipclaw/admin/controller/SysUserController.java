@@ -30,7 +30,7 @@ public class SysUserController {
 
     private final SysUserService sysUserService;
 
-    @GetMapping("/list")
+    @GetMapping("/page")
     @Operation(summary = "分页获取用户列表", description = "分页查询用户信息")
     public Result<Page<SysUserResponse>> getUserPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
@@ -50,7 +50,7 @@ public class SysUserController {
     @GetMapping("/{id}")
     @Operation(summary = "获取用户详情", description = "根据用户 ID 获取用户信息")
     public Result<SysUserResponse> getUserById(
-            @Parameter(description = "用户 ID") @PathVariable Long id) {
+            @Parameter(description = "用户 ID") @PathVariable(name = "id") Long id) {
         try {
             SysUser user = sysUserService.getUserById(id);
             return Result.success(SysUserResponse.fromEntity(user));
@@ -75,7 +75,7 @@ public class SysUserController {
     @PutMapping("/update/{userId}")
     @Operation(summary = "更新用户", description = "根据用户 ID 更新用户信息")
     public Result<Void> updateUser(
-            @Parameter(description = "用户 ID") @PathVariable Long userId,
+            @Parameter(description = "用户 ID") @PathVariable(name = "userId") Long userId,
             @Valid @RequestBody SysUserUpdateRequest request) {
         try {
             request.setId(userId);
@@ -89,7 +89,7 @@ public class SysUserController {
     @PutMapping("/toggle/{userId}")
     @Operation(summary = "更新用户", description = "根据用户 ID 更新用户信息")
     public Result<Void> toggleUser(
-            @Parameter(description = "用户 ID") @PathVariable Long userId,
+            @Parameter(description = "用户 ID") @PathVariable(name = "userId") Long userId,
             @Parameter(description = "用户状态") @RequestParam(name = "status") Integer status) {
         try {
             return sysUserService.toggleUserStatus(userId, status) ? Result.success() : Result.error("更新用户失败");
@@ -102,7 +102,7 @@ public class SysUserController {
     @DeleteMapping("/{userId}")
     @Operation(summary = "删除用户", description = "根据用户 ID 删除用户")
     public Result<Void> deleteUser(
-            @Parameter(description = "用户 ID") @PathVariable Long userId) {
+            @Parameter(description = "用户 ID") @PathVariable(name = "userId") Long userId) {
         try {
             return sysUserService.deleteUser(userId) ? Result.success() : Result.error("删除用户失败");
         } catch (Exception e) {

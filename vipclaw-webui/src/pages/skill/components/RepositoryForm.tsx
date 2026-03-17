@@ -18,10 +18,18 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
   useEffect(() => {
     if (visible) {
       if (values) {
-        form.setFieldsValue(values);
+        // 编辑模式：设置已有值，如果 branch 为空则设置为 'main'
+        form.setFieldsValue({
+          ...values,
+          branch: values.branch || 'main',
+        });
       } else {
+        // 新建模式：重置表单并设置默认值
         form.resetFields();
-        form.setFieldsValue({ status: 1 });
+        form.setFieldsValue({ 
+          status: 1,
+          branch: 'main',
+        });
       }
     }
   }, [visible, values, form]);
@@ -64,6 +72,9 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         </Form.Item>
         <Form.Item name="url" label="仓库地址">
           <Input placeholder="请输入仓库地址" />
+        </Form.Item>
+        <Form.Item name="branch" label="分支名称" initialValue="main">
+          <Input placeholder="请输入分支名称，例如：main" />
         </Form.Item>
         <Form.Item name="description" label="仓库描述">
           <TextArea rows={3} placeholder="请输入仓库描述" />

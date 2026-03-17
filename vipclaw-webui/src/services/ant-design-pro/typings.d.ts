@@ -198,6 +198,7 @@ declare namespace API {
     id: number;
     name: string;
     url?: string;
+    branch?: string;
     description?: string;
     status: number;
     createTime?: string;
@@ -207,6 +208,7 @@ declare namespace API {
   type SkillRepositoryCreateRequest = {
     name: string;
     url?: string;
+    branch?: string;
     description?: string;
     status?: number;
   };
@@ -215,6 +217,7 @@ declare namespace API {
     id?: number;
     name?: string;
     url?: string;
+    branch?: string;
     description?: string;
     status?: number;
   };

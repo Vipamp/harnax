@@ -52,4 +52,5 @@ export default {
   'menu.mcp': 'MCP Services',
   'menu.model': 'Model Management',
   'menu.skill': 'Skill Management',
+  'menu.agent': 'Agent Management',
 };

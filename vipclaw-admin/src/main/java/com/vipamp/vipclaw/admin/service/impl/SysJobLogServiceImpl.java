@@ -65,10 +65,4 @@ public class SysJobLogServiceImpl extends ServiceImpl<SysJobLogMapper, SysJobLog
         wrapper.orderByDesc(SysJobLog::getCreateTime);
         return this.page(page, wrapper);
     }
-
-    @Override
-    public int cleanLogs(int days) {
-        log.info("清理 {} 天前的定时任务日志", days);
-        return baseMapper.cleanLogs(days);
-    }
 }

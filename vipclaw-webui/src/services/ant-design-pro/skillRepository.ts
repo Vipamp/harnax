@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取技能仓库列表 GET /admin/skill-repositories/list */
+/** 获取技能仓库列表 GET /admin/skill-repositories/page */
 export async function getSkillRepositoryPage(
   params: {
     pageNum?: number;
@@ -12,7 +12,7 @@ export async function getSkillRepositoryPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/skill-repositories/list', {
+  return request('/admin/skill-repositories/page', {
     method: 'GET',
     params: {
       ...params,
@@ -88,10 +88,10 @@ export async function deleteSkillRepository(repositoryId: number, options?: { [k
   });
 }
 
-/** 同步技能仓库 POST /admin/skill-repositories/sync/${repositoryId} */
-export async function syncSkillRepository(repositoryId: number, options?: { [key: string]: any }) {
-  return request(`/admin/skill-repositories/sync/${repositoryId}`, {
-    method: 'POST',
+/** 获取远程技能列表 GET /admin/skill-repositories/fetch/${repositoryId} */
+export async function fetchRemoteSkills(repositoryId: number, options?: { [key: string]: any }) {
+  return request(`/admin/skill-repositories/fetch/${repositoryId}`, {
+    method: 'GET',
     ...(options || {}),
   });
 }

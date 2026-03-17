@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取用户列表 GET /admin/users/list */
+/** 获取用户列表 GET /admin/users/page */
 export async function getUserPage(
   params: {
    pageNum?: number;
@@ -12,7 +12,7 @@ export async function getUserPage(
   },
   options?: { [key: string]: any },
 ) {
- return request('/admin/users/list', {
+ return request('/admin/users/page', {
    method: 'GET',
    params: {
       ...params,

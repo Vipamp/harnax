@@ -156,11 +156,11 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
             id: 'pages.user.management.gender',
             defaultMessage: '性别',
           })}
-          valueEnum={{
-            0: '女',
-            1: '男',
-            2: '保密',
-          }}
+          options={[
+            { label: '女', value: 0 },
+            { label: '男', value: 1 },
+            { label: '保密', value: 2 },
+          ]}
         />
 
         <ProFormSelect
@@ -169,10 +169,10 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
             id: 'pages.user.management.status',
             defaultMessage: '状态',
           })}
-          valueEnum={{
-            0: '禁用',
-            1: '正常',
-          }}
+          options={[
+            { label: '正常', value: 1 },
+            { label: '禁用', value: 0 },
+          ]}
         />
 
         <ProFormTextArea

@@ -4,7 +4,8 @@ import { GithubOutlined, SearchOutlined, ReloadOutlined, ThunderboltOutlined } f
 import RepositoryList from './components/RepositoryList';
 import RepositoryForm from './components/RepositoryForm';
 import SkillList from './components/SkillList';
-import { getSkillRepositoryPage } from '@/services/ant-design-pro/skillRepository';
+import SyncSkillModal from './components/SyncSkillModal';
+import { getSkillRepositoryPage, fetchRemoteSkills } from '@/services/ant-design-pro/skillRepository';
 
 const SkillManagement: React.FC = () => {
   // 仓库相关状态
@@ -16,6 +17,12 @@ const SkillManagement: React.FC = () => {
 
   // 技能相关状态
   const [skillListKey, setSkillListKey] = useState(0);
+
+  // 同步弹窗相关状态
+  const [syncModalVisible, setSyncModalVisible] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [remoteSkills, setRemoteSkills] = useState<API.SkillSyncItem[]>([]);
+  const [syncingRepository, setSyncingRepository] = useState<API.SkillRepositoryItem | null>(null);
 
   // 筛选状态
   const [filters, setFilters] = useState({
@@ -92,15 +99,42 @@ const SkillManagement: React.FC = () => {
 
   // 同步仓库
   const handleSyncRepository = async (repository: API.SkillRepositoryItem) => {
-    message.info('同步功能开发中，敬请期待');
-    // TODO: 调用后端同步接口
-    // try {
-    //   await syncSkillRepository(repository.id);
-    //   message.success('同步成功');
-    //   loadRepositories();
-    // } catch (error) {
-    //   message.error('同步失败');
-    // }
+    setSyncingRepository(repository);
+    setSyncLoading(true);
+    try {
+      // 调用获取远程技能列表的接口
+      const response: any = await fetchRemoteSkills(repository.id!);
+      if (response.data && Array.isArray(response.data)) {
+        setRemoteSkills(response.data);
+        setSyncModalVisible(true);
+      } else if (response.data && response.data.records) {
+        // 兼容分页格式
+        setRemoteSkills(response.data.records);
+        setSyncModalVisible(true);
+      } else {
+        message.warning('未获取到技能数据');
+      }
+    } catch (error) {
+      message.error('获取远程技能失败');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // 同步成功后的回调
+  const handleSyncSuccess = () => {
+    setSyncModalVisible(false);
+    setRemoteSkills([]);
+    setSyncingRepository(null);
+    // 刷新技能列表
+    setSkillListKey((prev) => prev + 1);
+  };
+
+  // 关闭同步弹窗
+  const handleSyncModalCancel = () => {
+    setSyncModalVisible(false);
+    setRemoteSkills([]);
+    setSyncingRepository(null);
   };
 
   return (
@@ -215,6 +249,19 @@ const SkillManagement: React.FC = () => {
         onCancel={handleRepositoryFormClose}
         onSuccess={handleRepositoryFormSuccess}
       />
+
+      {/* 同步技能弹窗 */}
+      {syncingRepository && (
+        <SyncSkillModal
+          visible={syncModalVisible}
+          repositoryId={syncingRepository.id!}
+          repositoryName={syncingRepository.name}
+          skills={remoteSkills}
+          loading={syncLoading}
+          onCancel={handleSyncModalCancel}
+          onSuccess={handleSyncSuccess}
+        />
+      )}
     </div>
   );
 };

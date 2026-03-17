@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取定时任务列表 GET /admin/jobs/list */
+/** 获取定时任务列表 GET /admin/jobs/page */
 export async function getJobPage(
   params: {
     pageNum?: number;
@@ -12,7 +12,7 @@ export async function getJobPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/jobs/list', {
+  return request('/admin/jobs/page', {
     method: 'GET',
     params: {
       ...params,
@@ -111,13 +111,3 @@ export async function getJobLogPage(
   });
 }
 
-/** 清理定时任务日志 DELETE /admin/jobs/logs/clean */
-export async function cleanJobLogs(days: number, options?: { [key: string]: any }) {
-  return request('/admin/jobs/logs/clean', {
-    method: 'DELETE',
-    params: {
-      days,
-    },
-    ...(options || {}),
-  });
-}

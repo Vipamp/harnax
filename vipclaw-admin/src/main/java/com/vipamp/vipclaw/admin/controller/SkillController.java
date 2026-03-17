@@ -17,6 +17,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * 技能管理控制器
  *
@@ -33,7 +35,7 @@ public class SkillController {
     private final SkillService skillService;
     private final SkillRepositoryService skillRepositoryService;
 
-    @GetMapping("/list")
+    @GetMapping("/page")
     @Operation(summary = "分页获取技能列表", description = "分页查询技能信息")
     public Result<Page<SkillResponse>> getSkillPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
@@ -54,7 +56,7 @@ public class SkillController {
     @GetMapping("/{id}")
     @Operation(summary = "获取技能详情", description = "根据技能 ID 获取技能信息")
     public Result<SkillResponse> getSkillById(
-            @Parameter(description = "技能 ID") @PathVariable("id") Long id) {
+            @Parameter(description = "技能 ID") @PathVariable(name = "id") Long id) {
         try {
             Skill skill = skillService.getSkillById(id);
             return Result.success(SkillResponse.fromEntity(skill));
@@ -79,7 +81,7 @@ public class SkillController {
     @PutMapping("/update/{skillId}")
     @Operation(summary = "更新技能", description = "根据技能 ID 更新技能信息")
     public Result<Void> updateSkill(
-            @Parameter(description = "技能 ID") @PathVariable("skillId") Long skillId,
+            @Parameter(description = "技能 ID") @PathVariable(name = "skillId") Long skillId,
             @Valid @RequestBody SkillUpdateRequest request) {
         try {
             request.setId(skillId);
@@ -93,7 +95,7 @@ public class SkillController {
     @PutMapping("/toggle/{skillId}")
     @Operation(summary = "切换技能状态", description = "根据技能 ID 切换技能状态")
     public Result<Void> toggleSkill(
-            @Parameter(description = "技能 ID") @PathVariable("skillId") Long skillId,
+            @Parameter(description = "技能 ID") @PathVariable(name = "skillId") Long skillId,
             @Parameter(description = "技能状态") @RequestParam(name = "status") Integer status) {
         try {
             return skillService.toggleSkillStatus(skillId, status) ? Result.success() : Result.error("更新技能失败");
@@ -106,11 +108,25 @@ public class SkillController {
     @DeleteMapping("/{skillId}")
     @Operation(summary = "删除技能", description = "根据技能 ID 删除技能")
     public Result<Void> deleteSkill(
-            @Parameter(description = "技能 ID") @PathVariable("skillId") Long skillId) {
+            @Parameter(description = "技能 ID") @PathVariable(name = "skillId") Long skillId) {
         try {
             return skillService.deleteSkill(skillId) ? Result.success() : Result.error("删除技能失败");
         } catch (Exception e) {
             log.error("删除技能失败", e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    @PostMapping("/batch")
+    @Operation(summary = "批量保存技能", description = "批量保存技能到指定仓库，重名技能会被覆盖")
+    public Result<Integer> batchSaveSkills(
+            @Parameter(description = "仓库 ID") @RequestParam(name = "repositoryId") Long repositoryId,
+            @Parameter(description = "技能列表") @RequestBody List<SkillResponse> skills) {
+        try {
+            Integer count = skillService.batchSaveSkills(repositoryId, skills);
+            return Result.success(count);
+        } catch (Exception e) {
+            log.error("批量保存技能失败", e);
             return Result.error(e.getMessage());
         }
     }

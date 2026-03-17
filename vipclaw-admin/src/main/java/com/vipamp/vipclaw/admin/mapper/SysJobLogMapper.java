@@ -18,14 +18,8 @@ import java.util.List;
 public interface SysJobLogMapper extends BaseMapper<SysJobLog> {
 
     /**
-     * 根据任务ID查询日志列表
+     * 根据任务 ID 查询日志列表
      */
     @Select("SELECT * FROM sys_job_log WHERE job_id = #{jobId} ORDER BY create_time DESC")
     List<SysJobLog> selectByJobId(@Param("jobId") Long jobId);
-
-    /**
-     * 清理指定天数前的日志
-     */
-    @Select("DELETE FROM sys_job_log WHERE create_time < DATE_SUB(NOW(), INTERVAL #{days} DAY)")
-    int cleanLogs(@Param("days") int days);
 }

@@ -10,16 +10,16 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 技能仓库实体类
+ * 智能体实体类
  *
  * @author vipamp
- * @since 2026-03-16
+ * @since 2026-03-18
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-@TableName("skill_repository")
-@Schema(description = "技能仓库实体类")
-public class SkillRepository implements Serializable {
+@TableName("agent")
+@Schema(description = "智能体实体类")
+public class Agent implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -32,28 +32,46 @@ public class SkillRepository implements Serializable {
     private Long id;
 
     /**
-     * 仓库名称
+     * 智能体名称
      */
-    @Schema(description = "仓库名称")
+    @Schema(description = "智能体名称")
     private String name;
 
     /**
-     * 仓库地址
+     * 智能体描述
      */
-    @Schema(description = "仓库地址")
-    private String url;
-
-    /**
-     * 分支名称
-     */
-    @Schema(description = "分支名称", example = "main")
-    private String branch;
-
-    /**
-     * 仓库描述
-     */
-    @Schema(description = "仓库描述")
+    @Schema(description = "智能体描述")
     private String description;
+
+    /**
+     * 系统提示词（支持 Markdown）
+     */
+    @Schema(description = "系统提示词（支持 Markdown）")
+    private String systemPrompt;
+
+    /**
+     * 对话模型 ID
+     */
+    @Schema(description = "对话模型 ID")
+    private Long modelId;
+
+    /**
+     * MCP 服务列表（JSON 格式）
+     */
+    @Schema(description = "MCP 服务列表（JSON 格式）")
+    private String mcpList;
+
+    /**
+     * 技能列表（JSON 格式）
+     */
+    @Schema(description = "技能列表（JSON 格式）")
+    private String skillList;
+
+    /**
+     * 所有者
+     */
+    @Schema(description = "所有者")
+    private String owner;
 
     /**
      * 是否启用（0:禁用，1:启用）

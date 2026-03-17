@@ -1,0 +1,23 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.vipamp</groupId>
+        <artifactId>vipclaw-core</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <artifactId>vipclaw-agent</artifactId>
+    <packaging>jar</packaging>
+
+    <name>vipclaw-agent</name>
+    <url>http://maven.apache.org</url>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope</artifactId>
+            <version>${agent-scope.version}</version>
+        </dependency>
+    </dependencies>
+</project>

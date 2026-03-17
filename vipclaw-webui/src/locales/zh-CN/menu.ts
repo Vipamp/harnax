@@ -52,6 +52,7 @@ export default {
   'menu.mcp': 'MCP 服务',
   'menu.model': '模型管理',
   'menu.skill': '技能管理',
+  'menu.agent': '智能体',
   'menu.job': '定时任务',
   'menu.job.management': '任务管理',
   'menu.job.log': '执行日志',

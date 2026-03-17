@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取技能列表 GET /admin/skills/list */
+/** 获取技能列表 GET /admin/skills/page */
 export async function getSkillPage(
   params: {
     pageNum?: number;
@@ -13,7 +13,7 @@ export async function getSkillPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/skills/list', {
+  return request('/admin/skills/page', {
     method: 'GET',
     params: {
       ...params,
@@ -77,6 +77,23 @@ export async function toggleSkillStatus(
 export async function deleteSkill(skillId: number, options?: { [key: string]: any }) {
   return request(`/admin/skills/${skillId}`, {
     method: 'DELETE',
+    ...(options || {}),
+  });
+}
+
+/** 批量保存技能（同步用）POST /admin/skills/batch */
+export async function batchSaveSkills(
+  repositoryId: number,
+  data: API.SkillSyncItem[],
+  options?: { [key: string]: any },
+) {
+  return request('/admin/skills/batch', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    params: { repositoryId },
+    data: data,
     ...(options || {}),
   });
 }

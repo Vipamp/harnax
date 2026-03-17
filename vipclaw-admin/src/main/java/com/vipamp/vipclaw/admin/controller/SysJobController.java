@@ -37,7 +37,7 @@ public class SysJobController {
     private final SysJobService sysJobService;
     private final SysJobLogService sysJobLogService;
 
-    @GetMapping("/list")
+    @GetMapping("/page")
     @Operation(summary = "分页获取定时任务列表", description = "分页查询定时任务信息")
     public Result<Page<SysJobResponse>> getJobPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
@@ -57,7 +57,7 @@ public class SysJobController {
     @GetMapping("/{id}")
     @Operation(summary = "获取定时任务详情", description = "根据任务 ID 获取任务信息")
     public Result<SysJobResponse> getJobById(
-            @Parameter(description = "任务 ID") @PathVariable Long id) {
+            @Parameter(description = "任务 ID") @PathVariable(name = "id") Long id) {
         try {
             SysJob job = sysJobService.getJobById(id);
             return Result.success(SysJobResponse.fromEntity(job));
@@ -82,7 +82,7 @@ public class SysJobController {
     @PutMapping("/update/{jobId}")
     @Operation(summary = "更新定时任务", description = "根据任务 ID 更新任务信息")
     public Result<Void> updateJob(
-            @Parameter(description = "任务 ID") @PathVariable Long jobId,
+            @Parameter(description = "任务 ID") @PathVariable(name = "jobId") Long jobId,
             @Valid @RequestBody SysJobUpdateRequest request) {
         try {
             request.setId(jobId);
@@ -96,7 +96,7 @@ public class SysJobController {
     @DeleteMapping("/{jobId}")
     @Operation(summary = "删除定时任务", description = "根据任务 ID 删除任务")
     public Result<Void> deleteJob(
-            @Parameter(description = "任务 ID") @PathVariable Long jobId) {
+            @Parameter(description = "任务 ID") @PathVariable(name = "jobId") Long jobId) {
         try {
             return sysJobService.deleteJob(jobId) ? Result.success() : Result.error("删除定时任务失败");
         } catch (Exception e) {
@@ -108,7 +108,7 @@ public class SysJobController {
     @PostMapping("/start/{jobId}")
     @Operation(summary = "启动定时任务", description = "启动指定的定时任务")
     public Result<Void> startJob(
-            @Parameter(description = "任务 ID") @PathVariable Long jobId) {
+            @Parameter(description = "任务 ID") @PathVariable(name = "jobId") Long jobId) {
         try {
             return sysJobService.startJob(jobId) ? Result.success() : Result.error("启动定时任务失败");
         } catch (Exception e) {
@@ -120,7 +120,7 @@ public class SysJobController {
     @PostMapping("/pause/{jobId}")
     @Operation(summary = "暂停定时任务", description = "暂停指定的定时任务")
     public Result<Void> pauseJob(
-            @Parameter(description = "任务 ID") @PathVariable Long jobId) {
+            @Parameter(description = "任务 ID") @PathVariable(name = "jobId") Long jobId) {
         try {
             return sysJobService.pauseJob(jobId) ? Result.success() : Result.error("暂停定时任务失败");
         } catch (Exception e) {
@@ -132,7 +132,7 @@ public class SysJobController {
     @PostMapping("/run/{jobId}")
     @Operation(summary = "立即执行定时任务", description = "立即执行一次指定的定时任务")
     public Result<Void> runJobOnce(
-            @Parameter(description = "任务 ID") @PathVariable Long jobId) {
+            @Parameter(description = "任务 ID") @PathVariable(name = "jobId") Long jobId) {
         try {
             return sysJobService.runJobOnce(jobId) ? Result.success() : Result.error("执行定时任务失败");
         } catch (Exception e) {
@@ -146,7 +146,7 @@ public class SysJobController {
     public Result<Page<SysJobLogResponse>> getJobLogPage(
             @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") Integer pageNum,
             @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
-            @Parameter(description = "任务ID") @RequestParam(name = "jobId", required = false) Long jobId,
+            @Parameter(description = "任务 ID") @RequestParam(name = "jobId", required = false) Long jobId,
             @Parameter(description = "任务名称") @RequestParam(name = "jobName", required = false) String jobName,
             @Parameter(description = "执行状态（0-失败，1-成功）") @RequestParam(name = "status", required = false) Integer status,
             @Parameter(description = "开始时间") @RequestParam(name = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
@@ -157,19 +157,6 @@ public class SysJobController {
             return Result.success(responsePage);
         } catch (Exception e) {
             log.error("获取定时任务日志列表失败", e);
-            return Result.error(e.getMessage());
-        }
-    }
-
-    @DeleteMapping("/logs/clean")
-    @Operation(summary = "清理定时任务日志", description = "清理指定天数前的日志")
-    public Result<Void> cleanLogs(
-            @Parameter(description = "天数", example = "30") @RequestParam(name = "days", defaultValue = "30") Integer days) {
-        try {
-            int count = sysJobLogService.cleanLogs(days);
-            return Result.success();
-        } catch (Exception e) {
-            log.error("清理定时任务日志失败", e);
             return Result.error(e.getMessage());
         }
     }

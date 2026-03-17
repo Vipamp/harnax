@@ -35,6 +35,12 @@ public class SkillRepositoryResponse {
     private String url;
 
     /**
+     * 分支名称
+     */
+    @Schema(description = "分支名称", example = "main")
+    private String branch;
+
+    /**
      * 仓库描述
      */
     @Schema(description = "仓库描述")
@@ -72,6 +78,7 @@ public class SkillRepositoryResponse {
         response.setId(repository.getId());
         response.setName(repository.getName());
         response.setUrl(repository.getUrl());
+        response.setBranch(repository.getBranch());
         response.setDescription(repository.getDescription());
         response.setStatus(repository.getStatus());
         response.setCreateTime(repository.getCreateTime());
