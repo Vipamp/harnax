@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Row, Col, Tag, Switch, Button, Space, Popconfirm, Empty, Spin, Typography, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, ApiOutlined, EyeOutlined } from '@ant-design/icons';
 import { modelPage, toggleModel, deleteModel } from '@/services/ant-design-pro/model';
 import { message } from 'antd';
+import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 
 const { Text, Paragraph } = Typography;
 
@@ -27,6 +28,9 @@ const MODEL_TYPE_MAP: Record<string, { label: string; color: string; bg: string 
 const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) => {
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // 获取当前用户信息
+  const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
 
   const loadModels = async () => {
     setLoading(true);
@@ -176,7 +180,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                   }}
                 />
                 <div style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div>
                     <Text strong style={{ fontSize: '14px' }}>{model.name}</Text>
                     <br />
@@ -217,37 +221,55 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                   {renderCapabilityTags(model)}
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+                {/* 是否公开、创建时间和创建人 */}
+                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+                  {model.isPublic === 1 && (
+                    <Tag color="blue">公开</Tag>
+                  )}
                   <Text type="secondary" style={{ fontSize: '12px' }}>
                     {model.createTime?.replace('T', ' ')}
                   </Text>
+                  {model.creator && (
+                    <Text type="secondary" style={{ fontSize: '11px' }}>{model.creator}</Text>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Space size={4}>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => onEdit(model)}
-                    >
-                      编辑
-                    </Button>
-                    <Popconfirm
-                      title="确定要删除此模型吗？"
-                      onConfirm={() => handleDelete(model.id)}
-                    >
-                      <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                      >
-                        删除
-                      </Button>
-                    </Popconfirm>
-                    <Switch
-                      checked={model.status === 1}
-                      onChange={() => handleToggle(model.id)}
-                      size="small"
-                    />
+                    {hasOperationPermission(isAdmin, currentUser, model.creator) && (
+                      <>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => onEdit(model)}
+                        >
+                          编辑
+                        </Button>
+                        <Popconfirm
+                          title="确定要删除此模型吗？"
+                          onConfirm={() => handleDelete(model.id)}
+                        >
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                          >
+                            删除
+                          </Button>
+                        </Popconfirm>
+                        <Switch
+                          checked={model.status === 1}
+                          onChange={() => handleToggle(model.id)}
+                          checkedChildren="启用"
+                          unCheckedChildren="禁用"
+                          style={{
+                            backgroundColor: model.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                          }}
+                        />
+                      </>
+                    )}
                   </Space>
                 </div>
                 </div>

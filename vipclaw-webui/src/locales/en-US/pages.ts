@@ -20,6 +20,7 @@ export default {
   'pages.user.management.phone.pattern': 'Please enter correct phone number',
   'pages.user.management.gender': 'Gender',
   'pages.user.management.status': 'Status',
+  'pages.user.management.isAdmin': 'Admin',
   'pages.user.management.avatar': 'Avatar URL',
   'pages.user.management.avatar.placeholder': 'Please enter avatar URL',
   'pages.user.management.createTime': 'Create Time',

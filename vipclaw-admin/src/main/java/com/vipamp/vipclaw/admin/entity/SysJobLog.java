@@ -86,6 +86,12 @@ public class SysJobLog implements Serializable {
     private LocalDateTime endTime;
 
     /**
+     * 创建人
+     */
+    @Schema(description = "创建人")
+    private String creator;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间")

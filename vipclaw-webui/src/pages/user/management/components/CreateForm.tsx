@@ -203,6 +203,20 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           fieldProps={{ defaultValue: 1 }}
         />
 
+        <ProFormSelect
+          name="isAdmin"
+          label={intl.formatMessage({
+            id: 'pages.user.management.isAdmin',
+            defaultMessage: '管理员',
+          })}
+          options={[
+            { label: '是', value: 1 },
+            { label: '否', value: 0 },
+          ]}
+          initialValue={0}
+          fieldProps={{ defaultValue: 0 }}
+        />
+
         <ProFormTextArea
           name="avatar"
           label={intl.formatMessage({

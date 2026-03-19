@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Button, message } from 'antd';
+import { Modal, Button, message, Switch } from 'antd';
 import {
   ProForm,
   ProFormSelect,
@@ -8,6 +8,7 @@ import {
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined } from '@ant-design/icons';
+import { getCurrentUserInfo } from '@/utils/permissionUtil';
 
 export interface CreateFormProps {
   visible: boolean;
@@ -27,6 +28,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   const [mcpType, setMcpType] = useState<string>('stdio');
   const [form] = ProForm.useForm();
   const [testing, setTesting] = useState(false);
+  const { isAdmin } = getCurrentUserInfo();
+  const [isPublic, setIsPublic] = useState(false);
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
@@ -73,7 +76,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
     >
       <ProForm<API.McpServerCreateRequest>
         form={form}
-        onFinish={onSubmit}
+        onFinish={(values) => onSubmit({ ...values, isPublic: isPublic ? 1 : 0 })}
         submitter={{
           searchConfig: {
             submitText: '创建',
@@ -159,6 +162,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           initialValue={1}
           fieldProps={{ size: 'large', defaultValue: 1 }}
         />
+
+        <ProForm.Item
+          label="是否公开"
+          extra="公开后其他用户也可以查看此 MCP 服务"
+        >
+          <Switch
+            checked={isPublic}
+            onChange={setIsPublic}
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+          />
+        </ProForm.Item>
       </ProForm>
     </Modal>
   );

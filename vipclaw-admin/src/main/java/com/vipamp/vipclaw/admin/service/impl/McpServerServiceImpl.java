@@ -10,6 +10,8 @@ import com.vipamp.vipclaw.admin.entity.McpServer;
 import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.McpServerMapper;
 import com.vipamp.vipclaw.admin.service.McpServerService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
@@ -28,6 +30,8 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer> implements McpServerService {
 
+    private final JwtUtil jwtUtil;
+
     @Override
     public Page<McpServer> getMcpServerPage(@Nullable String keyword, @Nullable Integer status,
                                             @Nullable String types, Integer current, Integer size) {
@@ -35,6 +39,16 @@ public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer
 
         Page<McpServer> page = new Page<>(current, size);
         LambdaQueryWrapper<McpServer> wrapper = new LambdaQueryWrapper<>();
+
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        wrapper.and(w -> w
+                .eq(McpServer::getIsPublic, 1)
+                .or()
+                .eq(McpServer::getCreator, currentUsername)
+        );
 
         // 模糊查询（名称或描述）
         if (StringUtils.hasText(keyword)) {
@@ -95,6 +109,15 @@ public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer
         mcpServer.setUrl(request.getUrl());
         mcpServer.setStatus(request.getStatus() != null ? request.getStatus() : 1);
         mcpServer.setActive(1);
+        
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        mcpServer.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (mcpServer.getIsPublic() == null) {
+            mcpServer.setIsPublic(0);
+        }
 
         boolean success = this.save(mcpServer);
         log.info("MCP 服务创建{}，id: {}", success ? "成功" : "失败", mcpServer.getId());

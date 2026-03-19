@@ -68,6 +68,18 @@ public class McpServer implements Serializable {
     private Integer status;
 
     /**
+     * 是否公开（0:否，1:是）
+     */
+    @Schema(description = "是否公开（0:否，1:是）")
+    private Integer isPublic;
+
+    /**
+     * 创建人
+     */
+    @Schema(description = "创建人")
+    private String creator;
+
+    /**
      * 是否可用（0:被删除，1:可用）
      */
     @Schema(description = "是否可用（0:被删除，1:可用）")

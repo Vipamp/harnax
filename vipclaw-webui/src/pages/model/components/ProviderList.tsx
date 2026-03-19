@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Card, Switch, Button, Space, Popconfirm, Tag, Typography } from 'antd';
 import { EditOutlined, DeleteOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 
 const { Text } = Typography;
 
@@ -23,6 +24,9 @@ const ProviderList: React.FC<ProviderListProps> = ({
   onDelete,
   onConnectivityTest,
 }) => {
+  // 获取当前用户信息
+  const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
+
   const getProviderIcon = (name: string) => {
     const icons: Record<string, string> = {
       dashscope: '/icons/providers/alibabacloud.svg',
@@ -68,6 +72,22 @@ const ProviderList: React.FC<ProviderListProps> = ({
             <Tag color={provider.status === 1 ? 'green' : 'red'}>
               {provider.status === 1 ? '启用' : '禁用'}
             </Tag>
+            {provider.isPublic === 1 && (
+              <Tag color="blue" style={{ marginLeft: 4 }}>公开</Tag>
+            )}
+          </div>
+
+          {/* 是否公开、创建时间和创建人 */}
+          <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {provider.isPublic === 1 && (
+              <Tag color="blue" style={{ marginLeft: 0 }}>公开</Tag>
+            )}
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              {provider.createTime?.replace('T', ' ')}
+            </Text>
+            {provider.creator && (
+              <Text type="secondary" style={{ fontSize: '11px' }}>{provider.creator}</Text>
+            )}
           </div>
 
           <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -83,44 +103,54 @@ const ProviderList: React.FC<ProviderListProps> = ({
               >
                 测试
               </Button>
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(provider);
-                }}
-              >
-                编辑
-              </Button>
-              <Popconfirm
-                title="确定要删除此服务商吗？"
-                onConfirm={(e) => {
-                  e?.stopPropagation();
-                  onDelete(provider.id);
-                }}
-                onCancel={(e) => e?.stopPropagation()}
-              >
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  删除
-                </Button>
-              </Popconfirm>
+              {hasOperationPermission(isAdmin, currentUser, provider.creator) && (
+                <>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(provider);
+                    }}
+                  >
+                    编辑
+                  </Button>
+                  <Popconfirm
+                    title="确定要删除此服务商吗？"
+                    onConfirm={(e) => {
+                      e?.stopPropagation();
+                      onDelete(provider.id);
+                    }}
+                    onCancel={(e) => e?.stopPropagation()}
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </>
+              )}
             </Space>
-            <Switch
-              checked={provider.status === 1}
-              onChange={(checked, e) => {
-                e.stopPropagation();
-                onToggle(provider.id);
-              }}
-              size="small"
-            />
+            {hasOperationPermission(isAdmin, currentUser, provider.creator) && (
+              <Switch
+                checked={provider.status === 1}
+                onChange={(checked, e) => {
+                  e.stopPropagation();
+                  onToggle(provider.id);
+                }}
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
+                style={{
+                  backgroundColor: provider.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                }}
+              />
+            )}
           </div>
         </Card>
       ))}

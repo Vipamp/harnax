@@ -59,6 +59,18 @@ public class McpServerResponse {
     private Integer status;
 
     /**
+     * 是否公开（0:否，1:是）
+     */
+    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    private Integer isPublic;
+
+    /**
+     * 创建人
+     */
+    @Schema(description = "创建人", example = "admin")
+    private String creator;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间", example = "2026-03-12 12:00:00")
@@ -88,6 +100,8 @@ public class McpServerResponse {
         response.setCommand(mcpServer.getCommand());
         response.setUrl(mcpServer.getUrl());
         response.setStatus(mcpServer.getStatus());
+        response.setIsPublic(mcpServer.getIsPublic());
+        response.setCreator(mcpServer.getCreator());
         response.setCreateTime(mcpServer.getCreateTime());
         response.setUpdateTime(mcpServer.getUpdateTime());
         return response;

@@ -5,6 +5,7 @@ import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, get
 import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
 // @ts-ignore
 import { useModel } from '@umijs/max';
+import { getCurrentUserInfo } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -25,6 +26,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [skills, setSkills] = useState<API.SkillItem[]>([]);
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
+  const [isPublic, setIsPublic] = useState(false);
+  const { isAdmin } = getCurrentUserInfo();
 
   // 初始化表单数据
   useEffect(() => {
@@ -206,6 +209,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           modelId,
           owner,
           status: 1,
+          isPublic: isPublic ? 1 : 0,
           // mcpList: [{"id":1, "enableSkip":"true"},{"id":2, "enableSkip":"false"}]
           mcpList: mcpConfigs.filter(config => config.mcpId).map(config => ({
             id: config.mcpId,
@@ -314,6 +318,21 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 placeholder="自动填充当前登录用户"
                 disabled
               />
+            </Form.Item>
+
+            {/* 是否公开 */}
+            <Form.Item
+              label="是否公开"
+            >
+              <Switch
+                checked={isPublic}
+                onChange={setIsPublic}
+                checkedChildren="公开"
+                unCheckedChildren="私有"
+              />
+              <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>
+                公开后其他用户也可以查看此智能体
+              </div>
             </Form.Item>
           </>
         )}

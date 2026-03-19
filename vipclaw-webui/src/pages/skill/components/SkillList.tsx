@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Switch, message } from 'antd';
+import { Table, Switch, message, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getSkillPage, toggleSkillStatus } from '@/services/ant-design-pro/skill';
 import dayjs from 'dayjs';
@@ -69,6 +69,20 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       key: 'description',
       ellipsis: true,
       render: (text: string) => text || '暂无描述',
+    },
+    {
+      title: '是否公开',
+      dataIndex: 'isPublic',
+      key: 'isPublic',
+      width: 100,
+      render: (isPublic: number) => isPublic === 1 ? <Tag color="blue">公开</Tag> : <Tag>私有</Tag>,
+    },
+    {
+      title: '创建人',
+      dataIndex: 'creator',
+      key: 'creator',
+      width: 120,
+      render: (creator: string) => creator || '-',
     },
     {
       title: '同步时间',

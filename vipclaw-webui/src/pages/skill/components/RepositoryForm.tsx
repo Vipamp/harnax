@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, Select, message } from 'antd';
+import { Modal, Form, Input, Select, Switch, Typography, message } from 'antd';
 import { createSkillRepository, updateSkillRepository } from '@/services/ant-design-pro/skillRepository';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+
+const { Text } = Typography;
 
 const { TextArea } = Input;
 
@@ -14,6 +17,8 @@ interface RepositoryFormProps {
 const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const { username, isAdmin } = getCurrentUserInfo();
+  const isCreate = !values;
 
   useEffect(() => {
     if (visible) {
@@ -22,6 +27,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         form.setFieldsValue({
           ...values,
           branch: values.branch || 'main',
+          isPublic: values.isPublic === 1,
         });
       } else {
         // 新建模式：重置表单并设置默认值
@@ -29,6 +35,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         form.setFieldsValue({ 
           status: 1,
           branch: 'main',
+          isPublic: false,
         });
       }
     }
@@ -38,11 +45,15 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
     try {
       const formValues = await form.validateFields();
       setLoading(true);
+      const data = {
+        ...formValues,
+        isPublic: formValues.isPublic ? 1 : 0,
+      };
       if (values) {
-        await updateSkillRepository(values.id, formValues);
+        await updateSkillRepository(values.id, data);
         message.success('更新成功');
       } else {
-        await createSkillRepository(formValues);
+        await createSkillRepository(data);
         message.success('创建成功');
       }
       onSuccess();
@@ -85,6 +96,24 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
               { label: '启用', value: 1 },
               { label: '禁用', value: 0 },
             ]}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="isPublic"
+          label="是否公开"
+          valuePropName="checked"
+          initialValue={false}
+          extra={
+            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
+              ? '您没有权限修改此设置'
+              : '公开后其他用户也可以查看此仓库'
+          }
+        >
+          <Switch
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+            disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
       </Form>

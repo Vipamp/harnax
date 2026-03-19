@@ -198,6 +198,25 @@ const UserManagement: React.FC = () => {
     },
     {
       title: intl.formatMessage({
+        id: 'pages.user.management.isAdmin',
+        defaultMessage: '管理员',
+      }),
+     dataIndex: 'isAdmin',
+      valueEnum: {
+        0: { text: '否' },
+        1: { text: '是' },
+      },
+     hideInSearch: true,
+     render: (_, record) => {
+       return (
+          <Tag color={record.isAdmin === 1 ? 'blue' : 'default'}>
+            {record.isAdmin === 1 ? '是' : '否'}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: intl.formatMessage({
         id: 'pages.user.management.createTime',
         defaultMessage: '创建时间',
       }),

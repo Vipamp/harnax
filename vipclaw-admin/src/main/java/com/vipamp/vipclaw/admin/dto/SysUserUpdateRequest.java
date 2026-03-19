@@ -73,4 +73,10 @@ public class SysUserUpdateRequest {
      */
     @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
     private Integer status;
+
+    /**
+     * 是否是管理员（0:否，1:是）
+     */
+    @Schema(description = "是否是管理员（0:否，1:是）", example = "0")
+    private Integer isAdmin;
 }

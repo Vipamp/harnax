@@ -17,6 +17,8 @@ import com.vipamp.vipclaw.admin.service.AgentService;
 import com.vipamp.vipclaw.admin.service.McpServerService;
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
 import com.vipamp.vipclaw.admin.service.SkillService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,11 +43,22 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     private final SkillRepositoryService skillRepositoryService;
     private final SkillService skillService;
     private final com.vipamp.vipclaw.admin.service.ModelService modelService;
+    private final JwtUtil jwtUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public Page<Agent> getAgentPage(String name, Integer status, Integer current, Integer size) {
         LambdaQueryWrapper<Agent> wrapper = new LambdaQueryWrapper<>();
+        
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        wrapper.and(w -> w
+                .eq(Agent::getIsPublic, 1)
+                .or()
+                .eq(Agent::getCreator, currentUsername)
+        );
         
         if (name != null && !name.isEmpty()) {
             wrapper.like(Agent::getName, name);
@@ -179,6 +192,15 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             agent.setModelId(request.getModelId());
             agent.setOwner(request.getOwner());
             agent.setStatus(request.getStatus() != null ? request.getStatus() : 1);
+            
+            // 设置创建人
+            String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+            agent.setCreator(currentUsername);
+            
+            // 默认不公开
+            if (agent.getIsPublic() == null) {
+                agent.setIsPublic(0);
+            }
             
             // 转换 MCP 列表为 JSON 存储
             // 格式: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]

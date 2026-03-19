@@ -65,6 +65,12 @@ public class SysUserResponse {
     private Integer status;
 
     /**
+     * 是否是管理员（0:否，1:是）
+     */
+    @Schema(description = "是否是管理员（0:否，1:是）", example = "0")
+    private Integer isAdmin;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间", example = "2026-03-05 12:00:00")
@@ -95,6 +101,7 @@ public class SysUserResponse {
         response.setGender(user.getGender());
         response.setAvatar(user.getAvatar());
         response.setStatus(user.getStatus());
+        response.setIsAdmin(user.getIsAdmin());
         response.setCreateTime(user.getCreateTime());
         response.setUpdateTime(user.getUpdateTime());
         return response;

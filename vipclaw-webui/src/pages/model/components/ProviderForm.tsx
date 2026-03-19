@@ -1,7 +1,10 @@
 import React from 'react';
-import { Modal, Form, Input, Select } from 'antd';
+import { Modal, Form, Input, Select, Switch, Typography } from 'antd';
 import { createModelProvider, updateModelProvider } from '@/services/ant-design-pro/modelProvider';
 import { message } from 'antd';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+
+const { Text } = Typography;
 
 interface ProviderFormProps {
   visible: boolean;
@@ -19,6 +22,8 @@ const PROVIDER_OPTIONS = [
 const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = React.useState(false);
+  const { username, isAdmin } = getCurrentUserInfo();
+  const isCreate = !values;
 
   React.useEffect(() => {
     if (visible) {
@@ -29,9 +34,14 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           apiKey: '', // API Key 不回显
           baseUrl: values.baseUrl,
           status: values.status,
+          isPublic: values.isPublic === 1,
         });
       } else {
         form.resetFields();
+        form.setFieldsValue({
+          status: 1,
+          isPublic: false,
+        });
       }
     }
   }, [visible, values, form]);
@@ -48,11 +58,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           status: formValues.status,
+          isPublic: formValues.isPublic ? 1 : 0,
         });
         message.success('更新成功');
       } else {
         // 创建
-        await createModelProvider(formValues);
+        await createModelProvider({
+          ...formValues,
+          isPublic: formValues.isPublic ? 1 : 0,
+        });
         message.success('创建成功');
       }
 
@@ -120,6 +134,24 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
               { label: '启用', value: 1 },
               { label: '禁用', value: 0 },
             ]}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="isPublic"
+          label="是否公开"
+          valuePropName="checked"
+          initialValue={false}
+          extra={
+            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
+              ? '您没有权限修改此设置'
+              : '公开后其他用户也可以查看此服务商'
+          }
+        >
+          <Switch
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+            disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
       </Form>

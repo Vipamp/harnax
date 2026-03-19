@@ -63,6 +63,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           gender: values?.gender,
           avatar: values?.avatar,
           status: values?.status,
+          isAdmin: values?.isAdmin,
         }}
       >
         <ProFormText
@@ -172,6 +173,18 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           options={[
             { label: '正常', value: 1 },
             { label: '禁用', value: 0 },
+          ]}
+        />
+
+        <ProFormSelect
+          name="isAdmin"
+          label={intl.formatMessage({
+            id: 'pages.user.management.isAdmin',
+            defaultMessage: '管理员',
+          })}
+          options={[
+            { label: '是', value: 1 },
+            { label: '否', value: 0 },
           ]}
         />
 

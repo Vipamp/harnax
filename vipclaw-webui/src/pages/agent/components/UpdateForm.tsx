@@ -5,6 +5,7 @@ import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, get
 import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
 // @ts-ignore
 import { useModel } from '@umijs/max';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -26,6 +27,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [skills, setSkills] = useState<API.SkillItem[]>([]);
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null);
+  const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
+  const { username, isAdmin } = getCurrentUserInfo();
 
   // MCP 配置列表（支持动态添加）
   const [mcpConfigs, setMcpConfigs] = useState<Array<{ mcpId?: number; mcpName?: string; enableSkip?: boolean }>>([{}]);
@@ -50,6 +53,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         owner: currentUser?.username || currentUser?.nickname || values.owner,
         modelId: values.modelId, // 回填对话模型
       });
+      setIsPublic(values.isPublic === 1);
 
       // 初始化 MCP 配置
       if (values.mcpList && values.mcpList.length > 0) {
@@ -231,6 +235,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           modelId: formValues.modelId,
           owner: formValues.owner,
           status: 1,
+          isPublic: isPublic ? 1 : 0,
           // MCP 配置：使用当前状态中的值
           mcpList: mcpConfigs.filter(config => config.mcpId).map(config => ({
             id: config.mcpId,
@@ -336,6 +341,24 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Input 
                 placeholder="自动填充当前登录用户"
                 disabled
+              />
+            </Form.Item>
+
+            {/* 是否公开 */}
+            <Form.Item
+              label="是否公开"
+              extra={
+                isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)
+                  ? '您没有权限修改此设置（已公开的实体不能改为非公开）'
+                  : '公开后其他用户也可以查看此智能体'
+              }
+            >
+              <Switch
+                checked={isPublic}
+                onChange={setIsPublic}
+                checkedChildren="公开"
+                unCheckedChildren="私有"
+                disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)}
               />
             </Form.Item>
           </>

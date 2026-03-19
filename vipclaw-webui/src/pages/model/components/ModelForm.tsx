@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, Select, Switch, Row, Col } from 'antd';
+import { Modal, Form, Input, Select, Switch, Row, Col, Typography } from 'antd';
 import { createModel, updateModel } from '@/services/ant-design-pro/model';
 import { message } from 'antd';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+
+const { Text } = Typography;
 
 interface ModelFormProps {
   visible: boolean;
@@ -20,6 +23,8 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [modelType, setModelType] = useState<string | undefined>(values?.modelType);
+  const { username, isAdmin } = getCurrentUserInfo();
+  const isCreate = !values;
 
   useEffect(() => {
     if (visible) {
@@ -37,6 +42,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           supportMcp: values.supportMcp === 1,
           supportVision: values.supportVision === 1,
           status: values.status,
+          isPublic: values.isPublic === 1,
         });
         setModelType(values.modelType);
       } else {
@@ -44,6 +50,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         form.setFieldsValue({
           providerId: providerId,
           status: 1,
+          isPublic: false,
         });
         setModelType(undefined);
       }
@@ -83,6 +90,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         supportMcp: formValues.supportMcp ? 1 : 0,
         supportVision: formValues.supportVision ? 1 : 0,
         status: formValues.status,
+        isPublic: formValues.isPublic ? 1 : 0,
       };
 
       if (values) {
@@ -215,6 +223,25 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
               { label: '启用', value: 1 },
               { label: '禁用', value: 0 },
             ]}
+          />
+        </Form.Item>
+
+        {/* 是否公开 */}
+        <Form.Item
+          name="isPublic"
+          label="是否公开"
+          valuePropName="checked"
+          initialValue={false}
+          extra={
+            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
+              ? '您没有权限修改此设置'
+              : '公开后其他用户也可以查看此模型'
+          }
+        >
+          <Switch
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+            disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
       </Form>

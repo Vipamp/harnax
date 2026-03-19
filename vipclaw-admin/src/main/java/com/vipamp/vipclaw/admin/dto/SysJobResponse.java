@@ -65,6 +65,18 @@ public class SysJobResponse {
     private String description;
 
     /**
+     * 是否公开（0:否，1:是）
+     */
+    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    private Integer isPublic;
+
+    /**
+     * 创建人
+     */
+    @Schema(description = "创建人", example = "admin")
+    private String creator;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
@@ -95,6 +107,8 @@ public class SysJobResponse {
         response.setJobStatus(job.getJobStatus());
         response.setConcurrent(job.getConcurrent());
         response.setDescription(job.getDescription());
+        response.setIsPublic(job.getIsPublic());
+        response.setCreator(job.getCreator());
         response.setCreateTime(job.getCreateTime());
         response.setUpdateTime(job.getUpdateTime());
         return response;

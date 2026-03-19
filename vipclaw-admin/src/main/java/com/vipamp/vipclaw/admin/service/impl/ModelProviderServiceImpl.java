@@ -12,6 +12,8 @@ import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.ModelMapper;
 import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper;
 import com.vipamp.vipclaw.admin.service.ModelProviderService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,15 +31,30 @@ public class ModelProviderServiceImpl extends ServiceImpl<ModelProviderMapper, M
     @Autowired
     private ModelMapper modelMapper;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Override
     public Page<ModelProviderResponse> page(Page<ModelProvider> page, String name, Integer status) {
         LambdaQueryWrapper<ModelProvider> queryWrapper = new LambdaQueryWrapper<>();
         
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        queryWrapper.and(wrapper -> wrapper
+                .eq(ModelProvider::getIsPublic, 1)
+                .or()
+                .eq(ModelProvider::getCreator, currentUsername)
+        );
+        
         // 按名称模糊查询
         if (StringUtils.hasText(name)) {
-            queryWrapper.like(ModelProvider::getName, name)
+            queryWrapper.and(wrapper -> wrapper
+                    .like(ModelProvider::getName, name)
                     .or()
-                    .like(ModelProvider::getDisplayName, name);
+                    .like(ModelProvider::getDisplayName, name)
+            );
         }
         
         // 按状态筛选
@@ -84,6 +101,15 @@ public class ModelProviderServiceImpl extends ServiceImpl<ModelProviderMapper, M
         // 默认状态为启用
         if (modelProvider.getStatus() == null) {
             modelProvider.setStatus(1);
+        }
+        
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        modelProvider.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (modelProvider.getIsPublic() == null) {
+            modelProvider.setIsPublic(0);
         }
         
         this.save(modelProvider);

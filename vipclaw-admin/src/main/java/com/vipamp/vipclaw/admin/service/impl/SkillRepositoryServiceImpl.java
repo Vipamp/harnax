@@ -11,6 +11,8 @@ import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.SkillRepositoryMapper;
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +34,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMapper, SkillRepository> implements SkillRepositoryService {
 
+    private final JwtUtil jwtUtil;
+
     @Override
     public Page<SkillRepository> getRepositoryPage(@Nullable String name,
                                                    @Nullable Integer status,
@@ -41,6 +45,16 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
 
         Page<SkillRepository> page = new Page<>(current, size);
         LambdaQueryWrapper<SkillRepository> wrapper = new LambdaQueryWrapper<>();
+
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        wrapper.and(w -> w
+                .eq(SkillRepository::getIsPublic, 1)
+                .or()
+                .eq(SkillRepository::getCreator, currentUsername)
+        );
 
         // 仓库名称模糊查询
         if (StringUtils.hasText(name)) {
@@ -103,6 +117,15 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
         repository.setDescription(request.getDescription());
         repository.setStatus(request.getStatus() != null ? request.getStatus() : 1); // 默认启用
         repository.setActive(1);  // 默认生效
+        
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        repository.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (repository.getIsPublic() == null) {
+            repository.setIsPublic(0);
+        }
 
         boolean success = this.save(repository);
         log.info("技能仓库创建{}，repositoryId: {}", success ? "成功" : "失败", repository.getId());

@@ -59,5 +59,8 @@ public class LoginResponse {
 
         @Schema(description = "性别 (0:女 1:男 2:保密)", example = "1")
         private Integer gender;
+
+        @Schema(description = "是否是管理员（0:否，1:是）", example = "0")
+        private Integer isAdmin;
     }
 }

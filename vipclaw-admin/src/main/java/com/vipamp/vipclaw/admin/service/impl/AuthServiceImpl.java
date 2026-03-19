@@ -79,6 +79,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .phone(user.getPhone())
                 .gender(user.getGender())
+                .isAdmin(user.getIsAdmin())
                 .build();
 
         LoginResponse response = LoginResponse.builder()
@@ -91,21 +92,6 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("用户登录成功，userId: {}, username: {}", user.getId(), user.getUsername());
         return response;
-    }
-
-    @Override
-    public LoginResponse.UserInfo getCurrentUser() {
-        // TODO: 实际项目中应从 Token 中解析用户信息
-        // 这里返回一个示例用户
-        return LoginResponse.UserInfo.builder()
-                .userId(1L)
-                .username("admin")
-                .nickname("管理员")
-                .avatar("https://example.com/avatar.jpg")
-                .email("admin@example.com")
-                .phone("13800138000")
-                .gender(1)
-                .build();
     }
 
     @Override

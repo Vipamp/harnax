@@ -65,6 +65,18 @@ public class SkillResponse {
     private Integer status;
 
     /**
+     * 是否公开（0:否，1:是）
+     */
+    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    private Integer isPublic;
+
+    /**
+     * 创建人
+     */
+    @Schema(description = "创建人", example = "admin")
+    private String creator;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
@@ -94,6 +106,8 @@ public class SkillResponse {
         response.setSkillmd(skill.getSkillmd());
         response.setResources(skill.getResources());
         response.setStatus(skill.getStatus());
+        response.setIsPublic(skill.getIsPublic());
+        response.setCreator(skill.getCreator());
         response.setCreateTime(skill.getCreateTime());
         response.setUpdateTime(skill.getUpdateTime());
         return response;

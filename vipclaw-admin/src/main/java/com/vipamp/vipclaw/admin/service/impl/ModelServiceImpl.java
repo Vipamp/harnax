@@ -12,6 +12,8 @@ import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.ModelMapper;
 import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper;
 import com.vipamp.vipclaw.admin.service.ModelService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,9 +31,22 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
     @Autowired
     private ModelProviderMapper modelProviderMapper;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Override
     public Page<ModelResponse> page(Page<Model> page, String name, Long providerId, String modelType, Integer status, String tags, Double minPrice, Double maxPrice) {
         LambdaQueryWrapper<Model> queryWrapper = new LambdaQueryWrapper<>();
+
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        queryWrapper.and(wrapper -> wrapper
+                .eq(Model::getIsPublic, 1)
+                .or()
+                .eq(Model::getCreator, currentUsername)
+        );
 
         // 按名称模糊查询
         if (StringUtils.hasText(name)) {
@@ -177,6 +192,15 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
         }
         if (model.getSupportVision() == null) {
             model.setSupportVision(0);
+        }
+
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        model.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (model.getIsPublic() == null) {
+            model.setIsPublic(0);
         }
 
         this.save(model);

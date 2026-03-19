@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, message } from 'antd';
+import { Modal, Button, message, Switch } from 'antd';
 import {
   ProForm,
   ProFormSelect,
@@ -8,6 +8,7 @@ import {
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined } from '@ant-design/icons';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 
 export interface UpdateFormProps {
   visible: boolean;
@@ -27,11 +28,16 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const intl = useIntl();
   const [mcpType, setMcpType] = useState<string>(values.type);
   const [testing, setTesting] = useState(false);
+  const [isPublic, setIsPublic] = useState(values.isPublic === 1);
+  const { username, isAdmin } = getCurrentUserInfo();
 
-  // 当外部 values 变化时更新 mcpType
+  // 当外部 values 变化时更新 mcpType 和 isPublic
   useEffect(() => {
     if (values?.type) {
       setMcpType(values.type);
+    }
+    if (values?.isPublic !== undefined) {
+      setIsPublic(values.isPublic === 1);
     }
   }, [values]);
 
@@ -78,7 +84,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       }}
     >
       <ProForm<API.McpServerUpdateRequest>
-        onFinish={onSubmit}
+        onFinish={(formValues) => onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0 })}
         submitter={{
           searchConfig: {
             submitText: '保存',
@@ -170,6 +176,23 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           ]}
           fieldProps={{ size: 'large' }}
         />
+
+        <ProForm.Item
+          label="是否公开"
+          extra={
+            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)
+              ? '您没有权限修改此设置（已公开的实体不能改为非公开）'
+              : '公开后其他用户也可以查看此 MCP 服务'
+          }
+        >
+          <Switch
+            checked={isPublic}
+            onChange={setIsPublic}
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+            disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)}
+          />
+        </ProForm.Item>
       </ProForm>
     </Modal>
   );

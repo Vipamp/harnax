@@ -75,6 +75,7 @@ export default [
    icon: 'user',
    path: '/user',
    component: './user/management',
+   access: 'canAccessUserManagement',
   },
   {
    path: '/',

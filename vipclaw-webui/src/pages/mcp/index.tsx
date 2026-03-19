@@ -16,7 +16,7 @@ import {
   Typography,
   Pagination,
 } from 'antd';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   deleteMcpServer,
   getMcpServerPage,
@@ -37,6 +37,7 @@ import {
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
+import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 
 const { Text, Paragraph, Title } = Typography;
 
@@ -62,6 +63,9 @@ const McpManagement: React.FC = () => {
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [types, setTypes] = useState<string[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
+
+  // 获取当前用户信息
+  const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
 
   /** 加载数据 */
   const loadData = async (page = current, size = pageSize) => {
@@ -223,12 +227,17 @@ const McpManagement: React.FC = () => {
             </div>
             {/* 状态开关 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Text type="secondary" style={{ fontSize: '12px' }}>状态</Text>
-              <Switch
-                checked={item.status === 1}
-                size="small"
-                onChange={(checked) => handleToggleStatus(item.id!, checked ? 1 : 0)}
-              />
+              {hasOperationPermission(isAdmin, currentUser, item.creator) && (
+                <Switch
+                  checked={item.status === 1}
+                  onChange={(checked) => handleToggleStatus(item.id!, checked ? 1 : 0)}
+                  checkedChildren="启用"
+                  unCheckedChildren="禁用"
+                  style={{
+                    backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                  }}
+                />
+              )}
             </div>
           </div>
 
@@ -264,11 +273,21 @@ const McpManagement: React.FC = () => {
             </Text>
           </div>
 
-          {/* 底部：创建时间 + 操作按钮 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+          {/* 是否公开、创建时间和创建人 */}
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+            {item.isPublic === 1 && (
+              <Tag color="blue">公开</Tag>
+            )}
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {item.createTime?.replace('T', ' ')}
             </Text>
+            {item.creator && (
+              <Text type="secondary" style={{ fontSize: '11px' }}>{item.creator}</Text>
+            )}
+          </div>
+
+          {/* 底部：操作按钮 */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
             <Space size={4}>
               <Button
                 type="link"
@@ -278,26 +297,30 @@ const McpManagement: React.FC = () => {
               >
                 测试
               </Button>
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setCurrentRow(item);
-                  setUpdateModalVisible(true);
-                }}
-              >
-                编辑
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                onClick={() => handleRemove(item.id!)}
-              >
-                删除
-              </Button>
+              {hasOperationPermission(isAdmin, currentUser, item.creator) && (
+                <>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => {
+                      setCurrentRow(item);
+                      setUpdateModalVisible(true);
+                    }}
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleRemove(item.id!)}
+                  >
+                    删除
+                  </Button>
+                </>
+              )}
             </Space>
           </div>
         </div>

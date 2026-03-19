@@ -31,6 +31,7 @@ declare namespace API {
     gender?: number;
     avatar?: string;
    status?: number;
+    isAdmin?: number;
     createTime?: string;
     updateTime?: string;
   };
@@ -48,6 +49,7 @@ declare namespace API {
     gender?: number;
     avatar?: string;
    status?: number;
+    isAdmin?: number;
   };
 
   /**
@@ -63,6 +65,7 @@ declare namespace API {
     gender?: number;
     avatar?: string;
    status?: number;
+    isAdmin?: number;
   };
 
  export type UserListResponse = {
@@ -124,6 +127,7 @@ export type LoginParams = {
         email?: string;
        phone?: string;
         gender?: number;
+        isAdmin?: number;
       };
     };
     timestamp?: number;
@@ -141,6 +145,7 @@ export type LoginParams = {
     email?: string;
    phone?: string;
     gender?: number;
+    isAdmin?: number;
   };
 
  export type FakeCaptcha = {
@@ -174,6 +179,8 @@ message?: string;
     command?: string;
     url?: string;
     status?: number;
+    isPublic?: number;
+    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -188,6 +195,7 @@ message?: string;
     command?: string;
     url?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -201,6 +209,7 @@ message?: string;
     command?: string;
     url?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -213,6 +222,8 @@ message?: string;
     branch?: string;
     description?: string;
     status: number;
+    isPublic?: number;
+    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -226,6 +237,7 @@ message?: string;
     branch?: string;
     description?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -238,6 +250,7 @@ message?: string;
     branch?: string;
     description?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -252,6 +265,8 @@ message?: string;
     skillmd?: string;
     resources?: string;
     status: number;
+    isPublic?: number;
+    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -266,6 +281,7 @@ message?: string;
     skillmd?: string;
     resources?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -279,6 +295,7 @@ message?: string;
     skillmd?: string;
     resources?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -313,6 +330,8 @@ message?: string;
     skillList?: AgentSkillConfig[];
     owner?: string;
     status: number;
+    isPublic?: number;
+    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -352,6 +371,7 @@ message?: string;
     skillList?: string;
     owner?: string;
     status?: number;
+    isPublic?: number;
   };
 
   /**
@@ -367,5 +387,64 @@ message?: string;
     skillList?: string; // 逗号分隔的字符串 "1,2,3"
     owner?: string;
     status?: number;
+    isPublic?: number;
+  };
+
+  /**
+   * @zh-CN 模型供应商对象
+   */
+  export type ModelProviderItem = {
+    id?: number;
+    name: string;
+    displayName?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    status?: number;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 模型对象
+   */
+  export type ModelItem = {
+    id?: number;
+    name: string;
+    modelName?: string;
+    providerId?: number;
+    providerName?: string;
+    description?: string;
+    modelType?: string;
+    supportInternet?: number;
+    supportReasoning?: number;
+    supportTool?: number;
+    supportMcp?: number;
+    supportVision?: number;
+    price?: number;
+    status?: number;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 定时任务对象
+   */
+  export type SysJobItem = {
+    id?: number;
+    jobName: string;
+    jobGroup?: string;
+    jobClass: string;
+    cronExpression: string;
+    jobStatus?: number;
+    concurrent?: number;
+    description?: string;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
   };
 }

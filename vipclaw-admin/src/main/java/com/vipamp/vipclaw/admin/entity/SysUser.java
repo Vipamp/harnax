@@ -80,6 +80,12 @@ public class SysUser implements Serializable {
     private Integer status;
 
     /**
+     * 是否是管理员（0:否，1:是）
+     */
+    @Schema(description = "是否是管理员（0:否，1:是）")
+    private Integer isAdmin;
+
+    /**
      * 是否可用（0:被删除，1:可用）
      */
     @Schema(description = "是否可用（0:被删除，1:可用）")

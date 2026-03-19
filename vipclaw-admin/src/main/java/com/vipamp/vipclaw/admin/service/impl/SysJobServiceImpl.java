@@ -10,6 +10,8 @@ import com.vipamp.vipclaw.admin.entity.SysJob;
 import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.SysJobMapper;
 import com.vipamp.vipclaw.admin.service.SysJobService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import jakarta.annotation.Nullable;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ import java.util.List;
 public class SysJobServiceImpl extends ServiceImpl<SysJobMapper, SysJob> implements SysJobService {
 
     private final SchedulerFactoryBean schedulerFactoryBean;
+    private final JwtUtil jwtUtil;
 
     /**
      * 获取 Scheduler 实例
@@ -52,6 +55,16 @@ public class SysJobServiceImpl extends ServiceImpl<SysJobMapper, SysJob> impleme
 
         Page<SysJob> page = new Page<>(current, size);
         LambdaQueryWrapper<SysJob> wrapper = new LambdaQueryWrapper<>();
+
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        wrapper.and(w -> w
+                .eq(SysJob::getIsPublic, 1)
+                .or()
+                .eq(SysJob::getCreator, currentUsername)
+        );
 
         // 模糊查询
         if (StringUtils.hasText(keyword)) {
@@ -111,6 +124,15 @@ public class SysJobServiceImpl extends ServiceImpl<SysJobMapper, SysJob> impleme
         job.setConcurrent(request.getConcurrent() != null ? request.getConcurrent() : 1);
         job.setDescription(request.getDescription());
         job.setActive(1);
+        
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        job.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (job.getIsPublic() == null) {
+            job.setIsPublic(0);
+        }
 
         boolean success = this.save(job);
         log.info("定时任务创建{}，jobId: {}", success ? "成功" : "失败", job.getId());

@@ -74,6 +74,18 @@ public class SysJob implements Serializable {
     private String description;
 
     /**
+     * 是否公开（0:否，1:是）
+     */
+    @Schema(description = "是否公开（0:否，1:是）")
+    private Integer isPublic;
+
+    /**
+     * 创建人
+     */
+    @Schema(description = "创建人")
+    private String creator;
+
+    /**
      * 是否可用（0-已删除，1-未删除）
      */
     @Schema(description = "是否可用（0-已删除，1-未删除）")

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, Select, Radio, Button, Space, Alert, Typography, Card, Tag, Tooltip } from 'antd';
+import { Modal, Form, Input, Select, Radio, Button, Space, Alert, Typography, Card, Tag, Tooltip, Switch } from 'antd';
 import { QuestionCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
+import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -17,6 +18,8 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
   const isUpdate = !!values;
   const [nextExecutions, setNextExecutions] = useState<string[]>([]);
   const [cronError, setCronError] = useState<string>('');
+  const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
+  const { username, isAdmin } = getCurrentUserInfo();
 
   useEffect(() => {
     if (visible && values) {
@@ -28,6 +31,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         concurrent: values.concurrent,
         description: values.description,
       });
+      setIsPublic(values.isPublic === 1);
       // 预测下次执行时间
       if (values.cronExpression) {
         predictNextExecutions(values.cronExpression);
@@ -38,6 +42,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         jobGroup: 'DEFAULT',
         concurrent: 1,
       });
+      setIsPublic(false);
       setNextExecutions([]);
       setCronError('');
     }
@@ -272,7 +277,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
   const handleSubmit = async () => {
     try {
       const formData = await form.validateFields();
-      await onSubmit(formData);
+      await onSubmit({ ...formData, isPublic: isPublic ? 1 : 0 });
       form.resetFields();
     } catch (error) {
       console.error('表单验证失败:', error);
@@ -446,6 +451,24 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
           rules={[{ max: 500, message: '任务描述长度不能超过500' }]}
         >
           <TextArea rows={3} placeholder="请输入任务描述（可选）" />
+        </Form.Item>
+
+        {/* 是否公开 */}
+        <Form.Item
+          label="是否公开"
+          extra={
+            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, !isUpdate) && isUpdate
+              ? '您没有权限修改此设置（已公开的实体不能改为非公开）'
+              : '公开后其他用户也可以查看此定时任务'
+          }
+        >
+          <Switch
+            checked={isPublic}
+            onChange={setIsPublic}
+            checkedChildren="公开"
+            unCheckedChildren="私有"
+            disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, !isUpdate)}
+          />
         </Form.Item>
       </Form>
     </Modal>

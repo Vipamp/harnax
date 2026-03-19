@@ -16,12 +16,6 @@ public interface AuthService {
     LoginResponse login(LoginRequest request);
 
     /**
-     * 获取当前登录用户信息
-     * @return 用户信息
-     */
-    LoginResponse.UserInfo getCurrentUser();
-
-    /**
      * 退出登录
      */
     void logout();

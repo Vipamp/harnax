@@ -11,6 +11,8 @@ import com.vipamp.vipclaw.admin.entity.Skill;
 import com.vipamp.vipclaw.admin.exception.BizException;
 import com.vipamp.vipclaw.admin.mapper.SkillMapper;
 import com.vipamp.vipclaw.admin.service.SkillService;
+import com.vipamp.vipclaw.admin.util.JwtUtil;
+import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SkillServiceImpl extends ServiceImpl<SkillMapper, Skill> implements SkillService {
 
+    private final JwtUtil jwtUtil;
+
     @Override
     public Page<Skill> getSkillPage(@Nullable String name,
                                     @Nullable Long repositoryId,
@@ -41,6 +45,16 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, Skill> implements
 
         Page<Skill> page = new Page<>(current, size);
         LambdaQueryWrapper<Skill> wrapper = new LambdaQueryWrapper<>();
+
+        // 获取当前用户
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        
+        // 权限过滤：只查询公开的或自己创建的
+        wrapper.and(w -> w
+                .eq(Skill::getIsPublic, 1)
+                .or()
+                .eq(Skill::getCreator, currentUsername)
+        );
 
         // 技能名称模糊查询
         if (StringUtils.hasText(name)) {
@@ -99,6 +113,15 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, Skill> implements
         skill.setResources(request.getResources());
         skill.setStatus(request.getStatus() != null ? request.getStatus() : 1); // 默认启用
         skill.setActive(1);  // 默认生效
+        
+        // 设置创建人
+        String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
+        skill.setCreator(currentUsername);
+        
+        // 默认不公开
+        if (skill.getIsPublic() == null) {
+            skill.setIsPublic(0);
+        }
 
         boolean success = this.save(skill);
         log.info("技能创建{}，skillId: {}", success ? "成功" : "失败", skill.getId());

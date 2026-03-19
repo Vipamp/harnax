@@ -51,7 +51,7 @@ public class McpServerController {
     @GetMapping("/{id}")
     @Operation(summary = "获取 MCP 服务详情", description = "根据 ID 获取 MCP 服务信息")
     public Result<McpServerResponse> getMcpServerById(
-            @Parameter(description = "MCP ID") @PathVariable Long id) {
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id) {
         try {
             McpServer mcpServer = mcpServerService.getMcpServerById(id);
             return Result.success(McpServerResponse.fromEntity(mcpServer));
@@ -76,7 +76,7 @@ public class McpServerController {
     @PutMapping("/update/{id}")
     @Operation(summary = "更新 MCP 服务", description = "根据 ID 更新 MCP 服务信息")
     public Result<Void> updateMcpServer(
-            @Parameter(description = "MCP ID") @PathVariable Long id,
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id,
             @Valid @RequestBody McpServerUpdateRequest request) {
         try {
             request.setId(id);
@@ -90,7 +90,7 @@ public class McpServerController {
     @PutMapping("/toggle/{id}")
     @Operation(summary = "切换 MCP 服务启用状态", description = "启用或禁用 MCP 服务")
     public Result<Void> toggleMcpServer(
-            @Parameter(description = "MCP ID") @PathVariable Long id,
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id,
             @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") Integer status) {
         try {
             return mcpServerService.toggleMcpServerStatus(id, status) ? Result.success() : Result.error("切换状态失败");
@@ -103,7 +103,7 @@ public class McpServerController {
     @DeleteMapping("/{id}")
     @Operation(summary = "删除 MCP 服务", description = "根据 ID 逻辑删除 MCP 服务")
     public Result<Void> deleteMcpServer(
-            @Parameter(description = "MCP ID") @PathVariable Long id) {
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id) {
         try {
             return mcpServerService.deleteMcpServer(id) ? Result.success() : Result.error("删除 MCP 服务失败");
         } catch (Exception e) {
@@ -115,7 +115,7 @@ public class McpServerController {
     @PostMapping("/{id}/connectivity-test")
     @Operation(summary = "MCP 服务连通性测试", description = "测试 MCP 服务是否可正常连接")
     public Result<Boolean> connectivityTest(
-            @Parameter(description = "MCP ID") @PathVariable Long id) {
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id) {
         try {
             boolean result = mcpServerService.connectivityTest(id);
             return Result.success(result);

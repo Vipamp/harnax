@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { List, Switch, Button, Space, Typography, Tag, Popconfirm, message, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, GithubOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons';
 import { deleteSkillRepository, toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
+import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 
 const { Text, Paragraph } = Typography;
 
@@ -24,6 +25,9 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
   onDelete,
   onSync,
 }) => {
+  // 获取当前用户信息
+  const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
+
   const handleDelete = async (id: number) => {
     try {
       await deleteSkillRepository(id);
@@ -79,44 +83,52 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                       }}
                     />
                   </Tooltip>
-                  <Switch
-                    size="small"
-                    checked={repository.status === 1}
-                    onChange={(checked) => {
-                      onSelect(repository);
-                      handleToggle(repository.id, checked ? 1 : 0);
-                    }}
-                  />
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelect(repository);
-                      onEdit(repository);
-                    }}
-                  />
-                  <Popconfirm
-                    title="确定删除此仓库吗？"
-                    onConfirm={(e) => {
-                      e?.stopPropagation();
-                      onSelect(repository);
-                      handleDelete(repository.id);
-                    }}
-                    onCancel={(e) => e?.stopPropagation()}
-                  >
-                    <Button
-                      type="text"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelect(repository);
-                      }}
-                    />
-                  </Popconfirm>
+                  {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
+                    <>
+                      <Switch
+                        checked={repository.status === 1}
+                        onChange={(checked) => {
+                          onSelect(repository);
+                          handleToggle(repository.id, checked ? 1 : 0);
+                        }}
+                        checkedChildren="启用"
+                        unCheckedChildren="禁用"
+                        style={{
+                          backgroundColor: repository.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                        }}
+                      />
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(repository);
+                          onEdit(repository);
+                        }}
+                      />
+                      <Popconfirm
+                        title="确定删除此仓库吗？"
+                        onConfirm={(e) => {
+                          e?.stopPropagation();
+                          onSelect(repository);
+                          handleDelete(repository.id);
+                        }}
+                        onCancel={(e) => e?.stopPropagation()}
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect(repository);
+                          }}
+                        />
+                      </Popconfirm>
+                    </>
+                  )}
                 </Space>
               </div>
               {repository.url && (
@@ -142,6 +154,18 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   </a>
                 </div>
               )}
+              {/* 是否公开、创建时间和创建人 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+                {repository.isPublic === 1 && (
+                  <Tag color="blue" style={{ fontSize: '11px' }}>公开</Tag>
+                )}
+                <Text type="secondary" style={{ fontSize: '11px' }}>
+                  {repository.createTime?.replace('T', ' ')}
+                </Text>
+                {repository.creator && (
+                  <Text type="secondary" style={{ fontSize: '11px' }}>{repository.creator}</Text>
+                )}
+              </div>
             </div>
           </div>
         </List.Item>

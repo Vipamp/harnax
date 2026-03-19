@@ -94,3 +94,43 @@ npm run build
 1. 确保先启动后端服务，再启动前端服务
 2. 前端通过代理连接后端，确保后端在 8080 端口运行
 3. TypeScript 编译错误在首次安装依赖前是正常的，执行 `npm install` 后会自动解决
+
+
+
+
+
+
+1. 用户实体增加是否是管理员的选项 is_admin 字段
+2. 后端返回给前端的实体也要增加是否是 is_admin，并在表格中增加一列展示；
+3. 登陆时的返回实体需要增加是否是管理员的属性，前端将该属性保存在 localStorage 里面，
+4. 页面打开时，“用户管理” 页面对非管理员用户不可见
+
+
+
+
+
+
+帮我将下面列举出来的实体全部都加上 is_public, creator 两个字段，修改对应的前后端，并增加具体的前后端逻辑
+## 1、需要需改的实体
+1. 模型供应商、
+2. 模型
+3. MCP 服务、
+4. 技能仓库
+5. 技能
+6. 智能体
+7. 定时任务和日志
+
+## 2. 前后端逻辑
+（1）所有的实体都适用当前登陆用户作为创建人保存在 creator 字段，这个字段在新增实体和修改实体时不在表单显示；
+（2）所有的查询后端接口，只查询该用户创建的实体 或者 is_public = 1 的实体，is_public=0 且创建人不是自己的不查询
+
+
+
+update `agent` set is_public=1, creator='admin';
+update `mcp_server` set is_public=1, creator='admin';
+update `model` set is_public=1, creator='admin';
+update `model_provider` set is_public=1, creator='admin';
+update `model_service` set is_public=1, creator='admin';
+update `skill` set is_public=1, creator='admin';
+update `skill_repository` set is_public=1, creator='admin';
+update `sys_job` set is_public=1, creator='admin';

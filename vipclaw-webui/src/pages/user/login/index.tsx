@@ -206,6 +206,7 @@ const Login: React.FC = () => {
   email: userInfo.email,
  phone: userInfo.phone,
  gender: userInfo.gender,
+ isAdmin: userInfo.isAdmin,
 };
   
  // 保存到 React 状态

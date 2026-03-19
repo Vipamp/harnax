@@ -390,6 +390,23 @@ const JobManagement: React.FC = () => {
       align: 'center',
     },
     {
+      title: '是否公开',
+      dataIndex: 'isPublic',
+      valueType: 'text',
+      hideInSearch: true,
+      width: 100,
+      align: 'center',
+      render: (_, record) => record.isPublic === 1 ? <Tag color="blue">公开</Tag> : <Tag>私有</Tag>,
+    },
+    {
+      title: '创建人',
+      dataIndex: 'creator',
+      valueType: 'text',
+      hideInSearch: true,
+      width: 120,
+      align: 'center',
+    },
+    {
       title: '创建时间',
       dataIndex: 'createTime',
       valueType: 'dateTime',

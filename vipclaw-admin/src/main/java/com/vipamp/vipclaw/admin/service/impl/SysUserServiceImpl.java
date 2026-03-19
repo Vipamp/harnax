@@ -93,6 +93,7 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         user.setPhone(request.getPhone());
         user.setGender(request.getGender() != null ? request.getGender() : 2);
         user.setStatus(request.getStatus() != null ? request.getStatus() : 1); // 默认启用
+        user.setIsAdmin(request.getIsAdmin() != null ? request.getIsAdmin() : 0); // 默认非管理员
         user.setActive(1);  // 默认生效
         user.setAvatar(request.getAvatar());
 
@@ -141,6 +142,9 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         }
         if (request.getStatus() != null) {
             user.setStatus(request.getStatus());
+        }
+        if (request.getIsAdmin() != null) {
+            user.setIsAdmin(request.getIsAdmin());
         }
         if (request.getAvatar() != null) {
             user.setAvatar(request.getAvatar());
