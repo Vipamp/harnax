@@ -19,6 +19,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
   const [nextExecutions, setNextExecutions] = useState<string[]>([]);
   const [cronError, setCronError] = useState<string>('');
   const [isPublic, setIsPublic] = useState(values?.isPublic === 1);
+  const [previewModalVisible, setPreviewModalVisible] = useState<boolean>(false);
   const { username, isAdmin } = getCurrentUserInfo();
 
   useEffect(() => {
@@ -38,10 +39,11 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
       }
     } else if (visible) {
       form.resetFields();
-      form.setFieldsValue({
+      const defaultValues = {
         jobGroup: 'DEFAULT',
         concurrent: 1,
-      });
+      };
+      form.setFieldsValue(defaultValues);
       setIsPublic(false);
       setNextExecutions([]);
       setCronError('');
@@ -310,21 +312,61 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         </Space>
       }
     >
-      <Alert
-        message="Cron 表达式说明"
-        description={
-          <div style={{ fontSize: '12px' }}>
-            <Text type="secondary">
-              格式：秒 分 时 日 月 周 年（可选）
-              <br />
-              示例：0 0 12 * * ? （每天中午12点执行）
-            </Text>
-          </div>
+      {/* 预览执行时间弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <ClockCircleOutlined style={{ color: '#52c41a' }} />
+            <span>预计执行时间（未来 5 次）</span>
+          </Space>
         }
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
+        open={previewModalVisible}
+        onCancel={() => setPreviewModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setPreviewModalVisible(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        {nextExecutions.length > 0 ? (
+          <Space direction="vertical" size={12} style={{ width: '100%', padding: '16px 0' }}>
+            {nextExecutions.map((time, index) => (
+              <div
+                key={index}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  background: index === 0 ? '#f6ffed' : '#f0f5ff',
+                  border: `1px solid ${index === 0 ? '#b7eb8f' : '#d6e4ff'}`,
+                  borderRadius: '8px',
+                }}
+              >
+                <ClockCircleOutlined
+                  style={{
+                    marginRight: 12,
+                    fontSize: '16px',
+                    color: index === 0 ? '#52c41a' : '#1890ff',
+                  }}
+                />
+                <div>
+                  <Tag color={index === 0 ? 'green' : 'blue'} style={{ marginRight: 8 }}>
+                    {index === 0 ? '下次执行' : `第${index + 1}次`}
+                  </Tag>
+                  <Text strong style={{ fontSize: '15px' }}>{time}</Text>
+                </div>
+              </div>
+            ))}
+          </Space>
+        ) : (
+          <Alert
+            message="暂无预测数据"
+            description="Cron 表达式解析失败或格式错误"
+            type="warning"
+            showIcon
+          />
+        )}
+      </Modal>
 
       <Form
         form={form}
@@ -361,7 +403,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
           label="执行类"
           rules={[
             { required: true, message: '请输入执行类全路径' },
-            { max: 255, message: '执行类长度不能超过255' },
+            { max: 255, message: '执行类长度不能超过 255' },
           ]}
           tooltip={{
             title: '必须是继承 BaseJob 的类全路径，例如：job.com.vipamp.vipclaw.admin.SampleJob',
@@ -370,47 +412,71 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         >
           <Input placeholder="例如：job.com.vipamp.vipclaw.admin.SampleJob" />
         </Form.Item>
-
-        <Form.Item
-          name="cronExpression"
-          label="Cron表达式"
-          rules={[
-            { required: true, message: '请输入Cron表达式' },
-          ]}
-        >
-          <Input
-            placeholder="例如：0/5 * * * * ?"
-            onChange={(e) => predictNextExecutions(e.target.value)}
+        
+        <Form.Item label="常用表达式">
+          <Select
+            placeholder="选择常用表达式"
+            options={cronExamples}
+            onChange={(value) => {
+              if (value) {
+                form.setFieldsValue({ cronExpression: value });
+                predictNextExecutions(value);
+              } else {
+                // 清空时重置
+                form.setFieldsValue({ cronExpression: '' });
+                setNextExecutions([]);
+                setCronError('');
+              }
+            }}
+            style={{ width: '100%' }}
+            allowClear
           />
         </Form.Item>
-
-        {/* Cron 表达式预测结果 */}
-        {nextExecutions.length > 0 && (
-          <Card
-            size="small"
-            title={
-              <Space>
-                <EyeOutlined style={{ color: '#52c41a' }} />
-                <Text strong>预计执行时间（未来5次）</Text>
-              </Space>
-            }
-            style={{ marginBottom: 16, background: '#f6ffed', borderColor: '#b7eb8f' }}
-          >
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
-              {nextExecutions.map((time, index) => (
-                <Tag
-                  key={index}
-                  color={index === 0 ? 'green' : 'blue'}
-                  style={{ fontSize: '13px', padding: '4px 8px' }}
-                >
-                  <ClockCircleOutlined style={{ marginRight: 4 }} />
-                  {index === 0 ? '下次：' : `第${index + 1}次：`}
-                  {time}
-                </Tag>
-              ))}
-            </Space>
-          </Card>
-        )}
+        
+        <Form.Item
+          name="cronExpression"
+          label="Cron 表达式"
+          rules={[
+            { required: true, message: '请输入 Cron 表达式' },
+          ]}
+          tooltip={{
+            title: '格式：秒 分 时 日 月 周 年（可选）。示例：0 0 12 * * ? 表示每天中午12点执行',
+            icon: <QuestionCircleOutlined />,
+          }}
+        >
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              placeholder="例如：0/5 * * * * ?"
+              onChange={(e) => predictNextExecutions(e.target.value)}
+            />
+            <Button
+              type="primary"
+              icon={<EyeOutlined />}
+              onClick={() => {
+                const cronValue = form.getFieldValue('cronExpression');
+                if (cronValue && !cronError && nextExecutions.length > 0) {
+                  setPreviewModalVisible(true);
+                } else if (!cronValue) {
+                  setCronError('请先输入 Cron 表达式');
+                } else if (cronError) {
+                  // 已有错误，提示用户修正
+                } else {
+                  // 尝试重新计算
+                  predictNextExecutions(cronValue);
+                  setTimeout(() => {
+                    const currentError = form.getFieldError('cronExpression');
+                    if (!currentError || currentError.length === 0) {
+                      setPreviewModalVisible(true);
+                    }
+                  }, 100);
+                }
+              }}
+              disabled={!form.getFieldValue('cronExpression') || !!cronError}
+            >
+              预览执行时间
+            </Button>
+          </Space.Compact>
+        </Form.Item>
 
         {cronError && (
           <Alert
@@ -421,18 +487,6 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
             style={{ marginBottom: 16 }}
           />
         )}
-
-        <Form.Item label="常用表达式">
-          <Select
-            placeholder="选择常用表达式"
-            options={cronExamples}
-            onChange={(value) => {
-              form.setFieldValue('cronExpression', value);
-              predictNextExecutions(value);
-            }}
-            style={{ width: '100%' }}
-          />
-        </Form.Item>
 
         <Form.Item
           name="concurrent"

@@ -70,4 +70,10 @@ public class AgentUpdateRequest {
      */
     @Schema(description = "状态 (0:禁用 1:正常)", example = "1")
     private Integer status;
+
+    /**
+     * 是否公开 (0:否 1:是)
+     */
+    @Schema(description = "是否公开 (0:否 1:是)", example = "1")
+    private Integer isPublic;
 }

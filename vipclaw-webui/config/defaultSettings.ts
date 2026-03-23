@@ -10,10 +10,10 @@ const Settings: ProLayoutProps & {
   navTheme: 'light',
   // 科技蓝紫渐变主色
   colorPrimary: '#4f6ef7',
-  layout: 'top',
+  layout: 'side',  // 使用侧边菜单布局
   contentWidth: 'Fluid',
   fixedHeader: true,
-  fixSiderbar: false,
+  fixSiderbar: true,
   colorWeak: false,
   title: 'VipClaw',
   pwa: true,

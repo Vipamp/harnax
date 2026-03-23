@@ -48,4 +48,10 @@ export default {
   'menu.editor.flow': 'ফ্লো এডিটর',
   'menu.editor.mind': 'মাইন্ড এডিটর',
   'menu.editor.koni': 'কোনি সম্পাদক',
+  'menu.user.management': 'ব্যবহারকারী ব্যবস্থাপনা',
+  'menu.context': 'প্রসঙ্গ ব্যবস্থাপনা',
+  'menu.mcp': 'MCP সেবা',
+  'menu.model': 'মডেল ব্যবস্থাপনা',
+  'menu.skill': 'দক্ষতা ব্যবস্থাপনা',
+  'menu.agent': 'এজেন্ট ব্যবস্থাপনা',
 };

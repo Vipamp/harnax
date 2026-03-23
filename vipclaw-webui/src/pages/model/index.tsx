@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Button, Switch, message, Spin, Empty, Tag, Popconfirm, Input, Select } from 'antd';
 import { PlusOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, SearchOutlined, ReloadOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, EyeOutlined } from '@ant-design/icons';
+import { PageContainer } from '@ant-design/pro-components';
 import ProviderList from './components/ProviderList';
 import ProviderForm from './components/ProviderForm';
-import ModelList from './components/ModelList';
+import ModelListTable from './components/ModelListTable';
 import ModelForm from './components/ModelForm';
 import { modelProviderPage, toggleModelProvider, deleteModelProvider, connectivityTest } from '@/services/ant-design-pro/modelProvider';
 
@@ -177,10 +178,20 @@ const ModelManagement: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', background: '#f0f2f5', minHeight: 'calc(100vh - 48px)' }}>
+    <PageContainer
+      header={{
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+            <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+            模型管理
+          </span>
+        ),
+      }}
+    >
+      <div style={{ padding: '0', background: '#f0f2f5', minHeight: 'calc(100vh - 112px)' }}>
       <Row gutter={16}>
         {/* 左侧：服务商列表 */}
-        <Col span={5}>
+        <Col span={6}>
           <Card
             title="模型服务商"
             extra={
@@ -211,7 +222,7 @@ const ModelManagement: React.FC = () => {
         </Col>
 
         {/* 右侧：模型列表 */}
-        <Col span={19}>
+        <Col span={18}>
           <Card
             title={
               selectedProvider ? (
@@ -319,7 +330,7 @@ const ModelManagement: React.FC = () => {
             }}
           >
             {selectedProvider ? (
-              <ModelList
+              <ModelListTable
                 key={modelListKey}
                 providerId={selectedProvider.id}
                 onEdit={handleEditModel}
@@ -348,7 +359,8 @@ const ModelManagement: React.FC = () => {
         onCancel={handleModelFormClose}
         onSuccess={handleModelFormSuccess}
       />
-    </div>
+      </div>
+    </PageContainer>
   );
 };
 

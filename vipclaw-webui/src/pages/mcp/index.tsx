@@ -273,7 +273,7 @@ const McpManagement: React.FC = () => {
             </Text>
           </div>
 
-          {/* 是否公开、创建时间和创建人 */}
+          {/* 是否公开、创建时间、创建人和操作按钮 */}
           <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
             {item.isPublic === 1 && (
               <Tag color="blue">公开</Tag>
@@ -284,41 +284,41 @@ const McpManagement: React.FC = () => {
             {item.creator && (
               <Text type="secondary" style={{ fontSize: '11px' }}>{item.creator}</Text>
             )}
-          </div>
-
-          {/* 底部：操作按钮 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
-            <Space size={4}>
-              <Button
-                type="link"
-                size="small"
-                icon={<ThunderboltOutlined />}
-                onClick={() => handleConnectivityTest(item.id!, item.name)}
-              >
-                测试
-              </Button>
+            <div style={{ flex: 1 }} />
+            <Space size={8}>
+              <Tooltip title="测试">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => handleConnectivityTest(item.id!, item.name)}
+                  style={{ padding: '4px' }}
+                />
+              </Tooltip>
               {hasOperationPermission(isAdmin, currentUser, item.creator) && (
                 <>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<EditOutlined />}
-                    onClick={() => {
-                      setCurrentRow(item);
-                      setUpdateModalVisible(true);
-                    }}
-                  >
-                    编辑
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    onClick={() => handleRemove(item.id!)}
-                  >
-                    删除
-                  </Button>
+                  <Tooltip title="编辑">
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => {
+                        setCurrentRow(item);
+                        setUpdateModalVisible(true);
+                      }}
+                      style={{ padding: '4px', color: '#1890ff' }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="删除">
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => handleRemove(item.id!)}
+                      style={{ padding: '4px' }}
+                    />
+                  </Tooltip>
                 </>
               )}
             </Space>

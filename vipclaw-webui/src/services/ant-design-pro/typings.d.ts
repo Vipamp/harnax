@@ -264,6 +264,8 @@ declare namespace API {
     description?: string;
     createTime?: string;
     updateTime?: string;
+    isPublic?: number;
+    creator?: string;
   };
 
   type SysJobCreateRequest = {

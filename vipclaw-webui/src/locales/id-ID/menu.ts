@@ -49,4 +49,10 @@ export default {
   'menu.editor.flow': 'Penyusun Alur',
   'menu.editor.mind': 'Penyusun Mind',
   'menu.editor.koni': 'Penyusun Koni',
+  'menu.user.management': 'Manajemen Pengguna',
+  'menu.context': 'Manajemen Konteks',
+  'menu.mcp': 'Layanan MCP',
+  'menu.model': 'Manajemen Model',
+  'menu.skill': 'Manajemen Keterampilan',
+  'menu.agent': 'Manajemen Agen',
 };

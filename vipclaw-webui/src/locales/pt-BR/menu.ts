@@ -50,4 +50,10 @@ export default {
   'menu.editor.flow': 'Flow Editor',
   'menu.editor.mind': 'Mind Editor',
   'menu.editor.koni': 'Koni Editor',
+  'menu.user.management': 'Gerenciamento de Usuário',
+  'menu.context': 'Gerenciamento de Contexto',
+  'menu.mcp': 'Serviço MCP',
+  'menu.model': 'Gerenciamento de Modelo',
+  'menu.skill': 'Gerenciamento de Habilidade',
+  'menu.agent': 'Gerenciamento de Agente',
 };

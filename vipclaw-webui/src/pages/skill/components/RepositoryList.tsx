@@ -70,66 +70,20 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 <Text strong style={{ fontSize: '14px' }}>
                   {repository.name}
                 </Text>
-                <Space size={4}>
-                  <Tooltip title="同步">
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<SyncOutlined />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelect(repository);
-                        onSync(repository);
-                      }}
-                    />
-                  </Tooltip>
-                  {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
-                    <>
-                      <Switch
-                        checked={repository.status === 1}
-                        onChange={(checked) => {
-                          onSelect(repository);
-                          handleToggle(repository.id, checked ? 1 : 0);
-                        }}
-                        checkedChildren="启用"
-                        unCheckedChildren="禁用"
-                        style={{
-                          backgroundColor: repository.status === 1 ? '#4f6ef7' : '#d9d9d9',
-                        }}
-                      />
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelect(repository);
-                          onEdit(repository);
-                        }}
-                      />
-                      <Popconfirm
-                        title="确定删除此仓库吗？"
-                        onConfirm={(e) => {
-                          e?.stopPropagation();
-                          onSelect(repository);
-                          handleDelete(repository.id);
-                        }}
-                        onCancel={(e) => e?.stopPropagation()}
-                      >
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelect(repository);
-                          }}
-                        />
-                      </Popconfirm>
-                    </>
-                  )}
-                </Space>
+                {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
+                  <Switch
+                    checked={repository.status === 1}
+                    onChange={(checked) => {
+                      onSelect(repository);
+                      handleToggle(repository.id, checked ? 1 : 0);
+                    }}
+                    checkedChildren="启用"
+                    unCheckedChildren="禁用"
+                    style={{
+                      backgroundColor: repository.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                    }}
+                  />
+                )}
               </div>
               {repository.url && (
                 <div style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
@@ -154,7 +108,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   </a>
                 </div>
               )}
-              {/* 是否公开、创建时间和创建人 */}
+              {/* 是否公开、创建时间、创建人和操作按钮 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
                 {repository.isPublic === 1 && (
                   <Tag color="blue" style={{ fontSize: '11px' }}>公开</Tag>
@@ -164,6 +118,50 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 </Text>
                 {repository.creator && (
                   <Text type="secondary" style={{ fontSize: '11px' }}>{repository.creator}</Text>
+                )}
+                {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
+                  <Space size={8} style={{ marginLeft: 'auto' }}>
+                    <Tooltip title="同步">
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<SyncOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(repository);
+                          onSync(repository);
+                        }}
+                        style={{ padding: '4px', color: '#1890ff' }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="编辑">
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(repository);
+                          onEdit(repository);
+                        }}
+                        style={{ padding: '4px', color: '#1890ff' }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="删除">
+                      <Button
+                        type="link"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(repository);
+                          handleDelete(repository.id);
+                        }}
+                        style={{ padding: '4px' }}
+                      />
+                    </Tooltip>
+                  </Space>
                 )}
               </div>
             </div>

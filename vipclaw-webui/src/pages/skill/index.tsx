@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Button, message, Spin, Empty, Tag, Input, Select } from 'antd';
 import { GithubOutlined, SearchOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { PageContainer } from '@ant-design/pro-components';
 import RepositoryList from './components/RepositoryList';
 import RepositoryForm from './components/RepositoryForm';
 import SkillList from './components/SkillList';
@@ -138,10 +139,20 @@ const SkillManagement: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', background: '#f0f2f5', minHeight: 'calc(100vh - 48px)' }}>
+    <PageContainer
+      header={{
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+            <ThunderboltOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+            技能管理
+          </span>
+        ),
+      }}
+    >
+      <div style={{ padding: '0', background: '#f0f2f5', minHeight: 'calc(100vh - 112px)' }}>
       <Row gutter={16}>
         {/* 左侧：仓库列表 */}
-        <Col span={7}>
+        <Col span={6}>
           <Card
             title={
               <span>
@@ -177,7 +188,7 @@ const SkillManagement: React.FC = () => {
         </Col>
 
         {/* 右侧：技能列表 */}
-        <Col span={17}>
+        <Col span={18}>
           <Card
             title={
               selectedRepository ? (
@@ -262,7 +273,8 @@ const SkillManagement: React.FC = () => {
           onSuccess={handleSyncSuccess}
         />
       )}
-    </div>
+      </div>
+    </PageContainer>
   );
 };
 

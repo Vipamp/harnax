@@ -163,6 +163,9 @@ public class McpServerServiceImpl extends ServiceImpl<McpServerMapper, McpServer
         if (request.getStatus() != null) {
             mcpServer.setStatus(request.getStatus());
         }
+        if (request.getIsPublic() != null) {
+            mcpServer.setIsPublic(request.getIsPublic());
+        }
 
         // 校验更新后 type 与字段的联动逻辑
         validateTypeAndFields(mcpServer.getType(), mcpServer.getCommand(), mcpServer.getUrl());

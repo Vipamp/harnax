@@ -48,4 +48,10 @@ export default {
   'menu.editor.flow': '流程編輯器',
   'menu.editor.mind': '腦圖編輯器',
   'menu.editor.koni': '拓撲編輯器',
+  'menu.user.management': '用戶管理',
+  'menu.context': '上下文管理',
+  'menu.mcp': 'MCP 服務',
+  'menu.model': '模型管理',
+  'menu.skill': '技能管理',
+  'menu.agent': '智能體管理',
 };

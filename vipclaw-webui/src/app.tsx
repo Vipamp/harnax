@@ -3,6 +3,7 @@ import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
+import { Space, Typography } from 'antd';
 import React from 'react';
 import { AvatarDropdown, AvatarName, Footer, Question, SelectLang } from '@/components';
 import defaultSettings from '../config/defaultSettings';
@@ -81,6 +82,7 @@ export const layout: RunTimeLayoutConfig = ({
       <Question key="doc" />,
       <SelectLang key="SelectLang" />,
     ],
+    // 顶部右侧显示用户头像和登录信息
     avatarProps: {
       src: initialState?.currentUser?.avatar,
       title: <AvatarName />,
@@ -98,6 +100,13 @@ export const layout: RunTimeLayoutConfig = ({
       if (!initialState?.currentUser && location.pathname !== loginPath) {
         history.push(loginPath);
       }
+    },
+    // 菜单配置
+    menu: {
+      // 默认展开所有菜单
+      autoOpen: true,
+      // 忽略折叠状态，始终展开所有一级菜单
+      ignoreFlatMenu: true,
     },
     bgLayoutImgList: [
       {

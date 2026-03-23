@@ -483,7 +483,7 @@ const JobManagement: React.FC = () => {
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
             <ScheduleOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            定时任务管理
+            定时任务
           </span>
         ),
       }}

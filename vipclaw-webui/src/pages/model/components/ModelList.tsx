@@ -221,7 +221,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                   {renderCapabilityTags(model)}
                 </div>
 
-                {/* 是否公开、创建时间和创建人 */}
+                {/* 是否公开、创建时间、创建人和操作按钮 */}
                 <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
                   {model.isPublic === 1 && (
                     <Tag color="blue">公开</Tag>
@@ -232,32 +232,32 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                   {model.creator && (
                     <Text type="secondary" style={{ fontSize: '11px' }}>{model.creator}</Text>
                   )}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Space size={4}>
+                  <div style={{ flex: 1 }} />
+                  <Space size={8}>
                     {hasOperationPermission(isAdmin, currentUser, model.creator) && (
                       <>
-                        <Button
-                          type="link"
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={() => onEdit(model)}
-                        >
-                          编辑
-                        </Button>
+                        <Tooltip title="编辑">
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => onEdit(model)}
+                            style={{ padding: '4px', color: '#1890ff' }}
+                          />
+                        </Tooltip>
                         <Popconfirm
                           title="确定要删除此模型吗？"
                           onConfirm={() => handleDelete(model.id)}
                         >
-                          <Button
-                            type="link"
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                          >
-                            删除
-                          </Button>
+                          <Tooltip title="删除">
+                            <Button
+                              type="link"
+                              size="small"
+                              danger
+                              icon={<DeleteOutlined />}
+                              style={{ padding: '4px' }}
+                            />
+                          </Tooltip>
                         </Popconfirm>
                         <Switch
                           checked={model.status === 1}

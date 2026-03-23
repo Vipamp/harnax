@@ -48,4 +48,10 @@ export default {
   'menu.editor.flow': 'フローエディタ',
   'menu.editor.mind': 'マインドエディター',
   'menu.editor.koni': 'コニエディター',
+  'menu.user.management': 'ユーザー管理',
+  'menu.context': 'コンテキスト管理',
+  'menu.mcp': 'MCP サービス',
+  'menu.model': 'モデル管理',
+  'menu.skill': 'スキル管理',
+  'menu.agent': 'エージェント管理',
 };

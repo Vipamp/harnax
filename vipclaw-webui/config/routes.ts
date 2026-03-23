@@ -30,28 +30,41 @@ export default [
    hideInMenu: true,
   },
   {
-    name: 'model',
-    icon: 'robot',
-    path: '/model',
-    component: './model',
-  },
-  {
-    name: 'mcp',
-    icon: 'api',
-    path: '/mcp',
-    component: './mcp',
-  },
-  {
-    name: 'skill',
-    icon: 'thunderbolt',
-    path: '/skill',
-    component: './skill',
-  },
-  {
     name: 'agent',
     icon: 'robot',
     path: '/agent',
-    component: './agent',
+    routes: [
+      {
+        name: 'management',
+        path: '/agent/manager',
+        component: './agent',
+      },
+    ],
+  },
+  {
+    name: 'context',
+    icon: 'appstore',
+    path: '/context',
+    routes: [
+      {
+        name: 'model',
+        icon: 'robot',
+        path: '/context/model',
+        component: './model',
+      },
+      {
+        name: 'mcp',
+        icon: 'api',
+        path: '/context/mcp',
+        component: './mcp',
+      },
+      {
+        name: 'skill',
+        icon: 'thunderbolt',
+        path: '/context/skill',
+        component: './skill',
+      },
+    ],
   },
   {
     name: 'job',
@@ -60,7 +73,7 @@ export default [
     routes: [
       {
         name: 'management',
-        path: '/job',
+        path: '/job/manager',
         component: './job',
       },
       {
@@ -71,14 +84,20 @@ export default [
     ],
   },
   {
-   name: 'user.management',
-   icon: 'user',
-   path: '/user',
-   component: './user/management',
-   access: 'canAccessUserManagement',
+    name: 'system',
+    icon: 'setting',
+    path: '/system',
+    routes: [
+      {
+        name: 'user.management',
+        path: '/system/user',
+        component: './user/management',
+        access: 'canAccessUserManagement',
+      },
+    ],
   },
   {
-   path: '/',
+    path: '/',
    redirect: '/welcome',
   },
   {

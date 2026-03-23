@@ -105,6 +105,8 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         
         response.setOwner(agent.getOwner());
         response.setStatus(agent.getStatus());
+        response.setIsPublic(agent.getIsPublic());
+        response.setCreator(agent.getCreator());
         response.setCreateTime(agent.getCreateTime());
         response.setUpdateTime(agent.getUpdateTime());
         
@@ -251,7 +253,10 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
             if (request.getStatus() != null) {
                 agent.setStatus(request.getStatus());
             }
-            
+            if (request.getIsPublic() != null) {
+                agent.setIsPublic(request.getIsPublic());
+            }
+
             // 更新 MCP 列表
             if (request.getMcpList() != null) {
                 // 允许清空 MCP 列表

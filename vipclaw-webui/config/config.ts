@@ -105,8 +105,8 @@ export default defineConfig({
     // default zh-CN
     default: 'zh-CN',
     antd: true,
-    // default true, when it is true, will use `navigator.language` overwrite default
-    baseNavigator: true,
+    // 不使用浏览器默认语言，强制使用配置的默认语言
+    baseNavigator: false,
   },
   /**
    * @name antd 插件

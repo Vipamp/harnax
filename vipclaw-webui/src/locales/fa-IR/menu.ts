@@ -48,4 +48,10 @@ export default {
   'menu.editor.flow': 'ویرایشگر جریان',
   'menu.editor.mind': 'ویرایشگر ذهن',
   'menu.editor.koni': 'ویرایشگر Koni',
+  'menu.user.management': 'مدیریت کاربر',
+  'menu.context': 'مدیریت متن',
+  'menu.mcp': 'سرویس MCP',
+  'menu.model': 'مدیریت مدل',
+  'menu.skill': 'مدیریت مهارت',
+  'menu.agent': 'مدیریت عامل',
 };
