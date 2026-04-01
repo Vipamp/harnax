@@ -302,4 +302,46 @@ declare namespace API {
     duration?: number;
     createTime?: string;
   };
+
+  // 会话相关类型
+  type SessionItem = {
+    id: number;
+    title: string;
+    sessionDescription?: string;
+    sessionId?: string;
+    agentId?: number;
+    name?: string;
+    description?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    modelName?: string;
+    mcpList?: SessionMcpItem[];
+    skillList?: SessionSkillItem[];
+    owner?: string;
+    status: number;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type SessionMcpItem = {
+    mcpId: number;
+    mcpName: string;
+    mcpDescription?: string;
+    enableSkip?: string;
+  };
+
+  type SessionSkillItem = {
+    repositoryId?: number;
+    repositoryName?: string;
+    skillId: number;
+    skillName: string;
+  };
+
+  type SessionCreateRequest = {
+    title: string;
+    sessionDescription?: string;
+    agentId: number;
+  };
 }

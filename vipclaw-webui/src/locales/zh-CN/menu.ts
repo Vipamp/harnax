@@ -54,6 +54,7 @@ export default {
   'menu.context.skill': '技能管理',
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
+  'menu.agent.session': '会话',
   'menu.system': '系统管理',
   'menu.system.user.management': '用户管理',
   'menu.job': '定时任务',

@@ -39,6 +39,11 @@ export default [
         path: '/agent/manager',
         component: './agent',
       },
+      {
+        name: 'session',
+        path: '/agent/session',
+        component: './session',
+      },
     ],
   },
   {
