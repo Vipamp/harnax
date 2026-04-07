@@ -1,37 +1,46 @@
-package com.vipamp.vipclaw.agent.adaptor
+package com.vipamp.vipclaw.agent.adaptor.mcp
 
 /**
+ * MCP 配置接口
+ * 支持多种 MCP 连接方式的配置
+ *
  * @Author: heqingsong
  * @Date: 2026/3/25
- * @Description: McpConfig
  * @Project: vipclaw
  */
-sealed interface McpConfig
+sealed interface McpConfig {
+    val name: String
+}
 
+/**
+ * STDIO 类型的 MCP 配置
+ * 通过标准输入输出与本地进程通信
+ */
 data class StdioMcpConfig(
-    val name: String,
+    override val name: String,
     val command: String,
     val args: List<String> = emptyList(),
     val env: Map<String, String> = mapOf()
 ) : McpConfig
 
+/**
+ * SSE HTTP 类型的 MCP 配置
+ * 通过 SSE 事件流与远程 MCP 服务通信
+ */
 data class SseHttpMcpConfig(
-    val name: String,
+    override val name: String,
     val url: String,
     val headers: Map<String, String> = mapOf(),
-    val queryParam: Map<String, String> = mapOf()
+    val queryParam: Map<String, String> = mapOf(),
 ) : McpConfig
 
+/**
+ * Streamable HTTP 类型的 MCP 配置
+ * 通过 HTTP 流式传输与远程 MCP 服务通信
+ */
 data class StreamableHttpMcpConfig(
-    val name: String,
+    override val name: String,
     val url: String,
     val headers: Map<String, String> = mapOf(),
     val queryParam: Map<String, String> = mapOf()
 ) : McpConfig
-
-val McpConfig.name: String
-    get() = when (this) {
-        is StdioMcpConfig -> this.name
-        is SseHttpMcpConfig -> this.name
-        is StreamableHttpMcpConfig -> this.name
-    }
