@@ -260,7 +260,7 @@ public class SkillRepositoryServiceImpl extends ServiceImpl<SkillRepositoryMappe
         skill3.setName("前端 UI 设计师");
         skill3.setDescription("前端界面设计和样式咨询，精通 React、Vue 等主流框架");
         skill3.setSkillmd("# 前端 UI 设计师\n\n专业技能：\n- React/Vue\n- CSS/Tailwind\n- 响应式设计\n- 用户体验优化");
-        skill3.setResources("[]");
+        skill3.setResources("{\"ref/doc1.md\":\"## 1. 简介\",\"ref/doc2.md\":\"## 2. 正文\"}");
         skill3.setExists(true); // 模拟已存在的技能
         mockData.add(skill3);
         

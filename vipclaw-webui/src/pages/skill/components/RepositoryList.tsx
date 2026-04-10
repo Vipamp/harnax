@@ -55,12 +55,30 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
         <List.Item
           onClick={() => onSelect(repository)}
           style={{
-            padding: '12px 16px',
+            padding: '16px',
             cursor: 'pointer',
-            backgroundColor: selectedRepository?.id === repository.id ? '#e6f7ff' : 'transparent',
-            borderRadius: '8px',
-            marginBottom: '8px',
-            border: selectedRepository?.id === repository.id ? '1px solid #1890ff' : '1px solid transparent',
+            backgroundColor: selectedRepository?.id === repository.id ? '#f0f7ff' : '#ffffff',
+            borderRadius: '10px',
+            marginBottom: '12px',
+            border: selectedRepository?.id === repository.id ? '2px solid #1890ff' : '1.5px solid #e8e8e8',
+            boxShadow: selectedRepository?.id === repository.id 
+              ? '0 2px 8px rgba(24, 144, 255, 0.15)' 
+              : '0 1px 4px rgba(0, 0, 0, 0.06)',
+            transition: 'all 0.3s ease',
+          }}
+          onMouseEnter={(e) => {
+            if (selectedRepository?.id !== repository.id) {
+              e.currentTarget.style.borderColor = '#b3d9ff';
+              e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.1)';
+              e.currentTarget.style.backgroundColor = '#fafafa';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (selectedRepository?.id !== repository.id) {
+              e.currentTarget.style.borderColor = '#e8e8e8';
+              e.currentTarget.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.06)';
+              e.currentTarget.style.backgroundColor = '#ffffff';
+            }
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>

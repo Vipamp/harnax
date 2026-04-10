@@ -149,7 +149,7 @@ const SkillManagement: React.FC = () => {
         ),
       }}
     >
-      <div style={{ padding: '0', background: '#f0f2f5', minHeight: 'calc(100vh - 112px)' }}>
+      <div style={{ padding: '0', minHeight: 'calc(100vh - 140px)' }}>
       <Row gutter={16}>
         {/* 左侧：仓库列表 */}
         <Col span={6}>

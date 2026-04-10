@@ -17,6 +17,201 @@ import {
   Pagination,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
+// @ts-ignore
+import { useModel, history } from '@umijs/max';
+
+// MCP 卡片组件
+const McpCard: React.FC<{
+  item: API.McpServerItem;
+  index: number;
+  config: { color: string; label: string; icon: React.ReactNode; bg: string };
+  isAdmin: boolean;
+  currentUser: string;
+  onToggleStatus: (id: number, status: number) => void;
+  onEdit: (item: API.McpServerItem) => void;
+  onDelete: (id: number) => void;
+  hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
+}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const endpoint = item.type === 'stdio' ? item.command : item.url;
+
+  // 点击卡片跳转到详情页
+  const handleCardClick = () => {
+    history.push(`/context/mcp/detail/${item.id}`);
+  };
+
+  return (
+    <Card
+      style={{
+        borderRadius: '16px',
+        border: 'none',
+        boxShadow: isHovered 
+          ? `0 12px 32px ${config.color}20` 
+          : '0 4px 20px rgba(0,0,0,0.06)',
+        overflow: 'hidden',
+        position: 'relative',
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        transform: isHovered ? 'translateY(-6px)' : 'translateY(0)',
+        animation: `vipSlideUp 0.5s ease-out ${index * 80}ms both`,
+        cursor: 'pointer',
+      }}
+      styles={{ body: { padding: 0 } }}
+      onClick={handleCardClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* 顶部类型标识条 - 带动画 */}
+      <div
+        style={{
+          height: '4px',
+          background: config.bg,
+          backgroundSize: '200% 100%',
+          animation: isHovered ? 'gradientShift 2s linear infinite' : 'none',
+        }}
+      />
+
+      <div style={{ padding: '20px' }}>
+        {/* 头部：图标 + 名称 + 类型标签 */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: '14px',
+              background: isHovered 
+                ? config.bg 
+                : `${config.color}15`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              color: isHovered ? '#fff' : config.color,
+              flexShrink: 0,
+              transition: 'all 0.3s ease',
+              boxShadow: isHovered ? `0 8px 20px ${config.color}40` : 'none',
+            }}
+          >
+            {config.icon}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Text strong style={{ fontSize: '16px', color: '#1a1a2e' }}>
+                {item.name}
+              </Text>
+            </div>
+            <Tag
+              style={{
+                background: isHovered ? config.bg : `${config.color}12`,
+                color: isHovered ? '#fff' : config.color,
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 10px',
+                transition: 'all 0.3s ease',
+              }}
+            >
+              {config.label}
+            </Tag>
+          </div>
+          {/* 状态开关 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
+            {hasOperationPermission(isAdmin, currentUser, item.creator) && (
+              <Switch
+                checked={item.status === 1}
+                onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
+                checkedChildren="启"
+                unCheckedChildren="停"
+                style={{
+                  backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                }}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* 描述 */}
+        <Paragraph
+          ellipsis={{ rows: 2 }}
+          style={{ margin: '0 0 16px', color: '#666', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
+        >
+          {item.description || '暂无描述'}
+        </Paragraph>
+
+        {/* 命令/地址 */}
+        <div
+          style={{
+            background: isHovered ? `${config.color}08` : '#f7f8ff',
+            borderRadius: '10px',
+            padding: '12px 14px',
+            marginBottom: 16,
+            border: isHovered ? `1px solid ${config.color}20` : '1px solid transparent',
+            transition: 'all 0.3s ease',
+          }}
+        >
+          <Text
+            code
+            style={{
+              fontSize: '12px',
+              color: '#4a4a6a',
+              display: 'block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+            }}
+          >
+            {endpoint || '-'}
+          </Text>
+        </div>
+
+        {/* 是否公开、创建时间、创建人和操作按钮 */}
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+          {item.isPublic === 1 && (
+            <Tag color="blue">公开</Tag>
+          )}
+          <Text type="secondary" style={{ fontSize: '12px' }}>
+            {item.createTime?.replace('T', ' ')}
+          </Text>
+          {item.creator && (
+            <Text type="secondary" style={{ fontSize: '11px' }}>{item.creator}</Text>
+          )}
+          <div style={{ flex: 1 }} />
+          {hasOperationPermission(isAdmin, currentUser, item.creator) && (
+            <Space size={8}>
+              <Tooltip title="编辑">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(item);
+                  }}
+                  style={{ color: '#1890ff' }}
+                />
+              </Tooltip>
+              <Tooltip title="删除">
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(item.id!);
+                  }}
+                />
+              </Tooltip>
+            </Space>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+};
 import {
   deleteMcpServer,
   getMcpServerPage,
@@ -150,184 +345,6 @@ const McpManagement: React.FC = () => {
     }
   };
 
-  /** 渲染单个 MCP 卡片 */
-  const renderCard = (item: API.McpServerItem) => {
-    const config = MCP_TYPE_CONFIG[item.type] || { color: '#999', label: item.type, icon: <ApiOutlined />, bg: '#999' };
-    const endpoint = item.type === 'stdio' ? item.command : item.url;
-
-    return (
-      <Card
-        key={item.id}
-        hoverable
-        style={{
-          borderRadius: '16px',
-          border: 'none',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
-          overflow: 'hidden',
-          position: 'relative',
-          transition: 'all 0.3s ease',
-          transform: 'translateY(0)',
-        }}
-        styles={{ body: { padding: 0 } }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-4px)';
-          e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)';
-        }}
-      >
-        {/* 顶部类型标识条 */}
-        <div
-          style={{
-            height: '4px',
-            background: config.bg,
-          }}
-        />
-
-        <div style={{ padding: '20px' }}>
-          {/* 头部：图标 + 名称 + 类型标签 */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: '12px',
-                background: `${config.color}15`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '22px',
-                color: config.color,
-                flexShrink: 0,
-              }}
-            >
-              {config.icon}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <Text strong style={{ fontSize: '16px', color: '#1a1a2e' }}>
-                  {item.name}
-                </Text>
-              </div>
-              <Tag
-                style={{
-                  background: `${config.color}12`,
-                  color: config.color,
-                  border: `1px solid ${config.color}30`,
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  padding: '0 8px',
-                }}
-              >
-                {config.label}
-              </Tag>
-            </div>
-            {/* 状态开关 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-                <Switch
-                  checked={item.status === 1}
-                  onChange={(checked) => handleToggleStatus(item.id!, checked ? 1 : 0)}
-                  checkedChildren="启用"
-                  unCheckedChildren="禁用"
-                  style={{
-                    backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
-                  }}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* 描述 */}
-          <Paragraph
-            ellipsis={{ rows: 2 }}
-            style={{ margin: '0 0 12px', color: '#666', fontSize: '13px', minHeight: 40 }}
-          >
-            {item.description || '暂无描述'}
-          </Paragraph>
-
-          {/* 命令/地址 */}
-          <div
-            style={{
-              background: '#f7f8ff',
-              borderRadius: '8px',
-              padding: '10px 12px',
-              marginBottom: 16,
-            }}
-          >
-            <Text
-              code
-              style={{
-                fontSize: '12px',
-                color: '#4a4a6a',
-                display: 'block',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {endpoint || '-'}
-            </Text>
-          </div>
-
-          {/* 是否公开、创建时间、创建人和操作按钮 */}
-          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
-            {item.isPublic === 1 && (
-              <Tag color="blue">公开</Tag>
-            )}
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {item.createTime?.replace('T', ' ')}
-            </Text>
-            {item.creator && (
-              <Text type="secondary" style={{ fontSize: '11px' }}>{item.creator}</Text>
-            )}
-            <div style={{ flex: 1 }} />
-            <Space size={8}>
-              <Tooltip title="测试">
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<ThunderboltOutlined />}
-                  onClick={() => handleConnectivityTest(item.id!, item.name)}
-                  style={{ padding: '4px' }}
-                />
-              </Tooltip>
-              {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-                <>
-                  <Tooltip title="编辑">
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => {
-                        setCurrentRow(item);
-                        setUpdateModalVisible(true);
-                      }}
-                      style={{ padding: '4px', color: '#1890ff' }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="删除">
-                    <Button
-                      type="link"
-                      size="small"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleRemove(item.id!)}
-                      style={{ padding: '4px' }}
-                    />
-                  </Tooltip>
-                </>
-              )}
-            </Space>
-          </div>
-        </div>
-      </Card>
-    );
-  };
-
   return (
     <PageContainer
       header={{
@@ -405,11 +422,27 @@ const McpManagement: React.FC = () => {
       {data.length > 0 ? (
         <>
           <Row gutter={[20, 20]}>
-            {data.map((item) => (
-              <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
-                {renderCard(item)}
-              </Col>
-            ))}
+            {data.map((item, index) => {
+              const config = MCP_TYPE_CONFIG[item.type] || { color: '#999', label: item.type, icon: <ApiOutlined />, bg: '#999' };
+              return (
+                <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+                  <McpCard
+                    item={item}
+                    index={index}
+                    config={config}
+                    isAdmin={isAdmin}
+                    currentUser={currentUser}
+                    onToggleStatus={handleToggleStatus}
+                    onEdit={(item) => {
+                      setCurrentRow(item);
+                      setUpdateModalVisible(true);
+                    }}
+                    onDelete={handleRemove}
+                    hasOperationPermission={hasOperationPermission}
+                  />
+                </Col>
+              );
+            })}
           </Row>
 
           {/* 分页 */}

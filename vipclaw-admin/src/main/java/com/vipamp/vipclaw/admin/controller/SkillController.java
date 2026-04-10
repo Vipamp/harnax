@@ -59,7 +59,12 @@ public class SkillController {
             @Parameter(description = "技能 ID") @PathVariable(name = "id") Long id) {
         try {
             Skill skill = skillService.getSkillById(id);
-            return Result.success(SkillResponse.fromEntity(skill));
+            // 获取仓库信息
+            SkillRepository repository = null;
+            if (skill != null && skill.getRepositoryId() != null) {
+                repository = skillRepositoryService.getById(skill.getRepositoryId());
+            }
+            return Result.success(SkillResponse.fromEntity(skill, repository));
         } catch (Exception e) {
             log.error("获取技能详情失败", e);
             return Result.error(e.getMessage());

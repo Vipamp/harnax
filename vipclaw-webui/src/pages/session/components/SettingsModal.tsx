@@ -2,9 +2,10 @@ import { Modal, Form, Input, Button, message, Select, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getAgentPage } from '@/services/ant-design-pro/agent';
-import { createSession } from '@/services/ant-design-pro/session';
+import { createSession, checkSessionTitle } from '@/services/ant-design-pro/session';
 // @ts-ignore
 import { useModel } from '@umijs/max';
+import { debounce } from 'lodash';
 
 const { TextArea } = Input;
 
@@ -21,6 +22,31 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
   const [agents, setAgents] = useState<API.AgentItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
+  const [titleChecking, setTitleChecking] = useState(false);
+
+  // 异步校验会话名称
+  const validateSessionTitle = async (_: any, value: string) => {
+    if (!value) {
+      return Promise.reject('请输入会话名称');
+    }
+
+    setTitleChecking(true);
+    try {
+      const res = await checkSessionTitle(value);
+      if (res.code === 200 && res.data) {
+        return Promise.reject('会话名称已存在，请使用其他名称');
+      }
+      return Promise.resolve();
+    } catch (error) {
+      console.error('检查会话名称失败', error);
+      return Promise.reject('检查会话名称失败');
+    } finally {
+      setTitleChecking(false);
+    }
+  };
+
+  // 创建防抖的校验函数
+  const debouncedValidateTitle = debounce(validateSessionTitle, 500);
 
   // 初始化表单数据
   useEffect(() => {
@@ -58,6 +84,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
         message.success('创建成功');
         form.resetFields();
         onSuccess(res.data || (createData as unknown as API.SessionItem));
+        // 关闭弹窗
+        onCancel();
       } else {
         message.error(res.message || '创建失败');
       }
@@ -89,7 +117,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
         <Form.Item
           label="会话名称"
           name="title"
-          rules={[{ required: true, message: '请输入会话名称' }]}
+          rules={[
+            { required: true, message: '请输入会话名称' },
+            {
+              validator: async (_, value) => {
+                if (!value) {
+                  return Promise.resolve();
+                }
+                const res = await checkSessionTitle(value);
+                if (res.code === 200 && res.data) {
+                  return Promise.reject(new Error('会话名称已存在，请使用其他名称'));
+                }
+                return Promise.resolve();
+              },
+            },
+          ]}
+          validateTrigger="onBlur"
         >
           <Input placeholder="请输入会话名称" />
         </Form.Item>

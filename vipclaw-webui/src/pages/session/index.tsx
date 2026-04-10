@@ -6,11 +6,12 @@ import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 // @ts-ignore
-import { useModel } from '@umijs/max';
+import { useModel, useLocation } from '@umijs/max';
 
 const { Text, Title } = Typography;
 
 const SessionPage: React.FC = () => {
+  const location = useLocation();
   const [sessions, setSessions] = useState<API.SessionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSession, setSelectedSession] = useState<API.SessionItem | null>(null);
@@ -21,14 +22,21 @@ const SessionPage: React.FC = () => {
   const currentUser = initialState?.currentUser;
 
   // 加载会话列表
-  const loadSessions = async () => {
+  const loadSessions = async (targetSessionId?: number) => {
     setLoading(true);
     try {
       const res = await getSessionPage({ pageNum: 1, pageSize: 100 });
       if (res.code === 200 && res.data?.records) {
         setSessions(res.data.records);
-        // 默认选中第一个会话
-        if (res.data.records.length > 0 && !selectedSession) {
+        
+        // 如果指定了目标会话 ID，选中它
+        if (targetSessionId) {
+          const targetSession = res.data.records.find(s => s.id === targetSessionId);
+          if (targetSession) {
+            setSelectedSession(targetSession);
+          }
+        } else if (res.data.records.length > 0 && !selectedSession) {
+          // 否则默认选中第一个会话
           setSelectedSession(res.data.records[0]);
         }
       }
@@ -41,7 +49,15 @@ const SessionPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadSessions();
+    // 从 URL 参数中获取会话 ID
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get('id');
+    
+    if (sessionId) {
+      loadSessions(parseInt(sessionId, 10));
+    } else {
+      loadSessions();
+    }
   }, []);
 
   // 处理创建新会话
@@ -59,6 +75,7 @@ const SessionPage: React.FC = () => {
         if (selectedSession?.id === id) {
           setSelectedSession(null);
         }
+        // 刷新列表，不指定目标会话 ID
         loadSessions();
       } else {
         message.error(res.message || '删除失败');
@@ -87,22 +104,44 @@ const SessionPage: React.FC = () => {
 
   // 处理查看详情
   const handleViewDetail = (session: API.SessionItem) => {
+    setSelectedSession(session);
     setDetailSession(session);
     setDetailModalVisible(true);
   };
 
   return (
-    <PageContainer>
-      <div style={{ display: 'flex', height: 'calc(100vh - 180px)', gap: 16 }}>
+    <PageContainer
+      header={{
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+            会话管理
+          </span>
+        ),
+      }}
+    >
+      <div style={{ display: 'flex', height: 'calc(100vh - 200px)', gap: 16 }}>
         {/* 左侧：会话列表 */}
         <Card
-          style={{ width: 300, display: 'flex', flexDirection: 'column' }}
-          styles={{ body: { flex: 1, overflow: 'auto', padding: '12px' } }}
+          style={{ 
+            width: 320, 
+            display: 'flex', 
+            flexDirection: 'column',
+            borderRadius: '16px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+            border: '1px solid #f0f0f8',
+          }}
+          styles={{ body: { flex: 1, overflow: 'auto', padding: '16px' } }}
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>会话列表</span>
-              <Button type="primary" icon={<PlusOutlined />} size="small" onClick={handleCreateSession}>
-                新建会话
+              <span style={{ fontWeight: 600 }}>会话列表</span>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />} 
+                size="small" 
+                onClick={handleCreateSession}
+                style={{ borderRadius: '8px' }}
+              >
+                新建
               </Button>
             </div>
           }
@@ -170,7 +209,14 @@ const SessionPage: React.FC = () => {
 
         {/* 右侧：聊天窗口区域 */}
         <Card
-          style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+          style={{ 
+            flex: 1, 
+            display: 'flex', 
+            flexDirection: 'column',
+            borderRadius: '16px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+            border: '1px solid #f0f0f8',
+          }}
           styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
         >
           {selectedSession ? (

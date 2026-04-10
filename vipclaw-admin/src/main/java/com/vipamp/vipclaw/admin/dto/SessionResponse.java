@@ -77,6 +77,12 @@ public class SessionResponse {
     private String modelName;
 
     /**
+     * 模型价格（元/百万token）
+     */
+    @Schema(description = "模型价格（元/百万token）", example = "15.0")
+    private Double modelPrice;
+
+    /**
      * MCP 服务列表
      */
     @Schema(description = "MCP 服务列表")

@@ -52,6 +52,7 @@ export default {
   'menu.mcp': 'MCP Services',
   'menu.model': 'Model Management',
   'menu.skill': 'Skill Management',
+  'menu.context.channel': 'Channel Management',
   'menu.agent': 'Agent',
   'menu.agent.management': 'Agent Management',
   'menu.system': 'System Management',

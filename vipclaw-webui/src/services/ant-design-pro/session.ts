@@ -34,6 +34,20 @@ export async function getSessionById(id: number, options?: { [key: string]: any 
 }
 
 /**
+ * 检查会话名称是否存在
+ */
+export async function checkSessionTitle(
+  title: string,
+  options?: { [key: string]: any },
+) {
+  return request('/admin/sessions/check-title', {
+    method: 'GET',
+    params: { title },
+    ...(options || {}),
+  });
+}
+
+/**
  * 创建会话
  */
 export async function createSession(

@@ -1,4 +1,4 @@
-import { Modal, Descriptions, Tag, Typography, Collapse, Empty, Divider } from 'antd';
+import { Modal, Descriptions, Tag, Typography, Collapse, Empty, Divider, Tooltip } from 'antd';
 import React from 'react';
 import { InfoCircleOutlined, DatabaseOutlined, ToolOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
@@ -61,9 +61,6 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
             <Descriptions.Item label="会话名称">
               <Text strong>{session.title}</Text>
             </Descriptions.Item>
-            <Descriptions.Item label="状态">
-              {getStatusTag(session.status)}
-            </Descriptions.Item>
             <Descriptions.Item label="会话描述" span={2}>
               {session.sessionDescription || <Text type="secondary">无</Text>}
             </Descriptions.Item>
@@ -88,24 +85,37 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
           key="agent"
         >
           <Descriptions column={2} size="small">
-            <Descriptions.Item label="智能体ID">
-              {session.agentId}
-            </Descriptions.Item>
             <Descriptions.Item label="智能体名称">
               <Tag color="purple">{session.name || '未知'}</Tag>
             </Descriptions.Item>
-            <Descriptions.Item label="智能体描述" span={2}>
-              {session.description || <Text type="secondary">无</Text>}
+            <Descriptions.Item label="智能体描述">
+              <Tooltip title={session.description || '无'}>
+                <Text 
+                  type="secondary" 
+                  style={{ 
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    display: 'block'
+                  }}
+                >
+                  {session.description || '无'}
+                </Text>
+              </Tooltip>
             </Descriptions.Item>
             <Descriptions.Item label="对话模型">
               {session.modelName ? (
-                <Tag color="cyan">{session.modelName}</Tag>
+                <Tag color="blue">{session.modelName}</Tag>
               ) : (
                 <Text type="secondary">未配置</Text>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="模型ID">
-              {session.modelId || <Text type="secondary">无</Text>}
+            <Descriptions.Item label="模型价格">
+              {session.modelPrice !== undefined && session.modelPrice !== null ? (
+                <Tag color="cyan">¥{session.modelPrice}/M</Tag>
+              ) : (
+                <Text type="secondary">未配置</Text>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label="系统提示词" span={2}>
               <Paragraph 

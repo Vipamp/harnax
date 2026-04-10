@@ -58,6 +58,14 @@ public interface SessionService extends IService<Session> {
      * @return 删除结果
      */
     boolean deleteSession(Long id);
+    
+    /**
+     * 检查会话名称是否存在
+     *
+     * @param title 会话名称
+     * @return 是否存在
+     */
+    boolean existsByTitle(String title);
 
     /**
      * 将 Session 实体转换为响应 DTO（包含完整的技能和 MCP 信息）

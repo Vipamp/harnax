@@ -116,6 +116,7 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
             com.vipamp.vipclaw.admin.entity.Model model = modelService.getById(session.getModelId());
             if (model != null) {
                 response.setModelName(model.getModelName());
+                response.setModelPrice(model.getPrice());
             }
         }
 
@@ -198,6 +199,16 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
     @Transactional(rollbackFor = Exception.class)
     public boolean createSession(SessionCreateRequest request) {
         try {
+            // 检查会话名称是否重复
+            long count = this.count(
+                new LambdaQueryWrapper<Session>()
+                    .eq(Session::getTitle, request.getTitle())
+                    .eq(Session::getActive, 1)
+            );
+            if (count > 0) {
+                throw new BizException("会话名称已存在，请使用其他名称");
+            }
+
             // 根据智能体ID获取智能体信息
             Agent agent = agentService.getById(request.getAgentId());
             if (agent == null) {
@@ -262,9 +273,16 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
             throw new BizException("会话不存在");
         }
 
-        LambdaUpdateWrapper<Session> wrapper = new LambdaUpdateWrapper<>();
-        wrapper.set(Session::getActive, 0)
-                .eq(Session::getId, id);
-        return this.update(wrapper);
+        return this.removeById(id);
+    }
+    
+    @Override
+    public boolean existsByTitle(String title) {
+        long count = this.count(
+            new LambdaQueryWrapper<Session>()
+                .eq(Session::getTitle, title)
+                .eq(Session::getActive, 1)
+        );
+        return count > 0;
     }
 }

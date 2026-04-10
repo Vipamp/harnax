@@ -1,6 +1,8 @@
 package com.vipamp.vipclaw.admin.dto;
 
 import com.vipamp.vipclaw.admin.entity.Skill;
+import com.vipamp.vipclaw.admin.entity.SkillRepository;
+import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -110,6 +112,24 @@ public class SkillResponse {
         response.setCreator(skill.getCreator());
         response.setCreateTime(skill.getCreateTime());
         response.setUpdateTime(skill.getUpdateTime());
+        return response;
+    }
+
+    /**
+     * 从实体对象转换（包含仓库信息）
+     *
+     * @param skill 技能实体
+     * @param repository 仓库实体
+     * @return 技能响应对象
+     */
+    public static SkillResponse fromEntity(Skill skill, SkillRepository repository) {
+        if (skill == null) {
+            return null;
+        }
+        SkillResponse response = fromEntity(skill);
+        if (repository != null) {
+            response.setRepositoryName(repository.getUrl());
+        }
         return response;
     }
 }

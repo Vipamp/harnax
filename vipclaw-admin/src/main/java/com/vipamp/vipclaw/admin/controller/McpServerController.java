@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest;
 import com.vipamp.vipclaw.admin.dto.McpServerResponse;
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest;
+import com.vipamp.vipclaw.admin.dto.McpToolResponse;
 import com.vipamp.vipclaw.admin.entity.McpServer;
 import com.vipamp.vipclaw.admin.service.McpServerService;
 import com.vipamp.vipclaw.admin.vo.Result;
@@ -14,6 +15,10 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * MCP 服务管理控制器
@@ -123,6 +128,87 @@ public class McpServerController {
             log.error("MCP 服务连通性测试失败", e);
             return Result.error(e.getMessage());
         }
+    }
+
+    @GetMapping("/{id}/list_tools")
+    @Operation(summary = "获取 MCP 工具列表", description = "获取 MCP 服务提供的工具列表（Mock 数据）")
+    public Result<List<McpToolResponse>> listTools(
+            @Parameter(description = "MCP ID") @PathVariable(name = "id") Long id) {
+        try {
+            // TODO: 后续替换为真实的工具列表获取逻辑
+            List<McpToolResponse> mockTools = getMockTools();
+            return Result.success(mockTools);
+        } catch (Exception e) {
+            log.error("获取 MCP 工具列表失败", e);
+            return Result.error(e.getMessage());
+        }
+    }
+
+    /**
+     * 获取 Mock 工具列表
+     */
+    private List<McpToolResponse> getMockTools() {
+        List<McpToolResponse> tools = new ArrayList<>();
+
+        // 工具 1: 读取文件
+        McpToolResponse readFile = new McpToolResponse();
+        readFile.setName("read_file");
+        readFile.setParameters(Arrays.asList(
+                createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
+                createParameter("encoding", "string", "文件编码，默认为 utf-8")
+        ));
+        tools.add(readFile);
+
+        // 工具 2: 写入文件
+        McpToolResponse writeFile = new McpToolResponse();
+        writeFile.setName("write_file");
+        writeFile.setParameters(Arrays.asList(
+                createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
+                createParameter("content", "string", "要写入的文件内容"),
+                createParameter("encoding", "string", "文件编码，默认为 utf-8")
+        ));
+        tools.add(writeFile);
+
+        // 工具 3: 列出目录
+        McpToolResponse listDirectory = new McpToolResponse();
+        listDirectory.setName("list_directory");
+        listDirectory.setParameters(Arrays.asList(
+                createParameter("directory_path", "string", "目录路径，例如: /path/to/directory")
+        ));
+        tools.add(listDirectory);
+
+        // 工具 4: 搜索文件
+        McpToolResponse searchFiles = new McpToolResponse();
+        searchFiles.setName("search_files");
+        searchFiles.setParameters(Arrays.asList(
+                createParameter("directory_path", "string", "搜索的目录路径"),
+                createParameter("pattern", "string", "搜索模式，支持通配符，例如: *.txt"),
+                createParameter("recursive", "boolean", "是否递归搜索子目录，默认为 false")
+        ));
+        tools.add(searchFiles);
+
+        // 工具 5: 执行命令
+        McpToolResponse executeCommand = new McpToolResponse();
+        executeCommand.setName("execute_command");
+        executeCommand.setParameters(Arrays.asList(
+                createParameter("command", "string", "要执行的命令，例如: ls -la"),
+                createParameter("working_directory", "string", "工作目录，默认为当前目录"),
+                createParameter("timeout", "integer", "命令执行超时时间（秒），默认为 30")
+        ));
+        tools.add(executeCommand);
+
+        return tools;
+    }
+
+    /**
+     * 创建参数对象
+     */
+    private McpToolResponse.McpToolParameter createParameter(String name, String type, String description) {
+        McpToolResponse.McpToolParameter parameter = new McpToolResponse.McpToolParameter();
+        parameter.setName(name);
+        parameter.setType(type);
+        parameter.setDescription(description);
+        return parameter;
     }
 
     /**

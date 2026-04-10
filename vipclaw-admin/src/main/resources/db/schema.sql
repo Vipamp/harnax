@@ -172,3 +172,45 @@ CREATE TABLE `agent`
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
+
+-- Channel 通道表
+DROP TABLE IF EXISTS `channel`;
+CREATE TABLE `channel`
+(
+    `id`               BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `name`             VARCHAR(100) NOT NULL COMMENT '通道名称',
+    `type`             VARCHAR(20)  NOT NULL COMMENT '类型(wecom/feishu/dingtalk/http)',
+    `agent_id`         BIGINT(20)   NOT NULL COMMENT '关联的智能体ID',
+    `webhook_url`      VARCHAR(500) DEFAULT NULL COMMENT '推送地址',
+    `token`            VARCHAR(500) DEFAULT NULL COMMENT '验证Token',
+    `encoding_aes_key` VARCHAR(500) DEFAULT NULL COMMENT '加密密钥(企业微信)',
+    `app_id`           VARCHAR(100) DEFAULT NULL COMMENT '应用ID(飞书/钉钉)',
+    `app_secret`       VARCHAR(500) DEFAULT NULL COMMENT '应用密钥',
+    `callback_key`     VARCHAR(100) NOT NULL COMMENT '回调标识(用于生成回调URL)',
+    `description`      TEXT         DEFAULT NULL COMMENT '描述',
+    `status`           TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
+    `active`           TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_callback_key` (`callback_key`),
+    KEY `idx_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel通道表';
+
+-- Channel 消息记录表
+DROP TABLE IF EXISTS `channel_message`;
+CREATE TABLE `channel_message`
+(
+    `id`          BIGINT(20)    NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `channel_id`  BIGINT(20)    NOT NULL COMMENT '通道ID',
+    `session_id`  VARCHAR(100)  NOT NULL COMMENT '会话标识(用户/群组)',
+    `message_id`  VARCHAR(100)  DEFAULT NULL COMMENT '原始消息ID',
+    `role`        VARCHAR(20)   NOT NULL COMMENT '角色(user/assistant)',
+    `content`     TEXT          NOT NULL COMMENT '消息内容',
+    `sender_id`   VARCHAR(100)  DEFAULT NULL COMMENT '发送者ID',
+    `sender_name` VARCHAR(100)  DEFAULT NULL COMMENT '发送者名称',
+    `create_time` DATETIME      DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_channel_session` (`channel_id`, `session_id`),
+    KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel消息记录表';

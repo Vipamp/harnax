@@ -1,10 +1,7 @@
 import {
-  AlipayCircleOutlined,
   LockOutlined,
   MobileOutlined,
-  TaobaoCircleOutlined,
   UserOutlined,
-  WeiboCircleOutlined,
 } from '@ant-design/icons';
 import {
   LoginForm,
@@ -13,7 +10,7 @@ import {
   ProFormText,
 } from '@ant-design/pro-components';
 import { FormattedMessage, Helmet, SelectLang, useIntl, useModel, history } from '@umijs/max';
-import { Alert, App, Image, Space, Spin, Tabs } from 'antd';
+import { Alert, App, Image, Spin, Tabs } from 'antd';
 import { createStyles } from 'antd-style';
 import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -49,57 +46,119 @@ const useStyles = createStyles(({ token }) => {
     },
     container: {
       display: 'flex',
-      height: '100vh',
-      overflow: 'hidden',
-    },
-    leftPanel: {
-      flex: '1',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #4f6ef7 100%)',
-      display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '60px 48px',
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 30%, #0f3460 60%, #4f6ef7 100%)',
       position: 'relative',
       overflow: 'hidden',
-      '@media (max-width: 768px)': {
-        display: 'none',
+      padding: '24px',
+    },
+    decorativeCircle1: {
+      position: 'absolute',
+      width: 600,
+      height: 600,
+      borderRadius: '50%',
+      background: 'radial-gradient(circle, rgba(79,110,247,0.15) 0%, transparent 70%)',
+      top: '-200px',
+      right: '-100px',
+      pointerEvents: 'none',
+    },
+    decorativeCircle2: {
+      position: 'absolute',
+      width: 500,
+      height: 500,
+      borderRadius: '50%',
+      background: 'radial-gradient(circle, rgba(102,126,234,0.12) 0%, transparent 70%)',
+      bottom: '-150px',
+      left: '-100px',
+      pointerEvents: 'none',
+    },
+    decorativeCircle3: {
+      position: 'absolute',
+      width: 300,
+      height: 300,
+      borderRadius: '50%',
+      background: 'radial-gradient(circle, rgba(79,110,247,0.1) 0%, transparent 70%)',
+      top: '50%',
+      left: '10%',
+      transform: 'translateY(-50%)',
+      pointerEvents: 'none',
+    },
+    loginCard: {
+      width: '100%',
+      maxWidth: '480px',
+      position: 'relative',
+      zIndex: 10,
+    },
+    loginCardInner: {
+      background: 'rgba(255, 255, 255, 0.95)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: '24px',
+      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+      padding: '48px 40px',
+      '@media (max-width: 480px)': {
+        padding: '32px 24px',
+        borderRadius: '20px',
       },
     },
-    rightPanel: {
-      width: '480px',
-      flexShrink: 0,
+    logoSection: {
+      textAlign: 'center',
+      marginBottom: 32,
+    },
+    logoIcon: {
+      width: 72,
+      height: 72,
+      borderRadius: '20px',
+      background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
       display: 'flex',
-      flexDirection: 'column',
-      backgroundColor: '#fff',
-      overflowY: 'auto',
-      '@media (max-width: 768px)': {
-        width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      margin: '0 auto 20px',
+      fontSize: '36px',
+      boxShadow: '0 10px 30px rgba(79, 110, 247, 0.3)',
+    },
+    logoTitle: {
+      fontSize: '32px',
+      fontWeight: 700,
+      color: '#1a1a2e',
+      margin: '0 0 8px',
+      letterSpacing: '-0.5px',
+    },
+    logoSubtitle: {
+      fontSize: '15px',
+      color: '#888',
+      margin: 0,
+    },
+    features: {
+      display: 'flex',
+      gap: '12px',
+      justifyContent: 'center',
+      marginTop: 24,
+      flexWrap: 'wrap',
+      '@media (max-width: 480px)': {
+        gap: '8px',
       },
+    },
+    featureTag: {
+      padding: '8px 16px',
+      background: 'linear-gradient(135deg, rgba(79,110,247,0.08) 0%, rgba(102,126,234,0.08) 100%)',
+      borderRadius: '20px',
+      fontSize: '13px',
+      color: '#4f6ef7',
+      fontWeight: 500,
+      border: '1px solid rgba(79,110,247,0.15)',
+    },
+    footerWrapper: {
+      position: 'absolute',
+      bottom: 24,
+      left: 0,
+      right: 0,
+      zIndex: 10,
     },
   };
 });
-
-const ActionIcons = () => {
-  const { styles } = useStyles();
-
-  return (
-    <>
-      <AlipayCircleOutlined
-        key="AlipayCircleOutlined"
-        className={styles.action}
-      />
-      <TaobaoCircleOutlined
-        key="TaobaoCircleOutlined"
-        className={styles.action}
-      />
-      <WeiboCircleOutlined
-        key="WeiboCircleOutlined"
-        className={styles.action}
-      />
-    </>
-  );
-};
 
 const Lang = () => {
   const { styles } = useStyles();
@@ -289,97 +348,19 @@ return;
       </Helmet>
       <Lang />
 
-      {/* 左侧装饰面板 */}
-      <div className={styles.leftPanel}>
-        {/* 背景装饰圆 */}
-        <div style={{
-          position: 'absolute', width: 400, height: 400,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(79,110,247,0.25) 0%, transparent 70%)',
-          top: '-100px', right: '-100px',
-        }} />
-        <div style={{
-          position: 'absolute', width: 300, height: 300,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(102,126,234,0.2) 0%, transparent 70%)',
-          bottom: '-80px', left: '-60px',
-        }} />
+      {/* 背景装饰元素 */}
+      <div className={styles.decorativeCircle1} />
+      <div className={styles.decorativeCircle2} />
+      <div className={styles.decorativeCircle3} />
 
-        {/* 主内容 */}
-        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', color: '#fff' }}>
-          <div style={{
-            width: 72, height: 72,
-            borderRadius: '20px',
-            background: 'rgba(255,255,255,0.15)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 32px',
-            fontSize: '32px',
-          }}>
-            🐾
-          </div>
-          <h1 style={{
-            fontSize: '36px',
-            fontWeight: 700,
-            color: '#fff',
-            margin: '0 0 16px',
-            letterSpacing: '-0.5px',
-          }}>
-            VipClaw
-          </h1>
-          <p style={{
-            fontSize: '16px',
-            color: 'rgba(255,255,255,0.7)',
-            lineHeight: 1.8,
-            maxWidth: '360px',
-            margin: '0 auto 48px',
-          }}>
-            整合多种大模型、工具、MCP、Skills 的智能体平台，为企业和开发者提供一站式解决方案
-          </p>
-          <div style={{ display: 'flex', gap: '24px', justifyContent: 'center' }}>
-            {['🤖 多模型集成', '🛠️ 工具平台', '⚡ 高效协同'].map((item) => (
-              <div key={item} style={{
-                padding: '10px 20px',
-                background: 'rgba(255,255,255,0.1)',
-                backdropFilter: 'blur(8px)',
-                borderRadius: '8px',
-                border: '1px solid rgba(255,255,255,0.15)',
-                fontSize: '13px',
-                color: 'rgba(255,255,255,0.85)',
-                fontWeight: 500,
-              }}>
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 右侧登录面板 */}
-      <div className={styles.rightPanel}>
-        <div
-          style={{
-            flex: '1',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            padding: '48px 48px 32px',
-          }}
-        >
-          {/* 登录标题 */}
-          <div style={{ marginBottom: 40 }}>
-            <h2 style={{
-              fontSize: '26px',
-              fontWeight: 700,
-              color: '#1a1a2e',
-              margin: '0 0 8px',
-            }}>
-              欢迎回来 👋
-            </h2>
-            <p style={{ fontSize: '15px', color: '#888', margin: 0 }}>
-              登录您的 VipClaw 账户
-            </p>
+      {/* 登录卡片 */}
+      <div className={styles.loginCard}>
+        <div className={styles.loginCardInner}>
+          {/* Logo 区域 */}
+          <div className={styles.logoSection}>
+            <div className={styles.logoIcon}>🐾</div>
+            <h1 className={styles.logoTitle}>VipClaw</h1>
+            <p className={styles.logoSubtitle}>智能体平台 · 一站式解决方案</p>
           </div>
 
           <LoginForm
@@ -401,13 +382,13 @@ return;
                 size: 'large',
                 style: {
                   width: '100%',
-                  height: '48px',
+                  height: '50px',
                   fontSize: '16px',
                   fontWeight: 600,
-                  borderRadius: '10px',
+                  borderRadius: '12px',
                   background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
                   border: 'none',
-                  boxShadow: '0 6px 20px rgba(79, 110, 247, 0.35)',
+                  boxShadow: '0 8px 24px rgba(79, 110, 247, 0.35)',
                 },
               },
             }}
@@ -647,8 +628,19 @@ return;
               />
             </a>
           </div>
-        </LoginForm>
+          </LoginForm>
+
+          {/* 功能标签 */}
+          <div className={styles.features}>
+            <span className={styles.featureTag}>🤖 多模型集成</span>
+            <span className={styles.featureTag}>🛠️ 工具平台</span>
+            <span className={styles.featureTag}>⚡ 高效协同</span>
+          </div>
         </div>
+      </div>
+
+      {/* 页脚 */}
+      <div className={styles.footerWrapper}>
         <Footer />
       </div>
     </div>

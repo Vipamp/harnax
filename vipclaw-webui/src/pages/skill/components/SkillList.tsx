@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Table, Switch, message, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getSkillPage, toggleSkillStatus } from '@/services/ant-design-pro/skill';
+// @ts-ignore
+import { history } from '@umijs/max';
 import dayjs from 'dayjs';
 
 interface SkillListProps {
@@ -61,7 +63,14 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       dataIndex: 'name',
       key: 'name',
       width: 200,
-      render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
+      render: (text: string, record: API.SkillItem) => (
+        <a
+          onClick={() => history.push(`/context/skill/detail/${record.id}`)}
+          style={{ fontWeight: 500, cursor: 'pointer' }}
+        >
+          {text}
+        </a>
+      ),
     },
     {
       title: '描述',

@@ -13,6 +13,7 @@ import com.vipamp.vipclaw.admin.entity.McpServer;
 import com.vipamp.vipclaw.admin.entity.Skill;
 import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import com.vipamp.vipclaw.admin.mapper.AgentMapper;
+import com.vipamp.vipclaw.admin.mapper.SessionMapper;
 import com.vipamp.vipclaw.admin.service.AgentService;
 import com.vipamp.vipclaw.admin.service.McpServerService;
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
@@ -43,6 +44,7 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
     private final SkillRepositoryService skillRepositoryService;
     private final SkillService skillService;
     private final com.vipamp.vipclaw.admin.service.ModelService modelService;
+    private final SessionMapper sessionMapper;
     private final JwtUtil jwtUtil;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -95,11 +97,12 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         response.setSystemPrompt(agent.getSystemPrompt());
         response.setModelId(agent.getModelId());
         
-        // 查询模型名称
+        // 查询模型名称和价格
         if (agent.getModelId() != null) {
             com.vipamp.vipclaw.admin.entity.Model model = modelService.getById(agent.getModelId());
             if (model != null) {
                 response.setModelName(model.getModelName());
+                response.setModelPrice(model.getPrice());
             }
         }
         
@@ -109,6 +112,31 @@ public class AgentServiceImpl extends ServiceImpl<AgentMapper, Agent> implements
         response.setCreator(agent.getCreator());
         response.setCreateTime(agent.getCreateTime());
         response.setUpdateTime(agent.getUpdateTime());
+        
+        // 查询关联会话列表
+        List<com.vipamp.vipclaw.admin.entity.Session> sessions = sessionMapper.selectList(
+            new LambdaQueryWrapper<com.vipamp.vipclaw.admin.entity.Session>()
+                .eq(com.vipamp.vipclaw.admin.entity.Session::getAgentId, agent.getId())
+                .eq(com.vipamp.vipclaw.admin.entity.Session::getActive, 1)
+                .orderByDesc(com.vipamp.vipclaw.admin.entity.Session::getCreateTime)
+                .last("LIMIT 10")
+        );
+        
+        // 转换为 SessionItem 列表
+        List<com.vipamp.vipclaw.admin.dto.AgentResponse.SessionItem> sessionItems = sessions.stream()
+            .map(session -> {
+                com.vipamp.vipclaw.admin.dto.AgentResponse.SessionItem item = 
+                    new com.vipamp.vipclaw.admin.dto.AgentResponse.SessionItem();
+                item.setId(session.getId());
+                item.setTitle(session.getTitle());
+                item.setSessionDescription(session.getSessionDescription());
+                item.setSessionId(session.getSessionId());
+                return item;
+            })
+            .collect(java.util.stream.Collectors.toList());
+        
+        response.setSessionList(sessionItems);
+        response.setSessionCount(sessionItems.size());
         
         // 解析 MCP 列表 (JSON 格式)
         if (agent.getMcpList() != null && !agent.getMcpList().isEmpty()) {

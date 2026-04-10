@@ -54,6 +54,12 @@ public class AgentResponse {
      */
     @Schema(description = "对话模型名称", example = "GPT-4")
     private String modelName;
+    
+    /**
+     * 对话模型价格（每百万 token）
+     */
+    @Schema(description = "对话模型价格（每百万 token）", example = "50.0")
+    private Double modelPrice;
 
     /**
      * MCP 服务列表
@@ -66,6 +72,12 @@ public class AgentResponse {
      */
     @Schema(description = "技能列表")
     private List<SkillItem> skillList;
+    
+    /**
+     * 会话列表
+     */
+    @Schema(description = "会话列表")
+    private List<SessionItem> sessionList;
 
     /**
      * 所有者
@@ -102,6 +114,12 @@ public class AgentResponse {
      */
     @Schema(description = "更新时间", example = "2026-03-18 12:00:00")
     private LocalDateTime updateTime;
+
+    /**
+     * 关联会话数量
+     */
+    @Schema(description = "关联会话数量", example = "5")
+    private Integer sessionCount;
 
     /**
      * MCP 项
@@ -151,6 +169,25 @@ public class AgentResponse {
 
         @Schema(description = "技能描述", example = "代码审查技能")
         private String skillDescription;
+    }
+    
+    /**
+     * 会话项
+     */
+    @Data
+    @Schema(description = "会话项")
+    public static class SessionItem {
+        @Schema(description = "会话 ID", example = "1")
+        private Long id;
+
+        @Schema(description = "会话名称", example = "我的会话")
+        private String title;
+
+        @Schema(description = "会话描述", example = "这是一个会话")
+        private String sessionDescription;
+
+        @Schema(description = "会话 UUID", example = "session-123")
+        private String sessionId;
     }
 
     /**

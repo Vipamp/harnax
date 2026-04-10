@@ -52,6 +52,7 @@ export default {
   'menu.context.mcp': 'MCP 服务',
   'menu.context.model': '模型管理',
   'menu.context.skill': '技能管理',
+  'menu.context.channel': 'Channel 管理',
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
   'menu.agent.session': '会话',

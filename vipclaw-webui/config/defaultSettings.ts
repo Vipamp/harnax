@@ -1,7 +1,8 @@
 import type { ProLayoutProps } from '@ant-design/pro-components';
 
 /**
- * @name
+ * VipClaw 全局配置
+ * 设计方向：现代科技感 + 精致商务风
  */
 const Settings: ProLayoutProps & {
   pwa?: boolean;
@@ -10,36 +11,40 @@ const Settings: ProLayoutProps & {
   navTheme: 'light',
   // 科技蓝紫渐变主色
   colorPrimary: '#4f6ef7',
-  layout: 'side',  // 使用侧边菜单布局
+  layout: 'side',
   contentWidth: 'Fluid',
   fixedHeader: true,
   fixSiderbar: true,
   colorWeak: false,
   title: 'VipClaw',
   pwa: true,
-  logo: 'https://gw.alipayobjects.com/zos/rmsportal/KDpgvguMpGfqaHPjicRK.svg',
+  logo: '/logo.svg',
   iconfontUrl: '',
   token: {
-    // 通过 token 统一调整布局样式
-    // https://procomponents.ant.design/components/layout#%E9%80%9A%E8%BF%87-token-%E4%BF%AE%E6%94%B9%E6%A0%B7%E5%BC%8F
+    // 头部配置
     header: {
-      colorBgHeader: '#fff',
+      colorBgHeader: '#ffffff',
       colorHeaderTitle: '#1a1a2e',
       colorTextMenu: '#4a4a6a',
       colorTextMenuSelected: '#4f6ef7',
       colorBgMenuItemSelected: '#eef1fe',
-      heightLayoutHeader: 56,
+      colorBgMenuItemHover: '#f5f7ff',
+      heightLayoutHeader: 64,
     },
+    
+    // 侧边栏配置
     sider: {
-      colorMenuBackground: '#fff',
+      colorMenuBackground: '#ffffff',
       colorTextMenu: '#4a4a6a',
       colorTextMenuSelected: '#4f6ef7',
       colorBgMenuItemSelected: '#eef1fe',
       colorTextMenuItemHover: '#4f6ef7',
     },
+    
+    // 页面容器配置
     pageContainer: {
       paddingInlinePageContainerContent: 24,
-      paddingBlockPageContainerContent: 20,
+      paddingBlockPageContainerContent: 24,
     },
   },
 };

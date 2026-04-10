@@ -492,50 +492,67 @@ const JobManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
+        style={{ 
+          marginBottom: 24, 
+          borderRadius: '16px', 
+          boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+          border: '1px solid #f0f0f8',
+        }}
+        styles={{ body: { padding: '20px 24px' } }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Input
-            placeholder="搜索任务名称"
-            prefix={<SearchOutlined />}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 280, borderRadius: '8px' }}
-            allowClear
-          />
-          <Select
-            placeholder="状态筛选"
-            value={jobStatus}
-            onChange={(val) => setJobStatus(val)}
-            style={{ width: 140, borderRadius: '8px' }}
-            allowClear
-            options={[
-              { label: '运行中', value: 1 },
-              { label: '暂停', value: 0 },
-            ]}
-          />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
-            查询
-          </Button>
-          <Button
-            onClick={() => {
-              setKeyword('');
-              setJobStatus(undefined);
-              setCurrent(1);
-              loadData(1);
-            }}
-            style={{ borderRadius: '8px' }}
-          >
-            重置
-          </Button>
-          <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
+            <Input
+              placeholder="搜索任务名称"
+              prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onPressEnter={handleSearch}
+              style={{ width: 260, borderRadius: '10px', height: '40px' }}
+              allowClear
+            />
+            <Select
+              placeholder="状态筛选"
+              value={jobStatus}
+              onChange={(val) => setJobStatus(val)}
+              style={{ width: 140 }}
+              allowClear
+              options={[
+                { label: '运行中', value: 1 },
+                { label: '暂停', value: 0 },
+              ]}
+            />
+            <Button 
+              type="primary" 
+              onClick={handleSearch} 
+              style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}
+            >
+              查询
+            </Button>
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setJobStatus(undefined);
+                setCurrent(1);
+                loadData(1);
+              }}
+              style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}
+            >
+              重置
+            </Button>
+          </div>
           <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ borderRadius: '8px', fontWeight: 600 }}
+            style={{ 
+              borderRadius: '10px', 
+              height: '44px',
+              padding: '0 24px',
+              fontWeight: 600,
+              fontSize: '14px',
+              boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
+            }}
           >
             新建任务
           </Button>

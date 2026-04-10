@@ -66,6 +66,19 @@ public class SessionController {
         }
     }
 
+    @GetMapping("/check-title")
+    @Operation(summary = "检查会话名称是否存在", description = "检查会话名称是否已存在")
+    public Result<Boolean> checkSessionTitle(
+            @Parameter(description = "会话名称") @RequestParam(name = "title") String title) {
+        try {
+            boolean exists = sessionService.existsByTitle(title);
+            return Result.success(exists);
+        } catch (Exception e) {
+            log.error("检查会话名称失败", e);
+            return Result.error(e.getMessage());
+        }
+    }
+
     @PostMapping
     @Operation(summary = "创建会话", description = "新增会话信息")
     public Result<Void> createSession(

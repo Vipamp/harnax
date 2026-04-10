@@ -64,10 +64,26 @@ export default [
         component: './mcp',
       },
       {
+        path: '/context/mcp/detail/:id',
+        component: './mcp/detail',
+        hideInMenu: true,
+      },
+      {
         name: 'skill',
         icon: 'thunderbolt',
         path: '/context/skill',
         component: './skill',
+      },
+      {
+        path: '/context/skill/detail/:id',
+        component: './skill/detail',
+        hideInMenu: true,
+      },
+      {
+        name: 'channel',
+        icon: 'api',
+        path: '/context/channel',
+        component: './channel',
       },
     ],
   },

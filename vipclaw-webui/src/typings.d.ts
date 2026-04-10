@@ -326,8 +326,11 @@ message?: string;
     systemPrompt?: string;
     modelId?: number;
     modelName?: string;  // 模型名称
+    modelPrice?: number;  // 模型价格
     mcpList?: AgentMcpConfig[];
     skillList?: AgentSkillConfig[];
+    sessionList?: SessionItem[];  // 会话列表
+    sessionCount?: number;  // 关联会话数量
     owner?: string;
     status: number;
     isPublic?: number;
@@ -446,5 +449,32 @@ message?: string;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+  };
+
+  /**
+   * @zh-CN MCP 工具参数
+   */
+  export type McpToolParameter = {
+    name: string;
+    type: string;
+    description: string;
+  };
+
+  /**
+   * @zh-CN MCP 工具
+   */
+  export type McpTool = {
+    name: string;
+    parameters: McpToolParameter[];
+  };
+
+  /**
+   * @zh-CN MCP 工具列表响应
+   */
+  export type McpToolsResponse = {
+    code: number;
+    message: string;
+    data: McpTool[];
+    timestamp: number;
   };
 }

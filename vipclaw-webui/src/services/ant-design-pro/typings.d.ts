@@ -315,6 +315,7 @@ declare namespace API {
     systemPrompt?: string;
     modelId?: number;
     modelName?: string;
+    modelPrice?: number;
     mcpList?: SessionMcpItem[];
     skillList?: SessionSkillItem[];
     owner?: string;
@@ -343,5 +344,53 @@ declare namespace API {
     title: string;
     sessionDescription?: string;
     agentId: number;
+  };
+
+  // Channel 相关类型
+  type ChannelItem = {
+    id: number;
+    name: string;
+    type: string;
+    typeDisplayName?: string;
+    agentId: number;
+    agentName?: string;
+    webhookUrl?: string;
+    token?: string;
+    encodingAesKey?: string;
+    appId?: string;
+    appSecret?: string;
+    callbackKey?: string;
+    callbackUrl?: string;
+    description?: string;
+    status: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type ChannelCreateRequest = {
+    name: string;
+    type: string;
+    agentId: number;
+    webhookUrl?: string;
+    token?: string;
+    encodingAesKey?: string;
+    appId?: string;
+    appSecret?: string;
+    description?: string;
+    status?: number;
+  };
+
+  type ChannelUpdateRequest = {
+    id?: number;
+    name?: string;
+    type?: string;
+    agentId?: number;
+    webhookUrl?: string;
+    token?: string;
+    encodingAesKey?: string;
+    appId?: string;
+    appSecret?: string;
+    description?: string;
+    status?: number;
   };
 }

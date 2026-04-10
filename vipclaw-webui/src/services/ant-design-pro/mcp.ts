@@ -90,3 +90,11 @@ export async function connectivityTestMcpServer(id: number, options?: { [key: st
     ...(options || {}),
   });
 }
+
+/** 获取 MCP 工具列表 GET /admin/mcp/${id}/list_tools */
+export async function getMcpTools(id: number, options?: { [key: string]: any }) {
+  return request(`/admin/mcp/${id}/list_tools`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
