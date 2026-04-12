@@ -115,6 +115,11 @@ export default [
         component: './user/management',
         access: 'canAccessUserManagement',
       },
+      {
+        name: 'token.monitor',
+        path: '/system/token-monitor',
+        component: './token-monitor',
+      },
     ],
   },
   {

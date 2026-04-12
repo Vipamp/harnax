@@ -34,19 +34,12 @@ export const errorConfig: RequestConfig = {
  // 请求拦截器 - 添加 JWT Token
  requestInterceptors: [
  async (url, options) => {
- console.log('[请求拦截器] === 开始处理 ===');
- console.log('[请求拦截器] URL:', url);
- console.log('[请求拦截器] options:', JSON.stringify(options, null, 2));
- 
  // 从 localStorage 获取 token
  const tokenInfoStr = localStorage.getItem('tokenInfo');
- console.log('[请求拦截器] tokenInfoStr:', tokenInfoStr);
 
  if (tokenInfoStr) {
   try {
  const tokenInfo = JSON.parse(tokenInfoStr);
- console.log('[请求拦截器] tokenInfo:', tokenInfo);
- console.log('[请求拦截器] accessToken:', tokenInfo.accessToken);
  
   if (tokenInfo.accessToken) {
    // 在请求头中添加 Authorization
@@ -54,18 +47,13 @@ export const errorConfig: RequestConfig = {
     ...options.headers,
  Authorization: `Bearer ${tokenInfo.accessToken}`,
    };
- console.log('[请求拦截器] 新的 headers:', headers);
- console.log('[请求拦截器] Authorization:', headers.Authorization);
    
- const result = { url, options: { ...options, headers } };
- console.log('[请求拦截器] 返回值:', result);
- return result;
+ return { url, options: { ...options, headers } };
  }
  } catch (e) {
  console.error('[请求拦截器] 解析 token 失败:', e);
  }
  }
- console.log('[请求拦截器] 未找到 tokenInfo，未添加 Authorization');
  return { url, options };
  },
  ],
@@ -126,15 +114,33 @@ export const errorConfig: RequestConfig = {
       // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
       const { status } = error.response;
       if (status === 401) {
-        // 未授权，清除登录信息并跳转到登录页
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('tokenInfo');
-        // 避免登录页重复跳转
-        if (window.location.pathname !== '/login') {
-          history.push({
-            pathname: '/login',
-            search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
-          });
+        // 未授权，先检查 localStorage 中是否有 token
+        const tokenInfoStr = localStorage.getItem('tokenInfo');
+        if (!tokenInfoStr) {
+          // 确实没有登录，跳转到登录页
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('tokenInfo');
+          // 避免登录页重复跳转
+          if (window.location.pathname !== '/login') {
+            history.push({
+              pathname: '/login',
+              search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+            });
+          }
+        } else {
+          // 有 token 但返回 401，说明 token 可能过期或无效，提示用户重新登录
+          message.error('登录已过期，请重新登录');
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('tokenInfo');
+          // 延迟跳转，让用户看到错误提示
+          setTimeout(() => {
+            if (window.location.pathname !== '/login') {
+              history.push({
+                pathname: '/login',
+                search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+              });
+            }
+          }, 1000);
         }
         return;
       }

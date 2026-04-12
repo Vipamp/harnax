@@ -57,4 +57,5 @@ export default {
   'menu.agent.management': 'Agent Management',
   'menu.system': 'System Management',
   'menu.system.user.management': 'User Management',
+  'menu.system.token.monitor': 'Token Monitor',
 };

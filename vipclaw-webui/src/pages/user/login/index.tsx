@@ -200,7 +200,22 @@ const Login: React.FC = () => {
 
   // 检查用户是否已登录，如果已登录则跳转到欢迎页
   React.useEffect(() => {
-    if (initialState?.currentUser) {
+    // 只有当 localStorage 中有有效的 token 且 currentUser 存在时，才认为是已登录状态
+    const tokenInfoStr = localStorage.getItem('tokenInfo');
+    const hasValidToken = tokenInfoStr && (() => {
+      try {
+        const tokenInfo = JSON.parse(tokenInfoStr);
+        // 检查 token 是否过期
+        if (tokenInfo.expiresAt && Date.now() < tokenInfo.expiresAt) {
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    if (initialState?.currentUser && hasValidToken) {
      message.success('您已登录，正在跳转到首页...');
      history.push('/welcome');
     }

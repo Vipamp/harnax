@@ -16,5 +16,5 @@ fun interface McpAdaptor {
      *
      * @return McpConfig 实例
      */
-    fun getConfig(mcpName: String): McpConfig?
+    fun getConfig(mcpId: Long): McpConfig?
 }

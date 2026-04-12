@@ -64,6 +64,8 @@ export async function getInitialState(): Promise<{
      pathname: loginPath,
      search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
    });
+   // 确保返回空的用户信息
+   currentUser = undefined;
  }
 
  return {
