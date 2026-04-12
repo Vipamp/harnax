@@ -31,6 +31,10 @@ public class SecurityConfig {
         http
                 // 禁用 CSRF
                 .csrf(AbstractHttpConfigurer::disable)
+                // 禁用 Form Login (防止 302 重定向)
+                .formLogin(AbstractHttpConfigurer::disable)
+                // 禁用 HTTP Basic
+                .httpBasic(AbstractHttpConfigurer::disable)
                 // 配置 CORS（必须在 JWT 过滤器之前）
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // 配置授权规则

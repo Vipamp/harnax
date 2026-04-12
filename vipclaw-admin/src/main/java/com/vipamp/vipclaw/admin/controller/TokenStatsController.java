@@ -2,7 +2,7 @@ package com.vipamp.vipclaw.admin.controller;
 
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse;
 import com.vipamp.vipclaw.admin.service.TokenStatsService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

@@ -6,14 +6,14 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest;
 import com.vipamp.vipclaw.admin.dto.ModelResponse;
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest;
-import com.vipamp.vipclaw.admin.entity.Model;
-import com.vipamp.vipclaw.admin.entity.ModelProvider;
 import com.vipamp.vipclaw.admin.exception.BizException;
-import com.vipamp.vipclaw.admin.mapper.ModelMapper;
-import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper;
 import com.vipamp.vipclaw.admin.service.ModelService;
 import com.vipamp.vipclaw.admin.util.JwtUtil;
 import com.vipamp.vipclaw.admin.util.UserContextUtil;
+import com.vipamp.vipclaw.common.entity.Model;
+import com.vipamp.vipclaw.common.entity.ModelProvider;
+import com.vipamp.vipclaw.common.mapper.ModelMapper;
+import com.vipamp.vipclaw.common.mapper.ModelProviderMapper;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
 
         // 获取当前用户
         String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
-        
+
         // 权限过滤：只查询公开的或自己创建的
         queryWrapper.and(wrapper -> wrapper
                 .eq(Model::getIsPublic, 1)
@@ -197,7 +197,7 @@ public class ModelServiceImpl extends ServiceImpl<ModelMapper, Model> implements
         // 设置创建人
         String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
         model.setCreator(currentUsername);
-        
+
         // 默认不公开
         if (model.getIsPublic() == null) {
             model.setIsPublic(0);

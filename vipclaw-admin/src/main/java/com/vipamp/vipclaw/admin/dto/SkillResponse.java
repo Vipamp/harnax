@@ -1,8 +1,7 @@
 package com.vipamp.vipclaw.admin.dto;
 
-import com.vipamp.vipclaw.admin.entity.Skill;
-import com.vipamp.vipclaw.admin.entity.SkillRepository;
-import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
+import com.vipamp.vipclaw.common.entity.Skill;
+import com.vipamp.vipclaw.common.entity.SkillRepository;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -118,7 +117,7 @@ public class SkillResponse {
     /**
      * 从实体对象转换（包含仓库信息）
      *
-     * @param skill 技能实体
+     * @param skill      技能实体
      * @param repository 仓库实体
      * @return 技能响应对象
      */

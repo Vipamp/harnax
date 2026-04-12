@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.dto;
 
-import com.vipamp.vipclaw.admin.entity.SkillRepository;
+import com.vipamp.vipclaw.common.entity.SkillRepository;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 

@@ -35,6 +35,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>com.vipamp</groupId>
+            <artifactId>vipclaw-common-entity</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -100,13 +106,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-quartz</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>com.vipamp</groupId>
-            <artifactId>vipclaw-agent</artifactId>
-            <version>${revision}</version>
-        </dependency>
-
     </dependencies>
 
     <build>

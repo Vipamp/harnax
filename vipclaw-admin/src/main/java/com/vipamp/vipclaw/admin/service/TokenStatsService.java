@@ -2,7 +2,7 @@ package com.vipamp.vipclaw.admin.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse;
-import com.vipamp.vipclaw.admin.entity.TokenStats;
+import com.vipamp.vipclaw.common.entity.TokenStats;
 
 /**
  * Token 消耗统计服务接口

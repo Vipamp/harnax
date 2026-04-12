@@ -2,9 +2,9 @@ package com.vipamp.vipclaw.admin.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse;
-import com.vipamp.vipclaw.admin.entity.TokenStats;
-import com.vipamp.vipclaw.admin.mapper.TokenStatsMapper;
 import com.vipamp.vipclaw.admin.service.TokenStatsService;
+import com.vipamp.vipclaw.common.entity.TokenStats;
+import com.vipamp.vipclaw.common.mapper.TokenStatsMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,7 +39,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
                 tokenStats.getSessionId(),
                 tokenStats.getChatModelId(),
                 tokenStats.getTotalToken());
-        
+
         boolean success = this.save(tokenStats);
         log.info("Token 消耗记录保存{}", success ? "成功" : "失败");
         return success;
@@ -141,7 +141,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
      */
     private TokenStatsAggregationResponse getDimensionTimeSeriesData(
             String startTime, String endTime, String granularity, String dimensionType) {
-        
+
         TokenStatsAggregationResponse response = new TokenStatsAggregationResponse();
 
         // 不支持按周统计
@@ -241,7 +241,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
 
         List<Map<String, Object>> result = new ArrayList<>();
         LocalDateTime currentTime = startTime;
-        
+
         // 根据粒度规范化起始时间
         switch (granularity) {
             case "hour":
@@ -319,9 +319,9 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
 
         // 按维度ID分组
         Map<String, List<Map<String, Object>>> dimensionGroups = new HashMap<>();
-        String dimensionIdField = dimensionType.equals("session") ? "sessionId" : 
-                                  dimensionType.equals("agent") ? "agentId" : "modelId";
-        
+        String dimensionIdField = dimensionType.equals("session") ? "sessionId" :
+                dimensionType.equals("agent") ? "agentId" : "modelId";
+
         for (Map<String, Object> data : queryData) {
             Object dimIdObj = data.get(dimensionIdField);
             String dimId = dimIdObj != null ? dimIdObj.toString() : "unknown";
@@ -352,7 +352,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
 
             // 补全该维度的时间点
             LocalDateTime currentTime = startTime;
-            
+
             // 根据粒度规范化起始时间
             switch (granularity) {
                 case "hour":
@@ -366,7 +366,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
                     currentTime = currentTime.withHour(0).withMinute(0).withSecond(0);
                     break;
             }
-            
+
             while (!currentTime.isAfter(endTime)) {
                 String timeKey;
                 String displayTime;
@@ -400,7 +400,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
                     emptyData.put("totalOutputToken", 0L);
                     emptyData.put("grandTotalToken", 0L);
                     emptyData.put("totalFee", java.math.BigDecimal.ZERO);
-                    
+
                     // 保留维度字段
                     if ("model".equals(dimensionType)) {
                         Map<String, Object> sampleData = dimData.isEmpty() ? new HashMap<>() : dimData.get(0);
@@ -415,7 +415,7 @@ public class TokenStatsServiceImpl extends ServiceImpl<TokenStatsMapper, TokenSt
                         emptyData.put("sessionId", sampleData.get("sessionId"));
                         emptyData.put("sessionTitle", sampleData.get("sessionTitle"));
                     }
-                    
+
                     result.add(emptyData);
                 } else {
                     // 使用查询到的数据，但更新 timePoint 为显示时间

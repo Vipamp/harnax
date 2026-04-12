@@ -6,7 +6,7 @@ import com.vipamp.vipclaw.admin.dto.ChannelResponse;
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest;
 import com.vipamp.vipclaw.admin.entity.Channel;
 import com.vipamp.vipclaw.admin.service.ChannelService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

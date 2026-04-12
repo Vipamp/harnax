@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SessionResponse;
-import com.vipamp.vipclaw.admin.entity.Session;
+import com.vipamp.vipclaw.common.entity.Session;
 import org.springframework.lang.Nullable;
 
 /**

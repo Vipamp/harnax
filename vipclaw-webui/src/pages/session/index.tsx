@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, MessageOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, RobotOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
+import ChatWindow from './components/ChatWindow';
 // @ts-ignore
 import { useModel, useLocation } from '@umijs/max';
 
@@ -119,27 +120,27 @@ const SessionPage: React.FC = () => {
         ),
       }}
     >
-      <div style={{ display: 'flex', height: 'calc(100vh - 200px)', gap: 16 }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 150px)', gap: 12, overflow: 'hidden' }}>
         {/* 左侧：会话列表 */}
         <Card
           style={{ 
-            width: 320, 
+            width: 300, 
             display: 'flex', 
             flexDirection: 'column',
-            borderRadius: '16px',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-            border: '1px solid #f0f0f8',
+            borderRadius: '14px',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            border: '1px solid #ebebf0',
           }}
-          styles={{ body: { flex: 1, overflow: 'auto', padding: '16px' } }}
+          styles={{ body: { flex: 1, overflow: 'auto', padding: '12px' } }}
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600 }}>会话列表</span>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>会话列表</span>
               <Button 
                 type="primary" 
                 icon={<PlusOutlined />} 
                 size="small" 
                 onClick={handleCreateSession}
-                style={{ borderRadius: '8px' }}
+                style={{ borderRadius: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none' }}
               >
                 新建
               </Button>
@@ -158,11 +159,12 @@ const SessionPage: React.FC = () => {
                     onClick={() => handleSelectSession(session)}
                     style={{
                       cursor: 'pointer',
-                      backgroundColor: selectedSession?.id === session.id ? '#e6f4ff' : 'transparent',
-                      borderRadius: 8,
-                      padding: '8px 12px',
+                      backgroundColor: selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
+                      borderRadius: 10,
+                      padding: '10px 12px',
                       marginBottom: 4,
-                      border: `1px solid ${selectedSession?.id === session.id ? '#1890ff' : 'transparent'}`,
+                      border: `1px solid ${selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.18)' : 'transparent'}`,
+                      transition: 'all 0.2s',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
@@ -213,34 +215,40 @@ const SessionPage: React.FC = () => {
             flex: 1, 
             display: 'flex', 
             flexDirection: 'column',
-            borderRadius: '16px',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-            border: '1px solid #f0f0f8',
+            borderRadius: '14px',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            border: '1px solid #ebebf0',
+            overflow: 'hidden',
           }}
-          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column' } }}
+          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', minHeight: 0, height: 0 } }}
         >
           {selectedSession ? (
             <>
               {/* 会话标题栏 */}
               <div style={{ 
-                padding: '12px 16px', 
-                borderBottom: '1px solid #f0f0f0'
+                padding: '14px 24px',
+                borderBottom: '1px solid #ebebf0',
+                background: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexShrink: 0,
               }}>
-                <Title level={4} style={{ margin: 0 }}>{selectedSession.title}</Title>
+                <div style={{
+                  width: 28, height: 28, borderRadius: 8,
+                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 14, color: '#fff', flexShrink: 0,
+                }}>
+                  <RobotOutlined />
+                </div>
+                <Title level={5} style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                  {selectedSession.title}
+                </Title>
               </div>
               
-              {/* 聊天内容区域 - 暂时保留空间 */}
-              <div style={{ 
-                flex: 1, 
-                display: 'flex', 
-                flexDirection: 'column',
-                alignItems: 'center', 
-                justifyContent: 'center',
-                color: '#999'
-              }}>
-                <MessageOutlined style={{ fontSize: 64, marginBottom: 16 }} />
-                <Text type="secondary">AI 聊天窗口开发中...</Text>
-              </div>
+              {/* 聊天窗口 */}
+              <ChatWindow sessionId={selectedSession.sessionId} />
             </>
           ) : (
             <div style={{ 
@@ -249,10 +257,20 @@ const SessionPage: React.FC = () => {
               flexDirection: 'column',
               alignItems: 'center', 
               justifyContent: 'center',
-              color: '#999'
+              gap: 8,
             }}>
-              <MessageOutlined style={{ fontSize: 64, marginBottom: 16 }} />
-              <Text type="secondary">请选择或创建一个会话</Text>
+              <div style={{
+                width: 56, height: 56, borderRadius: 16,
+                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 26, color: '#fff',
+                boxShadow: '0 6px 20px rgba(99,102,241,0.2)',
+                marginBottom: 8,
+              }}>
+                <RobotOutlined />
+              </div>
+              <Text style={{ fontSize: 15, fontWeight: 600, color: '#1e1e2e' }}>选择一个会话开始对话</Text>
+              <Text style={{ fontSize: 13, color: '#9ca3af' }}>或点击左侧「新建」创建新会话</Text>
             </div>
           )}
         </Card>

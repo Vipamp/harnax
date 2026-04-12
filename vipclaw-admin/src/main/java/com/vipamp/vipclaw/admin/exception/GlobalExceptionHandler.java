@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.exception;
 
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
         error.put("status", 500);
         error.put("error", "Internal Server Error");
         error.put("message", ex.getMessage());
-        
+
         return ResponseEntity.status(500).body(error);
     }
 
@@ -60,7 +60,7 @@ public class GlobalExceptionHandler {
         error.put("status", 400);
         error.put("error", "Bad Request");
         error.put("message", ex.getMessage());
-        
+
         return ResponseEntity.status(400).body(error);
     }
 }

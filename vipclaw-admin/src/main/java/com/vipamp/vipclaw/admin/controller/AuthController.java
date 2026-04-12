@@ -5,7 +5,7 @@ import com.vipamp.vipclaw.admin.dto.LoginRequest;
 import com.vipamp.vipclaw.admin.dto.LoginResponse;
 import com.vipamp.vipclaw.admin.service.AuthService;
 import com.vipamp.vipclaw.admin.service.CaptchaService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;

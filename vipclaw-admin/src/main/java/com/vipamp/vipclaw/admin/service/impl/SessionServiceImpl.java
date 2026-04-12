@@ -4,22 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SessionResponse;
 import com.vipamp.vipclaw.admin.entity.Agent;
-import com.vipamp.vipclaw.admin.entity.McpServer;
-import com.vipamp.vipclaw.admin.entity.Session;
-import com.vipamp.vipclaw.admin.entity.Skill;
-import com.vipamp.vipclaw.admin.entity.SkillRepository;
 import com.vipamp.vipclaw.admin.exception.BizException;
-import com.vipamp.vipclaw.admin.mapper.SessionMapper;
-import com.vipamp.vipclaw.admin.service.AgentService;
-import com.vipamp.vipclaw.admin.service.McpServerService;
-import com.vipamp.vipclaw.admin.service.SessionService;
-import com.vipamp.vipclaw.admin.service.SkillRepositoryService;
-import com.vipamp.vipclaw.admin.service.SkillService;
+import com.vipamp.vipclaw.common.entity.*;
+import com.vipamp.vipclaw.common.mapper.SessionMapper;
+import com.vipamp.vipclaw.admin.service.*;
 import com.vipamp.vipclaw.admin.util.JwtUtil;
 import com.vipamp.vipclaw.admin.util.UserContextUtil;
 import lombok.RequiredArgsConstructor;
@@ -113,7 +105,7 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
 
         // 查询模型名称
         if (session.getModelId() != null) {
-            com.vipamp.vipclaw.admin.entity.Model model = modelService.getById(session.getModelId());
+            Model model = modelService.getById(session.getModelId());
             if (model != null) {
                 response.setModelName(model.getModelName());
                 response.setModelPrice(model.getPrice());
@@ -131,8 +123,9 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
         if (session.getMcpList() != null && !session.getMcpList().isEmpty()) {
             try {
                 List<Map<String, Object>> mcpConfigs = objectMapper.readValue(
-                    session.getMcpList(),
-                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
+                        session.getMcpList(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {
+                        }
                 );
 
                 List<SessionResponse.McpItem> mcpItems = new ArrayList<>();
@@ -201,9 +194,9 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
         try {
             // 检查会话名称是否重复
             long count = this.count(
-                new LambdaQueryWrapper<Session>()
-                    .eq(Session::getTitle, request.getTitle())
-                    .eq(Session::getActive, 1)
+                    new LambdaQueryWrapper<Session>()
+                            .eq(Session::getTitle, request.getTitle())
+                            .eq(Session::getActive, 1)
             );
             if (count > 0) {
                 throw new BizException("会话名称已存在，请使用其他名称");
@@ -220,7 +213,7 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
             session.setSessionDescription(request.getSessionDescription());
             session.setSessionId(UUID.randomUUID().toString());
             session.setAgentId(request.getAgentId());
-            
+
             // 从智能体复制信息
             session.setName(agent.getName());
             session.setDescription(agent.getDescription());
@@ -275,13 +268,13 @@ public class SessionServiceImpl extends ServiceImpl<SessionMapper, Session> impl
 
         return this.removeById(id);
     }
-    
+
     @Override
     public boolean existsByTitle(String title) {
         long count = this.count(
-            new LambdaQueryWrapper<Session>()
-                .eq(Session::getTitle, title)
-                .eq(Session::getActive, 1)
+                new LambdaQueryWrapper<Session>()
+                        .eq(Session::getTitle, title)
+                        .eq(Session::getActive, 1)
         );
         return count > 0;
     }

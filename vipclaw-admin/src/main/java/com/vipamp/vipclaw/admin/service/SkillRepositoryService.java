@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest;
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse;
-import com.vipamp.vipclaw.admin.entity.SkillRepository;
+import com.vipamp.vipclaw.common.entity.SkillRepository;
 import jakarta.annotation.Nullable;
 
 import java.util.List;

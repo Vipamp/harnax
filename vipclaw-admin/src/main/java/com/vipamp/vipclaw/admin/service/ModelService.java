@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest;
 import com.vipamp.vipclaw.admin.dto.ModelResponse;
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest;
-import com.vipamp.vipclaw.admin.entity.Model;
+import com.vipamp.vipclaw.common.entity.Model;
 
 /**
  * 模型服务接口

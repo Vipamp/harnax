@@ -14,16 +14,40 @@ export default {
   dev: {
     // localhost:8000/admin/** -> http://localhost:8080/admin/**
     '/admin/': {
-      // 要代理的地址
       target: 'http://localhost:8080',
-      // 配置了这个可以从 http 代理到 https
-      // 依赖 origin 的功能可能需要这个，比如 cookie
       changeOrigin: true,
+    },
+    // localhost:8000/ai/** -> http://localhost:8081/ai/**
+    '/ai/': {
+      target: 'http://localhost:8081',
+      changeOrigin: true,
+      // 接管响应处理，手动转发每个 chunk，绕过 umi 开发服务器 gzip 缓冲
+      selfHandleResponse: true,
+      onProxyRes: (proxyRes: any, _req: any, res: any) => {
+        // 设置响应头，禁止压缩
+        const headers: Record<string, string> = {};
+        for (const key of Object.keys(proxyRes.headers)) {
+          if (key.toLowerCase() !== 'content-encoding') {
+            headers[key] = proxyRes.headers[key];
+          }
+        }
+        headers['Cache-Control'] = 'no-cache, no-transform';
+        headers['X-Accel-Buffering'] = 'no';
+        res.writeHead(proxyRes.statusCode, headers);
+
+        // 逐块转发，每写一块立即 flush
+        proxyRes.on('data', (chunk: any) => {
+          res.write(chunk);
+          if (typeof res.flush === 'function') res.flush();
+        });
+        proxyRes.on('end', () => {
+          res.end();
+        });
+      },
     },
     '/api/': {
       target: 'https://proapi.azurewebsites.net',
       changeOrigin: true,
-      // pathRewrite: { '^': '' },
     },
   },
   /**

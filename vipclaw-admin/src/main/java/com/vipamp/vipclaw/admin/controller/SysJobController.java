@@ -9,7 +9,7 @@ import com.vipamp.vipclaw.admin.entity.SysJob;
 import com.vipamp.vipclaw.admin.entity.SysJobLog;
 import com.vipamp.vipclaw.admin.service.SysJobLogService;
 import com.vipamp.vipclaw.admin.service.SysJobService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

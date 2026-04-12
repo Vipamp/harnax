@@ -4,9 +4,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest;
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse;
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest;
-import com.vipamp.vipclaw.admin.entity.ModelProvider;
 import com.vipamp.vipclaw.admin.service.ModelProviderService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
+import com.vipamp.vipclaw.common.entity.ModelProvider;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,7 +38,7 @@ public class ModelProviderController {
             @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") Integer pageSize,
             @Parameter(description = "服务商名称") @RequestParam(name = "name", required = false) String name,
             @Parameter(description = "状态") @RequestParam(name = "status", required = false) Integer status) {
-        
+
         Page<ModelProvider> page = new Page<>(current, pageSize);
         Page<ModelProviderResponse> result = modelProviderService.page(page, name, status);
         return Result.success(result);

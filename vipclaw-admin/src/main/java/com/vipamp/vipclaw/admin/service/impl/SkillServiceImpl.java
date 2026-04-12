@@ -7,12 +7,12 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest;
 import com.vipamp.vipclaw.admin.dto.SkillResponse;
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest;
-import com.vipamp.vipclaw.admin.entity.Skill;
 import com.vipamp.vipclaw.admin.exception.BizException;
-import com.vipamp.vipclaw.admin.mapper.SkillMapper;
 import com.vipamp.vipclaw.admin.service.SkillService;
 import com.vipamp.vipclaw.admin.util.JwtUtil;
 import com.vipamp.vipclaw.admin.util.UserContextUtil;
+import com.vipamp.vipclaw.common.entity.Skill;
+import com.vipamp.vipclaw.common.mapper.SkillMapper;
 import jakarta.annotation.Nullable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +48,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, Skill> implements
 
         // 获取当前用户
         String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
-        
+
         // 权限过滤：只查询公开的或自己创建的
         wrapper.and(w -> w
                 .eq(Skill::getIsPublic, 1)
@@ -113,11 +113,11 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, Skill> implements
         skill.setResources(request.getResources());
         skill.setStatus(request.getStatus() != null ? request.getStatus() : 1); // 默认启用
         skill.setActive(1);  // 默认生效
-        
+
         // 设置创建人
         String currentUsername = UserContextUtil.getCurrentUsername(jwtUtil);
         skill.setCreator(currentUsername);
-        
+
         // 默认不公开
         if (skill.getIsPublic() == null) {
             skill.setIsPublic(0);

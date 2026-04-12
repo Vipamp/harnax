@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.dto;
 
-import com.vipamp.vipclaw.admin.entity.McpServer;
+import com.vipamp.vipclaw.common.entity.McpServer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 

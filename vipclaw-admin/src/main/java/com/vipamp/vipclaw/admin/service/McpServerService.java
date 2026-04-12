@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest;
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest;
-import com.vipamp.vipclaw.admin.entity.McpServer;
+import com.vipamp.vipclaw.common.entity.McpServer;
 import org.springframework.lang.Nullable;
 
 /**

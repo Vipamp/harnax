@@ -1,0 +1,34 @@
+server:
+  port: 8081
+  servlet:
+    context-path: /ai
+
+spring:
+  application:
+    name: vipclaw-agent-service
+  
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+
+#mybatis-plus:
+#  mapper-locations: classpath*:/mapper/**/*.xml
+#  type-aliases-package: com.vipamp.vipclaw.agent.service.entity
+#  configuration:
+#    map-underscore-to-camel-case: true
+#    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+logging:
+  level:
+    com.vipamp.vipclaw.agent.service: debug
+
+session:
+  jdbc-url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  database-name: vipclaw
+  username: root
+  password: 123456
+
+local:
+  tmp-dir:

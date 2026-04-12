@@ -6,7 +6,7 @@ import com.vipamp.vipclaw.admin.dto.AgentResponse;
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest;
 import com.vipamp.vipclaw.admin.entity.Agent;
 import com.vipamp.vipclaw.admin.service.AgentService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

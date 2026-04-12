@@ -6,7 +6,7 @@ import com.vipamp.vipclaw.admin.dto.SysUserResponse;
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest;
 import com.vipamp.vipclaw.admin.entity.SysUser;
 import com.vipamp.vipclaw.admin.service.SysUserService;
-import com.vipamp.vipclaw.admin.vo.Result;
+import com.vipamp.vipclaw.common.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;

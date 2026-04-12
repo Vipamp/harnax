@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.common.log
 
-import java.util.logging.Logger
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 /**
  * @Author: heqingsong
@@ -9,5 +10,5 @@ import java.util.logging.Logger
  * @Project: vipclaw
  */
 inline fun <reified T> T.logger(): Logger {
-    return Logger.getLogger(T::class.java.name)
+    return LoggerFactory.getLogger(T::class.java)
 }

@@ -15,7 +15,9 @@
 
     <modules>
         <module>vipclaw-common</module>
-        <module>vipclaw-core</module>
+        <module>vipclaw-common-entity</module>
+        <module>vipclaw-agent</module>
+        <module>vipclaw-channel</module>
         <module>vipclaw-admin</module>
     </modules>
 
@@ -53,6 +55,17 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-reload4j</artifactId>
+        </dependency>
+    </dependencies>
 
     <build>
         <pluginManagement>
