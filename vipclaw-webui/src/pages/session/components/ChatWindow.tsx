@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, message } from 'antd';
+import { Input, Button, message, Modal, Table, Tag, Space } from 'antd';
 import {
   SendOutlined,
   BulbOutlined,
@@ -12,6 +12,7 @@ import {
   UserOutlined,
   CopyOutlined,
   CheckOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,10 +23,18 @@ import styles from './ChatWindow.less';
 const { TextArea } = Input;
 
 /* ─── 类型 ─── */
+interface PendingCallTool {
+  toolId: string;
+  toolName: string;
+  arguments: Record<string, any>;
+  isDangerous: boolean;
+}
+
 interface MessageSegment {
-  type: 'text' | 'thinking' | 'tool_call' | 'tool_result';
+  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_confirm';
   content: string;
   toolName?: string;
+  pendingCallTools?: PendingCallTool[];
 }
 
 interface ChatMessage {
@@ -136,6 +145,89 @@ const ToolResultCard: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
+/* ─── 工具确认卡片 ─── */
+const ToolConfirmCard: React.FC<{
+  pendingCallTools: PendingCallTool[];
+  onConfirm: (confirmed: boolean) => void;
+}> = ({ pendingCallTools, onConfirm }) => {
+  const [modalVisible, setModalVisible] = useState(true);
+
+  const handleConfirm = () => {
+    setModalVisible(false);
+    onConfirm(true);
+  };
+
+  const handleReject = () => {
+    setModalVisible(false);
+    onConfirm(false);
+  };
+
+  const columns = [
+    {
+      title: '工具名称',
+      dataIndex: 'toolName',
+      key: 'toolName',
+      width: 150,
+    },
+    {
+      title: '参数',
+      dataIndex: 'arguments',
+      key: 'arguments',
+      render: (args: Record<string, any>) => (
+        <pre style={{ margin: 0, fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      ),
+    },
+    {
+      title: '风险级别',
+      dataIndex: 'isDangerous',
+      key: 'isDangerous',
+      width: 100,
+      render: (isDangerous: boolean) => (
+        <Tag color={isDangerous ? 'red' : 'green'}>
+          {isDangerous ? '高风险' : '低风险'}
+        </Tag>
+      ),
+    },
+  ];
+
+  return (
+    <Modal
+      title={
+        <span>
+          <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
+          工具执行确认
+        </span>
+      }
+      open={modalVisible}
+      onCancel={handleReject}
+      footer={
+        <Space>
+          <Button danger onClick={handleReject}>
+            拒绝
+          </Button>
+          <Button type="primary" onClick={handleConfirm}>
+            允许执行
+          </Button>
+        </Space>
+      }
+      width={700}
+    >
+      <div style={{ marginBottom: 16 }}>
+        <p>AI 想要调用以下工具，请确认是否允许执行：</p>
+      </div>
+      <Table
+        columns={columns}
+        dataSource={pendingCallTools}
+        rowKey="toolId"
+        pagination={false}
+        size="small"
+      />
+    </Modal>
+  );
+};
+
 /* ─── 加载点 ─── */
 const LoadingDots: React.FC = () => (
   <div className={styles.loadingDots}>
@@ -152,6 +244,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [loading, setLoading] = useState(false);
   const [enableThink, setEnableThink] = useState(false);
   const [enableSearch, setEnableSearch] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    pendingCallTools: PendingCallTool[];
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -212,16 +308,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     abortRef.current = abortController;
 
     try {
-      const params = new URLSearchParams({
+      const chatBody = {
         sessionId,
         message: text.trim(),
-        enableThink: String(enableThink),
-        enableSearch: String(enableSearch),
-      });
+        enableThink,
+        enableSearch,
+      };
 
-      const response = await fetch(`/ai/chat?${params.toString()}`, {
-        method: 'GET',
-        headers: { Accept: 'text/event-stream' },
+      const response = await fetch('/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify(chatBody),
         signal: abortController.signal,
       });
 
@@ -291,6 +391,222 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               accText = '';
               currentSegs.push({ type: 'tool_result', content: data.message || '' });
               changed = true;
+            } else if (data.eventType === 'ToolConfirmEvent') {
+              // 收到工具确认事件，暂停并等待用户确认
+              accText = '';
+              const pendingTools = data.pendingCallTools || [];
+              
+              // 创建一个 Promise 等待用户确认
+              const confirmResult = await new Promise<boolean>((resolve) => {
+                setPendingConfirm({
+                  pendingCallTools: pendingTools,
+                  resolve,
+                });
+              });
+              
+              // 用户确认后，清除待确认状态
+              setPendingConfirm(null);
+              
+              // 调用 confirm 接口 (POST)
+              const confirmBody = {
+                sessionId,
+                isConfirmed: confirmResult,
+                toolInfoList: pendingTools.map((tool: PendingCallTool) => ({
+                  toolId: tool.toolId,
+                  toolName: tool.toolName,
+                })),
+                enableThink,
+                enableSearch,
+              };
+              
+              const confirmResponse = await fetch('/ai/confirm', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'text/event-stream',
+                },
+                body: JSON.stringify(confirmBody),
+                signal: abortController.signal,
+              });
+              
+              if (!confirmResponse.ok) throw new Error(`HTTP ${confirmResponse.status}`);
+              
+              const confirmReader = confirmResponse.body?.getReader();
+              if (!confirmReader) throw new Error('无法读取响应流');
+              
+              let confirmBuffer = '';
+              
+              while (true) {
+                const { done, value } = await confirmReader.read();
+                if (done) break;
+                
+                confirmBuffer += decoder.decode(value, { stream: true });
+                const confirmLines = confirmBuffer.split('\n');
+                confirmBuffer = confirmLines.pop() || '';
+                
+                let confirmChanged = false;
+                for (const line of confirmLines) {
+                  if (!line.startsWith('data:')) continue;
+                  const confirmJsonStr = line.substring(5).trim();
+                  if (!confirmJsonStr) continue;
+                  try {
+                    const confirmData = JSON.parse(confirmJsonStr);
+                    
+                    if (confirmData.eventType === 'TextEvent') {
+                      if (confirmData.last === true) {
+                        accText = '';
+                        continue;
+                      }
+                      accText += confirmData.message || '';
+                      const lastSeg = currentSegs[currentSegs.length - 1];
+                      if (lastSeg && lastSeg.type === 'text') {
+                        lastSeg.content = accText;
+                      } else {
+                        currentSegs.push({ type: 'text', content: accText });
+                      }
+                      confirmChanged = true;
+                    } else if (confirmData.eventType === 'ThinkingEvent') {
+                      if (confirmData.last === true) {
+                        accThinking = '';
+                        activeThinkIdx = -1;
+                        continue;
+                      }
+                      accThinking += confirmData.message || '';
+                      if (activeThinkIdx >= 0 && activeThinkIdx < currentSegs.length) {
+                        currentSegs[activeThinkIdx].content = accThinking;
+                      } else {
+                        currentSegs.push({ type: 'thinking', content: accThinking });
+                        activeThinkIdx = currentSegs.length - 1;
+                      }
+                      confirmChanged = true;
+                    } else if (confirmData.eventType === 'CallToolEvent') {
+                      accText = '';
+                      currentSegs.push({
+                        type: 'tool_call',
+                        content: JSON.stringify(confirmData.arguments || {}, null, 2),
+                        toolName: confirmData.toolName || '未知工具',
+                      });
+                      confirmChanged = true;
+                    } else if (confirmData.eventType === 'ToolResultEvent') {
+                      accText = '';
+                      currentSegs.push({ type: 'tool_result', content: confirmData.message || '' });
+                      confirmChanged = true;
+                    } else if (confirmData.eventType === 'ToolConfirmEvent') {
+                      // 递归处理嵌套的工具确认
+                      accText = '';
+                      const nestedPendingTools = confirmData.pendingCallTools || [];
+                      
+                      const nestedConfirmResult = await new Promise<boolean>((resolve) => {
+                        setPendingConfirm({
+                          pendingCallTools: nestedPendingTools,
+                          resolve,
+                        });
+                      });
+                      
+                      setPendingConfirm(null);
+                      
+                      const nestedConfirmBody = {
+                        sessionId,
+                        isConfirmed: nestedConfirmResult,
+                        toolInfoList: nestedPendingTools.map((tool: PendingCallTool) => ({
+                          toolId: tool.toolId,
+                          toolName: tool.toolName,
+                        })),
+                        enableThink,
+                        enableSearch,
+                      };
+                      
+                      const nestedConfirmResponse = await fetch('/ai/confirm', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Accept': 'text/event-stream',
+                        },
+                        body: JSON.stringify(nestedConfirmBody),
+                        signal: abortController.signal,
+                      });
+                      
+                      if (!nestedConfirmResponse.ok) throw new Error(`HTTP ${nestedConfirmResponse.status}`);
+                      
+                      const nestedConfirmReader = nestedConfirmResponse.body?.getReader();
+                      if (!nestedConfirmReader) throw new Error('无法读取响应流');
+                      
+                      let nestedConfirmBuffer = '';
+                      
+                      while (true) {
+                        const { done: nestedDone, value: nestedValue } = await nestedConfirmReader.read();
+                        if (nestedDone) break;
+                        
+                        nestedConfirmBuffer += decoder.decode(nestedValue, { stream: true });
+                        const nestedConfirmLines = nestedConfirmBuffer.split('\n');
+                        nestedConfirmBuffer = nestedConfirmLines.pop() || '';
+                        
+                        for (const nestedLine of nestedConfirmLines) {
+                          if (!nestedLine.startsWith('data:')) continue;
+                          const nestedJsonStr = nestedLine.substring(5).trim();
+                          if (!nestedJsonStr) continue;
+                          try {
+                            const nestedData = JSON.parse(nestedJsonStr);
+                            
+                            if (nestedData.eventType === 'TextEvent') {
+                              if (nestedData.last === true) {
+                                accText = '';
+                                continue;
+                              }
+                              accText += nestedData.message || '';
+                              const lastSeg = currentSegs[currentSegs.length - 1];
+                              if (lastSeg && lastSeg.type === 'text') {
+                                lastSeg.content = accText;
+                              } else {
+                                currentSegs.push({ type: 'text', content: accText });
+                              }
+                              confirmChanged = true;
+                            } else if (nestedData.eventType === 'ThinkingEvent') {
+                              if (nestedData.last === true) {
+                                accThinking = '';
+                                activeThinkIdx = -1;
+                                continue;
+                              }
+                              accThinking += nestedData.message || '';
+                              if (activeThinkIdx >= 0 && activeThinkIdx < currentSegs.length) {
+                                currentSegs[activeThinkIdx].content = accThinking;
+                              } else {
+                                currentSegs.push({ type: 'thinking', content: accThinking });
+                                activeThinkIdx = currentSegs.length - 1;
+                              }
+                              confirmChanged = true;
+                            } else if (nestedData.eventType === 'CallToolEvent') {
+                              accText = '';
+                              currentSegs.push({
+                                type: 'tool_call',
+                                content: JSON.stringify(nestedData.arguments || {}, null, 2),
+                                toolName: nestedData.toolName || '未知工具',
+                              });
+                              confirmChanged = true;
+                            } else if (nestedData.eventType === 'ToolResultEvent') {
+                              accText = '';
+                              currentSegs.push({ type: 'tool_result', content: nestedData.message || '' });
+                              confirmChanged = true;
+                            }
+                          } catch (err) {
+                            console.error('解析嵌套SSE消息失败:', err, nestedLine);
+                          }
+                        }
+                        
+                        if (confirmChanged) {
+                          flushUI();
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.error('解析confirm SSE消息失败:', err, line);
+                  }
+                }
+                
+                if (confirmChanged) {
+                  flushUI();
+                }
+              }
             }
           } catch (err) {
             console.error('解析SSE消息失败:', err, line);
@@ -350,6 +666,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
   return (
     <div className={styles.chatWindow}>
+      {/* ─── 工具确认弹窗 ─── */}
+      {pendingConfirm && (
+        <ToolConfirmCard
+          pendingCallTools={pendingConfirm.pendingCallTools}
+          onConfirm={(confirmed) => {
+            pendingConfirm.resolve(confirmed);
+          }}
+        />
+      )}
+      
       {/* ─── 消息列表 ─── */}
       <div className={styles.messageList}>
         {messages.length === 0 ? (

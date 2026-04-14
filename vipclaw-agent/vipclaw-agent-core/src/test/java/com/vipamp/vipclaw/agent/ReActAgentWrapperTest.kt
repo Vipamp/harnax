@@ -1,5 +1,7 @@
 package com.vipamp.vipclaw.agent
 
+import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
+
 /**
  * @Author: heqingsong
  * @Date: 2026/4/12
@@ -14,7 +16,8 @@ object ReActAgentWrapperTest {
             AgentSpec.builder()
                 .id(1)
                 .chatModelId(1)
-                .build()
+                .build(),
+            userIdentifier = UserIdentifier(1)
         )
         val streamTextAll = agent.streamTextAll("你好")
         streamTextAll.subscribe(

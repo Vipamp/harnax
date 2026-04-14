@@ -9,6 +9,8 @@ import com.vipamp.vipclaw.agent.provider.HOOK_SET
 import com.vipamp.vipclaw.agent.provider.TOOL_SET
 import com.vipamp.vipclaw.agent.provider.hook.ConfirmToolsHook
 import com.vipamp.vipclaw.agent.provider.hook.ProcessLogHook
+import com.vipamp.vipclaw.agent.provider.tool.SessionMetaContext
+import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
 import com.vipamp.vipclaw.agent.session.SessionConfig
 import com.vipamp.vipclaw.agent.session.SessionLoader
 import com.vipamp.vipclaw.common.log.logger
@@ -35,6 +37,7 @@ class AscopeAgentLauncher(
     val skillAdaptor: SkillAdaptor,
     val tokenStatAdaptor: TokenStatAdaptor,
     val processLogAdaptor: ProcessLogAdaptor,
+    val toolCallLogAdaptor: ToolCallLogAdaptor,
     val localRootTmpDir: Path
 ) {
     val needConfirmedTools: MutableSet<String> = mutableSetOf()
@@ -43,9 +46,10 @@ class AscopeAgentLauncher(
         agentSpec: AgentSpec,
         sessionId: String = UUID.randomUUID().toString(),
         stateless: Boolean = false,
-        chatSpec: ChatSpec = ChatSpec.builder().build()
+        chatSpec: ChatSpec = ChatSpec.builder().build(),
+        userIdentifier: UserIdentifier,
     ): ReActAgentWrapper {
-        return createAgentBase(agentSpec, sessionId, stateless, listOf(), chatSpec)
+        return createAgentBase(agentSpec, sessionId, stateless, listOf(), chatSpec, userIdentifier)
     }
 
     private fun createAgentBase(
@@ -53,7 +57,8 @@ class AscopeAgentLauncher(
         sessionId: String,
         stateless: Boolean = false,
         subAgent: List<ReActAgentWrapper>,
-        chatSpec: ChatSpec = ChatSpec.builder().build()
+        chatSpec: ChatSpec = ChatSpec.builder().build(),
+        userIdentifier: UserIdentifier,
     ): ReActAgentWrapper {
         val agentBuilder = AscopeAgentBuilder()
             .name(agentSpec.name)
@@ -67,7 +72,7 @@ class AscopeAgentLauncher(
 //        val chatModelConfig = chatModelConfigAdaptor.getConfig(agentSpec.chatModelId) ?: throw IllegalArgumentException(
 //            "Chat model config not found"
 //        )
-        val chatModelConfig = DashScopeChatModelConfig("qwen3.5-122b-a10b","sk-5404e4ddac8645a1bd3555c00376a1f5")
+        val chatModelConfig = DashScopeChatModelConfig("qwen3.5-122b-a10b", "sk-5404e4ddac8645a1bd3555c00376a1f5")
         val chatModel = ModelHelper.createChatModel(chatModelConfig, chatSpec)
         agentBuilder.model(chatModel)
 
@@ -85,9 +90,14 @@ class AscopeAgentLauncher(
         }
 
         agentSpec.enableMetaTool?.let { agentBuilder.enableMetaTool(it) }
-        TOOL_SET.forEach {
-            agentBuilder.addTool(it)
-            needConfirmedTools.addAll(it.dangerousTools())
+        TOOL_SET.forEach { toolBox ->
+            toolBox.init(
+                toolCallLogAdaptor,
+                SessionMetaContext(agentSpec.id, sessionId),
+                userIdentifier
+            )
+            agentBuilder.addTool(toolBox)
+            needConfirmedTools.addAll(toolBox.needConfirmedTools())
         }
 
         if (agentSpec.contextForTools.isNotEmpty()) {
@@ -164,6 +174,7 @@ class AscopeAgentLauncher(
             tokenStatAdaptor: TokenStatAdaptor,
             sessionConfig: SessionConfig?,
             processLogAdaptor: ProcessLogAdaptor,
+            toolCallLogAdaptor: ToolCallLogAdaptor,
             localRootTmpDir: Path = Files.createTempDirectory("agent-tmp-dir")
         ): AscopeAgentLauncher {
             return AscopeAgentLauncher(
@@ -173,6 +184,7 @@ class AscopeAgentLauncher(
                 skillAdaptor,
                 tokenStatAdaptor,
                 processLogAdaptor,
+                toolCallLogAdaptor,
                 localRootTmpDir
             )
         }

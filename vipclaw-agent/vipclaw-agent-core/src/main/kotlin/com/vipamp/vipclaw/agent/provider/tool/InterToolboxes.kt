@@ -10,13 +10,15 @@ import java.util.*
  * @Description: InnerToolBoxes
  * @Project: vipclaw
  */
-class TimeToolBox : ToolBox {
+class TimeToolBox : ToolBox() {
 
     @Tool(description = "获取当前日期")
-    fun getDate(): String = SimpleDateFormat(YYYY_MM_DD).format(Date())
+    @NeedConfirmed
+    fun getDate(): String = execute { SimpleDateFormat(YYYY_MM_DD).format(Date()) }
 
     @Tool(description = "获取当前时间")
-    fun getDatetime(): String = SimpleDateFormat(YYYY_MM_DD_HH_MM_SS).format(Date())
+    @NeedConfirmed
+    fun getDatetime(): String = execute { SimpleDateFormat(YYYY_MM_DD_HH_MM_SS).format(Date()) }
 
     override fun name(): String = NAME
 

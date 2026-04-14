@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
 import com.vipamp.vipclaw.agent.*
 import com.vipamp.vipclaw.agent.chat.ChatEvent
 import com.vipamp.vipclaw.agent.chat.MessageLog
+import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
 import com.vipamp.vipclaw.agent.service.dto.ChatRequest
 import com.vipamp.vipclaw.agent.service.dto.ConfirmRequest
 import com.vipamp.vipclaw.common.entity.Session
@@ -71,7 +72,8 @@ class ChatService(
             agentSpec = agentSpec,
             sessionId = sessionId,
             stateless = false,
-            chatSpec
+            chatSpec,
+            userIdentifier = UserIdentifier(0)
         )
 
         logger().info("Agent for session $sessionId created and cached successfully")

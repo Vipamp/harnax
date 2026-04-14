@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import reactor.core.publisher.Flux
@@ -32,15 +34,15 @@ class ChatController(
         return Result.success("OK")
     }
 
-    @GetMapping("/chat", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PostMapping("/chat", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     @Schema(description = "聊天")
-    fun chat(request: ChatRequest): Flux<ChatEvent> {
+    fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent> {
         return chatService.chat(request)
     }
 
-    @GetMapping("/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @PostMapping("/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     @Schema(description = "工具执行确认")
-    fun confirm(request: ConfirmRequest): Flux<ChatEvent> {
+    fun confirm(@RequestBody request: ConfirmRequest): Flux<ChatEvent> {
         return chatService.confirm(request)
     }
 
