@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, message, Modal, Table, Tag, Space } from 'antd';
+import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm } from 'antd';
 import {
   SendOutlined,
   BulbOutlined,
@@ -13,6 +13,9 @@ import {
   CopyOutlined,
   CheckOutlined,
   ExclamationCircleOutlined,
+  PictureOutlined,
+  CloseOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -42,6 +45,7 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   segments: MessageSegment[];
   timestamp: number;
+  imageUrls?: string[];
 }
 
 interface ChatWindowProps {
@@ -244,12 +248,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [loading, setLoading] = useState(false);
   const [enableThink, setEnableThink] = useState(false);
   const [enableSearch, setEnableSearch] = useState(false);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<{
     pendingCallTools: PendingCallTool[];
     resolve: (confirmed: boolean) => void;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -275,6 +281,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       role: 'user',
       segments: [{ type: 'text', content: text.trim() }],
       timestamp: Date.now(),
+      imageUrls: imageUrls.length > 0 ? [...imageUrls] : undefined,
     };
     const assistantMessageId = `assistant-${Date.now()}`;
     const assistantMessage: ChatMessage = {
@@ -293,6 +300,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
     setMessages(currentMsgs);
     setInputValue('');
+    setImageUrls([]); // 清空图片
     setLoading(true);
 
     const flushUI = () => {
@@ -311,6 +319,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       const chatBody = {
         sessionId,
         message: text.trim(),
+        imageUrl: imageUrls,
         enableThink,
         enableSearch,
       };
@@ -641,6 +650,69 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     }
   };
 
+  /* ─── 图片处理 ─── */
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // 将图片转换为 Base64
+    const base64Promises = Array.from(files).map((file) => {
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    });
+
+    try {
+      const base64Urls = await Promise.all(base64Promises);
+      setImageUrls((prev) => [...prev, ...base64Urls]);
+    } catch (error) {
+      console.error('图片转换失败:', error);
+      message.error('图片转换失败');
+    }
+
+    // 清空 input 以允许重复上传同一文件
+    if (uploadRef.current) {
+      uploadRef.current.value = '';
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setImageUrls((prev) => {
+      const newUrls = [...prev];
+      newUrls.splice(index, 1);
+      return newUrls;
+    });
+  };
+
+  /* ─── 清空聊天记录 ─── */
+  const handleClearChat = async () => {
+    try {
+      const response = await fetch(`/ai/session/${sessionId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      // 清空前端聊天记录
+      setMessages([]);
+      setInputValue('');
+      setImageUrls([]);
+      
+      message.success('聊天记录已清空');
+    } catch (error) {
+      console.error('清空聊天记录失败:', error);
+      message.error('清空聊天记录失败');
+    }
+  };
+
   /* ─── 渲染段落 ─── */
   const renderSegment = (seg: MessageSegment, idx: number) => {
     switch (seg.type) {
@@ -714,7 +786,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   }`}
                 >
                   {msg.role === 'user' ? (
-                    <span>{msg.segments[0]?.content}</span>
+                    <div>
+                      {msg.imageUrls && msg.imageUrls.length > 0 && (
+                        <div className={styles.imagePreview}>
+                          {msg.imageUrls.map((url, idx) => (
+                            <img key={idx} src={url} alt={`图片${idx + 1}`} className={styles.previewImage} />
+                          ))}
+                        </div>
+                      )}
+                      <span>{msg.segments[0]?.content}</span>
+                    </div>
                   ) : isEmpty(msg) ? (
                     <LoadingDots />
                   ) : (
@@ -736,6 +817,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       {/* ─── 输入区域 ─── */}
       <div className={styles.inputArea}>
         <div className={styles.inputCard}>
+          {/* 图片预览 */}
+          {imageUrls.length > 0 && (
+            <div className={styles.imageUploadPreview}>
+              {imageUrls.map((url, index) => (
+                <div key={index} className={styles.uploadedImageItem}>
+                  <img src={url} alt={`上传图片${index + 1}`} className={styles.uploadedImage} />
+                  <div
+                    className={styles.removeImageBtn}
+                    onClick={() => handleRemoveImage(index)}
+                  >
+                    <CloseOutlined />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
           <div className={styles.inputCardBody}>
             <TextArea
               value={inputValue}
@@ -748,6 +846,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           </div>
           <div className={styles.inputCardFooter}>
             <div className={styles.options}>
+              <div
+                className={`${styles.optionItem} ${imageUrls.length > 0 ? styles.optionActive : ''}`}
+                onClick={() => uploadRef.current?.click()}
+              >
+                <PictureOutlined />
+                <span>图片 ({imageUrls.length})</span>
+              </div>
               <div
                 className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''}`}
                 onClick={() => setEnableThink(!enableThink)}
@@ -762,18 +867,41 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 <SearchOutlined />
                 <span>联网搜索</span>
               </div>
+              <Popconfirm
+                title="清空聊天记录"
+                description="确定要清空当前会话的所有聊天记录吗?"
+                onConfirm={handleClearChat}
+                okText="确定"
+                cancelText="取消"
+                placement="topLeft"
+              >
+                <div className={`${styles.optionItem} ${styles.clearOption}`}>
+                  <DeleteOutlined />
+                  <span>清空记录</span>
+                </div>
+              </Popconfirm>
             </div>
             <Button
               type="primary"
               icon={<SendOutlined />}
               onClick={handleSend}
               loading={loading}
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() && imageUrls.length === 0}
               className={styles.sendButton}
             />
           </div>
         </div>
       </div>
+      
+      {/* 隐藏的文件输入 */}
+      <input
+        ref={uploadRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleImageUpload}
+      />
     </div>
   );
 };

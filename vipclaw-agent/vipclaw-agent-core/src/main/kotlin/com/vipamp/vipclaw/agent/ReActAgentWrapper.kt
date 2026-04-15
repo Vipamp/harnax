@@ -6,11 +6,12 @@ import com.vipamp.vipclaw.agent.chat.ChatEvent
 import com.vipamp.vipclaw.agent.chat.ChatEventConverter
 import io.agentscope.core.ReActAgent
 import io.agentscope.core.agent.StreamOptions
-import io.agentscope.core.message.Msg
-import io.agentscope.core.message.MsgRole
-import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.*
 import io.agentscope.core.session.SessionManager
 import reactor.core.publisher.Flux
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.*
 
 /**
  * @Author: heqingsong
@@ -25,31 +26,56 @@ class ReActAgentWrapper(
     val tokenStatBuilder: TokenStatBuilder,
     val tokenStatAdaptor: TokenStatAdaptor
 ) {
-    fun streamTextAll(prompt: String): Flux<ChatEvent> {
-        return reActAgent.stream(userMsg(prompt))
-            .flatMap { ChatEventConverter.convert(it, dangerousTools) }
-            .doOnNext { extracted(it) }
-            .doOnNext { sessionManager?.saveSession() }
+    fun callStream(
+        prompt: String,
+        imageUrls: MutableList<String> = mutableListOf(),
+        options: StreamOptions = StreamOptions.builder().build()
+    ): Flux<ChatEvent> {
+        val list: MutableList<ContentBlock> = mutableListOf()
+        prompt.let { list.add(textBlock(it)) }
+        imageUrls.stream().forEach { list.add(imageBlock(it)) }
+        return callStream(options = options, msg = Msg.builder().name("user").role(MsgRole.USER).content(list).build())
     }
 
-    fun stream(msg: Msg): Flux<ChatEvent> {
-        return reActAgent.stream(msg)
-            .flatMap { ChatEventConverter.convert(it, dangerousTools) }
-            .doOnNext { extracted(it) }
-            .doOnNext { sessionManager?.saveSession() }
-    }
+    fun callStream(
+        options: StreamOptions = StreamOptions.builder().build(),
+        msg: Msg? = null,
+    ): Flux<ChatEvent> = callStream(options = options, msg = msg?.let { arrayOf(msg) } ?: arrayOf())
 
-    fun stream(options: StreamOptions): Flux<ChatEvent> {
-        return reActAgent.stream(options)
-            .flatMap { ChatEventConverter.convert(it, dangerousTools) }
-            .doOnNext { extracted(it) }
-            .doOnNext { sessionManager?.saveSession() }
-    }
+    private fun callStream(
+        options: StreamOptions,
+        vararg msg: Msg = arrayOf()
+    ): Flux<ChatEvent> = reActAgent.stream(msg.toList(), options)
+        .flatMap { ChatEventConverter.convert(it, dangerousTools) }
+        .doOnNext { extracted(it) }
+        .doOnNext { sessionManager?.saveSession() }
 
-    private fun userMsg(prompt: String): Msg = Msg.builder()
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text(prompt).build())
-        .build()
+    private fun textBlock(prompt: String): TextBlock = TextBlock.builder().text(prompt).build()
+
+    private fun imageBlock(url: String): ImageBlock {
+        // 判断是 Base64 数据 URL 还是文件路径
+        return if (url.startsWith("data:image")) {
+            // Base64 数据 URL 格式: data:image/png;base64,iVBORw0KGgo...
+            val parts = url.split(",")
+            val mimeType = parts[0].substringAfter(":").substringBefore(";")
+            val base64Data = parts[1]
+            
+            ImageBlock.builder().source(
+                Base64Source.builder()
+                    .data(base64Data)
+                    .mediaType(mimeType)
+                    .build()
+            ).build()
+        } else {
+            // 文件路径
+            ImageBlock.builder().source(
+                Base64Source.builder()
+                    .data(Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get(url))))
+                    .mediaType("image/png")
+                    .build()
+            ).build()
+        }
+    }
 
     private fun extracted(it: ChatEvent) {
         if (it.tokenUsage != null) {

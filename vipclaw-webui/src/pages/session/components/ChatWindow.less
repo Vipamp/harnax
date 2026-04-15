@@ -498,6 +498,68 @@
   }
 }
 
+/* 图片上传预览 */
+.imageUploadPreview {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #f0f0f3;
+}
+
+.uploadedImageItem {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.uploadedImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.removeImageBtn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.8);
+    transform: scale(1.1);
+  }
+}
+
+/* 消息中的图片预览 */
+.imagePreview {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.previewImage {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .inputCardFooter {
   display: flex;
   justify-content: space-between;
@@ -535,6 +597,14 @@
   &:hover {
     color: #4f46e5 !important;
     background: rgba(99, 102, 241, 0.1);
+  }
+}
+
+/* 清空记录选项按钮 */
+.clearOption {
+  &:hover {
+    color: #ef4444 !important;
+    background: rgba(239, 68, 68, 0.08);
   }
 }
 

@@ -19,7 +19,7 @@ object ReActAgentWrapperTest {
                 .build(),
             userIdentifier = UserIdentifier(1)
         )
-        val streamTextAll = agent.streamTextAll("你好")
+        val streamTextAll = agent.callStream("你好")
         streamTextAll.subscribe(
             { text -> println(text) },
             { error -> println(error) },

@@ -19,6 +19,7 @@ import io.agentscope.core.memory.Memory
 import io.agentscope.core.memory.autocontext.AutoContextMemory
 import io.agentscope.core.session.Session
 import io.agentscope.core.session.SessionManager
+import io.agentscope.core.state.SimpleSessionKey
 import io.agentscope.core.tool.ToolExecutionContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -130,8 +131,8 @@ class AscopeAgentLauncher(
             }
             if (it is ProcessLogHook) {
                 it.initial(processLogAdaptor, agentSpec.id, agentSpec.name, sessionId)
-                agentBuilder.addHook(it)
             }
+            agentBuilder.addHook(it)
         }
         // short memory
         var memory: Memory? = null
@@ -164,6 +165,10 @@ class AscopeAgentLauncher(
             TokenStatBuilder().agentId(agentSpec.id).sessionId(sessionId).modelId(agentSpec.chatModelId),
             tokenStatAdaptor
         )
+    }
+
+    fun clearSession(sessionId: String) {
+        session.delete(SimpleSessionKey.of(sessionId))
     }
 
     companion object {

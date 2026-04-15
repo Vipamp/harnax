@@ -1,5 +1,7 @@
 package com.vipamp.vipclaw.agent.service.dto;
 
+import java.util.List;
+
 /**
  * @Author: heqingsong
  * @Date: 2026/4/12
@@ -8,6 +10,7 @@ package com.vipamp.vipclaw.agent.service.dto;
  */
 public record ChatRequest(String sessionId,
                           String message,
+                          List<String> imageUrl,
                           Boolean enableThink,
                           Boolean enableSearch) {
 }

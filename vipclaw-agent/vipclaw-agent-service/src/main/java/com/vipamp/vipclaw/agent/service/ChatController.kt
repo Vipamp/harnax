@@ -7,12 +7,7 @@ import com.vipamp.vipclaw.common.Result
 import io.swagger.v3.oas.annotations.media.Schema
 import lombok.RequiredArgsConstructor
 import org.springframework.http.MediaType
-import org.springframework.web.bind.annotation.DeleteMapping
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
 import reactor.core.publisher.Flux
 
 /**
@@ -48,7 +43,7 @@ class ChatController(
 
     @DeleteMapping("/session/{sessionId}")
     @Schema(description = "工具执行确认")
-    fun clearSession(sessionId: String): Result<String> {
+    fun clearSession(@PathVariable("sessionId") sessionId: String): Result<String> {
         try {
             chatService.clearSession(sessionId)
             return Result.success("OK");
@@ -56,10 +51,4 @@ class ChatController(
             return Result.error(e.toString());
         }
     }
-
-//    @DeleteMapping("/session/{sessionId}")
-//    @Schema(description = "工具执行确认")
-//    fun loadSessionMessages(sessionId: String): Result<List<MessageLog>> {
-//        return Result.success(chatService.loadSessionMessages(sessionId))
-//    }
 }

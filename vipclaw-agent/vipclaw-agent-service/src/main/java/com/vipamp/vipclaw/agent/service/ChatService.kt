@@ -10,6 +10,10 @@ import com.vipamp.vipclaw.agent.service.dto.ConfirmRequest
 import com.vipamp.vipclaw.common.entity.Session
 import com.vipamp.vipclaw.common.log.logger
 import com.vipamp.vipclaw.common.mapper.SessionMapper
+import io.agentscope.core.message.Msg
+import io.agentscope.core.message.MsgRole
+import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.ToolResultBlock
 import lombok.RequiredArgsConstructor
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
@@ -29,26 +33,55 @@ class ChatService(
 
     fun chat(request: ChatRequest): Flux<ChatEvent> {
         try {
+            // TODO
+            val userIdentifier = UserIdentifier(0)
             val chatSpec = ChatSpecBuilder()
                 .enableThinking(request.enableThink)
                 .enableSearch(request.enableSearch)
                 .build()
-            return createAgent(request.sessionId, chatSpec)
-                .streamTextAll(request.message)
+            return createAgent(request.sessionId, chatSpec, userIdentifier)
+                .callStream(request.message, request.imageUrl)
         } catch (e: Exception) {
             logger().error("Error creating agent or streaming text: ${e.message}")
             return Flux.error { e }
         }
     }
 
-    fun confirm(request: ConfirmRequest): Flux<ChatEvent> {
-        return Flux.empty()
+    fun confirm(confirmRequest: ConfirmRequest): Flux<ChatEvent> {
+        val chatSpec =
+            ChatSpec.builder().enableThinking(confirmRequest.enableThink).enableSearch(confirmRequest.enableSearch)
+                .build()
+        // TODO
+        val userIdentifier = UserIdentifier(0)
+        val agent = createAgent(confirmRequest.sessionId, chatSpec, userIdentifier)
+        if (confirmRequest.isConfirmed) {
+            return agent.callStream()
+        } else {
+            val results: MutableList<ToolResultBlock?> = ArrayList()
+            val cancelMessage = "Operation cancelled by user"
+            if (confirmRequest.toolInfoList() != null) {
+                for (tool in confirmRequest.toolInfoList) {
+                    results.add(
+                        ToolResultBlock.of(
+                            tool.toolId,
+                            tool.toolName,
+                            TextBlock.builder().text(cancelMessage).build()
+                        )
+                    )
+                }
+            }
+            val cancelResult =
+                Msg.builder()
+                    .name("Assistant").role(MsgRole.TOOL)
+                    .content(*results.toTypedArray<ToolResultBlock?>()).build()
+            return agent.callStream(msg = cancelResult)
+        }
     }
 
     /**
      * 根据 sessionId 从数据库获取 Session 信息，然后创建 Agent
      */
-    private fun createAgent(sessionId: String, chatSpec: ChatSpec): ReActAgentWrapper {
+    private fun createAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): ReActAgentWrapper {
         val queryWrapper = LambdaQueryWrapper<Session>()
             .eq(Session::getSessionId, sessionId)
             .eq(Session::getActive, 1)
@@ -73,7 +106,7 @@ class ChatService(
             sessionId = sessionId,
             stateless = false,
             chatSpec,
-            userIdentifier = UserIdentifier(0)
+            userIdentifier
         )
 
         logger().info("Agent for session $sessionId created and cached successfully")
@@ -82,7 +115,7 @@ class ChatService(
     }
 
     fun clearSession(sessionId: String) {
-
+        launcher.clearSession(sessionId)
     }
 
     fun loadSessionMessages(sessionId: String): List<MessageLog> {
