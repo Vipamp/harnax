@@ -3,7 +3,6 @@ package com.vipamp.vipclaw.agent
 import com.vipamp.vipclaw.agent.provider.tool.ToolBox
 import io.agentscope.core.memory.autocontext.AutoContextConfig
 import io.agentscope.core.model.StructuredOutputReminder
-import io.agentscope.core.plan.PlanNotebook
 
 /**
  * @Author: heqingsong
@@ -28,8 +27,7 @@ data class AgentSpec(
     val useAutoContextMemory: Boolean,
     val autoContextConfig: AutoContextConfig?,
     val skills: List<SkillSpec>,
-    val enablePlan: Boolean?,
-    val planNotebook: PlanNotebook?
+    val planSpec: PlanSpec
 ) {
 
     companion object {
@@ -55,8 +53,7 @@ class AgentSpecBuilder {
     private var useAutoContextMemory: Boolean = false
     private var autoContextConfig: AutoContextConfig? = null
     private var skills: MutableList<SkillSpec> = mutableListOf()
-    private var enablePlan: Boolean? = null
-    private var planNotebook: PlanNotebook? = null
+    private var planSpec: PlanSpec = PlanSpec(false)
 
     fun id(id: Long) = apply { this.id = id }
     fun name(name: String) = apply { this.name = name }
@@ -74,13 +71,12 @@ class AgentSpecBuilder {
     fun useAutoContextMemory(useAutoContextMemory: Boolean) = apply { this.useAutoContextMemory = useAutoContextMemory }
     fun autoContextConfig(autoContextConfig: AutoContextConfig?) = apply { this.autoContextConfig = autoContextConfig }
     fun addSkill(skill: SkillSpec) = apply { this.skills.add(skill) }
-    fun enablePlan(enablePlan: Boolean?) = apply { this.enablePlan = enablePlan }
-    fun planNotebook(planNotebook: PlanNotebook?) = apply { this.planNotebook = planNotebook }
+    fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
 
     fun build(): AgentSpec {
         require(id > 0) { "Agent id must be greater than 0" }
         require(chatModelId > 0) { "Chat model id must be greater than 0" }
-        
+
         return AgentSpec(
             id = id,
             name = name,
@@ -96,8 +92,7 @@ class AgentSpecBuilder {
             useAutoContextMemory = useAutoContextMemory,
             autoContextConfig = autoContextConfig,
             skills = skills,
-            enablePlan = enablePlan,
-            planNotebook = planNotebook
+            planSpec = planSpec
         )
     }
 }
@@ -113,3 +108,10 @@ data class SkillSpec(
     val skillName: String,
     val skipIfMissing: Boolean = true
 )
+
+data class PlanSpec(
+    val enablePlan: Boolean,
+    val maxSubTask: Int? = null,
+    val needUserConfirmed: Boolean? = null
+)
+

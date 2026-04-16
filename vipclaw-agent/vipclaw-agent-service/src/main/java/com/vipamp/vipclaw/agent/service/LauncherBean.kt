@@ -45,6 +45,7 @@ class LauncherConfig {
         @Autowired sessionConfig: SessionConfig,
         @Autowired processLogAdaptor: ProcessLogAdaptor,
         @Autowired(required = false) toolCallLogAdaptor: ToolCallLogAdaptor,
+        @Autowired planNoteAdaptor: PlanNoteAdaptor,
         @Value($$"${local.tmp-dir}") tmpDir: String
     ): AscopeAgentLauncher {
         System.setProperty("local.tmp-dir", tmpDir)
@@ -56,6 +57,7 @@ class LauncherConfig {
             sessionConfig,
             processLogAdaptor,
             toolCallLogAdaptor,
+            planNoteAdaptor,
             Path(tmpDir)
         )
     }

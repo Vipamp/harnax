@@ -12,5 +12,6 @@ public record ChatRequest(String sessionId,
                           String message,
                           List<String> imageUrl,
                           Boolean enableThink,
-                          Boolean enableSearch) {
+                          Boolean enableSearch,
+                          Boolean enablePlan) {
 }

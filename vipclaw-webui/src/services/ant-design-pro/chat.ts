@@ -24,3 +24,16 @@ export async function sendChatMessage(
     ...(options || {}),
   });
 }
+
+/**
+ * 获取历史会话消息
+ */
+export async function getSessionMessages(
+  sessionId: string,
+  options?: { [key: string]: any },
+) {
+  return request(`/ai/session/${sessionId}`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}

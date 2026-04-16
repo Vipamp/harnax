@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm } from 'antd';
+import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin } from 'antd';
 import {
   SendOutlined,
   BulbOutlined,
@@ -16,11 +16,15 @@ import {
   PictureOutlined,
   CloseOutlined,
   DeleteOutlined,
+  UnorderedListOutlined,
+  ClockCircleOutlined,
+  CheckSquareOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { getSessionMessages } from '@/services/ant-design-pro/chat';
 import styles from './ChatWindow.less';
 
 const { TextArea } = Input;
@@ -37,6 +41,8 @@ interface MessageSegment {
   type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_confirm';
   content: string;
   toolName?: string;
+  toolId?: string;
+  confirmStatus?: 'pending' | 'confirmed' | 'rejected';
   pendingCallTools?: PendingCallTool[];
 }
 
@@ -50,6 +56,29 @@ interface ChatMessage {
 
 interface ChatWindowProps {
   sessionId: string;
+}
+
+interface PlanSubTask {
+  name: string;
+  description: string;
+  expectedOutcome: string;
+  outcome: string;
+  state: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'ABANDONED';
+  createdAt: string;
+  finishedAt: string | null;
+  costTimeSeconds: number;
+}
+
+interface PlanNote {
+  sessionId: string;
+  planId: string;
+  name: string;
+  description: string | null;
+  expectedOutcome: string | null;
+  subtasks: PlanSubTask[] | null;
+  createdAt: string;
+  finishedAt: string | null;
+  costTimeseconds: number;
 }
 
 /* ─── 快捷建议 ─── */
@@ -123,15 +152,31 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
 };
 
 /* ─── 工具卡片 ─── */
-const ToolCallCard: React.FC<{ toolName: string; content: string }> = ({ toolName, content }) => {
+const ToolCallCard: React.FC<{
+  toolName: string;
+  content: string;
+  confirmStatus?: 'pending' | 'confirmed' | 'rejected';
+}> = ({ toolName, content, confirmStatus }) => {
   const [expanded, setExpanded] = useState(false);
+  
+  // 根据确认状态显示不同的文本
+  const statusText = confirmStatus === 'confirmed' 
+    ? '（已允许）' 
+    : confirmStatus === 'rejected' 
+    ? '（已拒绝）' 
+    : confirmStatus === 'pending' 
+    ? '（待确认）' 
+    : '';
+  
   return (
-    <div className={styles.toolCard}>
-      <div className={styles.toolCardHeader} onClick={() => setExpanded(!expanded)}>
-        <ToolOutlined /> 调用工具: {toolName}
-        {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
+    <div style={{ display: 'block', width: '100%' }}>
+      <div className={styles.toolCard}>
+        <div className={styles.toolCardHeader} onClick={() => setExpanded(!expanded)}>
+          <ToolOutlined /> 调用工具: {toolName}{statusText}
+          {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
+        </div>
+        {expanded && content && <div className={styles.toolCardBody}>{content}</div>}
       </div>
-      {expanded && content && <div className={styles.toolCardBody}>{content}</div>}
     </div>
   );
 };
@@ -139,17 +184,59 @@ const ToolCallCard: React.FC<{ toolName: string; content: string }> = ({ toolNam
 const ToolResultCard: React.FC<{ content: string }> = ({ content }) => {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className={styles.toolResultCard}>
-      <div className={styles.toolResultHeader} onClick={() => setExpanded(!expanded)}>
-        <CheckCircleOutlined /> 工具返回
-        {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
+    <div style={{ display: 'block', width: '100%' }}>
+      <div className={styles.toolResultCard}>
+        <div className={styles.toolResultHeader} onClick={() => setExpanded(!expanded)}>
+          <CheckCircleOutlined /> 工具返回
+          {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
+        </div>
+        {expanded && <div className={styles.toolResultBody}>{content}</div>}
       </div>
-      {expanded && <div className={styles.toolResultBody}>{content}</div>}
     </div>
   );
 };
 
-/* ─── 工具确认卡片 ─── */
+/* ─── 工具确认卡片（用于聊天内容中显示） ─── */
+const ToolConfirmChatCard: React.FC<{
+  pendingCallTools: PendingCallTool[];
+  status: 'pending' | 'confirmed' | 'rejected';
+}> = ({ pendingCallTools, status }) => {
+  const [expanded, setExpanded] = useState(false);
+  
+  const statusText = status === 'confirmed' ? '已允许' : status === 'rejected' ? '已拒绝' : '等待确认';
+  const statusColor = status === 'confirmed' ? 'green' : status === 'rejected' ? 'red' : 'orange';
+  
+  return (
+    <div className={styles.toolConfirmCard}>
+      <div className={styles.toolConfirmCardHeader} onClick={() => setExpanded(!expanded)}>
+        <ExclamationCircleOutlined style={{ color: '#faad14' }} />
+        <span>工具执行确认</span>
+        <Tag color={statusColor}>{statusText}</Tag>
+        {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
+      </div>
+      {expanded && (
+        <div className={styles.toolConfirmCardBody}>
+          <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
+            AI 想要调用以下工具：
+          </div>
+          {pendingCallTools.map((tool) => (
+            <div key={tool.toolId} style={{ marginBottom: 8, padding: 8, background: '#fafafa', borderRadius: 4 }}>
+              <div style={{ fontWeight: 500, marginBottom: 4 }}>
+                <ToolOutlined /> {tool.toolName}
+                {tool.isDangerous && <Tag color="red" style={{ marginLeft: 8 }}>高风险</Tag>}
+              </div>
+              <pre style={{ margin: 0, fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
+                {JSON.stringify(tool.arguments, null, 2)}
+              </pre>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── 工具确认弹窗 ─── */
 const ToolConfirmCard: React.FC<{
   pendingCallTools: PendingCallTool[];
   onConfirm: (confirmed: boolean) => void;
@@ -248,14 +335,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [loading, setLoading] = useState(false);
   const [enableThink, setEnableThink] = useState(false);
   const [enableSearch, setEnableSearch] = useState(false);
+  const [enablePlan, setEnablePlan] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<{
     pendingCallTools: PendingCallTool[];
     resolve: (confirmed: boolean) => void;
   } | null>(null);
+  const [showPlanPanel, setShowPlanPanel] = useState(false);
+  const [plans, setPlans] = useState<PlanNote[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [currentPlan, setCurrentPlan] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const planRefreshTimerRef = useRef<NodeJS.Timeout | null>(null); // 当前计划刷新定时器（2秒）
+  const plansListTimerRef = useRef<NodeJS.Timeout | null>(null); // 历史计划刷新定时器（5秒）
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -265,12 +359,136 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // 组件卸载时中断请求
+  // 组件卸载时中断请求和定时器
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+      }
+      if (plansListTimerRef.current) {
+        clearInterval(plansListTimerRef.current);
+      }
     };
   }, []);
+
+  // 当 sessionId 变化时，加载历史消息
+  useEffect(() => {
+    if (!sessionId) {
+      setMessages([]);
+      setPlans([]);
+      setShowPlanPanel(false);
+      return;
+    }
+
+    const loadHistoryMessages = async () => {
+      try {
+        setLoading(true);
+        const response = await getSessionMessages(sessionId);
+        
+        if (response.code === 200 && response.data) {
+          const logs: any[] = response.data;
+          const historyMessages: ChatMessage[] = [];
+          
+          // 遍历所有日志，将同一个 AI 回复的所有 segment 合并到一个消息中
+          let currentAssistantMsg: ChatMessage | null = null;
+          
+          for (let i = 0; i < logs.length; i++) {
+            const log = logs[i];
+            const msgId = `${log.role.toLowerCase()}-${log.timestamp || Date.now()}-${i}`;
+            
+            if (log.role === 'USER') {
+              // 用户消息：结束当前的 assistant 消息（如果有）
+              currentAssistantMsg = null;
+              historyMessages.push({
+                id: msgId,
+                role: 'user' as const,
+                segments: [{ type: 'text', content: log.message || '' }],
+                timestamp: log.timestamp || Date.now(),
+              });
+            } else if (log.role === 'ASSISTANT') {
+              // 助手消息：创建或继续当前的 assistant 消息
+              if (!currentAssistantMsg) {
+                // 创建新的 assistant 消息
+                currentAssistantMsg = {
+                  id: msgId,
+                  role: 'assistant' as const,
+                  segments: [],
+                  timestamp: log.timestamp || Date.now(),
+                };
+                historyMessages.push(currentAssistantMsg);
+              }
+              
+              const segments = currentAssistantMsg.segments;
+              
+              // 添加思考过程
+              if (log.thinking) {
+                segments.push({ type: 'thinking', content: log.thinking });
+              }
+              
+              // 添加工具调用日志
+              if (log.toolUseLog && log.toolUseLog.length > 0) {
+                // 遍历每个工具调用
+                for (const tool of log.toolUseLog) {
+                  // 添加工具调用
+                  segments.push({
+                    type: 'tool_call',
+                    content: JSON.stringify(tool.input || {}, null, 2),
+                    toolName: tool.name || '未知工具',
+                  });
+                  
+                  // 检查下一条消息是否是对应的工具结果
+                  // 工具结果通常紧跟在助手消息之后
+                  if (i + 1 < logs.length && logs[i + 1].role === 'TOOL') {
+                    const toolResultLog = logs[i + 1];
+                    // 匹配工具名称（如果有的话）
+                    if (!toolResultLog.name || toolResultLog.name === tool.name) {
+                      segments.push({
+                        type: 'tool_result',
+                        content: toolResultLog.result || '',
+                      });
+                      i++; // 跳过下一条，因为已经处理了
+                    }
+                  }
+                }
+              }
+              
+              // 添加文本回复
+              if (log.text) {
+                segments.push({ type: 'text', content: log.text });
+              }
+            } else if (log.role === 'TOOL') {
+              // 如果工具结果没有被前面的 ASSISTANT 消息吸收，添加到当前的 assistant 消息
+              if (currentAssistantMsg) {
+                currentAssistantMsg.segments.push({
+                  type: 'tool_result',
+                  content: log.result || '',
+                });
+              } else {
+                // 如果没有当前的 assistant 消息，创建一个新的
+                currentAssistantMsg = {
+                  id: msgId,
+                  role: 'assistant' as const,
+                  segments: [{ type: 'tool_result', content: log.result || '' }],
+                  timestamp: log.timestamp || Date.now(),
+                };
+                historyMessages.push(currentAssistantMsg);
+              }
+            }
+          }
+          
+          setMessages(historyMessages);
+        }
+      } catch (error) {
+        console.error('加载历史消息失败:', error);
+        message.error('加载历史消息失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadHistoryMessages();
+  }, [sessionId]);
 
   /* ─── 发送消息（fetch + ReadableStream，走代理） ─── */
   const doSend = async (text: string) => {
@@ -322,6 +540,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         imageUrl: imageUrls,
         enableThink,
         enableSearch,
+        enablePlan,
       };
 
       const response = await fetch('/ai/chat', {
@@ -405,6 +624,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               accText = '';
               const pendingTools = data.pendingCallTools || [];
               
+              // 为每个待确认的工具添加工具调用卡片（与正常工具调用一致）
+              for (const tool of pendingTools) {
+                currentSegs.push({
+                  type: 'tool_call',
+                  content: JSON.stringify(tool.arguments || {}, null, 2),
+                  toolName: tool.toolName,
+                  // 添加工具ID用于后续更新状态
+                  toolId: tool.toolId,
+                  // 标记为待确认状态
+                  confirmStatus: 'pending' as const,
+                });
+              }
+              changed = true;
+              flushUI();
+              
               // 创建一个 Promise 等待用户确认
               const confirmResult = await new Promise<boolean>((resolve) => {
                 setPendingConfirm({
@@ -415,6 +649,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               // 用户确认后，清除待确认状态
               setPendingConfirm(null);
+              
+              // 更新聊天内容中的工具调用状态
+              for (let i = 0; i < currentSegs.length; i++) {
+                const seg = currentSegs[i];
+                if (seg.type === 'tool_call' && seg.confirmStatus === 'pending') {
+                  // 更新状态为已允许或已拒绝
+                  seg.confirmStatus = confirmResult ? 'confirmed' : 'rejected';
+                }
+              }
+              changed = true;
+              flushUI();
               
               // 调用 confirm 接口 (POST)
               const confirmBody = {
@@ -505,6 +750,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       accText = '';
                       const nestedPendingTools = confirmData.pendingCallTools || [];
                       
+                      // 为每个待确认的工具添加工具调用卡片（与正常工具调用一致）
+                      for (const tool of nestedPendingTools) {
+                        currentSegs.push({
+                          type: 'tool_call',
+                          content: JSON.stringify(tool.arguments || {}, null, 2),
+                          toolName: tool.toolName,
+                          toolId: tool.toolId,
+                          confirmStatus: 'pending' as const,
+                        });
+                      }
+                      confirmChanged = true;
+                      flushUI();
+                      
                       const nestedConfirmResult = await new Promise<boolean>((resolve) => {
                         setPendingConfirm({
                           pendingCallTools: nestedPendingTools,
@@ -513,6 +771,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       });
                       
                       setPendingConfirm(null);
+                      
+                      // 更新聊天内容中的工具调用状态
+                      for (let i = 0; i < currentSegs.length; i++) {
+                        const seg = currentSegs[i];
+                        if (seg.type === 'tool_call' && seg.confirmStatus === 'pending') {
+                          seg.confirmStatus = nestedConfirmResult ? 'confirmed' : 'rejected';
+                        }
+                      }
+                      confirmChanged = true;
+                      flushUI();
                       
                       const nestedConfirmBody = {
                         sessionId,
@@ -638,6 +906,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     } finally {
       setLoading(false);
       abortRef.current = null;
+      
+      // 如果启用了计划功能，发送消息后自动加载当前计划
+      if (enablePlan) {
+        loadCurrentPlan();
+      }
     }
   };
 
@@ -687,6 +960,98 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     });
   };
 
+  /* ─── 加载当前计划 ─── */
+  const loadCurrentPlan = async () => {
+    if (!sessionId) return;
+    
+    try {
+      const response = await fetch(`/ai/session/${sessionId}/current-plan`);
+      
+      if (!response.ok) {
+        return; // 静默失败，不显示错误
+      }
+      
+      const result = await response.json();
+      console.log('Current plan API response:', result);
+      
+      if (result.code === 200 && result.data) {
+        // 后端返回的数据结构: { currentPlan: {...} }
+        // 将 currentPlan 包装成 activePlan 格式以适配前端渲染逻辑
+        const planData = result.data.currentPlan || result.data;
+        console.log('Plan data extracted:', planData);
+        
+        if (planData) {
+          setCurrentPlan({
+            activePlan: planData
+          });
+          console.log('Current plan set successfully');
+        }
+      }
+    } catch (error) {
+      // 静默失败，不影响用户体验
+      console.error('加载当前计划失败:', error);
+    }
+  };
+
+  /* ─── 加载计划列表 ─── */
+  const loadPlans = async () => {
+    if (!sessionId) return;
+    
+    try {
+      setLoadingPlans(true);
+      const response = await fetch(`/ai/session/${sessionId}/plans`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Plans API response:', result);
+      
+      if (result.code === 200 && result.data) {
+        setPlans(result.data);
+        console.log('Plans loaded:', result.data.length, 'plans');
+      }
+    } catch (error) {
+      console.error('加载计划列表失败:', error);
+      // 不显示错误消息，静默失败
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
+  /* ─── 切换计划面板 ─── */
+  const handleTogglePlanPanel = () => {
+    const newShowState = !showPlanPanel;
+    setShowPlanPanel(newShowState);
+    
+    if (newShowState) {
+      // 打开面板时加载历史计划
+      loadPlans();
+      
+      // 启动定时刷新当前计划（每2秒）
+      loadCurrentPlan(); // 立即加载一次
+      planRefreshTimerRef.current = setInterval(() => {
+        loadCurrentPlan();
+      }, 2000);
+      
+      // 启动定时刷新历史计划（每5秒）
+      plansListTimerRef.current = setInterval(() => {
+        loadPlans();
+      }, 5000);
+    } else {
+      // 关闭面板时清除所有定时器
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+        planRefreshTimerRef.current = null;
+      }
+      if (plansListTimerRef.current) {
+        clearInterval(plansListTimerRef.current);
+        plansListTimerRef.current = null;
+      }
+    }
+  };
+
   /* ─── 清空聊天记录 ─── */
   const handleClearChat = async () => {
     try {
@@ -703,8 +1068,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
       // 清空前端聊天记录
       setMessages([]);
+      setPlans([]);
+      setCurrentPlan(null);
       setInputValue('');
       setImageUrls([]);
+      setShowPlanPanel(false);
+      
+      // 清除所有定时器
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+        planRefreshTimerRef.current = null;
+      }
+      if (plansListTimerRef.current) {
+        clearInterval(plansListTimerRef.current);
+        plansListTimerRef.current = null;
+      }
       
       message.success('聊天记录已清空');
     } catch (error) {
@@ -719,9 +1097,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       case 'thinking':
         return <ThinkingBlock key={idx} content={seg.content} />;
       case 'tool_call':
-        return <ToolCallCard key={idx} toolName={seg.toolName || ''} content={seg.content} />;
+        return (
+          <ToolCallCard
+            key={idx}
+            toolName={seg.toolName || ''}
+            content={seg.content}
+            confirmStatus={seg.confirmStatus}
+          />
+        );
       case 'tool_result':
         return <ToolResultCard key={idx} content={seg.content} />;
+      case 'tool_confirm':
+        const status = (seg.content as 'pending' | 'confirmed' | 'rejected') || 'pending';
+        return (
+          <ToolConfirmChatCard
+            key={idx}
+            pendingCallTools={seg.pendingCallTools || []}
+            status={status}
+          />
+        );
       default:
         return (
           <div key={idx} className={styles.markdownBody}>
@@ -736,8 +1130,205 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const isEmpty = (msg: ChatMessage) =>
     msg.segments.length === 0 || msg.segments.every((s) => !s.content);
 
+  /* ─── 渲染计划状态标签 ─── */
+  const renderPlanState = (state: string) => {
+    const stateMap: Record<string, { color: string; text: string }> = {
+      TODO: { color: 'default', text: '待处理' },
+      IN_PROGRESS: { color: 'processing', text: '进行中' },
+      DONE: { color: 'success', text: '已完成' },
+      ABANDONED: { color: 'error', text: '已放弃' },
+    };
+    const config = stateMap[state] || { color: 'default', text: state };
+    return <Tag color={config.color}>{config.text}</Tag>;
+  };
+
+  /* ─── 渲染计划面板 ─── */
+  const renderPlanPanel = () => {
+    if (!showPlanPanel) return null;
+
+    return (
+      <div className={styles.planPanel}>
+        <div className={styles.planPanelHeader}>
+          <h3>执行计划</h3>
+          <Button
+            type="text"
+            icon={<CloseOutlined />}
+            onClick={() => setShowPlanPanel(false)}
+            size="small"
+          />
+        </div>
+        <div className={styles.planPanelContent}>
+          {/* 当前计划状态 */}
+          {currentPlan && (
+            <div className={styles.currentPlanSection}>
+              <div className={styles.currentPlanHeader}>
+                <h4>当前计划</h4>
+                <div className={styles.refreshIndicator}>
+                  <ClockCircleOutlined spin />
+                  <span>实时更新</span>
+                </div>
+              </div>
+              {currentPlan.activePlan && (
+                <div className={styles.activePlanCard}>
+                  <div className={styles.planTitle}>{currentPlan.activePlan.name}</div>
+                  {currentPlan.activePlan.description && (
+                    <p className={styles.planDesc}>{currentPlan.activePlan.description}</p>
+                  )}
+                  {currentPlan.activePlan.subtasks && currentPlan.activePlan.subtasks.length > 0 && (
+                    <div className={styles.currentSubtasks}>
+                      <div className={styles.subtaskProgress}>
+                        <span>进度：</span>
+                        <span>
+                          {currentPlan.activePlan.subtasks.filter((t: any) => t.state === 'DONE').length} / {currentPlan.activePlan.subtasks.length}
+                        </span>
+                      </div>
+                      {currentPlan.activePlan.subtasks.map((subtask: any, idx: number) => (
+                        <div key={idx} className={styles.subtaskItem}>
+                          <div className={styles.subtaskIcon}>
+                            {subtask.state === 'DONE' && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                            {subtask.state === 'IN_PROGRESS' && <ClockCircleOutlined spin style={{ color: '#1890ff' }} />}
+                            {subtask.state === 'TODO' && <div className={styles.todoIcon} />}
+                            {subtask.state === 'ABANDONED' && <CloseOutlined style={{ color: '#ff4d4f' }} />}
+                          </div>
+                          <div className={styles.subtaskInfo}>
+                            <div className={styles.subtaskName}>{subtask.name}</div>
+                            {subtask.state === 'IN_PROGRESS' && (
+                              <div className={styles.subtaskStatus}>执行中...</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {!currentPlan.activePlan && (
+                <div className={styles.noActivePlan}>
+                  <p>当前没有活动计划</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 历史计划 */}
+          {loadingPlans && (
+            <div className={styles.loadingPlans}>
+              <p>加载计划中...</p>
+            </div>
+          )}
+          
+          {!loadingPlans && plans.length > 0 && (
+            <div className={styles.historyPlansSection}>
+              <h4>历史计划 ({plans.length})</h4>
+              <Collapse accordion defaultActiveKey={[plans[0]?.planId]}>
+                {plans.map((plan) => (
+                  <Collapse.Panel
+                    key={plan.planId}
+                    header={
+                      <div className={styles.planHeader}>
+                        <span className={styles.planName}>{plan.name}</span>
+                        {plan.finishedAt && (
+                          <Tag color="success" style={{ marginLeft: 8 }}>
+                            已完成
+                          </Tag>
+                        )}
+                      </div>
+                    }
+                  >
+                    {plan.description && (
+                      <p className={styles.planDescription}>{plan.description}</p>
+                    )}
+                    {plan.expectedOutcome && (
+                      <div className={styles.planOutcome}>
+                        <strong>预期结果：</strong>
+                        <span>{plan.expectedOutcome}</span>
+                      </div>
+                    )}
+                    {plan.subtasks && plan.subtasks.length > 0 && (
+                      <div className={styles.planSubtasks}>
+                        <h4>子任务 ({plan.subtasks.length})</h4>
+                        <Table
+                          dataSource={plan.subtasks}
+                          rowKey={(record) => record.name}
+                          size="small"
+                          pagination={false}
+                          columns={[
+                            {
+                              title: '状态',
+                              dataIndex: 'state',
+                              key: 'state',
+                              width: 90,
+                              render: (state: string) => renderPlanState(state),
+                            },
+                            {
+                              title: '任务名称',
+                              dataIndex: 'name',
+                              key: 'name',
+                              ellipsis: true,
+                            },
+                            {
+                              title: '耗时',
+                              dataIndex: 'costTimeSeconds',
+                              key: 'costTimeSeconds',
+                              width: 70,
+                              render: (seconds: number) => `${seconds}s`,
+                            },
+                          ]}
+                          expandable={{
+                            expandedRowRender: (record) => (
+                              <div className={styles.subtaskDetail}>
+                                {record.description && (
+                                  <p>
+                                    <strong>描述：</strong>
+                                    {record.description}
+                                  </p>
+                                )}
+                                {record.expectedOutcome && (
+                                  <p>
+                                    <strong>预期结果：</strong>
+                                    {record.expectedOutcome}
+                                  </p>
+                                )}
+                                {record.outcome && (
+                                  <p>
+                                    <strong>实际结果：</strong>
+                                    {record.outcome}
+                                  </p>
+                                )}
+                              </div>
+                            ),
+                          }}
+                        />
+                      </div>
+                    )}
+                    <div className={styles.planFooter}>
+                      <span>创建时间：{plan.createdAt}</span>
+                      {plan.costTimeseconds > 0 && (
+                        <span>总耗时：{plan.costTimeseconds}s</span>
+                      )}
+                    </div>
+                  </Collapse.Panel>
+                ))}
+              </Collapse>
+            </div>
+          )}
+
+          {!loadingPlans && plans.length === 0 && (
+            <div className={styles.planEmpty}>
+              <ClockCircleOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
+              <p>暂无历史计划</p>
+              <span>开启"开启计划"选项后，AI 会自动创建计划</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={styles.chatWindow}>
+      {/* ─── 计划面板 ─── */}
+      {renderPlanPanel()}
       {/* ─── 工具确认弹窗 ─── */}
       {pendingConfirm && (
         <ToolConfirmCard
@@ -866,6 +1457,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               >
                 <SearchOutlined />
                 <span>联网搜索</span>
+              </div>
+              <div
+                className={`${styles.optionItem} ${enablePlan ? styles.optionActive : ''}`}
+                onClick={() => setEnablePlan(!enablePlan)}
+              >
+                <UnorderedListOutlined />
+                <span>开启计划</span>
+              </div>
+              <div
+                className={`${styles.optionItem} ${showPlanPanel ? styles.optionActive : ''}`}
+                onClick={handleTogglePlanPanel}
+              >
+                <CheckSquareOutlined />
+                <span>查看计划</span>
               </div>
               <Popconfirm
                 title="清空聊天记录"

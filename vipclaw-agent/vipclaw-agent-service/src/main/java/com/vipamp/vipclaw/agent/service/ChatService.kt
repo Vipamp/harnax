@@ -2,8 +2,10 @@ package com.vipamp.vipclaw.agent.service
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
 import com.vipamp.vipclaw.agent.*
+import com.vipamp.vipclaw.agent.adaptor.PlanNote
 import com.vipamp.vipclaw.agent.chat.ChatEvent
 import com.vipamp.vipclaw.agent.chat.MessageLog
+import com.vipamp.vipclaw.agent.chat.MessageLogConverter
 import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
 import com.vipamp.vipclaw.agent.service.dto.ChatRequest
 import com.vipamp.vipclaw.agent.service.dto.ConfirmRequest
@@ -14,9 +16,11 @@ import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
+import io.agentscope.core.state.PlanNotebookState
 import lombok.RequiredArgsConstructor
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
+import java.util.Optional
 
 /**
  * @Author: heqingsong
@@ -38,6 +42,7 @@ class ChatService(
             val chatSpec = ChatSpecBuilder()
                 .enableThinking(request.enableThink)
                 .enableSearch(request.enableSearch)
+                .enablePlan(request.enablePlan)
                 .build()
             return createAgent(request.sessionId, chatSpec, userIdentifier)
                 .callStream(request.message, request.imageUrl)
@@ -118,7 +123,13 @@ class ChatService(
         launcher.clearSession(sessionId)
     }
 
-    fun loadSessionMessages(sessionId: String): List<MessageLog> {
-        return emptyList()
-    }
+    fun loadSessionMessages(sessionId: String): List<MessageLog> =
+        launcher.loadSessionMessages(sessionId)
+            .flatMap { MessageLogConverter.convert(it) }
+
+    fun loadSessionHistoryPlan(sessionId: String): MutableList<PlanNote> =
+        launcher.loadSessionHistoryPlan(sessionId)
+
+    fun loadSessionCurrentPlanNote(sessionId: String): Optional<PlanNotebookState> =
+        launcher.loadSessionCurrentPlanNote(sessionId)
 }

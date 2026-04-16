@@ -17,8 +17,11 @@ import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.memory.InMemoryMemory
 import io.agentscope.core.memory.Memory
 import io.agentscope.core.memory.autocontext.AutoContextMemory
+import io.agentscope.core.message.Msg
+import io.agentscope.core.plan.PlanNotebook
 import io.agentscope.core.session.Session
 import io.agentscope.core.session.SessionManager
+import io.agentscope.core.state.PlanNotebookState
 import io.agentscope.core.state.SimpleSessionKey
 import io.agentscope.core.tool.ToolExecutionContext
 import java.nio.file.Files
@@ -39,6 +42,7 @@ class AscopeAgentLauncher(
     val tokenStatAdaptor: TokenStatAdaptor,
     val processLogAdaptor: ProcessLogAdaptor,
     val toolCallLogAdaptor: ToolCallLogAdaptor,
+    val planNoteAdaptor: PlanNoteAdaptor,
     val localRootTmpDir: Path
 ) {
     val needConfirmedTools: MutableSet<String> = mutableSetOf()
@@ -73,7 +77,7 @@ class AscopeAgentLauncher(
 //        val chatModelConfig = chatModelConfigAdaptor.getConfig(agentSpec.chatModelId) ?: throw IllegalArgumentException(
 //            "Chat model config not found"
 //        )
-        val chatModelConfig = DashScopeChatModelConfig("qwen3.5-122b-a10b", "sk-5404e4ddac8645a1bd3555c00376a1f5")
+        val chatModelConfig = DashScopeChatModelConfig("qwen3.5-plus", "sk-5404e4ddac8645a1bd3555c00376a1f5")
         val chatModel = ModelHelper.createChatModel(chatModelConfig, chatSpec)
         agentBuilder.model(chatModel)
 
@@ -143,10 +147,19 @@ class AscopeAgentLauncher(
         }
 
         // plan
-        if (agentSpec.enablePlan != null) {
-            agentBuilder.enablePlan(agentSpec.enablePlan)
-            // If enablePlan is true, the plan notebook will not be null;
-            agentBuilder.addPlanNotebook(agentSpec.planNotebook!!)
+        var planNotebook: PlanNotebook? = null
+        if (chatSpec.enablePlan) {
+            val planNotebookBuilder =
+                PlanNotebook.builder().storage(CustomerPlanNoteStorage(sessionId, planNoteAdaptor))
+            if (agentSpec.planSpec.maxSubTask != null) {
+                planNotebookBuilder.maxSubtasks(agentSpec.planSpec.maxSubTask)
+            }
+            if (agentSpec.planSpec.needUserConfirmed != null) {
+                planNotebookBuilder.needUserConfirm(agentSpec.planSpec.needUserConfirmed)
+            }
+            agentBuilder.enablePlan(true)
+            planNotebook = planNotebookBuilder.build()
+            agentBuilder.addPlanNotebook(planNotebook)
         }
         // Load session
         val agent = agentBuilder.build()
@@ -155,7 +168,7 @@ class AscopeAgentLauncher(
             sessionManager = SessionManager.forSessionId(sessionId).withSession(session)
             sessionManager.addComponent(agent)
             sessionManager.addComponent(memory)
-            agentSpec.planNotebook?.let { sessionManager.addComponent(it) }
+            planNotebook?.let { sessionManager.addComponent(it) }
             sessionManager.loadIfExists()
             logger().info("Loaded ${agent.name} with session $sessionId successfully.")
         }
@@ -169,6 +182,19 @@ class AscopeAgentLauncher(
 
     fun clearSession(sessionId: String) {
         session.delete(SimpleSessionKey.of(sessionId))
+        planNoteAdaptor.deletePlan(sessionId)
+    }
+
+    fun loadSessionMessages(sessionId: String): List<Msg> {
+        return session.getList(SimpleSessionKey.of(sessionId), "memory_messages", Msg::class.java)
+    }
+
+    fun loadSessionHistoryPlan(sessionId: String): MutableList<PlanNote> {
+        return planNoteAdaptor.getPlanNotes(sessionId)
+    }
+
+    fun loadSessionCurrentPlanNote(sessionId: String): Optional<PlanNotebookState> {
+        return session.get(SimpleSessionKey.of(sessionId), "planNotebook_state", PlanNotebookState::class.java)
     }
 
     companion object {
@@ -180,6 +206,7 @@ class AscopeAgentLauncher(
             sessionConfig: SessionConfig?,
             processLogAdaptor: ProcessLogAdaptor,
             toolCallLogAdaptor: ToolCallLogAdaptor,
+            planNoteAdaptor: PlanNoteAdaptor,
             localRootTmpDir: Path = Files.createTempDirectory("agent-tmp-dir")
         ): AscopeAgentLauncher {
             return AscopeAgentLauncher(
@@ -190,6 +217,7 @@ class AscopeAgentLauncher(
                 tokenStatAdaptor,
                 processLogAdaptor,
                 toolCallLogAdaptor,
+                planNoteAdaptor,
                 localRootTmpDir
             )
         }
