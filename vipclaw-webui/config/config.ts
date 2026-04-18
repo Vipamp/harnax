@@ -114,7 +114,6 @@ export default defineConfig({
    * @doc https://umijs.org/docs/max/antd#antd
    */
   antd: {
-    appConfig: {},
     configProvider: {
       theme: {
         cssVar: true,
@@ -169,13 +168,5 @@ export default defineConfig({
   mock: {
     include: ['mock/**/*', 'src/pages/**/_mock.ts'],
   },
-  /**
-   * @name 是否开启 mako
-   * @description 使用 mako 极速研发
-   * @doc https://umijs.org/docs/api/config#mako
-   */
-  mako: {},
-  esbuildMinifyIIFE: true,
   requestRecord: {},
-  exportStatic: {},
 });

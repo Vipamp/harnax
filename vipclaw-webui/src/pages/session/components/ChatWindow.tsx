@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin } from 'antd';
+import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin, Dropdown } from 'antd';
 import {
   SendOutlined,
   BulbOutlined,
   SearchOutlined,
   DownOutlined,
+  UpOutlined,
   RightOutlined,
+  LeftOutlined,
+  ReloadOutlined,
   ToolOutlined,
   CheckCircleOutlined,
   RobotOutlined,
@@ -19,6 +22,8 @@ import {
   UnorderedListOutlined,
   ClockCircleOutlined,
   CheckSquareOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -38,12 +43,15 @@ interface PendingCallTool {
 }
 
 interface MessageSegment {
-  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_confirm';
+  type: 'text' | 'thinking' | 'tool_call' | 'tool_result' | 'tool_confirm' | 'plan_card';
   content: string;
   toolName?: string;
   toolId?: string;
   confirmStatus?: 'pending' | 'confirmed' | 'rejected';
   pendingCallTools?: PendingCallTool[];
+  planData?: any; // 计划数据
+  toolResult?: string; // 工具返回结果（合并显示时使用）
+  toolResultExpanded?: boolean; // 工具结果是否展开（合并显示时使用）
 }
 
 interface ChatMessage {
@@ -79,6 +87,7 @@ interface PlanNote {
   createdAt: string;
   finishedAt: string | null;
   costTimeseconds: number;
+  status: string; // TODO, IN_PROGRESS, DONE, ABANDONED
 }
 
 /* ─── 快捷建议 ─── */
@@ -134,7 +143,7 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
 
 /* ─── 思考折叠 ─── */
 const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(true); // 默认展开
   return (
     <div className={styles.thinkingBlock}>
       <div className={styles.thinkingToggle} onClick={() => setExpanded(!expanded)}>
@@ -151,7 +160,80 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
-/* ─── 工具卡片 ─── */
+/* ─── 合并的工具卡片（工具调用 + 工具返回） ─── */
+const MergedToolCard: React.FC<{
+  toolName: string;
+  arguments: string;
+  result?: string;
+  confirmStatus?: 'pending' | 'confirmed' | 'rejected';
+  onToggleResult?: () => void;
+}> = ({ toolName, arguments: args, result, confirmStatus, onToggleResult }) => {
+  const [expanded, setExpanded] = useState(false); // 默认折叠
+  const hasResult = !!result;
+  
+  // 根据确认状态显示不同的文本和颜色
+  const statusConfig = {
+    pending: { text: '待确认', color: '#faad14', icon: <ExclamationCircleOutlined /> },
+    confirmed: { text: '已允许', color: '#52c41a', icon: <CheckCircleOutlined /> },
+    rejected: { text: '已拒绝', color: '#ff4d4f', icon: <CloseOutlined /> },
+    calling: { text: '调用中', color: '#1890ff', icon: <ClockCircleOutlined spin /> },
+    completed: { text: '已完成', color: '#52c41a', icon: <CheckCircleOutlined /> },
+  };
+  
+  let status = 'calling';
+  if (confirmStatus === 'pending') status = 'pending';
+  else if (confirmStatus === 'rejected') status = 'rejected';
+  else if (confirmStatus === 'confirmed' && !hasResult) status = 'confirmed';
+  else if (hasResult) status = 'completed';
+  
+  const currentStatus = statusConfig[status as keyof typeof statusConfig];
+  
+  return (
+    <div className={styles.mergedToolCard}>
+      {/* 工具调用头部 - 始终显示 */}
+      <div 
+        className={styles.mergedToolHeader}
+        onClick={() => setExpanded(!expanded)}
+        style={{ cursor: 'pointer' }}
+      >
+        <div className={styles.mergedToolTitle}>
+          <ToolOutlined style={{ color: currentStatus.color }} />
+          <span className={styles.mergedToolName}>{toolName}</span>
+          <span className={styles.mergedToolStatus} style={{ color: currentStatus.color }}>
+            {currentStatus.icon}
+            <span style={{ marginLeft: 4 }}>{currentStatus.text}</span>
+          </span>
+        </div>
+        <div className={styles.mergedToolArrow}>
+          {expanded ? <UpOutlined /> : <DownOutlined />}
+        </div>
+      </div>
+      
+      {/* 展开后显示参数和结果 */}
+      {expanded && (
+        <>
+          {/* 工具参数 */}
+          {args && (
+            <div className={styles.mergedToolArgs}>
+              <div className={styles.mergedToolSectionLabel}>参数</div>
+              <pre className={styles.mergedToolCode}>{args}</pre>
+            </div>
+          )}
+          
+          {/* 工具返回结果 */}
+          {hasResult && (
+            <div className={styles.mergedToolResult}>
+              <div className={styles.mergedToolSectionLabel}>返回结果</div>
+              <pre className={styles.mergedToolCode}>{result}</pre>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+/* ─── 工具卡片（旧版，保留兼容） ─── */
 const ToolCallCard: React.FC<{
   toolName: string;
   content: string;
@@ -176,21 +258,6 @@ const ToolCallCard: React.FC<{
           {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
         </div>
         {expanded && content && <div className={styles.toolCardBody}>{content}</div>}
-      </div>
-    </div>
-  );
-};
-
-const ToolResultCard: React.FC<{ content: string }> = ({ content }) => {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div style={{ display: 'block', width: '100%' }}>
-      <div className={styles.toolResultCard}>
-        <div className={styles.toolResultHeader} onClick={() => setExpanded(!expanded)}>
-          <CheckCircleOutlined /> 工具返回
-          {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
-        </div>
-        {expanded && <div className={styles.toolResultBody}>{content}</div>}
       </div>
     </div>
   );
@@ -334,6 +401,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [enableThink, setEnableThink] = useState(false);
+  const [showThinking, setShowThinking] = useState(true); // 是否显示思考过程
   const [enableSearch, setEnableSearch] = useState(false);
   const [enablePlan, setEnablePlan] = useState(false);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -345,6 +413,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [plans, setPlans] = useState<PlanNote[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [currentPlan, setCurrentPlan] = useState<any>(null);
+  const [currentPlanExpanded, setCurrentPlanExpanded] = useState(true); // 当前计划默认展开
+  const previousHasPlanRef = useRef<boolean>(false); // 记录上一次是否有计划
+  const currentPlanMessageIdRef = useRef<string | null>(null); // 当前计划消息的ID
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -359,13 +430,41 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  // 当开启计划功能时，立即加载当前计划
+  useEffect(() => {
+    if (enablePlan && sessionId) {
+      loadCurrentPlan();
+    }
+  }, [enablePlan, sessionId]);
+
+  // 根据当前计划的折叠状态控制定时器
+  useEffect(() => {
+    if (enablePlan && currentPlanExpanded && currentPlan) {
+      // 展开状态：启动定时器，每2秒刷新一次
+      planRefreshTimerRef.current = setInterval(() => {
+        loadCurrentPlan();
+      }, 2000);
+    } else {
+      // 折叠状态或无计划：清除定时器
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+        planRefreshTimerRef.current = null;
+      }
+    }
+
+    // 组件卸载时清理定时器
+    return () => {
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+      }
+    };
+  }, [currentPlanExpanded, currentPlan, enablePlan]);
+
   // 组件卸载时中断请求和定时器
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      if (planRefreshTimerRef.current) {
-        clearInterval(planRefreshTimerRef.current);
-      }
+      // planRefreshTimerRef 已经在上面的 useEffect 中清理
       if (plansListTimerRef.current) {
         clearInterval(plansListTimerRef.current);
       }
@@ -378,8 +477,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setMessages([]);
       setPlans([]);
       setShowPlanPanel(false);
+      setCurrentPlan(null);
+      currentPlanMessageIdRef.current = null; // 重置计划消息ID
+      previousHasPlanRef.current = false; // 重置计划状态
       return;
     }
+
+    // 切换会话时重置计划卡片ID
+    currentPlanMessageIdRef.current = null;
+    previousHasPlanRef.current = false;
 
     const loadHistoryMessages = async () => {
       try {
@@ -392,8 +498,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           
           // 遍历所有日志，将同一个 AI 回复的所有 segment 合并到一个消息中
           let currentAssistantMsg: ChatMessage | null = null;
+          let lastProcessedIndex = -1; // 记录最后处理的消息索引
           
           for (let i = 0; i < logs.length; i++) {
+            // 如果当前索引已经被处理过，跳过
+            if (i <= lastProcessedIndex) continue;
+            
             const log = logs[i];
             const msgId = `${log.role.toLowerCase()}-${log.timestamp || Date.now()}-${i}`;
             
@@ -406,6 +516,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 segments: [{ type: 'text', content: log.message || '' }],
                 timestamp: log.timestamp || Date.now(),
               });
+              lastProcessedIndex = i;
             } else if (log.role === 'ASSISTANT') {
               // 助手消息：创建或继续当前的 assistant 消息
               if (!currentAssistantMsg) {
@@ -421,21 +532,41 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               const segments = currentAssistantMsg.segments;
               
-              // 添加思考过程
+              // 添加思考过程（需要合并连续的思考）
               if (log.thinking) {
-                segments.push({ type: 'thinking', content: log.thinking });
+                // 检查上一个 segment 是否是 thinking 类型
+                const lastSeg = segments.length > 0 ? segments[segments.length - 1] : null;
+                if (lastSeg && lastSeg.type === 'thinking') {
+                  // 如果最后一个是 thinking，合并到它（追加内容）
+                  lastSeg.content = (lastSeg.content || '') + '\n\n' + log.thinking;
+                } else {
+                  // 否则创建新的 thinking segment
+                  segments.push({ type: 'thinking', content: log.thinking });
+                }
               }
               
               // 添加工具调用日志
               if (log.toolUseLog && log.toolUseLog.length > 0) {
                 // 遍历每个工具调用
                 for (const tool of log.toolUseLog) {
-                  // 添加工具调用
-                  segments.push({
+                  const toolName = tool.name;
+                  
+                  // 如果没有工具名称，跳过
+                  if (!toolName) {
+                    continue;
+                  }
+                  
+                  // 过滤掉计划相关的工具
+                  if (isPlanRelatedTool(toolName)) {
+                    continue;
+                  }
+                  
+                  // 创建工具调用 segment
+                  const toolSeg: MessageSegment = {
                     type: 'tool_call',
                     content: JSON.stringify(tool.input || {}, null, 2),
-                    toolName: tool.name || '未知工具',
-                  });
+                    toolName: toolName,
+                  };
                   
                   // 检查下一条消息是否是对应的工具结果
                   // 工具结果通常紧跟在助手消息之后
@@ -443,13 +574,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     const toolResultLog = logs[i + 1];
                     // 匹配工具名称（如果有的话）
                     if (!toolResultLog.name || toolResultLog.name === tool.name) {
-                      segments.push({
-                        type: 'tool_result',
-                        content: toolResultLog.result || '',
-                      });
-                      i++; // 跳过下一条，因为已经处理了
+                      // 过滤掉计划相关的工具结果
+                      if (!isPlanRelatedTool(toolName)) {
+                        // 将工具结果合并到工具调用中
+                        toolSeg.toolResult = toolResultLog.result || '';
+                      }
+                      lastProcessedIndex = i + 1; // 标记下一条已处理
                     }
                   }
+                  
+                  segments.push(toolSeg);
                 }
               }
               
@@ -457,23 +591,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               if (log.text) {
                 segments.push({ type: 'text', content: log.text });
               }
+              
+              lastProcessedIndex = i;
             } else if (log.role === 'TOOL') {
-              // 如果工具结果没有被前面的 ASSISTANT 消息吸收，添加到当前的 assistant 消息
-              if (currentAssistantMsg) {
-                currentAssistantMsg.segments.push({
-                  type: 'tool_result',
-                  content: log.result || '',
-                });
-              } else {
-                // 如果没有当前的 assistant 消息，创建一个新的
-                currentAssistantMsg = {
-                  id: msgId,
-                  role: 'assistant' as const,
-                  segments: [{ type: 'tool_result', content: log.result || '' }],
-                  timestamp: log.timestamp || Date.now(),
-                };
-                historyMessages.push(currentAssistantMsg);
+              // 过滤掉计划相关的工具结果
+              const toolName = log.name || '';
+              if (isPlanRelatedTool(toolName)) {
+                lastProcessedIndex = i;
+                continue;
               }
+              
+              // 如果工具结果没有名称，跳过
+              if (!toolName) {
+                lastProcessedIndex = i;
+                continue;
+              }
+              
+              // 如果工具结果没有被前面的 ASSISTANT 消息吸收，不显示（已合并到工具调用中）
+              // 不再创建独立的 tool_result segment
+              
+              lastProcessedIndex = i;
             }
           }
           
@@ -513,8 +650,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     let currentSegs: MessageSegment[] = [];
     let accText = '';
     let accThinking = '';
+    let activeTextIdx = -1; // 当前活跃的 text segment 索引
     let activeThinkIdx = -1; // 当前活跃的 thinking segment 索引
+    let currentEventType: 'text' | 'thinking' | null = null; // 当前事件类型
+    let toolCallMap = new Map<string, number>(); // toolId -> segment index 映射
     let currentMsgs = [...messages, userMessage, assistantMessage];
+    let currentAssistantMessageId = assistantMessageId; // 可变的 assistant message ID
 
     setMessages(currentMsgs);
     setInputValue('');
@@ -522,7 +663,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setLoading(true);
 
     const flushUI = () => {
-      const idx = currentMsgs.findIndex((m) => m.id === assistantMessageId);
+      const idx = currentMsgs.findIndex((m) => m.id === currentAssistantMessageId);
       if (idx >= 0) {
         currentMsgs = [...currentMsgs];
         currentMsgs[idx] = { ...currentMsgs[idx], segments: [...currentSegs] };
@@ -576,65 +717,236 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           if (!jsonStr) continue;
           try {
             const data = JSON.parse(jsonStr);
+            
+            // 添加调试日志，查看接收到的所有事件
+            console.log('[SSE Event] eventType:', data.eventType, 'data:', data);
 
             if (data.eventType === 'TextEvent') {
-              if (data.last === true) {
-                // 当前文本段结束，重置累积器，后续文本作为新 segment
+              // 如果当前不是 text 事件，表示上一个内容块结束
+              if (currentEventType !== 'text') {
                 accText = '';
+                activeTextIdx = -1;
+              }
+              currentEventType = 'text';
+              
+              if (data.last === true) {
+                // 当前文本段结束
+                accText = '';
+                activeTextIdx = -1;
+                currentEventType = null;
                 continue;
               }
+              
               accText += data.message || '';
-              const lastSeg = currentSegs[currentSegs.length - 1];
-              if (lastSeg && lastSeg.type === 'text') {
-                lastSeg.content = accText;
-              } else {
+              // 创建或更新 text segment
+              if (activeTextIdx < 0 || activeTextIdx >= currentSegs.length) {
                 currentSegs.push({ type: 'text', content: accText });
+                activeTextIdx = currentSegs.length - 1;
+              } else {
+                currentSegs[activeTextIdx].content = accText;
               }
               changed = true;
+              
             } else if (data.eventType === 'ThinkingEvent') {
-              if (data.last === true) {
-                // 思考过程结束，重置累积器和索引，后续思考创建新块
-                accThinking = '';
-                activeThinkIdx = -1;
-                continue;
+              // 如果当前不是 thinking 事件，检查是否需要追加到上一个 thinking segment
+              if (currentEventType !== 'thinking') {
+                // 检查上一个 segment 是否是 thinking 类型
+                const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                if (lastSeg && lastSeg.type === 'thinking') {
+                  // 如果最后一个是 thinking，继续追加到它
+                  activeThinkIdx = currentSegs.length - 1;
+                  // 不读取旧内容，accThinking 只保存当前批次的内容
+                  accThinking = '';
+                } else {
+                  // 否则创建新的 thinking segment
+                  accThinking = '';
+                  activeThinkIdx = -1;
+                }
               }
+              currentEventType = 'thinking';
+              
+              // 累积当前批次的思考内容
               accThinking += data.message || '';
-              if (activeThinkIdx >= 0 && activeThinkIdx < currentSegs.length) {
-                currentSegs[activeThinkIdx].content = accThinking;
-              } else {
-                // 新建一个 thinking segment
+              
+              // 创建或更新 thinking segment
+              if (activeThinkIdx < 0 || activeThinkIdx >= currentSegs.length) {
+                // 创建新 segment
                 currentSegs.push({ type: 'thinking', content: accThinking });
                 activeThinkIdx = currentSegs.length - 1;
+              } else {
+                // 更新现有 segment：直接赋值为累积的内容
+                currentSegs[activeThinkIdx].content = accThinking;
               }
               changed = true;
+              
+              if (data.last === true) {
+                // 当前思考批次结束，但不重置状态
+                // 如果下一次还是 ThinkingEvent，会继续追加到同一个 segment
+                // 只有遇到其他类型事件时，才会重新检查并可能创建新 segment
+                accThinking = '';
+                // 不重置 activeThinkIdx 和 currentEventType
+              }
+              
             } else if (data.eventType === 'CallToolEvent') {
+              const toolName = data.toolName;
+              const toolId = data.toolId || `tool-${Date.now()}`;
+              
+              console.log('[CallToolEvent] toolName:', toolName, 'toolId:', toolId);
+              
+              // 如果没有工具名称，跳过
+              if (!toolName) {
+                console.log('[CallToolEvent] No toolName, skipping');
+                continue;
+              }
+              
+              // 如果是 create_plan，自动打开执行计划侧边栏并加载当前计划
+              if (toolName === 'create_plan' && enablePlan) {
+                setShowPlanPanel(true);
+                // 立即加载当前计划，后续由 useEffect 自动管理定时器
+                loadCurrentPlan();
+              }
+              
+              // 过滤掉计划相关的工具
+              if (isPlanRelatedTool(toolName)) {
+                console.log('[CallToolEvent] Plan-related tool, skipping:', toolName);
+                // 计划相关工具不中断思考的连续性
+                continue;
+              }
+              
+              // 非计划工具调用，中断思考的连续性
+              currentEventType = null;
               accText = '';
-              currentSegs.push({
+              accThinking = '';
+              activeTextIdx = -1;
+              activeThinkIdx = -1;
+              
+              const toolSeg: MessageSegment = {
                 type: 'tool_call',
                 content: JSON.stringify(data.arguments || {}, null, 2),
-                toolName: data.toolName || '未知工具',
-              });
+                toolName: toolName,
+                toolId: toolId,
+              };
+              currentSegs.push(toolSeg);
+              toolCallMap.set(toolId, currentSegs.length - 1);
+              console.log('[CallToolEvent] Added tool at index:', currentSegs.length - 1);
               changed = true;
+              
             } else if (data.eventType === 'ToolResultEvent') {
+              const toolId = data.toolId || '';
+              const resultContent = data.message || '';
+              const toolName = data.toolName || '';
+              
+              console.log('[ToolResultEvent] toolName:', toolName, 'toolId:', toolId, 'resultContent:', resultContent);
+              console.log('[ToolResultEvent] toolCallMap:', Array.from(toolCallMap.entries()));
+              
+              // 计划相关工具的结果不中断思考的连续性
+              if (isPlanRelatedTool(toolName)) {
+                console.log('[ToolResultEvent] Plan-related tool result, not interrupting thinking');
+                // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
+                if (toolId && toolCallMap.has(toolId)) {
+                  const segIdx = toolCallMap.get(toolId)!;
+                  currentSegs = currentSegs.map((seg, idx) => 
+                    idx === segIdx && seg.type === 'tool_call'
+                      ? { ...seg, toolResult: resultContent }
+                      : seg
+                  );
+                }
+                changed = true;
+                continue;
+              }
+              
+              // 非计划工具结果，中断思考的连续性
+              currentEventType = null;
               accText = '';
-              currentSegs.push({ type: 'tool_result', content: data.message || '' });
+              accThinking = '';
+              activeTextIdx = -1;
+              activeThinkIdx = -1;
+              
+              // 根据 toolId 找到对应的工具调用 segment 并更新
+              if (toolId && toolCallMap.has(toolId)) {
+                const segIdx = toolCallMap.get(toolId)!;
+                console.log('[ToolResultEvent] Found tool at index:', segIdx);
+                // 创建新的 segment 对象以触发 React 重新渲染
+                currentSegs = currentSegs.map((seg, idx) => 
+                  idx === segIdx && seg.type === 'tool_call'
+                    ? { ...seg, toolResult: resultContent }
+                    : seg
+                );
+                console.log('[ToolResultEvent] Updated segment:', currentSegs[segIdx]);
+              } else {
+                // 如果找不到对应的工具调用，不显示独立的工具结果
+                console.log('[ToolResultEvent] Tool not found, ignoring result');
+              }
               changed = true;
+              
+              // 检查是否是 finish_subtask 或 finish_plan 工具
+              if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
+                console.log('[ToolResultEvent] Detected finish tool, creating new assistant message');
+                
+                // 完成当前消息
+                flushUI();
+                
+                // 创建新的 assistant 消息
+                const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                const newAssistantMessage: ChatMessage = {
+                  id: newAssistantMessageId,
+                  role: 'assistant',
+                  segments: [],
+                  timestamp: Date.now(),
+                };
+                
+                // 更新 currentMsgs
+                currentMsgs = [...currentMsgs, newAssistantMessage];
+                setMessages(currentMsgs);
+                
+                // 更新当前 assistant message ID
+                currentAssistantMessageId = newAssistantMessageId;
+                
+                // 重置所有状态以开始新消息
+                currentSegs = [];
+                accText = '';
+                accThinking = '';
+                activeTextIdx = -1;
+                activeThinkIdx = -1;
+                currentEventType = null;
+                toolCallMap = new Map<string, number>();
+              }
+              
             } else if (data.eventType === 'ToolConfirmEvent') {
               // 收到工具确认事件，暂停并等待用户确认
+              currentEventType = null;
               accText = '';
+              accThinking = '';
+              activeTextIdx = -1;
+              activeThinkIdx = -1;
+              
               const pendingTools = data.pendingCallTools || [];
               
-              // 为每个待确认的工具添加工具调用卡片（与正常工具调用一致）
+              // 为每个待确认的工具添加工具调用卡片
               for (const tool of pendingTools) {
-                currentSegs.push({
+                // 如果没有工具名称，跳过
+                if (!tool.toolName) {
+                  console.log('[ToolConfirmEvent] No toolName, skipping');
+                  continue;
+                }
+                
+                // 过滤掉计划相关的工具
+                if (isPlanRelatedTool(tool.toolName)) {
+                  console.log('[ToolConfirmEvent] Plan-related tool, skipping:', tool.toolName);
+                  continue;
+                }
+                
+                const toolSeg: MessageSegment = {
                   type: 'tool_call',
                   content: JSON.stringify(tool.arguments || {}, null, 2),
                   toolName: tool.toolName,
-                  // 添加工具ID用于后续更新状态
                   toolId: tool.toolId,
-                  // 标记为待确认状态
                   confirmStatus: 'pending' as const,
-                });
+                };
+                currentSegs.push(toolSeg);
+                // 重要：将工具调用添加到 toolCallMap 中，以便 confirm 流中的 ToolResultEvent 能找到它
+                toolCallMap.set(tool.toolId, currentSegs.length - 1);
+                console.log('[ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
               }
               changed = true;
               flushUI();
@@ -654,7 +966,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               for (let i = 0; i < currentSegs.length; i++) {
                 const seg = currentSegs[i];
                 if (seg.type === 'tool_call' && seg.confirmStatus === 'pending') {
-                  // 更新状态为已允许或已拒绝
                   seg.confirmStatus = confirmResult ? 'confirmed' : 'rejected';
                 }
               }
@@ -709,42 +1020,154 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     if (confirmData.eventType === 'TextEvent') {
                       if (confirmData.last === true) {
                         accText = '';
+                        activeTextIdx = -1;
+                        currentEventType = null;
                         continue;
                       }
+                      
+                      if (currentEventType !== 'text') {
+                        accText = '';
+                        activeTextIdx = -1;
+                      }
+                      currentEventType = 'text';
+                      
                       accText += confirmData.message || '';
-                      const lastSeg = currentSegs[currentSegs.length - 1];
-                      if (lastSeg && lastSeg.type === 'text') {
-                        lastSeg.content = accText;
-                      } else {
+                      if (activeTextIdx < 0 || activeTextIdx >= currentSegs.length) {
                         currentSegs.push({ type: 'text', content: accText });
+                        activeTextIdx = currentSegs.length - 1;
+                      } else {
+                        currentSegs[activeTextIdx].content = accText;
                       }
                       confirmChanged = true;
+                      
                     } else if (confirmData.eventType === 'ThinkingEvent') {
                       if (confirmData.last === true) {
                         accThinking = '';
                         activeThinkIdx = -1;
+                        currentEventType = null;
                         continue;
                       }
+                      
+                      if (currentEventType !== 'thinking') {
+                        accThinking = '';
+                        activeThinkIdx = -1;
+                      }
+                      currentEventType = 'thinking';
+                      
                       accThinking += confirmData.message || '';
-                      if (activeThinkIdx >= 0 && activeThinkIdx < currentSegs.length) {
-                        currentSegs[activeThinkIdx].content = accThinking;
-                      } else {
+                      if (activeThinkIdx < 0 || activeThinkIdx >= currentSegs.length) {
                         currentSegs.push({ type: 'thinking', content: accThinking });
                         activeThinkIdx = currentSegs.length - 1;
+                      } else {
+                        currentSegs[activeThinkIdx].content = accThinking;
                       }
                       confirmChanged = true;
+                      
                     } else if (confirmData.eventType === 'CallToolEvent') {
+                      const confirmToolName = confirmData.toolName || '未知工具';
+                      const confirmToolId = confirmData.toolId || `tool-${Date.now()}`;
+                      
+                      if (confirmToolName === 'create_plan' && enablePlan) {
+                        setShowPlanPanel(true);
+                        // 立即加载当前计划，后续由 useEffect 自动管理定时器
+                        loadCurrentPlan();
+                      }
+                      
+                      if (isPlanRelatedTool(confirmToolName)) {
+                        // 计划相关工具不中断思考的连续性
+                        confirmChanged = true;
+                        continue;
+                      }
+                      
+                      // 非计划工具调用，中断思考的连续性
+                      currentEventType = null;
                       accText = '';
-                      currentSegs.push({
+                      accThinking = '';
+                      activeTextIdx = -1;
+                      activeThinkIdx = -1;
+                      
+                      const toolSeg: MessageSegment = {
                         type: 'tool_call',
                         content: JSON.stringify(confirmData.arguments || {}, null, 2),
-                        toolName: confirmData.toolName || '未知工具',
-                      });
+                        toolName: confirmToolName,
+                        toolId: confirmToolId,
+                      };
+                      currentSegs.push(toolSeg);
+                      toolCallMap.set(confirmToolId, currentSegs.length - 1);
                       confirmChanged = true;
+                      
                     } else if (confirmData.eventType === 'ToolResultEvent') {
+                      const toolId = confirmData.toolId || '';
+                      const resultContent = confirmData.message || '';
+                      const toolName = confirmData.toolName || '';
+                      
+                      // 计划相关工具的结果不中断思考的连续性
+                      if (isPlanRelatedTool(toolName)) {
+                        // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
+                        if (toolId && toolCallMap.has(toolId)) {
+                          const segIdx = toolCallMap.get(toolId)!;
+                          currentSegs = currentSegs.map((seg, idx) => 
+                            idx === segIdx && seg.type === 'tool_call'
+                              ? { ...seg, toolResult: resultContent }
+                              : seg
+                          );
+                        }
+                        confirmChanged = true;
+                        continue;
+                      }
+                      
+                      // 非计划工具结果，中断思考的连续性
+                      currentEventType = null;
                       accText = '';
-                      currentSegs.push({ type: 'tool_result', content: confirmData.message || '' });
+                      accThinking = '';
+                      activeTextIdx = -1;
+                      activeThinkIdx = -1;
+                      
+                      if (toolId && toolCallMap.has(toolId)) {
+                        const segIdx = toolCallMap.get(toolId)!;
+                        currentSegs = currentSegs.map((seg, idx) => 
+                          idx === segIdx && seg.type === 'tool_call'
+                            ? { ...seg, toolResult: resultContent }
+                            : seg
+                        );
+                      } else {
+                        // 如果找不到对应的工具调用，不显示独立的工具结果
+                        console.log('[Confirm ToolResultEvent] Tool not found, ignoring result');
+                      }
                       confirmChanged = true;
+                      
+                      // 检查是否是 finish_subtask 或 finish_plan 工具
+                      if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
+                        console.log('[Confirm ToolResultEvent] Detected finish tool, creating new assistant message');
+                        
+                        // 完成当前消息
+                        flushUI();
+                        
+                        // 创建新的 assistant 消息
+                        const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                        const newAssistantMessage: ChatMessage = {
+                          id: newAssistantMessageId,
+                          role: 'assistant',
+                          segments: [],
+                          timestamp: Date.now(),
+                        };
+                        
+                        // 更新 currentMsgs
+                        currentMsgs = [...currentMsgs, newAssistantMessage];
+                        setMessages(currentMsgs);
+                        
+                        // 更新当前 assistant message ID
+                        currentAssistantMessageId = newAssistantMessageId;
+                        
+                        // 重置所有状态以开始新消息
+                        currentSegs = [];
+                        accText = '';
+                        accThinking = '';
+                        activeTextIdx = -1;
+                        activeThinkIdx = -1;
+                        currentEventType = null;
+                        toolCallMap = new Map<string, number>();
+                      }
                     } else if (confirmData.eventType === 'ToolConfirmEvent') {
                       // 递归处理嵌套的工具确认
                       accText = '';
@@ -752,13 +1175,29 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       
                       // 为每个待确认的工具添加工具调用卡片（与正常工具调用一致）
                       for (const tool of nestedPendingTools) {
-                        currentSegs.push({
+                        // 如果没有工具名称，跳过
+                        if (!tool.toolName) {
+                          console.log('[Nested ToolConfirmEvent] No toolName, skipping');
+                          continue;
+                        }
+                        
+                        // 过滤掉计划相关的工具
+                        if (isPlanRelatedTool(tool.toolName)) {
+                          console.log('[Nested ToolConfirmEvent] Plan-related tool, skipping:', tool.toolName);
+                          continue;
+                        }
+                        
+                        const toolSeg: MessageSegment = {
                           type: 'tool_call',
                           content: JSON.stringify(tool.arguments || {}, null, 2),
                           toolName: tool.toolName,
                           toolId: tool.toolId,
                           confirmStatus: 'pending' as const,
-                        });
+                        };
+                        currentSegs.push(toolSeg);
+                        // 重要：将工具调用添加到 toolCallMap 中
+                        toolCallMap.set(tool.toolId, currentSegs.length - 1);
+                        console.log('[Nested ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
                       }
                       confirmChanged = true;
                       flushUI();
@@ -828,42 +1267,153 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                             if (nestedData.eventType === 'TextEvent') {
                               if (nestedData.last === true) {
                                 accText = '';
+                                activeTextIdx = -1;
+                                currentEventType = null;
                                 continue;
                               }
+                              
+                              if (currentEventType !== 'text') {
+                                accText = '';
+                                activeTextIdx = -1;
+                              }
+                              currentEventType = 'text';
+                              
                               accText += nestedData.message || '';
-                              const lastSeg = currentSegs[currentSegs.length - 1];
-                              if (lastSeg && lastSeg.type === 'text') {
-                                lastSeg.content = accText;
-                              } else {
+                              if (activeTextIdx < 0 || activeTextIdx >= currentSegs.length) {
                                 currentSegs.push({ type: 'text', content: accText });
+                                activeTextIdx = currentSegs.length - 1;
+                              } else {
+                                currentSegs[activeTextIdx].content = accText;
                               }
                               confirmChanged = true;
+                              
                             } else if (nestedData.eventType === 'ThinkingEvent') {
                               if (nestedData.last === true) {
                                 accThinking = '';
                                 activeThinkIdx = -1;
+                                currentEventType = null;
                                 continue;
                               }
+                              
+                              if (currentEventType !== 'thinking') {
+                                accThinking = '';
+                                activeThinkIdx = -1;
+                              }
+                              currentEventType = 'thinking';
+                              
                               accThinking += nestedData.message || '';
-                              if (activeThinkIdx >= 0 && activeThinkIdx < currentSegs.length) {
-                                currentSegs[activeThinkIdx].content = accThinking;
-                              } else {
+                              if (activeThinkIdx < 0 || activeThinkIdx >= currentSegs.length) {
                                 currentSegs.push({ type: 'thinking', content: accThinking });
                                 activeThinkIdx = currentSegs.length - 1;
+                              } else {
+                                currentSegs[activeThinkIdx].content = accThinking;
                               }
                               confirmChanged = true;
+                              
                             } else if (nestedData.eventType === 'CallToolEvent') {
+                              const nestedToolName = nestedData.toolName || '未知工具';
+                              const nestedToolId = nestedData.toolId || `tool-${Date.now()}`;
+                              
+                              if (nestedToolName === 'create_plan' && enablePlan) {
+                                setShowPlanPanel(true);
+                                // 立即加载当前计划，后续由 useEffect 自动管理定时器
+                                loadCurrentPlan();
+                              }
+                              
+                              if (isPlanRelatedTool(nestedToolName)) {
+                                // 计划相关工具不中断思考的连续性
+                                confirmChanged = true;
+                                continue;
+                              }
+                              
+                              // 非计划工具调用，中断思考的连续性
+                              currentEventType = null;
                               accText = '';
-                              currentSegs.push({
+                              accThinking = '';
+                              activeTextIdx = -1;
+                              activeThinkIdx = -1;
+                              
+                              const toolSeg: MessageSegment = {
                                 type: 'tool_call',
                                 content: JSON.stringify(nestedData.arguments || {}, null, 2),
-                                toolName: nestedData.toolName || '未知工具',
-                              });
+                                toolName: nestedToolName,
+                                toolId: nestedToolId,
+                              };
+                              currentSegs.push(toolSeg);
+                              toolCallMap.set(nestedToolId, currentSegs.length - 1);
                               confirmChanged = true;
+                              
                             } else if (nestedData.eventType === 'ToolResultEvent') {
+                              const toolId = nestedData.toolId || '';
+                              const resultContent = nestedData.message || '';
+                              const toolName = nestedData.toolName || '';
+                              
+                              // 计划相关工具的结果不中断思考的连续性
+                              if (isPlanRelatedTool(toolName)) {
+                                // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
+                                if (toolId && toolCallMap.has(toolId)) {
+                                  const segIdx = toolCallMap.get(toolId)!;
+                                  currentSegs = currentSegs.map((seg, idx) => 
+                                    idx === segIdx && seg.type === 'tool_call'
+                                      ? { ...seg, toolResult: resultContent }
+                                      : seg
+                                  );
+                                }
+                                confirmChanged = true;
+                                continue;
+                              }
+                              
+                              // 非计划工具结果，中断思考的连续性
+                              currentEventType = null;
                               accText = '';
-                              currentSegs.push({ type: 'tool_result', content: nestedData.message || '' });
+                              accThinking = '';
+                              activeTextIdx = -1;
+                              activeThinkIdx = -1;
+                              
+                              if (toolId && toolCallMap.has(toolId)) {
+                                const segIdx = toolCallMap.get(toolId)!;
+                                currentSegs = currentSegs.map((seg, idx) => 
+                                  idx === segIdx && seg.type === 'tool_call'
+                                    ? { ...seg, toolResult: resultContent }
+                                    : seg
+                                );
+                              } else {
+                                currentSegs.push({ type: 'tool_result', content: resultContent });
+                              }
                               confirmChanged = true;
+                              
+                              // 检查是否是 finish_subtask 或 finish_plan 工具
+                              if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
+                                console.log('[Nested ToolResultEvent] Detected finish tool, creating new assistant message');
+                                
+                                // 完成当前消息
+                                flushUI();
+                                
+                                // 创建新的 assistant 消息
+                                const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                                const newAssistantMessage: ChatMessage = {
+                                  id: newAssistantMessageId,
+                                  role: 'assistant',
+                                  segments: [],
+                                  timestamp: Date.now(),
+                                };
+                                
+                                // 更新 currentMsgs
+                                currentMsgs = [...currentMsgs, newAssistantMessage];
+                                setMessages(currentMsgs);
+                                
+                                // 更新当前 assistant message ID
+                                currentAssistantMessageId = newAssistantMessageId;
+                                
+                                // 重置所有状态以开始新消息
+                                currentSegs = [];
+                                accText = '';
+                                accThinking = '';
+                                activeTextIdx = -1;
+                                activeThinkIdx = -1;
+                                currentEventType = null;
+                                toolCallMap = new Map<string, number>();
+                              }
                             }
                           } catch (err) {
                             console.error('解析嵌套SSE消息失败:', err, nestedLine);
@@ -907,8 +1457,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setLoading(false);
       abortRef.current = null;
       
-      // 如果启用了计划功能，发送消息后自动加载当前计划
-      if (enablePlan) {
+      // 如果启用了计划功能且卡片处于展开状态，立即刷新一次
+      if (enablePlan && currentPlanExpanded) {
         loadCurrentPlan();
       }
     }
@@ -919,6 +1469,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      // loading 时不允许发送
+      if (loading) return;
       handleSend();
     }
   };
@@ -974,19 +1526,106 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       const result = await response.json();
       console.log('Current plan API response:', result);
       
+      let hasValidPlan = false;
+      let planData: any = null;
+      
       if (result.code === 200 && result.data) {
-        // 后端返回的数据结构: { currentPlan: {...} }
-        // 将 currentPlan 包装成 activePlan 格式以适配前端渲染逻辑
-        const planData = result.data.currentPlan || result.data;
+        // 后端直接返回 PlanNote 对象
+        planData = result.data;
         console.log('Plan data extracted:', planData);
         
-        if (planData) {
-          setCurrentPlan({
-            activePlan: planData
+        // 只有当 planData 存在且包含有效字段时才设置
+        if (planData && (planData.name || planData.subtasks)) {
+          hasValidPlan = true;
+          console.log('Current plan is valid');
+        } else {
+          // 没有计划数据
+          planData = null;
+          hasValidPlan = false;
+          console.log('No current plan data');
+        }
+      } else {
+        // 接口返回错误或无数据
+        planData = null;
+        hasValidPlan = false;
+      }
+      
+      // 更新消息流中的计划卡片
+      if (hasValidPlan) {
+        // 有计划数据
+        if (!currentPlanMessageIdRef.current) {
+          // 第一次检测到计划，创建新的计划消息卡片
+          // 使用固定的 ID 格式，避免重复创建
+          const planMessageId = `plan-card-${sessionId}`;
+          currentPlanMessageIdRef.current = planMessageId;
+          
+          // 检查是否已经存在计划卡片，避免重复添加
+          setMessages(prev => {
+            // 检查是否已经存在该计划卡片
+            const existingPlanMsg = prev.find(msg => msg.id === planMessageId);
+            if (existingPlanMsg) {
+              // 如果已存在，只更新 planData
+              return prev.map(msg => 
+                msg.id === planMessageId ? {
+                  ...msg,
+                  segments: msg.segments.map(seg => 
+                    seg.type === 'plan_card' ? { ...seg, planData } : seg
+                  )
+                } : msg
+              );
+            } else {
+              // 如果不存在，创建新的计划卡片
+              return [...prev, {
+                id: planMessageId,
+                role: 'assistant',
+                segments: [{
+                  type: 'plan_card',
+                  content: '',
+                  planData: planData
+                }],
+                timestamp: Date.now()
+              }];
+            }
           });
-          console.log('Current plan set successfully');
+          console.log('Created or updated plan card message:', planMessageId);
+        } else {
+          // 更新现有计划消息的 planData
+          setMessages(prev => prev.map(msg => {
+            if (msg.id === currentPlanMessageIdRef.current) {
+              return {
+                ...msg,
+                segments: msg.segments.map(seg => 
+                  seg.type === 'plan_card' ? { ...seg, planData } : seg
+                )
+              };
+            }
+            return msg;
+          }));
+          console.log('Updated existing plan card message');
+        }
+        
+        // 更新 currentPlan 状态（用于控制定时器）
+        setCurrentPlan({ activePlan: planData });
+      } else {
+        // 没有计划数据
+        if (currentPlanMessageIdRef.current) {
+          // 计划已结束，保留卡片但停止更新
+          console.log('Plan ended, keeping card but stopping updates');
+          // 不清除 currentPlanMessageIdRef，保留卡片
+          // 停止 currentPlan 以触发定时器清除
+          setCurrentPlan(null);
         }
       }
+      
+      // 检测计划从有变为无的情况
+      if (previousHasPlanRef.current && !hasValidPlan) {
+        console.log('Plan changed from has to none, refreshing history plans');
+        // 当前计划从有变为无，增量刷新历史计划
+        loadPlans(true);
+      }
+      
+      // 更新上一次的计划状态
+      previousHasPlanRef.current = hasValidPlan;
     } catch (error) {
       // 静默失败，不影响用户体验
       console.error('加载当前计划失败:', error);
@@ -994,7 +1633,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   };
 
   /* ─── 加载计划列表 ─── */
-  const loadPlans = async () => {
+  const loadPlans = async (isIncremental = false) => {
     if (!sessionId) return;
     
     try {
@@ -1009,8 +1648,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       console.log('Plans API response:', result);
       
       if (result.code === 200 && result.data) {
-        setPlans(result.data);
-        console.log('Plans loaded:', result.data.length, 'plans');
+        const newPlans = result.data;
+        
+        if (isIncremental && plans.length > 0) {
+          // 增量刷新：只添加新计划
+          const existingPlanIds = new Set(plans.map(p => p.planId));
+          const incrementalPlans = newPlans.filter(p => !existingPlanIds.has(p.planId));
+          
+          if (incrementalPlans.length > 0) {
+            // 将新计划添加到列表前面（最新的在前）
+            setPlans(prev => [...incrementalPlans, ...prev]);
+            console.log(`Incremental update: added ${incrementalPlans.length} new plan(s)`);
+          } else {
+            console.log('No new plans to add');
+          }
+        } else {
+          // 全量加载：替换所有计划
+          setPlans(newPlans);
+          console.log('Full load:', newPlans.length, 'plans');
+        }
       }
     } catch (error) {
       console.error('加载计划列表失败:', error);
@@ -1026,30 +1682,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setShowPlanPanel(newShowState);
     
     if (newShowState) {
-      // 打开面板时加载历史计划
-      loadPlans();
-      
-      // 启动定时刷新当前计划（每2秒）
-      loadCurrentPlan(); // 立即加载一次
-      planRefreshTimerRef.current = setInterval(() => {
-        loadCurrentPlan();
-      }, 2000);
-      
-      // 启动定时刷新历史计划（每5秒）
-      plansListTimerRef.current = setInterval(() => {
-        loadPlans();
-      }, 5000);
+      // 打开面板时全量加载历史计划
+      loadPlans(false);
     } else {
       // 关闭面板时清除所有定时器
-      if (planRefreshTimerRef.current) {
-        clearInterval(planRefreshTimerRef.current);
-        planRefreshTimerRef.current = null;
-      }
       if (plansListTimerRef.current) {
         clearInterval(plansListTimerRef.current);
         plansListTimerRef.current = null;
       }
+      if (planRefreshTimerRef.current) {
+        clearInterval(planRefreshTimerRef.current);
+        planRefreshTimerRef.current = null;
+      }
     }
+  };
+
+  /* ─── 手动刷新历史计划 ─── */
+  const handleRefreshPlans = async () => {
+    // 手动刷新使用增量模式
+    await loadPlans(true);
   };
 
   /* ─── 清空聊天记录 ─── */
@@ -1070,6 +1721,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setMessages([]);
       setPlans([]);
       setCurrentPlan(null);
+      currentPlanMessageIdRef.current = null; // 重置计划消息ID
+      previousHasPlanRef.current = false; // 重置计划状态
       setInputValue('');
       setImageUrls([]);
       setShowPlanPanel(false);
@@ -1095,18 +1748,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const renderSegment = (seg: MessageSegment, idx: number) => {
     switch (seg.type) {
       case 'thinking':
+        // 如果隐藏思考过程，不渲染
+        if (!showThinking) return null;
         return <ThinkingBlock key={idx} content={seg.content} />;
       case 'tool_call':
+        // 如果工具名称为空，不渲染
+        if (!seg.toolName) return null;
         return (
-          <ToolCallCard
+          <MergedToolCard
             key={idx}
             toolName={seg.toolName || ''}
-            content={seg.content}
+            arguments={seg.content}
+            result={seg.toolResult}
             confirmStatus={seg.confirmStatus}
           />
         );
       case 'tool_result':
-        return <ToolResultCard key={idx} content={seg.content} />;
+        // 不显示独立的工具返回卡片（已合并到工具调用卡片中）
+        return null;
       case 'tool_confirm':
         const status = (seg.content as 'pending' | 'confirmed' | 'rejected') || 'pending';
         return (
@@ -1115,6 +1774,71 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             pendingCallTools={seg.pendingCallTools || []}
             status={status}
           />
+        );
+      case 'plan_card':
+        // 渲染计划卡片
+        if (!seg.planData || !seg.planData.name) return null;
+        
+        const plan = seg.planData;
+        return (
+          <div key={idx} className={styles.currentPlanCard}>
+            <div 
+              className={styles.currentPlanHeader}
+              onClick={() => setCurrentPlanExpanded(!currentPlanExpanded)}
+            >
+              <div className={styles.currentPlanTitle}>
+                <CheckSquareOutlined style={{ marginRight: 6, fontSize: 14, color: '#6366f1' }} />
+                <span style={{ fontWeight: 500 }}>{plan.name}</span>
+                {plan.subtasks && plan.subtasks.length > 0 && (
+                  <span className={styles.planProgress}>
+                    {plan.subtasks.filter((t: any) => t.state === 'DONE').length}/{plan.subtasks.length}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {currentPlanExpanded && (
+                  <div className={styles.refreshIndicator}>
+                    <ClockCircleOutlined spin style={{ fontSize: 12 }} />
+                    <span>实时</span>
+                  </div>
+                )}
+                <div className={styles.collapseIcon}>
+                  {currentPlanExpanded ? <DownOutlined /> : <RightOutlined />}
+                </div>
+              </div>
+            </div>
+            
+            {currentPlanExpanded && (
+              <div className={styles.currentPlanContent}>
+                {plan.description && (
+                  <p className={styles.planDesc}>{plan.description}</p>
+                )}
+                {plan.subtasks && plan.subtasks.length > 0 && (
+                  <div className={styles.currentSubtasks}>
+                    {plan.subtasks.map((subtask: any, subIdx: number) => (
+                      <div key={subIdx} className={styles.subtaskItem}>
+                        <div className={styles.subtaskIcon}>
+                          {subtask.state === 'DONE' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />}
+                          {subtask.state === 'IN_PROGRESS' && <ClockCircleOutlined spin style={{ color: '#1890ff', fontSize: 14 }} />}
+                          {subtask.state === 'TODO' && <div className={styles.todoIcon} />}
+                          {subtask.state === 'ABANDONED' && <CloseOutlined style={{ color: '#ff4d4f', fontSize: 14 }} />}
+                        </div>
+                        <div className={styles.subtaskInfo}>
+                          <div className={styles.subtaskName}>{subtask.name}</div>
+                          {subtask.state === 'IN_PROGRESS' && (
+                            <div className={styles.subtaskStatus}>执行中...</div>
+                          )}
+                          {subtask.state === 'ABANDONED' && (
+                            <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>已放弃</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         );
       default:
         return (
@@ -1142,6 +1866,99 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     return <Tag color={config.color}>{config.text}</Tag>;
   };
 
+  /* ─── 判断是否为计划相关的工具 ─── */
+  const isPlanRelatedTool = (toolName: string): boolean => {
+    const planTools = [
+      'create_plan',
+      'update_plan_info',
+      'revise_current_plan',
+      'update_subtask_state',
+      'finish_subtask',
+      'view_subtasks',
+      'get_subtask_count',
+      'finish_plan',
+      'view_historical_plans',
+      'recover_historical_plan',
+    ];
+    return planTools.includes(toolName);
+  };
+
+  /* ─── 判断当前计划是否有效 ─── */
+  const hasValidCurrentPlan = () => {
+    if (!currentPlan || !currentPlan.activePlan) return false;
+    const plan = currentPlan.activePlan;
+    // 检查是否有有效数据（名称或子任务）
+    return !!(plan.name || (plan.subtasks && plan.subtasks.length > 0));
+  };
+
+  /* ─── 渲染当前计划卡片 ─── */
+  const renderCurrentPlanCard = () => {
+    if (!currentPlan || !currentPlan.activePlan) return null;
+
+    const plan = currentPlan.activePlan;
+    
+    return (
+      <div className={styles.currentPlanCard}>
+        <div 
+          className={styles.currentPlanHeader}
+          onClick={() => setCurrentPlanExpanded(!currentPlanExpanded)}
+        >
+          <div className={styles.currentPlanTitle}>
+            <CheckSquareOutlined style={{ marginRight: 6, fontSize: 14, color: '#6366f1' }} />
+            <span style={{ fontWeight: 500 }}>{plan.name}</span>
+            {plan.subtasks && plan.subtasks.length > 0 && (
+              <span className={styles.planProgress}>
+                {plan.subtasks.filter((t: any) => t.state === 'DONE').length}/{plan.subtasks.length}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {currentPlanExpanded && (
+              <div className={styles.refreshIndicator}>
+                <ClockCircleOutlined spin style={{ fontSize: 12 }} />
+                <span>实时</span>
+              </div>
+            )}
+            <div className={styles.collapseIcon}>
+              {currentPlanExpanded ? <DownOutlined /> : <RightOutlined />}
+            </div>
+          </div>
+        </div>
+        
+        {currentPlanExpanded && (
+          <div className={styles.currentPlanContent}>
+            {plan.description && (
+              <p className={styles.planDesc}>{plan.description}</p>
+            )}
+            {plan.subtasks && plan.subtasks.length > 0 && (
+              <div className={styles.currentSubtasks}>
+                {plan.subtasks.map((subtask: any, idx: number) => (
+                  <div key={idx} className={styles.subtaskItem}>
+                    <div className={styles.subtaskIcon}>
+                      {subtask.state === 'DONE' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 14 }} />}
+                      {subtask.state === 'IN_PROGRESS' && <ClockCircleOutlined spin style={{ color: '#1890ff', fontSize: 14 }} />}
+                      {subtask.state === 'TODO' && <div className={styles.todoIcon} />}
+                      {subtask.state === 'ABANDONED' && <CloseOutlined style={{ color: '#ff4d4f', fontSize: 14 }} />}
+                    </div>
+                    <div className={styles.subtaskInfo}>
+                      <div className={styles.subtaskName}>{subtask.name}</div>
+                      {subtask.state === 'IN_PROGRESS' && (
+                        <div className={styles.subtaskStatus}>执行中...</div>
+                      )}
+                      {subtask.state === 'ABANDONED' && (
+                        <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>已放弃</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /* ─── 渲染计划面板 ─── */
   const renderPlanPanel = () => {
     if (!showPlanPanel) return null;
@@ -1158,68 +1975,131 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           />
         </div>
         <div className={styles.planPanelContent}>
-          {/* 当前计划状态 */}
-          {currentPlan && (
-            <div className={styles.currentPlanSection}>
-              <div className={styles.currentPlanHeader}>
-                <h4>当前计划</h4>
+          {/* 当前计划 */}
+          <div className={styles.currentPlanSection}>
+            <div className={styles.currentPlanHeader}>
+              <h4>当前计划</h4>
+              {hasValidCurrentPlan() && (
                 <div className={styles.refreshIndicator}>
                   <ClockCircleOutlined spin />
                   <span>实时更新</span>
                 </div>
-              </div>
-              {currentPlan.activePlan && (
-                <div className={styles.activePlanCard}>
-                  <div className={styles.planTitle}>{currentPlan.activePlan.name}</div>
-                  {currentPlan.activePlan.description && (
-                    <p className={styles.planDesc}>{currentPlan.activePlan.description}</p>
-                  )}
-                  {currentPlan.activePlan.subtasks && currentPlan.activePlan.subtasks.length > 0 && (
-                    <div className={styles.currentSubtasks}>
-                      <div className={styles.subtaskProgress}>
-                        <span>进度：</span>
-                        <span>
-                          {currentPlan.activePlan.subtasks.filter((t: any) => t.state === 'DONE').length} / {currentPlan.activePlan.subtasks.length}
-                        </span>
-                      </div>
-                      {currentPlan.activePlan.subtasks.map((subtask: any, idx: number) => (
-                        <div key={idx} className={styles.subtaskItem}>
-                          <div className={styles.subtaskIcon}>
-                            {subtask.state === 'DONE' && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
-                            {subtask.state === 'IN_PROGRESS' && <ClockCircleOutlined spin style={{ color: '#1890ff' }} />}
-                            {subtask.state === 'TODO' && <div className={styles.todoIcon} />}
-                            {subtask.state === 'ABANDONED' && <CloseOutlined style={{ color: '#ff4d4f' }} />}
-                          </div>
-                          <div className={styles.subtaskInfo}>
-                            <div className={styles.subtaskName}>{subtask.name}</div>
-                            {subtask.state === 'IN_PROGRESS' && (
-                              <div className={styles.subtaskStatus}>执行中...</div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!currentPlan.activePlan && (
-                <div className={styles.noActivePlan}>
-                  <p>当前没有活动计划</p>
-                </div>
               )}
             </div>
-          )}
+            
+            {hasValidCurrentPlan() ? (
+              <div className={styles.activePlanCard}>
+                {/* 计划头部 */}
+                <div className={styles.planCardHeader}>
+                  <div className={styles.planTitleSection}>
+                    <div className={styles.planIcon}>
+                      <CheckSquareOutlined />
+                    </div>
+                    <div className={styles.planTitleInfo}>
+                      <h3 className={styles.planTitle}>{currentPlan.activePlan.name}</h3>
+                      {currentPlan.activePlan.description && (
+                        <p className={styles.planDesc}>{currentPlan.activePlan.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className={styles.planProgressBadge}>
+                    <span className={styles.progressText}>
+                      {currentPlan.activePlan.subtasks.filter((t: any) => t.state === 'DONE').length}
+                    </span>
+                    <span className={styles.progressDivider}>/</span>
+                    <span className={styles.progressTotal}>
+                      {currentPlan.activePlan.subtasks.length}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* 子任务列表 */}
+                {currentPlan.activePlan.subtasks && currentPlan.activePlan.subtasks.length > 0 && (
+                  <div className={styles.currentSubtasks}>
+                    {currentPlan.activePlan.subtasks.map((subtask: any, idx: number) => (
+                      <div key={idx} className={`${styles.subtaskItem} ${styles[`subtask${subtask.state}`]}`}>
+                        <div className={styles.subtaskIconWrapper}>
+                          {subtask.state === 'DONE' && (
+                            <div className={`${styles.subtaskIcon} ${styles.iconDone}`}>
+                              <CheckOutlined />
+                            </div>
+                          )}
+                          {subtask.state === 'IN_PROGRESS' && (
+                            <div className={`${styles.subtaskIcon} ${styles.iconProgress}`}>
+                              <ClockCircleOutlined spin />
+                            </div>
+                          )}
+                          {subtask.state === 'TODO' && (
+                            <div className={`${styles.subtaskIcon} ${styles.iconTodo}`} />
+                          )}
+                          {subtask.state === 'ABANDONED' && (
+                            <div className={`${styles.subtaskIcon} ${styles.iconAbandoned}`}>
+                              <CloseOutlined />
+                            </div>
+                          )}
+                        </div>
+                        <div className={styles.subtaskInfo}>
+                          <div className={styles.subtaskName}>{subtask.name}</div>
+                          {subtask.state === 'IN_PROGRESS' && (
+                            <div className={styles.subtaskStatus}>执行中...</div>
+                          )}
+                          {subtask.state === 'ABANDONED' && (
+                            <div className={styles.subtaskStatus}>已放弃</div>
+                          )}
+                        </div>
+                        {subtask.costTimeSeconds > 0 && (
+                          <div className={styles.subtaskTime}>
+                            <ClockCircleOutlined />
+                            <span>{subtask.costTimeSeconds}s</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className={styles.noCurrentPlan}>
+                <UnorderedListOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
+                <p>无当前计划</p>
+                <span>开启"开启计划"选项后，AI 会自动创建计划</span>
+              </div>
+            )}
+          </div>
 
           {/* 历史计划 */}
-          {loadingPlans && (
+          {loadingPlans && plans.length === 0 && (
             <div className={styles.loadingPlans}>
               <p>加载计划中...</p>
             </div>
           )}
           
+          {!loadingPlans && plans.length === 0 && !currentPlan && (
+            <div className={styles.planEmpty}>
+              <ClockCircleOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
+              <p>暂无计划</p>
+              <span>开启"开启计划"选项后，AI 会自动创建计划</span>
+            </div>
+          )}
+          
           {!loadingPlans && plans.length > 0 && (
             <div className={styles.historyPlansSection}>
-              <h4>历史计划 ({plans.length})</h4>
+              <div className={styles.historyPlansHeader}>
+                <div className={styles.historyPlansTitle}>
+                  <h4>历史计划</h4>
+                  <span className={styles.planCount}>{plans.length}</span>
+                </div>
+                <Button
+                  className={styles.refreshPlanButton}
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  onClick={handleRefreshPlans}
+                  loading={loadingPlans}
+                  size="small"
+                >
+                  <span className={styles.refreshButtonText}>刷新</span>
+                </Button>
+              </div>
               <Collapse accordion defaultActiveKey={[plans[0]?.planId]}>
                 {plans.map((plan) => (
                   <Collapse.Panel
@@ -1227,9 +2107,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     header={
                       <div className={styles.planHeader}>
                         <span className={styles.planName}>{plan.name}</span>
-                        {plan.finishedAt && (
-                          <Tag color="success" style={{ marginLeft: 8 }}>
-                            已完成
+                        {plan.status && (
+                          <Tag 
+                            color={
+                              plan.status === 'DONE' ? 'success' :
+                              plan.status === 'IN_PROGRESS' ? 'processing' :
+                              plan.status === 'ABANDONED' ? 'error' :
+                              'default'
+                            } 
+                            style={{ marginLeft: 8 }}
+                          >
+                            {plan.status === 'DONE' ? '已完成' :
+                             plan.status === 'IN_PROGRESS' ? '执行中' :
+                             plan.status === 'ABANDONED' ? '已废弃' :
+                             '待执行'}
                           </Tag>
                         )}
                       </div>
@@ -1312,14 +2203,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               </Collapse>
             </div>
           )}
-
-          {!loadingPlans && plans.length === 0 && (
-            <div className={styles.planEmpty}>
-              <ClockCircleOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
-              <p>暂无历史计划</p>
-              <span>开启"开启计划"选项后，AI 会自动创建计划</span>
-            </div>
-          )}
         </div>
       </div>
     );
@@ -1327,8 +2210,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
   return (
     <div className={styles.chatWindow}>
-      {/* ─── 计划面板 ─── */}
+      {/* ─── 历史计划面板 ─── */}
       {renderPlanPanel()}
+      
+      {/* ─── 历史计划切换按钮（右侧边缘） ─── */}
+      {enablePlan && (
+        <div 
+          className={`${styles.historyPlanToggleButton} ${showPlanPanel ? styles.historyPlanToggleButtonActive : ''}`}
+          onClick={handleTogglePlanPanel}
+        >
+          {showPlanPanel ? <RightOutlined /> : <LeftOutlined />}
+        </div>
+      )}
+      
       {/* ─── 工具确认弹窗 ─── */}
       {pendingConfirm && (
         <ToolConfirmCard
@@ -1390,7 +2284,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   ) : isEmpty(msg) ? (
                     <LoadingDots />
                   ) : (
-                    msg.segments.map((seg, idx) => renderSegment(seg, idx))
+                    <>
+                      {msg.segments.map((seg, idx) => renderSegment(seg, idx))}
+                      {/* 如果是最后一条消息且正在 loading，显示加载动画 */}
+                      {loading && msg.id === messages[messages.length - 1]?.id && (
+                        <div className={styles.inlineLoading}>
+                          <span className={styles.loadingDot} />
+                          <span className={styles.loadingDot} />
+                          <span className={styles.loadingDot} />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 <div
@@ -1430,9 +2334,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="输入消息... (Enter 发送，Shift + Enter 换行)"
+              placeholder={loading ? "AI 正在输出中，请稍候..." : "输入消息... (Enter 发送，Shift + Enter 换行)"}
               autoSize={{ minRows: 2, maxRows: 6 }}
-              disabled={loading}
             />
           </div>
           <div className={styles.inputCardFooter}>
@@ -1444,13 +2347,59 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 <PictureOutlined />
                 <span>图片 ({imageUrls.length})</span>
               </div>
-              <div
-                className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''}`}
-                onClick={() => setEnableThink(!enableThink)}
+              <Dropdown
+                menu={{
+                  items: [
+                    {
+                      key: 'show',
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <EyeOutlined className={styles.menuIcon} />
+                          <span>显示思考过程</span>
+                          {showThinking && <CheckOutlined className={styles.menuCheck} />}
+                        </span>
+                      ),
+                      disabled: showThinking,
+                    },
+                    {
+                      key: 'hide',
+                      label: (
+                        <span className={styles.menuItemLabel}>
+                          <EyeInvisibleOutlined className={styles.menuIcon} />
+                          <span>隐藏思考过程</span>
+                          {!showThinking && <CheckOutlined className={styles.menuCheck} />}
+                        </span>
+                      ),
+                      disabled: !showThinking,
+                    },
+                  ],
+                  onClick: ({ key }) => {
+                    if (key === 'show') {
+                      setShowThinking(true);
+                    } else if (key === 'hide') {
+                      setShowThinking(false);
+                    }
+                  },
+                }}
+                trigger={['contextMenu']}
+                dropdownRender={(menu) => (
+                  <div className={styles.thinkingMenu}>
+                    <div className={styles.menuHeader}>
+                      <BulbOutlined className={styles.menuHeaderIcon} />
+                      <span>思考过程显示设置</span>
+                    </div>
+                    {menu}
+                  </div>
+                )}
               >
-                <BulbOutlined />
-                <span>深度思考</span>
-              </div>
+                <div
+                  className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''}`}
+                  onClick={() => setEnableThink(!enableThink)}
+                >
+                  <BulbOutlined />
+                  <span>深度思考</span>
+                </div>
+              </Dropdown>
               <div
                 className={`${styles.optionItem} ${enableSearch ? styles.optionActive : ''}`}
                 onClick={() => setEnableSearch(!enableSearch)}
@@ -1464,13 +2413,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               >
                 <UnorderedListOutlined />
                 <span>开启计划</span>
-              </div>
-              <div
-                className={`${styles.optionItem} ${showPlanPanel ? styles.optionActive : ''}`}
-                onClick={handleTogglePlanPanel}
-              >
-                <CheckSquareOutlined />
-                <span>查看计划</span>
               </div>
               <Popconfirm
                 title="清空聊天记录"
@@ -1491,7 +2433,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               icon={<SendOutlined />}
               onClick={handleSend}
               loading={loading}
-              disabled={!inputValue.trim() && imageUrls.length === 0}
+              disabled={!inputValue.trim() && imageUrls.length === 0 || loading}
               className={styles.sendButton}
             />
           </div>

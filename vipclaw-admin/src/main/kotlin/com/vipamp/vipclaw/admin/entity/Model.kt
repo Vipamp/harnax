@@ -1,0 +1,79 @@
+package com.vipamp.vipclaw.admin.entity
+
+import com.baomidou.mybatisplus.annotation.*
+import io.swagger.v3.oas.annotations.media.Schema
+import java.io.Serializable
+import java.time.LocalDateTime
+
+/**
+ * 模型实体类
+ *
+ * @author vipamp
+ * @since 2026-03-13
+ */
+@TableName("model")
+@Schema(description = "模型实体类")
+class Model : Serializable {
+
+    companion object {
+        private const val serialVersionUID = 1L
+    }
+
+    @TableId(value = "id", type = IdType.AUTO)
+    @Schema(description = "ID")
+    var id: Long = 0
+
+    @Schema(description = "名称")
+    var name: String = ""
+
+    @Schema(description = "模型名称")
+    var modelName: String = ""
+
+    @Schema(description = "模型供应商ID")
+    var providerId: Long = 0
+
+    @Schema(description = "描述")
+    var description: String = ""
+
+    @Schema(description = "模型类型（chat/embedding）")
+    var modelType: String = "chat"
+
+    @Schema(description = "是否支持联网（0:否，1:是）")
+    var supportInternet: Int = 0
+
+    @Schema(description = "是否支持推理（0:否，1:是）")
+    var supportReasoning: Int = 0
+
+    @Schema(description = "是否支持工具（0:否，1:是）")
+    var supportTool: Int = 0
+
+    @Schema(description = "是否支持MCP（0:否，1:是）")
+    var supportMcp: Int = 0
+
+    @Schema(description = "是否支持视觉（0:否，1:是）")
+    var supportVision: Int = 0
+
+    @Schema(description = "价格（元/百万token）")
+    var price: Double = 0.0
+
+    @Schema(description = "是否启用（0:禁用，1:启用）")
+    var status: Int = 1
+
+    @Schema(description = "是否公开（0:否，1:是）")
+    var isPublic: Int = 1
+
+    @Schema(description = "创建人")
+    var creator: String? = null
+
+    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @TableLogic(value = "1", delval = "0")
+    var active: Int = 1
+
+    @Schema(description = "创建时间")
+    @TableField(fill = FieldFill.INSERT)
+    var createTime: LocalDateTime = LocalDateTime.now()
+
+    @Schema(description = "更新时间")
+    @TableField(fill = FieldFill.INSERT_UPDATE)
+    var updateTime: LocalDateTime = LocalDateTime.now()
+}

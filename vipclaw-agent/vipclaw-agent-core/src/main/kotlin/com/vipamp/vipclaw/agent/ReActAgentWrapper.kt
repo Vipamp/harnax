@@ -28,7 +28,7 @@ class ReActAgentWrapper(
 ) {
     fun callStream(
         prompt: String,
-        imageUrls: MutableList<String> = mutableListOf(),
+        imageUrls: List<String> = listOf(),
         options: StreamOptions = StreamOptions.builder().build()
     ): Flux<ChatEvent> {
         val list: MutableList<ContentBlock> = mutableListOf()
@@ -46,9 +46,9 @@ class ReActAgentWrapper(
         options: StreamOptions,
         vararg msg: Msg = arrayOf()
     ): Flux<ChatEvent> = reActAgent.stream(msg.toList(), options)
+        .doOnNext { sessionManager?.saveSession() }
         .flatMap { ChatEventConverter.convert(it, dangerousTools) }
         .doOnNext { extracted(it) }
-        .doOnNext { sessionManager?.saveSession() }
 
     private fun textBlock(prompt: String): TextBlock = TextBlock.builder().text(prompt).build()
 
@@ -59,7 +59,7 @@ class ReActAgentWrapper(
             val parts = url.split(",")
             val mimeType = parts[0].substringAfter(":").substringBefore(";")
             val base64Data = parts[1]
-            
+
             ImageBlock.builder().source(
                 Base64Source.builder()
                     .data(base64Data)

@@ -15,7 +15,6 @@
 
     <modules>
         <module>vipclaw-common</module>
-        <module>vipclaw-common-entity</module>
         <module>vipclaw-agent</module>
         <module>vipclaw-channel</module>
         <module>vipclaw-admin</module>

@@ -10,7 +10,7 @@ import {
   ProFormText,
 } from '@ant-design/pro-components';
 import { FormattedMessage, Helmet, SelectLang, useIntl, useModel, history } from '@umijs/max';
-import { Alert, App, Image, Spin, Tabs } from 'antd';
+import { Alert, Image, Spin, Tabs, message } from 'antd';
 import { createStyles } from 'antd-style';
 import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -190,7 +190,6 @@ const Login: React.FC = () => {
   const [type, setType] = useState<string>('account');
   const { initialState, setInitialState } = useModel('@@initialState');
   const { styles } = useStyles();
-  const { message } = App.useApp();
   const intl = useIntl();
 
   // 验证码相关状态

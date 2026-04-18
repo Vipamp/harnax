@@ -1,0 +1,130 @@
+package com.vipamp.vipclaw.admin.util
+
+import io.jsonwebtoken.Claims
+import io.jsonwebtoken.Jwts
+import io.jsonwebtoken.security.Keys
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Component
+import java.nio.charset.StandardCharsets
+import java.util.*
+import javax.crypto.SecretKey
+
+/**
+ * JWT 工具类
+ */
+@Component
+class JwtUtil {
+
+    private val log = LoggerFactory.getLogger(JwtUtil::class.java)
+
+    @Value("\${jwt.secret:vipclaw-secret-key-2026}")
+    private lateinit var secret: String
+
+    @Value("\${jwt.expiration:7200000}")
+    private lateinit var expiration: Long
+
+    /**
+     * 获取签名密钥
+     */
+    private fun getSigningKey(): SecretKey {
+        val keyBytes = secret.toByteArray(StandardCharsets.UTF_8)
+        return Keys.hmacShaKeyFor(keyBytes)
+    }
+
+    /**
+     * 生成 JWT Token
+     *
+     * @param userId 用户 ID
+     * @param username 用户名
+     * @return JWT Token
+     */
+    fun generateToken(userId: Long, username: String): String {
+        val claims: MutableMap<String, Any> = HashMap()
+        claims["userId"] = userId
+        claims["username"] = username
+
+        val now = Date()
+        val expirationDate = Date(now.time + expiration)
+
+        return Jwts.builder()
+            .claims(claims)
+            .subject(username)
+            .issuedAt(now)
+            .expiration(expirationDate)
+            .signWith(getSigningKey())
+            .compact()
+    }
+
+    /**
+     * 从 Token 中获取用户 ID
+     *
+     * @param token JWT Token
+     * @return 用户 ID
+     */
+    fun getUserIdFromToken(token: String): Long? {
+        val claims = getClaimsFromToken(token)
+        return claims["userId", Long::class.java]
+    }
+
+    /**
+     * 从 Token 中获取用户名
+     *
+     * @param token JWT Token
+     * @return 用户名
+     */
+    fun getUsernameFromToken(token: String): String? {
+        val claims = getClaimsFromToken(token)
+        return claims.subject
+    }
+
+    /**
+     * 验证 Token 是否有效
+     *
+     * @param token JWT Token
+     * @return true/false
+     */
+    fun validateToken(token: String): Boolean {
+        return try {
+            val expiration = getExpirationDateFromToken(token)
+            !expiration.before(Date())
+        } catch (e: Exception) {
+            log.error("验证 Token 失败：{}", e.message)
+            false
+        }
+    }
+
+    /**
+     * 获取过期时间
+     *
+     * @param token JWT Token
+     * @return 过期时间
+     */
+    private fun getExpirationDateFromToken(token: String): Date {
+        val claims = getClaimsFromToken(token)
+        return claims.expiration
+    }
+
+    /**
+     * 获取 Claims
+     *
+     * @param token JWT Token
+     * @return Claims
+     */
+    private fun getClaimsFromToken(token: String): Claims {
+        return Jwts.parser()
+            .verifyWith(getSigningKey())
+            .build()
+            .parseSignedClaims(token)
+            .payload
+    }
+
+    /**
+     * 获取过期时间（毫秒）
+     *
+     * @return 过期时间
+     */
+    fun getExpirationTime(): Long {
+        return expiration
+    }
+}

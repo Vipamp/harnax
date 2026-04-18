@@ -15,7 +15,6 @@ import io.modelcontextprotocol.spec.McpSchema
  */
 object McpHelper {
 
-
     fun listTools(mcpConfig: McpConfig): List<McpSchema.Tool> {
         val mcpClient = createMcpClient(mcpConfig, false)
         try {

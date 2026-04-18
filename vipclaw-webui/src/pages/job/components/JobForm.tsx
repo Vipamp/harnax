@@ -109,7 +109,8 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
       // 获取该年所有可能的月份
       const months = parseField(monthExpr, 1, 12, '月');
 
-      for (const month of months) {
+      for (let mIdx = 0; mIdx < months.length; mIdx++) {
+        const month = months[mIdx];
         if (yearOffset === 0 && month < candidate.getMonth() + 1) continue;
 
         // 获取该月所有可能的日期
@@ -124,21 +125,25 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
           days = parseField(dayExpr, 1, daysInMonth, '日');
         }
 
-        for (const day of days) {
+        for (let dIdx = 0; dIdx < days.length; dIdx++) {
+          const day = days[dIdx];
           if (yearOffset === 0 && month === candidate.getMonth() + 1 && day <= candidate.getDate()) {
             if (yearOffset === 0 && month === candidate.getMonth() + 1 && day < candidate.getDate()) continue;
           }
 
           const hours = parseField(hourExpr, 0, 23, '时');
-          for (const hour of hours) {
+          for (let hIdx = 0; hIdx < hours.length; hIdx++) {
+            const hour = hours[hIdx];
             if (yearOffset === 0 && month === candidate.getMonth() + 1 && day === candidate.getDate() && hour < candidate.getHours()) continue;
 
             const minutes = parseField(minuteExpr, 0, 59, '分');
-            for (const minute of minutes) {
+            for (let minIdx = 0; minIdx < minutes.length; minIdx++) {
+              const minute = minutes[minIdx];
               if (yearOffset === 0 && month === candidate.getMonth() + 1 && day === candidate.getDate() && hour === candidate.getHours() && minute < candidate.getMinutes()) continue;
 
               const seconds = parseField(secondExpr, 0, 59, '秒');
-              for (const second of seconds) {
+              for (let sIdx = 0; sIdx < seconds.length; sIdx++) {
+                const second = seconds[sIdx];
                 if (yearOffset === 0 && month === candidate.getMonth() + 1 && day === candidate.getDate() && hour === candidate.getHours() && minute === candidate.getMinutes() && second <= candidate.getSeconds()) continue;
 
                 const result = new Date(year, month - 1, day, hour, minute, second);
@@ -202,8 +207,8 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
     // 处理逗号分隔的多个值
     if (expr.includes(',')) {
       const parts = expr.split(',');
-      for (const part of parts) {
-        result.push(...parseField(part.trim(), min, max, fieldName));
+      for (let idx = 0; idx < parts.length; idx++) {
+        result.push(...parseField(parts[idx].trim(), min, max, fieldName));
       }
       return [...new Set(result)].sort((a, b) => a - b);
     }

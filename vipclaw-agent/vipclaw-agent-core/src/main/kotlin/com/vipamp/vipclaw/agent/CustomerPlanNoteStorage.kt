@@ -3,9 +3,10 @@ package com.vipamp.vipclaw.agent
 import com.vipamp.vipclaw.agent.adaptor.PlanNote
 import com.vipamp.vipclaw.agent.adaptor.PlanNoteAdaptor
 import com.vipamp.vipclaw.agent.adaptor.PlanSubTask
-import com.vipamp.vipclaw.agent.adaptor.PlanSubTaskState
+import com.vipamp.vipclaw.agent.adaptor.TaskState
 import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.plan.model.Plan
+import io.agentscope.core.plan.model.PlanState
 import io.agentscope.core.plan.model.SubTask
 import io.agentscope.core.plan.model.SubTaskState
 import io.agentscope.core.plan.storage.PlanStorage
@@ -24,8 +25,6 @@ class CustomerPlanNoteStorage(
     val planNoteAdaptor: PlanNoteAdaptor
 ) : PlanStorage {
 
-    private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-
     override fun addPlan(plan: Plan?): Mono<Void> {
         return Mono.fromRunnable {
             if (plan == null) {
@@ -35,7 +34,7 @@ class CustomerPlanNoteStorage(
 
             try {
                 // 将 Plan 转换为 PlanNote
-                val planNote = convertToPlanNote(plan)
+                val planNote = convertToPlanNote(sessionId, plan)
                 planNoteAdaptor.save(planNote)
                 logger().info(
                     "Plan added successfully: sessionId={}, planId={}, name={}",
@@ -88,85 +87,97 @@ class CustomerPlanNoteStorage(
         }
     }
 
-    /**
-     * 将 Plan 转换为 PlanNote
-     */
-    private fun convertToPlanNote(plan: Plan): PlanNote {
-        val subtasks = plan.subtasks!!.map { toPlanSubTask(it) }.toMutableList()
-        return PlanNote(
-            sessionId = sessionId,
-            planId = plan.id ?: "",
-            name = plan.name ?: "",
-            description = plan.description,
-            expectedOutcome = plan.expectedOutcome,
-            subtasks = subtasks,
-            createdAt = plan.createdAt,
-            finishedAt = plan.createdAt,
-            costTimeseconds = 0L
-        )
-    }
+    companion object {
 
-    /**
-     * 将 PlanNote 转换为 Plan
-     */
-    private fun convertToPlan(planNote: PlanNote): Plan {
-        val subtasks = planNote.subtasks?.map { toSubTask(it) } ?: emptyList()
-        return Plan(
-            planNote.name,
-            planNote.description,
-            planNote.expectedOutcome,
-            subtasks
-        )
-    }
+        private val dateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-    private fun toPlanSubTask(subTask: SubTask): PlanSubTask {
-        return PlanSubTask(
-            name = subTask.name ?: "",
-            description = subTask.description ?: "",
-            expectedOutcome = subTask.expectedOutcome ?: "",
-            outcome = subTask.outcome ?: "",
-            state = when (subTask.state) {
-                SubTaskState.TODO -> PlanSubTaskState.TODO
-                SubTaskState.IN_PROGRESS -> PlanSubTaskState.IN_PROGRESS
-                SubTaskState.DONE -> PlanSubTaskState.DONE
-                SubTaskState.ABANDONED -> PlanSubTaskState.ABANDONED
-                else -> PlanSubTaskState.TODO
-            },
-            createdAt = subTask.createdAt,
-            finishedAt = subTask.finishedAt,
-            costTimeSeconds = compareTime(subTask.createdAt, subTask.finishedAt)
-        )
-    }
-
-    private fun toSubTask(planSubTask: PlanSubTask): SubTask {
-        val subTask = SubTask(
-            planSubTask.name,
-            planSubTask.description,
-            planSubTask.expectedOutcome,
-        )
-        subTask.state = when (planSubTask.state) {
-            PlanSubTaskState.TODO -> SubTaskState.TODO
-            PlanSubTaskState.IN_PROGRESS -> SubTaskState.IN_PROGRESS
-            PlanSubTaskState.DONE -> SubTaskState.DONE
-            PlanSubTaskState.ABANDONED -> SubTaskState.ABANDONED
+        /**
+         * 将 Plan 转换为 PlanNote
+         */
+        fun convertToPlanNote(sessionId: String, plan: Plan): PlanNote {
+            val subtasks = plan.subtasks!!.map { toPlanSubTask(it) }.toMutableList()
+            return PlanNote(
+                sessionId = sessionId,
+                planId = plan.id ?: "",
+                name = plan.name ?: "",
+                description = plan.description,
+                expectedOutcome = plan.expectedOutcome,
+                subtasks = subtasks,
+                createdAt = plan.createdAt,
+                finishedAt = plan.createdAt,
+                costTimeSeconds = 0L,
+                status = when (plan.state) {
+                    PlanState.TODO -> TaskState.TODO
+                    PlanState.IN_PROGRESS -> TaskState.IN_PROGRESS
+                    PlanState.DONE -> TaskState.DONE
+                    PlanState.ABANDONED -> TaskState.ABANDONED
+                    else -> TaskState.TODO
+                }
+            )
         }
-        subTask.outcome = planSubTask.outcome
-        subTask.createdAt = planSubTask.createdAt
-        subTask.finishedAt = planSubTask.finishedAt
-        return subTask
-    }
 
-    private fun compareTime(time1: String?, time2: String?): Long {
-        return if (time1 == null || time2 == null) {
-            0
-        } else {
-            try {
-                val dateTime1 = LocalDateTime.parse(time1, dateTimeFormatter)
-                val dateTime2 = LocalDateTime.parse(time2, dateTimeFormatter)
-                java.time.Duration.between(dateTime1, dateTime2).seconds
-            } catch (e: Exception) {
-                logger().warn("Failed to parse time strings: time1={}, time2={}", time1, time2, e)
+        /**
+         * 将 PlanNote 转换为 Plan
+         */
+        fun convertToPlan(planNote: PlanNote): Plan {
+            val subtasks = planNote.subtasks?.map { toSubTask(it) } ?: emptyList()
+            return Plan(
+                planNote.name,
+                planNote.description,
+                planNote.expectedOutcome,
+                subtasks
+            )
+        }
+
+        private fun toPlanSubTask(subTask: SubTask): PlanSubTask {
+            return PlanSubTask(
+                name = subTask.name ?: "",
+                description = subTask.description ?: "",
+                expectedOutcome = subTask.expectedOutcome ?: "",
+                outcome = subTask.outcome ?: "",
+                state = when (subTask.state) {
+                    SubTaskState.TODO -> TaskState.TODO
+                    SubTaskState.IN_PROGRESS -> TaskState.IN_PROGRESS
+                    SubTaskState.DONE -> TaskState.DONE
+                    SubTaskState.ABANDONED -> TaskState.ABANDONED
+                    else -> TaskState.TODO
+                },
+                createdAt = subTask.createdAt,
+                finishedAt = subTask.finishedAt,
+                costTimeSeconds = compareTime(subTask.createdAt, subTask.finishedAt)
+            )
+        }
+
+        fun toSubTask(planSubTask: PlanSubTask): SubTask {
+            val subTask = SubTask(
+                planSubTask.name,
+                planSubTask.description,
+                planSubTask.expectedOutcome,
+            )
+            subTask.state = when (planSubTask.state) {
+                TaskState.TODO -> SubTaskState.TODO
+                TaskState.IN_PROGRESS -> SubTaskState.IN_PROGRESS
+                TaskState.DONE -> SubTaskState.DONE
+                TaskState.ABANDONED -> SubTaskState.ABANDONED
+            }
+            subTask.outcome = planSubTask.outcome
+            subTask.createdAt = planSubTask.createdAt
+            subTask.finishedAt = planSubTask.finishedAt
+            return subTask
+        }
+
+        private fun compareTime(time1: String?, time2: String?): Long {
+            return if (time1 == null || time2 == null) {
                 0
+            } else {
+                try {
+                    val dateTime1 = LocalDateTime.parse(time1, dateTimeFormatter)
+                    val dateTime2 = LocalDateTime.parse(time2, dateTimeFormatter)
+                    java.time.Duration.between(dateTime1, dateTime2).seconds
+                } catch (e: Exception) {
+                    logger().warn("Failed to parse time strings: time1={}, time2={}", time1, time2, e)
+                    0
+                }
             }
         }
     }

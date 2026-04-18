@@ -77,7 +77,7 @@ class AscopeAgentLauncher(
 //        val chatModelConfig = chatModelConfigAdaptor.getConfig(agentSpec.chatModelId) ?: throw IllegalArgumentException(
 //            "Chat model config not found"
 //        )
-        val chatModelConfig = DashScopeChatModelConfig("qwen3.5-plus", "sk-5404e4ddac8645a1bd3555c00376a1f5")
+        val chatModelConfig = DashScopeChatModelConfig("qwen3-max-2026-01-23", "sk-5404e4ddac8645a1bd3555c00376a1f5")
         val chatModel = ModelHelper.createChatModel(chatModelConfig, chatSpec)
         agentBuilder.model(chatModel)
 
@@ -189,12 +189,16 @@ class AscopeAgentLauncher(
         return session.getList(SimpleSessionKey.of(sessionId), "memory_messages", Msg::class.java)
     }
 
-    fun loadSessionHistoryPlan(sessionId: String): MutableList<PlanNote> {
+    fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> {
         return planNoteAdaptor.getPlanNotes(sessionId)
     }
 
-    fun loadSessionCurrentPlanNote(sessionId: String): Optional<PlanNotebookState> {
-        return session.get(SimpleSessionKey.of(sessionId), "planNotebook_state", PlanNotebookState::class.java)
+    fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? {
+        val planNote = session.get(SimpleSessionKey.of(sessionId), "planNotebook_state", PlanNotebookState::class.java)
+        if (planNote.isPresent) {
+            return CustomerPlanNoteStorage.convertToPlanNote(sessionId, planNote.get().currentPlan)
+        }
+        return null
     }
 
     companion object {

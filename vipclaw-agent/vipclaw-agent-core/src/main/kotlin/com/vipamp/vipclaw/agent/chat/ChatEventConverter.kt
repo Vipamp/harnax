@@ -53,11 +53,11 @@ object ChatEventConverter {
         when (event.type) {
             EventType.REASONING -> {
                 val text: String? = MsgExtractHelper.extractText(msg)
-                if (!text.isNullOrEmpty()) {
+                if (!text.isNullOrEmpty() && !event.isLast) {
                     events.add(StreamTextChatEvent(message = text, event.isLast, tokenUsage = tokenUsage))
                 }
                 val thinking: String? = MsgExtractHelper.extractThinking(msg)
-                if (!thinking.isNullOrEmpty()) {
+                if (!thinking.isNullOrEmpty() && !event.isLast) {
                     events.add(StreamThinkingChatEvent(message = thinking, event.isLast, tokenUsage = tokenUsage))
                 }
                 if (event.isLast && msg.hasContentBlocks(ToolUseBlock::class.java)) {
@@ -105,6 +105,7 @@ object ChatEventConverter {
                     )
                 }
             }
+
             else -> {}
         }
         return Flux.fromIterable(events)
