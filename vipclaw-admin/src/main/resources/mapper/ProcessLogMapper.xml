@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.ProcessLogMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="ProcessLogEntityResultMap" type="com.vipamp.vipclaw.admin.entity.ProcessLogEntity">
+        <id column="id" property="id"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="message" property="message"/>
+        <result column="log_type" property="logType"/>
+        <result column="stack_trace" property="stackTrace"/>
+        <result column="ts" property="ts"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="ProcessLogEntityResultMap">
+        SELECT * FROM process_log_entity WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE process_log_entity SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO process_log_entity (
+        agent_id, agent_name, session_id, message, log_type, stack_trace, ts
+        ) VALUES (
+        #{agentId}, #{agentName}, #{sessionId}, #{message}, #{logType}, #{stackTrace}, #{ts}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE process_log_entity SET
+        agent_id = #{agentId},
+        agent_name = #{agentName},
+        session_id = #{sessionId},
+        message = #{message},
+        log_type = #{logType},
+        stack_trace = #{stackTrace},
+        ts = #{ts}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

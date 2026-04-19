@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.SysJobMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="SysJobResultMap" type="com.vipamp.vipclaw.admin.entity.SysJob">
+        <id column="id" property="id"/>
+        <result column="job_name" property="jobName"/>
+        <result column="job_group" property="jobGroup"/>
+        <result column="job_class" property="jobClass"/>
+        <result column="cron_expression" property="cronExpression"/>
+        <result column="job_status" property="jobStatus"/>
+        <result column="concurrent" property="concurrent"/>
+        <result column="description" property="description"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="SysJobResultMap">
+        SELECT * FROM sys_job WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE sys_job SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- selectByNameAndGroup -->
+    <select id="selectByNameAndGroup" resultMap="SysJobResultMap">
+        SELECT * FROM sys_job WHERE job_name = #{jobName} AND job_group = #{jobGroup} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- selectRunningJobs -->
+    <select id="selectRunningJobs" resultMap="SysJobResultMap">
+        SELECT * FROM sys_job WHERE job_status = 1 AND active = 1
+    </select>
+
+    <!-- selectActiveById -->
+    <select id="selectActiveById" resultMap="SysJobResultMap">
+        SELECT * FROM sys_job WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- updateStatus -->
+    <update id="updateStatus">
+        UPDATE sys_job SET job_status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- logicalDelete -->
+    <update id="logicalDelete">
+        UPDATE sys_job SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_job (
+        job_name, job_group, job_class, cron_expression, job_status, concurrent, description, is_public, creator,
+        active, create_time, update_time
+        ) VALUES (
+        #{jobName}, #{jobGroup}, #{jobClass}, #{cronExpression}, #{jobStatus}, #{concurrent}, #{description},
+        #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE sys_job SET
+        job_name = #{jobName},
+        job_group = #{jobGroup},
+        job_class = #{jobClass},
+        cron_expression = #{cronExpression},
+        job_status = #{jobStatus},
+        concurrent = #{concurrent},
+        description = #{description},
+        is_public = #{isPublic},
+        creator = #{creator},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- selectJobList -->
+    <select id="selectJobList" resultMap="SysJobResultMap">
+        SELECT * FROM sys_job
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='keyword != null and keyword != ""'>
+            AND job_name LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        <if test='jobStatus != null'>
+            AND job_status = #{jobStatus}
+        </if>
+        ORDER BY update_time DESC
+    </select>
+
+</mapper>

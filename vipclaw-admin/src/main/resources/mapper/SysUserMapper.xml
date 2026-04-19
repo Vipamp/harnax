@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.SysUserMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="SysUserResultMap" type="com.vipamp.vipclaw.admin.entity.SysUser">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="password" property="password"/>
+        <result column="nickname" property="nickname"/>
+        <result column="email" property="email"/>
+        <result column="phone" property="phone"/>
+        <result column="gender" property="gender"/>
+        <result column="avatar" property="avatar"/>
+        <result column="status" property="status"/>
+        <result column="is_admin" property="isAdmin"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- 根据ID查询 -->
+    <select id="selectById" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <!-- 插入用户 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_user (
+        username,
+        password,
+        nickname,
+        email,
+        phone,
+        gender,
+        avatar,
+        status,
+        is_admin,
+        active,
+        create_time,
+        update_time
+        ) VALUES (
+        #{username},
+        #{password},
+        #{nickname},
+        #{email},
+        #{phone},
+        #{gender},
+        #{avatar},
+        #{status},
+        #{isAdmin},
+        #{active},
+        #{createTime},
+        #{updateTime}
+        )
+    </insert>
+
+    <!-- 根据ID更新 -->
+    <update id="updateById">
+        UPDATE sys_user SET
+        username = #{username},
+        password = #{password},
+        nickname = #{nickname},
+        email = #{email},
+        phone = #{phone},
+        gender = #{gender},
+        avatar = #{avatar},
+        status = #{status},
+        is_admin = #{isAdmin},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- 根据ID删除（逻辑删除） -->
+    <update id="deleteById">
+        UPDATE sys_user SET active = 0
+        WHERE id = #{id}
+    </update>
+
+    <!-- ==================== 自定义查询方法 ==================== -->
+
+    <!-- 查询用户列表（带条件） -->
+    <select id="selectUserList" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE active = 1
+        <if test="keyword != null and keyword != ''">
+            AND (
+            username LIKE CONCAT('%', #{keyword}, '%')
+            OR nickname LIKE CONCAT('%', #{keyword}, '%')
+            OR email LIKE CONCAT('%', #{keyword}, '%')
+            OR phone LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="status != null">
+            AND status = #{status, jdbcType=INTEGER}
+        </if>
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据用户名查询 -->
+    <select id="selectByUsername" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE username = #{username}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 根据ID查询（校验active） -->
+    <select id="selectActiveById" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE id = #{id}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 更新用户状态 -->
+    <update id="updateStatus">
+        UPDATE sys_user SET
+        status = #{status},
+        update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+    <!-- 逻辑删除用户 -->
+    <update id="logicalDelete">
+        UPDATE sys_user SET
+        active = 0,
+        update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+</mapper>

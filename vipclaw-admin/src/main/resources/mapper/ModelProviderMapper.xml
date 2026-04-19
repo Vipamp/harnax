@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.ModelProviderMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="ModelProviderResultMap" type="com.vipamp.vipclaw.admin.entity.ModelProvider">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="display_name" property="displayName"/>
+        <result column="api_key" property="apiKey"/>
+        <result column="base_url" property="baseUrl"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="ModelProviderResultMap">
+        SELECT * FROM model_provider WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE model_provider SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- countByName -->
+    <select id="countByName" resultMap="ModelProviderResultMap">
+        SELECT COUNT(*) FROM model_provider WHERE name = #{name} AND active = 1
+    </select>
+
+    <!-- selectActiveById -->
+    <select id="selectActiveById" resultMap="ModelProviderResultMap">
+        SELECT * FROM model_provider WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO model_provider (
+        name, display_name, api_key, base_url, status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+        #{name}, #{displayName}, #{apiKey}, #{baseUrl}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
+        #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE model_provider SET
+        name = #{name},
+        display_name = #{displayName},
+        api_key = #{apiKey},
+        base_url = #{baseUrl},
+        status = #{status},
+        is_public = #{isPublic},
+        creator = #{creator},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- selectModelProviderList -->
+    <select id="selectModelProviderList" resultMap="ModelProviderResultMap">
+        SELECT * FROM model_provider
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='name != null and name != ""'>
+            AND (name LIKE CONCAT('%', #{name}, '%')
+            OR display_name LIKE CONCAT('%', #{name}, '%'))
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        ORDER BY status DESC, update_time DESC
+    </select>
+
+</mapper>

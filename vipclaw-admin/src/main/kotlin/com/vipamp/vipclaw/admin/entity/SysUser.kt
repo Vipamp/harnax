@@ -10,7 +10,7 @@ class SysUser : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "用户 ID")
+    @Schema(description = "用户 ID")
     var id: Long = 0
 
     @Schema(description = "用户名")
@@ -41,12 +41,12 @@ class SysUser : Serializable {
     var isAdmin: Int = 0
 
     @Schema(description = "是否可用（0:被删除，1:可用）")
-        var active: Int = 1
+    var active: Int = 1
 
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 
 }

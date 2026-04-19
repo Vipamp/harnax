@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.TokenStatsMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="TokenStatsResultMap" type="com.vipamp.vipclaw.admin.entity.TokenStats">
+        <id column="id" property="id"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="chat_model_id" property="chatModelId"/>
+        <result column="input_token" property="inputToken"/>
+        <result column="output_token" property="outputToken"/>
+        <result column="total_token" property="totalToken"/>
+        <result column="fee" property="fee"/>
+        <result column="ts" property="ts"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO token_stats (
+        agent_id, session_id, chat_model_id, input_token, output_token, total_token, fee, ts
+        ) VALUES (
+        #{agentId}, #{sessionId}, #{chatModelId}, #{inputToken}, #{outputToken}, #{totalToken}, #{fee}, #{ts}
+        )
+    </insert>
+
+</mapper>

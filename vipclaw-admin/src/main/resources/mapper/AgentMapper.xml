@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.AgentMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="AgentResultMap" type="com.vipamp.vipclaw.admin.entity.Agent">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="system_prompt" property="systemPrompt"/>
+        <result column="model_id" property="modelId"/>
+        <result column="mcp_list" property="mcpList"/>
+        <result column="skill_list" property="skillList"/>
+        <result column="owner" property="owner"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="AgentResultMap">
+        SELECT * FROM agent WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE agent SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- selectActiveById -->
+    <select id="selectActiveById" resultMap="AgentResultMap">
+        SELECT * FROM agent WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent (
+        name, description, system_prompt, model_id, mcp_list, skill_list,
+        owner, status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+        #{name}, #{description}, #{systemPrompt}, #{modelId}, #{mcpList}, #{skillList},
+        #{owner}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE agent SET
+        name = #{name},
+        description = #{description},
+        system_prompt = #{systemPrompt},
+        model_id = #{modelId},
+        mcp_list = #{mcpList},
+        skill_list = #{skillList},
+        owner = #{owner},
+        status = #{status},
+        is_public = #{isPublic},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- selectAgentList -->
+    <select id="selectAgentList" resultMap="AgentResultMap">
+        SELECT * FROM agent
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='name != null and name != ""'>
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+</mapper>

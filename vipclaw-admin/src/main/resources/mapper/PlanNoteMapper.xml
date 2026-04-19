@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.PlanNoteMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="PlanNoteEntityResultMap" type="com.vipamp.vipclaw.admin.entity.PlanNoteEntity">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="plan_id" property="planId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="expected_outcome" property="expectedOutcome"/>
+        <result column="subtasks" property="subtasks"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="finished_at" property="finishedAt"/>
+        <result column="cost_timeseconds" property="costTimeseconds"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="PlanNoteEntityResultMap">
+        SELECT * FROM plan_note_entity WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE plan_note_entity SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- selectBySessionIdAndPlanId -->
+    <select id="selectBySessionIdAndPlanId" resultMap="PlanNoteEntityResultMap">
+        SELECT * FROM plan_note WHERE session_id = #{sessionId} AND plan_id = #{planId} LIMIT 1
+    </select>
+
+    <!-- selectBySessionId -->
+    <select id="selectBySessionId" resultMap="PlanNoteEntityResultMap">
+        SELECT * FROM plan_note WHERE session_id = #{sessionId} ORDER BY create_time DESC
+    </select>
+
+    <!-- deleteBySessionId -->
+    <select id="deleteBySessionId" resultMap="PlanNoteEntityResultMap">
+        DELETE FROM plan_note WHERE session_id = #{sessionId}
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO plan_note_entity (
+        session_id, plan_id, name, description, expected_outcome, subtasks, created_at, cost_timeseconds, status,
+        create_time
+        ) VALUES (
+        #{sessionId}, #{planId}, #{name}, #{description}, #{expectedOutcome}, #{subtasks}, #{createdAt},
+        #{costTimeseconds}, #{status}, #{createTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE plan_note_entity SET
+        session_id = #{sessionId},
+        plan_id = #{planId},
+        name = #{name},
+        description = #{description},
+        expected_outcome = #{expectedOutcome},
+        subtasks = #{subtasks},
+        created_at = #{createdAt},
+        cost_timeseconds = #{costTimeseconds},
+        status = #{status}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

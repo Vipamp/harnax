@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.McpServerMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="McpServerResultMap" type="com.vipamp.vipclaw.admin.entity.McpServer">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="type" property="type"/>
+        <result column="command" property="command"/>
+        <result column="url" property="url"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== 基础 CRUD 方法 ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="McpServerResultMap">
+        SELECT * FROM mcp_server WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE mcp_server SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- selectByName -->
+    <select id="selectByName" resultMap="McpServerResultMap">
+        SELECT * FROM mcp_server WHERE name = #{name} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- selectActiveById -->
+    <select id="selectActiveById" resultMap="McpServerResultMap">
+        SELECT * FROM mcp_server WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- updateStatus -->
+    <select id="updateStatus" resultMap="McpServerResultMap">
+        UPDATE mcp_server SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </select>
+
+    <!-- logicalDelete -->
+    <select id="logicalDelete" resultMap="McpServerResultMap">
+        UPDATE mcp_server SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO mcp_server (
+        name, description, type, command, url, status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+        #{name}, #{description}, #{type}, #{command}, #{url}, #{status}, #{isPublic}, #{creator}, #{active},
+        #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE mcp_server SET
+        name = #{name},
+        description = #{description},
+        type = #{type},
+        command = #{command},
+        url = #{url},
+        status = #{status},
+        is_public = #{isPublic},
+        creator = #{creator},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- selectMcpServerList -->
+    <select id="selectMcpServerList" resultMap="McpServerResultMap">
+        SELECT * FROM mcp_server
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='keyword != null and keyword != ""'>
+            AND (name LIKE CONCAT('%', #{keyword}, '%')
+            OR description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        <if test='types != null and types != ""'>
+            AND type IN
+            <foreach item='type' index='index' collection='types.split(",")' open='(' separator=',' close=')'>
+                #{type}
+            </foreach>
+        </if>
+        ORDER BY status DESC, update_time DESC
+    </select>
+
+</mapper>
