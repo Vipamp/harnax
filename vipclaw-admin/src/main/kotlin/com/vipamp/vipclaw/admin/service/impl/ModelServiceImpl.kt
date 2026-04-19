@@ -1,8 +1,5 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
@@ -13,10 +10,12 @@ import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper
 import com.vipamp.vipclaw.admin.service.ModelService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.beans.BeanUtils
 import org.springframework.stereotype.Service
 import org.springframework.util.StringUtils.hasText
+import kotlin.math.min
 
 /**
  * 模型服务实现类
@@ -27,8 +26,9 @@ import org.springframework.util.StringUtils.hasText
 @Service
 class ModelServiceImpl(
     private val modelProviderMapper: ModelProviderMapper,
-    private val jwtUtil: JwtUtil
-) : ServiceImpl<ModelMapper, Model>(), ModelService {
+    private val jwtUtil: JwtUtil,
+    private val modelMapper: ModelMapper
+) : ModelService {
 
     private val log = LoggerFactory.getLogger(ModelServiceImpl::class.java)
 
@@ -42,82 +42,45 @@ class ModelServiceImpl(
         minPrice: Double?,
         maxPrice: Double?
     ): Page<ModelResponse> {
-        val queryWrapper = LambdaQueryWrapper<Model>()
-
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // 权限过滤：只查询公开的或自己创建的
-        queryWrapper.and { wrapper ->
-            wrapper.eq(Model::isPublic, 1)
-                .or()
-                .eq(Model::creator, currentUsername)
+        // 将 tags 字符串转换为 List
+        val tagsList = if (hasText(tags)) {
+            tags!!.split(",").map { it.trim() }
+        } else {
+            null
         }
 
-        // 按名称模糊查询
-        if (hasText(name)) {
-            queryWrapper.and { wrapper ->
-                wrapper.like(Model::name, name)
-                    .or()
-                    .like(Model::modelName, name)
-            }
+        // 使用 MyBatis 原生查询
+        val allModels = modelMapper.selectModelList(
+            name,
+            providerId,
+            modelType,
+            status,
+            tagsList,
+            minPrice,
+            maxPrice,
+            currentUsername
+        )
+
+        // 手动分页
+        val fromIndex = ((page.current - 1) * page.size).toInt()
+        val toIndex = min(fromIndex + page.size.toInt(), allModels.size)
+
+        val records = if (fromIndex < allModels.size) {
+            allModels.subList(fromIndex, toIndex)
+        } else {
+            emptyList()
         }
-
-        // 按供应商筛选
-        providerId?.let { queryWrapper.eq(Model::providerId, it) }
-
-        // 按模型类型筛选
-        if (hasText(modelType)) {
-            queryWrapper.eq(Model::modelType, modelType)
-        }
-
-        // 按状态筛选
-        status?.let { queryWrapper.eq(Model::status, it) }
-
-        // 按标签筛选（支持多个标签，如：internet,reasoning,tool,mcp,vision）
-        // 多个标签之间是"或"关系，只要满足其中一个即可
-        if (hasText(tags)) {
-            val tagArray = tags!!.split(",")
-            queryWrapper.and { wrapper ->
-                tagArray.forEach { tag ->
-                    val trimmedTag = tag.trim()
-                    when {
-                        "internet".equals(trimmedTag, ignoreCase = true) ->
-                            wrapper.or().eq(Model::supportInternet, 1)
-
-                        "reasoning".equals(trimmedTag, ignoreCase = true) ->
-                            wrapper.or().eq(Model::supportReasoning, 1)
-
-                        "tool".equals(trimmedTag, ignoreCase = true) ->
-                            wrapper.or().eq(Model::supportTool, 1)
-
-                        "mcp".equals(trimmedTag, ignoreCase = true) ->
-                            wrapper.or().eq(Model::supportMcp, 1)
-
-                        "vision".equals(trimmedTag, ignoreCase = true) ->
-                            wrapper.or().eq(Model::supportVision, 1)
-                    }
-                }
-            }
-        }
-
-        // 按价格范围筛选
-        minPrice?.let { queryWrapper.ge(Model::price, it) }
-        maxPrice?.let { queryWrapper.le(Model::price, it) }
-
-        // 按更新时间倒序排序
-        queryWrapper.orderByDesc(Model::status)
-            .orderByDesc(Model::updateTime)
-
-        val result = this.page(page, queryWrapper)
 
         // 转换为响应对象
-        val responsePage = Page<ModelResponse>(result.current, result.size, result.total)
-        responsePage.records = result.records.map { model ->
+        val responsePage = Page<ModelResponse>(page.current, page.size, allModels.size.toLong())
+        responsePage.records = records.map { model ->
             val response = ModelResponse.fromEntity(model)
             // 填充供应商名称
-            model.providerId?.let { providerId ->
-                val provider = modelProviderMapper.selectById(providerId)
+            model.providerId?.let { pid ->
+                val provider = modelProviderMapper.selectById(pid)
                 provider?.let {
                     response.providerName = it.displayName
                 }
@@ -129,7 +92,7 @@ class ModelServiceImpl(
     }
 
     override fun getDetail(id: Long): ModelResponse {
-        val model = this.getById(id)
+        val model = this.modelMapper.selectById(id)
             ?: throw BizException("模型不存在")
         val response = ModelResponse.fromEntity(model)
         // 填充供应商名称
@@ -144,52 +107,26 @@ class ModelServiceImpl(
 
     override fun create(request: ModelCreateRequest): ModelResponse {
         // 检查供应商是否存在
-        val provider = modelProviderMapper.selectById(request.providerId)
+        val provider = modelProviderMapper.selectById(request.providerId!!)
             ?: throw BizException("模型供应商不存在")
 
         // 检查同一供应商下 name 是否已存在
-        val nameQuery = LambdaQueryWrapper<Model>()
-        nameQuery.eq(Model::providerId, request.providerId)
-            .eq(Model::name, request.name)
-            .eq(Model::active, 1)
-        if (this.count(nameQuery) > 0) {
+        if (modelMapper.countByProviderIdAndName(request.providerId, request.name!!) > 0) {
             throw BizException("该模型名称在当前供应商下已存在")
         }
 
         // 检查同一供应商下 model_name 是否已存在
-        val modelNameQuery = LambdaQueryWrapper<Model>()
-        modelNameQuery.eq(Model::providerId, request.providerId)
-            .eq(Model::modelName, request.modelName)
-            .eq(Model::active, 1)
-        if (this.count(modelNameQuery) > 0) {
+        if (modelMapper.countByProviderIdAndModelName(request.providerId, request.modelName!!) > 0) {
             throw BizException("该模型标识在当前供应商下已存在")
         }
 
         val model = Model()
         BeanUtils.copyProperties(request, model)
 
-        // 默认状态为启用
-        if (model.status == null) {
-            model.status = 1
-        }
-
-        // 默认不支持各项能力
-        if (model.supportInternet == null) model.supportInternet = 0
-        if (model.supportReasoning == null) model.supportReasoning = 0
-        if (model.supportTool == null) model.supportTool = 0
-        if (model.supportMcp == null) model.supportMcp = 0
-        if (model.supportVision == null) model.supportVision = 0
-
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         model.creator = currentUsername
-
-        // 默认不公开
-        if (model.isPublic == null) {
-            model.isPublic = 0
-        }
-
-        this.save(model)
+        this.modelMapper.insert(model) > 0
 
         val response = ModelResponse.fromEntity(model)
         response.providerName = provider.displayName
@@ -197,23 +134,18 @@ class ModelServiceImpl(
     }
 
     override fun update(id: Long, request: ModelUpdateRequest): ModelResponse {
-        val model = this.getById(id)
+        val model = modelMapper.selectActiveById(id)
             ?: throw BizException("模型不存在")
 
         // 如果修改了供应商，检查是否存在
-        if (request.providerId != null && request.providerId != model.providerId) {
+        if (request.providerId != model.providerId) {
             val provider = modelProviderMapper.selectById(request.providerId)
                 ?: throw BizException("模型供应商不存在")
         }
 
         // 如果修改了 name，检查是否与其他模型冲突
         if (hasText(request.name) && request.name != model.name) {
-            val nameQuery = LambdaQueryWrapper<Model>()
-            nameQuery.eq(Model::providerId, model.providerId)
-                .eq(Model::name, request.name)
-                .eq(Model::active, 1)
-                .ne(Model::id, id)
-            if (this.count(nameQuery) > 0) {
+            if (modelMapper.countByProviderIdAndName(model.providerId!!, request.name!!) > 0) {
                 throw BizException("该模型名称在当前供应商下已存在")
             }
             model.name = request.name
@@ -223,12 +155,7 @@ class ModelServiceImpl(
 
         // 如果修改了 modelName，检查是否与其他模型冲突
         if (hasText(request.modelName) && request.modelName != model.modelName) {
-            val modelNameQuery = LambdaQueryWrapper<Model>()
-            modelNameQuery.eq(Model::providerId, model.providerId)
-                .eq(Model::modelName, request.modelName)
-                .eq(Model::active, 1)
-                .ne(Model::id, id)
-            if (this.count(modelNameQuery) > 0) {
+            if (modelMapper.countByProviderIdAndModelName(model.providerId!!, request.modelName!!) > 0) {
                 throw BizException("该模型标识在当前供应商下已存在")
             }
             model.modelName = request.modelName
@@ -236,31 +163,45 @@ class ModelServiceImpl(
             model.modelName = request.modelName
         }
 
-        request.providerId?.let { model.providerId = it }
-        request.description?.let { model.description = it }
+        request.providerId.let { model.providerId = it }
+        request.description.let { model.description = it }
         if (hasText(request.modelType)) {
             model.modelType = request.modelType
         }
-        request.supportInternet?.let { model.supportInternet = it }
-        request.supportReasoning?.let { model.supportReasoning = it }
-        request.supportTool?.let { model.supportTool = it }
-        request.supportMcp?.let { model.supportMcp = it }
-        request.supportVision?.let { model.supportVision = it }
-        request.price?.let { model.price = it }
-        request.status?.let { model.status = it }
+        request.supportInternet.let { model.supportInternet = it }
+        request.supportReasoning.let { model.supportReasoning = it }
+        request.supportTool.let { model.supportTool = it }
+        request.supportMcp.let { model.supportMcp = it }
+        request.supportVision.let { model.supportVision = it }
+        request.price.let { model.price = it }
+        request.status.let { model.status = it }
 
-        this.updateById(model)
+        this.modelMapper.updateById(model) > 0
         return getDetail(id)
     }
 
     override fun toggle(id: Long): ModelResponse {
-        val model = this.getById(id)
+        val model = this.modelMapper.selectById(id)
             ?: throw BizException("模型不存在")
 
         // 切换状态
         model.status = if (model.status == 1) 0 else 1
-        this.updateById(model)
+        this.modelMapper.updateById(model) > 0
 
         return getDetail(id)
+    }
+
+    override fun getModelById(id: Long): Model? {
+        return this.modelMapper.selectById(id)
+    }
+
+    override fun deleteById(id: Long) {
+        log.info("删除模型，id: {}", id)
+        val model = modelMapper.selectActiveById(id)
+            ?: throw BizException("模型不存在")
+
+        // 逻辑删除：设置 active = 0
+        modelMapper.deleteById(id)
+        log.info("模型删除成功，id: {}", id)
     }
 }

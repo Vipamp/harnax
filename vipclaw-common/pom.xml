@@ -29,6 +29,13 @@
             <version>${kotlin.version}</version>
             <scope>test</scope>
         </dependency>
+        
+        <!-- PageHelper -->
+        <dependency>
+            <groupId>com.github.pagehelper</groupId>
+            <artifactId>pagehelper</artifactId>
+            <version>6.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>

@@ -17,7 +17,7 @@ data class SkillResponse(
     @Schema(description = "仓库ID", example = "1")
     val repositoryId: Long? = null,
     @Schema(description = "仓库名称", example = "qoder-skills")
-    val repositoryName: String? = null,
+    var repositoryName: String? = null,
     @Schema(description = "技能描述")
     val description: String? = null,
     @Schema(description = "skill.md 内容")

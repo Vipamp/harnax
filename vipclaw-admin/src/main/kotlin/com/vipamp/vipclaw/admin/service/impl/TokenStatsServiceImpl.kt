@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
+import com.vipamp.vipclaw.admin.dto.OverallStats
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse
+import com.vipamp.vipclaw.admin.entity.TokenStats
+import com.vipamp.vipclaw.admin.mapper.TokenStatsMapper
 import com.vipamp.vipclaw.admin.service.TokenStatsService
-import com.vipamp.vipclaw.common.entity.TokenStats
-import com.vipamp.vipclaw.common.mapper.TokenStatsMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -21,7 +21,7 @@ import java.time.format.DateTimeFormatter
 @Service
 class TokenStatsServiceImpl(
     private val tokenStatsMapper: TokenStatsMapper
-) : ServiceImpl<TokenStatsMapper, TokenStats>(), TokenStatsService {
+) : TokenStatsService {
 
     private val log = LoggerFactory.getLogger(TokenStatsServiceImpl::class.java)
 
@@ -35,7 +35,7 @@ class TokenStatsServiceImpl(
             tokenStats.totalToken
         )
 
-        val success = this.save(tokenStats)
+        val success = this.tokenStatsMapper.insert(tokenStats) > 0
         log.info("Token 消耗记录保存{}", if (success) "成功" else "失败")
         return success
     }
@@ -48,22 +48,23 @@ class TokenStatsServiceImpl(
         // 获取总体统计
         val overallMap = tokenStatsMapper.getOverallStats(startTime, endTime)
         if (overallMap != null) {
-            response.overall = TokenStatsAggregationResponse.mapToOverallStats(overallMap)
+            response.overall = TokenStatsAggregationResponse.mapToOverallStats(overallMap as Map<String, Any?>)
         } else {
-            response.overall = TokenStatsAggregationResponse.OverallStats()
+            response.overall = OverallStats()
         }
 
         // 按模型聚合
         val modelData = tokenStatsMapper.aggregateByModel(startTime, endTime)
-        response.modelStats = modelData.map { TokenStatsAggregationResponse.mapToModelStats(it) }
+        response.modelStats = modelData!!.map { TokenStatsAggregationResponse.mapToModelStats(it as Map<String, Any?>) }
 
         // 按会话聚合
         val sessionData = tokenStatsMapper.aggregateBySession(startTime, endTime)
-        response.sessionStats = sessionData.map { TokenStatsAggregationResponse.mapToSessionStats(it) }
+        response.sessionStats =
+            sessionData!!.map { TokenStatsAggregationResponse.mapToSessionStats(it as Map<String, Any?>) }
 
         // 按智能体聚合
         val agentData = tokenStatsMapper.aggregateByAgent(startTime, endTime)
-        response.agentStats = agentData.map { TokenStatsAggregationResponse.mapToAgentStats(it) }
+        response.agentStats = agentData!!.map { TokenStatsAggregationResponse.mapToAgentStats(it as Map<String, Any?>) }
 
         log.info("Token 聚合统计数据获取完成")
         return response
@@ -74,7 +75,12 @@ class TokenStatsServiceImpl(
         endTime: String,
         granularity: String
     ): TokenStatsAggregationResponse {
-        log.info("获取 Token 时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
+        log.info(
+            "获取 Token 时序统计数据, startTime: {}, endTime: {}, granularity: {}",
+            startTime,
+            endTime,
+            granularity
+        )
 
         val response = TokenStatsAggregationResponse()
 
@@ -93,7 +99,7 @@ class TokenStatsServiceImpl(
 
         response.timeSeriesData = filledTimeSeriesData.map { TokenStatsAggregationResponse.mapToTimeSeriesData(it) }
 
-        log.info("Token 时序统计数据获取完成，共 {} 条记录", response.timeSeriesData.size)
+        log.info("Token 时序统计数据获取完成，共 {} 条记录", response.timeSeriesData!!.size)
         return response
     }
 
@@ -145,16 +151,19 @@ class TokenStatsServiceImpl(
                 "month" -> tokenStatsMapper.getModelTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getModelTimeSeriesByDay(startTime, endTime)
             }
+
             "agent" -> when (actualGranularity) {
                 "hour" -> tokenStatsMapper.getAgentTimeSeriesByHour(startTime, endTime)
                 "month" -> tokenStatsMapper.getAgentTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getAgentTimeSeriesByDay(startTime, endTime)
             }
+
             "session" -> when (actualGranularity) {
                 "hour" -> tokenStatsMapper.getSessionTimeSeriesByHour(startTime, endTime)
                 "month" -> tokenStatsMapper.getSessionTimeSeriesByMonth(startTime, endTime)
                 else -> tokenStatsMapper.getSessionTimeSeriesByDay(startTime, endTime)
             }
+
             else -> emptyList()
         }
 
@@ -164,10 +173,10 @@ class TokenStatsServiceImpl(
         )
 
         response.timeSeriesData = filledTimeSeriesData.map {
-            TokenStatsAggregationResponse.mapToDimensionTimeSeriesData(it, dimensionType)
+            TokenStatsAggregationResponse.mapToDimensionTimeSeriesData(it as MutableMap<String?, Any?>, dimensionType)
         }
 
-        log.info("{} 时序统计数据获取完成，共 {} 条记录", dimensionType, response.timeSeriesData.size)
+        log.info("{} 时序统计数据获取完成，共 {} 条记录", dimensionType, response.timeSeriesData!!.size)
         return response
     }
 
@@ -175,7 +184,7 @@ class TokenStatsServiceImpl(
      * 补全时间点，确保从开始到结束的所有时间点都有数据（没有数据的点为0）
      */
     private fun fillTimePoints(
-        queryData: List<Map<String, Any>>,
+        queryData: MutableList<MutableMap<String?, Any?>?>?,
         startTimeStr: String,
         endTimeStr: String,
         granularity: String
@@ -185,11 +194,11 @@ class TokenStatsServiceImpl(
         val endTime = LocalDateTime.parse(endTimeStr, formatter)
 
         // 将查询结果转为 Map，方便查找
-        val dataMap = mutableMapOf<String, Map<String, Any>>()
-        for (data in queryData) {
-            val timePointObj = data["timePoint"]
+        val dataMap = mutableMapOf<String, Map<String?, Any?>?>()
+        for (data in queryData ?: emptyList()) {
+            val timePointObj = data?.get("timePoint") as? LocalDateTime?
             if (timePointObj != null) {
-                val timeKey = if (timePointObj is LocalDateTime) {
+                val timeKey = if (true) {
                     timePointObj.format(formatter)
                 } else {
                     timePointObj.toString()
@@ -198,7 +207,7 @@ class TokenStatsServiceImpl(
             }
         }
 
-        val result = mutableListOf<Map<String, Any>>()
+        val result = mutableListOf<Map<String, Any?>?>()
         var currentTime = startTime
 
         // 根据粒度规范化起始时间
@@ -214,10 +223,12 @@ class TokenStatsServiceImpl(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
                     currentTime.format(formatter)
                 ).also { currentTime = currentTime.plusHours(1) }
+
                 "month" -> Pair(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
                     currentTime.format(formatter)
                 ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
+
                 else -> Pair(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
                     currentTime.format(formatter)
@@ -240,18 +251,18 @@ class TokenStatsServiceImpl(
                 // 使用查询到的数据，但更新 timePoint 为显示时间
                 val mutableData = data.toMutableMap()
                 mutableData["timePoint"] = displayTime
-                result.add(mutableData)
+                result.add(mutableData as Map<String, Any?>?)
             }
         }
 
-        return result
+        return result as List<Map<String, Any>>
     }
 
     /**
      * 补全维度时间点，确保每个维度从开始到结束的所有时间点都有数据（没有数据的点为0）
      */
     private fun fillDimensionTimePoints(
-        queryData: List<Map<String, Any>>,
+        queryData: List<MutableMap<String?, Any?>?>?,
         startTimeStr: String,
         endTimeStr: String,
         granularity: String,
@@ -269,10 +280,12 @@ class TokenStatsServiceImpl(
         }
 
         val dimensionGroups = mutableMapOf<String, MutableList<Map<String, Any>>>()
-        for (data in queryData) {
-            val dimIdObj = data[dimensionIdField]
-            val dimId = dimIdObj?.toString() ?: "unknown"
-            dimensionGroups.computeIfAbsent(dimId) { mutableListOf() }.add(data)
+        if (queryData != null) {
+            for (data in queryData) {
+                val dimIdObj = data?.get(dimensionIdField)
+                val dimId = dimIdObj?.toString() ?: "unknown"
+                dimensionGroups.computeIfAbsent(dimId) { mutableListOf() }.add(data as Map<String, Any>)
+            }
         }
 
         val result = mutableListOf<Map<String, Any>>()
@@ -309,10 +322,12 @@ class TokenStatsServiceImpl(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
                         currentTime.format(formatter)
                     ).also { currentTime = currentTime.plusHours(1) }
+
                     "month" -> Pair(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
                         currentTime.format(formatter)
                     ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
+
                     else -> Pair(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
                         currentTime.format(formatter)
@@ -335,16 +350,18 @@ class TokenStatsServiceImpl(
                     val sampleData = if (dimData.isEmpty()) emptyMap() else dimData[0]
                     when (dimensionType) {
                         "model" -> {
-                            emptyData["modelId"] = sampleData["modelId"]
-                            emptyData["modelName"] = sampleData["modelName"]
+                            emptyData["modelId"] = sampleData["modelId"]!!
+                            emptyData["modelName"] = sampleData["modelName"]!!
                         }
+
                         "agent" -> {
-                            emptyData["agentId"] = sampleData["agentId"]
-                            emptyData["agentName"] = sampleData["agentName"]
+                            emptyData["agentId"] = sampleData["agentId"]!!
+                            emptyData["agentName"] = sampleData["agentName"]!!
                         }
+
                         "session" -> {
-                            emptyData["sessionId"] = sampleData["sessionId"]
-                            emptyData["sessionTitle"] = sampleData["sessionTitle"]
+                            emptyData["sessionId"] = sampleData["sessionId"]!!
+                            emptyData["sessionTitle"] = sampleData["sessionTitle"]!!
                         }
                     }
 

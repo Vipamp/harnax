@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
 import com.vipamp.vipclaw.admin.entity.McpServer
@@ -12,7 +11,7 @@ import com.vipamp.vipclaw.admin.entity.McpServer
  * @author vipamp
  * @since 2026-03-12
  */
-interface McpServerService : IService<McpServer> {
+interface McpServerService {
 
     /**
      * 分页查询 MCP 服务列表

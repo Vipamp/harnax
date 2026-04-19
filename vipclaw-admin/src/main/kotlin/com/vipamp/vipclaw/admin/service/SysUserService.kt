@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
@@ -12,7 +11,7 @@ import com.vipamp.vipclaw.admin.entity.SysUser
  * @author vipamp
  * @since 2026-03-05
  */
-interface SysUserService : IService<SysUser> {
+interface SysUserService {
 
     /**
      * 分页查询用户列表
@@ -73,5 +72,5 @@ interface SysUserService : IService<SysUser> {
      * @param username 用户名
      * @return 用户实体
      */
-    fun getByUsername(username: String): SysUser
+    fun getByUsername(username: String): SysUser?
 }

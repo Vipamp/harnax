@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
@@ -13,7 +12,7 @@ import com.vipamp.vipclaw.admin.entity.Channel
  * @author vipamp
  * @since 2026-04-08
  */
-interface ChannelService : IService<Channel> {
+interface ChannelService {
 
     /**
      * 分页查询 Channel 列表
@@ -33,7 +32,7 @@ interface ChannelService : IService<Channel> {
      * @param id Channel ID
      * @return Channel 实体
      */
-    fun getChannelById(id: Long): Channel
+    fun getChannelById(id: Long): Channel?
 
     /**
      * 创建 Channel
@@ -75,7 +74,7 @@ interface ChannelService : IService<Channel> {
      * @param callbackKey 回调标识
      * @return Channel 实体
      */
-    fun getByCallbackKey(callbackKey: String): Channel
+    fun getByCallbackKey(callbackKey: String): Channel?
 
     /**
      * 将 Channel 实体转换为响应 DTO
@@ -83,5 +82,5 @@ interface ChannelService : IService<Channel> {
      * @param channel Channel 实体
      * @return 响应 DTO
      */
-    fun convertToResponse(channel: Channel): ChannelResponse
+    fun convertToResponse(channel: Channel?): ChannelResponse?
 }

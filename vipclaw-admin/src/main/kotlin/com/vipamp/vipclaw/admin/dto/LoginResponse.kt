@@ -22,6 +22,33 @@ data class LoginResponse(
     @Schema(description = "用户信息")
     val userInfo: UserInfo? = null
 ) {
+    companion object {
+        @JvmStatic
+        fun builder() = Builder()
+    }
+
+    class Builder {
+        private var accessToken: String? = null
+        private var tokenType: String? = null
+        private var expiresIn: Long? = null
+        private var expiresAt: Long? = null
+        private var userInfo: UserInfo? = null
+
+        fun accessToken(accessToken: String?) = apply { this.accessToken = accessToken }
+        fun tokenType(tokenType: String?) = apply { this.tokenType = tokenType }
+        fun expiresIn(expiresIn: Long?) = apply { this.expiresIn = expiresIn }
+        fun expiresAt(expiresAt: Long?) = apply { this.expiresAt = expiresAt }
+        fun userInfo(userInfo: UserInfo?) = apply { this.userInfo = userInfo }
+
+        fun build() = LoginResponse(
+            accessToken = accessToken,
+            tokenType = tokenType,
+            expiresIn = expiresIn,
+            expiresAt = expiresAt,
+            userInfo = userInfo
+        )
+    }
+
     /**
      * 用户信息 DTO
      */
@@ -50,5 +77,41 @@ data class LoginResponse(
 
         @Schema(description = "是否是管理员（0:否，1:是）", example = "0")
         val isAdmin: Int? = null
-    )
+    ) {
+        companion object {
+            @JvmStatic
+            fun builder() = Builder()
+        }
+
+        class Builder {
+            private var userId: Long? = null
+            private var username: String? = null
+            private var nickname: String? = null
+            private var avatar: String? = null
+            private var email: String? = null
+            private var phone: String? = null
+            private var gender: Int? = null
+            private var isAdmin: Int? = null
+
+            fun userId(userId: Long?) = apply { this.userId = userId }
+            fun username(username: String?) = apply { this.username = username }
+            fun nickname(nickname: String?) = apply { this.nickname = nickname }
+            fun avatar(avatar: String?) = apply { this.avatar = avatar }
+            fun email(email: String?) = apply { this.email = email }
+            fun phone(phone: String?) = apply { this.phone = phone }
+            fun gender(gender: Int?) = apply { this.gender = gender }
+            fun isAdmin(isAdmin: Int?) = apply { this.isAdmin = isAdmin }
+
+            fun build() = UserInfo(
+                userId = userId,
+                username = username,
+                nickname = nickname,
+                avatar = avatar,
+                email = email,
+                phone = phone,
+                gender = gender,
+                isAdmin = isAdmin
+            )
+        }
+    }
 }

@@ -59,17 +59,16 @@ class UserContextUtil {
          * @param jwtUtil JWT 工具类
          * @return 用户名，未登录返回 null
          */
-        fun getCurrentUsername(jwtUtil: JwtUtil): String? {
+        fun getCurrentUsername(jwtUtil: JwtUtil): String {
             return try {
                 val token = getToken()
                 if (token != null && jwtUtil.validateToken(token)) {
                     jwtUtil.getUsernameFromToken(token)
                 } else {
-                    null
+                    throw RuntimeException("未登录")
                 }
             } catch (e: Exception) {
-                LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前用户名失败：{}", e.message)
-                null
+                throw RuntimeException("未登录")
             }
         }
 

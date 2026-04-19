@@ -1,12 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
 import com.vipamp.vipclaw.admin.entity.SkillRepository
-import java.util.List
 
 /**
  * 技能仓库服务接口
@@ -14,7 +12,7 @@ import java.util.List
  * @author vipamp
  * @since 2026-03-16
  */
-interface SkillRepositoryService : IService<SkillRepository> {
+interface SkillRepositoryService {
 
     /**
      * 分页查询技能仓库列表
@@ -82,7 +80,7 @@ interface SkillRepositoryService : IService<SkillRepository> {
      * @param name 仓库名称
      * @return 技能仓库实体
      */
-    fun getByName(name: String): SkillRepository
+    fun getByName(name: String): SkillRepository?
 
     /**
      * 获取远程技能列表（从 Git 仓库同步）

@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
@@ -13,7 +12,7 @@ import com.vipamp.vipclaw.admin.entity.ModelProvider
  * @author vipamp
  * @since 2026-03-13
  */
-interface ModelProviderService : IService<ModelProvider> {
+interface ModelProviderService {
 
     /**
      * 分页查询模型服务商

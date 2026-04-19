@@ -1,15 +1,13 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
 import com.vipamp.vipclaw.admin.entity.SysJobLog
 import com.vipamp.vipclaw.admin.mapper.SysJobLogMapper
 import com.vipamp.vipclaw.admin.service.SysJobLogService
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.util.StringUtils.hasText
 import java.time.LocalDateTime
+import kotlin.math.min
 
 /**
  * 定时任务日志服务实现类
@@ -18,9 +16,18 @@ import java.time.LocalDateTime
  * @since 2026-03-16
  */
 @Service
-class SysJobLogServiceImpl : ServiceImpl<SysJobLogMapper, SysJobLog>(), SysJobLogService {
+class SysJobLogServiceImpl(
+    private val sysJobLogMapper: SysJobLogMapper
+) : SysJobLogService {
 
     private val log = LoggerFactory.getLogger(SysJobLogServiceImpl::class.java)
+
+    override fun save(jobLog: SysJobLog): Boolean {
+        log.info("保存定时任务日志，jobId: {}, jobName: {}", jobLog.jobId, jobLog.jobName)
+        val success = sysJobLogMapper.insert(jobLog) > 0
+        log.info("定时任务日志保存{}", if (success) "成功" else "失败")
+        return success
+    }
 
     override fun getJobLogPage(
         jobId: Long?,
@@ -36,25 +43,21 @@ class SysJobLogServiceImpl : ServiceImpl<SysJobLogMapper, SysJobLog>(), SysJobLo
             current, size, jobId, jobName, status
         )
 
+        // 使用 MyBatis 原生查询
+        val allLogs = sysJobLogMapper.selectJobLogList(jobId, jobName, status, startTime, endTime)
+
+        // 手动分页
         val page = Page<SysJobLog>(current.toLong(), size.toLong())
-        val wrapper = LambdaQueryWrapper<SysJobLog>()
-
-        // 任务ID筛选
-        jobId?.let { wrapper.eq(SysJobLog::jobId, it) }
-
-        // 任务名称模糊查询
-        if (hasText(jobName)) {
-            wrapper.like(SysJobLog::jobName, jobName)
+        val fromIndex = (current - 1) * size
+        val toIndex = min(fromIndex + size, allLogs.size)
+        
+        page.records = if (fromIndex < allLogs.size) {
+            allLogs.subList(fromIndex, toIndex)
+        } else {
+            emptyList()
         }
+        page.total = allLogs.size.toLong()
 
-        // 状态筛选
-        status?.let { wrapper.eq(SysJobLog::status, it) }
-
-        // 时间范围筛选
-        startTime?.let { wrapper.ge(SysJobLog::createTime, it) }
-        endTime?.let { wrapper.le(SysJobLog::createTime, it) }
-
-        wrapper.orderByDesc(SysJobLog::createTime)
-        return this.page(page, wrapper)
+        return page
     }
 }

@@ -18,11 +18,11 @@ class JwtUtil {
 
     private val log = LoggerFactory.getLogger(JwtUtil::class.java)
 
-    @Value("\${jwt.secret:vipclaw-secret-key-2026}")
-    private lateinit var secret: String
+    @Value($$"${jwt.secret}")
+    private var secret: String = "vipclaw-secret-key-2026"
 
-    @Value("\${jwt.expiration:7200000}")
-    private lateinit var expiration: Long
+    @Value($$"${jwt.expiration}")
+    private var expiration: Long = 7200000
 
     /**
      * 获取签名密钥
@@ -62,9 +62,9 @@ class JwtUtil {
      * @param token JWT Token
      * @return 用户 ID
      */
-    fun getUserIdFromToken(token: String): Long? {
+    fun getUserIdFromToken(token: String): Long {
         val claims = getClaimsFromToken(token)
-        return claims["userId", Long::class.java]
+        return claims["userId", Integer::class.java].toLong()
     }
 
     /**
@@ -73,7 +73,7 @@ class JwtUtil {
      * @param token JWT Token
      * @return 用户名
      */
-    fun getUsernameFromToken(token: String): String? {
+    fun getUsernameFromToken(token: String): String {
         val claims = getClaimsFromToken(token)
         return claims.subject
     }

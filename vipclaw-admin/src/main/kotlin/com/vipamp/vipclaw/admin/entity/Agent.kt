@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.*
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
@@ -11,7 +10,6 @@ import java.time.LocalDateTime
  * @author vipamp
  * @since 2026-03-18
  */
-@TableName("agent")
 @Schema(description = "智能体实体类")
 class Agent : Serializable {
 
@@ -22,7 +20,6 @@ class Agent : Serializable {
     /**
      * ID
      */
-    @TableId(value = "id", type = IdType.AUTO)
     @Schema(description = "ID")
     var id: Long = 0
 
@@ -90,20 +87,17 @@ class Agent : Serializable {
      * 是否可用（0:被删除，1:可用）
      */
     @Schema(description = "是否可用（0:被删除，1:可用）")
-    @TableLogic(value = "1", delval = "0")
     var active: Int = 1
 
     /**
      * 创建时间
      */
     @Schema(description = "创建时间")
-    @TableField(fill = FieldFill.INSERT)
     var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
      * 更新时间
      */
     @Schema(description = "更新时间")
-    @TableField(fill = FieldFill.INSERT_UPDATE)
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

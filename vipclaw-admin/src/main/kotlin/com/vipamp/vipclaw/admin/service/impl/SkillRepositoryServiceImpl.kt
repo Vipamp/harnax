@@ -1,9 +1,8 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
+import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.common.page.Page
+import java.time.LocalDateTime
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
@@ -13,12 +12,11 @@ import com.vipamp.vipclaw.admin.mapper.SkillRepositoryMapper
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.entity.SkillRepository
-import com.vipamp.vipclaw.common.mapper.SkillRepositoryMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.util.StringUtils.hasText
+import kotlin.math.min
 
 /**
  * 技能仓库服务实现类
@@ -28,8 +26,9 @@ import org.springframework.util.StringUtils.hasText
  */
 @Service
 class SkillRepositoryServiceImpl(
-    private val jwtUtil: JwtUtil
-) : ServiceImpl<SkillRepositoryMapper, SkillRepository>(), SkillRepositoryService {
+    private val jwtUtil: JwtUtil,
+    private val skillRepositoryMapper: SkillRepositoryMapper
+) : SkillRepositoryService {
 
     private val log = LoggerFactory.getLogger(SkillRepositoryServiceImpl::class.java)
 
@@ -41,52 +40,35 @@ class SkillRepositoryServiceImpl(
     ): Page<SkillRepository> {
         log.info("分页查询技能仓库列表，current: {}, size: {}, name: {}, status: {}", current, size, name, status)
 
-        val page = Page<SkillRepository>(current.toLong(), size.toLong())
-        val wrapper = LambdaQueryWrapper<SkillRepository>()
-
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // 权限过滤：只查询公开的或自己创建的
-        wrapper.and { w ->
-            w.eq(SkillRepository::isPublic, 1)
-                .or()
-                .eq(SkillRepository::creator, currentUsername)
+        // 使用 MyBatis 原生查询
+        val allRepositories = skillRepositoryMapper.selectRepositoryList(name, status, currentUsername)
+
+        // 手动分页
+        val page = Page<SkillRepository>(current.toLong(), size.toLong())
+        val fromIndex = (current - 1) * size
+        val toIndex = min(fromIndex + size, allRepositories.size)
+        
+        page.records = if (fromIndex < allRepositories.size) {
+            allRepositories.subList(fromIndex, toIndex)
+        } else {
+            emptyList()
         }
+        page.total = allRepositories.size.toLong()
 
-        // 仓库名称模糊查询
-        if (hasText(name)) {
-            wrapper.like(SkillRepository::name, name)
-        }
-
-        // 状态筛选
-        status?.let { wrapper.eq(SkillRepository::status, it) }
-
-        // 强制校验 active 字段
-        wrapper.eq(SkillRepository::active, 1)
-        wrapper.orderByDesc(SkillRepository::status)
-            .orderByDesc(SkillRepository::updateTime)
-        return this.page(page, wrapper)
+        return page
     }
 
     override fun getActiveRepositories(): List<SkillRepository> {
-        val wrapper = LambdaQueryWrapper<SkillRepository>()
-        wrapper.eq(SkillRepository::active, 1)
-            .eq(SkillRepository::status, 1)
-            .orderByDesc(SkillRepository::updateTime)
-        return this.list(wrapper)
+        return skillRepositoryMapper.selectActiveRepositories()
     }
 
     override fun getRepositoryById(id: Long): SkillRepository {
         log.info("查询技能仓库详情，id: {}", id)
 
-        // 强制校验 active 字段
-        val wrapper = LambdaQueryWrapper<SkillRepository>()
-        wrapper.eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        wrapper.last("LIMIT 1")
-
-        val repository = this.getOne(wrapper)
+        val repository = skillRepositoryMapper.selectActiveById(id)
             ?: throw BizException("技能仓库不存在")
         return repository
     }
@@ -95,8 +77,8 @@ class SkillRepositoryServiceImpl(
     override fun createRepository(request: SkillRepositoryCreateRequest): Boolean {
         log.info("创建技能仓库，name: {}", request.name)
 
-        // 检查仓库名称是否存在（需要同时校验 active 字段）
-        val existRepository = getByName(request.name)
+        // 检查仓库名称是否存在
+        val existRepository = skillRepositoryMapper.selectByName(request.name!!)
         if (existRepository != null) {
             throw BizException("仓库名称已存在")
         }
@@ -111,14 +93,14 @@ class SkillRepositoryServiceImpl(
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        repository.creator = currentUsername
+        repository.creator = currentUsername!!
 
         // 默认不公开
         if (repository.isPublic == null) {
             repository.isPublic = 0
         }
 
-        val success = this.save(repository)
+        val success = this.skillRepositoryMapper.insert(repository) > 0
         log.info("技能仓库创建{}，repositoryId: {}", if (success) "成功" else "失败", repository.id)
         return success
     }
@@ -127,18 +109,12 @@ class SkillRepositoryServiceImpl(
     override fun updateRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean {
         log.info("更新技能仓库，id: {}", id)
 
-        // 强制校验 active 字段
-        val queryWrapper = LambdaQueryWrapper<SkillRepository>()
-        queryWrapper.eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        queryWrapper.last("LIMIT 1")
-
-        val repository = this.getOne(queryWrapper)
+        val repository = skillRepositoryMapper.selectActiveById(id)
             ?: throw BizException("技能仓库不存在")
 
         // 如果请求中包含仓库名称且与当前仓库名称不同，检查新仓库名称是否已被使用
         if (request.name != null && request.name != repository.name) {
-            val existRepository = getByName(request.name)
+            val existRepository = skillRepositoryMapper.selectByName(request.name!!)
             if (existRepository != null) {
                 throw BizException("仓库名称已存在")
             }
@@ -151,7 +127,7 @@ class SkillRepositoryServiceImpl(
         request.description?.let { repository.description = it }
         request.status?.let { repository.status = it }
 
-        val success = this.updateById(repository)
+        val success = this.skillRepositoryMapper.updateById(repository) > 0
         log.info("技能仓库更新{}，id: {}", if (success) "成功" else "失败", id)
         return success
     }
@@ -160,48 +136,24 @@ class SkillRepositoryServiceImpl(
     override fun toggleRepositoryStatus(id: Long, status: Int): Boolean {
         log.info("切换技能仓库状态，id: {}, status: {}", id, status)
 
-        // 强制校验 active 字段
-        val queryWrapper = LambdaQueryWrapper<SkillRepository>()
-        queryWrapper.eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        queryWrapper.last("LIMIT 1")
-
-        val repository = this.getOne(queryWrapper)
+        val repository = skillRepositoryMapper.selectActiveById(id)
             ?: throw BizException("技能仓库不存在")
 
-        val wrapper = LambdaUpdateWrapper<SkillRepository>()
-        wrapper.set(SkillRepository::status, status)
-            .eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        return this.update(wrapper)
+        return skillRepositoryMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteRepository(id: Long): Boolean {
         log.info("删除技能仓库，id: {}", id)
 
-        // 强制校验 active 字段
-        val queryWrapper = LambdaQueryWrapper<SkillRepository>()
-        queryWrapper.eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        queryWrapper.last("LIMIT 1")
-
-        val repository = this.getOne(queryWrapper)
+        val repository = skillRepositoryMapper.selectActiveById(id)
             ?: throw BizException("技能仓库不存在")
 
-        val wrapper = LambdaUpdateWrapper<SkillRepository>()
-        wrapper.set(SkillRepository::active, 0)
-            .eq(SkillRepository::id, id)
-            .eq(SkillRepository::active, 1)
-        return this.update(wrapper)
+        return skillRepositoryMapper.logicalDelete(id) > 0
     }
 
     override fun getByName(name: String): SkillRepository? {
-        val wrapper = LambdaQueryWrapper<SkillRepository>()
-        wrapper.eq(SkillRepository::name, name)
-            .eq(SkillRepository::active, 1)
-        wrapper.last("LIMIT 1")
-        return getOne(wrapper)
+        return skillRepositoryMapper.selectByName(name)
     }
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {

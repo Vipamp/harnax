@@ -1,12 +1,14 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
+import com.vipamp.vipclaw.admin.entity.Skill
+import com.vipamp.vipclaw.admin.entity.SkillRepository
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.service.SkillService
+import com.vipamp.vipclaw.common.page.Page
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/skills")
+@RequestMapping("/admin/skills")
 @Tag(name = "技能管理", description = "技能相关接口")
 class SkillController(
     private val skillService: SkillService,
@@ -33,8 +35,14 @@ class SkillController(
     @GetMapping("/page")
     @Operation(summary = "分页获取技能列表", description = "分页查询技能信息")
     fun getSkillPage(
-        @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+        @Parameter(description = "页码", example = "1") @RequestParam(
+            name = "pageNum",
+            defaultValue = "1"
+        ) pageNum: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "pageSize",
+            defaultValue = "10"
+        ) pageSize: Int?,
         @Parameter(description = "技能名称") @RequestParam(name = "name", required = false) name: String?,
         @Parameter(description = "仓库ID") @RequestParam(name = "repositoryId", required = false) repositoryId: Long?,
         @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?
@@ -57,10 +65,8 @@ class SkillController(
         return try {
             val skill = skillService.getSkillById(id)
             // 获取仓库信息
-            var repository: com.vipamp.vipclaw.common.entity.SkillRepository? = null
-            if (skill != null && skill.repositoryId != null) {
-                repository = skillRepositoryService.getById(skill.repositoryId)
-            }
+            var repository: SkillRepository? = null
+            repository = skillRepositoryService.getRepositoryById(skill.repositoryId)
             ResultVo.success(SkillResponse.fromEntity(skill, repository))
         } catch (e: Exception) {
             log.error("获取技能详情失败", e)
@@ -140,7 +146,7 @@ class SkillController(
     /**
      * 分页结果转换
      */
-    private fun convertToResponsePage(page: Page<com.vipamp.vipclaw.common.entity.Skill>): Page<SkillResponse> {
+    private fun convertToResponsePage(page: Page<Skill>): Page<SkillResponse> {
         val responsePage = Page<SkillResponse>(page.current, page.size)
         responsePage.total = page.total
         responsePage.size = page.size
@@ -149,15 +155,11 @@ class SkillController(
         responsePage.records = page.records.map { skill ->
             val response = SkillResponse.fromEntity(skill)
             // 设置仓库名称
-            if (skill.repositoryId != null) {
-                try {
-                    val repository = skillRepositoryService.getById(skill.repositoryId)
-                    if (repository != null) {
-                        response.repositoryName = repository.name
-                    }
-                } catch (e: Exception) {
-                    log.warn("获取仓库名称失败，repositoryId: {}", skill.repositoryId)
-                }
+            try {
+                val repository = skillRepositoryService.getRepositoryById(skill.repositoryId)
+                response.repositoryName = repository.name
+            } catch (e: Exception) {
+                log.warn("获取仓库名称失败，repositoryId: {}", skill.repositoryId)
             }
             response
         }

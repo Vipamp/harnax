@@ -1,10 +1,11 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
 import com.vipamp.vipclaw.admin.dto.ResultVo
+import com.vipamp.vipclaw.admin.entity.Model
 import com.vipamp.vipclaw.admin.service.ModelService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/models")
+@RequestMapping("/admin/models")
 @Tag(name = "模型管理", description = "模型的增删改查接口")
 class ModelController(
     private val modelService: ModelService
@@ -31,8 +32,8 @@ class ModelController(
     @GetMapping("/page")
     @Operation(summary = "分页查询模型", description = "分页查询模型列表")
     fun page(
-        @Parameter(description = "当前页码") @RequestParam(name = "current", defaultValue = "1") current: Int?,
-        @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+        @Parameter(description = "当前页码") @RequestParam(name = "current", defaultValue = "1") current: Long?,
+        @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Long?,
         @Parameter(description = "名称") @RequestParam(name = "name", required = false) name: String?,
         @Parameter(description = "供应商ID") @RequestParam(name = "providerId", required = false) providerId: Long?,
         @Parameter(description = "模型类型") @RequestParam(name = "modelType", required = false) modelType: String?,
@@ -41,7 +42,7 @@ class ModelController(
         @Parameter(description = "最低价格") @RequestParam(name = "minPrice", required = false) minPrice: Double?,
         @Parameter(description = "最高价格") @RequestParam(name = "maxPrice", required = false) maxPrice: Double?
     ): ResultVo<Page<ModelResponse>> {
-        val page = Page<com.vipamp.vipclaw.common.entity.Model>(current ?: 1, pageSize ?: 10)
+        val page = Page<Model>(current ?: 1, pageSize ?: 10)
         val result = modelService.page(page, name, providerId, modelType, status, tags, minPrice, maxPrice)
         return ResultVo.success(result)
     }
@@ -103,7 +104,7 @@ class ModelController(
     fun delete(
         @Parameter(description = "模型ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
-        modelService.removeById(id)
+        modelService.deleteById(id)
         return ResultVo.success()
     }
 }

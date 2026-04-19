@@ -1,5 +1,7 @@
 package com.vipamp.vipclaw.admin.service
 
+import java.time.LocalDateTime
+
 
 /**
  * Token 黑名单服务接口
@@ -15,7 +17,7 @@ interface SysTokenBlacklistService {
      * @param expireTime 过期时间
      * @param reason     原因
      */
-    fun addToBlacklist(token: String, username: String, userId: Long, reason: String): Unit
+    fun addToBlacklist(token: String, username: String, userId: Long, expireTime: LocalDateTime, reason: String): Unit
 
     /**
      * 检查 Token 是否在黑名单中

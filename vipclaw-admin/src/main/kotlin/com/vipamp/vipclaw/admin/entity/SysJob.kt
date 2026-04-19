@@ -1,19 +1,16 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.*
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@TableName("sys_job")
 @Schema(description = "定时任务实体类")
 class SysJob : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @TableId(value = "id", type = IdType.AUTO)
-    @Schema(description = "任务ID")
+        @Schema(description = "任务ID")
     var id: Long = 0
 
     @Schema(description = "任务名称")
@@ -44,14 +41,11 @@ class SysJob : Serializable {
     var creator: String = ""
 
     @Schema(description = "是否可用（0-已删除，1-未删除）")
-    @TableLogic(value = "1", delval = "0")
-    var active: Int = 1
+        var active: Int = 1
 
     @Schema(description = "创建时间")
-    @TableField(fill = FieldFill.INSERT)
-    var createTime: LocalDateTime = LocalDateTime.now()
+        var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    var updateTime: LocalDateTime = LocalDateTime.now()
+        var updateTime: LocalDateTime = LocalDateTime.now()
 }

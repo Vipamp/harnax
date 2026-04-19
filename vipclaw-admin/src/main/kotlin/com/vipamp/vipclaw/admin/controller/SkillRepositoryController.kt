@@ -1,7 +1,8 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.*
+import com.vipamp.vipclaw.admin.entity.SkillRepository
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
+import kotlin.collections.map
 
 /**
  * 技能仓库管理控制器
@@ -17,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/skill-repositories")
+@RequestMapping("/admin/skill-repositories")
 @Tag(name = "技能仓库管理", description = "技能仓库相关接口")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService
@@ -141,7 +143,7 @@ class SkillRepositoryController(
     /**
      * 分页结果转换
      */
-    private fun convertToResponsePage(page: Page<com.vipamp.vipclaw.admin.entity.SkillRepository>): Page<SkillRepositoryResponse> {
+    private fun convertToResponsePage(page: Page<SkillRepository>): Page<SkillRepositoryResponse> {
         val responsePage = Page<SkillRepositoryResponse>(page.current, page.size)
         responsePage.total = page.total
         responsePage.size = page.size

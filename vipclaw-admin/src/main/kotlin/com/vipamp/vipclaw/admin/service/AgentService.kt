@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
@@ -13,7 +12,7 @@ import com.vipamp.vipclaw.admin.entity.Agent
  * @author vipamp
  * @since 2026-03-18
  */
-interface AgentService : IService<Agent> {
+interface AgentService {
 
     /**
      * 分页查询智能体列表
@@ -32,7 +31,7 @@ interface AgentService : IService<Agent> {
      * @param id 智能体 ID
      * @return 智能体实体
      */
-    fun getAgentById(id: Long): Agent
+    fun getAgentById(id: Long): Agent?
 
     /**
      * 创建智能体
@@ -74,5 +73,5 @@ interface AgentService : IService<Agent> {
      * @param agent 智能体实体
      * @return 响应 DTO
      */
-    fun convertToResponse(agent: Agent): AgentResponse
+    fun convertToResponse(agent: Agent?): AgentResponse?
 }

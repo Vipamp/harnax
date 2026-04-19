@@ -28,7 +28,7 @@ data class ChannelResponse(
     val agentId: Long? = null,
 
     @Schema(description = "智能体名称")
-    val agentName: String? = null,
+    var agentName: String? = null,
 
     @Schema(description = "推送地址")
     val webhookUrl: String? = null,
@@ -49,7 +49,7 @@ data class ChannelResponse(
     val callbackKey: String? = null,
 
     @Schema(description = "回调URL")
-    val callbackUrl: String? = null,
+    var callbackUrl: String? = null,
 
     @Schema(description = "描述")
     val description: String? = null,

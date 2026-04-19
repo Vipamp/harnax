@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-18
  */
 @RestController
-@RequestMapping("/agents")
+@RequestMapping("/admin/agents")
 @Tag(name = "智能体管理", description = "智能体相关接口")
 class AgentController(
     private val agentService: AgentService
@@ -50,7 +50,7 @@ class AgentController(
             responsePage.size = page.size
             responsePage.current = page.current
             responsePage.pages = page.pages
-            responsePage.records = page.records.map { agentService.convertToResponse(it) }
+            responsePage.records = page.records.map { agentService.convertToResponse(it)!! }
             ResultVo.success(responsePage)
         } catch (e: Exception) {
             log.error("获取智能体列表失败", e)
@@ -62,7 +62,7 @@ class AgentController(
     @Operation(summary = "获取智能体详情", description = "根据智能体 ID 获取智能体信息")
     fun getAgentById(
         @Parameter(description = "智能体 ID") @PathVariable(name = "id") id: Long
-    ): ResultVo<AgentResponse> {
+    ): ResultVo<AgentResponse?> {
         return try {
             val agent = agentService.getAgentById(id)
             // 使用新的转换方法，包含完整的技能和 MCP 信息

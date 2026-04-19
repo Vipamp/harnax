@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
@@ -13,7 +12,7 @@ import com.vipamp.vipclaw.admin.entity.Model
  * @author vipamp
  * @since 2026-03-13
  */
-interface ModelService : IService<Model> {
+interface ModelService {
 
     /**
      * 分页查询模型
@@ -28,7 +27,7 @@ interface ModelService : IService<Model> {
      * @param maxPrice   最高价格
      * @return 分页结果
      */
-    fun page(page: Page<Model>, name: String, providerId: Long, modelType: String, status: Int, tags: String, minPrice: Double, maxPrice: Double): Page<ModelResponse>
+    fun page(page: Page<Model>, name: String?, providerId: Long?, modelType: String?, status: Int?, tags: String?, minPrice: Double?, maxPrice: Double?): Page<ModelResponse>
 
 /**
      * 获取模型详情
@@ -62,4 +61,19 @@ interface ModelService : IService<Model> {
      * @return 模型响应
      */
     fun toggle(id: Long): ModelResponse
+
+    /**
+     * 根据 ID 获取模型实体
+     *
+     * @param id ID
+     * @return 模型实体，如果不存在则返回 null
+     */
+    fun getModelById(id: Long): Model?
+
+    /**
+     * 删除模型（逻辑删除）
+     *
+     * @param id ID
+     */
+    fun deleteById(id: Long)
 }

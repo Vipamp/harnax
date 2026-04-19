@@ -1,11 +1,9 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysJob
-import java.util.List
 
 /**
  * 定时任务服务接口
@@ -13,7 +11,7 @@ import java.util.List
  * @author vipamp
  * @since 2026-03-16
  */
-interface SysJobService : IService<SysJob> {
+interface SysJobService {
 
     /**
      * 分页查询定时任务列表

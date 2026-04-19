@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.entity.SysJobLog
 import jakarta.annotation.Nullable
 import java.time.LocalDateTime
@@ -12,7 +11,15 @@ import java.time.LocalDateTime
  * @author vipamp
  * @since 2026-03-16
  */
-interface SysJobLogService : IService<SysJobLog> {
+interface SysJobLogService {
+
+    /**
+     * 保存定时任务日志
+     *
+     * @param jobLog 日志对象
+     * @return 是否成功
+     */
+    fun save(jobLog: com.vipamp.vipclaw.admin.entity.SysJobLog): Boolean
 
     /**
      * 分页查询定时任务日志列表

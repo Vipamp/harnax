@@ -1,19 +1,16 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.*
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@TableName("sys_job_log")
 @Schema(description = "定时任务日志实体类")
 class SysJobLog : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @TableId(value = "id", type = IdType.AUTO)
-    @Schema(description = "日志ID")
+        @Schema(description = "日志ID")
     var id: Long = 0
 
     @Schema(description = "任务ID")
@@ -47,6 +44,5 @@ class SysJobLog : Serializable {
     var creator: String = ""
 
     @Schema(description = "创建时间")
-    @TableField(fill = FieldFill.INSERT)
-    var createTime: LocalDateTime = LocalDateTime.now()
+        var createTime: LocalDateTime = LocalDateTime.now()
 }

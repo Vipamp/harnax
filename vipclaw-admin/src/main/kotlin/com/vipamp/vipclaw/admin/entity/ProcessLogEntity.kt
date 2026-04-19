@@ -1,21 +1,16 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.IdType
-import com.baomidou.mybatisplus.annotation.TableId
-import com.baomidou.mybatisplus.annotation.TableName
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@TableName("process_log")
 @Schema(description = "处理日志实体类")
 class ProcessLogEntity : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @TableId(value = "id", type = IdType.AUTO)
-    @Schema(description = "ID")
+        @Schema(description = "ID")
     var id: Long = 0
 
     @Schema(description = "智能体 ID")

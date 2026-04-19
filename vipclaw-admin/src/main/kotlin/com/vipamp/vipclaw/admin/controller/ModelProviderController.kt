@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/model-providers")
+@RequestMapping("/admin/model-providers")
 @Tag(name = "模型服务商管理", description = "模型服务商的增删改查接口")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService

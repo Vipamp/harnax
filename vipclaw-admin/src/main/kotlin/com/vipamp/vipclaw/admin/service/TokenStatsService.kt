@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.service.IService
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse
 import com.vipamp.vipclaw.admin.entity.TokenStats
 
@@ -10,7 +9,7 @@ import com.vipamp.vipclaw.admin.entity.TokenStats
  * @author vipamp
  * @since 2026-04-11
  */
-interface TokenStatsService : IService<TokenStats> {
+interface TokenStatsService {
 
     /**
      * 保存 Token 消耗记录

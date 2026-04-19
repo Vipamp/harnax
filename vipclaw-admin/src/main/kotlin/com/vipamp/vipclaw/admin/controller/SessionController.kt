@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-25
  */
 @RestController
-@RequestMapping("/sessions")
+@RequestMapping("/admin/sessions")
 @Tag(name = "会话管理", description = "会话相关接口")
 class SessionController(
     private val sessionService: SessionService

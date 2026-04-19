@@ -1,12 +1,10 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
+import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
-import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.Channel
 import com.vipamp.vipclaw.admin.mapper.ChannelMapper
 import com.vipamp.vipclaw.admin.service.AgentService
@@ -15,6 +13,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
 import java.util.*
 
 /**
@@ -25,8 +24,9 @@ import java.util.*
  */
 @Service
 class ChannelServiceImpl(
+    private val channelMapper: ChannelMapper,
     private val agentService: AgentService
-) : ServiceImpl<ChannelMapper, Channel>(), ChannelService {
+) : ChannelService {
 
     private val log = LoggerFactory.getLogger(ChannelServiceImpl::class.java)
 
@@ -40,53 +40,57 @@ class ChannelServiceImpl(
         current: Int,
         size: Int
     ): Page<Channel> {
-        val wrapper = LambdaQueryWrapper<Channel>()
-
-        if (!keyword.isNullOrEmpty()) {
-            wrapper.and { w ->
-                w.like(Channel::name, keyword)
-                    .or()
-                    .like(Channel::description, keyword)
-            }
-        }
-
-        if (!type.isNullOrEmpty()) {
-            wrapper.eq(Channel::type, type)
-        }
-
-        status?.let { wrapper.eq(Channel::status, it) }
-
-        // 强制校验 active 字段
-        wrapper.eq(Channel::active, 1)
-        wrapper.orderByDesc(Channel::createTime)
-
-        return page(Page(current.toLong(), size.toLong()), wrapper)
+        // 使用 PageHelper 分页
+        PageHelper.startPage<Channel>(current, size)
+        val channels = channelMapper.selectChannelList(keyword, type, status)
+        
+        // 转换为 PageInfo
+        val pageInfo = com.github.pagehelper.PageInfo(channels)
+        return Page.fromPageInfo(pageInfo)
     }
 
     override fun getChannelById(id: Long): Channel? {
-        return getById(id)
+        return channelMapper.selectById(id)
+    }
+
+    fun save(channel: Channel): Boolean {
+        channel.createTime = LocalDateTime.now()
+        channel.updateTime = LocalDateTime.now()
+        return channelMapper.insert(channel) > 0
+    }
+
+    fun updateById(channel: Channel): Boolean {
+        channel.updateTime = LocalDateTime.now()
+        return channelMapper.updateById(channel) > 0
+    }
+
+    fun removeById(id: Long): Boolean {
+        return channelMapper.deleteById(id) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createChannel(request: ChannelCreateRequest): Boolean {
         return try {
             val channel = Channel()
-            channel.name = request.name
-            channel.type = request.type
-            channel.agentId = request.agentId
-            channel.webhookUrl = request.webhookUrl
-            channel.token = request.token
-            channel.encodingAesKey = request.encodingAesKey
-            channel.appId = request.appId
-            channel.appSecret = request.appSecret
-            channel.description = request.description
+            channel.name = request.name!!
+            channel.type = request.type!!
+            channel.agentId = request.agentId!!
+            channel.webhookUrl = request.webhookUrl!!
+            channel.token = request.token!!
+            channel.encodingAesKey = request.encodingAesKey!!
+            channel.appId = request.appId!!
+            channel.appSecret = request.appSecret!!
+            channel.description = request.description!!
             channel.status = request.status ?: 1
 
             // 生成唯一的回调标识
             val callbackKey = generateCallbackKey(request.type)
             channel.callbackKey = callbackKey
 
-            save(channel)
+            channel.createTime = LocalDateTime.now()
+            channel.updateTime = LocalDateTime.now()
+            channelMapper.insert(channel)
+            true
         } catch (e: Exception) {
             log.error("创建 Channel 失败", e)
             throw RuntimeException("创建 Channel 失败：${e.message}")
@@ -96,7 +100,7 @@ class ChannelServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun updateChannel(id: Long, request: ChannelUpdateRequest): Boolean {
         return try {
-            val channel = getById(id)
+            val channel = channelMapper.selectById(id)
                 ?: throw RuntimeException("Channel 不存在")
 
             request.name?.let { channel.name = it }
@@ -110,7 +114,9 @@ class ChannelServiceImpl(
             request.description?.let { channel.description = it }
             request.status?.let { channel.status = it }
 
-            updateById(channel)
+            channel.updateTime = LocalDateTime.now()
+            channelMapper.updateById(channel)
+            true
         } catch (e: Exception) {
             log.error("更新 Channel 失败", e)
             throw RuntimeException("更新 Channel 失败：${e.message}")
@@ -118,24 +124,22 @@ class ChannelServiceImpl(
     }
 
     override fun toggleChannelStatus(id: Long, status: Int): Boolean {
-        val channel = getById(id)
+        val channel = channelMapper.selectById(id)
             ?: throw RuntimeException("Channel 不存在")
         channel.status = status
-        return updateById(channel)
+        channel.updateTime = LocalDateTime.now()
+        return channelMapper.updateById(channel) > 0
     }
 
     override fun deleteChannel(id: Long): Boolean {
-        return removeById(id)
+        return channelMapper.deleteById(id) > 0
     }
 
     override fun getByCallbackKey(callbackKey: String): Channel? {
-        val wrapper = LambdaQueryWrapper<Channel>()
-        wrapper.eq(Channel::callbackKey, callbackKey)
-            .eq(Channel::active, 1)
-        return getOne(wrapper)
+        return channelMapper.selectByCallbackKey(callbackKey)
     }
 
-    override fun convertToResponse(channel: Channel): ChannelResponse? {
+    override fun convertToResponse(channel: Channel?): ChannelResponse? {
         if (channel == null) {
             return null
         }
@@ -143,16 +147,16 @@ class ChannelServiceImpl(
         val response = ChannelResponse.fromEntity(channel)
 
         // 查询智能体名称
-        channel.agentId?.let { agentId ->
-            val agent = agentService.getById(agentId)
+        channel.agentId.let { agentId ->
+            val agent = agentService.getAgentById(agentId)
             agent?.let {
-                response.agentName = it.name
+                response!!.agentName = it.name
             }
         }
 
         // 生成回调 URL
-        channel.callbackKey?.let { callbackKey ->
-            response.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
+        channel.callbackKey.let { callbackKey ->
+            response!!.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
         }
 
         return response

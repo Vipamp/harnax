@@ -36,16 +36,22 @@ class ToolCallLogAdaptorImpl(
             val result = toolCallLogMapper.insert(entity)
 
             if (result > 0) {
-                log.debug("Tool call log saved successfully: agentId={}, sessionId={}, toolName={}, duration={}ms",
+                log.debug(
+                    "Tool call log saved successfully: agentId={}, sessionId={}, toolName={}, duration={}ms",
                     toolCallInfo.agentId, toolCallInfo.sessionId,
-                    toolCallInfo.toolName, toolCallInfo.duration)
+                    toolCallInfo.toolName, toolCallInfo.duration
+                )
             } else {
-                log.warn("Failed to save tool call log: agentId={}, toolName={}",
-                    toolCallInfo.agentId, toolCallInfo.toolName)
+                log.warn(
+                    "Failed to save tool call log: agentId={}, toolName={}",
+                    toolCallInfo.agentId, toolCallInfo.toolName
+                )
             }
         } catch (e: Exception) {
-            log.error("Error saving tool call log: agentId={}, sessionId={}, toolName={}",
-                toolCallInfo.agentId, toolCallInfo.sessionId, toolCallInfo.toolName, e)
+            log.error(
+                "Error saving tool call log: agentId={}, sessionId={}, toolName={}",
+                toolCallInfo.agentId, toolCallInfo.sessionId, toolCallInfo.toolName, e
+            )
             // 不抛出异常，避免影响主流程
         }
     }
@@ -63,8 +69,10 @@ class ToolCallLogAdaptorImpl(
         try {
             entity.args = objectMapper.writeValueAsString(toolCallInfo.args)
         } catch (e: JsonProcessingException) {
-            log.warn("Failed to serialize tool call args to JSON: toolName={}",
-                toolCallInfo.toolName, e)
+            log.warn(
+                "Failed to serialize tool call args to JSON: toolName={}",
+                toolCallInfo.toolName, e
+            )
             entity.args = "{}"
         }
 

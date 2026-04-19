@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.*
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
@@ -11,7 +10,6 @@ import java.time.LocalDateTime
  * @author vipamp
  * @since 2026-03-12
  */
-@TableName("mcp_server")
 @Schema(description = "MCP 服务实体类")
 class McpServer : Serializable {
 
@@ -22,8 +20,7 @@ class McpServer : Serializable {
     /**
      * MCP ID
      */
-    @TableId(value = "id", type = IdType.AUTO)
-    @Schema(description = "MCP ID")
+        @Schema(description = "MCP ID")
     var id: Long = 0
 
     /**
@@ -78,20 +75,17 @@ class McpServer : Serializable {
      * 是否可用（0:被删除，1:可用）
      */
     @Schema(description = "是否可用（0:被删除，1:可用）")
-    @TableLogic(value = "1", delval = "0")
-    var active: Int = 1
+        var active: Int = 1
 
     /**
      * 创建时间
      */
     @Schema(description = "创建时间")
-    @TableField(fill = FieldFill.INSERT)
-    var createTime: LocalDateTime = LocalDateTime.now()
+        var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
      * 更新时间
      */
     @Schema(description = "更新时间")
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    var updateTime: LocalDateTime = LocalDateTime.now()
+        var updateTime: LocalDateTime = LocalDateTime.now()
 }

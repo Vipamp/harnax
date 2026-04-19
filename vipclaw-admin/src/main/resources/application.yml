@@ -1,7 +1,7 @@
 server:
   port: 8080
-  servlet:
-    context-path: /admin
+#  servlet:
+#    context-path: /admin
 
 spring:
   application:
@@ -72,3 +72,12 @@ logging:
 jwt:
   secret: vipclaw-secret-key-2026-vipclaw-admin-backend-jwt-token-authentication
   expiration: 7200000 # 2 小时（毫秒）
+
+session:
+  jdbc-url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  database-name: vipclaw
+  username: root
+  password: 123456
+
+local:
+  tmp-dir:

@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.ascopagent.adaptor
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -54,11 +53,7 @@ class PlanNoteAdaptorImpl(
 
     override fun getPlanNote(sessionId: String, planId: String): PlanNote? {
         return try {
-            val wrapper = LambdaQueryWrapper<PlanNoteEntity>()
-            wrapper.eq(PlanNoteEntity::sessionId, sessionId)
-                .eq(PlanNoteEntity::planId, planId)
-
-            val entity = planNoteMapper.selectOne(wrapper)
+            val entity = planNoteMapper.selectBySessionIdAndPlanId(sessionId, planId)
 
             if (entity == null) {
                 log.warn("PlanNote not found: sessionId=$sessionId, planId=$planId")
@@ -74,11 +69,7 @@ class PlanNoteAdaptorImpl(
 
     override fun getPlanNotes(sessionId: String): List<PlanNote> {
         return try {
-            val wrapper = LambdaQueryWrapper<PlanNoteEntity>()
-            wrapper.eq(PlanNoteEntity::sessionId, sessionId)
-                .orderByDesc(PlanNoteEntity::createTime)
-
-            val entities = planNoteMapper.selectList(wrapper)
+            val entities = planNoteMapper.selectBySessionId(sessionId)
 
             entities.map { convertToDomain(it) }
         } catch (e: Exception) {
@@ -89,10 +80,7 @@ class PlanNoteAdaptorImpl(
 
     override fun deletePlan(sessionId: String) {
         try {
-            val wrapper = LambdaQueryWrapper<PlanNoteEntity>()
-            wrapper.eq(PlanNoteEntity::sessionId, sessionId)
-
-            val result = planNoteMapper.delete(wrapper)
+            val result = planNoteMapper.deleteBySessionId(sessionId)
 
             if (result > 0) {
                 log.info("PlanNotes deleted successfully: sessionId=$sessionId, count=$result")

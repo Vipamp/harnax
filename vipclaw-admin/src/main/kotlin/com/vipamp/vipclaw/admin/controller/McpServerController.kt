@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.*
 import com.vipamp.vipclaw.admin.service.McpServerService
 import io.swagger.v3.oas.annotations.Operation
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-12
  */
 @RestController
-@RequestMapping("/mcp")
+@RequestMapping("/admin/mcp")
 @Tag(name = "MCP 服务管理", description = "MCP 服务相关接口")
 class McpServerController(
     private val mcpServerService: McpServerService
@@ -28,11 +28,26 @@ class McpServerController(
     @GetMapping("/page")
     @Operation(summary = "分页获取 MCP 服务列表", description = "分页查询 MCP 服务信息")
     fun getMcpServerPage(
-        @Parameter(description = "页码", example = "1") @RequestParam(name = "current", defaultValue = "1") current: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(name = "size", defaultValue = "10") size: Int?,
-        @Parameter(description = "关键词（名称/描述）") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(name = "status", required = false) status: Int?,
-        @Parameter(description = "类型筛选（可多选，逗号分隔）") @RequestParam(name = "types", required = false) types: String?
+        @Parameter(description = "页码", example = "1") @RequestParam(
+            name = "current",
+            defaultValue = "1"
+        ) current: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "size",
+            defaultValue = "10"
+        ) size: Int?,
+        @Parameter(description = "关键词（名称/描述）") @RequestParam(
+            name = "keyword",
+            required = false
+        ) keyword: String?,
+        @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(
+            name = "status",
+            required = false
+        ) status: Int?,
+        @Parameter(description = "类型筛选（可多选，逗号分隔）") @RequestParam(
+            name = "types",
+            required = false
+        ) types: String?
     ): ResultVo<Page<McpServerResponse>> {
         return try {
             val page = mcpServerService.getMcpServerPage(keyword, status, types, current ?: 1, size ?: 10)
@@ -78,7 +93,11 @@ class McpServerController(
         @Valid @RequestBody request: McpServerUpdateRequest
     ): ResultVo<Void> {
         return try {
-            if (mcpServerService.updateMcpServer(id, request)) ResultVo.success() else ResultVo.error("更新 MCP 服务失败")
+            if (mcpServerService.updateMcpServer(
+                    id,
+                    request
+                )
+            ) ResultVo.success() else ResultVo.error("更新 MCP 服务失败")
         } catch (e: Exception) {
             log.error("更新 MCP 服务失败", e)
             ResultVo.error(e.message ?: "更新 MCP 服务失败")
@@ -92,7 +111,11 @@ class McpServerController(
         @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") status: Int
     ): ResultVo<Void> {
         return try {
-            if (mcpServerService.toggleMcpServerStatus(id, status)) ResultVo.success() else ResultVo.error("切换状态失败")
+            if (mcpServerService.toggleMcpServerStatus(
+                    id,
+                    status
+                )
+            ) ResultVo.success() else ResultVo.error("切换状态失败")
         } catch (e: Exception) {
             log.error("切换 MCP 服务状态失败", e)
             ResultVo.error(e.message ?: "切换状态失败")

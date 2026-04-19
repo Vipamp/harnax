@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysJobLogResponse
@@ -24,7 +24,7 @@ import java.time.LocalDateTime
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/jobs")
+@RequestMapping("/admin/jobs")
 @Tag(name = "定时任务管理", description = "定时任务相关接口")
 class SysJobController(
     private val sysJobService: SysJobService,

@@ -27,12 +27,16 @@ class CaptchaServiceImpl : CaptchaService {
     companion object {
         // 验证码宽度
         private const val WIDTH = 120
+
         // 验证码高度
         private const val HEIGHT = 40
+
         // 验证码字符数
         private const val CODE_LENGTH = 4
+
         // 验证码过期时间(5 分钟)
         private const val EXPIRE_TIME: Long = 300
+
         // 验证码字符集合(去除容易混淆的字符)
         private const val CHAR_SET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
     }
@@ -57,22 +61,14 @@ class CaptchaServiceImpl : CaptchaService {
             log.info("生成验证码,captchaKey: {}", captchaKey)
 
             // 6. 返回响应
-            CaptchaResponse.builder()
-                .imageBase64(base64Image)
-                .captchaKey(captchaKey)
-                .expiresIn(EXPIRE_TIME)
-                .build()
+            CaptchaResponse(base64Image, captchaKey, EXPIRE_TIME)
         } catch (e: Exception) {
             log.error("生成验证码失败", e)
             throw BizException("生成验证码失败:${e.message}")
         }
     }
 
-    override fun validateCaptcha(captchaKey: String?, code: String?): Boolean {
-        if (captchaKey == null || code == null) {
-            return false
-        }
-
+    override fun validateCaptcha(captchaKey: String, code: String): Boolean {
         val captchaInfo = captchaStore[captchaKey]
             ?: run {
                 log.warn("验证码不存在,captchaKey: {}", captchaKey)
@@ -162,7 +158,7 @@ class CaptchaServiceImpl : CaptchaService {
             g.color = getRandomColor()
             g.drawString(
                 code[i].toString(),
-                i * charWidth + 10,
+                (i * charWidth + 10).toFloat(),
                 (fontSize + random.nextInt(5) + 5).toFloat()
             )
         }

@@ -1,26 +1,21 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
-import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.Session
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.admin.service.*
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.entity.*
-import com.vipamp.vipclaw.common.mapper.SessionMapper
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.util.StringUtils.hasText
 import java.util.*
+import kotlin.math.min
 
 /**
  * 会话服务实现类
@@ -34,9 +29,10 @@ class SessionServiceImpl(
     private val mcpServerService: McpServerService,
     private val skillRepositoryService: SkillRepositoryService,
     private val skillService: SkillService,
-    private val modelService: com.vipamp.vipclaw.admin.service.ModelService,
-    private val jwtUtil: JwtUtil
-) : ServiceImpl<SessionMapper, Session>(), SessionService {
+    private val modelService: ModelService,
+    private val jwtUtil: JwtUtil,
+    private val sessionMapper: SessionMapper
+) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
     private val objectMapper = ObjectMapper()
@@ -49,44 +45,35 @@ class SessionServiceImpl(
     ): Page<Session> {
         log.info("分页查询会话列表，current: {}, size: {}, keyword: {}, status: {}", current, size, keyword, status)
 
-        val page = Page<Session>(current.toLong(), size.toLong())
-        val wrapper = LambdaQueryWrapper<Session>()
-
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // 权限过滤：只查询公开的或自己创建的
-        wrapper.and { w ->
-            w.eq(Session::isPublic, 1)
-                .or()
-                .eq(Session::creator, currentUsername)
+        // 使用 MyBatis 原生查询
+        val allSessions = sessionMapper.selectSessionList(keyword, status, currentUsername)
+
+        // 手动分页
+        val page = Page<Session>(current.toLong(), size.toLong())
+        val fromIndex = (current - 1) * size
+        val toIndex = min(fromIndex + size, allSessions.size)
+
+        page.records = if (fromIndex < allSessions.size) {
+            allSessions.subList(fromIndex, toIndex)
+        } else {
+            emptyList()
         }
+        page.total = allSessions.size.toLong()
 
-        if (hasText(keyword)) {
-            wrapper.like(Session::title, keyword)
-        }
-
-        status?.let { wrapper.eq(Session::status, it) }
-
-        // 强制校验 active 字段
-        wrapper.eq(Session::active, 1)
-        wrapper.orderByDesc(Session::createTime)
-
-        return this.page(page, wrapper)
+        return page
     }
 
     override fun getSessionById(id: Long): Session {
         log.info("查询会话详情，id: {}", id)
-        val session = this.getById(id)
+        val session = this.sessionMapper.selectById(id)
             ?: throw BizException("会话不存在")
         return session
     }
 
-    override fun convertToResponse(session: Session): SessionResponse? {
-        if (session == null) {
-            return null
-        }
-
+    override fun convertToResponse(session: Session): SessionResponse {
         val response = SessionResponse()
         response.id = session.id
         response.title = session.title
@@ -99,8 +86,8 @@ class SessionServiceImpl(
         response.modelId = session.modelId
 
         // 查询模型名称
-        session.modelId?.let { modelId ->
-            val model = modelService.getById(modelId)
+        session.modelId.let { modelId ->
+            val model = modelService.getModelById(modelId)
             model?.let {
                 response.modelName = it.modelName
                 response.modelPrice = it.price
@@ -127,7 +114,7 @@ class SessionServiceImpl(
                     val mcpId = (config["id"] as Number).toLong()
                     val enableSkip = config["enable_skip"] as String?
 
-                    val fullMcp = mcpServerService.getById(mcpId)
+                    val fullMcp = mcpServerService.getMcpServerById(mcpId)
                     fullMcp?.let {
                         val item = SessionResponse.McpItem()
                         item.mcpId = it.id
@@ -153,13 +140,13 @@ class SessionServiceImpl(
                 for (skillIdStr in skillIds) {
                     try {
                         val skillId = skillIdStr.trim().toLong()
-                        val skill = skillService.getById(skillId)
+                        val skill = skillService.getSkillById(skillId)
                         skill?.let {
                             val item = SessionResponse.SkillItem()
                             item.skillId = it.id
                             item.skillName = it.name
 
-                            val repository = skillRepositoryService.getById(it.repositoryId)
+                            val repository = skillRepositoryService.getRepositoryById(it.repositoryId)
                             repository?.let {
                                 item.repositoryId = it.id
                                 item.repositoryName = it.name
@@ -186,24 +173,20 @@ class SessionServiceImpl(
     override fun createSession(request: SessionCreateRequest): Boolean {
         return try {
             // 检查会话名称是否重复
-            val count = this.count(
-                LambdaQueryWrapper<Session>()
-                    .eq(Session::title, request.title)
-                    .eq(Session::active, 1)
-            )
+            val count = sessionMapper.countByTitle(request.title!!)
             if (count > 0) {
                 throw BizException("会话名称已存在，请使用其他名称")
             }
 
             // 根据智能体ID获取智能体信息
-            val agent = agentService.getById(request.agentId)
+            val agent = agentService.getAgentById(request.agentId!!)
                 ?: throw BizException("智能体不存在")
 
             val session = Session()
-            session.title = request.title
-            session.sessionDescription = request.sessionDescription
+            session.title = request.title!!
+            session.sessionDescription = request.sessionDescription!!
             session.sessionId = UUID.randomUUID().toString()
-            session.agentId = request.agentId
+            session.agentId = request.agentId!!
 
             // 从智能体复制信息
             session.name = agent.name
@@ -217,12 +200,12 @@ class SessionServiceImpl(
 
             // 设置创建人
             val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-            session.creator = currentUsername
+            session.creator = currentUsername!!
 
             // 默认不公开
             session.isPublic = 0
 
-            val success = this.save(session)
+            val success = this.sessionMapper.insert(session) > 0
             log.info("会话创建{}，id: {}", if (success) "成功" else "失败", session.id)
             success
         } catch (e: Exception) {
@@ -235,31 +218,24 @@ class SessionServiceImpl(
     override fun toggleSessionStatus(id: Long, status: Int): Boolean {
         log.info("切换会话状态，id: {}, status: {}", id, status)
 
-        val session = this.getById(id)
+        val session = sessionMapper.selectActiveById(id)
             ?: throw BizException("会话不存在")
 
-        val wrapper = LambdaUpdateWrapper<Session>()
-        wrapper.set(Session::status, status)
-            .eq(Session::id, id)
-        return this.update(wrapper)
+        return sessionMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteSession(id: Long): Boolean {
         log.info("删除会话，id: {}", id)
 
-        val session = this.getById(id)
+        val session = this.sessionMapper.selectById(id)
             ?: throw BizException("会话不存在")
 
-        return this.removeById(id)
+        return this.sessionMapper.deleteById(id) > 0
     }
 
     override fun existsByTitle(title: String): Boolean {
-        val count = this.count(
-            LambdaQueryWrapper<Session>()
-                .eq(Session::title, title)
-                .eq(Session::active, 1)
-        )
+        val count = sessionMapper.countByTitle(title)
         return count > 0
     }
 }

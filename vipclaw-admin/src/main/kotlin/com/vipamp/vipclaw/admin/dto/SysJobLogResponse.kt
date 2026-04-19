@@ -2,6 +2,7 @@ package com.vipamp.vipclaw.admin.dto
 
 import com.vipamp.vipclaw.admin.entity.SysJobLog
 import io.swagger.v3.oas.annotations.media.Schema
+import java.time.Duration
 import java.time.LocalDateTime
 
 /**
@@ -30,7 +31,7 @@ data class SysJobLogResponse(
     @Schema(description = "结束时间", example = "2026-03-16 12:00:05")
     val endTime: LocalDateTime? = null,
     @Schema(description = "执行耗时（毫秒）", example = "5000")
-    val duration: Long? = null,
+    var duration: Long? = null,
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null
 ) {
@@ -49,7 +50,7 @@ data class SysJobLogResponse(
                 exceptionInfo = entity.exceptionInfo,
                 startTime = entity.startTime,
                 endTime = entity.endTime,
-                duration = entity.duration,
+                duration = Duration.between(entity.startTime, entity.endTime).toMillis(),
                 createTime = entity.createTime
             )
         }

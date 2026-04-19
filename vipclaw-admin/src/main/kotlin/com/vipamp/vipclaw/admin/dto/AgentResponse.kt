@@ -9,55 +9,55 @@ import java.time.LocalDateTime
 @Schema(description = "智能体响应对象")
 data class AgentResponse(
     @Schema(description = "ID", example = "1")
-    val id: Long? = null,
+    var id: Long? = null,
 
     @Schema(description = "智能体名称", example = "assistant")
-    val name: String? = null,
+    var name: String? = null,
 
     @Schema(description = "智能体描述")
-    val description: String? = null,
+    var description: String? = null,
 
     @Schema(description = "系统提示词(支持 Markdown)")
-    val systemPrompt: String? = null,
+    var systemPrompt: String? = null,
 
     @Schema(description = "对话模型 ID", example = "1")
-    val modelId: Long? = null,
+    var modelId: Long? = null,
 
     @Schema(description = "对话模型名称", example = "GPT-4")
-    val modelName: String? = null,
+    var modelName: String? = null,
 
     @Schema(description = "对话模型价格(每百万 token)", example = "50.0")
-    val modelPrice: Double? = null,
+    var modelPrice: Double? = null,
 
     @Schema(description = "MCP 服务列表")
-    val mcpList: List<McpItem>? = null,
+    var mcpList: List<McpItem>? = null,
 
     @Schema(description = "技能列表")
-    val skillList: List<SkillItem>? = null,
+    var skillList: List<SkillItem>? = null,
 
     @Schema(description = "会话列表")
-    val sessionList: List<SessionItem>? = null,
+    var sessionList: List<SessionItem>? = null,
 
     @Schema(description = "所有者", example = "admin")
-    val owner: String? = null,
+    var owner: String? = null,
 
     @Schema(description = "是否启用(0:禁用,1:启用)", example = "1")
-    val status: Int? = null,
+    var status: Int? = null,
 
     @Schema(description = "是否公开(0:否,1:是)", example = "1")
-    val isPublic: Int? = null,
+    var isPublic: Int? = null,
 
     @Schema(description = "创建人", example = "admin")
-    val creator: String? = null,
+    var creator: String? = null,
 
     @Schema(description = "创建时间", example = "2026-03-18 12:00:00")
-    val createTime: LocalDateTime? = null,
+    var createTime: LocalDateTime? = null,
 
     @Schema(description = "更新时间", example = "2026-03-18 12:00:00")
-    val updateTime: LocalDateTime? = null,
+    var updateTime: LocalDateTime? = null,
 
     @Schema(description = "关联会话数量", example = "5")
-    val sessionCount: Int? = null
+    var sessionCount: Int? = null
 ) {
 
     companion object {
@@ -85,53 +85,53 @@ data class AgentResponse(
     @Schema(description = "MCP 项")
     data class McpItem(
         @Schema(description = "MCP ID", example = "1")
-        val mcpId: Long? = null,
+        var mcpId: Long? = null,
 
         @Schema(description = "MCP 名称", example = "filesystem")
-        val mcpName: String? = null,
+        var mcpName: String? = null,
 
         @Schema(description = "MCP 描述", example = "文件系统服务")
-        val mcpDescription: String? = null,
+        var mcpDescription: String? = null,
 
         @Schema(description = "是否允许跳过", example = "true")
-        val enableSkip: String? = null
+        var enableSkip: String? = null
     )
 
     data class McpConfigInternal(
-        val id: Long? = null,
-        val enableSkip: String? = null
+        var id: Long? = null,
+        var enableSkip: String? = null
     )
 
     @Schema(description = "技能项")
     data class SkillItem(
         @Schema(description = "仓库 ID", example = "1")
-        val repositoryId: Long? = null,
+        var repositoryId: Long? = null,
 
         @Schema(description = "仓库名称", example = "qoder-skills")
-        val repositoryName: String? = null,
+        var repositoryName: String? = null,
 
         @Schema(description = "技能 ID", example = "1")
-        val skillId: Long? = null,
+        var skillId: Long? = null,
 
         @Schema(description = "技能名称", example = "code-review")
-        val skillName: String? = null,
+        var skillName: String? = null,
 
         @Schema(description = "技能描述", example = "代码审查技能")
-        val skillDescription: String? = null
+        var skillDescription: String? = null
     )
 
     @Schema(description = "会话项")
     data class SessionItem(
         @Schema(description = "会话 ID", example = "1")
-        val id: Long? = null,
+        var id: Long? = null,
 
         @Schema(description = "会话名称", example = "我的会话")
-        val title: String? = null,
+        var title: String? = null,
 
         @Schema(description = "会话描述", example = "这是一个会话")
-        val sessionDescription: String? = null,
+        var sessionDescription: String? = null,
 
         @Schema(description = "会话 UUID", example = "session-123")
-        val sessionId: String? = null
+        var sessionId: String? = null
     )
 }

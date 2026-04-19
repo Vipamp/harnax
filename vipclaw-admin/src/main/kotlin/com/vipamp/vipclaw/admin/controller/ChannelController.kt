@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
@@ -31,8 +31,14 @@ class ChannelController(
     @GetMapping("/page")
     @Operation(summary = "分页获取 Channel 列表", description = "分页查询 Channel 信息")
     fun getChannelPage(
-        @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+        @Parameter(description = "页码", example = "1") @RequestParam(
+            name = "pageNum",
+            defaultValue = "1"
+        ) pageNum: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "pageSize",
+            defaultValue = "10"
+        ) pageSize: Int?,
         @Parameter(description = "搜索关键字") @RequestParam(name = "keyword", required = false) keyword: String?,
         @Parameter(description = "类型筛选") @RequestParam(name = "type", required = false) type: String?,
         @Parameter(description = "状态筛选") @RequestParam(name = "status", required = false) status: Int?
@@ -44,7 +50,7 @@ class ChannelController(
             responsePage.size = page.size
             responsePage.current = page.current
             responsePage.pages = page.pages
-            responsePage.records = page.records.map { channelService.convertToResponse(it) }
+            responsePage.records = page.records.map { channelService.convertToResponse(it)!! }
             ResultVo.success(responsePage)
         } catch (e: Exception) {
             log.error("获取 Channel 列表失败", e)
@@ -52,11 +58,11 @@ class ChannelController(
         }
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/admin/{id}")
     @Operation(summary = "获取 Channel 详情", description = "根据 Channel ID 获取 Channel 信息")
     fun getChannelById(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long
-    ): ResultVo<ChannelResponse> {
+    ): ResultVo<ChannelResponse?> {
         return try {
             val channel = channelService.getChannelById(id)
             ResultVo.success(channelService.convertToResponse(channel))
@@ -100,7 +106,11 @@ class ChannelController(
         @Parameter(description = "状态") @RequestParam(name = "status") status: Int
     ): ResultVo<Void> {
         return try {
-            if (channelService.toggleChannelStatus(id, status)) ResultVo.success() else ResultVo.error("更新 Channel 失败")
+            if (channelService.toggleChannelStatus(
+                    id,
+                    status
+                )
+            ) ResultVo.success() else ResultVo.error("更新 Channel 失败")
         } catch (e: Exception) {
             log.error("更新 Channel 失败", e)
             ResultVo.error(e.message ?: "更新 Channel 失败")

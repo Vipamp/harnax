@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserResponse
@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-06
  */
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/admin/users")
 @Tag(name = "用户管理", description = "用户相关接口")
 class SysUserController(
     private val sysUserService: SysUserService

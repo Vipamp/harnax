@@ -17,9 +17,9 @@ export default {
       target: 'http://localhost:8080',
       changeOrigin: true,
     },
-    // localhost:8000/ai/** -> http://localhost:8081/ai/**
+    // localhost:8000/ai/** -> http://localhost:8080/ai/**
     '/ai/': {
-      target: 'http://localhost:8081',
+      target: 'http://localhost:8080',
       changeOrigin: true,
       // 接管响应处理，手动转发每个 chunk，绕过 umi 开发服务器 gzip 缓冲
       selfHandleResponse: true,

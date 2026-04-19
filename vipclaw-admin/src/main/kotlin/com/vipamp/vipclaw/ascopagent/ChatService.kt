@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.ascopagent
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper
 import com.vipamp.vipclaw.admin.entity.Session
 import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.agent.*
@@ -81,11 +80,7 @@ class ChatService(
      * 根据 sessionId 从数据库获取 Session 信息，然后创建 Agent
      */
     private fun createAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): ReActAgentWrapper {
-        val queryWrapper = LambdaQueryWrapper<Session>()
-            .eq(Session::sessionId, sessionId)
-            .eq(Session::status, 1)
-
-        val session = sessionMapper.selectOne(queryWrapper)
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
 
         logger().info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")

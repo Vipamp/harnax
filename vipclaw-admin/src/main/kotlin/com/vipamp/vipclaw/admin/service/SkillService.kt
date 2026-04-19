@@ -1,12 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Skill
-import java.util.List
 
 /**
  * 技能服务接口
@@ -14,7 +12,7 @@ import java.util.List
  * @author vipamp
  * @since 2026-03-16
  */
-interface SkillService : IService<Skill> {
+interface SkillService {
 
     /**
      * 分页查询技能列表
@@ -77,7 +75,7 @@ interface SkillService : IService<Skill> {
      * @param name         技能名称
      * @return 技能实体
      */
-    fun getByNameAndRepo(repositoryId: Long, name: String): Skill
+    fun getByNameAndRepo(repositoryId: Long, name: String): Skill?
 
     /**
      * 批量保存技能（同步用）

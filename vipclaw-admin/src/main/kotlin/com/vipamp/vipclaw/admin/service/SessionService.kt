@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page
-import com.baomidou.mybatisplus.extension.service.IService
+import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
 import com.vipamp.vipclaw.admin.entity.Session
@@ -12,7 +11,7 @@ import com.vipamp.vipclaw.admin.entity.Session
  * @author vipamp
  * @since 2026-03-25
  */
-interface SessionService : IService<Session> {
+interface SessionService {
 
     /**
      * 分页查询会话列表

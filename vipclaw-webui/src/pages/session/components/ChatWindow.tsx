@@ -98,6 +98,26 @@ const SUGGESTIONS = [
   '如何优化 SQL 慢查询？',
 ];
 
+/* ─── 辅助函数：获取 JWT Token（与 requestInterceptors 逻辑一致） ─── */
+const getAuthHeaders = (): Record<string, string> => {
+  try {
+    const tokenInfoStr = localStorage.getItem('tokenInfo');
+    console.log('[ChatWindow] tokenInfoStr:', tokenInfoStr);
+    if (tokenInfoStr) {
+      const tokenInfo = JSON.parse(tokenInfoStr);
+      console.log('[ChatWindow] tokenInfo:', tokenInfo);
+      if (tokenInfo.accessToken) {
+        const headers = { 'Authorization': `Bearer ${tokenInfo.accessToken}` };
+        console.log('[ChatWindow] Authorization header:', headers);
+        return headers;
+      }
+    }
+  } catch (e) {
+    console.error('[ChatWindow] 获取 token 失败:', e);
+  }
+  return {};
+};
+
 /* ─── 代码块（带复制 + 语言标签） ─── */
 const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = ({
   className,
@@ -675,6 +695,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     abortRef.current = abortController;
 
     try {
+      console.log('[ChatWindow] 发送消息, sessionId:', sessionId);
       const chatBody = {
         sessionId,
         message: text.trim(),
@@ -683,12 +704,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         enableSearch,
         enablePlan,
       };
+      console.log('[ChatWindow] chatBody:', chatBody);
 
       const response = await fetch('/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify(chatBody),
         signal: abortController.signal,
@@ -989,6 +1012,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 headers: {
                   'Content-Type': 'application/json',
                   'Accept': 'text/event-stream',
+                  ...getAuthHeaders(),
                 },
                 body: JSON.stringify(confirmBody),
                 signal: abortController.signal,
@@ -1237,6 +1261,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         headers: {
                           'Content-Type': 'application/json',
                           'Accept': 'text/event-stream',
+                          ...getAuthHeaders(),
                         },
                         body: JSON.stringify(nestedConfirmBody),
                         signal: abortController.signal,
@@ -1517,7 +1542,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     if (!sessionId) return;
     
     try {
-      const response = await fetch(`/ai/session/${sessionId}/current-plan`);
+      const response = await fetch(`/ai/session/${sessionId}/current-plan`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
       
       if (!response.ok) {
         return; // 静默失败，不显示错误
@@ -1638,7 +1667,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     
     try {
       setLoadingPlans(true);
-      const response = await fetch(`/ai/session/${sessionId}/plans`);
+      const response = await fetch(`/ai/session/${sessionId}/plans`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -1710,6 +1743,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
       });
 

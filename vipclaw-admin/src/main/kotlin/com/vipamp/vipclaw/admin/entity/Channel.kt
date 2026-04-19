@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.admin.entity
 
-import com.baomidou.mybatisplus.annotation.*
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
@@ -11,7 +10,6 @@ import java.time.LocalDateTime
  * @author vipamp
  * @since 2026-04-08
  */
-@TableName("channel")
 @Schema(description = "Channel 通道实体类")
 class Channel : Serializable {
 
@@ -19,7 +17,6 @@ class Channel : Serializable {
         private const val serialVersionUID = 1L
     }
 
-    @TableId(value = "id", type = IdType.AUTO)
     @Schema(description = "ID")
     var id: Long = 0
 
@@ -57,14 +54,11 @@ class Channel : Serializable {
     var status: Int = 1
 
     @Schema(description = "是否可用（0:被删除，1:可用）")
-    @TableLogic(value = "1", delval = "0")
     var active: Int = 1
 
     @Schema(description = "创建时间")
-    @TableField(fill = FieldFill.INSERT)
     var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-    @TableField(fill = FieldFill.INSERT_UPDATE)
     var updateTime: LocalDateTime = LocalDateTime.now()
 }
