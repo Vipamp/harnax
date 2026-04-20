@@ -6,8 +6,11 @@ import com.vipamp.vipclaw.admin.entity.Model
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.ModelMapper
 import com.vipamp.vipclaw.common.page.Page
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.context.properties.bind.Nested
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -88,7 +91,7 @@ class ModelServiceImplIntegrationTest {
             // Then
             assertNotNull(result)
             assertTrue(result.total >= 1)
-            assertTrue(result.records.all { it.modelName.contains("gpt-4") || it.name.contains("GPT-4") })
+            assertTrue(result.records.all { it.modelName?.contains("gpt-4") == true || it.name?.contains("GPT-4") == true })
         }
 
         @Test
@@ -131,7 +134,10 @@ class ModelServiceImplIntegrationTest {
 
             // Then
             assertNotNull(result)
-            assertTrue(result.records.all { it.price >= 0.0010 && it.price <= 0.0030 })
+            assertTrue(result.records.all { 
+                val p = it.price
+                p != null && p >= 0.0010 && p <= 0.0030 
+            })
         }
     }
 
@@ -371,9 +377,9 @@ class ModelServiceImplIntegrationTest {
             assertNotNull(created)
 
             // 2. 查询模型
-            val model = modelService.getModelById(created.id)
+            val modelId = created.id ?: throw IllegalStateException("Created model ID should not be null")
+            val model = modelService.getModelById(modelId)
             assertNotNull(model)
-            val modelId = model!!.id
 
             // 3. 更新模型
             val updateRequest = ModelUpdateRequest(

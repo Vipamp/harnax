@@ -46,7 +46,7 @@ class AgentServiceImpl(
         size: Int
     ): Page<Agent> {
         // 获取当前用户
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
         // 使用 PageHelper 分页
         PageHelper.startPage<Agent>(current, size)
@@ -154,9 +154,9 @@ class AgentServiceImpl(
         }
 
         // 解析技能列表（逗号分隔的字符串）
-        if (!agent.skillList.isNullOrEmpty()) {
+        if (agent.skillList.isNotEmpty()) {
             try {
-                val skillIds = agent.skillList!!.split(",")
+                val skillIds = agent.skillList.split(",")
                 val skillItems = mutableListOf<AgentResponse.SkillItem>()
 
                 for (skillIdStr in skillIds) {
@@ -164,7 +164,7 @@ class AgentServiceImpl(
                         val skillId = skillIdStr.trim().toLong()
                         // 从数据库查询完整的技能信息
                         val skill = skillService.getSkillById(skillId)
-                        skill?.let {
+                        skill.let { it ->
                             val item = AgentResponse.SkillItem()
                             item.skillId = it.id
                             item.skillName = it.name
@@ -172,7 +172,7 @@ class AgentServiceImpl(
 
                             // 查询技能仓库信息
                             val repository = skillRepositoryService.getRepositoryById(it.repositoryId)
-                            repository?.let {
+                            repository.let {
                                 item.repositoryId = it.id
                                 item.repositoryName = it.name
                             }

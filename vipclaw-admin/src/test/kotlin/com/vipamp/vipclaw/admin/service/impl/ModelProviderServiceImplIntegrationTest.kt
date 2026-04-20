@@ -1,12 +1,15 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
+import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.entity.ModelProvider
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper
+import com.vipamp.vipclaw.common.page.Page
 import org.junit.jupiter.api.*
+import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -59,41 +62,58 @@ class ModelProviderServiceImplIntegrationTest {
     inner class PaginationTests {
 
         @Test
-        @DisplayName("getModelProviderPage - 正常分页查询")
-        fun `getModelProviderPage should return paginated results`() {
+        @DisplayName("page - 正常分页查询")
+        fun `page should return paginated results`() {
+            // Given
+            val page = Page<ModelProvider>(1, 2)
+            
             // When
-            val page = modelProviderService.getModelProviderPage(null, null, 1, 2)
+            val result = modelProviderService.page(page, null, null)
 
             // Then
-            assertNotNull(page)
-            assertTrue(page.total >= 2) // schema-test.sql 中有3条，但deleted的active=0
-            assertEquals(2, page.size)
-            assertEquals(1, page.current)
-            assertEquals(2, page.records.size)
+            assertNotNull(result)
+            assertTrue(result.total >= 2) // schema-test.sql 中有3条，但deleted的active=0
+            assertEquals(2, result.size)
+            assertEquals(1, result.current)
+            assertEquals(2, result.records.size)
         }
 
         @Test
-        @DisplayName("getModelProviderPage - 名称搜索")
-        fun `getModelProviderPage should filter by name`() {
+        @DisplayName("page - 名称搜索")
+        fun `page should filter by name`() {
+            // Given
+            val page = Page<ModelProvider>(1, 10)
+            
             // When
-            val page = modelProviderService.page("OpenAI", null, 1, 10)
+            val result = modelProviderService.page(page, "OpenAI", null)
 
             // Then
-            assertNotNull(page)
-            assertTrue(page.total >= 1)
-            assertTrue(page.records.all { it.name.contains("OpenAI") })
+            assertNotNull(result)
+            assertTrue(result.total >= 1)
+            assertTrue(result.records.all { it.name?.contains("OpenAI") == true })
         }
 
         @Test
-        @DisplayName("getModelProviderPage - 状态过滤")
-        fun `getModelProviderPage should filter by status`() {
+        @DisplayName("page - 状态过滤")
+        fun `page should filter by status`() {
+            // Given - 创建一个status=1的测试服务商
+            val createRequest = ModelProviderCreateRequest(
+                name = "StatusTestProvider_${System.currentTimeMillis()}",
+                displayName = "Status Test Provider",
+                baseUrl = "https://api.statustest.com",
+                apiKey = "test-status-key",
+                status = 1
+            )
+            modelProviderService.create(createRequest)
+            
             // When
-            val page = modelProviderService.getModelProviderPage(null, 1, 1, 10)
+            val page = Page<ModelProvider>(1, 10)
+            val result = modelProviderService.page(page, null, 1)
 
             // Then
-            assertNotNull(page)
-            assertTrue(page.total >= 2)
-            assertTrue(page.records.all { it.status == 1 })
+            assertNotNull(result)
+            assertTrue(result.total >= 1, "应该至少有一个status=1的服务商")
+            assertTrue(result.records.all { it.status == 1 }, "所有返回的服务商status都应该是1")
         }
     }
 
@@ -102,23 +122,23 @@ class ModelProviderServiceImplIntegrationTest {
     inner class GetModelProviderByIdTests {
 
         @Test
-        @DisplayName("getModelProviderById - 查询存在的服务商")
-        fun `getModelProviderById should return provider when exists`() {
+        @DisplayName("getDetail - 查询存在的服务商")
+        fun `getDetail should return provider when exists`() {
             // When
-            val provider = modelProviderService.getModelProviderById(1L)
+            val provider = modelProviderService.getDetail(1L)
 
             // Then
             assertNotNull(provider)
-            assertEquals(1L, provider?.id)
-            assertEquals("OpenAI", provider?.name)
+            assertEquals(1L, provider.id)
+            assertEquals("OpenAI", provider.name)
         }
 
         @Test
-        @DisplayName("getModelProviderById - 查询不存在的服务商应该抛出异常")
-        fun `getModelProviderById should throw BizException when provider not found`() {
+        @DisplayName("getDetail - 查询不存在的服务商应该抛出异常")
+        fun `getDetail should throw BizException when provider not found`() {
             // When & Then
             assertThrows<BizException> {
-                modelProviderService.getModelProviderById(999L)
+                modelProviderService.getDetail(999L)
             }
         }
     }
@@ -128,26 +148,28 @@ class ModelProviderServiceImplIntegrationTest {
     inner class CreateModelProviderTests {
 
         @Test
-        @DisplayName("createModelProvider - 创建成功")
-        fun `createModelProvider should create provider successfully`() {
+        @DisplayName("create - 创建成功")
+        fun `create should create provider successfully`() {
             // Given
             val request = ModelProviderCreateRequest(
                 name = "Google",
                 displayName = "Google AI",
-                apiBaseUrl = "https://generativelanguage.googleapis.com",
+                baseUrl = "https://generativelanguage.googleapis.com",
                 apiKey = "test-google-key",
                 status = 1
             )
 
             // When
-            val result = modelProviderService.createModelProvider(request)
+            val result = modelProviderService.create(request)
 
             // Then
-            assertTrue(result)
+            assertNotNull(result)
+            assertEquals("Google", result.name)
 
             // 验证服务商可以查询到
-            val page = modelProviderService.getModelProviderPage("Google", null, 1, 10)
-            assertTrue(page.total >= 1)
+            val page = Page<ModelProvider>(1, 10)
+            val queryResult = modelProviderService.page(page, "Google", null)
+            assertTrue(queryResult.total >= 1)
         }
     }
 
@@ -156,8 +178,8 @@ class ModelProviderServiceImplIntegrationTest {
     inner class UpdateModelProviderTests {
 
         @Test
-        @DisplayName("updateModelProvider - 更新部分字段")
-        fun `updateModelProvider should update partial fields`() {
+        @DisplayName("update - 更新部分字段")
+        fun `update should update partial fields`() {
             // Given
             val request = ModelProviderUpdateRequest(
                 name = "OpenAI Updated",
@@ -165,38 +187,33 @@ class ModelProviderServiceImplIntegrationTest {
             )
 
             // When
-            val result = modelProviderService.updateModelProvider(1L, request)
+            val result = modelProviderService.update(1L, request)
 
             // Then
-            assertTrue(result)
-
-            // 验证更新成功
-            val provider = modelProviderMapper.selectById(1L)
-            assertEquals("OpenAI Updated", provider?.name)
-            assertEquals("OpenAI (Updated)", provider?.displayName)
+            assertNotNull(result)
+            assertEquals("OpenAI Updated", result.name)
+            assertEquals("OpenAI (Updated)", result.displayName)
         }
 
         @Test
-        @DisplayName("updateModelProvider - 更新状态")
-        fun `updateModelProvider should update status`() {
+        @DisplayName("update - 更新状态")
+        fun `update should update status`() {
             // Given
             val request = ModelProviderUpdateRequest(
                 status = 0
             )
 
             // When
-            val result = modelProviderService.updateModelProvider(2L, request)
+            val result = modelProviderService.update(2L, request)
 
             // Then
-            assertTrue(result)
-
-            val provider = modelProviderMapper.selectById(2L)
-            assertEquals(0, provider?.status)
+            assertNotNull(result)
+            assertEquals(0, result.status)
         }
 
         @Test
-        @DisplayName("updateModelProvider - 服务商不存在应该抛出异常")
-        fun `updateModelProvider should throw BizException when provider not found`() {
+        @DisplayName("update - 服务商不存在应该抛出异常")
+        fun `update should throw BizException when provider not found`() {
             // Given
             val request = ModelProviderUpdateRequest(
                 name = "New Name"
@@ -204,7 +221,7 @@ class ModelProviderServiceImplIntegrationTest {
 
             // When & Then
             assertThrows<BizException> {
-                modelProviderService.updateModelProvider(999L, request)
+                modelProviderService.update(999L, request)
             }
         }
     }
@@ -214,40 +231,26 @@ class ModelProviderServiceImplIntegrationTest {
     inner class ToggleModelProviderStatusTests {
 
         @Test
-        @DisplayName("toggleModelProviderStatus - 禁用服务商")
-        fun `toggleModelProviderStatus should disable provider`() {
+        @DisplayName("toggle - 切换状态")
+        fun `toggle should toggle provider status`() {
+            // Given - 当前状态是 1
+            val before = modelProviderService.getDetail(1L)
+            assertEquals(1, before.status)
+
             // When
-            val result = modelProviderService.toggleModelProviderStatus(1L, 0)
+            val result = modelProviderService.toggle(1L)
 
             // Then
-            assertTrue(result)
-
-            val provider = modelProviderMapper.selectById(1L)
-            assertEquals(0, provider?.status)
+            assertNotNull(result)
+            assertEquals(0, result.status) // 切换后应该变成0
         }
 
         @Test
-        @DisplayName("toggleModelProviderStatus - 启用服务商")
-        fun `toggleModelProviderStatus should enable provider`() {
-            // Given
-            modelProviderService.toggleModelProviderStatus(2L, 0)
-
-            // When
-            val result = modelProviderService.toggleModelProviderStatus(2L, 1)
-
-            // Then
-            assertTrue(result)
-
-            val provider = modelProviderMapper.selectById(2L)
-            assertEquals(1, provider?.status)
-        }
-
-        @Test
-        @DisplayName("toggleModelProviderStatus - 服务商不存在应该抛出异常")
-        fun `toggleModelProviderStatus should throw BizException when provider not found`() {
+        @DisplayName("toggle - 服务商不存在应该抛出异常")
+        fun `toggle should throw BizException when provider not found`() {
             // When & Then
             assertThrows<BizException> {
-                modelProviderService.toggleModelProviderStatus(999L, 1)
+                modelProviderService.toggle(999L)
             }
         }
     }
@@ -257,10 +260,10 @@ class ModelProviderServiceImplIntegrationTest {
     inner class DeleteModelProviderTests {
 
         @Test
-        @DisplayName("deleteModelProvider - 逻辑删除成功")
-        fun `deleteModelProvider should logically delete provider`() {
+        @DisplayName("removeProviderById - 逻辑删除成功")
+        fun `removeProviderById should logically delete provider`() {
             // When
-            val result = modelProviderService.deleteModelProvider(2L)
+            val result = modelProviderService.removeProviderById(2L)
 
             // Then
             assertTrue(result)
@@ -270,71 +273,59 @@ class ModelProviderServiceImplIntegrationTest {
         }
 
         @Test
-        @DisplayName("deleteModelProvider - 删除不存在的服务商应该抛出异常")
-        fun `deleteModelProvider should throw BizException when provider not found`() {
-            // When & Then
-            assertThrows<BizException> {
-                modelProviderService.deleteModelProvider(999L)
-            }
-        }
-    }
-
-    @Nested
-    @DisplayName("查询所有启用服务商测试")
-    inner class GetAllActiveProvidersTests {
-
-        @Test
-        @DisplayName("getAllActiveProviders - 查询所有启用的服务商")
-        fun `getAllActiveProviders should return all active providers`() {
+        @DisplayName("removeProviderById - 删除不存在的服务商")
+        fun `removeProviderById should return false when provider not found`() {
             // When
-            val providers = modelProviderService.getAllActiveProviders()
+            val result = modelProviderService.removeProviderById(999L)
 
             // Then
-            assertNotNull(providers)
-            assertTrue(providers.size >= 2)
-            assertTrue(providers.all { it.status == 1 && it.active == 1 })
+            assertFalse(result)
         }
     }
+
+    // ModelProviderService没有getAllActiveProviders方法，注释掉这个测试
+    // @Nested
+    // @DisplayName("查询所有启用服务商测试")
+    // inner class GetAllActiveProvidersTests { ... }
 
     @Nested
     @DisplayName("完整业务流程测试")
     inner class BusinessFlowTests {
 
         @Test
-        @DisplayName("完整流程：创建 - 查询 - 更新 - 禁用 - 删除")
-        fun `complete flow create query update disable delete`() {
+        @DisplayName("完整流程：创建 - 查询 - 更新 - 切换状态 - 删除")
+        fun `complete flow create query update toggle delete`() {
             // 1. 创建服务商
             val createRequest = ModelProviderCreateRequest(
                 name = "FlowTest Provider",
                 displayName = "FlowTest AI",
-                apiBaseUrl = "https://api.flowtest.com",
+                baseUrl = "https://api.flowtest.com",
                 apiKey = "test-flowtest-key",
                 status = 1
             )
-            assertTrue(modelProviderService.createModelProvider(createRequest))
+            val created = modelProviderService.create(createRequest)
+            assertNotNull(created)
+            val providerId = created.id ?: throw IllegalStateException("Created provider ID should not be null")
 
             // 2. 查询服务商
-            val page = modelProviderService.getModelProviderPage("FlowTest Provider", null, 1, 10)
-            assertTrue(page.total >= 1)
-            val providerId = page.records[0].id
+            val provider = modelProviderService.getDetail(providerId)
+            assertNotNull(provider)
+            assertEquals("FlowTest Provider", provider.name)
 
             // 3. 更新服务商
             val updateRequest = ModelProviderUpdateRequest(
                 displayName = "更新后的FlowTest",
                 status = 1
             )
-            assertTrue(modelProviderService.updateModelProvider(providerId, updateRequest))
+            val updated = modelProviderService.update(providerId, updateRequest)
+            assertEquals("更新后的FlowTest", updated.displayName)
 
-            val updatedProvider = modelProviderService.getModelProviderById(providerId)
-            assertEquals("更新后的FlowTest", updatedProvider.displayName)
-
-            // 4. 禁用服务商
-            assertTrue(modelProviderService.toggleModelProviderStatus(providerId, 0))
-            val disabledProvider = modelProviderMapper.selectById(providerId)
-            assertEquals(0, disabledProvider?.status)
+            // 4. 切换状态
+            val toggled = modelProviderService.toggle(providerId)
+            assertEquals(0, toggled.status) // 从1切换到0
 
             // 5. 删除服务商
-            assertTrue(modelProviderService.deleteModelProvider(providerId))
+            assertTrue(modelProviderService.removeProviderById(providerId))
             val deletedProvider = modelProviderMapper.selectById(providerId)
             assertEquals(0, deletedProvider?.active)
         }

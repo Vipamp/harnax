@@ -1,18 +1,15 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.github.pagehelper.PageHelper
-import com.vipamp.vipclaw.common.page.Page
-import java.time.LocalDateTime
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.SysUserService
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.util.StringUtils.hasText
 
 /**
  * 用户服务实现类
@@ -37,27 +34,27 @@ class SysUserServiceImpl(
 
         // 使用 MyBatis 注解查询
         val allUsers = sysUserMapper.selectUserList(keyword, status)
-        
+
         // 手动分页
         val page = Page<SysUser>(current.toLong(), size.toLong())
         val total = allUsers.size.toLong()
         page.total = total
-        
+
         val fromIndex = (current - 1) * size
         val toIndex = minOf(fromIndex + size, allUsers.size)
-        
+
         if (fromIndex < allUsers.size) {
             page.records = allUsers.subList(fromIndex, toIndex)
         } else {
             page.records = emptyList()
         }
-        
+
         return page
     }
 
     override fun getUserById(id: Long): SysUser {
         log.info("查询用户详情，id: {}", id)
-        
+
         val user = sysUserMapper.selectActiveById(id)
             ?: throw BizException("用户不存在")
         return user

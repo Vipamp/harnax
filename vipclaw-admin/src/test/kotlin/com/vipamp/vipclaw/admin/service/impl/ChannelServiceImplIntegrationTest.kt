@@ -61,7 +61,7 @@ class ChannelServiceImplIntegrationTest {
         @DisplayName("getChannelPage - 正常分页查询")
         fun `getChannelPage should return paginated results`() {
             // When
-            val page = channelService.getChannelPage(null, null, 1, 2)
+            val page = channelService.getChannelPage(null, null, null, 1, 2)
 
             // Then
             assertNotNull(page)
@@ -75,7 +75,7 @@ class ChannelServiceImplIntegrationTest {
         @DisplayName("getChannelPage - 名称搜索")
         fun `getChannelPage should filter by name`() {
             // When
-            val page = channelService.getChannelPage("WeCom", null, 1, 10)
+            val page = channelService.getChannelPage("WeCom", null, null, 1, 10)
 
             // Then
             assertNotNull(page)
@@ -87,7 +87,7 @@ class ChannelServiceImplIntegrationTest {
         @DisplayName("getChannelPage - 类型过滤")
         fun `getChannelPage should filter by type`() {
             // When
-            val page = channelService.getChannelPage(null, "http", 1, 10)
+            val page = channelService.getChannelPage(null, "http", null, 1, 10)
 
             // Then
             assertNotNull(page)
@@ -135,7 +135,6 @@ class ChannelServiceImplIntegrationTest {
                 name = "New Channel",
                 type = "wecom",
                 agentId = 1L,
-                callbackKey = "test-new-channel",
                 description = "新通道",
                 status = 1
             )
@@ -147,7 +146,7 @@ class ChannelServiceImplIntegrationTest {
             assertTrue(result)
 
             // 验证Channel可以查询到
-            val page = channelService.getChannelPage("New Channel", null, 1, 10)
+            val page = channelService.getChannelPage("New Channel", null, null, 1, 10)
             assertTrue(page.total >= 1)
         }
     }
@@ -270,14 +269,13 @@ class ChannelServiceImplIntegrationTest {
                 name = "FlowTest Channel",
                 type = "http",
                 agentId = 1L,
-                callbackKey = "test-flow-channel",
                 description = "流程测试通道",
                 status = 1
             )
             assertTrue(channelService.createChannel(createRequest))
 
             // 2. 查询Channel
-            val page = channelService.getChannelPage("FlowTest Channel", null, 1, 10)
+            val page = channelService.getChannelPage("FlowTest Channel", null, null, 1, 10)
             assertTrue(page.total >= 1)
             val channelId = page.records[0].id
 

@@ -5,10 +5,10 @@ import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.context.properties.bind.Nested
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -90,13 +90,27 @@ class SysUserServiceImplIntegrationTest {
         @Test
         @DisplayName("getUserPage - 状态过滤")
         fun `getUserPage should filter by status`() {
+            // Given - 创建一个status=0的测试用户
+            val createRequest = SysUserCreateRequest(
+                username = "status_test_user_${System.currentTimeMillis()}",
+                password = "password123",
+                nickname = "状态测试用户",
+                email = "status_test@example.com",
+                phone = "13900139099",
+                gender = 1,
+                avatar = "",
+                status = 0,  // 明确创建status=0的用户
+                isAdmin = 0
+            )
+            sysUserService.createUser(createRequest)
+            
             // When
             val page = sysUserService.getUserPage(null, 0, 1, 10)
 
             // Then
             assertNotNull(page)
-            assertTrue(page.total >= 1)
-            assertTrue(page.records.all { it.status == 0 })
+            assertTrue(page.total >= 1, "应该至少有一个status=0的用户")
+            assertTrue(page.records.all { it.status == 0 }, "所有返回的用户status都应该是0")
         }
 
         @Test
