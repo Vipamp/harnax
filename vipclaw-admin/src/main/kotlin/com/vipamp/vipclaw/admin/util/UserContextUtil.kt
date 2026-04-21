@@ -68,6 +68,7 @@ class UserContextUtil {
                     throw RuntimeException("未登录")
                 }
             } catch (e: Exception) {
+                e.printStackTrace()
                 throw RuntimeException("未登录")
             }
         }
@@ -81,7 +82,8 @@ class UserContextUtil {
         fun getCurrentUserId(jwtUtil: JwtUtil): Long? {
             return try {
                 val token = getToken()
-                if (token != null && jwtUtil.validateToken(token)) {
+                val valid = jwtUtil.validateToken(token!!)
+                if (token != null && valid) {
                     jwtUtil.getUserIdFromToken(token)
                 } else {
                     null

@@ -7,6 +7,7 @@ import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.SysUserService
 import com.vipamp.vipclaw.common.page.Page
+import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -65,22 +66,23 @@ class SysUserServiceImpl(
         log.info("创建用户，username: {}", request.username)
 
         // 检查用户名是否存在（需要同时校验 active 字段）
-        val existUser = getByUsername(request.username!!)
+        val existUser = getByUsername(request.username)
         if (existUser != null) {
             throw BizException("用户名已存在")
         }
 
         val user = SysUser()
-        user.username = request.username!!
-        user.password = request.password!!
-        user.nickname = request.nickname!!
-        user.email = request.email!!
-        user.phone = request.phone!!
+        user.username = request.username
+        // BCrypt 加密密码
+        user.password = BCrypt.hashpw(request.password, BCrypt.gensalt())
+        user.nickname = request.nickname
+        user.email = request.email
+        user.phone = request.phone
         user.gender = request.gender ?: 2
-        user.status = request.status ?: 1 // 默认启用
-        user.isAdmin = request.isAdmin ?: 0 // 默认非管理员
+        user.status = 1 // 默认启用
+        user.isAdmin = 0 // 默认非管理员
         user.active = 1  // 默认生效
-        user.avatar = request.avatar!!
+        user.avatar = request.avatar ?: ""
 
         val success = this.sysUserMapper.insert(user) > 0
         log.info("用户创建{}，userId: {}", if (success) "成功" else "失败", user.id)
@@ -94,16 +96,7 @@ class SysUserServiceImpl(
         val user = sysUserMapper.selectActiveById(id)
             ?: throw BizException("用户不存在")
 
-        // 如果请求中包含用户名且与当前用户名不同，检查新用户名是否已被使用
-        if (request.username != null && request.username != user.username) {
-            val existUser = sysUserMapper.selectByUsername(request.username)
-            if (existUser != null) {
-                throw BizException("用户名已存在")
-            }
-            user.username = request.username
-        }
-
-        // 选择性更新字段
+        // 选择性更新字段（username 不允许修改）
         request.nickname?.let { user.nickname = it }
         request.email?.let { user.email = it }
         request.phone?.let { user.phone = it }
@@ -111,6 +104,12 @@ class SysUserServiceImpl(
         request.status?.let { user.status = it }
         request.isAdmin?.let { user.isAdmin = it }
         request.avatar?.let { user.avatar = it }
+        // 如果提供了密码，进行加密
+        request.password?.let { 
+            if (it.isNotEmpty()) {
+                user.password = BCrypt.hashpw(it, BCrypt.gensalt())
+            }
+        }
 
         val success = this.sysUserMapper.updateById(user) > 0
         log.info("用户更新{}，id: {}", if (success) "成功" else "失败", id)

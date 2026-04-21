@@ -32,6 +32,7 @@ declare namespace API {
     avatar?: string;
    status?: number;
     isAdmin?: number;
+    lastLoginTime?: string;
     createTime?: string;
     updateTime?: string;
   };

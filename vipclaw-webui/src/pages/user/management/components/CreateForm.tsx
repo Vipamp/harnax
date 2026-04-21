@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
-import { ProForm, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
+import { ProForm, ProFormSelect, ProFormText, ProFormSwitch } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 
 export interface CreateFormProps {
@@ -183,41 +183,13 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           options={[
             { label: '男', value: 1 },
             { label: '女', value: 0 },
-            { label: '保密', value: 2 },
+            { label: '未知', value: 2 },
           ]}
-          initialValue={1}
-          fieldProps={{ defaultValue: 1 }}
+          initialValue={2}
+          fieldProps={{ defaultValue: 2 }}
         />
 
-        <ProFormSelect
-          name="status"
-          label={intl.formatMessage({
-            id: 'pages.user.management.status',
-            defaultMessage: '状态',
-          })}
-          options={[
-            { label: '正常', value: 1 },
-            { label: '禁用', value: 0 },
-          ]}
-          initialValue={1}
-          fieldProps={{ defaultValue: 1 }}
-        />
-
-        <ProFormSelect
-          name="isAdmin"
-          label={intl.formatMessage({
-            id: 'pages.user.management.isAdmin',
-            defaultMessage: '管理员',
-          })}
-          options={[
-            { label: '是', value: 1 },
-            { label: '否', value: 0 },
-          ]}
-          initialValue={0}
-          fieldProps={{ defaultValue: 0 }}
-        />
-
-        <ProFormTextArea
+        <ProFormText
           name="avatar"
           label={intl.formatMessage({
             id: 'pages.user.management.avatar',
@@ -227,9 +199,6 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             id: 'pages.user.management.avatar.placeholder',
             defaultMessage: '请输入头像 URL',
           })}
-          fieldProps={{
-            rows: 2,
-          }}
         />
       </ProForm>
     </Modal>

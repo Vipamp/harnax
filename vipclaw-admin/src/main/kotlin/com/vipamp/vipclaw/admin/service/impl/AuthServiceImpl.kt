@@ -69,6 +69,7 @@ class AuthServiceImpl(
         val expiresAt: Long = System.currentTimeMillis() + jwtUtil.getExpirationTime()
 
         // 6. 构建响应
+        log.info("用户信息 - id: {}, username: {}, isAdmin: {}", user.id, user.username, user.isAdmin)
         val userInfo = UserInfo.builder()
             .userId(user.id)
             .username(user.username)

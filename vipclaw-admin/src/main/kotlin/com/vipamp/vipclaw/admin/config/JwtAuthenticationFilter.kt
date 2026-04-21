@@ -32,15 +32,20 @@ class JwtAuthenticationFilter(
         response: HttpServletResponse,
         filterChain: FilterChain
     ) {
+        val requestURI = request.requestURI
         try {
             val token = resolveToken(request)
-            if (token != null) {
-                if (tokenBlacklistService.isBlacklisted(token)) {
-                    log.debug("Token 已在黑名单中，拒绝访问")
-                    SecurityContextHolder.clearContext()
-                    filterChain.doFilter(request, response)
-                    return
+            if (token == null) {
+                log.info("[JWT Filter] 请求未携带 Token: {}", requestURI)
+            } else {
+                log.info("[JWT Filter] 开始验证 Token, URI: {}", requestURI)
+                val res = tokenBlacklistService.isBlacklisted(token)
+                if (res) {
+                    log.warn("[JWT Filter] Token 已在黑名单中，拒绝访问: {}", requestURI)
+                    // 抛出异常，由 SecurityConfig 的 authenticationEntryPoint 统一处理
+                    throw org.springframework.security.authentication.AuthenticationServiceException("Token 已失效，请重新登录")
                 }
+                
                 if (jwtUtil.validateToken(token)) {
                     val userId = jwtUtil.getUserIdFromToken(token)
                     val username = jwtUtil.getUsernameFromToken(token)
@@ -51,13 +56,13 @@ class JwtAuthenticationFilter(
                     )
                     authentication.details = WebAuthenticationDetailsSource().buildDetails(request)
                     SecurityContextHolder.getContext().authentication = authentication
-                    log.debug("JWT 认证成功，userId: {}, username: {}", userId, username)
+                    log.info("[JWT Filter] JWT 认证成功，userId: {}, username: {}, URI: {}", userId, username, requestURI)
                 } else {
-                    log.debug("Token 无效或已过期")
+                    log.warn("[JWT Filter] Token 无效或已过期，URI: {}", requestURI)
                 }
             }
         } catch (e: Exception) {
-            log.error("JWT 认证失败：{}", e.message)
+            log.error("[JWT Filter] JWT 认证失败：{}", e.message, e)
         }
 
         filterChain.doFilter(request, response)

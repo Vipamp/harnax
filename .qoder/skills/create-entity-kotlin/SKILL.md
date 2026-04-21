@@ -1,22 +1,19 @@
 ---
-name: create-entity
-description: 在需要基于实体类开发 CURD 操作时，开发对应的前后端代码，完成对实体的 CURD 操作
+name: create-entity-kotlin
+description: 依据 PRD 文档，开发 SpringBoot 后端的 CURD 操作代码，完成对实体的 CURD 操作，使用 Kotlin 语言开发
 ---
 
 ## 一、项目概览
 
 - **后端**: SpringBoot3 + MyBatis + MySQL
-- **前端**: Ant Design Pro + Umi4
 - **接口规范**: RESTful API，统一返回 Result 包装类型
-- **分页**: MyBatis Plus Page 对象
-
-> vipclaw-admin 是需要开发的后端代码模块，vipclaw-webui 是需要开发的前端代码模块，其他模块不要动
+- **规范**：在开发前，必须先有 PRD 文档，如果没有，先用 `prd-writer-skill` 这个 skill 来创建 PRD 文档
 
 ## 二、开发流程
 
-### 2.1 分析实体的 schema 信息
+### 2.1 分析实体的 schema 信息，创建建表语句，生成实体类
 
-- 分析实体的 schema 信息中，确定实体的字段和字段类型，同时必须包含如下字段和类型，如果未提供自动补充进去
+- 分析实体的 schema 信息中，确定实体的字段和字段类型，同时必须包含如下字段和类型，如果未提供自动补充进去，并修改到 PRD 文档中
 
 ```text
 - `id`：主键，自增，long 类型

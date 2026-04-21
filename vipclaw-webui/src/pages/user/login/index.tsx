@@ -270,6 +270,7 @@ const Login: React.FC = () => {
      
       // 直接从登录响应中提取用户信息并保存
  const userInfo = msg.data.userInfo;
+ console.log('[登录成功] 后端返回的用户信息:', userInfo);
  if (userInfo) {
  const currentUser= {
   userId: userInfo.userId,
@@ -281,6 +282,8 @@ const Login: React.FC = () => {
  gender: userInfo.gender,
  isAdmin: userInfo.isAdmin,
 };
+  console.log('[登录成功] 保存到 localStorage 的 currentUser:', currentUser);
+  console.log('[登录成功] isAdmin 值:', currentUser.isAdmin, '类型:', typeof currentUser.isAdmin);
   
  // 保存到 React 状态
  flushSync(() => {

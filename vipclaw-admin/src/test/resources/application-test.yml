@@ -20,6 +20,11 @@ mybatis:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
+# JWT 配置
+jwt:
+  secret: vipclaw-test-secret-key-2026
+  expiration: 7200000
+
 # 日志配置
 logging:
   level:

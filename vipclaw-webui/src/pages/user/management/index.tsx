@@ -229,6 +229,16 @@ const UserManagement: React.FC = () => {
     },
     {
       title: intl.formatMessage({
+        id: 'pages.user.management.lastLoginTime',
+        defaultMessage: '最近登录',
+      }),
+    dataIndex: 'lastLoginTime',
+     valueType: 'dateTime',
+    hideInForm: true,
+    hideInSearch: true,
+    },
+    {
+      title: intl.formatMessage({
         id: 'pages.user.management.action',
         defaultMessage: '操作',
       }),

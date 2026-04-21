@@ -74,8 +74,8 @@ data class LoginResponse(
 
         @Schema(description = "性别 (0:女 1:男 2:保密)", example = "1")
         val gender: Int? = null,
-
-        @Schema(description = "是否是管理员（0:否，1:是）", example = "0")
+        
+        @Schema(description = "是否是管理员(0:否,1:是)", example = "0")
         val isAdmin: Int? = null
     ) {
         companion object {

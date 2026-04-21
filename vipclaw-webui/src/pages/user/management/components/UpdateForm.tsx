@@ -1,7 +1,7 @@
 import React from 'react';
-import { Modal } from 'antd';
+import { Modal, Switch } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
-import { ProForm, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
+import { ProForm, ProFormSelect, ProFormText, ProFormTextArea, ProFormSwitch } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 
 export interface UpdateFormProps {
@@ -62,8 +62,6 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           phone: values?.phone,
           gender: values?.gender,
           avatar: values?.avatar,
-          status: values?.status,
-          isAdmin: values?.isAdmin,
         }}
       >
         <ProFormText
@@ -76,19 +74,26 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
             id: 'pages.user.management.username.placeholder',
             defaultMessage: '请输入用户名',
           })}
+          disabled
+          readonly
+        />
+
+        <ProFormText.Password
+          name="password"
+          label={intl.formatMessage({
+            id: 'pages.user.management.password',
+            defaultMessage: '密码',
+          })}
+          placeholder={intl.formatMessage({
+            id: 'pages.user.management.password.update.placeholder',
+            defaultMessage: '留空则不修改密码',
+          })}
           rules={[
             {
-              min: 3,
+              min: 6,
               message: intl.formatMessage({
-                id: 'pages.user.management.username.min',
-                defaultMessage: '用户名至少 3 个字符',
-              }),
-            },
-            {
-              pattern: /^[a-zA-Z0-9_]+$/,
-              message: intl.formatMessage({
-                id: 'pages.user.management.username.pattern',
-                defaultMessage: '用户名只能包含字母、数字和下划线',
+                id: 'pages.user.management.password.min',
+                defaultMessage: '密码至少 6 个字符',
               }),
             },
           ]}
@@ -160,35 +165,11 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           options={[
             { label: '女', value: 0 },
             { label: '男', value: 1 },
-            { label: '保密', value: 2 },
+            { label: '未知', value: 2 },
           ]}
         />
 
-        <ProFormSelect
-          name="status"
-          label={intl.formatMessage({
-            id: 'pages.user.management.status',
-            defaultMessage: '状态',
-          })}
-          options={[
-            { label: '正常', value: 1 },
-            { label: '禁用', value: 0 },
-          ]}
-        />
-
-        <ProFormSelect
-          name="isAdmin"
-          label={intl.formatMessage({
-            id: 'pages.user.management.isAdmin',
-            defaultMessage: '管理员',
-          })}
-          options={[
-            { label: '是', value: 1 },
-            { label: '否', value: 0 },
-          ]}
-        />
-
-        <ProFormTextArea
+        <ProFormText
           name="avatar"
           label={intl.formatMessage({
             id: 'pages.user.management.avatar',
@@ -198,9 +179,6 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
             id: 'pages.user.management.avatar.placeholder',
             defaultMessage: '请输入头像 URL',
           })}
-          fieldProps={{
-            rows: 2,
-          }}
         />
       </ProForm>
     </Modal>

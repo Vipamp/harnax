@@ -40,25 +40,28 @@
 **表名**: `sys_user`  
 **说明**: 系统用户表
 
-| 字段名 | 数据类型 | 长度 | 可空 | 默认值 | 说明 | 约束 |
-|--------|---------|------|------|--------|------|------|
-| `id` | BIGINT | 20 | ❌ 否 | AUTO_INCREMENT | 用户 ID（主键） | PRIMARY KEY |
-| `username` | VARCHAR | 50 | ❌ 否 | - | 用户名（登录账号） | UNIQUE KEY, NOT NULL |
-| `password` | VARCHAR | 100 | ❌ 否 | - | 密码（BCrypt 加密） | NOT NULL |
-| `nickname` | VARCHAR | 50 | ✅ 是 | NULL | 昵称（显示名称） | - |
-| `email` | VARCHAR | 100 | ✅ 是 | NULL | 邮箱地址 | - |
-| `phone` | VARCHAR | 20 | ✅ 是 | NULL | 手机号 | - |
-| `gender` | TINYINT | 2 | ✅ 是 | 2 | 性别 (0:女 1:男 2:未知) | - |
-| `avatar` | VARCHAR | 255 | ✅ 是 | NULL | 头像 URL | - |
-| `status` | TINYINT | 2 | ✅ 是 | 1 | 状态 (0:禁用 1:启用) | - |
-| `is_admin` | TINYINT | 2 | ✅ 是 | 0 | 是否管理员 (0:否 1:是) | - |
-| `active` | TINYINT | 2 | ✅ 是 | 1 | 逻辑删除标识 (0:已删除 1:正常) | - |
-| `create_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP | 创建时间 | - |
-| `update_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | - |
+| 字段名               | 数据类型 | 长度  | 可空 | 默认值                          | 说明                             | 约束 |
+|-------------------|---------|-----|------|------------------------------|--------------------------------|------|
+| `id`              | BIGINT | 20  | ❌ 否 | AUTO_INCREMENT               | 用户 ID（主键）                      | PRIMARY KEY |
+| `username`        | VARCHAR | 50  | ❌ 否 | -                            | 用户名（登录账号）                      | UNIQUE KEY, NOT NULL |
+| `password`        | VARCHAR | 100 | ❌ 否 | -                            | 密码（前端 base64，然后后端 BCrypt 加密存储） | NOT NULL |
+| `nickname`        | VARCHAR | 50  | ❌ 否 | -                            | 昵称（显示名称）                       | - |
+| `email`           | VARCHAR | 100 | ❌ 否 | -                            | 邮箱地址                           | - |
+| `phone`           | VARCHAR | 20  | ❌ 否 | -                            | 手机号                            | - |
+| `gender`          | TINYINT | 2   | ✅ 是 | 2                            | 性别 (0:女 1:男 2:未知)              | - |
+| `avatar`          | VARCHAR | 255 | ✅ 是 | ""                           | 头像 URL                         | - |
+| `status`          | TINYINT | 2   | ❌ 否 | 1                            | 状态 (0:禁用 1:启用)                 | - |
+| `is_admin`        | TINYINT | 2   | ❌ 否 | 0                            | 是否管理员 (0:否 1:是)                | - |
+| `active`          | TINYINT | 2   | ❌ 否 | 1                            | 逻辑删除标识 (0:已删除 1:正常)            | - |
+| `last_login_time` | DATETIME | -   | ❌ 否 | CURRENT\_TIMESTAMP           | 最近一次登陆时间                       | - |
+| `create_time`     | DATETIME | -   | ❌ 否 | CURRENT\_TIMESTAMP           | 创建时间                           | - |
+| `update_time`     | DATETIME | -   | ❌ 否 | CURRENT\_TIMESTAMP ON UPDATE | 更新时间                           | - |
 
 **索引设计**:
 - `PRIMARY KEY (id)`: 主键索引
 - `UNIQUE KEY uk_username (username)`: 用户名唯一索引
+- `UNIQUE KEY uk_email (email)`: 邮箱唯一索引
+- `UNIQUE KEY uk_phone (phone)`: 手机号唯一索引
 
 #### 3.1.2 字段详细说明
 
@@ -68,14 +71,14 @@
 |-----|---------|---------|--------|
 | `username` | 用户登录账号，全局唯一 | - 长度：1-50 字符<br>- 格式：仅允许字母、数字、下划线<br>- 正则：`^[a-zA-Z0-9_]+$` | `admin`, `zhangsan`, `user_001` |
 | `password` | 用户登录密码，BCrypt 加密存储 | - 长度：6-100 字符<br>- 前端传输明文，后端加密 | `123456` → `$2a$10$...` |
+| `nickname` | 用户显示名称，用于 UI 展示 | - 长度：0-50 字符 | `张三`, `Admin` |
+| `email` | 用户邮箱，用于通知和找回密码 | - 邮箱格式校验<br>- 正则：标准邮箱格式 | `zhangsan@example.com` |
+| `phone` | 用户手机号，用于短信通知 | - 手机号格式校验<br>- 正则：`^1[3-9]\d{9}$` | `13800138000` |
 
 **可选字段 (NULLABLE)**:
 
 | 字段 | 业务规则 | 校验规则 | 示例值 |
 |-----|---------|---------|--------|
-| `nickname` | 用户显示名称，用于 UI 展示 | - 长度：0-50 字符 | `张三`, `Admin` |
-| `email` | 用户邮箱，用于通知和找回密码 | - 邮箱格式校验<br>- 正则：标准邮箱格式 | `zhangsan@example.com` |
-| `phone` | 用户手机号，用于短信通知 | - 手机号格式校验<br>- 正则：`^1[3-9]\d{9}$` | `13800138000` |
 | `gender` | 用户性别 | - 枚举值：0(女), 1(男), 2(未知)<br>- 默认值：2 | `0`, `1`, `2` |
 | `avatar` | 用户头像 URL | - URL 格式校验<br>- 最大长度：255 字符 | `https://example.com/avatar.jpg` |
 
@@ -86,6 +89,7 @@
 | `status` | 0:禁用（不可登录）<br>1:启用（可登录）<br>默认值：1 | 控制用户是否可登录系统 |
 | `is_admin` | 0:普通用户<br>1:管理员<br>默认值：0 | 控制用户权限级别，管理员可访问用户管理页面 |
 | `active` | 0:已删除（逻辑删除）<br>1:正常<br>默认值：1 | 逻辑删除标识，不物理删除数据 |
+| `last_login_time` | 登录时自动更新 | 记录用户最近一次登录时间 |
 | `create_time` | 创建时自动填充 | 记录用户创建时间 |
 | `update_time` | 每次更新自动刷新 | 记录最后一次修改时间 |
 
@@ -99,17 +103,14 @@
 |-----|------|------|---------|--------|------|
 | `username` | String | ✅ 是 | - 正则：`^[a-zA-Z0-9_]+$`<br>- 长度：1-50 | - | 用户名 |
 | `password` | String | ✅ 是 | - 长度：6-100 | - | 密码（明文） |
-| `nickname` | String | ❌ 否 | - 长度：0-50 | `""` | 昵称 |
-| `email` | String | ❌ 否 | - 邮箱格式 | `""` | 邮箱 |
-| `phone` | String | ❌ 否 | - 正则：`^1[3-9]\d{9}$` | `""` | 手机号 |
+| `nickname` | String | ✅ 是 | - 长度：0-50 | `""` | 昵称 |
+| `email` | String | ✅ 是 | - 邮箱格式 | `""` | 邮箱 |
+| `phone` | String | ✅ 是 | - 正则：`^1[3-9]\d{9}$` | `""` | 手机号 |
 | `gender` | Int | ❌ 否 | - 枚举：0,1,2 | `2` | 性别 |
 | `avatar` | String | ❌ 否 | - URL 格式 | `""` | 头像 URL |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | `1` | 状态 |
-| `is_admin` | Int | ❌ 否 | - 枚举：0,1 | `0` | 是否管理员 |
 
 **注意事项**:
 - 创建时 `password` 为必填，后端会进行 BCrypt 加密
-- `is_admin` 默认 0（普通用户），只有管理员可以设置为 1
 
 ---
 
@@ -119,36 +120,33 @@
 |-----|------|------|---------|------|
 | `id` | Long | ✅ 是 | - 路径参数 | 用户 ID（从 URL 获取） |
 | `username` | String | ❌ 否 | - 只读，不可修改 | 用户名（更新时不允许修改） |
-| `password` | String | ❌ 否 | - 长度：6-100 | 新密码（为空则不修改） |
 | `nickname` | String | ❌ 否 | - 长度：0-50 | 昵称 |
 | `email` | String | ❌ 否 | - 邮箱格式 | 邮箱 |
 | `phone` | String | ❌ 否 | - 正则：`^1[3-9]\d{9}$` 或空 | 手机号 |
 | `gender` | Int | ❌ 否 | - 枚举：0,1,2 | 性别 |
 | `avatar` | String | ❌ 否 | - URL 格式 | 头像 URL |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | 状态（建议使用独立接口切换） |
-| `is_admin` | Int | ❌ 否 | - 枚举：0,1 | 是否管理员 |
 
 **更新规则**:
 - 所有字段为 `null` 时不更新该字段（部分更新）
 - `username` 标记为只读，更新接口不接受用户名修改
-- `password` 为空字符串时不修改密码
-- `status` 建议使用独立的 `toggleUserStatus` 接口
+- `status` 不在这里更新，有统一的 toggle 接口更新状态
 
 ---
 
 #### 3.2.3 响应对象 (SysUserResponse)
 
-| 字段 | 类型 | 说明 | 示例值 |
-|-----|------|------|--------|
-| `id` | Long | 用户 ID | `1` |
-| `username` | String | 用户名 | `admin` |
-| `nickname` | String | 昵称 | `管理员` |
-| `email` | String | 邮箱 | `admin@example.com` |
-| `phone` | String | 手机号 | `13800138000` |
-| `gender` | Int | 性别 | `1` |
-| `avatar` | String | 头像 URL | `https://example.com/avatar.jpg` |
-| `status` | Int | 状态 | `1` |
-| `is_admin` | Int | 是否管理员 | `1` |
+| 字段           | 类型 | 说明 | 示例值 |
+|--------------|------|------|--------|
+| `id`         | Long | 用户 ID | `1` |
+| `username`   | String | 用户名 | `admin` |
+| `nickname`   | String | 昵称 | `管理员` |
+| `email`      | String | 邮箱 | `admin@example.com` |
+| `phone`      | String | 手机号 | `13800138000` |
+| `gender`     | Int | 性别 | `1` |
+| `avatar`     | String | 头像 URL | `https://example.com/avatar.jpg` |
+| `status`     | Int | 状态 | `1` |
+| `is_admin`   | Int | 是否管理员 | `1` |
+| `last_login_time` | LocalDateTime | 最近一次登录时间 | `2026-03-05 12:00:00` |
 | `createTime` | LocalDateTime | 创建时间 | `2026-03-05 12:00:00` |
 | `updateTime` | LocalDateTime | 更新时间 | `2026-03-05 12:00:00` |
 

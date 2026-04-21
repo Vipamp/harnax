@@ -28,7 +28,7 @@ class SecurityConfig(
             .httpBasic { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/admin/auth/login", "/admin/auth/logout", "/admin/auth/captcha", "/ai/admin")
+                auth.requestMatchers("/admin/auth/login", "/admin/auth/logout", "/admin/auth/captcha")
                     .permitAll()
                     .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")
                     .permitAll()
@@ -38,10 +38,11 @@ class SecurityConfig(
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
             .exceptionHandling { exceptions ->
-                exceptions.authenticationEntryPoint { _, response, _ ->
-                    response.status = 401
+                exceptions.authenticationEntryPoint { _, response, authException ->
                     response.contentType = "application/json;charset=UTF-8"
-                    response.writer.write("""{"success":false,"errorCode":401,"errorMessage":"未授权或 Token 无效"}""")
+                    response.writer.write(
+                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "认证失败"}"}"""
+                    )
                 }
             }
 
