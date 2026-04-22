@@ -16,37 +16,37 @@ import java.time.LocalDateTime
 data class SysUserResponse(
     @Schema(description = "用户 ID", example = "1")
     val id: Long,
-    
+
     @Schema(description = "用户名", example = "zhangsan")
     val username: String,
-    
+
     @Schema(description = "昵称", example = "张三")
     val nickname: String,
-    
+
     @Schema(description = "邮箱", example = "zhangsan@example.com")
     val email: String,
-    
+
     @Schema(description = "手机号", example = "13800138000")
     val phone: String,
-    
+
     @Schema(description = "性别 (0:女 1:男 2:未知)", example = "2")
     val gender: Int? = null,
-    
+
     @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
     val avatar: String? = null,
-    
+
     @Schema(description = "状态 (0:禁用 1:启用)", example = "1")
     val status: Int,
-    
+
     @Schema(description = "是否是管理员(0:否,1:是)", example = "0")
     val isAdmin: Int,
-    
+
     @Schema(description = "最近一次登录时间", example = "2026-03-05 12:00:00")
-    val lastLoginTime: LocalDateTime? = null,
-    
+    val lastLoginTime: LocalDateTime?,
+
     @Schema(description = "创建时间", example = "2026-03-05 12:00:00")
     val createTime: LocalDateTime,
-    
+
     @Schema(description = "更新时间", example = "2026-03-05 12:00:00")
     val updateTime: LocalDateTime
 ) {
@@ -60,7 +60,7 @@ data class SysUserResponse(
                 email = entity.email,
                 phone = entity.phone,
                 gender = entity.gender,
-                avatar = if (entity.avatar.isEmpty()) null else entity.avatar,
+                avatar = entity.avatar,
                 status = entity.status,
                 isAdmin = entity.isAdmin,
                 lastLoginTime = entity.lastLoginTime,

@@ -17,6 +17,7 @@ import { flushSync } from 'react-dom';
 import { Footer } from '@/components';
 import { login as loginApi, getCaptcha } from '@/services/ant-design-pro/login';
 import Settings from '../../../../config/defaultSettings';
+import CryptoJS from 'crypto-js';
 
 const useStyles = createStyles(({ token }) => {
   return {
@@ -258,9 +259,14 @@ const Login: React.FC = () => {
 
   const handleSubmit = async (values: API.LoginParams) => {
  try {
+    // 对密码进行前端加密（SHA-256）
+    const encryptedPassword = values.password 
+      ? CryptoJS.SHA256(values.password).toString()
+      : values.password;
+    
     // 登录
    // 提交时包含 captchaKey，后端会校验验证码
- const msg = await loginApi({ ...values, type, captchaKey });
+ const msg = await loginApi({ ...values, password: encryptedPassword, type, captchaKey });
   if (msg.code === 200 && msg.data) {
     const defaultLoginSuccessMessage = intl.formatMessage({
      id: 'pages.login.success',

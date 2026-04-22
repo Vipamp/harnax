@@ -20,7 +20,7 @@ class ModelProvider : Serializable {
     /**
      * ID
      */
-        @Schema(description = "ID")
+    @Schema(description = "ID")
     var id: Long = 1
 
     /**
@@ -39,13 +39,13 @@ class ModelProvider : Serializable {
      * API 密钥
      */
     @Schema(description = "API 密钥")
-    var apiKey: String = ""
+    var apiKey: String? = null
 
     /**
      * API 地址
      */
     @Schema(description = "API 地址")
-    var baseUrl: String = ""
+    var baseUrl: String? = null
 
     /**
      * 是否启用(0:禁用,1:启用)
@@ -69,17 +69,17 @@ class ModelProvider : Serializable {
      * 是否可用(0:被删除,1:可用)
      */
     @Schema(description = "是否可用(0:被删除,1:可用)")
-        var active: Int = 1
+    var active: Int = 1
 
     /**
      * 创建时间
      */
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
      * 更新时间
      */
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 }

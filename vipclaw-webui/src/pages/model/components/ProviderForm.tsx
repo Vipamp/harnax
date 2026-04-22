@@ -33,14 +33,12 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           displayName: values.displayName,
           apiKey: '', // API Key 不回显
           baseUrl: values.baseUrl,
-          status: values.status,
           isPublic: values.isPublic === 1,
         });
       } else {
         form.resetFields();
         form.setFieldsValue({
-          status: 1,
-          isPublic: false,
+          isPublic: true,
         });
       }
     }
@@ -54,17 +52,20 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       if (values) {
         // 更新
         await updateModelProvider(values.id, {
+          name: formValues.name,
           displayName: formValues.displayName,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
-          status: formValues.status,
           isPublic: formValues.isPublic ? 1 : 0,
         });
         message.success('更新成功');
       } else {
         // 创建
         await createModelProvider({
-          ...formValues,
+          name: formValues.name,
+          displayName: formValues.displayName,
+          apiKey: formValues.apiKey || undefined,
+          baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
         });
         message.success('创建成功');
@@ -120,21 +121,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         <Form.Item
           name="baseUrl"
           label="API 地址"
+          rules={[
+            { 
+              type: 'url', 
+              message: '请输入有效的 URL 地址',
+              transform: (value) => value && value.trim() !== '' ? value : undefined
+            }
+          ]}
         >
           <Input placeholder="如：https://dashscope.aliyuncs.com/compatible-mode/v1" />
-        </Form.Item>
-
-        <Form.Item
-          name="status"
-          label="状态"
-          initialValue={1}
-        >
-          <Select
-            options={[
-              { label: '启用', value: 1 },
-              { label: '禁用', value: 0 },
-            ]}
-          />
         </Form.Item>
 
         <Form.Item

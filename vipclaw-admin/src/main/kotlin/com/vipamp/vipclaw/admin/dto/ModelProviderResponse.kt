@@ -36,7 +36,7 @@ data class ModelProviderResponse(
                 id = provider.id,
                 name = provider.name,
                 displayName = provider.displayName,
-                apiKey = provider.apiKey,
+                apiKey = maskApiKey(provider.apiKey),
                 baseUrl = provider.baseUrl,
                 status = provider.status,
                 isPublic = provider.isPublic,
@@ -44,6 +44,16 @@ data class ModelProviderResponse(
                 createTime = provider.createTime,
                 updateTime = provider.updateTime
             )
+        }
+        
+        /**
+         * API Key 脱敏处理
+         * 规则：前 2 位 + **** + 后 4 位
+         */
+        private fun maskApiKey(apiKey: String?): String? {
+            if (apiKey.isNullOrEmpty()) return apiKey
+            if (apiKey.length <= 6) return "****"
+            return apiKey.substring(0, 2) + "****" + apiKey.substring(apiKey.length - 4)
         }
     }
 }

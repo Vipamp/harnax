@@ -15,9 +15,7 @@ import com.vipamp.vipclaw.admin.service.ModelProviderService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
 import org.slf4j.LoggerFactory
-import org.springframework.beans.BeanUtils
 import org.springframework.stereotype.Service
-import org.springframework.util.StringUtils.hasText
 import kotlin.math.min
 
 /**
@@ -67,47 +65,57 @@ class ModelProviderServiceImpl(
 
     override fun create(request: ModelProviderCreateRequest): ModelProviderResponse {
         // 检查名称是否已存在
-        if (modelProviderMapper.countByName(request.name!!) > 0) {
-            throw BizException("服务商名称已存在")
+        if (modelProviderMapper.countByName(request.name) > 0) {
+            throw BizException("供应商名称已存在")
         }
 
         val modelProvider = ModelProvider()
-        BeanUtils.copyProperties(request, modelProvider)
-
+        modelProvider.name = request.name
+        modelProvider.displayName = request.displayName
+        modelProvider.apiKey = request.apiKey  // 允许为 null
+        modelProvider.baseUrl = request.baseUrl  // 允许为 null
+        modelProvider.isPublic = request.isPublic ?: 1
+        modelProvider.status = 1 // 默认启用
+        modelProvider.active = 1 // 默认正常
+        
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         modelProvider.creator = currentUsername
+        modelProvider.createTime = LocalDateTime.now()
+        modelProvider.updateTime = LocalDateTime.now()
 
-        this.modelProviderMapper.insert(modelProvider) > 0
+        this.modelProviderMapper.insert(modelProvider)
         return ModelProviderResponse.fromEntity(modelProvider)
     }
 
     override fun update(id: Long, request: ModelProviderUpdateRequest): ModelProviderResponse {
         val modelProvider = modelProviderMapper.selectActiveById(id)
-            ?: throw BizException("模型服务商不存在")
+            ?: throw BizException("供应商不存在")
 
         // 如果修改了名称，检查是否重复
-        if (hasText(request.name) && request.name != modelProvider.name) {
-            if (modelProviderMapper.countByName(request.name!!) > 0) {
-                throw BizException("服务商名称已存在")
+        if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
+            if (modelProviderMapper.countByName(request.name) > 0) {
+                throw BizException("供应商名称已存在")
             }
             modelProvider.name = request.name
         }
 
-        // 更新其他字段
-        if (hasText(request.displayName)) {
-            modelProvider.displayName = request.displayName!!
+        // 更新其他字段（只更新非 null 字段）
+        if (!request.displayName.isNullOrBlank()) {
+            modelProvider.displayName = request.displayName
         }
         request.apiKey?.let { apiKey ->
             // 如果 API Key 不为空且不是脱敏格式，则更新
-            if (!apiKey.contains("****")) {
+            if (apiKey.isNotBlank() && !apiKey.contains("****")) {
                 modelProvider.apiKey = apiKey
             }
         }
         request.baseUrl?.let { modelProvider.baseUrl = it }
-        request.status?.let { modelProvider.status = it }
+        request.isPublic?.let { modelProvider.isPublic = it }
 
-        this.modelProviderMapper.updateById(modelProvider) > 0
+        modelProvider.updateTime = LocalDateTime.now()
+        this.modelProviderMapper.updateById(modelProvider)
+        
         return ModelProviderResponse.fromEntity(modelProvider)
     }
 

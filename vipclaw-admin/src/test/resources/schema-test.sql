@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
     `status` TINYINT(2) DEFAULT 1 COMMENT '状态 (0:禁用 1:使用)',
     `is_admin` TINYINT(2) DEFAULT 0 COMMENT '是否是管理员（0:否，1:是）',
     `active` TINYINT(2) DEFAULT 1 COMMENT '状态 (0:已删除 1:未删除)',
-    `last_login_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '最近一次登陆时间',
+    `last_login_time` DATETIME DEFAULT NULL COMMENT '最近一次登陆时间，初始为 NULL',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -32,10 +32,13 @@ INSERT INTO `sys_user` (`username`, `password`, `nickname`, `email`, `phone`, `g
 -- 模型服务商表
 CREATE TABLE IF NOT EXISTS `model_provider` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name` VARCHAR(100) NOT NULL COMMENT '服务商名称',
-    `api_base_url` VARCHAR(500) DEFAULT NULL COMMENT 'API 基础 URL',
+    `name` VARCHAR(50) NOT NULL COMMENT '服务商名称（dashscope/openai/ollama）',
+    `display_name` VARCHAR(100) NOT NULL COMMENT '显示名称',
     `api_key` VARCHAR(500) DEFAULT NULL COMMENT 'API 密钥',
+    `base_url` VARCHAR(500) DEFAULT NULL COMMENT 'API 地址',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
+    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
+    `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -43,10 +46,10 @@ CREATE TABLE IF NOT EXISTS `model_provider` (
     UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型服务商表';
 
-INSERT INTO `model_provider` (`name`, `api_base_url`, `api_key`, `status`, `active`) VALUES
-('OpenAI', 'https://api.openai.com', 'sk-test-openai-key', 1, 1),
-('Anthropic', 'https://api.anthropic.com', 'sk-test-anthropic-key', 1, 1),
-('Deleted Provider', 'https://api.deleted.com', 'sk-deleted', 1, 0);
+INSERT INTO `model_provider` (`name`, `display_name`, `api_key`, `base_url`, `status`, `is_public`, `creator`, `active`) VALUES
+('dashscope', '阿里云百炼', 'sk-test-key-12345', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 1, 1, 'admin', 1),
+('openai', 'OpenAI', 'sk-openai-key-67890', 'https://api.openai.com/v1', 1, 1, 'admin', 1),
+('deleted_provider', '已删除服务商', 'sk-deleted', 'https://api.deleted.com', 1, 1, 'admin', 0);
 
 -- 模型表
 CREATE TABLE IF NOT EXISTS `model` (

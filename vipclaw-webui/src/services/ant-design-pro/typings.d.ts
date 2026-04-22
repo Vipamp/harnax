@@ -130,7 +130,7 @@ declare namespace API {
     displayName: string;
     apiKey?: string;
     baseUrl?: string;
-    status?: number;
+    isPublic?: number;
   };
 
   type ModelProviderUpdateRequest = {
@@ -139,7 +139,7 @@ declare namespace API {
     displayName?: string;
     apiKey?: string;
     baseUrl?: string;
-    status?: number;
+    isPublic?: number;
   };
 
   // 模型相关类型

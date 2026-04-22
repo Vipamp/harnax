@@ -137,4 +137,13 @@
         AND active = 1
     </update>
 
+    <!-- 更新用户最近一次登录时间 -->
+    <update id="updateLastLoginTime">
+        UPDATE sys_user SET
+        last_login_time = #{lastLoginTime, jdbcType=TIMESTAMP},
+        update_time = #{lastLoginTime, jdbcType=TIMESTAMP}
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
 </mapper>

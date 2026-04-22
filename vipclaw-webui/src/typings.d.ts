@@ -49,8 +49,6 @@ declare namespace API {
    phone?: string;
     gender?: number;
     avatar?: string;
-   status?: number;
-    isAdmin?: number;
   };
 
   /**
@@ -65,7 +63,6 @@ declare namespace API {
    phone?: string;
     gender?: number;
     avatar?: string;
-   status?: number;
     isAdmin?: number;
   };
 

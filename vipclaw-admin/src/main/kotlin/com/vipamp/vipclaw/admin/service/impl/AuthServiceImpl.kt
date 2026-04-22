@@ -5,11 +5,13 @@ import com.vipamp.vipclaw.admin.dto.LoginResponse
 import com.vipamp.vipclaw.admin.dto.LoginResponse.UserInfo
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.AuthService
 import com.vipamp.vipclaw.admin.service.CaptchaService
 import com.vipamp.vipclaw.admin.service.SysTokenBlacklistService
 import com.vipamp.vipclaw.admin.service.SysUserService
 import com.vipamp.vipclaw.admin.util.JwtUtil
+import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -28,7 +30,8 @@ class AuthServiceImpl(
     private val sysUserService: SysUserService,
     private val captchaService: CaptchaService,
     private val jwtUtil: JwtUtil,
-    private val tokenBlacklistService: SysTokenBlacklistService
+    private val tokenBlacklistService: SysTokenBlacklistService,
+    private val sysUserMapper: SysUserMapper
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -39,8 +42,9 @@ class AuthServiceImpl(
         // 1. 验证用户名和密码
         val user: SysUser = sysUserService.getByUsername(request.username) ?: throw BizException("用户名不存在")
 
-        // TODO: 实际项目中应该使用加密后的密码进行比对
-        if (request.password != user.password) {
+        // 前端使用 SHA-256 加密密码，数据库中存储的是 BCrypt(SHA-256(明文密码))
+        // 使用 BCrypt 验证前端传来的 SHA-256 密码
+        if (!BCrypt.checkpw(request.password, user.password)) {
             throw BizException("用户名或密码错误")
         }
 
@@ -88,6 +92,15 @@ class AuthServiceImpl(
             .expiresAt(expiresAt)
             .userInfo(userInfo)
             .build()
+
+        // 7. 更新用户最近一次登录时间
+        try {
+            val now = LocalDateTime.now()
+            sysUserMapper.updateLastLoginTime(user.id, now)
+            log.info("更新用户登录时间成功，userId: {}, loginTime: {}", user.id, now)
+        } catch (e: Exception) {
+            log.error("更新用户登录时间失败，userId: {}, error: {}", user.id, e.message)
+        }
 
         log.info("用户登录成功，userId: {}, username: {}", user.id, user.username)
         return response

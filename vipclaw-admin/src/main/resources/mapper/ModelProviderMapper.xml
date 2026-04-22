@@ -30,7 +30,7 @@
     </update>
 
     <!-- countByName -->
-    <select id="countByName" resultMap="ModelProviderResultMap">
+    <select id="countByName" resultType="int">
         SELECT COUNT(*) FROM model_provider WHERE name = #{name} AND active = 1
     </select>
 

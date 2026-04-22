@@ -41,9 +41,6 @@ data class SysUserUpdateRequest(
     @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
     val avatar: String? = null,
     
-    @Schema(description = "状态 (0:禁用 1:启用)")
-    val status: Int? = null,
-    
     @Schema(description = "是否是管理员(0:否,1:是)")
     val isAdmin: Int? = null
 )

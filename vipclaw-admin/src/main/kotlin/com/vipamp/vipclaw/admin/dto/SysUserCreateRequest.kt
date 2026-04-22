@@ -38,5 +38,5 @@ data class SysUserCreateRequest(
     val gender: Int? = 2,
     
     @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
-    val avatar: String? = ""
+    val avatar: String? = null
 )

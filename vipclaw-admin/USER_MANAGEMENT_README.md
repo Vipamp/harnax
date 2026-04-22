@@ -293,7 +293,7 @@ mvn test -Dtest=SysUserControllerTest
 | 创建用户接口 | ✅ 完成 | POST /admin/users |
 | 分页查询接口 | ✅ 完成 | GET /admin/users/page |
 | 详情查询接口 | ✅ 完成 | GET /admin/users/{id} |
-| 更新用户接口 | ✅ 完成 | PUT /admin/users/{userId} |
+| 更新用户接口 | ✅ 完成 | PUT /admin/users/update/{userId} |
 | 切换状态接口 | ✅ 完成 | PUT /admin/users/toggle/{userId} |
 | 删除用户接口 | ✅ 完成 | DELETE /admin/users/{userId} |
 | BCrypt 密码加密 | ✅ 完成 | 创建和更新时自动加密 |

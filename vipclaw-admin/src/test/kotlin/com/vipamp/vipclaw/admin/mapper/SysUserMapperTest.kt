@@ -14,6 +14,7 @@ import org.testcontainers.containers.MySQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -66,7 +67,7 @@ class SysUserMapperTest {
             assertNotNull(user)
             assertEquals(1L, user.id)
             assertEquals("testuser1", user.username)
-            assertEquals($$"$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", user.password)
+            assertEquals("password123", user.password)
             assertEquals("测试用户1", user.nickname)
             assertEquals("test1@example.com", user.email)
             assertEquals("13800138001", user.phone)
@@ -93,7 +94,7 @@ class SysUserMapperTest {
         @DisplayName("insert - 插入新用户")
         fun `insert should create new user`() {
             // Given
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val newUser = SysUser().apply {
                 username = "newuser"
                 password = "encrypted_password_123"
@@ -104,6 +105,7 @@ class SysUserMapperTest {
                 avatar = "https://example.com/avatar.jpg"
                 status = 1
                 isAdmin = 0
+                lastLoginTime = null  // 新用户未登录
                 active = 1
                 createTime = now
                 updateTime = now
@@ -131,6 +133,7 @@ class SysUserMapperTest {
             assertEquals(1, savedUser.status)
             assertEquals(0, savedUser.isAdmin)
             assertEquals(1, savedUser.active)
+            assertNull(savedUser.lastLoginTime)  // 验证 lastLoginTime 为 null
             assertEquals(now, savedUser.createTime)
             assertEquals(now, savedUser.updateTime)
         }
@@ -141,7 +144,7 @@ class SysUserMapperTest {
             // Given
             val user = sysUserMapper.selectById(1L)
             assertNotNull(user)
-            
+
             // 记录原始值
             val originalUsername = user.username
             val originalPassword = user.password
@@ -151,9 +154,9 @@ class SysUserMapperTest {
             val originalIsAdmin = user.isAdmin
             val originalActive = user.active
             val originalCreateTime = user.createTime
-            
+
             // 更新部分字段
-            val newUpdateTime = LocalDateTime.now()
+            val newUpdateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             user.nickname = "更新后的昵称"
             user.email = "updated@example.com"
             user.avatar = "https://example.com/new-avatar.jpg"
@@ -206,11 +209,11 @@ class SysUserMapperTest {
 
             // Then
             assertTrue(users.isNotEmpty())
-            assertTrue(users.all { 
-                it.username.contains("testuser") || 
-                it.nickname.contains("testuser") ||
-                it.email.contains("testuser") ||
-                it.phone.contains("testuser")
+            assertTrue(users.all {
+                it.username.contains("testuser") ||
+                        it.nickname.contains("testuser") ||
+                        it.email.contains("testuser") ||
+                        it.phone.contains("testuser")
             })
         }
 
@@ -233,11 +236,11 @@ class SysUserMapperTest {
 
             // Then
             assertTrue(users.isNotEmpty())
-            assertTrue(users.all { 
+            assertTrue(users.all {
                 it.status == 1 && (
-                    it.username.contains("testuser") || 
-                    it.nickname.contains("testuser")
-                )
+                        it.username.contains("testuser") ||
+                                it.nickname.contains("testuser")
+                        )
             })
         }
 
@@ -354,7 +357,7 @@ class SysUserMapperTest {
             val result = sysUserMapper.logicalDelete(5L)
 
             // Then
-            assertEquals(1, result) // SQL 仍然执行成功
+            assertEquals(0, result) // SQL 仍然执行成功
 
             // 验证 active 仍然是 0
             val user = sysUserMapper.selectById(5L)
@@ -371,7 +374,7 @@ class SysUserMapperTest {
         @DisplayName("完整流程：插入 - 查询 - 更新 - 禁用 - 删除")
         fun `complete flow insert query update disable delete`() {
             // 1. 插入用户
-            val now = LocalDateTime.now()
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val newUser = SysUser().apply {
                 username = "flowtest"
                 password = "password123"
@@ -382,6 +385,7 @@ class SysUserMapperTest {
                 avatar = "https://example.com/flow.jpg"
                 status = 1
                 isAdmin = 0
+                lastLoginTime = null  // 新用户未登录
                 active = 1
                 createTime = now
                 updateTime = now
@@ -403,11 +407,12 @@ class SysUserMapperTest {
             assertEquals(1, user.status)
             assertEquals(0, user.isAdmin)
             assertEquals(1, user.active)
+            assertNull(user.lastLoginTime)  // 验证 lastLoginTime 为 null
             assertEquals(now, user.createTime)
             assertEquals(now, user.updateTime)
 
             // 3. 更新用户
-            val newUpdateTime = LocalDateTime.now()
+            val newUpdateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             user.nickname = "更新后的流程测试用户"
             user.email = "updated@test.com"
             user.avatar = "https://example.com/updated.jpg"
@@ -453,6 +458,63 @@ class SysUserMapperTest {
             // 6. 验证 selectActiveById 查不到
             val activeUser = sysUserMapper.selectActiveById(newUser.id)
             assertNull(activeUser)
+        }
+    }
+
+    @Nested
+    @DisplayName("登录时间更新测试")
+    inner class LastLoginTimeTests {
+
+        @Test
+        @DisplayName("updateLastLoginTime - 更新用户登录时间")
+        fun `updateLastLoginTime should update last login time`() {
+            // Given
+            val userId = 1L
+            val userBefore = sysUserMapper.selectById(userId)
+            assertNotNull(userBefore)
+            assertNull(userBefore.lastLoginTime)  // 初始为 null
+            val loginTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+
+            // When
+            val result = sysUserMapper.updateLastLoginTime(userId, loginTime)
+
+            // Then
+            assertEquals(1, result)
+            val userAfter = sysUserMapper.selectById(userId)
+            assertNotNull(userAfter)
+            assertNotNull(userAfter.lastLoginTime)
+            // 验证登录时间已更新
+            assertEquals(loginTime, userAfter.lastLoginTime)
+        }
+
+        @Test
+        @DisplayName("updateLastLoginTime - 更新不存在的用户返回 0")
+        fun `updateLastLoginTime should return 0 when user not exists`() {
+            // Given
+            val loginTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+
+            // When
+            val result = sysUserMapper.updateLastLoginTime(999L, loginTime)
+
+            // Then
+            assertEquals(0, result)
+        }
+
+        @Test
+        @DisplayName("updateLastLoginTime - 不更新已删除用户的登录时间")
+        fun `updateLastLoginTime should not update deleted user`() {
+            // Given
+            val deletedUserId = 5L  // schema-test.sql 中 active=0 的用户
+            val userBefore = sysUserMapper.selectById(deletedUserId)
+            assertNotNull(userBefore)
+            assertEquals(0, userBefore.active)
+            val loginTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+
+            // When
+            val result = sysUserMapper.updateLastLoginTime(deletedUserId, loginTime)
+
+            // Then
+            assertEquals(0, result)  // 已删除用户不应该被更新
         }
     }
 }

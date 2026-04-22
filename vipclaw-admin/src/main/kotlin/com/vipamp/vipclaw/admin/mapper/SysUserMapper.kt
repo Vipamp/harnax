@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.mapper
 import com.vipamp.vipclaw.admin.entity.SysUser
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
+import java.time.LocalDateTime
 
 /**
  * SysUser Mapper 接口
@@ -96,4 +97,16 @@ interface SysUserMapper {
      * @return 影响行数
      */
     fun logicalDelete(@Param("id") id: Long): Int
+
+    /**
+     * 更新用户最近一次登录时间
+     *
+     * @param id 用户 ID
+     * @param lastLoginTime 登录时间
+     * @return 影响行数
+     */
+    fun updateLastLoginTime(
+        @Param("id") id: Long,
+        @Param("lastLoginTime") lastLoginTime: LocalDateTime
+    ): Int
 }

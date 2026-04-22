@@ -73,7 +73,7 @@ class SysUserController(
         }
     }
 
-    @PutMapping("/{userId}")
+    @PutMapping("/update/{userId}")
     @Operation(summary = "更新用户", description = "根据用户 ID 更新用户信息")
     fun updateUser(
         @Parameter(description = "用户 ID") @PathVariable(name = "userId") userId: Long,

@@ -32,7 +32,7 @@ class SysUser : Serializable {
     var gender: Int = 2
 
     @Schema(description = "头像 URL")
-    var avatar: String = ""
+    var avatar: String? = null
 
     @Schema(description = "是否启用（0:禁用，1:启用）")
     var status: Int = 1
@@ -41,7 +41,7 @@ class SysUser : Serializable {
     var isAdmin: Int = 0
 
     @Schema(description = "最近一次登录时间")
-    var lastLoginTime: LocalDateTime = LocalDateTime.now()
+    var lastLoginTime: LocalDateTime? = null
 
     @Schema(description = "是否可用(0:被删除,1:可用)")
     var active: Int = 1

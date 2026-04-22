@@ -73,7 +73,8 @@ class SysUserServiceImpl(
 
         val user = SysUser()
         user.username = request.username
-        // BCrypt 加密密码
+        // 前端已对密码进行 SHA-256 加密，后端再进行 BCrypt 加密
+        // 这样数据库中存储的是 BCrypt(SHA-256(明文密码))
         user.password = BCrypt.hashpw(request.password, BCrypt.gensalt())
         user.nickname = request.nickname
         user.email = request.email
@@ -82,7 +83,7 @@ class SysUserServiceImpl(
         user.status = 1 // 默认启用
         user.isAdmin = 0 // 默认非管理员
         user.active = 1  // 默认生效
-        user.avatar = request.avatar ?: ""
+        user.avatar = request.avatar
 
         val success = this.sysUserMapper.insert(user) > 0
         log.info("用户创建{}，userId: {}", if (success) "成功" else "失败", user.id)
@@ -101,7 +102,6 @@ class SysUserServiceImpl(
         request.email?.let { user.email = it }
         request.phone?.let { user.phone = it }
         request.gender?.let { user.gender = it }
-        request.status?.let { user.status = it }
         request.isAdmin?.let { user.isAdmin = it }
         request.avatar?.let { user.avatar = it }
         // 如果提供了密码，进行加密

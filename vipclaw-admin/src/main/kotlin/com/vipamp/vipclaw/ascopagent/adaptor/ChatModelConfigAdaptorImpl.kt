@@ -5,7 +5,10 @@ import com.vipamp.vipclaw.admin.entity.ModelProvider
 import com.vipamp.vipclaw.admin.mapper.ModelMapper
 import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper
 import com.vipamp.vipclaw.agent.adaptor.ChatModelConfigAdaptor
-import com.vipamp.vipclaw.agent.adaptor.model.*
+import com.vipamp.vipclaw.agent.adaptor.model.ChatModelConfig
+import com.vipamp.vipclaw.agent.adaptor.model.DashScopeChatModelConfig
+import com.vipamp.vipclaw.agent.adaptor.model.OllamaChatModelConfig
+import com.vipamp.vipclaw.agent.adaptor.model.OpenAIChatModelConfig
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
@@ -54,30 +57,33 @@ class ChatModelConfigAdaptorImpl(
         return when (providerType) {
             "dashscope" -> DashScopeChatModelConfig(
                 model.modelName,
-                provider.apiKey,
+                provider.apiKey!!,
                 provider.baseUrl,
-                true,
-                true,
-                false,
-                null,
-                null,
-                false
+                stream = true,
+                enableThinking = true,
+                enableSearch = false,
+                httpTransport = null,
+                options = null,
+                encrypt = false
             )
+
             "openai" -> OpenAIChatModelConfig(
                 model.modelName,
-                provider.apiKey,
+                provider.apiKey!!,
                 provider.baseUrl,
                 true,
                 null,
                 null,
                 null
             )
+
             "ollama" -> OllamaChatModelConfig(
                 model.modelName,
                 provider.baseUrl ?: "http://localhost:11434",
                 null,
                 null
             )
+
             else -> {
                 log.warn("Unsupported provider type: $providerType")
                 null

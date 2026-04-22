@@ -47,12 +47,12 @@
 | `display_name` | VARCHAR | 100 | ❌ 否 | - | 显示名称 | NOT NULL |
 | `api_key` | VARCHAR | 500 | ✅ 是 | NULL | API 密钥 | - |
 | `base_url` | VARCHAR | 500 | ✅ 是 | NULL | API 地址 | - |
-| `status` | TINYINT | 1 | ✅ 是 | 1 | 状态 (0:禁用 1:启用) | - |
-| `is_public` | TINYINT | 1 | ✅ 是 | 1 | 是否公开 (0:否 1:是) | - |
-| `creator` | VARCHAR | 100 | ✅ 是 | - | 创建人用户名 | - |
-| `active` | TINYINT | 1 | ✅ 是 | 1 | 逻辑删除标识 (0:已删除 1:正常) | - |
-| `create_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP | 创建时间 | - |
-| `update_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | - |
+| `status` | TINYINT | 1 | ❌ 否 | 1 | 状态 (0:禁用 1:启用) | - |
+| `is_public` | TINYINT | 1 | ❌ 否 | 1 | 是否公开 (0:否 1:是) | - |
+| `creator` | VARCHAR | 100 | ❌ 否 | - | 创建人用户名 | NOT NULL |
+| `active` | TINYINT | 1 | ❌ 否 | 1 | 逻辑删除标识 (0:已删除 1:正常) | - |
+| `create_time` | DATETIME | - | ❌ 否 | CURRENT_TIMESTAMP | 创建时间 | - |
+| `update_time` | DATETIME | - | ❌ 否 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | - |
 
 **索引设计**:
 - `PRIMARY KEY (id)`: 主键索引
@@ -64,24 +64,27 @@
 
 | 字段 | 业务规则 | 校验规则 | 示例值 |
 |-----|---------|---------|--------|
-| `name` | 供应商技术名称，全局唯一标识 | - 长度：1-50 字符<br>- 英文小写+数字+下划线 | `dashscope`, `openai`, `ollama` |
-| `display_name` | 供应商显示名称，用于 UI 展示 | - 长度：1-100 字符 | `阿里云百炼`, `OpenAI`, `本地模型` |
+| `name` | 供应商技术名称，全局唯一标识 | - 长度：1-50 字符<br>- 英文小写+数字+下划线<br>- 格式校验：`^[a-z0-9_]+$` | `dashscope`, `openai`, `ollama` |
+| `display_name` | 供应商显示名称，用于 UI 展示 | - 长度：1-100 字符<br>- 不允许纯空格 | `阿里云百炼`, `OpenAI`, `本地模型` |
+| `creator` | 创建人用户名 | - 长度：1-100 字符<br>- 由系统自动填充当前登录用户 | `admin`, `user123` |
 
 **可选字段 (NULLABLE)**:
 
 | 字段 | 业务规则 | 校验规则 | 示例值 |
 |-----|---------|---------|--------|
-| `api_key` | API 认证密钥 | - 最大长度：500 字符<br>- 敏感信息，响应时脱敏显示 | `sk-xxxxxxxxxxxxxxxx` |
-| `base_url` | API 基础地址 | - 最大长度：500 字符<br>- URL 格式校验 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `api_key` | API 认证密钥 | - 最大长度：500 字符<br>- 敏感信息，响应时脱敏显示<br>- 建议加密存储 | `sk-xxxxxxxxxxxxxxxx` |
+| `base_url` | API 基础地址 | - 最大长度：500 字符<br>- URL 格式校验：`^(https?:\/\/)?([\w.-]+)+(:\d+)?(\/[^\s]*)?$` | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
 
 **系统字段**:
 
 | 字段 | 业务规则 | 说明 |
 |-----|---------|------|
+| `id` | 数据库自增主键 | 全局唯一标识符 |
 | `status` | 0:禁用<br>1:启用（默认） | 控制供应商是否可用 |
 | `is_public` | 0:私有<br>1:公开（默认） | 控制其他用户是否可见 |
-| `creator` | 创建人用户名 | 数据权限控制 |
-| `active` | 0:已删除<br>1:正常（默认） | 逻辑删除标识 |
+| `active` | 0:已删除<br>1:正常（默认） | 逻辑删除标识，禁止物理删除 |
+| `create_time` | 创建时间，自动填充 | 格式：`YYYY-MM-DD HH:mm:ss` |
+| `update_time` | 更新时间，自动更新 | 格式：`YYYY-MM-DD HH:mm:ss` |
 
 ---
 
@@ -91,15 +94,18 @@
 
 | 字段 | 类型 | 必填 | 校验规则 | 默认值 | 说明 |
 |-----|------|------|---------|--------|------|
-| `name` | String | ❌ 否 | - 长度：0-50 | `null` | 供应商名称 |
-| `displayName` | String | ❌ 否 | - 长度：0-100 | `null` | 显示名称 |
-| `apiKey` | String | ❌ 否 | - 长度：0-500 | `null` | API 密钥 |
-| `baseUrl` | String | ❌ 否 | - URL 格式 | `null` | API 地址 |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | `null` | 状态 |
+| `name` | String | ✅ 是 | - 长度：1-50<br>- 格式：`^[a-z0-9_]+$`<br>- 唯一性校验 | - | 供应商技术名称 |
+| `displayName` | String | ✅ 是 | - 长度：1-100<br>- 不允许纯空格 | - | 供应商显示名称 |
+| `apiKey` | String | ❌ 否 | - 长度：0-500 | `null` | API 密钥（敏感信息） |
+| `baseUrl` | String | ❌ 否 | - URL 格式校验 | `null` | API 基础地址 |
+| `isPublic` | Int | ❌ 否 | - 枚举：0,1 | `1` | 是否公开（0:私有 1:公开） |
 
 **注意事项**:
-- 所有字段均为可选，但 `name` 和 `displayName` 建议必填
-- `apiKey` 为敏感信息，需加密存储
+- `name` 和 `displayName` 为必填字段
+- `apiKey` 为敏感信息，后端需加密存储
+- `isPublic` 默认为 1（公开）
+- `status` 字段由系统自动填充，默认值为 1（启用），创建请求中不允许传入
+- `creator`、`active`、`createTime`、`updateTime` 由系统自动填充
 
 ---
 
@@ -107,16 +113,18 @@
 
 | 字段 | 类型 | 必填 | 校验规则 | 说明 |
 |-----|------|------|---------|------|
-| `id` | Long | ✅ 是 | - 路径参数 | 供应商 ID |
-| `name` | String | ❌ 否 | - 长度：0-50 | 供应商名称 |
-| `displayName` | String | ❌ 否 | - 长度：0-100 | 显示名称 |
+| `id` | Long | ✅ 是 | - 路径参数<br>- 必须存在 | 供应商 ID |
+| `name` | String | ❌ 否 | - 长度：1-50<br>- 格式：`^[a-z0-9_]+$`<br>- 唯一性校验 | 供应商技术名称 |
+| `displayName` | String | ❌ 否 | - 长度：1-100<br>- 不允许纯空格 | 供应商显示名称 |
 | `apiKey` | String | ❌ 否 | - 长度：0-500 | API 密钥（为空则不修改） |
-| `baseUrl` | String | ❌ 否 | - URL 格式 | API 地址 |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | 状态 |
+| `baseUrl` | String | ❌ 否 | - URL 格式校验 | API 基础地址 |
+| `isPublic` | Int | ❌ 否 | - 枚举：0,1 | 是否公开 |
 
 **更新规则**:
 - 所有字段为 `null` 时不更新该字段（部分更新）
 - `apiKey` 为空字符串时不修改密钥
+- `name` 更新时需校验唯一性（排除自身）
+- `id` 为路径参数，必填
 
 ---
 
@@ -125,18 +133,19 @@
 | 字段 | 类型 | 说明 | 示例值 |
 |-----|------|------|--------|
 | `id` | Long | 供应商 ID | `1` |
-| `name` | String | 供应商名称 | `dashscope` |
+| `name` | String | 供应商技术名称 | `dashscope` |
 | `displayName` | String | 显示名称 | `阿里云百炼` |
-| `apiKey` | String | API 密钥（脱敏） | `sk****xxxx` |
+| `apiKey` | String | API 密钥（脱敏） | `sk****a1f5` |
 | `baseUrl` | String | API 地址 | `https://dashscope...` |
-| `status` | Int | 状态 | `1` |
-| `isPublic` | Int | 是否公开 | `1` |
-| `creator` | String | 创建人 | `admin` |
-| `createTime` | LocalDateTime | 创建时间 | `2026-03-13 12:00:00` |
-| `updateTime` | LocalDateTime | 更新时间 | `2026-03-13 12:00:00` |
+| `status` | Int | 状态（0:禁用 1:启用） | `1` |
+| `isPublic` | Int | 是否公开（0:私有 1:公开） | `1` |
+| `creator` | String | 创建人用户名 | `admin` |
+| `createTime` | LocalDateTime | 创建时间 | `2026-03-13T12:00:00` |
+| `updateTime` | LocalDateTime | 更新时间 | `2026-03-13T12:00:00` |
 
 **安全说明**:
 - `apiKey` 在响应中需要脱敏显示（前 2 位 + **** + 后 4 位）
+- 如果 `apiKey` 为空，则返回空字符串或 `null`
 
 ---
 
@@ -158,7 +167,7 @@
   "displayName": "阿里云百炼",
   "apiKey": "sk-5404e4ddac8645a1bd3555c00376a1f5",
   "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "status": 1
+  "isPublic": 1
 }
 ```
 
@@ -168,23 +177,28 @@
 1. 接收 ModelProviderCreateRequest 请求
    ↓
 2. 参数校验（@Valid）
-   - name 长度校验
-   - displayName 长度校验
+   - name 必填校验、长度校验、格式校验（`^[a-z0-9_]+$`）
+   - displayName 必填校验、长度校验、非纯空格校验
+   - baseUrl URL 格式校验（如果有传参）
+   - apiKey 长度校验（如果有传参）
+   - isPublic 枚举校验（0 或 1）
    ↓
 3. 检查供应商名称是否已存在
    - 查询数据库：SELECT * FROM model_provider WHERE name = #{name} AND active = 1
    - 如果存在 → 抛出 BizException("供应商名称已存在")
    ↓
 4. 构建 ModelProvider 实体
-   - 设置默认值：status=1, is_public=1, active=1
+   - 设置默认值：status=1, is_public=request.isPublic ?: 1, active=1
    - 设置 creator：当前登录用户名
    - 设置时间：createTime, updateTime = LocalDateTime.now()
+   - apiKey 加密存储（如果有传参）
    ↓
 5. 插入数据库
    - INSERT INTO model_provider (...)
    ↓
 6. 返回 ModelProviderResponse
    - apiKey 脱敏处理
+   - 封装为 ResultVo.success(response)
 ```
 
 #### 4.1.4 异常处理
@@ -192,6 +206,9 @@
 | 异常场景 | 错误码 | 错误信息 | 处理方式 |
 |---------|--------|---------|---------|
 | 供应商名称已存在 | 400 | "供应商名称已存在" | 提示用户更换名称 |
+| name 格式错误 | 400 | "供应商名称只能包含小写字母、数字和下划线" | 表单提示格式错误 |
+| displayName 为空或纯空格 | 400 | "显示名称不能为空" | 表单提示必填 |
+| baseUrl 格式错误 | 400 | "API 地址格式不正确" | 表单提示 URL 格式 |
 | 参数校验失败 | 400 | 具体校验错误信息 | 显示表单校验错误 |
 | 数据库异常 | 500 | "创建供应商失败" | 记录日志，提示重试 |
 
@@ -213,6 +230,7 @@
 | `pageSize` | Int | ❌ 否 | 10 | 每页大小 | `10` |
 | `name` | String | ❌ 否 | - | 供应商名称模糊搜索 | `open` |
 | `status` | Int | ❌ 否 | - | 状态筛选 (0/1) | `1` |
+| `isPublic` | Int | ❌ 否 | - | 公开性筛选 (0/1) | `1` |
 
 #### 4.2.3 响应示例
 
@@ -251,8 +269,9 @@
 2. 构建查询条件
    - active = 1
    - (is_public = 1 OR creator = #{currentUsername})
-   - name 模糊搜索（如果有传参）
+   - name 模糊搜索（如果有传参）：`name LIKE '%#{name}%'`
    - status 精确匹配（如果有传参）
+   - isPublic 精确匹配（如果有传参）
    ↓
 3. 执行分页查询
    - 使用 PageHelper 分页插件
@@ -262,6 +281,7 @@
    - apiKey 脱敏处理
    ↓
 5. 返回分页结果
+   - 封装为 ResultVo.success(pageResult)
 ```
 
 ---
@@ -307,8 +327,7 @@
 ```json
 {
   "displayName": "阿里云百炼（更新）",
-  "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "status": 1
+  "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1"
 }
 ```
 
@@ -324,20 +343,28 @@
 3. 权限校验
    - 如果 creator != 当前用户 → 抛出 BizException("无权限修改")
    ↓
-4. 部分更新（只更新非 null 字段）
+4. 参数校验（仅对非 null 字段校验）
+   - name != null → 校验长度、格式、唯一性（排除自身）
+   - displayName != null → 校验长度、非纯空格
+   - baseUrl != null → 校验 URL 格式
+   - apiKey != null → 校验长度
+   - isPublic != null → 校验枚举值（0 或 1）
+   ↓
+5. 部分更新（只更新非 null 字段）
    - name != null → 更新 name
    - displayName != null → 更新 displayName
-   - apiKey != null → 更新 apiKey
+   - apiKey != null && apiKey.isNotEmpty() → 更新 apiKey（加密存储）
    - baseUrl != null → 更新 baseUrl
-   - status != null → 更新 status
+   - isPublic != null → 更新 isPublic
    ↓
-5. 更新时间
+6. 更新时间
    - updateTime = LocalDateTime.now()
    ↓
-6. 执行更新
+7. 执行更新
    - UPDATE model_provider SET ... WHERE id = #{id}
    ↓
-7. 返回 ModelProviderResponse
+8. 返回 ModelProviderResponse
+   - 封装为 ResultVo.success(response)
 ```
 
 ---
@@ -672,7 +699,7 @@ CREATE TABLE `model_provider` (
     `base_url` VARCHAR(500) DEFAULT NULL COMMENT 'API 地址',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
-    `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
+    `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

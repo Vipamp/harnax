@@ -41,13 +41,13 @@ export async function createUser(data: API.SysUserCreateRequest, options?: { [ke
   });
 }
 
-/**更新用户 PUT /admin/users/${userId} */
+/**更新用户 PUT /admin/users/update/${userId} */
 export async function updateUser(
   userId: number,
   data: API.SysUserUpdateRequest,
   options?: { [key: string]: any },
 ) {
- return request(`/admin/users/${userId}`, {
+ return request(`/admin/users/update/${userId}`, {
    method: 'PUT',
    headers: {
       'Content-Type': 'application/json',

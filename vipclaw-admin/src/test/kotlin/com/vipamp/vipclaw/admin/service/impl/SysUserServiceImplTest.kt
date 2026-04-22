@@ -54,6 +54,7 @@ class SysUserServiceImplTest {
             avatar = "https://example.com/avatar.jpg"
             status = 1
             isAdmin = 0
+            lastLoginTime = null  // 新用户未登录，应为 null
             active = 1
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
@@ -79,6 +80,7 @@ class SysUserServiceImplTest {
                 avatar = "https://example.com/avatar2.jpg"
                 status = 1
                 isAdmin = 0
+                lastLoginTime = null  // 新用户未登录
                 active = 1
                 createTime = LocalDateTime.now()
                 updateTime = LocalDateTime.now()
@@ -261,6 +263,32 @@ class SysUserServiceImplTest {
             assertTrue(result)
             verify(sysUserMapper).insert(argThat { user ->
                 user!!.gender == 2  // 默认性别为 2(未知)
+            })
+        }
+
+        @Test
+        @DisplayName("createUser - 新用户的 lastLoginTime 应为 null")
+        fun `createUser should set lastLoginTime to null for new user`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser2",
+                password = "password123",
+                nickname = "新用户2",
+                email = "new2@example.com",
+                phone = "13900139003",
+                gender = 1,
+                avatar = ""
+            )
+            `when`(sysUserMapper.selectByUsername("newuser2")).thenReturn(null)
+            `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
+
+            // When
+            val result = sysUserService.createUser(request)
+
+            // Then
+            assertTrue(result)
+            verify(sysUserMapper).insert(argThat { user ->
+                user!!.lastLoginTime == null  // 新用户未登录，lastLoginTime 应为 null
             })
         }
     }
