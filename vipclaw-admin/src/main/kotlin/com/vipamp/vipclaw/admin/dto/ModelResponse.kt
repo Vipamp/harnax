@@ -23,6 +23,8 @@ data class ModelResponse(
     var description: String? = null,
     @Schema(description = "模型类型（chat/embedding）", example = "chat")
     var modelType: String? = null,
+    @Schema(description = "能力标签", example = "[\"reasoning\", \"tool\"]")
+    var tags: List<String>? = null,
     @Schema(description = "是否支持联网", example = "0")
     var supportInternet: Int? = null,
     @Schema(description = "是否支持推理", example = "0")
@@ -55,6 +57,7 @@ data class ModelResponse(
                 providerId = model.providerId,
                 description = model.description,
                 modelType = model.modelType,
+                tags = calculateTags(model),
                 supportInternet = model.supportInternet,
                 supportReasoning = model.supportReasoning,
                 supportTool = model.supportTool,
@@ -67,6 +70,19 @@ data class ModelResponse(
                 createTime = model.createTime,
                 updateTime = model.updateTime
             )
+        }
+        
+        /**
+         * 根据能力字段自动计算标签列表
+         */
+        private fun calculateTags(model: Model): List<String> {
+            val tags = mutableListOf<String>()
+            if (model.supportInternet == 1) tags.add("internet")
+            if (model.supportReasoning == 1) tags.add("reasoning")
+            if (model.supportTool == 1) tags.add("tool")
+            if (model.supportMcp == 1) tags.add("mcp")
+            if (model.supportVision == 1) tags.add("vision")
+            return tags
         }
     }
 }

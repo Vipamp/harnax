@@ -53,7 +53,7 @@ const ModelManagement: React.FC = () => {
   const loadProviders = async () => {
     setProviderLoading(true);
     try {
-      const response = await modelProviderPage({ current: 1, pageSize: 100 });
+      const response = await modelProviderPage({ pageNum: 1, pageSize: 100 });
       if (response.data) {
         setProviders(response.data.records || []);
         // 默认选中第一个服务商

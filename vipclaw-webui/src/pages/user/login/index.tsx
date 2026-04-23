@@ -187,7 +187,6 @@ const LoginMessage: React.FC<{
 };
 
 const Login: React.FC = () => {
- const [userLoginState, setUserLoginState] = useState<API.LoginResult>({});
   const [type, setType] = useState<string>('account');
   const { initialState, setInitialState } = useModel('@@initialState');
   const { styles } = useStyles();
@@ -267,6 +266,8 @@ const Login: React.FC = () => {
     // 登录
    // 提交时包含 captchaKey，后端会校验验证码
  const msg = await loginApi({ ...values, password: encryptedPassword, type, captchaKey });
+  
+  // 检查后端返回的 code
   if (msg.code === 200 && msg.data) {
     const defaultLoginSuccessMessage = intl.formatMessage({
      id: 'pages.login.success',
@@ -344,19 +345,31 @@ if (redirect) {
 }
 return;
     }
-   console.log(msg);
-     // 如果失败去设置用户错误信息
-  setUserLoginState(msg);
-   } catch (error) {
-      const defaultLoginFailureMessage = intl.formatMessage({
+    
+    // 登录失败，显示后端返回的具体错误信息
+    const errorMessage = msg.message || intl.formatMessage({
+      id: 'pages.login.failure',
+      defaultMessage: '登录失败，请重试！',
+    });
+    message.error(errorMessage);
+    // 刷新验证码
+    if (type === 'account') {
+      getCaptchaImage();
+    }
+   } catch (error: any) {
+      // 捕获网络错误或其他异常
+      const errorMessage = error?.message || error?.response?.data?.message || intl.formatMessage({
         id: 'pages.login.failure',
         defaultMessage: '登录失败，请重试！',
       });
-      console.log(error);
-      message.error(defaultLoginFailureMessage);
+      console.error('[登录失败] 错误信息:', error);
+      message.error(errorMessage);
+      // 刷新验证码
+      if (type === 'account') {
+        getCaptchaImage();
+      }
     }
   };
-  const { status, type: loginType } = userLoginState;
 
   return (
     <div className={styles.container}>
@@ -442,14 +455,6 @@ return;
               ]}
             />
 
-            {status === 'error' && loginType === 'account' && (
-              <LoginMessage
-                content={intl.formatMessage({
-                  id: 'pages.login.accountLogin.errorMessage',
-                  defaultMessage: '账户或密码错误(admin/ant.design)',
-                })}
-              />
-            )}
             {type === 'account' && (
               <>
                 <ProFormText
@@ -544,9 +549,7 @@ return;
           </>
         )}
 
-          {status === 'error' && loginType === 'mobile' && (
-            <LoginMessage content="验证码错误" />
-          )}
+          
           {type === 'mobile' && (
             <>
               <ProFormText

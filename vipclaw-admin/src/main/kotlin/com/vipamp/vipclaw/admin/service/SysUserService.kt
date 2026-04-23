@@ -73,4 +73,28 @@ interface SysUserService {
      * @return 用户实体
      */
     fun getByUsername(username: String): SysUser?
+
+    /**
+     * 检查用户名是否存在
+     *
+     * @param username 用户名
+     * @return 是否存在
+     */
+    fun existsByUsername(username: String): Boolean
+
+    /**
+     * 检查手机号是否存在
+     *
+     * @param phone 手机号
+     * @return 是否存在
+     */
+    fun existsByPhone(phone: String): Boolean
+
+    /**
+     * 检查邮箱是否存在
+     *
+     * @param email 邮箱
+     * @return 是否存在
+     */
+    fun existsByEmail(email: String): Boolean
 }

@@ -71,6 +71,22 @@ class SysUserServiceImpl(
             throw BizException("用户名已存在")
         }
 
+        // 检查手机号是否已存在
+        if (request.phone.isNotBlank()) {
+            val existPhone = sysUserMapper.selectByPhone(request.phone)
+            if (existPhone != null) {
+                throw BizException("手机号已存在")
+            }
+        }
+
+        // 检查邮箱是否已存在
+        if (request.email.isNotBlank()) {
+            val existEmail = sysUserMapper.selectByEmail(request.email)
+            if (existEmail != null) {
+                throw BizException("邮箱已存在")
+            }
+        }
+
         val user = SysUser()
         user.username = request.username
         // 前端已对密码进行 SHA-256 加密，后端再进行 BCrypt 加密
@@ -96,6 +112,22 @@ class SysUserServiceImpl(
 
         val user = sysUserMapper.selectActiveById(id)
             ?: throw BizException("用户不存在")
+
+        // 如果修改了手机号，检查是否已被其他用户使用
+        if (request.phone != null && request.phone.isNotBlank() && request.phone != user.phone) {
+            val existPhone = sysUserMapper.selectByPhone(request.phone)
+            if (existPhone != null) {
+                throw BizException("手机号已存在")
+            }
+        }
+
+        // 如果修改了邮箱，检查是否已被其他用户使用
+        if (request.email != null && request.email.isNotBlank() && request.email != user.email) {
+            val existEmail = sysUserMapper.selectByEmail(request.email)
+            if (existEmail != null) {
+                throw BizException("邮箱已存在")
+            }
+        }
 
         // 选择性更新字段（username 不允许修改）
         request.nickname?.let { user.nickname = it }
@@ -140,5 +172,17 @@ class SysUserServiceImpl(
 
     override fun getByUsername(username: String): SysUser? {
         return sysUserMapper.selectByUsername(username)
+    }
+
+    override fun existsByUsername(username: String): Boolean {
+        return sysUserMapper.selectByUsername(username) != null
+    }
+
+    override fun existsByPhone(phone: String): Boolean {
+        return sysUserMapper.selectByPhone(phone) != null
+    }
+
+    override fun existsByEmail(email: String): Boolean {
+        return sysUserMapper.selectByEmail(email) != null
     }
 }

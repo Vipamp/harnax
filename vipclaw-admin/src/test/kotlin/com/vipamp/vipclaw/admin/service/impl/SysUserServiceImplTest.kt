@@ -291,6 +291,55 @@ class SysUserServiceImplTest {
                 user!!.lastLoginTime == null  // 新用户未登录，lastLoginTime 应为 null
             })
         }
+
+        @Test
+        @DisplayName("createUser - 手机号已存在应该抛出异常")
+        fun `createUser should throw BizException when phone exists`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser3",
+                password = "password123",
+                nickname = "新用户3",
+                email = "new3@example.com",
+                phone = "13800138000",  // 已存在的手机号
+                gender = 1,
+                avatar = ""
+            )
+            `when`(sysUserMapper.selectByUsername("newuser3")).thenReturn(null)
+            `when`(sysUserMapper.selectByPhone("13800138000")).thenReturn(testUser)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request)
+            }
+            assertEquals("手机号已存在", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 邮箱已存在应该抛出异常")
+        fun `createUser should throw BizException when email exists`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser4",
+                password = "password123",
+                nickname = "新用户4",
+                email = "test@example.com",  // 已存在的邮箱
+                phone = "13900139004",
+                gender = 1,
+                avatar = ""
+            )
+            `when`(sysUserMapper.selectByUsername("newuser4")).thenReturn(null)
+            `when`(sysUserMapper.selectByPhone("13900139004")).thenReturn(null)
+            `when`(sysUserMapper.selectByEmail("test@example.com")).thenReturn(testUser)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request)
+            }
+            assertEquals("邮箱已存在", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
     }
 
     @Nested
@@ -346,8 +395,58 @@ class SysUserServiceImplTest {
             // Then
             assertTrue(result)
             verify(sysUserMapper).updateById(argThat { user ->
-                user!!.password.startsWith($$"$2a$10$") // BCrypt 加密后的密码
+                user!!.password.startsWith("$2a$10$") // BCrypt 加密后的密码
             })
+        }
+
+        @Test
+        @DisplayName("updateUser - 手机号已存在应该抛出异常")
+        fun `updateUser should throw BizException when phone exists`() {
+            // Given
+            val request = SysUserUpdateRequest(phone = "13800138001")  // 其他用户的手机号
+            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectByPhone("13800138001")).thenReturn(SysUser().apply { id = 2L })
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.updateUser(1L, request)
+            }
+            assertEquals("手机号已存在", exception.message)
+            verify(sysUserMapper, never()).updateById(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("updateUser - 邮箱已存在应该抛出异常")
+        fun `updateUser should throw BizException when email exists`() {
+            // Given
+            val request = SysUserUpdateRequest(email = "other@example.com")  // 其他用户的邮箱
+            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectByEmail("other@example.com")).thenReturn(SysUser().apply { id = 2L })
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.updateUser(1L, request)
+            }
+            assertEquals("邮箱已存在", exception.message)
+            verify(sysUserMapper, never()).updateById(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("updateUser - 设置为自己的手机号应该成功")
+        fun `updateUser should succeed when setting own phone`() {
+            // Given
+            val request = SysUserUpdateRequest(phone = "13800138000")  // 用户自己的手机号
+            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
+
+            // When
+            val result = sysUserService.updateUser(1L, request)
+
+            // Then
+            assertTrue(result)
+            // 不会调用 selectByPhone，因为是用户自己的手机号
+            verify(sysUserMapper, never()).selectByPhone(anyString())
+            verify(sysUserMapper).updateById(any<SysUser>())
         }
 
         @Test

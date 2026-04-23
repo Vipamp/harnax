@@ -76,6 +76,9 @@
         <if test='status != null'>
             AND status = #{status}
         </if>
+        <if test='isPublic != null'>
+            AND is_public = #{isPublic}
+        </if>
         ORDER BY status DESC, update_time DESC
     </select>
 

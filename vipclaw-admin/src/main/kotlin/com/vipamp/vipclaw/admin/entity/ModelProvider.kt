@@ -27,7 +27,7 @@ class ModelProvider : Serializable {
      * 服务商名称(dashscope/openai/ollama)
      */
     @Schema(description = "服务商名称(dashscope/openai/ollama)")
-    var name: String = "dashscope"
+    var name: String = ""
 
     /**
      * 显示名称

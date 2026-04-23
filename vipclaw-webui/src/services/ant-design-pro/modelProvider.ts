@@ -4,10 +4,11 @@ import { request } from '@umijs/max';
  * 模型服务商分页查询
  */
 export async function modelProviderPage(params: {
-  current?: number;
+  pageNum?: number;
   pageSize?: number;
   name?: string;
   status?: number;
+  isPublic?: number;
 }) {
   return request<API.Result<API.PageResult<API.ModelProviderItem>>>('/admin/model-providers/page', {
     method: 'GET',
@@ -66,7 +67,7 @@ export async function deleteModelProvider(id: number) {
  * 连接测试
  */
 export async function connectivityTest(id: number) {
-  return request<API.Result<boolean>>(`/admin/model-providers/${id}/connectivity-test`, {
+  return request<API.Result<boolean>>(`/admin/model-providers/${id}/test`, {
     method: 'POST',
   });
 }

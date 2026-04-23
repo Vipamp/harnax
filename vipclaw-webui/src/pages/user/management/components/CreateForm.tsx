@@ -1,18 +1,29 @@
-import React from 'react';
-import { Modal } from 'antd';
+import React, { useRef } from 'react';
+import { Modal, message } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import { ProForm, ProFormSelect, ProFormText, ProFormSwitch } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
+import * as CryptoJS from 'crypto-js';
+import { checkUsername, checkPhone, checkEmail } from '@/services/ant-design-pro/user';
 
 export interface CreateFormProps {
   onCancel: () => void;
-  onSubmit: (values: API.UserItem) => Promise<void>;
+  onSubmit: (values: API.SysUserCreateRequest) => Promise<void>;
   visible: boolean;
 }
 
 const CreateForm: React.FC<CreateFormProps> = (props) => {
   const { onCancel, onSubmit, visible } = props;
   const intl = useIntl();
+
+  const handleFinish = async (values: API.SysUserCreateRequest) => {
+    // 对密码进行前端加密（SHA-256）
+    const encryptedPassword = values.password 
+      ? CryptoJS.SHA256(values.password).toString()
+      : values.password;
+    
+    await onSubmit({ ...values, password: encryptedPassword });
+  };
 
   return (
     <Modal
@@ -38,8 +49,8 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
         },
       }}
     >
-      <ProForm<API.UserItem>
-        onFinish={onSubmit}
+      <ProForm<API.SysUserCreateRequest>
+        onFinish={handleFinish}
         submitter={{
           render: (_, dom) => [dom],
           searchConfig: {
@@ -87,6 +98,20 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
               }),
             },
           ]}
+          fieldProps={{
+            onBlur: async (e: React.FocusEvent<HTMLInputElement>) => {
+              const value = e.target.value;
+              if (!value || value.length < 3) return;
+              try {
+                const res = await checkUsername(value);
+                if (res.code === 200 && res.data) {
+                  message.error('用户名已被注册');
+                }
+              } catch (error) {
+                // 忽略错误
+              }
+            },
+          }}
         />
 
         <ProFormText.Password
@@ -141,6 +166,18 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           })}
           fieldProps={{
             type: 'email',
+            onBlur: async (e: React.FocusEvent<HTMLInputElement>) => {
+              const value = e.target.value;
+              if (!value) return;
+              try {
+                const res = await checkEmail(value);
+                if (res.code === 200 && res.data) {
+                  message.error('邮箱已被注册');
+                }
+              } catch (error) {
+                // 忽略错误
+              }
+            },
           }}
           rules={[
             {
@@ -163,6 +200,20 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             id: 'pages.user.management.phone.placeholder',
             defaultMessage: '请输入手机号',
           })}
+          fieldProps={{
+            onBlur: async (e: React.FocusEvent<HTMLInputElement>) => {
+              const value = e.target.value;
+              if (!value) return;
+              try {
+                const res = await checkPhone(value);
+                if (res.code === 200 && res.data) {
+                  message.error('手机号已被注册');
+                }
+              } catch (error) {
+                // 忽略错误
+              }
+            },
+          }}
           rules={[
             {
               pattern: /^1[3-9]\d{9}$/,

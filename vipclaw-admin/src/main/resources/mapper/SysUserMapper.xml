@@ -111,6 +111,22 @@
         LIMIT 1
     </select>
 
+    <!-- 根据手机号查询 -->
+    <select id="selectByPhone" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE phone = #{phone}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 根据邮箱查询 -->
+    <select id="selectByEmail" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE email = #{email}
+        AND active = 1
+        LIMIT 1
+    </select>
+
     <!-- 根据ID查询（校验active） -->
     <select id="selectActiveById" resultMap="SysUserResultMap">
         SELECT * FROM sys_user

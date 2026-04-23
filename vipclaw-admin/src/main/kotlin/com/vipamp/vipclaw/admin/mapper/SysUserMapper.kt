@@ -71,6 +71,22 @@ interface SysUserMapper {
     fun selectByUsername(@Param("username") username: String): SysUser?
 
     /**
+     * 根据手机号查询
+     *
+     * @param phone 手机号
+     * @return 用户实体
+     */
+    fun selectByPhone(@Param("phone") phone: String): SysUser?
+
+    /**
+     * 根据邮箱查询
+     *
+     * @param email 邮箱
+     * @return 用户实体
+     */
+    fun selectByEmail(@Param("email") email: String): SysUser?
+
+    /**
      * 根据 ID 查询（校验 active）
      *
      * @param id 用户 ID

@@ -16,11 +16,12 @@ import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
+import org.mockito.kotlin.any
 import org.mindrot.jbcrypt.BCrypt
 import java.time.LocalDateTime
 
@@ -61,7 +62,7 @@ class AuthServiceImplTest {
         testUser = SysUser().apply {
             id = 1L
             username = "testuser"
-            password = BCrypt.hashpw("password123")  // BCrypt 加密后的密码
+            password = BCrypt.hashpw("password123", BCrypt.gensalt())  // BCrypt 加密后的密码
             nickname = "测试用户"
             email = "test@example.com"
             phone = "13800138000"
@@ -92,7 +93,7 @@ class AuthServiceImplTest {
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
             `when`(jwtUtil.generateToken(anyLong(), anyString())).thenReturn("mock-jwt-token")
             `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)  // 1小时
-            `when`(sysUserMapper.updateLastLoginTime(anyLong(), any(LocalDateTime::class.java))).thenReturn(1)
+            `when`(sysUserMapper.updateLastLoginTime(anyLong(), any())).thenReturn(1)
 
             // When
             val response = authService.login(loginRequest)
@@ -106,7 +107,7 @@ class AuthServiceImplTest {
             assertEquals("测试用户", response.userInfo?.nickname)
 
             // 验证更新了登录时间
-            verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any(LocalDateTime::class.java))
+            verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any())
         }
 
         @Test
@@ -121,7 +122,7 @@ class AuthServiceImplTest {
             }
 
             // 验证不会更新登录时间
-            verify(sysUserMapper, never()).updateLastLoginTime(anyLong())
+            verify(sysUserMapper, never()).updateLastLoginTime(anyLong(), any())
         }
 
         @Test
@@ -139,7 +140,7 @@ class AuthServiceImplTest {
             }
 
             // 验证不会更新登录时间
-            verify(sysUserMapper, never()).updateLastLoginTime(anyLong())
+            verify(sysUserMapper, never()).updateLastLoginTime(anyLong(), any())
         }
 
         @Test
@@ -155,7 +156,7 @@ class AuthServiceImplTest {
             }
 
             // 验证不会更新登录时间
-            verify(sysUserMapper, never()).updateLastLoginTime(anyLong())
+            verify(sysUserMapper, never()).updateLastLoginTime(anyLong(), any())
         }
 
         @Test
@@ -171,7 +172,7 @@ class AuthServiceImplTest {
             }
 
             // 验证不会更新登录时间
-            verify(sysUserMapper, never()).updateLastLoginTime(anyLong())
+            verify(sysUserMapper, never()).updateLastLoginTime(anyLong(), any())
         }
 
         @Test
@@ -182,7 +183,7 @@ class AuthServiceImplTest {
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
             `when`(jwtUtil.generateToken(anyLong(), anyString())).thenReturn("mock-jwt-token")
             `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
-            `when`(sysUserMapper.updateLastLoginTime(anyLong(), any(LocalDateTime::class.java))).thenThrow(RuntimeException("DB error"))
+            `when`(sysUserMapper.updateLastLoginTime(anyLong(), any())).thenThrow(RuntimeException("DB error"))
 
             // When
             val response = authService.login(loginRequest)
@@ -192,7 +193,7 @@ class AuthServiceImplTest {
             assertEquals("mock-jwt-token", response.accessToken)
 
             // 验证尝试更新登录时间（即使失败也不影响登录）
-            verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any(LocalDateTime::class.java))
+            verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any())
         }
     }
 }

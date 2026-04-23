@@ -79,3 +79,39 @@ export async function deleteUser(userId: number, options?: { [key: string]: any 
     ...(options || {}),
   });
 }
+
+/** 检查用户名是否存在 GET /admin/users/check/username */
+export async function checkUsername(
+  username: string,
+  options?: { [key: string]: any },
+) {
+ return request('/admin/users/check/username', {
+   method: 'GET',
+   params: { username },
+    ...(options || {}),
+  });
+}
+
+/** 检查手机号是否存在 GET /admin/users/check/phone */
+export async function checkPhone(
+  phone: string,
+  options?: { [key: string]: any },
+) {
+ return request('/admin/users/check/phone', {
+   method: 'GET',
+   params: { phone },
+    ...(options || {}),
+  });
+}
+
+/** 检查邮箱是否存在 GET /admin/users/check/email */
+export async function checkEmail(
+  email: string,
+  options?: { [key: string]: any },
+) {
+ return request('/admin/users/check/email', {
+   method: 'GET',
+   params: { email },
+    ...(options || {}),
+  });
+}

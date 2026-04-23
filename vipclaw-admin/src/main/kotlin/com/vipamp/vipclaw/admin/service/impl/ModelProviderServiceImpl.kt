@@ -33,12 +33,12 @@ class ModelProviderServiceImpl(
 
     private val log = LoggerFactory.getLogger(ModelProviderServiceImpl::class.java)
 
-    override fun page(page: Page<ModelProvider>, name: String?, status: Int?): Page<ModelProviderResponse> {
+    override fun page(page: Page<ModelProvider>, name: String?, status: Int?, isPublic: Int?): Page<ModelProviderResponse> {
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
         // 使用 MyBatis 原生查询
-        val allProviders = modelProviderMapper.selectModelProviderList(name, status, currentUsername)
+        val allProviders = modelProviderMapper.selectModelProviderList(name, status, isPublic, currentUsername)
 
         // 手动分页
         val fromIndex = ((page.current - 1) * page.size).toInt()

@@ -20,9 +20,10 @@ interface ModelProviderService {
      * @param page     分页对象
      * @param name     服务商名称
      * @param status   状态
+     * @param isPublic 是否公开
      * @return 分页结果
      */
-    fun page(page: Page<ModelProvider>, name: String?, status: Int?): Page<ModelProviderResponse>
+    fun page(page: Page<ModelProvider>, name: String?, status: Int?, isPublic: Int?): Page<ModelProviderResponse>
 
     /**
      * 获取模型服务商详情

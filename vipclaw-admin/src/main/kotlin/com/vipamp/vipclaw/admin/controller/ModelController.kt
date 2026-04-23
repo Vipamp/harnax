@@ -32,7 +32,7 @@ class ModelController(
     @GetMapping("/page")
     @Operation(summary = "分页查询模型", description = "分页查询模型列表")
     fun page(
-        @Parameter(description = "当前页码") @RequestParam(name = "current", defaultValue = "1") current: Long?,
+        @Parameter(description = "当前页码") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Long?,
         @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Long?,
         @Parameter(description = "名称") @RequestParam(name = "name", required = false) name: String?,
         @Parameter(description = "供应商ID") @RequestParam(name = "providerId", required = false) providerId: Long?,
@@ -42,7 +42,7 @@ class ModelController(
         @Parameter(description = "最低价格") @RequestParam(name = "minPrice", required = false) minPrice: Double?,
         @Parameter(description = "最高价格") @RequestParam(name = "maxPrice", required = false) maxPrice: Double?
     ): ResultVo<Page<ModelResponse>> {
-        val page = Page<Model>(current ?: 1, pageSize ?: 10)
+        val page = Page<Model>(pageNum ?: 1, pageSize ?: 10)
         val result = modelService.page(page, name, providerId, modelType, status, tags, minPrice, maxPrice)
         return ResultVo.success(result)
     }

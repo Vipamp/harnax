@@ -32,13 +32,14 @@ class ModelProviderController(
     @GetMapping("/page")
     @Operation(summary = "分页查询模型服务商", description = "分页查询模型服务商列表")
     fun page(
-        @Parameter(description = "当前页码") @RequestParam(name = "current", defaultValue = "1") current: Long?,
+        @Parameter(description = "当前页码") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Long?,
         @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Long?,
         @Parameter(description = "服务商名称") @RequestParam(name = "name", required = false) name: String?,
-        @Parameter(description = "状态") @RequestParam(name = "status", required = false) status: Int?
+        @Parameter(description = "状态") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "是否公开") @RequestParam(name = "isPublic", required = false) isPublic: Int?
     ): ResultVo<Page<ModelProviderResponse>> {
-        val page = Page<ModelProvider>((current ?: 1), pageSize ?: 10)
-        val result = modelProviderService.page(page, name, status)
+        val page = Page<ModelProvider>((pageNum ?: 1), pageSize ?: 10)
+        val result = modelProviderService.page(page, name, status, isPublic)
         return ResultVo.success(result)
     }
 
@@ -106,7 +107,7 @@ class ModelProviderController(
     /**
      * 连接测试
      */
-    @PostMapping("/{id}/connectivity-test")
+    @PostMapping("/{id}/test")
     @Operation(summary = "连接测试", description = "测试模型服务商连接是否正常")
     fun connectivityTest(
         @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long

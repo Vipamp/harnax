@@ -30,7 +30,7 @@ class Model : Serializable {
     var providerId: Long = 0
 
     @Schema(description = "描述")
-    var description: String = ""
+    var description: String? = null
 
     @Schema(description = "模型类型（chat/embedding）")
     var modelType: String = "chat"

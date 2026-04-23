@@ -124,20 +124,22 @@ ModelProvider (模型供应商)
 
 | 字段 | 类型 | 必填 | 校验规则 | 默认值 | 说明 |
 |-----|------|------|---------|--------|------|
-| `name` | String | ❌ 否 | - 长度：0-100 | `null` | 模型名称 |
-| `modelName` | String | ❌ 否 | - 长度：0-100 | `null` | 模型技术名称 |
+| `name` | String | ✅ 是 | - 长度：1-100 | - | 模型名称 |
+| `modelName` | String | ✅ 是 | - 长度：1-100 | - | 模型技术名称 |
 | `providerId` | Long | ✅ 是 | - 必须存在 | - | 供应商 ID |
 | `description` | String | ❌ 否 | - 最大 65535 | `null` | 描述 |
 | `modelType` | String | ✅ 是 | - 枚举：chat, embedding | - | 模型类型 |
-| `supportInternet` | Int | ❌ 否 | - 枚举：0,1 | `null` | 联网能力 |
-| `supportReasoning` | Int | ❌ 否 | - 枚举：0,1 | `null` | 推理能力 |
-| `supportTool` | Int | ❌ 否 | - 枚举：0,1 | `null` | 工具能力 |
-| `supportMcp` | Int | ❌ 否 | - 枚举：0,1 | `null` | MCP 能力 |
-| `supportVision` | Int | ❌ 否 | - 枚举：0,1 | `null` | 视觉能力 |
-| `price` | Double | ❌ 否 | - ≥ 0 | `null` | 价格 |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | `null` | 状态 |
+| `supportInternet` | Int | ❌ 否 | - 枚举：0,1 | `0` | 联网能力 |
+| `supportReasoning` | Int | ❌ 否 | - 枚举：0,1 | `0` | 推理能力 |
+| `supportTool` | Int | ❌ 否 | - 枚举：0,1 | `0` | 工具能力 |
+| `supportMcp` | Int | ❌ 否 | - 枚举：0,1 | `0` | MCP 能力 |
+| `supportVision` | Int | ❌ 否 | - 枚举：0,1 | `0` | 视觉能力 |
+| `price` | Double | ❌ 否 | - ≥ 0 | `0.0` | 价格 |
+| `isPublic` | Int | ❌ 否 | - 枚举：0,1 | `1` | 是否公开 |
 
 **必填字段说明**:
+- `name`: 模型显示名称，必填
+- `modelName`: 模型技术名称，必填
 - `providerId`: 必须指定供应商
 - `modelType`: 必须指定模型类型
 
@@ -145,25 +147,24 @@ ModelProvider (模型供应商)
 
 #### 3.2.2 更新请求 (ModelUpdateRequest)
 
-| 字段 | 类型 | 必填 | 校验规则 | 默认值 | 说明 |
-|-----|------|------|---------|--------|------|
-| `id` | Long | ✅ 是 | - 路径参数 | - | 模型 ID |
-| `name` | String | ❌ 否 | - 长度：0-100 | `""` | 模型名称 |
-| `modelName` | String | ❌ 否 | - 长度：0-100 | `""` | 模型技术名称 |
-| `providerId` | Long | ❌ 否 | - 必须存在 | `0` | 供应商 ID |
-| `description` | String | ❌ 否 | - 最大 65535 | `""` | 描述 |
-| `modelType` | String | ❌ 否 | - 枚举：chat, embedding | `"chat"` | 模型类型 |
-| `supportInternet` | Int | ❌ 否 | - 枚举：0,1 | `0` | 联网能力 |
-| `supportReasoning` | Int | ❌ 否 | - 枚举：0,1 | `0` | 推理能力 |
-| `supportTool` | Int | ❌ 否 | - 枚举：0,1 | `0` | 工具能力 |
-| `supportMcp` | Int | ❌ 否 | - 枚举：0,1 | `0` | MCP 能力 |
-| `supportVision` | Int | ❌ 否 | - 枚举：0,1 | `0` | 视觉能力 |
-| `price` | Double | ❌ 否 | - ≥ 0 | `0.0` | 价格 |
-| `status` | Int | ❌ 否 | - 枚举：0,1 | `1` | 状态 |
+| 字段 | 类型 | 必填 | 校验规则 | 说明 |
+|-----|------|------|---------|------|
+| `name` | String | ❌ 否 | - 长度：1-100 | 模型名称 |
+| `modelName` | String | ❌ 否 | - 长度：1-100 | 模型技术名称 |
+| `providerId` | Long | ❌ 否 | - 必须存在 | 供应商 ID |
+| `description` | String | ❌ 否 | - 最大 65535 | 描述 |
+| `modelType` | String | ❌ 否 | - 枚举：chat, embedding | 模型类型 |
+| `supportInternet` | Int | ❌ 否 | - 枚举：0,1 | 联网能力 |
+| `supportReasoning` | Int | ❌ 否 | - 枚举：0,1 | 推理能力 |
+| `supportTool` | Int | ❌ 否 | - 枚举：0,1 | 工具能力 |
+| `supportMcp` | Int | ❌ 否 | - 枚举：0,1 | MCP 能力 |
+| `supportVision` | Int | ❌ 否 | - 枚举：0,1 | 视觉能力 |
+| `price` | Double | ❌ 否 | - ≥ 0 | 价格 |
+| `isPublic` | Int | ❌ 否 | - 枚举：0,1 | 是否公开 |
 
 **更新规则**:
-- 采用部分更新模式
-- 非必填字段可以不传，不传则不更新
+- 采用部分更新模式，所有字段为 `null` 时不更新该字段
+- `id` 为路径参数，不在 DTO 中
 
 ---
 

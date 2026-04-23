@@ -23,6 +23,10 @@ data class ModelProviderCreateRequest(
     @Schema(description = "API 密钥（敏感信息）", example = "sk-xxxxxxxxxxxxxxxx")
     val apiKey: String? = null,
     
+    @field:Pattern(
+        regexp = "^(https?:\\/\\/)?([\\w.-]+)+(:\\d+)?(\\/[^\\s]*)?$",
+        message = "API 地址格式不正确"
+    )
     @Schema(description = "API 基础地址", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
     val baseUrl: String? = null,
     

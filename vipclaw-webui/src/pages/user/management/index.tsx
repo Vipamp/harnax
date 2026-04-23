@@ -377,14 +377,20 @@ const UserManagement: React.FC = () => {
       {/* 新建用户弹窗 */}
       <CreateForm
         onCancel={() => setCreateModalVisible(false)}
-        onSubmit={async (values: API.UserItem) => {
+        onSubmit={async (values: API.SysUserCreateRequest) => {
           try {
-            await createUser(values);
-            messageApi.success('创建成功');
-            setCreateModalVisible(false);
-            loadData();
-          } catch (error) {
-            messageApi.error('创建失败，请重试');
+            const res = await createUser(values);
+            
+            // 检查后端返回的 code 字段
+            if (res.code === 200) {
+              messageApi.success('创建成功');
+              setCreateModalVisible(false);
+              loadData();
+            } else {
+              messageApi.error(res.message || '创建失败');
+            }
+          } catch (error: any) {
+            messageApi.error(error?.message || '创建失败，请重试');
           }
         }}
         visible={createModalVisible}

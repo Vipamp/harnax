@@ -114,6 +114,48 @@ class SysUserController(
         }
     }
 
+    @GetMapping("/check/username")
+    @Operation(summary = "检查用户名是否存在", description = "检查用户名是否已被注册")
+    fun checkUsername(
+        @Parameter(description = "用户名") @RequestParam(name = "username") username: String
+    ): ResultVo<Boolean> {
+        return try {
+            val exists = sysUserService.existsByUsername(username)
+            ResultVo.success(exists)
+        } catch (e: Exception) {
+            log.error("检查用户名失败", e)
+            ResultVo.error(e.message ?: "检查用户名失败")
+        }
+    }
+
+    @GetMapping("/check/phone")
+    @Operation(summary = "检查手机号是否存在", description = "检查手机号是否已被注册")
+    fun checkPhone(
+        @Parameter(description = "手机号") @RequestParam(name = "phone") phone: String
+    ): ResultVo<Boolean> {
+        return try {
+            val exists = sysUserService.existsByPhone(phone)
+            ResultVo.success(exists)
+        } catch (e: Exception) {
+            log.error("检查手机号失败", e)
+            ResultVo.error(e.message ?: "检查手机号失败")
+        }
+    }
+
+    @GetMapping("/check/email")
+    @Operation(summary = "检查邮箱是否存在", description = "检查邮箱是否已被注册")
+    fun checkEmail(
+        @Parameter(description = "邮箱") @RequestParam(name = "email") email: String
+    ): ResultVo<Boolean> {
+        return try {
+            val exists = sysUserService.existsByEmail(email)
+            ResultVo.success(exists)
+        } catch (e: Exception) {
+            log.error("检查邮箱失败", e)
+            ResultVo.error(e.message ?: "检查邮箱失败")
+        }
+    }
+
     /**
      * 分页结果转换
      */

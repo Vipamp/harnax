@@ -27,6 +27,7 @@ interface ModelProviderMapper {
     fun selectModelProviderList(
         @Param("name") name: String?,
         @Param("status") status: Int?,
+        @Param("isPublic") isPublic: Int?,
         @Param("currentUsername") currentUsername: String
     ): List<ModelProvider>
 
