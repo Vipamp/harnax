@@ -1,7 +1,10 @@
 package com.vipamp.vipclaw.admin.service.impl
 
+import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
+import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
+import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
@@ -25,40 +28,25 @@ class SysUserServiceImpl(
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
 
-    override fun getUserPage(
+    override fun page(
         keyword: String?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<SysUser> {
-        log.info("分页查询用户列表，current: {}, size: {}, keyword: {}, status: {}", current, size, keyword, status)
-
-        // 使用 MyBatis 注解查询
-        val allUsers = sysUserMapper.selectUserList(keyword, status)
-
-        // 手动分页
-        val page = Page<SysUser>(current.toLong(), size.toLong())
-        val total = allUsers.size.toLong()
-        page.total = total
-
-        val fromIndex = (current - 1) * size
-        val toIndex = minOf(fromIndex + size, allUsers.size)
-
-        if (fromIndex < allUsers.size) {
-            page.records = allUsers.subList(fromIndex, toIndex)
-        } else {
-            page.records = emptyList()
-        }
-
-        return page
+        log.info(
+            "分页查询用户列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}",
+            pageNum,
+            pageSize,
+            keyword,
+            status
+        )
+        PageHelper.startPage<Agent>(pageNum, pageSize)
+        return Page.fromPageInfo(sysUserMapper.selectUserList(keyword, status))
     }
 
-    override fun getUserById(id: Long): SysUser {
-        log.info("查询用户详情，id: {}", id)
-
-        val user = sysUserMapper.selectActiveById(id)
-            ?: throw BizException("用户不存在")
-        return user
+    override fun getSysUser(id: Long): SysUser? {
+        return sysUserMapper.selectById(id)
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -110,11 +98,11 @@ class SysUserServiceImpl(
     override fun updateUser(id: Long, request: SysUserUpdateRequest): Boolean {
         log.info("更新用户，id: {}", id)
 
-        val user = sysUserMapper.selectActiveById(id)
+        val user = sysUserMapper.selectById(id)
             ?: throw BizException("用户不存在")
 
         // 如果修改了手机号，检查是否已被其他用户使用
-        if (request.phone != null && request.phone.isNotBlank() && request.phone != user.phone) {
+        if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
             val existPhone = sysUserMapper.selectByPhone(request.phone)
             if (existPhone != null) {
                 throw BizException("手机号已存在")
@@ -122,7 +110,7 @@ class SysUserServiceImpl(
         }
 
         // 如果修改了邮箱，检查是否已被其他用户使用
-        if (request.email != null && request.email.isNotBlank() && request.email != user.email) {
+        if (!request.email.isNullOrBlank() && request.email != user.email) {
             val existEmail = sysUserMapper.selectByEmail(request.email)
             if (existEmail != null) {
                 throw BizException("邮箱已存在")
@@ -137,7 +125,7 @@ class SysUserServiceImpl(
         request.isAdmin?.let { user.isAdmin = it }
         request.avatar?.let { user.avatar = it }
         // 如果提供了密码，进行加密
-        request.password?.let { 
+        request.password?.let {
             if (it.isNotEmpty()) {
                 user.password = BCrypt.hashpw(it, BCrypt.gensalt())
             }
@@ -151,23 +139,19 @@ class SysUserServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleUserStatus(id: Long, status: Int): Boolean {
         log.info("切换用户状态，id: {}, status: {}", id, status)
-
-        val user = sysUserMapper.selectActiveById(id)
-            ?: throw BizException("用户不存在")
-
-        val result = sysUserMapper.updateStatus(id, status)
-        return result > 0
+        return sysUserMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteUser(id: Long): Boolean {
         log.info("删除用户，id: {}", id)
-
-        val user = sysUserMapper.selectActiveById(id)
+        val user = sysUserMapper.selectById(id)
             ?: throw BizException("用户不存在")
+        return sysUserMapper.deleteById(id) > 0
+    }
 
-        val result = sysUserMapper.logicalDelete(id)
-        return result > 0
+    override fun convertToResponse(sysUser: SysUser): SysUserResponse {
+        return SysUserResponse.fromEntity(sysUser)
     }
 
     override fun getByUsername(username: String): SysUser? {

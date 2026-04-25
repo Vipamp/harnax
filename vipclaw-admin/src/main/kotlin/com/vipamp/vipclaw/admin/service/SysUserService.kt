@@ -1,9 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
+import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 用户服务接口
@@ -16,13 +17,13 @@ interface SysUserService {
     /**
      * 分页查询用户列表
      *
-     * @param keyword 模糊查询字段
-     * @param status  状态筛选字段
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param keyword  模糊查询字段
+     * @param status   状态筛选字段
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getUserPage(keyword: String?, status: Int?, current: Int, size: Int): Page<SysUser>
+    fun page(keyword: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SysUser>
 
     /**
      * 获取单个用户详情
@@ -30,7 +31,7 @@ interface SysUserService {
      * @param id 用户 ID
      * @return 用户实体
      */
-    fun getUserById(id: Long): SysUser
+    fun getSysUser(id: Long): SysUser?
 
     /**
      * 创建用户
@@ -97,4 +98,12 @@ interface SysUserService {
      * @return 是否存在
      */
     fun existsByEmail(email: String): Boolean
+
+    /**
+     * 将用户实体转换为响应对象
+     *
+     * @param sysUser 用户实体
+     * @return 用户响应对象
+     */
+    fun convertToResponse(sysUser: SysUser): SysUserResponse
 }

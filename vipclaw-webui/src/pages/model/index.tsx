@@ -73,40 +73,57 @@ const ModelManagement: React.FC = () => {
   }, []);
 
   // 切换服务商状态
-  const handleToggleProvider = async (id: number) => {
+  const handleToggleProvider = async (id: number, currentStatus: number) => {
     try {
-      await toggleModelProvider(id);
-      message.success('状态切换成功');
-      // 只更新当前卡片状态，不重新加载整个列表
-      setProviders((prevProviders) =>
-        prevProviders.map((provider) =>
-          provider.id === id
-            ? { ...provider, status: provider.status === 1 ? 0 : 1 }
-            : provider
-        )
-      );
-      // 如果当前选中的服务商被切换，也更新选中状态
-      if (selectedProvider?.id === id) {
-        setSelectedProvider((prev) =>
-          prev ? { ...prev, status: prev.status === 1 ? 0 : 1 } : null
+      const newStatus = currentStatus === 1 ? 0 : 1;
+      const response = await toggleModelProvider(id, newStatus);
+      
+      if (response.code === 200) {
+        message.success('状态切换成功');
+        // 只更新当前卡片状态，不重新加载整个列表
+        setProviders((prevProviders) =>
+          prevProviders.map((provider) =>
+            provider.id === id
+              ? { ...provider, status: newStatus }
+              : provider
+          )
         );
+        // 如果当前选中的服务商被切换，也更新选中状态
+        if (selectedProvider?.id === id) {
+          setSelectedProvider((prev) =>
+            prev ? { ...prev, status: prev.status === 1 ? 0 : 1 } : null
+          );
+        }
+      } else {
+        const errorMsg = response.message || '状态切换失败';
+        message.error(errorMsg);
       }
-    } catch (error) {
-      message.error('状态切换失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '状态切换失败';
+      message.error(errorMsg);
     }
   };
 
   // 删除服务商
   const handleDeleteProvider = async (id: number) => {
     try {
-      await deleteModelProvider(id);
-      message.success('删除成功');
-      if (selectedProvider?.id === id) {
-        setSelectedProvider(null);
+      const response = await deleteModelProvider(id);
+      
+      // 检查返回结果
+      if (response.code === 200) {
+        message.success('删除成功');
+        if (selectedProvider?.id === id) {
+          setSelectedProvider(null);
+        }
+        loadProviders();
+      } else {
+        // 显示后端返回的错误信息
+        const errorMsg = response.message || '删除失败';
+        message.error(errorMsg);
       }
-      loadProviders();
-    } catch (error) {
-      message.error('删除失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      message.error(errorMsg);
     }
   };
 
@@ -114,13 +131,14 @@ const ModelManagement: React.FC = () => {
   const handleConnectivityTest = async (id: number) => {
     try {
       const response = await connectivityTest(id);
-      if (response.data) {
+      if (response.code === 200 && response.data) {
         message.success('连接测试成功');
       } else {
-        message.error('连接测试失败');
+        message.error(response.message || '连接测试失败');
       }
-    } catch (error) {
-      message.error('连接测试失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '连接测试失败';
+      message.error(errorMsg);
     }
   };
 
@@ -229,7 +247,7 @@ const ModelManagement: React.FC = () => {
                 <span>
                   模型列表
                   <Tag color="blue" style={{ marginLeft: 8 }}>
-                    {selectedProvider.displayName}
+                    {selectedProvider.name}
                   </Tag>
                 </span>
               ) : (

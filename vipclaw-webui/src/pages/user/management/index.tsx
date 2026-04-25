@@ -19,7 +19,7 @@ const UserManagement: React.FC = () => {
   const [tableLoading, setTableLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.UserItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [current, setCurrent] = useState<number>(1);
+  const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
@@ -28,7 +28,7 @@ const UserManagement: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
 
   /** 加载数据 */
-  const loadData = async (page = current, size = pageSize) => {
+  const loadData = async (page = pageNum, size = pageSize) => {
     setTableLoading(true);
     try {
       const res = await getUserPage({
@@ -48,11 +48,11 @@ const UserManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [current, pageSize]);
+  }, [pageNum, pageSize]);
 
   /** 搜索 */
   const handleSearch = () => {
-    setCurrent(1);
+    setPageNum(1);
     loadData(1);
   };
 
@@ -79,23 +79,30 @@ const UserManagement: React.FC = () => {
         const hide = message.loading('正在删除');
         if (!userId) return;
         try {
-          await deleteUser(userId);
+          const response = await deleteUser(userId);
           hide();
-          messageApi.success(
-            intl.formatMessage({
-              id: 'pages.user.management.deleteSuccess',
-              defaultMessage: '删除成功',
-            }),
-          );
-          loadData();
-        } catch (error) {
-          hide();
-          messageApi.error(
-            intl.formatMessage({
+          if (response.code === 200) {
+            messageApi.success(
+              intl.formatMessage({
+                id: 'pages.user.management.deleteSuccess',
+                defaultMessage: '删除成功',
+              }),
+            );
+            loadData();
+          } else {
+            const errorMsg = response.message || intl.formatMessage({
               id: 'pages.user.management.deleteFailed',
               defaultMessage: '删除失败，请重试',
-            }),
-          );
+            });
+            messageApi.error(errorMsg);
+          }
+        } catch (error: any) {
+          hide();
+          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({
+            id: 'pages.user.management.deleteFailed',
+            defaultMessage: '删除失败，请重试',
+          });
+          messageApi.error(errorMsg);
         }
       },
     });
@@ -334,7 +341,7 @@ const UserManagement: React.FC = () => {
           <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
             查询
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setCurrent(1); loadData(1); }} style={{ borderRadius: '8px' }}>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
             重置
           </Button>
           <div style={{ flex: 1 }} />
@@ -357,14 +364,14 @@ const UserManagement: React.FC = () => {
         rowKey="id"
         loading={tableLoading}
         pagination={{
-          current,
+          current: pageNum,
           pageSize,
           total,
           showSizeChanger: true,
           showQuickJumper: true,
           showTotal: (t) => `共 ${t} 条`,
           onChange: (page, size) => {
-            setCurrent(page);
+            setPageNum(page);
             if (size) setPageSize(size);
           },
         }}

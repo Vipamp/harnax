@@ -1,21 +1,21 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
-import com.vipamp.vipclaw.common.page.Page
-import java.time.LocalDateTime
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
+import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
+import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.McpServer
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.McpServerMapper
 import com.vipamp.vipclaw.admin.service.McpServerService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.util.StringUtils.hasText
-import kotlin.math.min
 
 /**
  * MCP 服务实现类
@@ -31,17 +31,17 @@ class McpServerServiceImpl(
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
 
-    override fun getMcpServerPage(
+    override fun page(
         keyword: String?,
         status: Int?,
         types: String?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<McpServer> {
         log.info(
-            "分页查询 MCP 服务列表，current: {}, size: {}, keyword: {}, status: {}, types: {}",
-            current,
-            size,
+            "分页查询 MCP 服务列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, types: {}",
+            pageNum,
+            pageSize,
             keyword,
             status,
             types
@@ -56,30 +56,12 @@ class McpServerServiceImpl(
         } else {
             null
         }
-
-        // 使用 MyBatis 原生查询
-        val allMcpServers = mcpServerMapper.selectMcpServerList(keyword, status, typesSql, currentUsername)
-
-        // 手动分页
-        val page = Page<McpServer>(current.toLong(), size.toLong())
-        val fromIndex = (current - 1) * size
-        val toIndex = min(fromIndex + size, allMcpServers.size)
-        
-        page.records = if (fromIndex < allMcpServers.size) {
-            allMcpServers.subList(fromIndex, toIndex)
-        } else {
-            emptyList()
-        }
-        page.total = allMcpServers.size.toLong()
-
-        return page
+        PageHelper.startPage<Agent>(pageNum, pageSize)
+        return Page.fromPageInfo(mcpServerMapper.selectMcpServerList(keyword, status, typesSql, currentUsername))
     }
 
-    override fun getMcpServerById(id: Long): McpServer {
-        log.info("查询 MCP 服务详情，id: {}", id)
-        val mcpServer = this.mcpServerMapper.selectById(id)
-            ?: throw BizException("MCP 服务不存在")
-        return mcpServer
+    override fun getMcpServer(id: Long): McpServer? {
+        return this.mcpServerMapper.selectById(id)
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -96,7 +78,7 @@ class McpServerServiceImpl(
         validateTypeAndFields(request.type, request.command, request.url)
 
         val mcpServer = McpServer()
-        mcpServer.name = request.name!!
+        mcpServer.name = request.name
         mcpServer.description = request.description!!
         mcpServer.type = request.type!!
         mcpServer.command = request.command!!
@@ -117,7 +99,7 @@ class McpServerServiceImpl(
     override fun updateMcpServer(id: Long, request: McpServerUpdateRequest): Boolean {
         log.info("更新 MCP 服务，id: {}", id)
 
-        val mcpServer = mcpServerMapper.selectActiveById(id)
+        val mcpServer = mcpServerMapper.selectById(id)
             ?: throw BizException("MCP 服务不存在")
 
         // 如果修改了名称，需校验唯一性
@@ -136,7 +118,6 @@ class McpServerServiceImpl(
         }
         request.command.let { mcpServer.command = it }
         request.url.let { mcpServer.url = it }
-        request.status.let { mcpServer.status = it }
         request.isPublic.let { mcpServer.isPublic = it }
 
         // 校验更新后 type 与字段的联动逻辑
@@ -151,7 +132,7 @@ class McpServerServiceImpl(
     override fun toggleMcpServerStatus(id: Long, status: Int): Boolean {
         log.info("切换 MCP 服务状态，id: {}, status: {}", id, status)
 
-        val mcpServer = mcpServerMapper.selectActiveById(id)
+        val mcpServer = mcpServerMapper.selectById(id)
             ?: throw BizException("MCP 服务不存在")
 
         val success = mcpServerMapper.updateStatus(id, status) > 0
@@ -163,10 +144,10 @@ class McpServerServiceImpl(
     override fun deleteMcpServer(id: Long): Boolean {
         log.info("删除 MCP 服务，id: {}", id)
 
-        val mcpServer = mcpServerMapper.selectActiveById(id)
+        val mcpServer = mcpServerMapper.selectById(id)
             ?: throw BizException("MCP 服务不存在")
 
-        val success = mcpServerMapper.logicalDelete(id) > 0
+        val success = mcpServerMapper.deleteById(id) > 0
         log.info("MCP 服务删除{}，id: {}", if (success) "成功" else "失败", id)
         return success
     }
@@ -206,5 +187,9 @@ class McpServerServiceImpl(
                 throw BizException("不支持的 MCP 类型：$type，仅支持 stdio/sse/streamablehttp")
             }
         }
+    }
+
+    override fun convertToResponse(mcpServer: McpServer): McpServerResponse {
+        return McpServerResponse.fromEntity(mcpServer)
     }
 }

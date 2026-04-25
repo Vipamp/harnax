@@ -22,11 +22,6 @@ abstract class ToolBox {
      */
     abstract fun name(): String
 
-    /**
-     * 获取危险工具列表（需要用户确认的工具）
-     */
-    open fun dangerousTools(): Set<String> = emptySet()
-
     fun init(
         toolCallLogAdaptor: ToolCallLogAdaptor,
         sessionMetaContext: SessionMetaContext,

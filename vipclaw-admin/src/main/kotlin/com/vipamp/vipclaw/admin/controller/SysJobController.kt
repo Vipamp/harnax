@@ -1,13 +1,10 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.vipamp.vipclaw.common.page.Page
-import com.vipamp.vipclaw.admin.dto.ResultVo
-import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
-import com.vipamp.vipclaw.admin.dto.SysJobLogResponse
-import com.vipamp.vipclaw.admin.dto.SysJobResponse
-import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
+import com.vipamp.vipclaw.admin.dto.*
 import com.vipamp.vipclaw.admin.service.SysJobLogService
 import com.vipamp.vipclaw.admin.service.SysJobService
+import com.vipamp.vipclaw.common.page.Page
+import com.vipamp.vipclaw.common.page.mapRecords
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -35,16 +32,27 @@ class SysJobController(
 
     @GetMapping("/page")
     @Operation(summary = "分页获取定时任务列表", description = "分页查询定时任务信息")
-    fun getJobPage(
-        @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
-        @Parameter(description = "模糊查询字段（任务名称）") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "状态筛选字段（0-暂停，1-运行）") @RequestParam(name = "jobStatus", required = false) jobStatus: Int?
+    fun pageSysJob(
+        @Parameter(description = "页码", example = "1") @RequestParam(
+            name = "pageNum",
+            defaultValue = "1"
+        ) pageNum: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "pageSize",
+            defaultValue = "10"
+        ) pageSize: Int?,
+        @Parameter(description = "模糊查询字段（任务名称）") @RequestParam(
+            name = "keyword",
+            required = false
+        ) keyword: String?,
+        @Parameter(description = "状态筛选字段（0-暂停，1-运行）") @RequestParam(
+            name = "jobStatus",
+            required = false
+        ) jobStatus: Int?
     ): ResultVo<Page<SysJobResponse>> {
         return try {
-            val page = sysJobService.getJobPage(keyword, jobStatus, pageNum ?: 1, pageSize ?: 10)
-            val responsePage = convertToResponsePage(page)
-            ResultVo.success(responsePage)
+            val page = sysJobService.page(keyword, jobStatus, pageNum ?: 1, pageSize ?: 10)
+            ResultVo.success(page.mapRecords { SysJobResponse.fromEntity(it) })
         } catch (e: Exception) {
             log.error("获取定时任务列表失败", e)
             ResultVo.error(e.message ?: "获取定时任务列表失败")
@@ -53,11 +61,11 @@ class SysJobController(
 
     @GetMapping("/{id}")
     @Operation(summary = "获取定时任务详情", description = "根据任务 ID 获取任务信息")
-    fun getJobById(
+    fun getSysJob(
         @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long
-    ): ResultVo<SysJobResponse> {
+    ): ResultVo<SysJobResponse?> {
         return try {
-            val job = sysJobService.getJobById(id)
+            val job = sysJobService.getSysJob(id)
             ResultVo.success(SysJobResponse.fromEntity(job))
         } catch (e: Exception) {
             log.error("获取定时任务详情失败", e)
@@ -78,66 +86,66 @@ class SysJobController(
         }
     }
 
-    @PutMapping("/update/{jobId}")
+    @PutMapping("/update/{id}")
     @Operation(summary = "更新定时任务", description = "根据任务 ID 更新任务信息")
-    fun updateJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "jobId") jobId: Long,
+    fun updateSysJob(
+        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SysJobUpdateRequest
     ): ResultVo<Void> {
         return try {
-            if (sysJobService.updateJob(jobId, request)) ResultVo.success() else ResultVo.error("更新定时任务失败")
+            if (sysJobService.updateJob(id, request)) ResultVo.success() else ResultVo.error("更新定时任务失败")
         } catch (e: Exception) {
             log.error("更新定时任务失败", e)
             ResultVo.error(e.message ?: "更新定时任务失败")
         }
     }
 
-    @DeleteMapping("/{jobId}")
+    @DeleteMapping("/{id}")
     @Operation(summary = "删除定时任务", description = "根据任务 ID 删除任务")
-    fun deleteJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "jobId") jobId: Long
+    fun deleteSysJob(
+        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
         return try {
-            if (sysJobService.deleteJob(jobId)) ResultVo.success() else ResultVo.error("删除定时任务失败")
+            if (sysJobService.deleteJob(id)) ResultVo.success() else ResultVo.error("删除定时任务失败")
         } catch (e: Exception) {
             log.error("删除定时任务失败", e)
             ResultVo.error(e.message ?: "删除定时任务失败")
         }
     }
 
-    @PostMapping("/start/{jobId}")
+    @PostMapping("/start/{id}")
     @Operation(summary = "启动定时任务", description = "启动指定的定时任务")
     fun startJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "jobId") jobId: Long
+        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
         return try {
-            if (sysJobService.startJob(jobId)) ResultVo.success() else ResultVo.error("启动定时任务失败")
+            if (sysJobService.startJob(id)) ResultVo.success() else ResultVo.error("启动定时任务失败")
         } catch (e: Exception) {
             log.error("启动定时任务失败", e)
             ResultVo.error(e.message ?: "启动定时任务失败")
         }
     }
 
-    @PostMapping("/pause/{jobId}")
+    @PostMapping("/pause/{id}")
     @Operation(summary = "暂停定时任务", description = "暂停指定的定时任务")
     fun pauseJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "jobId") jobId: Long
+        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
         return try {
-            if (sysJobService.pauseJob(jobId)) ResultVo.success() else ResultVo.error("暂停定时任务失败")
+            if (sysJobService.pauseJob(id)) ResultVo.success() else ResultVo.error("暂停定时任务失败")
         } catch (e: Exception) {
             log.error("暂停定时任务失败", e)
             ResultVo.error(e.message ?: "暂停定时任务失败")
         }
     }
 
-    @PostMapping("/run/{jobId}")
+    @PostMapping("/run/{id}")
     @Operation(summary = "立即执行定时任务", description = "立即执行一次指定的定时任务")
     fun runJobOnce(
-        @Parameter(description = "任务 ID") @PathVariable(name = "jobId") jobId: Long
+        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
         return try {
-            if (sysJobService.runJobOnce(jobId)) ResultVo.success() else ResultVo.error("执行定时任务失败")
+            if (sysJobService.runJobOnce(id)) ResultVo.success() else ResultVo.error("执行定时任务失败")
         } catch (e: Exception) {
             log.error("立即执行定时任务失败", e)
             ResultVo.error(e.message ?: "执行定时任务失败")
@@ -146,48 +154,44 @@ class SysJobController(
 
     @GetMapping("/logs")
     @Operation(summary = "分页获取定时任务日志列表", description = "分页查询定时任务执行日志")
-    fun getJobLogPage(
-        @Parameter(description = "页码", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+    fun pageSysJobLog(
+        @Parameter(description = "页码", example = "1") @RequestParam(
+            name = "pageNum",
+            defaultValue = "1"
+        ) pageNum: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "pageSize",
+            defaultValue = "10"
+        ) pageSize: Int?,
         @Parameter(description = "任务 ID") @RequestParam(name = "jobId", required = false) jobId: Long?,
         @Parameter(description = "任务名称") @RequestParam(name = "jobName", required = false) jobName: String?,
-        @Parameter(description = "执行状态（0-失败，1-成功）") @RequestParam(name = "status", required = false) status: Int?,
-        @Parameter(description = "开始时间") @RequestParam(name = "startTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") startTime: LocalDateTime?,
-        @Parameter(description = "结束时间") @RequestParam(name = "endTime", required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") endTime: LocalDateTime?
+        @Parameter(description = "执行状态（0-失败，1-成功）") @RequestParam(
+            name = "status",
+            required = false
+        ) status: Int?,
+        @Parameter(description = "开始时间") @RequestParam(
+            name = "startTime",
+            required = false
+        ) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") startTime: LocalDateTime?,
+        @Parameter(description = "结束时间") @RequestParam(
+            name = "endTime",
+            required = false
+        ) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") endTime: LocalDateTime?
     ): ResultVo<Page<SysJobLogResponse>> {
         return try {
-            val page = sysJobLogService.getJobLogPage(jobId, jobName, status, startTime, endTime, pageNum ?: 1, pageSize ?: 10)
-            val responsePage = convertToLogResponsePage(page)
-            ResultVo.success(responsePage)
+            val page = sysJobLogService.getJobLogPage(
+                jobId,
+                jobName,
+                status,
+                startTime,
+                endTime,
+                pageNum ?: 1,
+                pageSize ?: 10
+            )
+            ResultVo.success(page.mapRecords { SysJobLogResponse.fromEntity(it) })
         } catch (e: Exception) {
             log.error("获取定时任务日志列表失败", e)
             ResultVo.error(e.message ?: "获取定时任务日志列表失败")
         }
-    }
-
-    /**
-     * 分页结果转换
-     */
-    private fun convertToResponsePage(page: Page<com.vipamp.vipclaw.admin.entity.SysJob>): Page<SysJobResponse> {
-        val responsePage = Page<SysJobResponse>(page.current, page.size)
-        responsePage.total = page.total
-        responsePage.size = page.size
-        responsePage.current = page.current
-        responsePage.pages = page.pages
-        responsePage.records = page.records.map { SysJobResponse.fromEntity(it) }
-        return responsePage
-    }
-
-    /**
-     * 日志分页结果转换
-     */
-    private fun convertToLogResponsePage(page: Page<com.vipamp.vipclaw.admin.entity.SysJobLog>): Page<SysJobLogResponse> {
-        val responsePage = Page<SysJobLogResponse>(page.current, page.size)
-        responsePage.total = page.total
-        responsePage.size = page.size
-        responsePage.current = page.current
-        responsePage.pages = page.pages
-        responsePage.records = page.records.map { SysJobLogResponse.fromEntity(it) }
-        return responsePage
     }
 }

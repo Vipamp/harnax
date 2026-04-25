@@ -23,15 +23,15 @@ interface ModelProviderMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
+    fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
     // ==================== 自定义查询方法 ====================
     fun selectModelProviderList(
-        @Param("name") name: String?,
+        @Param("type") type: String?,
         @Param("status") status: Int?,
         @Param("isPublic") isPublic: Int?,
         @Param("currentUsername") currentUsername: String
     ): List<ModelProvider>
 
-    fun countByName(@Param("name") name: String): Int
-
-    fun selectActiveById(@Param("id") id: Long): ModelProvider?
+    fun countByType(@Param("type") type: String): Int
 }

@@ -21,22 +21,17 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="SkillRepositoryResultMap">
-        SELECT * FROM skill_repository WHERE id = #{id} LIMIT 1
+        SELECT * FROM skill_repository WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
-        UPDATE skill_repository SET active = 0 WHERE id = #{id}
+        UPDATE skill_repository SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectActiveRepositories -->
     <select id="selectActiveRepositories" resultMap="SkillRepositoryResultMap">
         SELECT * FROM skill_repository WHERE active = 1 AND status = 1 ORDER BY update_time DESC
-    </select>
-
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="SkillRepositoryResultMap">
-        SELECT * FROM skill_repository WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- selectByName -->
@@ -47,11 +42,6 @@
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE skill_repository SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
-    <!-- logicalDelete -->
-    <update id="logicalDelete">
-        UPDATE skill_repository SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- insert -->
@@ -71,7 +61,6 @@
         url = #{url},
         branch = #{branch},
         description = #{description},
-        status = #{status},
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},

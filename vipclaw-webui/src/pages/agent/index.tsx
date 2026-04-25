@@ -489,7 +489,7 @@ const AgentManagement: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.AgentItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [current, setCurrent] = useState<number>(1);
+  const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(12);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
@@ -499,7 +499,7 @@ const AgentManagement: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
 
   /** 加载数据 */
-  const loadData = async (page = current, size = pageSize) => {
+  const loadData = async (page = pageNum, size = pageSize) => {
     setLoading(true);
     try {
       const res = await getAgentPage({
@@ -519,11 +519,11 @@ const AgentManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [current, pageSize, status]);
+  }, [pageNum, pageSize, status]);
 
   /** 搜索 */
   const handleSearch = () => {
-    setCurrent(1);
+    setPageNum(1);
     loadData(1);
   };
 
@@ -537,11 +537,17 @@ const AgentManagement: React.FC = () => {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteAgent(id);
-          messageApi.success('删除成功');
-          loadData();
-        } catch (error) {
-          messageApi.error('删除失败，请重试');
+          const response = await deleteAgent(id);
+          if (response.code === 200) {
+            messageApi.success('删除成功');
+            loadData();
+          } else {
+            const errorMsg = response.message || '删除失败，请重试';
+            messageApi.error(errorMsg);
+          }
+        } catch (error: any) {
+          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          messageApi.error(errorMsg);
         }
       },
     });
@@ -624,7 +630,7 @@ const AgentManagement: React.FC = () => {
               查询
             </Button>
             <Button 
-              onClick={() => { setKeyword(''); setStatus(undefined); setCurrent(1); loadData(1); }} 
+              onClick={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }} 
               style={{ 
                 borderRadius: '10px',
                 height: '40px',
@@ -678,14 +684,14 @@ const AgentManagement: React.FC = () => {
           {/* 分页 */}
           <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
             <Pagination
-              current={current}
+              current={pageNum}
               pageSize={pageSize}
               total={total}
               showSizeChanger
               showQuickJumper
               showTotal={(t) => `共 ${t} 条`}
               onChange={(page, size) => {
-                setCurrent(page);
+                setPageNum(page);
                 if (size) setPageSize(size);
               }}
               style={{ padding: '12px 24px', background: '#fff', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}

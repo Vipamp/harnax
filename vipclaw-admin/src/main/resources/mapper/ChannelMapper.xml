@@ -57,10 +57,14 @@
         type = #{type},
         callback_url = #{callbackUrl},
         callback_key = #{callbackKey},
-        status = #{status},
         active = #{active},
         update_time = #{updateTime}
         WHERE id = #{id}
+    </update>
+
+    <!-- updateStatus -->
+    <update id="updateStatus">
+        UPDATE channel SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectChannelList -->

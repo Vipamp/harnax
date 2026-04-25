@@ -50,15 +50,25 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         isPublic: formValues.isPublic ? 1 : 0,
       };
       if (values) {
-        await updateSkillRepository(values.id, data);
-        message.success('更新成功');
+        const response = await updateSkillRepository(values.id, data);
+        if (response.code === 200) {
+          message.success('更新成功');
+          onSuccess();
+        } else {
+          message.error(response.message || '更新失败');
+        }
       } else {
-        await createSkillRepository(data);
-        message.success('创建成功');
+        const response = await createSkillRepository(data);
+        if (response.code === 200) {
+          message.success('创建成功');
+          onSuccess();
+        } else {
+          message.error(response.message || '创建失败');
+        }
       }
-      onSuccess();
-    } catch (error) {
-      message.error('操作失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '操作失败';
+      message.error(errorMsg);
     } finally {
       setLoading(false);
     }

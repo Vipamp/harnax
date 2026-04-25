@@ -22,7 +22,7 @@ const JobLog: React.FC = () => {
   const [tableLoading, setTableLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.JobLogItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [current, setCurrent] = useState<number>(1);
+  const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [jobName, setJobName] = useState<string>(searchParams.get('jobName') || '');
   const [jobId, setJobId] = useState<number | undefined>(
@@ -34,7 +34,7 @@ const JobLog: React.FC = () => {
   const [messageApi, contextHolder] = message.useMessage();
 
   /** 加载数据 */
-  const loadData = async (page = current, size = pageSize) => {
+  const loadData = async (page = pageNum, size = pageSize) => {
     setTableLoading(true);
     try {
       const res = await getJobLogPage({
@@ -57,11 +57,11 @@ const JobLog: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [current, pageSize]);
+  }, [pageNum, pageSize]);
 
   /** 搜索 */
   const handleSearch = () => {
-    setCurrent(1);
+    setPageNum(1);
     loadData(1);
   };
 
@@ -244,7 +244,7 @@ const JobLog: React.FC = () => {
               setJobId(undefined);
               setStatus(undefined);
               setDateRange(null);
-              setCurrent(1);
+              setPageNum(1);
               loadData(1);
             }}
             style={{ borderRadius: '8px' }}
@@ -259,14 +259,14 @@ const JobLog: React.FC = () => {
         rowKey="id"
         loading={tableLoading}
         pagination={{
-          current,
+          current: pageNum,
           pageSize,
           total,
           showSizeChanger: true,
           showQuickJumper: true,
           showTotal: (t) => `共 ${t} 条`,
           onChange: (page, size) => {
-            setCurrent(page);
+            setPageNum(page);
             if (size) setPageSize(size);
           },
         }}

@@ -35,21 +35,21 @@ class SysJobLogServiceImpl(
         status: Int?,
         startTime: LocalDateTime?,
         endTime: LocalDateTime?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<SysJobLog> {
         log.info(
-            "分页查询定时任务日志列表，current: {}, size: {}, jobId: {}, jobName: {}, status: {}",
-            current, size, jobId, jobName, status
+            "分页查询定时任务日志列表，pageNum: {}, pageSize: {}, jobId: {}, jobName: {}, status: {}",
+            pageNum, pageSize, jobId, jobName, status
         )
 
         // 使用 MyBatis 原生查询
         val allLogs = sysJobLogMapper.selectJobLogList(jobId, jobName, status, startTime, endTime)
 
         // 手动分页
-        val page = Page<SysJobLog>(current.toLong(), size.toLong())
-        val fromIndex = (current - 1) * size
-        val toIndex = min(fromIndex + size, allLogs.size)
+        val page = Page<SysJobLog>(pageNum.toLong(), pageSize.toLong())
+        val fromIndex = (pageNum - 1) * pageSize
+        val toIndex = min(fromIndex + pageSize, allLogs.size)
         
         page.records = if (fromIndex < allLogs.size) {
             allLogs.subList(fromIndex, toIndex)

@@ -26,6 +26,7 @@
     <select id="selectById" resultMap="SysUserResultMap">
         SELECT * FROM sys_user
         WHERE id = #{id}
+        AND active = 1
         LIMIT 1
     </select>
 
@@ -70,7 +71,6 @@
         phone = #{phone},
         gender = #{gender},
         avatar = #{avatar},
-        status = #{status},
         is_admin = #{isAdmin},
         active = #{active},
         update_time = #{updateTime}
@@ -79,8 +79,9 @@
 
     <!-- 根据ID删除（逻辑删除） -->
     <update id="deleteById">
-        UPDATE sys_user SET active = 0
+        UPDATE sys_user SET active = 0, update_time = NOW()
         WHERE id = #{id}
+        AND active = 1
     </update>
 
     <!-- ==================== 自定义查询方法 ==================== -->
@@ -127,27 +128,10 @@
         LIMIT 1
     </select>
 
-    <!-- 根据ID查询（校验active） -->
-    <select id="selectActiveById" resultMap="SysUserResultMap">
-        SELECT * FROM sys_user
-        WHERE id = #{id}
-        AND active = 1
-        LIMIT 1
-    </select>
-
     <!-- 更新用户状态 -->
     <update id="updateStatus">
         UPDATE sys_user SET
         status = #{status},
-        update_time = NOW()
-        WHERE id = #{id}
-        AND active = 1
-    </update>
-
-    <!-- 逻辑删除用户 -->
-    <update id="logicalDelete">
-        UPDATE sys_user SET
-        active = 0,
         update_time = NOW()
         WHERE id = #{id}
         AND active = 1

@@ -16,13 +16,13 @@ interface SessionService {
     /**
      * 分页查询会话列表
      *
-     * @param keyword 模糊查询字段
-     * @param status  状态筛选字段
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param keyword  模糊查询字段
+     * @param status   状态筛选字段
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getSessionPage(keyword: String?, status: Int?, current: Int, size: Int): Page<Session>
+    fun page(keyword: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Session>
 
     /**
      * 获取单个会话详情
@@ -30,7 +30,7 @@ interface SessionService {
      * @param id 会话 ID
      * @return 会话实体
      */
-    fun getSessionById(id: Long): Session
+    fun getSession(id: Long): Session?
 
     /**
      * 创建会话
@@ -39,6 +39,15 @@ interface SessionService {
      * @return 创建结果
      */
     fun createSession(request: SessionCreateRequest): Boolean
+
+    /**
+     * 更新会话
+     *
+     * @param id      会话 ID
+     * @param request 会话更新请求对象
+     * @return 更新结果
+     */
+    fun updateSession(id: Long, request: SessionCreateRequest): Boolean
 
     /**
      * 切换会话启用状态

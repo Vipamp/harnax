@@ -32,4 +32,6 @@ interface SysJobLogMapper {
         @Param("startTime") startTime: LocalDateTime?,
         @Param("endTime") endTime: LocalDateTime?
     ): List<SysJobLog>
+
+    fun selectByJobId(@Param("jobId") jobId: Long): List<SysJobLog>
 }

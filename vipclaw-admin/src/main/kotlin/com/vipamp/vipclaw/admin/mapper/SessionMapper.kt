@@ -33,8 +33,6 @@ interface SessionMapper {
 
     fun countByTitle(@Param("title") title: String): Int
 
-    fun selectActiveById(@Param("id") id: Long): Session?
-
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     fun selectBySessionIdAndStatus(@Param("sessionId") sessionId: String, @Param("status") status: Int): Session?

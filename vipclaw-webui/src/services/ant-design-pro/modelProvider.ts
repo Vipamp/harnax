@@ -48,9 +48,10 @@ export async function updateModelProvider(id: number, data: API.ModelProviderUpd
 /**
  * 切换模型服务商状态
  */
-export async function toggleModelProvider(id: number) {
+export async function toggleModelProvider(id: number, status: number) {
   return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/toggle/${id}`, {
     method: 'PUT',
+    params: { status },
   });
 }
 

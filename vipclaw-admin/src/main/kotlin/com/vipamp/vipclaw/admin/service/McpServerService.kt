@@ -1,9 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
+import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
 import com.vipamp.vipclaw.admin.entity.McpServer
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * MCP 服务接口
@@ -16,14 +17,14 @@ interface McpServerService {
     /**
      * 分页查询 MCP 服务列表
      *
-     * @param keyword 模糊查询字段（名称/描述）
-     * @param status  状态筛选字段
-     * @param types   类型筛选字段（逗号分隔，如：stdio,sse）
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param keyword  模糊查询字段（名称/描述）
+     * @param status   状态筛选字段
+     * @param types    类型筛选字段（逗号分隔，如：stdio,sse）
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getMcpServerPage(keyword: String?, status: Int?, types: String?, current: Int, size: Int): Page<McpServer>
+    fun page(keyword: String?, status: Int?, types: String?, pageNum: Int, pageSize: Int): Page<McpServer>
 
     /**
      * 获取单个 MCP 服务详情
@@ -31,7 +32,7 @@ interface McpServerService {
      * @param id MCP ID
      * @return MCP 服务实体
      */
-    fun getMcpServerById(id: Long): McpServer
+    fun getMcpServer(id: Long): McpServer?
 
     /**
      * 创建 MCP 服务
@@ -74,4 +75,12 @@ interface McpServerService {
      * @return 连通测试结果（true: 成功，false: 失败）
      */
     fun connectivityTest(id: Long): Boolean
+
+    /**
+     * 将 MCP 服务实体转换为响应对象
+     *
+     * @param mcpServer MCP 服务实体
+     * @return MCP 服务响应对象
+     */
+    fun convertToResponse(mcpServer: McpServer): McpServerResponse
 }

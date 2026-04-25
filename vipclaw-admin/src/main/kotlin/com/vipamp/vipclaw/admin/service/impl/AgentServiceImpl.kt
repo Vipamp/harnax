@@ -39,159 +39,15 @@ class AgentServiceImpl(
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
     private val objectMapper = ObjectMapper()
 
-    override fun getAgentPage(
+    override fun page(
         name: String?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<Agent> {
-        // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-
-        // 使用 PageHelper 分页
-        PageHelper.startPage<Agent>(current, size)
-        val agents = agentMapper.selectAgentList(name, status, currentUsername)
-
-        // 转换为 PageInfo
-        val pageInfo = com.github.pagehelper.PageInfo(agents)
-        return Page.fromPageInfo(pageInfo)
-    }
-
-    override fun getAgentById(id: Long): Agent? {
-        return agentMapper.selectById(id)
-    }
-
-    fun save(agent: Agent): Boolean {
-        return agentMapper.insert(agent) > 0
-    }
-
-    fun updateById(agent: Agent): Boolean {
-        agent.updateTime = LocalDateTime.now()
-        return agentMapper.updateById(agent) > 0
-    }
-
-    fun removeById(id: Long): Boolean {
-        return agentMapper.deleteById(id) > 0
-    }
-
-    /**
-     * 将 Agent 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
-     */
-    override fun convertToResponse(agent: Agent?): AgentResponse? {
-        if (agent == null) {
-            return null
-        }
-
-        val response = AgentResponse()
-        response.id = agent.id
-        response.name = agent.name
-        response.description = agent.description
-        response.systemPrompt = agent.systemPrompt
-        response.modelId = agent.modelId
-
-        // 查询模型名称和价格
-        agent.modelId.let { modelId ->
-            val model = modelService.getModelById(modelId)
-            model?.let {
-                response.modelName = it.modelName
-                response.modelPrice = it.price
-            }
-        }
-
-        response.owner = agent.owner
-        response.status = agent.status
-        response.isPublic = agent.isPublic
-        response.creator = agent.creator
-        response.createTime = agent.createTime
-        response.updateTime = agent.updateTime
-
-        // 查询关联会话列表
-        val sessions = sessionMapper.selectByAgentId(agent.id)
-
-        // 转换为 SessionItem 列表
-        val sessionItems = sessions.map { session ->
-            val item = AgentResponse.SessionItem()
-            item.id = session.id
-            item.title = session.title
-            item.sessionDescription = session.sessionDescription
-            item.sessionId = session.sessionId
-            item
-        }
-
-        response.sessionList = sessionItems
-        response.sessionCount = sessionItems.size
-
-        // 解析 MCP 列表 (JSON 格式)
-        if (agent.mcpList.isNotEmpty()) {
-            try {
-                // 先反序列化为 Map 获取 ID 和 enableSkip
-                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    agent.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {}
-                )
-
-                // 从数据库查询完整的 MCP 信息
-                val mcpItems = mutableListOf<AgentResponse.McpItem>()
-                for (config in mcpConfigs) {
-                    val mcpId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as String?
-
-                    val fullMcp = mcpServerService.getMcpServerById(mcpId)
-                    fullMcp.let {
-                        val item = AgentResponse.McpItem()
-                        item.mcpId = it.id
-                        item.mcpName = it.name
-                        item.mcpDescription = it.description
-                        item.enableSkip = enableSkip
-                        mcpItems.add(item)
-                    }
-                }
-                response.mcpList = mcpItems
-            } catch (e: Exception) {
-                log.warn("解析 MCP 列表失败", e)
-                response.mcpList = mutableListOf()
-            }
-        }
-
-        // 解析技能列表（逗号分隔的字符串）
-        if (agent.skillList.isNotEmpty()) {
-            try {
-                val skillIds = agent.skillList.split(",")
-                val skillItems = mutableListOf<AgentResponse.SkillItem>()
-
-                for (skillIdStr in skillIds) {
-                    try {
-                        val skillId = skillIdStr.trim().toLong()
-                        // 从数据库查询完整的技能信息
-                        val skill = skillService.getSkillById(skillId)
-                        skill.let { it ->
-                            val item = AgentResponse.SkillItem()
-                            item.skillId = it.id
-                            item.skillName = it.name
-                            item.skillDescription = it.skillmd
-
-                            // 查询技能仓库信息
-                            val repository = skillRepositoryService.getRepositoryById(it.repositoryId)
-                            repository.let {
-                                item.repositoryId = it.id
-                                item.repositoryName = it.name
-                            }
-
-                            skillItems.add(item)
-                        }
-                    } catch (e: NumberFormatException) {
-                        log.warn("无效的技能 ID: {}", skillIdStr)
-                    }
-                }
-
-                response.skillList = skillItems
-            } catch (e: Exception) {
-                log.warn("解析技能列表失败", e)
-                response.skillList = mutableListOf()
-            }
-        }
-
-        return response
+        PageHelper.startPage<Agent>(pageNum, pageSize)
+        return Page.fromPageInfo(agentMapper.selectAgentList(name, status, currentUsername))
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -239,10 +95,14 @@ class AgentServiceImpl(
         }
     }
 
+    override fun getAgent(id: Long): Agent? {
+        return agentMapper.selectById(id)
+    }
+
     @Transactional(rollbackFor = [Exception::class])
     override fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean {
         return try {
-            val agent = getAgentById(id)
+            val agent = getAgent(id)
                 ?: throw RuntimeException("智能体不存在")
 
             request.name?.let { agent.name = it }
@@ -250,7 +110,6 @@ class AgentServiceImpl(
             request.systemPrompt?.let { agent.systemPrompt = it }
             request.modelId?.let { agent.modelId = it }
             request.owner?.let { agent.owner = it }
-            request.status?.let { agent.status = it }
             request.isPublic?.let { agent.isPublic = it }
 
             // 更新 MCP 列表
@@ -288,12 +147,126 @@ class AgentServiceImpl(
     override fun toggleAgentStatus(id: Long, status: Int): Boolean {
         val agent = agentMapper.selectById(id)
             ?: throw RuntimeException("智能体不存在")
-        agent.status = status
-        agent.updateTime = LocalDateTime.now()
-        return agentMapper.updateById(agent) > 0
+        return agentMapper.updateStatus(id, status) > 0
     }
 
     override fun deleteAgent(id: Long): Boolean {
         return agentMapper.deleteById(id) > 0
+    }
+
+    /**
+     * 将 Agent 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
+     */
+    override fun convertToResponse(agent: Agent): AgentResponse {
+        val response = AgentResponse()
+        response.id = agent.id
+        response.name = agent.name
+        response.description = agent.description
+        response.systemPrompt = agent.systemPrompt
+        response.modelId = agent.modelId
+
+        // 查询模型名称和价格
+        agent.modelId.let { modelId ->
+            val model = modelService.getModel(modelId)
+            model?.let {
+                response.modelName = it.modelName
+                response.modelPrice = it.price
+            }
+        }
+
+        response.owner = agent.owner
+        response.status = agent.status
+        response.isPublic = agent.isPublic
+        response.creator = agent.creator
+        response.createTime = agent.createTime
+        response.updateTime = agent.updateTime
+
+        // 查询关联会话列表
+        val sessions = sessionMapper.selectByAgentId(agent.id)
+
+        // 转换为 SessionItem 列表
+        val sessionItems = sessions.map { session ->
+            val item = AgentResponse.SessionItem()
+            item.id = session.id
+            item.title = session.title
+            item.sessionDescription = session.sessionDescription
+            item.sessionId = session.sessionId
+            item
+        }
+
+        response.sessionList = sessionItems
+        response.sessionCount = sessionItems.size
+
+        // 解析 MCP 列表 (JSON 格式)
+        if (agent.mcpList.isNotEmpty()) {
+            try {
+                // 先反序列化为 Map 获取 ID 和 enableSkip
+                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
+                    agent.mcpList,
+                    object : TypeReference<List<Map<String, Any>>>() {}
+                )
+
+                // 从数据库查询完整的 MCP 信息
+                val mcpItems = mutableListOf<AgentResponse.McpItem>()
+                for (config in mcpConfigs) {
+                    val mcpId = (config["id"] as Number).toLong()
+                    val enableSkip = config["enable_skip"] as String?
+
+                    val fullMcp = mcpServerService.getMcpServer(mcpId)
+                    fullMcp?.let {
+                        val item = AgentResponse.McpItem()
+                        item.mcpId = it.id
+                        item.mcpName = it.name
+                        item.mcpDescription = it.description
+                        item.enableSkip = enableSkip
+                        mcpItems.add(item)
+                    }
+                }
+                response.mcpList = mcpItems
+            } catch (e: Exception) {
+                log.warn("解析 MCP 列表失败", e)
+                response.mcpList = mutableListOf()
+            }
+        }
+
+        // 解析技能列表（逗号分隔的字符串）
+        if (agent.skillList.isNotEmpty()) {
+            try {
+                val skillIds = agent.skillList.split(",")
+                val skillItems = mutableListOf<AgentResponse.SkillItem>()
+
+                for (skillIdStr in skillIds) {
+                    try {
+                        val skillId = skillIdStr.trim().toLong()
+                        // 从数据库查询完整的技能信息
+                        val skill = skillService.getSkill(skillId)
+                        skill?.let { it ->
+                            val item = AgentResponse.SkillItem()
+                            item.skillId = it.id
+                            item.skillName = it.name
+                            item.skillDescription = it.skillmd
+
+                            // 查询技能仓库信息
+                            val repository = skillRepositoryService.getSkillRepository(it.repositoryId)
+                            repository?.let {
+                                item.repositoryId = it.id
+                                item.repositoryName = it.name
+                            }
+
+                            skillItems.add(item)
+                        }
+                    } catch (e: NumberFormatException) {
+                        log.warn("无效的技能 ID: {}", skillIdStr)
+                    }
+                }
+
+                response.skillList = skillItems
+            } catch (e: Exception) {
+                log.warn("解析技能列表失败", e)
+                response.skillList = mutableListOf()
+            }
+        }
+
+        return response
     }
 }

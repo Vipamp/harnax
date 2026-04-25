@@ -1,14 +1,15 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
+import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.Channel
 import com.vipamp.vipclaw.admin.mapper.ChannelMapper
 import com.vipamp.vipclaw.admin.service.AgentService
 import com.vipamp.vipclaw.admin.service.ChannelService
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -33,39 +34,19 @@ class ChannelServiceImpl(
     @Value("\${app.base-url:http://localhost:8080}")
     private lateinit var baseUrl: String
 
-    override fun getChannelPage(
+    override fun page(
         keyword: String?,
         type: String?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<Channel> {
-        // 使用 PageHelper 分页
-        PageHelper.startPage<Channel>(current, size)
-        val channels = channelMapper.selectChannelList(keyword, type, status)
-        
-        // 转换为 PageInfo
-        val pageInfo = com.github.pagehelper.PageInfo(channels)
-        return Page.fromPageInfo(pageInfo)
+        PageHelper.startPage<Agent>(pageNum, pageSize)
+        return Page.fromPageInfo(channelMapper.selectChannelList(keyword, type, status))
     }
 
-    override fun getChannelById(id: Long): Channel? {
+    override fun getChannel(id: Long): Channel? {
         return channelMapper.selectById(id)
-    }
-
-    fun save(channel: Channel): Boolean {
-        channel.createTime = LocalDateTime.now()
-        channel.updateTime = LocalDateTime.now()
-        return channelMapper.insert(channel) > 0
-    }
-
-    fun updateById(channel: Channel): Boolean {
-        channel.updateTime = LocalDateTime.now()
-        return channelMapper.updateById(channel) > 0
-    }
-
-    fun removeById(id: Long): Boolean {
-        return channelMapper.deleteById(id) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -112,7 +93,6 @@ class ChannelServiceImpl(
             request.appId?.let { channel.appId = it }
             request.appSecret?.let { channel.appSecret = it }
             request.description?.let { channel.description = it }
-            request.status?.let { channel.status = it }
 
             channel.updateTime = LocalDateTime.now()
             channelMapper.updateById(channel)
@@ -126,9 +106,7 @@ class ChannelServiceImpl(
     override fun toggleChannelStatus(id: Long, status: Int): Boolean {
         val channel = channelMapper.selectById(id)
             ?: throw RuntimeException("Channel 不存在")
-        channel.status = status
-        channel.updateTime = LocalDateTime.now()
-        return channelMapper.updateById(channel) > 0
+        return channelMapper.updateStatus(id, status) > 0
     }
 
     override fun deleteChannel(id: Long): Boolean {
@@ -139,24 +117,20 @@ class ChannelServiceImpl(
         return channelMapper.selectByCallbackKey(callbackKey)
     }
 
-    override fun convertToResponse(channel: Channel?): ChannelResponse? {
-        if (channel == null) {
-            return null
-        }
-
+    override fun convertToResponse(channel: Channel): ChannelResponse {
         val response = ChannelResponse.fromEntity(channel)
 
         // 查询智能体名称
         channel.agentId.let { agentId ->
-            val agent = agentService.getAgentById(agentId)
+            val agent = agentService.getAgent(agentId)
             agent?.let {
-                response!!.agentName = it.name
+                response.agentName = it.name
             }
         }
 
         // 生成回调 URL
         channel.callbackKey.let { callbackKey ->
-            response!!.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
+            response.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
         }
 
         return response

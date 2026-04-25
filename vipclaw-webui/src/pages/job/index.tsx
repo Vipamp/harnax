@@ -38,7 +38,7 @@ const JobManagement: React.FC = () => {
   const [tableLoading, setTableLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.JobItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [current, setCurrent] = useState<number>(1);
+  const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
   const [jobStatus, setJobStatus] = useState<number | undefined>(undefined);
@@ -217,7 +217,7 @@ const JobManagement: React.FC = () => {
   };
 
   /** 加载数据 */
-  const loadData = async (page = current, size = pageSize) => {
+  const loadData = async (page = pageNum, size = pageSize) => {
     setTableLoading(true);
     try {
       const res = await getJobPage({
@@ -237,11 +237,11 @@ const JobManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [current, pageSize]);
+  }, [pageNum, pageSize]);
 
   /** 搜索 */
   const handleSearch = () => {
-    setCurrent(1);
+    setPageNum(1);
     loadData(1);
   };
 
@@ -256,13 +256,19 @@ const JobManagement: React.FC = () => {
         const hide = message.loading('正在删除');
         if (!jobId) return;
         try {
-          await deleteJob(jobId);
+          const response = await deleteJob(jobId);
           hide();
-          messageApi.success('删除成功');
-          loadData();
-        } catch (error) {
+          if (response.code === 200) {
+            messageApi.success('删除成功');
+            loadData();
+          } else {
+            const errorMsg = response.message || '删除失败，请重试';
+            messageApi.error(errorMsg);
+          }
+        } catch (error: any) {
           hide();
-          messageApi.error('删除失败，请重试');
+          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          messageApi.error(errorMsg);
         }
       },
     });
@@ -538,7 +544,7 @@ const JobManagement: React.FC = () => {
               onClick={() => {
                 setKeyword('');
                 setJobStatus(undefined);
-                setCurrent(1);
+                setPageNum(1);
                 loadData(1);
               }}
               style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}
@@ -569,14 +575,14 @@ const JobManagement: React.FC = () => {
         rowKey="id"
         loading={tableLoading}
         pagination={{
-          current,
+          current: pageNum,
           pageSize,
           total,
           showSizeChanger: true,
           showQuickJumper: true,
           showTotal: (t) => `共 ${t} 条`,
           onChange: (page, size) => {
-            setCurrent(page);
+            setPageNum(page);
             if (size) setPageSize(size);
           },
         }}

@@ -32,11 +32,7 @@ interface SkillRepositoryMapper {
 
     fun selectActiveRepositories(): List<SkillRepository>
 
-    fun selectActiveById(@Param("id") id: Long): SkillRepository?
-
     fun selectByName(@Param("name") name: String): SkillRepository?
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
-
-    fun logicalDelete(@Param("id") id: Long): Int
 }

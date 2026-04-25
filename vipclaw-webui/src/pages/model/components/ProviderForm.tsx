@@ -29,8 +29,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
     if (visible) {
       if (values) {
         form.setFieldsValue({
+          type: values.type,
           name: values.name,
-          displayName: values.displayName,
           apiKey: '', // API Key 不回显
           baseUrl: values.baseUrl,
           isPublic: values.isPublic === 1,
@@ -52,8 +52,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       if (values) {
         // 更新
         await updateModelProvider(values.id, {
+          type: formValues.type,
           name: formValues.name,
-          displayName: formValues.displayName,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
@@ -62,8 +62,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       } else {
         // 创建
         await createModelProvider({
+          type: formValues.type,
           name: formValues.name,
-          displayName: formValues.displayName,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
@@ -91,23 +91,23 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
     >
       <Form form={form} layout="vertical">
         <Form.Item
-          name="name"
-          label="服务商名称"
-          rules={[{ required: true, message: '请选择服务商' }]}
+          name="type"
+          label="服务商类型"
+          rules={[{ required: true, message: '请选择服务商类型' }]}
         >
           <Select
-            placeholder="请选择服务商"
+            placeholder="请选择服务商类型"
             options={PROVIDER_OPTIONS}
             disabled={!!values}
           />
         </Form.Item>
 
         <Form.Item
-          name="displayName"
-          label="显示名称"
-          rules={[{ required: true, message: '请输入显示名称' }]}
+          name="name"
+          label="名称"
+          rules={[{ required: true, message: '请输入名称' }]}
         >
-          <Input placeholder="请输入显示名称" />
+          <Input placeholder="请输入名称" />
         </Form.Item>
 
         <Form.Item

@@ -22,6 +22,8 @@ interface ToolCallLogMapper {
     fun updateById(toolcalllogentity: ToolCallLogEntity): Int
 
     fun deleteById(@Param("id") id: Long): Int
+    fun selectBySessionId(@Param("sessionId") sessionId: String): List<ToolCallLogEntity>
+    fun selectByToolName(@Param("toolName") toolName: String): List<ToolCallLogEntity>
 
     // ==================== 自定义查询方法 ====================
 }

@@ -51,12 +51,14 @@ ModelProvider (模型供应商)
 **表名**: `model`  
 **说明**: 模型表
 
+> ⚠️ **注意**: 当前生产环境表结构缺少 `is_public` 和 `creator` 字段,需要使用数据迁移脚本添加。详见 [11.3 SQL 脚本](#113-sql-脚本)。
+
 | 字段名 | 数据类型 | 长度 | 可空 | 默认值 | 说明 | 约束 |
 |--------|---------|------|------|--------|------|------|
 | `id` | BIGINT | 20 | ❌ 否 | AUTO_INCREMENT | 模型 ID（主键） | PRIMARY KEY |
 | `name` | VARCHAR | 100 | ❌ 否 | - | 模型名称 | NOT NULL |
 | `model_name` | VARCHAR | 100 | ❌ 否 | - | 模型技术名称 | NOT NULL |
-| `provider_id` | BIGINT | 20 | ❌ 否 | - | 供应商 ID | NOT NULL, FOREIGN KEY |
+| `provider_id` | BIGINT | 20 | ❌ 否 | - | 供应商 ID | NOT NULL |
 | `description` | TEXT | - | ✅ 是 | NULL | 模型描述 | - |
 | `model_type` | VARCHAR | 20 | ❌ 否 | - | 模型类型 (chat/embedding) | NOT NULL |
 | `support_internet` | TINYINT | 1 | ✅ 是 | 0 | 是否支持联网 (0:否 1:是) | - |
@@ -65,12 +67,12 @@ ModelProvider (模型供应商)
 | `support_mcp` | TINYINT | 1 | ✅ 是 | 0 | 是否支持 MCP (0:否 1:是) | - |
 | `support_vision` | TINYINT | 1 | ✅ 是 | 0 | 是否支持视觉 (0:否 1:是) | - |
 | `price` | DECIMAL | 10,4 | ✅ 是 | 0.0000 | 价格（元/百万 token） | - |
-| `status` | TINYINT | 1 | ✅ 是 | 1 | 状态 (0:禁用 1:启用) | - |
-| `is_public` | TINYINT | 1 | ✅ 是 | 1 | 是否公开 (0:否 1:是) | - |
-| `creator` | VARCHAR | 100 | ✅ 是 | - | 创建人用户名 | - |
-| `active` | TINYINT | 1 | ✅ 是 | 1 | 逻辑删除标识 (0:已删除 1:正常) | - |
-| `create_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP | 创建时间 | - |
-| `update_time` | DATETIME | - | ✅ 是 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | - |
+| `status` | TINYINT | 1 | ❌ 否 | 1 | 状态 (0:禁用 1:启用) | - |
+| `is_public` | TINYINT | 1 | ❌ 否 | 1 | 是否公开 (0:否 1:是) | **需迁移添加** |
+| `creator` | VARCHAR | 100 | ❌ 否 | - | 创建人用户名 | **需迁移添加** |
+| `active` | TINYINT | 1 | ❌ 否 | 1 | 逻辑删除标识 (0:已删除 1:正常) | - |
+| `create_time` | DATETIME | - | ❌ 否 | CURRENT_TIMESTAMP | 创建时间 | - |
+| `update_time` | DATETIME | - | ❌ 否 | CURRENT_TIMESTAMP ON UPDATE | 更新时间 | - |
 
 **索引设计**:
 - `PRIMARY KEY (id)`: 主键索引
@@ -826,24 +828,24 @@ flowchart TD
 ### 11.3 SQL 脚本
 
 ```sql
--- 创建模型表
+-- 创建模型表 (完整版 - 支持数据权限)
 CREATE TABLE `model` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
     `name` VARCHAR(100) NOT NULL COMMENT '名称',
     `model_name` VARCHAR(100) NOT NULL COMMENT '模型名称',
     `provider_id` BIGINT(20) NOT NULL COMMENT '模型供应商ID',
     `description` TEXT DEFAULT NULL COMMENT '描述',
-    `model_type` VARCHAR(20) NOT NULL COMMENT '模型类型（chat/embedding）',
-    `support_internet` TINYINT(1) DEFAULT 0 COMMENT '是否支持联网（0:否，1:是）',
-    `support_reasoning` TINYINT(1) DEFAULT 0 COMMENT '是否支持推理（0:否，1:是）',
-    `support_tool` TINYINT(1) DEFAULT 0 COMMENT '是否支持工具（0:否，1:是）',
-    `support_mcp` TINYINT(1) DEFAULT 0 COMMENT '是否支持MCP（0:否，1:是）',
-    `support_vision` TINYINT(1) DEFAULT 0 COMMENT '是否支持视觉（0:否，1:是）',
-    `price` DECIMAL(10,4) DEFAULT 0.0000 COMMENT '价格（元/百万token）',
-    `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
+    `model_type` VARCHAR(20) NOT NULL COMMENT '模型类型(chat/embedding)',
+    `support_internet` TINYINT(1) DEFAULT 0 COMMENT '是否支持联网(0:否,1:是)',
+    `support_reasoning` TINYINT(1) DEFAULT 0 COMMENT '是否支持推理(0:否,1:是)',
+    `support_tool` TINYINT(1) DEFAULT 0 COMMENT '是否支持工具(0:否,1:是)',
+    `support_mcp` TINYINT(1) DEFAULT 0 COMMENT '是否支持MCP(0:否,1:是)',
+    `support_vision` TINYINT(1) DEFAULT 0 COMMENT '是否支持视觉(0:否,1:是)',
+    `price` DECIMAL(10,4) DEFAULT 0.0000 COMMENT '价格(元/百万token)',
+    `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用(0:禁用,1:启用)',
+    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开(0:否,1:是)',
     `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
-    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用(0:被删除,1:可用)',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),

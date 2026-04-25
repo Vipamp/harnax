@@ -1,9 +1,11 @@
 package com.vipamp.vipclaw.admin.service.impl
 
+import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Skill
+import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SkillMapper
 import com.vipamp.vipclaw.admin.service.SkillService
@@ -13,7 +15,6 @@ import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import kotlin.math.min
 
 /**
  * 技能服务实现类
@@ -29,47 +30,30 @@ class SkillServiceImpl(
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
 
-    override fun getSkillPage(
+    override fun page(
         name: String?,
         repositoryId: Long?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<Skill> {
         log.info(
-            "分页查询技能列表，current: {}, size: {}, name: {}, repositoryId: {}, status: {}",
-            current,
-            size,
+            "分页查询技能列表，pageNum: {}, pageSize: {}, name: {}, repositoryId: {}, status: {}",
+            pageNum,
+            pageSize,
             name,
             repositoryId,
             status
         )
-
-        // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-
-        // 使用 MyBatis 原生查询
-        val allSkills = skillMapper.selectSkillList(name, repositoryId, status, currentUsername)
-
-        // 手动分页
-        val page = Page<Skill>(current.toLong(), size.toLong())
-        val fromIndex = (current - 1) * size
-        val toIndex = min(fromIndex + size, allSkills.size)
-
-        page.records = if (fromIndex < allSkills.size) {
-            allSkills.subList(fromIndex, toIndex)
-        } else {
-            emptyList()
-        }
-        page.total = allSkills.size.toLong()
-
-        return page
+        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername))
     }
 
-    override fun getSkillById(id: Long): Skill {
+    override fun getSkill(id: Long): Skill {
         log.info("查询技能详情，id: {}", id)
 
-        val skill = skillMapper.selectActiveById(id)
+        val skill = skillMapper.selectById(id)
             ?: throw BizException("技能不存在")
         return skill
     }
@@ -111,7 +95,7 @@ class SkillServiceImpl(
     override fun updateSkill(id: Long, request: SkillUpdateRequest): Boolean {
         log.info("更新技能，id: {}", id)
 
-        val skill = skillMapper.selectActiveById(id)
+        val skill = skillMapper.selectById(id)
             ?: throw BizException("技能不存在")
 
         // 如果请求中包含技能名称且与当前技能名称不同，检查新技能名称是否已被使用
@@ -128,7 +112,6 @@ class SkillServiceImpl(
         request.description?.let { skill.description = it }
         request.skillmd?.let { skill.skillmd = it }
         request.resources?.let { skill.resources = it }
-        request.status?.let { skill.status = it }
 
         val success = this.skillMapper.updateById(skill) > 0
         log.info("技能更新{}，id: {}", if (success) "成功" else "失败", id)
@@ -139,7 +122,7 @@ class SkillServiceImpl(
     override fun toggleSkillStatus(id: Long, status: Int): Boolean {
         log.info("切换技能状态，id: {}, status: {}", id, status)
 
-        val skill = skillMapper.selectActiveById(id)
+        val skill = skillMapper.selectById(id)
             ?: throw BizException("技能不存在")
 
         return skillMapper.updateStatus(id, status) > 0
@@ -149,10 +132,10 @@ class SkillServiceImpl(
     override fun deleteSkill(id: Long): Boolean {
         log.info("删除技能，id: {}", id)
 
-        val skill = skillMapper.selectActiveById(id)
+        val skill = skillMapper.selectById(id)
             ?: throw BizException("技能不存在")
 
-        return skillMapper.logicalDelete(id) > 0
+        return skillMapper.deleteById(id) > 0
     }
 
     override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? {
@@ -204,5 +187,9 @@ class SkillServiceImpl(
 
         log.info("批量保存技能完成，成功保存：{} 个", savedCount)
         return savedCount
+    }
+
+    override fun convertToResponse(skill: Skill): SkillResponse {
+        return SkillResponse.fromEntity(skill)
     }
 }

@@ -80,8 +80,7 @@ data class ChannelResponse(
         /**
          * 从实体对象转换
          */
-        fun fromEntity(channel: Channel?): ChannelResponse? {
-            if (channel == null) return null
+        fun fromEntity(channel: Channel): ChannelResponse {
             return ChannelResponse(
                 id = channel.id,
                 name = channel.name,

@@ -24,18 +24,13 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="AgentResultMap">
-        SELECT * FROM agent WHERE id = #{id} LIMIT 1
+        SELECT * FROM agent WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
         UPDATE agent SET active = 0 WHERE id = #{id}
     </update>
-
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="AgentResultMap">
-        SELECT * FROM agent WHERE id = #{id} AND active = 1 LIMIT 1
-    </select>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
@@ -58,11 +53,15 @@
         mcp_list = #{mcpList},
         skill_list = #{skillList},
         owner = #{owner},
-        status = #{status},
         is_public = #{isPublic},
         active = #{active},
         update_time = #{updateTime}
         WHERE id = #{id}
+    </update>
+
+    <!-- updateStatus -->
+    <update id="updateStatus">
+        UPDATE agent SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectAgentList -->

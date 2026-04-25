@@ -32,8 +32,7 @@ data class SkillRepositoryResponse(
 ) {
     companion object {
         @JvmStatic
-        fun fromEntity(entity: SkillRepository?): SkillRepositoryResponse {
-            if (entity == null) return SkillRepositoryResponse()
+        fun fromEntity(entity: SkillRepository): SkillRepositoryResponse {
             return SkillRepositoryResponse(
                 id = entity.id,
                 name = entity.name,

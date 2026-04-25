@@ -35,7 +35,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
   const loadModels = async () => {
     setLoading(true);
     try {
-      const params: any = { providerId, current: 1, pageSize: 100 };
+      const params: any = { providerId, pageNum: 1, pageSize: 100 };
       if (filters.name) {
         params.name = filters.name;
       }
@@ -72,14 +72,15 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
   }, [providerId, filters]);
 
   // 切换模型状态
-  const handleToggle = async (id: number) => {
+  const handleToggle = async (id: number, currentStatus: number) => {
     try {
-      await toggleModel(id);
+      const newStatus = currentStatus === 1 ? 0 : 1;
+      await toggleModel(id, newStatus);
       message.success('状态切换成功');
       // 只更新当前卡片状态，不重新加载整个列表
       setModels((prevModels) =>
         prevModels.map((model) =>
-          model.id === id ? { ...model, status: model.status === 1 ? 0 : 1 } : model
+          model.id === id ? { ...model, status: newStatus } : model
         )
       );
     } catch (error) {
@@ -90,11 +91,17 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
   // 删除模型
   const handleDelete = async (id: number) => {
     try {
-      await deleteModel(id);
-      message.success('删除成功');
-      loadModels();
-    } catch (error) {
-      message.error('删除失败');
+      const response = await deleteModel(id);
+      if (response.code === 200) {
+        message.success('删除成功');
+        loadModels();
+      } else {
+        const errorMsg = response.message || '删除失败';
+        message.error(errorMsg);
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      message.error(errorMsg);
     }
   };
 
@@ -261,7 +268,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                         </Popconfirm>
                         <Switch
                           checked={model.status === 1}
-                          onChange={() => handleToggle(model.id)}
+                          onChange={() => handleToggle(model.id, model.status)}
                           checkedChildren="启用"
                           unCheckedChildren="禁用"
                           style={{

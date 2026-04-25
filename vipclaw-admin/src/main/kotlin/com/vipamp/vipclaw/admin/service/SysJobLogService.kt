@@ -19,7 +19,7 @@ interface SysJobLogService {
      * @param jobLog 日志对象
      * @return 是否成功
      */
-    fun save(jobLog: com.vipamp.vipclaw.admin.entity.SysJobLog): Boolean
+    fun save(jobLog: SysJobLog): Boolean
 
     /**
      * 分页查询定时任务日志列表
@@ -29,9 +29,9 @@ interface SysJobLogService {
      * @param status    执行状态
      * @param startTime 开始时间
      * @param endTime   结束时间
-     * @param current   当前页码
-     * @param size      每页大小
+     * @param pageNum   当前页码
+     * @param pageSize  每页大小
      * @return 分页结果
      */
-    fun getJobLogPage(jobId: Long?, jobName: String?, status: Int?, startTime: LocalDateTime?, endTime: LocalDateTime?, current: Int, size: Int): Page<SysJobLog>
+    fun getJobLogPage(jobId: Long?, jobName: String?, status: Int?, startTime: LocalDateTime?, endTime: LocalDateTime?, pageNum: Int, pageSize: Int): Page<SysJobLog>
 }

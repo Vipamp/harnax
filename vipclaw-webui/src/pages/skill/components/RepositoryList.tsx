@@ -30,21 +30,33 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
 
   const handleDelete = async (id: number) => {
     try {
-      await deleteSkillRepository(id);
-      message.success('删除成功');
-      onDelete(id);
-    } catch (error) {
-      message.error('删除失败');
+      const response = await deleteSkillRepository(id);
+      if (response.code === 200) {
+        message.success('删除成功');
+        onDelete(id);
+      } else {
+        const errorMsg = response.message || '删除失败';
+        message.error(errorMsg);
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      message.error(errorMsg);
     }
   };
 
   const handleToggle = async (id: number, status: number) => {
     try {
-      await toggleSkillRepositoryStatus(id, status);
-      message.success('状态切换成功');
-      onToggle(id, status);
-    } catch (error) {
-      message.error('状态切换失败');
+      const response = await toggleSkillRepositoryStatus(id, status);
+      if (response.code === 200) {
+        message.success('状态切换成功');
+        onToggle(id, status);
+      } else {
+        const errorMsg = response.message || '状态切换失败';
+        message.error(errorMsg);
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '状态切换失败';
+      message.error(errorMsg);
     }
   };
 

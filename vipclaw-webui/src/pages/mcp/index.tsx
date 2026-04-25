@@ -252,7 +252,7 @@ const McpManagement: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.McpServerItem[]>([]);
   const [total, setTotal] = useState<number>(0);
-  const [current, setCurrent] = useState<number>(1);
+  const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(12);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
@@ -263,7 +263,7 @@ const McpManagement: React.FC = () => {
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
 
   /** 加载数据 */
-  const loadData = async (page = current, size = pageSize) => {
+  const loadData = async (page = pageNum, size = pageSize) => {
     setLoading(true);
     try {
       const res = await getMcpServerPage({
@@ -284,11 +284,11 @@ const McpManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [current, pageSize, status, types]);
+  }, [pageNum, pageSize, status, types]);
 
   /** 搜索 */
   const handleSearch = () => {
-    setCurrent(1);
+    setPageNum(1);
     loadData(1);
   };
 
@@ -302,11 +302,17 @@ const McpManagement: React.FC = () => {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          await deleteMcpServer(id);
-          messageApi.success('删除成功');
-          loadData();
-        } catch (error) {
-          messageApi.error('删除失败，请重试');
+          const response = await deleteMcpServer(id);
+          if (response.code === 200) {
+            messageApi.success('删除成功');
+            loadData();
+          } else {
+            const errorMsg = response.message || '删除失败，请重试';
+            messageApi.error(errorMsg);
+          }
+        } catch (error: any) {
+          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          messageApi.error(errorMsg);
         }
       },
     });
@@ -390,7 +396,7 @@ const McpManagement: React.FC = () => {
             value={types}
             onChange={(val) => {
               setTypes(val);
-              setCurrent(1);
+              setPageNum(1);
             }}
             style={{ width: 200, borderRadius: '8px' }}
             allowClear
@@ -403,7 +409,7 @@ const McpManagement: React.FC = () => {
           <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
             查询
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setCurrent(1); loadData(1); }} style={{ borderRadius: '8px' }}>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
             重置
           </Button>
           <div style={{ flex: 1 }} />
@@ -448,14 +454,14 @@ const McpManagement: React.FC = () => {
           {/* 分页 */}
           <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
             <Pagination
-              current={current}
+              current={pageNum}
               pageSize={pageSize}
               total={total}
               showSizeChanger
               showQuickJumper
               showTotal={(t) => `共 ${t} 条`}
               onChange={(page, size) => {
-                setCurrent(page);
+                setPageNum(page);
                 if (size) setPageSize(size);
               }}
               style={{ padding: '12px 24px', background: '#fff', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}

@@ -16,14 +16,14 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<API.SkillItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [current, setCurrent] = useState(1);
+  const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const res = await getSkillPage({
-        pageNum: current,
+        pageNum: pageNum,
         pageSize: pageSize,
         repositoryId,
         name: filters.name || undefined,
@@ -42,18 +42,22 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
     if (repositoryId) {
       loadData();
     }
-  }, [repositoryId, current, pageSize, filters.name, filters.status]);
+  }, [repositoryId, pageNum, pageSize, filters.name, filters.status]);
 
   const handleToggle = async (id: number, status: number) => {
     try {
-      await toggleSkillStatus(id, status);
-      message.success('状态切换成功');
-      // 局部更新状态，不刷新列表
-      setData((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, status } : item))
-      );
-    } catch (error) {
-      message.error('状态切换失败');
+      const response = await toggleSkillStatus(id, status);
+      if (response.code === 200) {
+        message.success('状态切换成功');
+        // 局部更新状态，不刷新列表
+        setData((prev) =>
+          prev.map((item) => (item.id === id ? { ...item, status } : item))
+        );
+      } else {
+        message.error(response.message || '状态切换失败');
+      }
+    } catch (error: any) {
+      message.error(error?.message || error?.info?.errorMessage || '状态切换失败');
     }
   };
 
@@ -122,13 +126,13 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       dataSource={data}
       loading={loading}
       pagination={{
-        current,
+        current: pageNum,
         pageSize,
         total,
         showSizeChanger: true,
         showTotal: (t) => `共 ${t} 条`,
         onChange: (page, size) => {
-          setCurrent(page);
+          setPageNum(page);
           setPageSize(size);
         },
       }}

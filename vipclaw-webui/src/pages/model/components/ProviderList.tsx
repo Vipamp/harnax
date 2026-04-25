@@ -10,7 +10,7 @@ interface ProviderListProps {
   selectedProvider: API.ModelProviderItem | null;
   onSelect: (provider: API.ModelProviderItem) => void;
   onEdit: (provider: API.ModelProviderItem) => void;
-  onToggle: (id: number) => void;
+  onToggle: (id: number, status: number) => void;
   onDelete: (id: number) => void;
   onConnectivityTest: (id: number) => void;
 }
@@ -27,13 +27,13 @@ const ProviderList: React.FC<ProviderListProps> = ({
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
 
-  const getProviderIcon = (name: string) => {
+  const getProviderIcon = (type: string) => {
     const icons: Record<string, string> = {
       dashscope: '/icons/providers/alibabacloud.svg',
       openai: '/icons/providers/openai.svg',
       ollama: '/icons/providers/ollama.svg',
     };
-    return icons[name];
+    return icons[type];
   };
 
   return (
@@ -54,25 +54,25 @@ const ProviderList: React.FC<ProviderListProps> = ({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {getProviderIcon(provider.name) ? (
+              {getProviderIcon(provider.type) ? (
                               <img
-                                src={getProviderIcon(provider.name)}
-                                alt={provider.name}
+                                src={getProviderIcon(provider.type)}
+                                alt={provider.type}
                                 style={{ width: '24px', height: '24px' }}
                               />
                             ) : (
                               <span style={{ fontSize: '20px' }}>📦</span>
                             )}
               <div>
-                <Text strong style={{ fontSize: '14px' }}>{provider.displayName}</Text>
+                <Text strong style={{ fontSize: '14px' }}>{provider.name}</Text>
                 <br />
-                <Text type="secondary" style={{ fontSize: '12px' }}>{provider.name}</Text>
+                <Text type="secondary" style={{ fontSize: '12px' }}>{provider.type}</Text>
               </div>
             </div>
             <Switch
               checked={provider.status === 1}
               onChange={() => {
-                onToggle(provider.id);
+                onToggle(provider.id, provider.status);
               }}
               checkedChildren="启用"
               unCheckedChildren="禁用"

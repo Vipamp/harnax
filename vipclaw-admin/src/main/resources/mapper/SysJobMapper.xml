@@ -23,12 +23,12 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="SysJobResultMap">
-        SELECT * FROM sys_job WHERE id = #{id} LIMIT 1
+        SELECT * FROM sys_job WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
-        UPDATE sys_job SET active = 0 WHERE id = #{id}
+        UPDATE sys_job SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectByNameAndGroup -->
@@ -41,19 +41,9 @@
         SELECT * FROM sys_job WHERE job_status = 1 AND active = 1
     </select>
 
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="SysJobResultMap">
-        SELECT * FROM sys_job WHERE id = #{id} AND active = 1 LIMIT 1
-    </select>
-
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE sys_job SET job_status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
-    <!-- logicalDelete -->
-    <update id="logicalDelete">
-        UPDATE sys_job SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- insert -->
@@ -74,7 +64,6 @@
         job_group = #{jobGroup},
         job_class = #{jobClass},
         cron_expression = #{cronExpression},
-        job_status = #{jobStatus},
         concurrent = #{concurrent},
         description = #{description},
         is_public = #{isPublic},

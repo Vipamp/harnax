@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
 import com.vipamp.vipclaw.admin.entity.ModelProvider
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 模型服务商服务接口
@@ -17,13 +17,14 @@ interface ModelProviderService {
     /**
      * 分页查询模型服务商
      *
-     * @param page     分页对象
      * @param name     服务商名称
      * @param status   状态
      * @param isPublic 是否公开
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun page(page: Page<ModelProvider>, name: String?, status: Int?, isPublic: Int?): Page<ModelProviderResponse>
+    fun page(name: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider>
 
     /**
      * 获取模型服务商详情
@@ -31,7 +32,7 @@ interface ModelProviderService {
      * @param id ID
      * @return 模型服务商响应
      */
-    fun getDetail(id: Long): ModelProviderResponse
+    fun getModelProvider(id: Long): ModelProvider?
 
     /**
      * 创建模型服务商
@@ -39,24 +40,34 @@ interface ModelProviderService {
      * @param request 创建请求
      * @return 模型服务商响应
      */
-    fun create(request: ModelProviderCreateRequest): ModelProviderResponse
+    fun createModelProvider(request: ModelProviderCreateRequest): Boolean
 
     /**
      * 更新模型服务商
      *
      * @param id      ID
      * @param request 更新请求
-     * @return 模型服务商响应
+     * @return 更新结果
      */
-    fun update(id: Long, request: ModelProviderUpdateRequest): ModelProviderResponse
+    fun updateModelProvider(id: Long, request: ModelProviderUpdateRequest): Boolean
+
+    /**
+     * 更新模型服务商状态
+     *
+     * @param id     ID
+     * @param status 状态（0:禁用，1:启用）
+     * @return 更新结果
+     */
+    fun updateStatus(id: Long, status: Int): Boolean
 
     /**
      * 切换模型服务商状态
      *
-     * @param id ID
-     * @return 模型服务商响应
+     * @param id     ID
+     * @param status 状态（0:禁用，1:启用）
+     * @return 更新结果
      */
-    fun toggle(id: Long): ModelProviderResponse
+    fun toggleModelProvider(id: Long, status: Int): Boolean
 
     /**
      * 连接测试
@@ -72,5 +83,13 @@ interface ModelProviderService {
      * @param id ID
      * @return 是否删除成功
      */
-    fun removeProviderById(id: Long): Boolean
+    fun deleteModelProvider(id: Long): Boolean
+
+    /**
+     * 将模型服务商转换为响应对象
+     *
+     * @param modelProvider 模型服务商
+     * @return 模型服务商响应
+     */
+    fun convertToResponse(modelProvider: ModelProvider): ModelProviderResponse
 }

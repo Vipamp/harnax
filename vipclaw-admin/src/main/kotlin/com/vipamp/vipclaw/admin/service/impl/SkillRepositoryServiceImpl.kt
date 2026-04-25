@@ -1,22 +1,21 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
-import com.vipamp.vipclaw.common.page.Page
-import java.time.LocalDateTime
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
+import com.vipamp.vipclaw.admin.dto.SkillRepositoryResponse
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
 import com.vipamp.vipclaw.admin.entity.SkillRepository
+import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SkillRepositoryMapper
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import org.springframework.util.StringUtils.hasText
-import kotlin.math.min
 
 /**
  * 技能仓库服务实现类
@@ -32,49 +31,34 @@ class SkillRepositoryServiceImpl(
 
     private val log = LoggerFactory.getLogger(SkillRepositoryServiceImpl::class.java)
 
-    override fun getRepositoryPage(
+    override fun page(
         name: String?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<SkillRepository> {
-        log.info("分页查询技能仓库列表，current: {}, size: {}, name: {}, status: {}", current, size, name, status)
-
-        // 获取当前用户
+        log.info(
+            "分页查询技能仓库列表，pageNum: {}, pageSize: {}, name: {}, status: {}",
+            pageNum,
+            pageSize,
+            name,
+            status
+        )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-
-        // 使用 MyBatis 原生查询
-        val allRepositories = skillRepositoryMapper.selectRepositoryList(name, status, currentUsername)
-
-        // 手动分页
-        val page = Page<SkillRepository>(current.toLong(), size.toLong())
-        val fromIndex = (current - 1) * size
-        val toIndex = min(fromIndex + size, allRepositories.size)
-        
-        page.records = if (fromIndex < allRepositories.size) {
-            allRepositories.subList(fromIndex, toIndex)
-        } else {
-            emptyList()
-        }
-        page.total = allRepositories.size.toLong()
-
-        return page
+        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        return Page.fromPageInfo(skillRepositoryMapper.selectRepositoryList(name, status, currentUsername))
     }
 
     override fun getActiveRepositories(): List<SkillRepository> {
         return skillRepositoryMapper.selectActiveRepositories()
     }
 
-    override fun getRepositoryById(id: Long): SkillRepository {
-        log.info("查询技能仓库详情，id: {}", id)
-
-        val repository = skillRepositoryMapper.selectActiveById(id)
-            ?: throw BizException("技能仓库不存在")
-        return repository
+    override fun getSkillRepository(id: Long): SkillRepository? {
+        return skillRepositoryMapper.selectById(id)
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createRepository(request: SkillRepositoryCreateRequest): Boolean {
+    override fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean {
         log.info("创建技能仓库，name: {}", request.name)
 
         // 检查仓库名称是否存在
@@ -106,10 +90,10 @@ class SkillRepositoryServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun updateRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean {
+    override fun updateSkillRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean {
         log.info("更新技能仓库，id: {}", id)
 
-        val repository = skillRepositoryMapper.selectActiveById(id)
+        val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("技能仓库不存在")
 
         // 如果请求中包含仓库名称且与当前仓库名称不同，检查新仓库名称是否已被使用
@@ -125,7 +109,6 @@ class SkillRepositoryServiceImpl(
         request.url?.let { repository.url = it }
         request.branch?.let { repository.branch = it }
         request.description?.let { repository.description = it }
-        request.status?.let { repository.status = it }
 
         val success = this.skillRepositoryMapper.updateById(repository) > 0
         log.info("技能仓库更新{}，id: {}", if (success) "成功" else "失败", id)
@@ -133,23 +116,19 @@ class SkillRepositoryServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun toggleRepositoryStatus(id: Long, status: Int): Boolean {
+    override fun toggleSkillRepository(id: Long, status: Int): Boolean {
         log.info("切换技能仓库状态，id: {}, status: {}", id, status)
 
-        val repository = skillRepositoryMapper.selectActiveById(id)
+        val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("技能仓库不存在")
 
         return skillRepositoryMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun deleteRepository(id: Long): Boolean {
+    override fun deleteSkillRepository(id: Long): Boolean {
         log.info("删除技能仓库，id: {}", id)
-
-        val repository = skillRepositoryMapper.selectActiveById(id)
-            ?: throw BizException("技能仓库不存在")
-
-        return skillRepositoryMapper.logicalDelete(id) > 0
+        return skillRepositoryMapper.deleteById(id) > 0
     }
 
     override fun getByName(name: String): SkillRepository? {
@@ -190,5 +169,9 @@ class SkillRepositoryServiceImpl(
 
         log.info("Mock 数据返回，共 {} 个技能", mockData.size)
         return mockData
+    }
+
+    override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse {
+        return SkillRepositoryResponse.fromEntity(skillRepository)
     }
 }

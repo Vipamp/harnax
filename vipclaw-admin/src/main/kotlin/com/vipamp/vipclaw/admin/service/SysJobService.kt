@@ -1,9 +1,9 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysJob
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 定时任务服务接口
@@ -16,13 +16,13 @@ interface SysJobService {
     /**
      * 分页查询定时任务列表
      *
-     * @param keyword    模糊查询字段（任务名称）
-     * @param jobStatus  状态筛选字段
-     * @param current    当前页码
-     * @param size       每页大小
+     * @param keyword   模糊查询字段（任务名称）
+     * @param jobStatus 状态筛选字段
+     * @param pageNum   当前页码
+     * @param pageSize  每页大小
      * @return 分页结果
      */
-    fun getJobPage(keyword: String?, jobStatus: Int?, current: Int, size: Int): Page<SysJob>
+    fun page(keyword: String?, jobStatus: Int?, pageNum: Int, pageSize: Int): Page<SysJob>
 
     /**
      * 获取单个定时任务详情
@@ -30,7 +30,7 @@ interface SysJobService {
      * @param id 任务 ID
      * @return 任务实体
      */
-    fun getJobById(id: Long): SysJob
+    fun getSysJob(id: Long): SysJob?
 
     /**
      * 创建定时任务

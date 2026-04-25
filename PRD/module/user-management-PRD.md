@@ -908,16 +908,41 @@ CREATE TABLE `sys_user`
     `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_username` (`username`)
+    UNIQUE KEY `uk_username` (`username`),
+    UNIQUE KEY `uk_email` (`email`),
+    UNIQUE KEY `uk_phone` (`phone`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统用户表';
 
--- 可选：添加邮箱唯一索引
--- ALTER TABLE `sys_user` ADD UNIQUE KEY `uk_email` (`email`);
-
--- 可选：添加手机号唯一索引
--- ALTER TABLE `sys_user` ADD UNIQUE KEY `uk_phone` (`phone`);
+-- 初始化用户名密码：admin/admin123
+INSERT INTO `sys_user` (
+    `username`,
+    `password`,
+    `nickname`,
+    `email`,
+    `phone`,
+    `gender`,
+    `avatar`,
+    `status`,
+    `is_admin`,
+    `active`,
+    `last_login_time`,
+    `create_time`,
+    `update_time`
+) VALUES (
+    'admin',
+    '$2a$10$esqm4yYiXlpoCQsUOcjGIubYyUU0irYEcLJpCQBpkAtP/Pmm6XphS',
+    '系统管理员',
+    'admin@vipclaw.com',
+    '13800138000',
+    1,
+    '',
+    1,
+    1,
+    1,
+    NULL,
+    NOW(),
+    NOW()
+);
 ```
-
----
 
 *文档结束 - 用户管理模块 PRD V1.1 (最后更新: 2026-04-22)*

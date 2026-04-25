@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Channel
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * Channel 服务接口
@@ -17,14 +17,14 @@ interface ChannelService {
     /**
      * 分页查询 Channel 列表
      *
-     * @param keyword 模糊查询字段
-     * @param type    类型筛选
-     * @param status  状态筛选
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param keyword  模糊查询字段
+     * @param type     类型筛选
+     * @param status   状态筛选
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getChannelPage(keyword: String?, type: String?, status: Int?, current: Int, size: Int): Page<Channel>
+    fun page(keyword: String?, type: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Channel>
 
     /**
      * 获取单个 Channel 详情
@@ -32,7 +32,7 @@ interface ChannelService {
      * @param id Channel ID
      * @return Channel 实体
      */
-    fun getChannelById(id: Long): Channel?
+    fun getChannel(id: Long): Channel?
 
     /**
      * 创建 Channel
@@ -82,5 +82,5 @@ interface ChannelService {
      * @param channel Channel 实体
      * @return 响应 DTO
      */
-    fun convertToResponse(channel: Channel?): ChannelResponse?
+    fun convertToResponse(channel: Channel): ChannelResponse
 }

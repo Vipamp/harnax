@@ -49,9 +49,5 @@ interface SysJobMapper {
      */
     fun selectRunningJobs(): List<SysJob>
 
-    fun selectActiveById(@Param("id") id: Long): SysJob?
-
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
-
-    fun logicalDelete(@Param("id") id: Long): Int
 }

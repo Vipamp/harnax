@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Agent
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 智能体服务接口
@@ -17,13 +17,13 @@ interface AgentService {
     /**
      * 分页查询智能体列表
      *
-     * @param name    智能体名称
-     * @param status  状态筛选字段
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param name     智能体名称
+     * @param status   状态筛选字段
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getAgentPage(name: String?, status: Int?, current: Int, size: Int): Page<Agent>
+    fun page(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Agent>
 
     /**
      * 获取单个智能体详情
@@ -31,7 +31,7 @@ interface AgentService {
      * @param id 智能体 ID
      * @return 智能体实体
      */
-    fun getAgentById(id: Long): Agent?
+    fun getAgent(id: Long): Agent?
 
     /**
      * 创建智能体
@@ -73,5 +73,5 @@ interface AgentService {
      * @param agent 智能体实体
      * @return 响应 DTO
      */
-    fun convertToResponse(agent: Agent?): AgentResponse?
+    fun convertToResponse(agent: Agent): AgentResponse
 }

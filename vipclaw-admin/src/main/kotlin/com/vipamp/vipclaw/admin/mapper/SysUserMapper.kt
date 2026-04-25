@@ -49,7 +49,6 @@ interface SysUserMapper {
     fun deleteById(@Param("id") id: Long): Int
 
     // ==================== 自定义查询方法 ====================
-
     /**
      * 查询用户列表（带条件）
      *
@@ -87,14 +86,6 @@ interface SysUserMapper {
     fun selectByEmail(@Param("email") email: String): SysUser?
 
     /**
-     * 根据 ID 查询（校验 active）
-     *
-     * @param id 用户 ID
-     * @return 用户实体
-     */
-    fun selectActiveById(@Param("id") id: Long): SysUser?
-
-    /**
      * 更新用户状态
      *
      * @param id 用户 ID
@@ -105,14 +96,6 @@ interface SysUserMapper {
         @Param("id") id: Long,
         @Param("status") status: Int
     ): Int
-
-    /**
-     * 逻辑删除用户
-     *
-     * @param id 用户 ID
-     * @return 影响行数
-     */
-    fun logicalDelete(@Param("id") id: Long): Int
 
     /**
      * 更新用户最近一次登录时间

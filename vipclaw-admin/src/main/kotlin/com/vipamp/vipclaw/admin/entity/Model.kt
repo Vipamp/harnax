@@ -17,7 +17,7 @@ class Model : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "ID")
+    @Schema(description = "ID")
     var id: Long = 0
 
     @Schema(description = "名称")
@@ -63,11 +63,11 @@ class Model : Serializable {
     var creator: String? = null
 
     @Schema(description = "是否可用（0:被删除，1:可用）")
-        var active: Int = 1
+    var active: Int = 1
 
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 }

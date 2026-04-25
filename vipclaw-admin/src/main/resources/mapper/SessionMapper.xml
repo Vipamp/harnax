@@ -28,7 +28,7 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="SessionResultMap">
-        SELECT * FROM session WHERE id = #{id} LIMIT 1
+        SELECT * FROM session WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
@@ -37,13 +37,8 @@
     </update>
 
     <!-- countByTitle -->
-    <select id="countByTitle" resultMap="SessionResultMap">
+    <select id="countByTitle" resultType="int">
         SELECT COUNT(*) FROM session WHERE title = #{title} AND active = 1
-    </select>
-
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="SessionResultMap">
-        SELECT * FROM session WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- updateStatus -->
@@ -75,7 +70,6 @@
         agent_id = #{agentId},
         model_id = #{modelId},
         system_prompt = #{systemPrompt},
-        status = #{status},
         is_public = #{isPublic},
         active = #{active},
         update_time = #{updateTime}

@@ -33,9 +33,5 @@ interface McpServerMapper {
 
     fun selectByName(@Param("name") name: String): McpServer?
 
-    fun selectActiveById(@Param("id") id: Long): McpServer?
-
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
-
-    fun logicalDelete(@Param("id") id: Long): Int
 }

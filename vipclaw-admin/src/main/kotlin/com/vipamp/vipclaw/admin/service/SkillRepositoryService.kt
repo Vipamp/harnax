@@ -1,10 +1,11 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
+import com.vipamp.vipclaw.admin.dto.SkillRepositoryResponse
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
 import com.vipamp.vipclaw.admin.entity.SkillRepository
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 技能仓库服务接口
@@ -17,13 +18,13 @@ interface SkillRepositoryService {
     /**
      * 分页查询技能仓库列表
      *
-     * @param name    仓库名称
-     * @param status  状态筛选字段
-     * @param current 当前页码
-     * @param size    每页大小
+     * @param name     仓库名称
+     * @param status   状态筛选字段
+     * @param pageNum  当前页码
+     * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun getRepositoryPage(name: String?, status: Int?, current: Int, size: Int): Page<SkillRepository>
+    fun page(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SkillRepository>
 
     /**
      * 获取所有启用的仓库列表
@@ -38,7 +39,7 @@ interface SkillRepositoryService {
      * @param id 技能仓库 ID
      * @return 技能仓库实体
      */
-    fun getRepositoryById(id: Long): SkillRepository
+    fun getSkillRepository(id: Long): SkillRepository?
 
     /**
      * 创建技能仓库
@@ -46,7 +47,7 @@ interface SkillRepositoryService {
      * @param request 技能仓库创建请求对象
      * @return 创建结果
      */
-    fun createRepository(request: SkillRepositoryCreateRequest): Boolean
+    fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean
 
     /**
      * 更新技能仓库
@@ -55,7 +56,7 @@ interface SkillRepositoryService {
      * @param request 技能仓库更新请求对象
      * @return 更新结果
      */
-    fun updateRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean
+    fun updateSkillRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean
 
     /**
      * 切换技能仓库启用状态
@@ -64,7 +65,7 @@ interface SkillRepositoryService {
      * @param status 启用状态（0:禁用，1:启用）
      * @return 更新结果
      */
-    fun toggleRepositoryStatus(id: Long, status: Int): Boolean
+    fun toggleSkillRepository(id: Long, status: Int): Boolean
 
     /**
      * 删除技能仓库
@@ -72,7 +73,7 @@ interface SkillRepositoryService {
      * @param id 技能仓库 ID
      * @return 删除结果
      */
-    fun deleteRepository(id: Long): Boolean
+    fun deleteSkillRepository(id: Long): Boolean
 
     /**
      * 根据仓库名称查询仓库
@@ -88,5 +89,14 @@ interface SkillRepositoryService {
      * @param repositoryId 技能仓库 ID
      * @return 远程技能列表
      */
+    // TODO Service 层不应该返回 Response 对象
     fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse>
+
+    /**
+     * 将技能仓库实体转换为技能仓库响应对象
+     *
+     * @param skillRepository 技能仓库实体
+     * @return 技能仓库响应对象
+     */
+    fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse
 }

@@ -34,8 +34,7 @@ data class McpServerResponse(
 ) {
     companion object {
         @JvmStatic
-        fun fromEntity(entity: McpServer?): McpServerResponse {
-            if (entity == null) return McpServerResponse()
+        fun fromEntity(entity: McpServer): McpServerResponse {
             return McpServerResponse(
                 id = entity.id,
                 name = entity.name,

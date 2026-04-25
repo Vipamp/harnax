@@ -23,6 +23,8 @@ interface ChannelMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
+    fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
     // ==================== 自定义查询方法 ====================
 
     fun selectChannelList(

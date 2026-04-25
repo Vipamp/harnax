@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.dto
 
+import com.vipamp.vipclaw.admin.entity.Agent
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
@@ -61,9 +62,7 @@ data class AgentResponse(
 ) {
 
     companion object {
-        fun fromEntity(agent: com.vipamp.vipclaw.admin.entity.Agent?): AgentResponse? {
-            if (agent == null) return null
-
+        fun fromEntity(agent: Agent): AgentResponse {
             val response = AgentResponse(
                 id = agent.id,
                 name = agent.name,

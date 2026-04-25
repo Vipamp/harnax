@@ -116,8 +116,8 @@ declare namespace API {
   // 模型服务商相关类型
   type ModelProviderItem = {
     id: number;
+    type: string;
     name: string;
-    displayName: string;
     apiKey?: string;
     baseUrl?: string;
     status: number;
@@ -126,8 +126,8 @@ declare namespace API {
   };
 
   type ModelProviderCreateRequest = {
+    type: string;
     name: string;
-    displayName: string;
     apiKey?: string;
     baseUrl?: string;
     isPublic?: number;
@@ -135,8 +135,8 @@ declare namespace API {
 
   type ModelProviderUpdateRequest = {
     id?: number;
+    type?: string;
     name?: string;
-    displayName?: string;
     apiKey?: string;
     baseUrl?: string;
     isPublic?: number;

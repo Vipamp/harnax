@@ -23,6 +23,8 @@ interface ModelMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
+    fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
     // ==================== 自定义查询方法 ====================
     fun selectModelList(
         @Param("name") name: String?,
@@ -40,6 +42,4 @@ interface ModelMapper {
     fun countByProviderIdAndModelName(@Param("providerId") providerId: Long, @Param("modelName") modelName: String): Int
 
     fun countActiveModelsByProviderId(@Param("providerId") providerId: Long): Int
-
-    fun selectActiveById(@Param("id") id: Long): Model?
 }

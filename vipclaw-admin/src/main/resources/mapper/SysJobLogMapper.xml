@@ -76,4 +76,7 @@
         ORDER BY create_time DESC
     </select>
 
+    <select id="selectByJobId" resultMap="SysJobLogResultMap">
+        SELECT * FROM sys_job_log WHERE job_id = #{jobId}
+    </select>
 </mapper>

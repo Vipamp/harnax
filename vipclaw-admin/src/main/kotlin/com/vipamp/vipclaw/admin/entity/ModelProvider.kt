@@ -24,16 +24,16 @@ class ModelProvider : Serializable {
     var id: Long = 1
 
     /**
-     * 服务商名称(dashscope/openai/ollama)
+     * 服务商类型(dashscope/openai/ollama)
      */
-    @Schema(description = "服务商名称(dashscope/openai/ollama)")
-    var name: String = ""
+    @Schema(description = "服务商类型(dashscope/openai/ollama)")
+    var type: String = ""
 
     /**
-     * 显示名称
+     * 名称
      */
-    @Schema(description = "显示名称")
-    var displayName: String = ""
+    @Schema(description = "名称")
+    var name: String = ""
 
     /**
      * API 密钥

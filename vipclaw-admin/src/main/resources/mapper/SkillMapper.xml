@@ -22,18 +22,13 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="SkillResultMap">
-        SELECT * FROM skill WHERE id = #{id} LIMIT 1
+        SELECT * FROM skill WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
-        UPDATE skill SET active = 0 WHERE id = #{id}
+        UPDATE skill SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
-
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="SkillResultMap">
-        SELECT * FROM skill WHERE id = #{id} AND active = 1 LIMIT 1
-    </select>
 
     <!-- selectByNameAndRepo -->
     <select id="selectByNameAndRepo" resultMap="SkillResultMap">
@@ -43,11 +38,6 @@
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE skill SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
-    <!-- logicalDelete -->
-    <update id="logicalDelete">
-        UPDATE skill SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- insert -->
@@ -69,7 +59,6 @@
         description = #{description},
         skillmd = #{skillmd},
         resources = #{resources},
-        status = #{status},
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},

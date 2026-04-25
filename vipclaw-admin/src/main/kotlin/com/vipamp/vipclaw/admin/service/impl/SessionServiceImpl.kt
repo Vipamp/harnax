@@ -2,9 +2,11 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
 import com.vipamp.vipclaw.admin.entity.Session
+import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.admin.service.*
@@ -15,7 +17,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
-import kotlin.math.min
 
 /**
  * 会话服务实现类
@@ -37,40 +38,26 @@ class SessionServiceImpl(
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
     private val objectMapper = ObjectMapper()
 
-    override fun getSessionPage(
+    override fun page(
         keyword: String?,
         status: Int?,
-        current: Int,
-        size: Int
+        pageNum: Int,
+        pageSize: Int
     ): Page<Session> {
-        log.info("分页查询会话列表，current: {}, size: {}, keyword: {}, status: {}", current, size, keyword, status)
-
-        // 获取当前用户
+        log.info(
+            "分页查询会话列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}",
+            pageNum,
+            pageSize,
+            keyword,
+            status
+        )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-
-        // 使用 MyBatis 原生查询
-        val allSessions = sessionMapper.selectSessionList(keyword, status, currentUsername)
-
-        // 手动分页
-        val page = Page<Session>(current.toLong(), size.toLong())
-        val fromIndex = (current - 1) * size
-        val toIndex = min(fromIndex + size, allSessions.size)
-
-        page.records = if (fromIndex < allSessions.size) {
-            allSessions.subList(fromIndex, toIndex)
-        } else {
-            emptyList()
-        }
-        page.total = allSessions.size.toLong()
-
-        return page
+        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername))
     }
 
-    override fun getSessionById(id: Long): Session {
-        log.info("查询会话详情，id: {}", id)
-        val session = this.sessionMapper.selectById(id)
-            ?: throw BizException("会话不存在")
-        return session
+    override fun getSession(id: Long): Session? {
+        return this.sessionMapper.selectById(id)
     }
 
     override fun convertToResponse(session: Session): SessionResponse {
@@ -87,7 +74,7 @@ class SessionServiceImpl(
 
         // 查询模型名称
         session.modelId.let { modelId ->
-            val model = modelService.getModelById(modelId)
+            val model = modelService.getModel(modelId)
             model?.let {
                 response.modelName = it.modelName
                 response.modelPrice = it.price
@@ -102,7 +89,7 @@ class SessionServiceImpl(
         response.updateTime = session.updateTime
 
         // 解析 MCP 列表 (JSON 格式)
-        if (!session.mcpList.isNullOrEmpty()) {
+        if (session.mcpList.isNotEmpty()) {
             try {
                 val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
                     session.mcpList,
@@ -114,7 +101,7 @@ class SessionServiceImpl(
                     val mcpId = (config["id"] as Number).toLong()
                     val enableSkip = config["enable_skip"] as String?
 
-                    val fullMcp = mcpServerService.getMcpServerById(mcpId)
+                    val fullMcp = mcpServerService.getMcpServer(mcpId)
                     fullMcp?.let {
                         val item = SessionResponse.McpItem()
                         item.mcpId = it.id
@@ -132,21 +119,21 @@ class SessionServiceImpl(
         }
 
         // 解析技能列表（逗号分隔的字符串）
-        if (!session.skillList.isNullOrEmpty()) {
+        if (session.skillList.isNotEmpty()) {
             try {
-                val skillIds = session.skillList!!.split(",")
+                val skillIds = session.skillList.split(",")
                 val skillItems = mutableListOf<SessionResponse.SkillItem>()
 
                 for (skillIdStr in skillIds) {
                     try {
                         val skillId = skillIdStr.trim().toLong()
-                        val skill = skillService.getSkillById(skillId)
+                        val skill = skillService.getSkill(skillId)
                         skill?.let {
                             val item = SessionResponse.SkillItem()
                             item.skillId = it.id
                             item.skillName = it.name
 
-                            val repository = skillRepositoryService.getRepositoryById(it.repositoryId)
+                            val repository = skillRepositoryService.getSkillRepository(it.repositoryId)
                             repository?.let {
                                 item.repositoryId = it.id
                                 item.repositoryName = it.name
@@ -173,20 +160,20 @@ class SessionServiceImpl(
     override fun createSession(request: SessionCreateRequest): Boolean {
         return try {
             // 检查会话名称是否重复
-            val count = sessionMapper.countByTitle(request.title!!)
+            val count = sessionMapper.countByTitle(request.title)
             if (count > 0) {
                 throw BizException("会话名称已存在，请使用其他名称")
             }
 
             // 根据智能体ID获取智能体信息
-            val agent = agentService.getAgentById(request.agentId!!)
+            val agent = agentService.getAgent(request.agentId!!)
                 ?: throw BizException("智能体不存在")
 
             val session = Session()
-            session.title = request.title!!
-            session.sessionDescription = request.sessionDescription!!
+            session.title = request.title
+            session.sessionDescription = request.sessionDescription
             session.sessionId = UUID.randomUUID().toString()
-            session.agentId = request.agentId!!
+            session.agentId = request.agentId
 
             // 从智能体复制信息
             session.name = agent.name
@@ -200,7 +187,7 @@ class SessionServiceImpl(
 
             // 设置创建人
             val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-            session.creator = currentUsername!!
+            session.creator = currentUsername
 
             // 默认不公开
             session.isPublic = 0
@@ -214,11 +201,19 @@ class SessionServiceImpl(
         }
     }
 
+    override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
+        val session = Session()
+        session.title = request.title
+        session.description = request.sessionDescription
+        request.agentId?.let { session.agentId = it }
+        return sessionMapper.updateById(session) > 0
+    }
+
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleSessionStatus(id: Long, status: Int): Boolean {
         log.info("切换会话状态，id: {}, status: {}", id, status)
 
-        val session = sessionMapper.selectActiveById(id)
+        val session = sessionMapper.selectById(id)
             ?: throw BizException("会话不存在")
 
         return sessionMapper.updateStatus(id, status) > 0

@@ -28,7 +28,7 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="ModelResultMap">
-        SELECT * FROM model WHERE id = #{id} LIMIT 1
+        SELECT * FROM model WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- deleteById -->
@@ -37,23 +37,18 @@
     </update>
 
     <!-- countByProviderIdAndName -->
-    <select id="countByProviderIdAndName" resultMap="ModelResultMap">
+    <select id="countByProviderIdAndName" resultType="int">
         SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND name = #{name} AND active = 1
     </select>
 
     <!-- countByProviderIdAndModelName -->
-    <select id="countByProviderIdAndModelName" resultMap="ModelResultMap">
+    <select id="countByProviderIdAndModelName" resultType="int">
         SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND model_name = #{modelName} AND active = 1
     </select>
 
     <!-- countActiveModelsByProviderId -->
-    <select id="countActiveModelsByProviderId" resultMap="ModelResultMap">
+    <select id="countActiveModelsByProviderId" resultType="int">
         SELECT COUNT(*) FROM model WHERE provider_id = #{providerId} AND status = 1 AND active = 1
-    </select>
-
-    <!-- selectActiveById -->
-    <select id="selectActiveById" resultMap="ModelResultMap">
-        SELECT * FROM model WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
     <!-- insert -->
@@ -82,11 +77,15 @@
         support_mcp = #{supportMcp},
         support_vision = #{supportVision},
         price = #{price},
-        status = #{status},
         is_public = #{isPublic},
         active = #{active},
         update_time = #{updateTime}
         WHERE id = #{id}
+    </update>
+
+    <!-- updateStatus -->
+    <update id="updateStatus">
+        UPDATE model SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectModelList -->

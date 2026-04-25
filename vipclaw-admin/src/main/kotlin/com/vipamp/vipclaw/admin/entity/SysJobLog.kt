@@ -10,7 +10,7 @@ class SysJobLog : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "日志ID")
+    @Schema(description = "日志ID")
     var id: Long = 0
 
     @Schema(description = "任务ID")
@@ -44,5 +44,5 @@ class SysJobLog : Serializable {
     var creator: String = ""
 
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 }

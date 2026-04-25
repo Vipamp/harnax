@@ -31,13 +31,9 @@ interface SkillMapper {
         @Param("currentUsername") currentUsername: String
     ): List<Skill>
 
-    fun selectActiveById(@Param("id") id: Long): Skill?
-
     fun selectByNameAndRepo(@Param("name") name: String, @Param("repositoryId") repositoryId: Long): Skill?
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
-
-    fun logicalDelete(@Param("id") id: Long): Int
 
     fun updateSkillFields(
         @Param("id") id: Long,

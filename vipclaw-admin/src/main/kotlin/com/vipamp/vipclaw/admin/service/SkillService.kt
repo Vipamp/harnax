@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Skill
+import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 技能服务接口
@@ -20,11 +20,11 @@ interface SkillService {
      * @param name         技能名称
      * @param repositoryId 仓库ID
      * @param status       状态筛选字段
-     * @param current      当前页码
-     * @param size         每页大小
+     * @param pageNum      当前页码
+     * @param pageSize     每页大小
      * @return 分页结果
      */
-    fun getSkillPage(name: String?, repositoryId: Long?, status: Int?, current: Int, size: Int): Page<Skill>
+    fun page(name: String?, repositoryId: Long?, status: Int?, pageNum: Int, pageSize: Int): Page<Skill>
 
     /**
      * 获取单个技能详情
@@ -32,7 +32,7 @@ interface SkillService {
      * @param id 技能 ID
      * @return 技能实体
      */
-    fun getSkillById(id: Long): Skill
+    fun getSkill(id: Long): Skill?
 
     /**
      * 创建技能
@@ -85,4 +85,6 @@ interface SkillService {
      * @return 保存的技能数量
      */
     fun batchSaveSkills(repositoryId: Long, skills: List<SkillResponse>): Int
+
+    fun convertToResponse(skill: Skill): SkillResponse
 }

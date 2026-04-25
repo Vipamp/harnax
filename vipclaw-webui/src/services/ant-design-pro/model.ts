@@ -4,7 +4,7 @@ import { request } from '@umijs/max';
  * 模型分页查询
  */
 export async function modelPage(params: {
-  current?: number;
+  pageNum?: number;
   pageSize?: number;
   name?: string;
   providerId?: number;
@@ -52,9 +52,10 @@ export async function updateModel(id: number, data: API.ModelUpdateRequest) {
 /**
  * 切换模型状态
  */
-export async function toggleModel(id: number) {
+export async function toggleModel(id: number, status: number) {
   return request<API.Result<API.ModelItem>>(`/admin/models/toggle/${id}`, {
     method: 'PUT',
+    params: { status },
   });
 }
 

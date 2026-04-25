@@ -14,6 +14,7 @@ enum ErrorShowType {
 // 与后端约定的响应数据格式
 interface ResponseStructure {
   success?: boolean;
+  isSuccess?: boolean;
   code?: number;
   data?: any;
   errorCode?: number;
@@ -64,17 +65,19 @@ export const errorConfig: RequestConfig = {
  errorConfig: {
   // 错误抛出
   errorThrower: (res) => {
-  const { success, code, data, errorCode, errorMessage, message, showType } =
+  const { success, isSuccess, code, data, errorCode, errorMessage, message: msg, showType } =
       res as unknown as ResponseStructure;
-    // 支持两种格式：success 字段或 code 字段
-    const isSuccess = success === true || code === 200;
-    const errorMsg = errorMessage || message;
+    
+    // 支持三种格式：success 字段、isSuccess 字段或 code 字段
+    const isSuccessValue = success === true || isSuccess === true || code === 200;
+    // 优先使用 errorMessage，其次使用 message 字段（后端 ResultVo 使用 message 字段）
+    const errorMsg = errorMessage || msg;
     const errorCodeValue = errorCode || code;
     
-    if (!isSuccess) {
+    if (!isSuccessValue) {
     const error: any = new Error(errorMsg || '请求失败');
       error.name = 'BizError';
-      error.info = { errorCode: errorCodeValue, errorMessage: errorMsg, showType, data };
+      error.info = { errorCode: errorCodeValue, errorMessage: errorMsg, showType: showType || ErrorShowType.ERROR_MESSAGE, data };
       throw error; // 抛出自制的错误
     }
   },
@@ -112,7 +115,12 @@ export const errorConfig: RequestConfig = {
     } else if (error.response) {
       // Axios 的错误
       // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
-      const { status } = error.response;
+      const { status, data } = error.response;
+      
+      // 尝试从响应数据中提取错误信息（后端可能返回 ResultVo 格式）
+      const responseData = data as ResponseStructure | undefined;
+      const errorMsg = responseData?.message || responseData?.errorMessage || `请求失败 (状态码: ${status})`;
+      
       if (status === 401) {
         // 未授权，先检查 localStorage 中是否有 token
         const tokenInfoStr = localStorage.getItem('tokenInfo');
@@ -144,7 +152,9 @@ export const errorConfig: RequestConfig = {
         }
         return;
       }
-      message.error(`Response status:${status}`);
+      
+      // 显示后端返回的具体错误信息
+      message.error(errorMsg);
     } else if (error.request) {
       // 请求已经成功发起，但没有收到响应
       // \`error.request\` 在浏览器中是 XMLHttpRequest 的实例，
@@ -161,12 +171,11 @@ export const errorConfig: RequestConfig = {
  responseInterceptors: [
  (response) => {
      // 拦截响应数据，进行个性化处理
-   const { data, success, code } = response as unknown as ResponseStructure;
+   const { data, success, code, message: msg } = response as unknown as ResponseStructure;
 
      // 支持两种格式：success 字段或 code 字段
-     if ((success === false) || (code && code !== 200)) {
-       message.error('请求失败！');
-     }
+     // 注意：这里不显示错误信息，让 errorThrower 抛出错误后由 errorHandler 处理
+     // 避免重复显示错误信息
      return response;
    },
  ],

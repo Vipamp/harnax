@@ -34,6 +34,8 @@ interface AgentMapper {
      */
     fun deleteById(@Param("id") id: Long): Int
 
+    fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
     /**
      * 查询列表（带条件）
      */
@@ -42,9 +44,4 @@ interface AgentMapper {
         @Param("status") status: Int?,
         @Param("currentUsername") currentUsername: String
     ): List<Agent>
-
-    /**
-     * 查询激活状态的记录
-     */
-    fun selectActiveById(@Param("id") id: Long): Agent?
 }

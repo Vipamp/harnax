@@ -79,10 +79,12 @@ const SessionPage: React.FC = () => {
         // 刷新列表，不指定目标会话 ID
         loadSessions();
       } else {
+        // 显示后端返回的具体错误信息
         message.error(res.message || '删除失败');
       }
-    } catch (error) {
-      message.error('删除失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      message.error(errorMsg);
     }
   };
 

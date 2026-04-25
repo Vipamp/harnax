@@ -4,11 +4,10 @@ import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
-import com.vipamp.vipclaw.admin.entity.Skill
-import com.vipamp.vipclaw.admin.entity.SkillRepository
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.service.SkillService
 import com.vipamp.vipclaw.common.page.Page
+import com.vipamp.vipclaw.common.page.mapRecords
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -34,7 +33,7 @@ class SkillController(
 
     @GetMapping("/page")
     @Operation(summary = "分页获取技能列表", description = "分页查询技能信息")
-    fun getSkillPage(
+    fun pageSkill(
         @Parameter(description = "页码", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1"
@@ -48,8 +47,8 @@ class SkillController(
         @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?
     ): ResultVo<Page<SkillResponse>> {
         return try {
-            val page = skillService.getSkillPage(name, repositoryId, status, pageNum ?: 1, pageSize ?: 10)
-            val responsePage = convertToResponsePage(page)
+            val page = skillService.page(name, repositoryId, status, pageNum ?: 1, pageSize ?: 10)
+            val responsePage = page.mapRecords { skillService.convertToResponse(it) }
             ResultVo.success(responsePage)
         } catch (e: Exception) {
             log.error("获取技能列表失败", e)
@@ -59,14 +58,13 @@ class SkillController(
 
     @GetMapping("/{id}")
     @Operation(summary = "获取技能详情", description = "根据技能 ID 获取技能信息")
-    fun getSkillById(
+    fun getSkill(
         @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long
-    ): ResultVo<SkillResponse> {
+    ): ResultVo<SkillResponse?> {
         return try {
-            val skill = skillService.getSkillById(id)
+            val skill = skillService.getSkill(id)
             // 获取仓库信息
-            var repository: SkillRepository? = null
-            repository = skillRepositoryService.getRepositoryById(skill.repositoryId)
+            val repository = skillRepositoryService.getSkillRepository(skill!!.repositoryId)
             ResultVo.success(SkillResponse.fromEntity(skill, repository))
         } catch (e: Exception) {
             log.error("获取技能详情失败", e)
@@ -87,41 +85,41 @@ class SkillController(
         }
     }
 
-    @PutMapping("/update/{skillId}")
+    @PutMapping("/update/{id}")
     @Operation(summary = "更新技能", description = "根据技能 ID 更新技能信息")
     fun updateSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "skillId") skillId: Long,
+        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SkillUpdateRequest
     ): ResultVo<Void> {
         return try {
-            if (skillService.updateSkill(skillId, request)) ResultVo.success() else ResultVo.error("更新技能失败")
+            if (skillService.updateSkill(id, request)) ResultVo.success() else ResultVo.error("更新技能失败")
         } catch (e: Exception) {
             log.error("更新技能失败", e)
             ResultVo.error(e.message ?: "更新技能失败")
         }
     }
 
-    @PutMapping("/toggle/{skillId}")
+    @PutMapping("/toggle/{id}")
     @Operation(summary = "切换技能状态", description = "根据技能 ID 切换技能状态")
     fun toggleSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "skillId") skillId: Long,
+        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
         @Parameter(description = "技能状态") @RequestParam(name = "status") status: Int
     ): ResultVo<Void> {
         return try {
-            if (skillService.toggleSkillStatus(skillId, status)) ResultVo.success() else ResultVo.error("更新技能失败")
+            if (skillService.toggleSkillStatus(id, status)) ResultVo.success() else ResultVo.error("更新技能失败")
         } catch (e: Exception) {
             log.error("更新技能失败", e)
             ResultVo.error(e.message ?: "更新技能失败")
         }
     }
 
-    @DeleteMapping("/{skillId}")
+    @DeleteMapping("/{id}")
     @Operation(summary = "删除技能", description = "根据技能 ID 删除技能")
     fun deleteSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "skillId") skillId: Long
+        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long
     ): ResultVo<Void> {
         return try {
-            if (skillService.deleteSkill(skillId)) ResultVo.success() else ResultVo.error("删除技能失败")
+            if (skillService.deleteSkill(id)) ResultVo.success() else ResultVo.error("删除技能失败")
         } catch (e: Exception) {
             log.error("删除技能失败", e)
             ResultVo.error(e.message ?: "删除技能失败")
@@ -143,26 +141,4 @@ class SkillController(
         }
     }
 
-    /**
-     * 分页结果转换
-     */
-    private fun convertToResponsePage(page: Page<Skill>): Page<SkillResponse> {
-        val responsePage = Page<SkillResponse>(page.current, page.size)
-        responsePage.total = page.total
-        responsePage.size = page.size
-        responsePage.current = page.current
-        responsePage.pages = page.pages
-        responsePage.records = page.records.map { skill ->
-            val response = SkillResponse.fromEntity(skill)
-            // 设置仓库名称
-            try {
-                val repository = skillRepositoryService.getRepositoryById(skill.repositoryId)
-                response.repositoryName = repository.name
-            } catch (e: Exception) {
-                log.warn("获取仓库名称失败，repositoryId: {}", skill.repositoryId)
-            }
-            response
-        }
-        return responsePage
-    }
 }

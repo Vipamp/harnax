@@ -5,7 +5,6 @@ import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
-import com.vipamp.vipclaw.common.page.Page
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -13,14 +12,14 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentMatchers.*
+import org.mindrot.jbcrypt.BCrypt
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.*
+import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
-import org.mockito.junit.jupiter.MockitoExtension
-import org.mindrot.jbcrypt.BCrypt
 import java.time.LocalDateTime
 
 /**
@@ -89,13 +88,13 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.selectUserList(null, null)).thenReturn(users)
 
             // When
-            val page = sysUserService.getUserPage(null, null, 1, 10)
+            val page = sysUserService.page(null, null, 1, 10)
 
             // Then
             assertNotNull(page)
             assertEquals(2, page.total)
-            assertEquals(1, page.current)
-            assertEquals(10, page.size)
+            assertEquals(1, page.pageNum)
+            assertEquals(10, page.pageSize)
             assertEquals(2, page.records.size)
             verify(sysUserMapper).selectUserList(null, null)
         }
@@ -108,7 +107,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.selectUserList("test", null)).thenReturn(users)
 
             // When
-            val page = sysUserService.getUserPage("test", null, 1, 10)
+            val page = sysUserService.page("test", null, 1, 10)
 
             // Then
             assertEquals(1, page.total)
@@ -124,7 +123,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.selectUserList(null, 1)).thenReturn(users)
 
             // When
-            val page = sysUserService.getUserPage(null, 1, 1, 10)
+            val page = sysUserService.page(null, 1, 1, 10)
 
             // Then
             assertEquals(1, page.total)
@@ -140,7 +139,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.selectUserList(null, null)).thenReturn(users)
 
             // When
-            val page = sysUserService.getUserPage(null, null, 10, 10)
+            val page = sysUserService.page(null, null, 10, 10)
 
             // Then
             assertTrue(page.records.isEmpty())
@@ -155,29 +154,30 @@ class SysUserServiceImplTest {
         @DisplayName("getUserById - 查询存在的用户")
         fun `getUserById should return user when exists`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
 
             // When
-            val user = sysUserService.getUserById(1L)
+            val user = sysUserService.getSysUser(1L)
 
             // Then
             assertNotNull(user)
-            assertEquals(1L, user.id)
-            assertEquals("testuser", user.username)
-            verify(sysUserMapper).selectActiveById(1L)
+            assertEquals(1L, user?.id)
+            assertEquals("testuser", user?.username)
+            verify(sysUserMapper).selectById(1L)
         }
 
         @Test
-        @DisplayName("getUserById - 查询不存在的用户应该抛出异常")
-        fun `getUserById should throw BizException when user not found`() {
+        @DisplayName("getUserById - 查询不存在的用户应该返回 null")
+        fun `getUserById should return null when user not found`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(999L)).thenReturn(null)
+            `when`(sysUserMapper.selectById(999L)).thenReturn(null)
 
-            // When & Then
-            val exception = assertThrows<BizException> {
-                sysUserService.getUserById(999L)
-            }
-            assertEquals("用户不存在", exception.message)
+            // When
+            val result = sysUserService.getSysUser(999L)
+
+            // Then
+            assertNull(result)
+            verify(sysUserMapper).selectById(999L)
         }
     }
 
@@ -209,10 +209,10 @@ class SysUserServiceImplTest {
             verify(sysUserMapper).selectByUsername("newuser")
             verify(sysUserMapper).insert(argThat { user ->
                 user!!.username == "newuser" &&
-                user.status == 1 &&  // 默认启用
-                user.isAdmin == 0 &&  // 默认非管理员
-                user.active == 1 &&   // 默认生效
-                user.password.startsWith("\$2a\$10\$")  // 密码已加密
+                        user.status == 1 &&  // 默认启用
+                        user.isAdmin == 0 &&  // 默认非管理员
+                        user.active == 1 &&   // 默认生效
+                        user.password.startsWith("\$2a\$10\$")  // 密码已加密
             })
         }
 
@@ -354,7 +354,7 @@ class SysUserServiceImplTest {
                 nickname = "更新后的昵称",
                 email = "updated@example.com"
             )
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -362,7 +362,7 @@ class SysUserServiceImplTest {
 
             // Then
             assertTrue(result)
-            verify(sysUserMapper).selectActiveById(1L)
+            verify(sysUserMapper).selectById(1L)
             verify(sysUserMapper).updateById(any<SysUser>())
         }
 
@@ -371,7 +371,7 @@ class SysUserServiceImplTest {
         fun `updateUser should throw BizException when user not found`() {
             // Given
             val request = SysUserUpdateRequest(nickname = "新昵称")
-            `when`(sysUserMapper.selectActiveById(999L)).thenReturn(null)
+            `when`(sysUserMapper.selectById(999L)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -386,7 +386,7 @@ class SysUserServiceImplTest {
         fun `updateUser should encrypt password when provided`() {
             // Given
             val request = SysUserUpdateRequest(password = "newpassword123")
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -404,7 +404,7 @@ class SysUserServiceImplTest {
         fun `updateUser should throw BizException when phone exists`() {
             // Given
             val request = SysUserUpdateRequest(phone = "13800138001")  // 其他用户的手机号
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.selectByPhone("13800138001")).thenReturn(SysUser().apply { id = 2L })
 
             // When & Then
@@ -420,7 +420,7 @@ class SysUserServiceImplTest {
         fun `updateUser should throw BizException when email exists`() {
             // Given
             val request = SysUserUpdateRequest(email = "other@example.com")  // 其他用户的邮箱
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.selectByEmail("other@example.com")).thenReturn(SysUser().apply { id = 2L })
 
             // When & Then
@@ -436,7 +436,7 @@ class SysUserServiceImplTest {
         fun `updateUser should succeed when setting own phone`() {
             // Given
             val request = SysUserUpdateRequest(phone = "13800138000")  // 用户自己的手机号
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -457,7 +457,7 @@ class SysUserServiceImplTest {
                 password = "",
                 nickname = "新昵称"
             )
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -467,7 +467,7 @@ class SysUserServiceImplTest {
             assertTrue(result)
             verify(sysUserMapper).updateById(argThat { user ->
                 user!!.password == testUser.password &&  // 密码不变
-                user.nickname == "新昵称"
+                        user.nickname == "新昵称"
             })
         }
 
@@ -476,7 +476,7 @@ class SysUserServiceImplTest {
         fun `updateUser should update isAdmin field`() {
             // Given
             val request = SysUserUpdateRequest(isAdmin = 1)
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -498,7 +498,7 @@ class SysUserServiceImplTest {
                 nickname = "新昵称"
                 // email 等其他字段为 null
             )
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
@@ -508,7 +508,7 @@ class SysUserServiceImplTest {
             assertTrue(result)
             verify(sysUserMapper).updateById(argThat { user ->
                 user!!.nickname == "新昵称" &&
-                user.email == originalEmail  // email 保持不变
+                        user.email == originalEmail  // email 保持不变
             })
         }
     }
@@ -521,7 +521,7 @@ class SysUserServiceImplTest {
         @DisplayName("toggleUserStatus - 禁用用户")
         fun `toggleUserStatus should disable user`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateStatus(1L, 0)).thenReturn(1)
 
             // When
@@ -529,7 +529,7 @@ class SysUserServiceImplTest {
 
             // Then
             assertTrue(result)
-            verify(sysUserMapper).selectActiveById(1L)
+            verify(sysUserMapper).selectById(1L)
             verify(sysUserMapper).updateStatus(1L, 0)
         }
 
@@ -537,7 +537,7 @@ class SysUserServiceImplTest {
         @DisplayName("toggleUserStatus - 启用用户")
         fun `toggleUserStatus should enable user`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateStatus(1L, 1)).thenReturn(1)
 
             // When
@@ -552,7 +552,7 @@ class SysUserServiceImplTest {
         @DisplayName("toggleUserStatus - 用户不存在应该抛出异常")
         fun `toggleUserStatus should throw BizException when user not found`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(999L)).thenReturn(null)
+            `when`(sysUserMapper.selectById(999L)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -570,37 +570,37 @@ class SysUserServiceImplTest {
         @DisplayName("deleteUser - 逻辑删除成功")
         fun `deleteUser should logically delete user`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(testUser)
-            `when`(sysUserMapper.logicalDelete(1L)).thenReturn(1)
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
+            `when`(sysUserMapper.deleteById(1L)).thenReturn(1)
 
             // When
             val result = sysUserService.deleteUser(1L)
 
             // Then
             assertTrue(result)
-            verify(sysUserMapper).selectActiveById(1L)
-            verify(sysUserMapper).logicalDelete(1L)
+            verify(sysUserMapper).selectById(1L)
+            verify(sysUserMapper).deleteById(1L)
         }
 
         @Test
         @DisplayName("deleteUser - 用户不存在应该抛出异常")
         fun `deleteUser should throw BizException when user not found`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(999L)).thenReturn(null)
+            `when`(sysUserMapper.selectById(999L)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> {
                 sysUserService.deleteUser(999L)
             }
             assertEquals("用户不存在", exception.message)
-            verify(sysUserMapper, never()).logicalDelete(any<Long>())
+            verify(sysUserMapper, never()).deleteById(any<Long>())
         }
 
         @Test
         @DisplayName("deleteUser - 重复删除应该抛出异常")
         fun `deleteUser should throw BizException when user already deleted`() {
             // Given
-            `when`(sysUserMapper.selectActiveById(1L)).thenReturn(null)  // 已删除的用户查询不到
+            `when`(sysUserMapper.selectById(1L)).thenReturn(null)  // 已删除的用户查询不到
 
             // When & Then
             val exception = assertThrows<BizException> {
