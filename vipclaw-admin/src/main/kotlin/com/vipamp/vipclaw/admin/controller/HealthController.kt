@@ -1,5 +1,7 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.common.SystemInfo
+import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.ResultVo.Companion.success
 import io.swagger.v3.oas.annotations.media.Schema
@@ -17,11 +19,17 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 @RequestMapping("/admin")
 @Tag(name = "健康监测", description = "Health 监测")
-class HealthController {
+class HealthController(private val editionUtil: EditionUtil) {
 
     @GetMapping("/health")
     @Schema(description = "健康检查")
     fun health(): ResultVo<String?> {
-        return success<String?>("OK")
+        return success("OK")
+    }
+
+    @GetMapping("/info")
+    @Schema(description = "获取版本信息")
+    fun version(): ResultVo<SystemInfo> {
+        return success(SystemInfo.from(editionUtil))
     }
 }

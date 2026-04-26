@@ -2,6 +2,7 @@ import {
   LockOutlined,
   MobileOutlined,
   UserOutlined,
+  GithubOutlined,
 } from '@ant-design/icons';
 import {
   LoginForm,
@@ -10,7 +11,7 @@ import {
   ProFormText,
 } from '@ant-design/pro-components';
 import { FormattedMessage, Helmet, SelectLang, useIntl, useModel, history } from '@umijs/max';
-import { Alert, Image, Spin, Tabs, message } from 'antd';
+import { Alert, Image, Spin, Tabs, message, Button, Divider } from 'antd';
 import { createStyles } from 'antd-style';
 import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -18,20 +19,10 @@ import { Footer } from '@/components';
 import { login as loginApi, getCaptcha } from '@/services/ant-design-pro/login';
 import Settings from '../../../../config/defaultSettings';
 import CryptoJS from 'crypto-js';
+import { isPersonal, isPublic } from '@/utils/edition';
 
 const useStyles = createStyles(({ token }) => {
   return {
-    action: {
-      marginLeft: '8px',
-      color: 'rgba(0, 0, 0, 0.2)',
-      fontSize: '24px',
-      verticalAlign: 'middle',
-      cursor: 'pointer',
-      transition: 'color 0.3s',
-      '&:hover': {
-        color: token.colorPrimaryActive,
-      },
-    },
     lang: {
       width: 42,
       height: 42,
@@ -40,96 +31,141 @@ const useStyles = createStyles(({ token }) => {
       right: 16,
       top: 16,
       borderRadius: token.borderRadius,
-      zIndex: 100,
+      zIndex: 1000,
       ':hover': {
         backgroundColor: token.colorBgTextHover,
       },
     },
+    // 整体容器 - 左右分栏布局
     container: {
       display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 30%, #0f3460 60%, #4f6ef7 100%)',
       position: 'relative',
       overflow: 'hidden',
-      padding: '24px',
     },
-    decorativeCircle1: {
+    // 左侧品牌展示区
+    leftPanel: {
+      flex: 1,
+      background: 'linear-gradient(135deg, #f0f7ff 0%, #f0fdfa 50%, #e0f2fe 100%)',
+      position: 'relative',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      padding: '60px',
+      overflow: 'hidden',
+    },
+    // 右侧登录操作区
+    rightPanel: {
+      flex: 1,
+      background: '#ffffff',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '40px',
+      position: 'relative',
+    },
+    // 粒子背景
+    particleBackground: {
       position: 'absolute',
-      width: 600,
-      height: 600,
-      borderRadius: '50%',
-      background: 'radial-gradient(circle, rgba(79,110,247,0.15) 0%, transparent 70%)',
-      top: '-200px',
-      right: '-100px',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       pointerEvents: 'none',
+      overflow: 'hidden',
     },
-    decorativeCircle2: {
-      position: 'absolute',
-      width: 500,
-      height: 500,
-      borderRadius: '50%',
-      background: 'radial-gradient(circle, rgba(102,126,234,0.12) 0%, transparent 70%)',
-      bottom: '-150px',
-      left: '-100px',
-      pointerEvents: 'none',
-    },
-    decorativeCircle3: {
-      position: 'absolute',
-      width: 300,
-      height: 300,
-      borderRadius: '50%',
-      background: 'radial-gradient(circle, rgba(79,110,247,0.1) 0%, transparent 70%)',
-      top: '50%',
-      left: '10%',
-      transform: 'translateY(-50%)',
-      pointerEvents: 'none',
-    },
-    loginCard: {
-      width: '100%',
-      maxWidth: '480px',
+    // Logo 区域
+    logoArea: {
       position: 'relative',
       zIndex: 10,
     },
-    loginCardInner: {
-      background: 'rgba(255, 255, 255, 0.95)',
-      backdropFilter: 'blur(20px)',
-      borderRadius: '24px',
-      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-      padding: '48px 40px',
-      '@media (max-width: 480px)': {
-        padding: '32px 24px',
-        borderRadius: '20px',
-      },
-    },
-    logoSection: {
-      textAlign: 'center',
-      marginBottom: 32,
-    },
     logoIcon: {
-      width: 72,
-      height: 72,
-      borderRadius: '20px',
-      background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
+      width: 56,
+      height: 56,
+      borderRadius: '16px',
+      background: 'linear-gradient(135deg, #1677ff 0%, #36cbcb 100%)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      margin: '0 auto 20px',
-      fontSize: '36px',
-      boxShadow: '0 10px 30px rgba(79, 110, 247, 0.3)',
+      fontSize: '28px',
+      marginBottom: '16px',
+      boxShadow: '0 8px 24px rgba(22, 119, 255, 0.25)',
     },
     logoTitle: {
-      fontSize: '32px',
+      fontSize: '28px',
       fontWeight: 700,
-      color: '#1a1a2e',
+      color: '#1f2937',
       margin: '0 0 8px',
       letterSpacing: '-0.5px',
     },
     logoSubtitle: {
-      fontSize: '15px',
-      color: '#888',
+      fontSize: '14px',
+      color: '#6b7280',
+      margin: 0,
+      fontWeight: 500,
+    },
+    // 中间视觉区域
+    visualArea: {
+      position: 'relative',
+      zIndex: 10,
+      flex: 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    visualIllustration: {
+      width: '100%',
+      maxWidth: '500px',
+      height: 'auto',
+    },
+    // 底部 Slogan 区域
+    bottomArea: {
+      position: 'relative',
+      zIndex: 10,
+    },
+    slogan: {
+      fontSize: '20px',
+      fontWeight: 600,
+      color: '#1f2937',
+      margin: '0 0 12px',
+      lineHeight: 1.4,
+    },
+    description: {
+      fontSize: '14px',
+      color: '#6b7280',
+      margin: '0 0 24px',
+      lineHeight: 1.7,
+    },
+    openSourceBadge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 16px',
+      background: 'rgba(255, 255, 255, 0.8)',
+      backdropFilter: 'blur(10px)',
+      borderRadius: '20px',
+      fontSize: '13px',
+      color: '#6b7280',
+      border: '1px solid rgba(229, 231, 235, 0.5)',
+    },
+    // 登录卡片
+    loginCard: {
+      width: '100%',
+      maxWidth: '420px',
+    },
+    loginHeader: {
+      textAlign: 'center',
+      marginBottom: '32px',
+    },
+    loginTitle: {
+      fontSize: '28px',
+      fontWeight: 700,
+      color: '#1f2937',
+      margin: '0 0 8px',
+    },
+    loginSubtitle: {
+      fontSize: '14px',
+      color: '#6b7280',
       margin: 0,
     },
     features: {
@@ -138,25 +174,43 @@ const useStyles = createStyles(({ token }) => {
       justifyContent: 'center',
       marginTop: 24,
       flexWrap: 'wrap',
-      '@media (max-width: 480px)': {
-        gap: '8px',
-      },
     },
     featureTag: {
-      padding: '8px 16px',
-      background: 'linear-gradient(135deg, rgba(79,110,247,0.08) 0%, rgba(102,126,234,0.08) 100%)',
-      borderRadius: '20px',
-      fontSize: '13px',
-      color: '#4f6ef7',
+      padding: '6px 14px',
+      background: 'linear-gradient(135deg, rgba(22,119,255,0.06) 0%, rgba(54,203,203,0.06) 100%)',
+      borderRadius: '16px',
+      fontSize: '12px',
+      color: '#1677ff',
       fontWeight: 500,
-      border: '1px solid rgba(79,110,247,0.15)',
+      border: '1px solid rgba(22,119,255,0.12)',
     },
-    footerWrapper: {
-      position: 'absolute',
-      bottom: 24,
-      left: 0,
-      right: 0,
-      zIndex: 10,
+    thirdPartyLogin: {
+      marginTop: 24,
+      textAlign: 'center',
+    },
+    thirdPartyTitle: {
+      fontSize: '13px',
+      color: '#9ca3af',
+      marginBottom: 16,
+    },
+    thirdPartyIcons: {
+      display: 'flex',
+      justifyContent: 'center',
+      gap: 16,
+    },
+    thirdPartyIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: '50%',
+      background: '#f9fafb',
+      border: '1px solid #e5e7eb',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+      transition: 'all 0.2s',
+      fontSize: '18px',
+      color: '#6b7280',
     },
   };
 });
@@ -192,19 +246,32 @@ const Login: React.FC = () => {
   const { styles } = useStyles();
   const intl = useIntl();
 
+  // 鼠标位置追踪（用于左侧粒子动画）
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const leftPanelRef = React.useRef<HTMLDivElement>(null);
+
+  // 鼠标移动处理函数 - 左侧面板粒子跟随
+  const handleLeftPanelMouseMove = React.useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (leftPanelRef.current) {
+      const rect = leftPanelRef.current.getBoundingClientRect();
+      setMousePosition({ 
+        x: e.clientX - rect.left, 
+        y: e.clientY - rect.top 
+      });
+    }
+  }, []);
+
   // 验证码相关状态
   const [captchaImage, setCaptchaImage] = useState<string>('');
   const [captchaKey, setCaptchaKey] = useState<string>('');
   const [loadingCaptcha, setLoadingCaptcha] = useState<boolean>(false);
 
-  // 检查用户是否已登录，如果已登录则跳转到欢迎页
+  // 检查用户是否已登录
   React.useEffect(() => {
-    // 只有当 localStorage 中有有效的 token 且 currentUser 存在时，才认为是已登录状态
     const tokenInfoStr = localStorage.getItem('tokenInfo');
     const hasValidToken = tokenInfoStr && (() => {
       try {
         const tokenInfo = JSON.parse(tokenInfoStr);
-        // 检查 token 是否过期
         if (tokenInfo.expiresAt && Date.now() < tokenInfo.expiresAt) {
           return true;
         }
@@ -221,150 +288,118 @@ const Login: React.FC = () => {
   }, [initialState?.currentUser, message]);
 
   const fetchUserInfo = async () => {
-  const userInfo = await initialState?.fetchUserInfo?.();
+    const userInfo = await initialState?.fetchUserInfo?.();
     if (userInfo) {
-    flushSync(() => {
-   setInitialState((s) => ({
-       ...s,
-       currentUser: userInfo,
-      }));
-    });
-   }
- };
+      flushSync(() => {
+        setInitialState((s) => ({
+          ...s,
+          currentUser: userInfo,
+        }));
+      });
+    }
+  };
 
   // 获取验证码
   const getCaptchaImage = async () => {
-  try {
-  setLoadingCaptcha(true);
-  const result = await getCaptcha();
-    if (result.code === 200 && result.data) {
-   setCaptchaImage(result.data.imageBase64 || '');
-   setCaptchaKey(result.data.captchaKey || '');
+    try {
+      setLoadingCaptcha(true);
+      const result = await getCaptcha();
+      if (result.code === 200 && result.data) {
+        setCaptchaImage(result.data.imageBase64 || '');
+        setCaptchaKey(result.data.captchaKey || '');
+      }
+    } catch (error) {
+      console.error('获取验证码失败:', error);
+      message.error('获取验证码失败，请刷新重试');
+    } finally {
+      setLoadingCaptcha(false);
     }
-   } catch (error) {
-  console.error('获取验证码失败:', error);
-  message.error('获取验证码失败，请刷新重试');
-   } finally {
-  setLoadingCaptcha(false);
-   }
- };
+  };
 
   // 页面加载时获取验证码
   React.useEffect(() => {
-   if (type === 'account') {
-    getCaptchaImage();
-   }
- }, [type]);
-
-  const handleSubmit = async (values: API.LoginParams) => {
- try {
-    // 对密码进行前端加密（SHA-256）
-    const encryptedPassword = values.password 
-      ? CryptoJS.SHA256(values.password).toString()
-      : values.password;
-    
-    // 登录
-   // 提交时包含 captchaKey，后端会校验验证码
- const msg = await loginApi({ ...values, password: encryptedPassword, type, captchaKey });
-  
-  // 检查后端返回的 code
-  if (msg.code === 200 && msg.data) {
-    const defaultLoginSuccessMessage = intl.formatMessage({
-     id: 'pages.login.success',
-      defaultMessage: '登录成功！',
-       });
-   message.success(defaultLoginSuccessMessage);
-     
-      // 直接从登录响应中提取用户信息并保存
- const userInfo = msg.data.userInfo;
- console.log('[登录成功] 后端返回的用户信息:', userInfo);
- if (userInfo) {
- const currentUser= {
-  userId: userInfo.userId,
-  username: userInfo.username,
-  nickname: userInfo.nickname,
-  avatar: userInfo.avatar,
-  email: userInfo.email,
- phone: userInfo.phone,
- gender: userInfo.gender,
- isAdmin: userInfo.isAdmin,
-};
-  console.log('[登录成功] 保存到 localStorage 的 currentUser:', currentUser);
-  console.log('[登录成功] isAdmin 值:', currentUser.isAdmin, '类型:', typeof currentUser.isAdmin);
-  
- // 保存到 React 状态
- flushSync(() => {
- setInitialState((s) => ({
-   ...s,
- currentUser,
- }));
- });
- 
- // 保存到 localStorage 以便刷新后恢复
- localStorage.setItem('currentUser', JSON.stringify(currentUser));
- }
-  
- // 保存 token 信息到 localStorage（用于后续请求认证）
- if (msg.data.accessToken) {
- const tokenInfo = {
- accessToken: msg.data.accessToken,
-  tokenType: msg.data.tokenType || 'Bearer',
- expiresIn: msg.data.expiresIn,
- expiresAt: msg.data.expiresAt,
-};
- localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
- console.log('[登录成功] Token 已保存:', tokenInfo);
- 
- // 确保 token 已经持久化到 localStorage
- try {
-  const savedToken = localStorage.getItem('tokenInfo');
-  if (savedToken) {
-   console.log('[登录成功] Token 验证成功，可以开始请求');
-  } else {
-   console.error('[登录成功] Token 保存失败！');
-  }
- } catch (e) {
-  console.error('[登录成功] 验证 Token 失败:', e);
- }
-}
-    
-// 使用 history.push 进行跳转，避免页面刷新导致 token 丢失
-const urlParams = new URL(window.location.href).searchParams;
-const redirect = urlParams.get('redirect');
-if (redirect) {
- // 给一个短暂的延迟，确保 localStorage 已经完全写入
- setTimeout(() => {
-  console.log('[登录成功] 准备跳转到 redirect:', redirect);
-  history.push(redirect);
- }, 100);
-} else {
- setTimeout(() => {
-  console.log('[登录成功] 准备跳转到 /welcome');
-  history.push('/welcome');
- }, 100);
-}
-return;
-    }
-    
-    // 登录失败，显示后端返回的具体错误信息
-    const errorMessage = msg.message || intl.formatMessage({
-      id: 'pages.login.failure',
-      defaultMessage: '登录失败，请重试！',
-    });
-    message.error(errorMessage);
-    // 刷新验证码
     if (type === 'account') {
       getCaptchaImage();
     }
-   } catch (error: any) {
-      // 捕获网络错误或其他异常
+  }, [type]);
+
+  const handleSubmit = async (values: API.LoginParams) => {
+    try {
+      const encryptedPassword = values.password 
+        ? CryptoJS.SHA256(values.password).toString()
+        : values.password;
+      
+      const msg = await loginApi({ ...values, password: encryptedPassword, type, captchaKey });
+  
+      if (msg.code === 200 && msg.data) {
+        const defaultLoginSuccessMessage = intl.formatMessage({
+          id: 'pages.login.success',
+          defaultMessage: '登录成功！',
+        });
+        message.success(defaultLoginSuccessMessage);
+        
+        const userInfo = msg.data.userInfo;
+        if (userInfo) {
+          const currentUser = {
+            userId: userInfo.userId,
+            username: userInfo.username,
+            nickname: userInfo.nickname,
+            avatar: userInfo.avatar,
+            email: userInfo.email,
+            phone: userInfo.phone,
+            gender: userInfo.gender,
+            isAdmin: userInfo.isAdmin,
+          };
+          
+          flushSync(() => {
+            setInitialState((s) => ({
+              ...s,
+              currentUser,
+            }));
+          });
+          
+          localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        }
+  
+        if (msg.data.accessToken) {
+          const tokenInfo = {
+            accessToken: msg.data.accessToken,
+            tokenType: msg.data.tokenType || 'Bearer',
+            expiresIn: msg.data.expiresIn,
+            expiresAt: msg.data.expiresAt,
+          };
+          localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
+        }
+        
+        const urlParams = new URL(window.location.href).searchParams;
+        const redirect = urlParams.get('redirect');
+        if (redirect) {
+          setTimeout(() => {
+            history.push(redirect);
+          }, 100);
+        } else {
+          setTimeout(() => {
+            history.push('/welcome');
+          }, 100);
+        }
+        return;
+      }
+      
+      const errorMessage = msg.message || intl.formatMessage({
+        id: 'pages.login.failure',
+        defaultMessage: '登录失败，请重试！',
+      });
+      message.error(errorMessage);
+      if (type === 'account') {
+        getCaptchaImage();
+      }
+    } catch (error: any) {
       const errorMessage = error?.message || error?.response?.data?.message || intl.formatMessage({
         id: 'pages.login.failure',
         defaultMessage: '登录失败，请重试！',
       });
       console.error('[登录失败] 错误信息:', error);
       message.error(errorMessage);
-      // 刷新验证码
       if (type === 'account') {
         getCaptchaImage();
       }
@@ -384,19 +419,103 @@ return;
       </Helmet>
       <Lang />
 
-      {/* 背景装饰元素 */}
-      <div className={styles.decorativeCircle1} />
-      <div className={styles.decorativeCircle2} />
-      <div className={styles.decorativeCircle3} />
+      {/* 左侧品牌展示区 */}
+      <div 
+        className={styles.leftPanel}
+        ref={leftPanelRef}
+        onMouseMove={handleLeftPanelMouseMove}
+      >
+        {/* 粒子背景效果 */}
+        <div className={styles.particleBackground}>
+          {[...Array(15)].map((_, i) => {
+            const size = Math.random() * 6 + 3;
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  borderRadius: '50%',
+                  background: `rgba(22, 119, 255, ${Math.random() * 0.3 + 0.1})`,
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  transition: 'all 0.3s ease-out',
+                  transform: `translate(${(mousePosition.x / 10 - Math.random() * 50) * 0.1}px, ${(mousePosition.y / 10 - Math.random() * 50) * 0.1}px)`,
+                }}
+              />
+            );
+          })}
+        </div>
 
-      {/* 登录卡片 */}
-      <div className={styles.loginCard}>
-        <div className={styles.loginCardInner}>
-          {/* Logo 区域 */}
-          <div className={styles.logoSection}>
-            <div className={styles.logoIcon}>🐾</div>
-            <h1 className={styles.logoTitle}>VipClaw</h1>
-            <p className={styles.logoSubtitle}>智能体平台 · 一站式解决方案</p>
+        {/* 顶部 Logo 区域 */}
+        <div className={styles.logoArea}>
+          <div className={styles.logoIcon}>🦆</div>
+          <h1 className={styles.logoTitle}>OpenDuck</h1>
+          <p className={styles.logoSubtitle}>Open Source AI Agent · 开源智能体平台</p>
+        </div>
+
+        {/* 中间视觉区域 - SVG 插画 */}
+        <div className={styles.visualArea}>
+          <svg 
+            className={styles.visualIllustration}
+            viewBox="0 0 500 400" 
+            fill="none" 
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle cx="250" cy="200" r="120" fill="url(#gradient1)" opacity="0.1"/>
+            <circle cx="250" cy="200" r="80" fill="url(#gradient1)" opacity="0.15"/>
+            
+            {/* 对话气泡 */}
+            <rect x="180" y="140" width="140" height="80" rx="12" fill="white" stroke="#1677ff" strokeWidth="2"/>
+            <circle cx="220" cy="170" r="4" fill="#1677ff"/>
+            <circle cx="250" cy="170" r="4" fill="#36cbcb"/>
+            <circle cx="280" cy="170" r="4" fill="#1677ff"/>
+            <rect x="210" y="185" width="80" height="6" rx="3" fill="#e5e7eb"/>
+            <rect x="220" y="195" width="60" height="6" rx="3" fill="#e5e7eb"/>
+            
+            {/* 代码节点 */}
+            <circle cx="150" cy="280" r="15" fill="white" stroke="#1677ff" strokeWidth="2"/>
+            <text x="150" y="285" textAnchor="middle" fontSize="12" fill="#1677ff">&lt;/&gt;</text>
+            
+            <circle cx="350" cy="280" r="15" fill="white" stroke="#36cbcb" strokeWidth="2"/>
+            <text x="350" y="285" textAnchor="middle" fontSize="12" fill="#36cbcb">AI</text>
+            
+            {/* 连接线 */}
+            <path d="M165 280 Q250 240 335 280" stroke="#1677ff" strokeWidth="2" fill="none" strokeDasharray="5,5"/>
+            
+            <defs>
+              <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#1677ff"/>
+                <stop offset="100%" stopColor="#36cbcb"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        {/* 底部 Slogan 区域 */}
+        <div className={styles.bottomArea}>
+          <h2 className={styles.slogan}>
+            让 AI 自由协作，构建轻量化智能体生态
+          </h2>
+          <p className={styles.description}>
+            OpenDuck 是一款开源可定制 AI 智能体，支持自主决策、多任务执行、插件扩展
+          </p>
+          <div className={styles.openSourceBadge}>
+            <span>🔓</span>
+            <span>Open Source · Apache License</span>
+            <span style={{ marginLeft: '8px' }}>🐙</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 右侧登录操作区 */}
+      <div className={styles.rightPanel}>
+        <div className={styles.loginCard}>
+          {/* 登录头部 */}
+          <div className={styles.loginHeader}>
+            <h1 className={styles.loginTitle}>欢迎登录 OpenDuck</h1>
+            <p className={styles.loginSubtitle}>登录你的智能体控制台，开始 AI 创作</p>
           </div>
 
           <LoginForm
@@ -412,19 +531,19 @@ return;
             }}
             submitter={{
               searchConfig: {
-                submitText: '登录',
+                submitText: '立即登录',
               },
               submitButtonProps: {
                 size: 'large',
                 style: {
                   width: '100%',
-                  height: '50px',
+                  height: '48px',
                   fontSize: '16px',
                   fontWeight: 600,
                   borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
+                  background: 'linear-gradient(135deg, #1677ff 0%, #36cbcb 100%)',
                   border: 'none',
-                  boxShadow: '0 8px 24px rgba(79, 110, 247, 0.35)',
+                  boxShadow: '0 8px 24px rgba(22, 119, 255, 0.3)',
                 },
               },
             }}
@@ -440,220 +559,154 @@ return;
               items={[
                 {
                   key: 'account',
-                  label: intl.formatMessage({
-                    id: 'pages.login.accountLogin.tab',
-                    defaultMessage: '账户密码登录',
-                  }),
+                  label: '账号密码登录',
                 },
-                {
+                ...(!isPersonal() ? [{
                   key: 'mobile',
-                  label: intl.formatMessage({
-                    id: 'pages.login.phoneLogin.tab',
-                    defaultMessage: '手机号登录',
-                  }),
-                },
+                  label: '验证码登录',
+                }] : []),
               ]}
             />
 
             {type === 'account' && (
               <>
                 <ProFormText
-                name="username"
-                  fieldProps={{
-                   size: 'large',
-                 prefix: <UserOutlined />,
-                  }}
-                 placeholder={intl.formatMessage({
-                 id: 'pages.login.username.placeholder',
-                 defaultMessage: '用户名：admin or user',
-                 })}
-                 rules={[
-                   {
-                   required: true,
-                   message: (
-                       <FormattedMessage
-                       id="pages.login.username.required"
-                       defaultMessage="请输入用户名!"
-                       />
-                     ),
-                   },
-                 ]}
-               />
-               <ProFormText.Password
-               name="password"
-                 fieldProps={{
-                  size: 'large',
-                prefix: <LockOutlined />,
-                 }}
-                 placeholder={intl.formatMessage({
-                 id: 'pages.login.password.placeholder',
-                 defaultMessage: '密码：ant.design',
-                 })}
-                 rules={[
-                   {
-                   required: true,
-                   message: (
-                       <FormattedMessage
-                       id="pages.login.password.required"
-                       defaultMessage="请输入密码！"
-                       />
-                     ),
-                   },
-                 ]}
-               />
-               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <ProFormText
-               name="captcha"
+                  name="username"
                   fieldProps={{
                     size: 'large',
-                  prefix: <LockOutlined />,
+                    prefix: <UserOutlined />,
                   }}
-                 placeholder={intl.formatMessage({
-                 id: 'pages.login.captcha.placeholder',
-                 defaultMessage: '请输入验证码',
-                 })}
-                 rules={[
-                   {
-                   required: true,
-                   message: (
-                       <FormattedMessage
-                       id="pages.login.captcha.required"
-                       defaultMessage="请输入验证码！"
-                       />
-                     ),
-                   },
-                 ]}
-               />
-               <div
-                 onClick={getCaptchaImage}
-               style={{
-                 cursor: 'pointer',
-                 flexShrink: 0,
-                 borderRadius: '8px',
-                 overflow: 'hidden',
-                 border: '1px solid #e0e4f4',
-                 transition: 'box-shadow 0.2s',
-               }}
-             >
-               {loadingCaptcha ? (
-                 <Spin />
-               ) : captchaImage ? (
-                 <Image
-                  src={captchaImage}
-                 preview={false}
-                 style={{ height: '42px', display: 'block' }}
-                 />
-               ) : null}
-             </div>
-           </div>
-          </>
-        )}
-
-          
-          {type === 'mobile' && (
-            <>
-              <ProFormText
-                fieldProps={{
-                  size: 'large',
-                  prefix: <MobileOutlined />,
-                }}
-                name="mobile"
-                placeholder={intl.formatMessage({
-                  id: 'pages.login.phoneNumber.placeholder',
-                  defaultMessage: '手机号',
-                })}
-                rules={[
-                  {
-                    required: true,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.required"
-                        defaultMessage="请输入手机号！"
+                  placeholder="请输入用户名 / 邮箱 / 手机号"
+                  rules={[
+                    {
+                      required: true,
+                      message: '请输入用户名!',
+                    },
+                  ]}
+                />
+                <ProFormText.Password
+                  name="password"
+                  fieldProps={{
+                    size: 'large',
+                    prefix: <LockOutlined />,
+                  }}
+                  placeholder="请输入登录密码"
+                  rules={[
+                    {
+                      required: true,
+                      message: '请输入密码！',
+                    },
+                  ]}
+                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <ProFormText
+                    name="captcha"
+                    fieldProps={{
+                      size: 'large',
+                      prefix: <LockOutlined />,
+                    }}
+                    placeholder="请输入验证码"
+                    rules={[
+                      {
+                        required: true,
+                        message: '请输入验证码！',
+                      },
+                    ]}
+                  />
+                  <div
+                    onClick={getCaptchaImage}
+                    style={{
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '1px solid #e5e7eb',
+                    }}
+                  >
+                    {loadingCaptcha ? (
+                      <Spin />
+                    ) : captchaImage ? (
+                      <Image
+                        src={captchaImage}
+                        preview={false}
+                        style={{ height: '42px', display: 'block' }}
                       />
-                    ),
-                  },
-                  {
-                    pattern: /^1\d{10}$/,
-                    message: (
-                      <FormattedMessage
-                        id="pages.login.phoneNumber.invalid"
-                        defaultMessage="手机号格式错误！"
-                      />
-                    ),
-                  },
-                ]}
-              />
-              <ProFormCaptcha
-               fieldProps={{
-                 size: 'large',
-               prefix: <LockOutlined />,
-               }}
-               captchaProps={{
-                 size: 'large',
-               }}
-               placeholder={intl.formatMessage({
-               id: 'pages.login.captcha.placeholder',
-               defaultMessage: '请输入验证码',
-               })}
-               captchaTextRender={(timing, count) => {
-                 if (timing) {
-                  return `${count} ${intl.formatMessage({
-                    id: 'pages.getCaptchaSecondText',
-                    defaultMessage: '获取验证码',
-                   })}`;
-                 }
-                return intl.formatMessage({
-                  id: 'pages.login.phoneLogin.getVerificationCode',
-                  defaultMessage: '获取验证码',
-                 });
-               }}
-              name="captcha"
-               rules={[
-                 {
-                 required: true,
-                 message: (
-                     <FormattedMessage
-                     id="pages.login.captcha.required"
-                     defaultMessage="请输入验证码！"
-                     />
-                   ),
-                 },
-               ]}
-          onGetCaptcha={async (phone) => {
-          const result = await getCaptcha();
-              if (!result || result.code !== 200) {
-           message.error('获取验证码失败');
-           return;
-              }
-              // 保存验证码 key（实际项目中应该验证）
-         setCaptchaKey(result.data?.captchaKey || '');
-         message.success('获取验证码成功！');
-            }}
-          />
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            )}
 
-            </>
-          )}
-          <div
-            style={{
-              marginBottom: 16,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <ProFormCheckbox noStyle name="autoLogin">
-              <FormattedMessage
-                id="pages.login.rememberMe"
-                defaultMessage="自动登录"
-              />
-            </ProFormCheckbox>
-            <a style={{ color: '#4f6ef7', fontWeight: 500 }}>
-              <FormattedMessage
-                id="pages.login.forgotPassword"
-                defaultMessage="忘记密码"
-              />
-            </a>
-          </div>
+            {type === 'mobile' && (
+              <>
+                <ProFormText
+                  fieldProps={{
+                    size: 'large',
+                    prefix: <MobileOutlined />,
+                  }}
+                  name="mobile"
+                  placeholder="手机号"
+                  rules={[
+                    {
+                      required: true,
+                      message: '请输入手机号！',
+                    },
+                    {
+                      pattern: /^1\d{10}$/,
+                      message: '手机号格式错误！',
+                    },
+                  ]}
+                />
+                <ProFormCaptcha
+                  fieldProps={{
+                    size: 'large',
+                    prefix: <LockOutlined />,
+                  }}
+                  captchaProps={{
+                    size: 'large',
+                  }}
+                  placeholder="请输入验证码"
+                  captchaTextRender={(timing, count) => {
+                    if (timing) {
+                      return `${count} 获取验证码`;
+                    }
+                    return '获取验证码';
+                  }}
+                  name="captcha"
+                  rules={[
+                    {
+                      required: true,
+                      message: '请输入验证码！',
+                    },
+                  ]}
+                  onGetCaptcha={async (phone) => {
+                    const result = await getCaptcha();
+                    if (!result || result.code !== 200) {
+                      message.error('获取验证码失败');
+                      return;
+                    }
+                    setCaptchaKey(result.data?.captchaKey || '');
+                    message.success('获取验证码成功！');
+                  }}
+                />
+              </>
+            )}
+            
+            <div
+              style={{
+                marginBottom: 16,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <ProFormCheckbox noStyle name="autoLogin">
+                记住我
+              </ProFormCheckbox>
+              <a style={{ color: '#1677ff', fontWeight: 500 }}>
+                忘记密码？
+              </a>
+            </div>
           </LoginForm>
 
           {/* 功能标签 */}
@@ -662,12 +715,43 @@ return;
             <span className={styles.featureTag}>🛠️ 工具平台</span>
             <span className={styles.featureTag}>⚡ 高效协同</span>
           </div>
-        </div>
-      </div>
 
-      {/* 页脚 */}
-      <div className={styles.footerWrapper}>
-        <Footer />
+          {/* 注册跳转 - 仅公网版显示 */}
+          {isPublic() && (
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
+              <span style={{ color: '#6b7280', fontSize: '14px' }}>
+                还没有 OpenDuck 账号？
+              </span>
+              <a style={{ color: '#1677ff', fontWeight: 500, marginLeft: 8 }}>
+                立即注册
+              </a>
+            </div>
+          )}
+
+          {/* 第三方登录 */}
+          <div className={styles.thirdPartyLogin}>
+            <Divider style={{ margin: '24px 0 16px' }}>
+              <span className={styles.thirdPartyTitle}>其他登录方式</span>
+            </Divider>
+            <div className={styles.thirdPartyIcons}>
+              <div 
+                className={styles.thirdPartyIcon}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#f0f7ff';
+                  e.currentTarget.style.borderColor = '#1677ff';
+                  e.currentTarget.style.color = '#1677ff';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#f9fafb';
+                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.color = '#6b7280';
+                }}
+              >
+                <GithubOutlined />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

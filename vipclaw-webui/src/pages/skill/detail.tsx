@@ -60,6 +60,30 @@ const getLanguageFromExtension = (filename: string): string => {
   return ext ? languageMap[ext] || 'text' : 'text';
 };
 
+// Markdown 代码块组件（带语法高亮）
+const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = ({ className, children }) => {
+  const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1] : 'text';
+  const code = String(children).replace(/\n$/, '');
+  
+  return (
+    <SyntaxHighlighter
+      language={language}
+      style={oneDark}
+      customStyle={{
+        margin: '16px 0',
+        borderRadius: '8px',
+        fontSize: '13px',
+        lineHeight: '1.6',
+        padding: '16px',
+      }}
+      wrapLongLines={true}
+    >
+      {code}
+    </SyntaxHighlighter>
+  );
+};
+
 // 渲染文件内容
 const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ filename, content }) => {
   const language = getLanguageFromExtension(filename);
@@ -70,13 +94,21 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
       <div 
         className="markdown-body" 
         style={{ 
-          padding: '32px',
-          background: '#ffffff',
-          lineHeight: '1.8',
-          fontSize: '15px'
+          padding: '24px',
+          height: '100%',
+          overflow: 'auto'
         }}
       >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        <ReactMarkdown 
+          remarkPlugins={[remarkGfm]}
+          components={{
+            code: ({ node, inline, className, children, ...props }: any) => {
+              if (inline) {
+                return <code className={className} {...props}>{children}</code>;
+              }
+              return <CodeBlock className={className}>{children}</CodeBlock>;            }
+          }}
+        >
           {content}
         </ReactMarkdown>
       </div>
@@ -91,13 +123,15 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
           background: '#fafbfc',
           padding: '24px',
           overflow: 'auto',
-          maxHeight: '600px',
+          height: '100%',
           fontSize: '13px',
           lineHeight: '1.7',
           whiteSpace: 'pre-wrap',
           wordWrap: 'break-word',
           fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Monaco, monospace',
-          color: '#24292e'
+          color: '#24292e',
+          margin: 0,
+          boxSizing: 'border-box'
         }}
       >
         {content}
@@ -113,9 +147,10 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
       customStyle={{
         margin: 0,
         borderRadius: '0',
-        maxHeight: '600px',
+        height: '100%',
         fontSize: '13px',
-        lineHeight: '1.6'
+        lineHeight: '1.6',
+        boxSizing: 'border-box'
       }}
       wrapLongLines={true}
     >
@@ -246,23 +281,50 @@ const SkillDetail: React.FC = () => {
         </span>
       ),
       children: (
-        <Card
-          style={{
-            borderRadius: '12px',
-            border: '1px solid #f0f0f0',
-          }}
-          styles={{ body: { padding: '24px' } }}
-        >
-          {skillInfo?.skillmd ? (
-            <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {skillInfo.skillmd}
-              </ReactMarkdown>
-            </div>
-          ) : (
-            <Empty description="暂无 SKILL.md 内容" />
-          )}
-        </Card>
+        <div style={{ height: '100%' }}>
+          <Card
+            style={{
+              borderRadius: '12px',
+              border: '1px solid #f0f0f0',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+            styles={{ 
+              body: { 
+                padding: 0,
+                flex: 1,
+                overflow: 'hidden'
+              } 
+            }}
+          >
+            {skillInfo?.skillmd ? (
+              <div 
+                className="markdown-body"
+                style={{
+                  padding: '24px',
+                  height: '100%',
+                  overflow: 'auto'
+                }}
+              >
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code: ({ node, inline, className, children, ...props }: any) => {
+                      if (inline) {
+                        return <code className={className} {...props}>{children}</code>;
+                      }
+                      return <CodeBlock className={className}>{children}</CodeBlock>;                    }
+                  }}
+                >
+                  {skillInfo.skillmd}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <Empty description="暂无 SKILL.md 内容" />
+            )}
+          </Card>
+        </div>
       ),
     },
     {
@@ -274,92 +336,205 @@ const SkillDetail: React.FC = () => {
         </span>
       ),
       children: (
-        <div style={{ display: 'flex', gap: 20, height: 650 }}>
-          {/* 左侧文件树 */}
-          <Card
-            title={
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <FolderOpenOutlined style={{ color: '#722ed1' }} />
-                文件结构
-              </span>
-            }
-            style={{
-              width: 320,
-              borderRadius: '12px',
-              border: '1px solid #f0f0f5',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
-            }}
-            styles={{ 
-              body: { 
-                padding: '16px',
-                background: '#fafbfc',
-                borderRadius: '0 0 12px 12px'
-              } 
-            }}
-          >
-            {treeData.length > 0 ? (
-              <DirectoryTree
-                treeData={treeData}
-                onSelect={handleFileSelect}
-                defaultExpandAll
-                showIcon
-                icon={
-                  (props: any) => {
-                    if (props.isLeaf) {
-                      return <FileOutlined style={{ color: '#8c8c8c' }} />;
-                    }
-                    return <FolderOutlined style={{ color: '#722ed1' }} />;
-                  }
-                }
-              />
-            ) : (
-              <Empty description="暂无资源文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
-          </Card>
+        <div className="resources-container" style={{ 
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%)',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          border: '1px solid #e8e8e8'
+        }}>
+          {/* 顶部工具栏 */}
+          <div className="resources-toolbar" style={{
+            padding: '12px 16px',
+            background: '#ffffff',
+            borderBottom: '1px solid #e8e8e8',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FolderOpenOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
+              <Text strong style={{ color: '#1a1a2e' }}>资源文件</Text>
+              <Tag color="purple" style={{ marginLeft: '8px', borderRadius: '4px' }}>
+                {Object.keys(fileContents).length} 个文件
+              </Tag>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Button 
+                size="small" 
+                icon={<FolderOutlined />} 
+                style={{ 
+                  borderColor: '#d9d9d9',
+                  color: '#595959',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#722ed1';
+                  e.currentTarget.style.color = '#722ed1';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#d9d9d9';
+                  e.currentTarget.style.color = '#595959';
+                }}
+              >
+                展开全部
+              </Button>
+            </div>
+          </div>
 
-          {/* 右侧文件内容 */}
-          <Card
-            title={
-              selectedFile ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FileMarkdownOutlined style={{ color: '#722ed1' }} />
-                  <Text strong>{selectedFile}</Text>
-                </span>
-              ) : (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FileOutlined />
-                  文件内容
-                </span>
-              )
-            }
-            style={{
-              flex: 1,
-              borderRadius: '12px',
-              border: '1px solid #f0f0f5',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
-            }}
-            styles={{ body: { padding: 0 } }}
-          >
-            {selectedFile && fileContents[selectedFile] ? (
-              <FileContentRenderer
-                filename={selectedFile}
-                content={fileContents[selectedFile]}
-              />
-            ) : (
+          {/* 主内容区域 */}
+          <div style={{ 
+            flex: 1, 
+            display: 'flex',
+            overflow: 'hidden'
+          }}>
+            {/* 左侧文件树 */}
+            <div className="file-tree-panel" style={{
+              width: '320px',
+              background: '#ffffff',
+              borderRight: '1px solid #e8e8e8',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}>
               <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                height: 400,
-                background: '#fafbfc'
+                padding: '12px 16px', 
+                background: '#fafbfc',
+                borderBottom: '1px solid #e8e8e8',
+                fontSize: '12px',
+                color: '#8c8c8c',
+                fontWeight: 500
               }}>
-                <Empty 
-                  description="请从左侧选择文件查看内容" 
-                  image={Empty.PRESENTED_IMAGE_SIMPLE} 
-                />
+                文件结构
               </div>
-            )}
-          </Card>
+              <div style={{ 
+                flex: 1, 
+                overflow: 'auto',
+                padding: '8px 0'
+              }}>
+                {treeData.length > 0 ? (
+                  <DirectoryTree
+                    treeData={treeData}
+                    onSelect={handleFileSelect}
+                    defaultExpandAll
+                    showIcon
+                    className="custom-file-tree"
+                    icon={
+                      (props: any) => {
+                        if (props.isLeaf) {
+                          return <FileOutlined style={{ color: '#8c8c8c', fontSize: '14px' }} />;
+                        }
+                        return <FolderOutlined style={{ color: '#722ed1', fontSize: '14px' }} />;
+                      }
+                    }
+                  />
+                ) : (
+                  <div style={{ 
+                    padding: '40px 20px', 
+                    textAlign: 'center',
+                    color: '#8c8c8c'
+                  }}>
+                    <Empty 
+                      description="暂无资源文件" 
+                      image={Empty.PRESENTED_IMAGE_SIMPLE} 
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 右侧文件内容 */}
+            <div className="file-content-panel" style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#ffffff',
+              overflow: 'hidden'
+            }}>
+              {/* 文件路径面包屑 */}
+              {selectedFile && (
+                <div style={{
+                  padding: '12px 16px',
+                  background: '#fafbfc',
+                  borderBottom: '1px solid #e8e8e8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '13px',
+                  color: '#595959'
+                }}>
+                  <FileMarkdownOutlined style={{ color: '#722ed1' }} />
+                  <Breadcrumb>
+                    <Breadcrumb.Item>
+                      <span style={{ color: '#8c8c8c' }}>resources</span>
+                    </Breadcrumb.Item>
+                    {selectedFile.split('/').map((part, index, arr) => (
+                      <Breadcrumb.Item key={index}>
+                        <span style={{ 
+                          color: index === arr.length - 1 ? '#1a1a2e' : '#595959',
+                          fontWeight: index === arr.length - 1 ? 500 : 400
+                        }}>
+                          {part}
+                        </span>
+                      </Breadcrumb.Item>
+                    ))}
+                  </Breadcrumb>
+                </div>
+              )}
+
+              {/* 内容显示区域 */}
+              <div style={{ 
+                flex: 1, 
+                overflow: 'auto',
+                position: 'relative'
+              }}>
+                {selectedFile && fileContents[selectedFile] ? (
+                  <div className="file-content-wrapper" style={{
+                    height: '100%',
+                    overflow: 'auto'
+                  }}>
+                    <FileContentRenderer
+                      filename={selectedFile}
+                      content={fileContents[selectedFile]}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column',
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    height: '100%',
+                    background: 'linear-gradient(135deg, #fafbfc 0%, #f5f6f8 100%)',
+                    color: '#8c8c8c'
+                  }}>
+                    <div style={{
+                      width: '80px',
+                      height: '80px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #f0e6ff 0%, #e6d5ff 100%)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: '16px',
+                      boxShadow: '0 4px 12px rgba(114, 46, 209, 0.1)'
+                    }}>
+                      <FileOutlined style={{ fontSize: '32px', color: '#722ed1' }} />
+                    </div>
+                    <Text style={{ fontSize: '16px', marginBottom: '8px', color: '#595959' }}>
+                      选择文件查看内容
+                    </Text>
+                    <Text style={{ fontSize: '13px', color: '#8c8c8c' }}>
+                      从左侧文件树中选择一个文件以查看其内容
+                    </Text>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       ),
     },
@@ -375,6 +550,7 @@ const SkillDetail: React.FC = () => {
 
   return (
     <PageContainer
+      className="skill-detail-page"
       header={{
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -470,9 +646,11 @@ const SkillDetail: React.FC = () => {
                 style={{ padding: '24px' }}
               >
                 <Descriptions.Item label="仓库地址" span={2}>
-                  {skillInfo.repositoryName ? (
+                  {skillInfo.repositoryUrl ? (
                     <a
-                      href={skillInfo.repositoryName}
+                      href={skillInfo.repositoryBranch 
+                        ? `${skillInfo.repositoryUrl}/tree/${skillInfo.repositoryBranch}`
+                        : skillInfo.repositoryUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ 
@@ -486,7 +664,12 @@ const SkillDetail: React.FC = () => {
                       }}
                     >
                       <LinkOutlined />
-                      {skillInfo.repositoryName}
+                      {skillInfo.repositoryName || skillInfo.repositoryUrl}
+                      {skillInfo.repositoryBranch && (
+                        <Tag color="blue" style={{ marginLeft: 8, borderRadius: '4px' }}>
+                          {skillInfo.repositoryBranch}
+                        </Tag>
+                      )}
                     </a>
                   ) : (
                     <Text type="secondary">暂无仓库地址</Text>
@@ -495,10 +678,10 @@ const SkillDetail: React.FC = () => {
                 <Descriptions.Item label="技能描述" span={2}>
                   <Text style={{ lineHeight: 1.6 }}>{skillInfo.description || '暂无描述'}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>}>
+                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>} span={2}>
                   <Text>{skillInfo.creator || '未知'}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />最近同步时间</span>}>
+                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />最近同步时间</span>} span={2}>
                   <Text>{skillInfo.updateTime?.replace('T', ' ') || '未知'}</Text>
                 </Descriptions.Item>
               </Descriptions>
@@ -510,9 +693,12 @@ const SkillDetail: React.FC = () => {
                 borderRadius: '16px',
                 border: '1px solid #f0f0f5',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                height: 'calc(100vh - 280px)',
+                display: 'flex',
+                flexDirection: 'column'
               }}
-              styles={{ body: { padding: 0 } }}
+              styles={{ body: { padding: 0, flex: 1, overflow: 'hidden' } }}
             >
               <Tabs
                 defaultActiveKey="skillmd"
@@ -520,6 +706,9 @@ const SkillDetail: React.FC = () => {
                 size="large"
                 style={{ 
                   padding: '0 24px',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
                   '--ant-tabs-item-active-color': '#722ed1',
                   '--ant-tabs-ink-bar-color': '#722ed1'
                 } as React.CSSProperties}

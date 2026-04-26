@@ -1,10 +1,11 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Modal, message } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import { ProForm, ProFormSelect, ProFormText, ProFormSwitch } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import * as CryptoJS from 'crypto-js';
 import { checkUsername, checkPhone, checkEmail } from '@/services/ant-design-pro/user';
+import { isPersonal } from '@/utils/edition';
 
 export interface CreateFormProps {
   onCancel: () => void;
@@ -15,6 +16,9 @@ export interface CreateFormProps {
 const CreateForm: React.FC<CreateFormProps> = (props) => {
   const { onCancel, onSubmit, visible } = props;
   const intl = useIntl();
+  
+  // 判断是否是个人版
+  const personalMode = useMemo(() => isPersonal(), []);
 
   const handleFinish = async (values: API.SysUserCreateRequest) => {
     // 对密码进行前端加密（SHA-256）
@@ -152,6 +156,29 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             id: 'pages.user.management.nickname.placeholder',
             defaultMessage: '请输入昵称',
           })}
+          rules={[
+            {
+              required: true,
+              message: intl.formatMessage({
+                id: 'pages.user.management.nickname.required',
+                defaultMessage: '请输入昵称',
+              }),
+            },
+            {
+              min: 1,
+              message: intl.formatMessage({
+                id: 'pages.user.management.nickname.min',
+                defaultMessage: '昵称至少 1 个字符',
+              }),
+            },
+            {
+              max: 50,
+              message: intl.formatMessage({
+                id: 'pages.user.management.nickname.max',
+                defaultMessage: '昵称最多 50 个字符',
+              }),
+            },
+          ]}
         />
 
         <ProFormText
@@ -180,6 +207,13 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             },
           }}
           rules={[
+            {
+              required: !personalMode,
+              message: intl.formatMessage({
+                id: 'pages.user.management.email.required',
+                defaultMessage: '请输入邮箱',
+              }),
+            },
             {
               type: 'email',
               message: intl.formatMessage({
@@ -215,6 +249,13 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             },
           }}
           rules={[
+            {
+              required: !personalMode,
+              message: intl.formatMessage({
+                id: 'pages.user.management.phone.required',
+                defaultMessage: '请输入手机号',
+              }),
+            },
             {
               pattern: /^1[3-9]\d{9}$/,
               message: intl.formatMessage({

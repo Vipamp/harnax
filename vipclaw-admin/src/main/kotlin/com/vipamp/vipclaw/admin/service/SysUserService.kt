@@ -37,18 +37,20 @@ interface SysUserService {
      * 创建用户
      *
      * @param request 用户创建请求对象
+     * @param isPersonal 是否是个人版
      * @return 创建结果
      */
-    fun createUser(request: SysUserCreateRequest): Boolean
+    fun createUser(request: SysUserCreateRequest, isPersonal: Boolean = false): Boolean
 
     /**
      * 更新用户
      *
      * @param id      用户 ID
      * @param request 用户更新请求对象
+     * @param isPersonal 是否是个人版
      * @return 更新结果
      */
-    fun updateUser(id: Long, request: SysUserUpdateRequest): Boolean
+    fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean = false): Boolean
 
     /**
      * 切换用户启用状态

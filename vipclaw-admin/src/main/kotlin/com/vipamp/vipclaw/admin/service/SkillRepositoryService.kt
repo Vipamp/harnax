@@ -89,7 +89,6 @@ interface SkillRepositoryService {
      * @param repositoryId 技能仓库 ID
      * @return 远程技能列表
      */
-    // TODO Service 层不应该返回 Response 对象
     fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse>
 
     /**

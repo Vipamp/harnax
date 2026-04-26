@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.CaptchaResponse
 import com.vipamp.vipclaw.admin.dto.LoginRequest
 import com.vipamp.vipclaw.admin.dto.LoginResponse
@@ -19,7 +20,9 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/admin/auth")
 class AuthController(
-    private val authService: AuthService, private val captchaService: CaptchaService
+    private val authService: AuthService, 
+    private val captchaService: CaptchaService,
+    private val editionUtil: EditionUtil
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -53,5 +56,24 @@ class AuthController(
             log.error("获取验证码失败", e)
             return ResultVo.error(e.message ?: "获取验证码失败")
         }
+    }
+    
+    /**
+     * 获取当前版本支持的登录方式
+     */
+    @GetMapping("/login-methods")
+    @Operation(summary = "获取登录方式", description = "根据当前版本获取支持的登录方式")
+    fun getLoginMethods(): ResultVo<Map<String, Any>> {
+        val methods = mutableListOf("username") // 所有版本都支持用户名登录
+        
+        // 企业版和公网版支持手机号和邮箱登录
+        if (editionUtil.isEnterprise() || editionUtil.isPublic()) {
+            methods.add("phone")
+            methods.add("email")
+        }
+        
+        return ResultVo.success(mapOf(
+            "methods" to methods
+        ))
     }
 }

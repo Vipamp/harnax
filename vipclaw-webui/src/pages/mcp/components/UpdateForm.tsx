@@ -9,6 +9,7 @@ import {
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+import { isPersonal } from '@/utils/edition';
 
 export interface UpdateFormProps {
   visible: boolean;
@@ -18,11 +19,21 @@ export interface UpdateFormProps {
   onConnectivityTest?: (id: number) => Promise<boolean>;
 }
 
-const MCP_TYPE_OPTIONS = [
-  { label: 'STDIO（本地进程）', value: 'stdio' },
-  { label: 'SSE（Server-Sent Events）', value: 'sse' },
-  { label: 'Streamable HTTP', value: 'streamablehttp' },
-];
+// MCP 类型选项 - 根据版本动态生成
+const getMcpTypeOptions = () => {
+  const allOptions = [
+    { label: 'STDIO（本地进程）', value: 'stdio' },
+    { label: 'SSE（Server-Sent Events）', value: 'sse' },
+    { label: 'Streamable HTTP', value: 'streamablehttp' },
+  ];
+  
+  // 个人版支持所有模式,企业版和公网版不支持 stdio
+  if (isPersonal()) {
+    return allOptions;
+  } else {
+    return allOptions.filter(opt => opt.value !== 'stdio');
+  }
+};
 
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
@@ -134,7 +145,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         <ProFormSelect
           name="type"
           label="类型"
-          options={MCP_TYPE_OPTIONS}
+          options={getMcpTypeOptions()}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
             size: 'large',

@@ -6,10 +6,12 @@ import java.time.LocalDateTime
 
 @Schema(description = "技能仓库实体类")
 class SkillRepository : Serializable {
-    companion object { private const val serialVersionUID = 1L }
+    companion object {
+        private const val serialVersionUID = 1L
+    }
 
-        @Schema(description = "ID")
-    var id: Long =0
+    @Schema(description = "ID")
+    var id: Long = 0
 
     @Schema(description = "仓库名称")
     var name: String = ""
@@ -33,11 +35,11 @@ class SkillRepository : Serializable {
     var creator: String = ""
 
     @Schema(description = "是否可用（0:被删除，1:可用）")
-        var active: Int = 1
+    var active: Int = 1
 
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 }

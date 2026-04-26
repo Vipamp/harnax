@@ -130,7 +130,7 @@ class SkillController(
     @Operation(summary = "批量保存技能", description = "批量保存技能到指定仓库，重名技能会被覆盖")
     fun batchSaveSkills(
         @Parameter(description = "仓库 ID") @RequestParam(name = "repositoryId") repositoryId: Long,
-        @Parameter(description = "技能列表") @RequestBody skills: List<SkillResponse>
+        @Parameter(description = "技能列表") @RequestBody skills: List<String>
     ): ResultVo<Int> {
         return try {
             val count = skillService.batchSaveSkills(repositoryId, skills)
@@ -140,5 +140,4 @@ class SkillController(
             ResultVo.error(e.message ?: "批量保存技能失败")
         }
     }
-
 }

@@ -17,11 +17,18 @@ data class McpServerCreateRequest(
     @Schema(description = "MCP 描述", example = "这是一个 MCP 服务")
     val description: String? = null,
 
-    @Schema(description = "MCP 类型（stdio/sse/streamablehttp）", example = "stdio", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(
+        description = "MCP 类型（stdio/sse/streamablehttp）",
+        example = "stdio",
+        requiredMode = Schema.RequiredMode.REQUIRED
+    )
     @NotBlank(message = "MCP 类型不能为空")
-    val type: String? = null,
+    val type: String = "stdio",
 
-    @Schema(description = "执行命令（仅 stdio 类型生效）", example = "npx -y @modelcontextprotocol/server-filesystem /tmp")
+    @Schema(
+        description = "执行命令（仅 stdio 类型生效）",
+        example = "npx -y @modelcontextprotocol/server-filesystem /tmp"
+    )
     val command: String? = null,
 
     @Schema(description = "服务地址（sse/streamablehttp 类型生效）", example = "http://localhost:3000/sse")

@@ -34,4 +34,6 @@ interface ModelProviderMapper {
     ): List<ModelProvider>
 
     fun countByType(@Param("type") type: String): Int
+
+    fun countByName(@Param("name") name: String): Int
 }

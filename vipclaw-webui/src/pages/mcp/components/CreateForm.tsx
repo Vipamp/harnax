@@ -9,6 +9,7 @@ import {
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
+import { isPersonal } from '@/utils/edition';
 
 export interface CreateFormProps {
   visible: boolean;
@@ -17,15 +18,26 @@ export interface CreateFormProps {
   onConnectivityTest?: (values: API.McpServerCreateRequest) => Promise<boolean>;
 }
 
-const MCP_TYPE_OPTIONS = [
-  { label: 'STDIO（本地进程）', value: 'stdio' },
-  { label: 'SSE（Server-Sent Events）', value: 'sse' },
-  { label: 'Streamable HTTP', value: 'streamablehttp' },
-];
+// MCP 类型选项 - 根据版本动态生成
+const getMcpTypeOptions = () => {
+  const allOptions = [
+    { label: 'STDIO（本地进程）', value: 'stdio' },
+    { label: 'SSE（Server-Sent Events）', value: 'sse' },
+    { label: 'Streamable HTTP', value: 'streamablehttp' },
+  ];
+  
+  // 个人版支持所有模式,企业版和公网版不支持 stdio
+  if (isPersonal()) {
+    return allOptions;
+  } else {
+    return allOptions.filter(opt => opt.value !== 'stdio');
+  }
+};
 
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
-  const [mcpType, setMcpType] = useState<string>('stdio');
+  // 个人版默认 stdio,企业版和公网版默认 sse
+  const [mcpType, setMcpType] = useState<string>(isPersonal() ? 'stdio' : 'sse');
   const [form] = ProForm.useForm();
   const [testing, setTesting] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
@@ -117,12 +129,12 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         <ProFormSelect
           name="type"
           label="类型"
-          options={MCP_TYPE_OPTIONS}
-          initialValue="stdio"
+          options={getMcpTypeOptions()}
+          initialValue={isPersonal() ? 'stdio' : 'sse'}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
             size: 'large',
-            defaultValue: 'stdio',
+            defaultValue: isPersonal() ? 'stdio' : 'sse',
             onChange: (val: string) => setMcpType(val),
           }}
         />

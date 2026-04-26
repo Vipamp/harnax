@@ -51,29 +51,42 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
 
       if (values) {
         // 更新
-        await updateModelProvider(values.id, {
+        const response = await updateModelProvider(values.id, {
           type: formValues.type,
           name: formValues.name,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
         });
-        message.success('更新成功');
+        
+        if (response.code === 200) {
+          message.success('更新成功');
+          onSuccess();
+        } else {
+          const errorMsg = response.message || '更新失败';
+          message.error(errorMsg);
+        }
       } else {
         // 创建
-        await createModelProvider({
+        const response = await createModelProvider({
           type: formValues.type,
           name: formValues.name,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
         });
-        message.success('创建成功');
+        
+        if (response.code === 200) {
+          message.success('创建成功');
+          onSuccess();
+        } else {
+          const errorMsg = response.message || '创建失败';
+          message.error(errorMsg);
+        }
       }
-
-      onSuccess();
-    } catch (error) {
-      message.error(values ? '更新失败' : '创建失败');
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || (values ? '更新失败' : '创建失败');
+      message.error(errorMsg);
     } finally {
       setLoading(false);
     }

@@ -84,7 +84,7 @@ interface SkillService {
      * @param skills       技能列表
      * @return 保存的技能数量
      */
-    fun batchSaveSkills(repositoryId: Long, skills: List<SkillResponse>): Int
+    fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int
 
     fun convertToResponse(skill: Skill): SkillResponse
 }

@@ -19,10 +19,6 @@ data class SysUserUpdateRequest(
     @Schema(description = "用户名", example = "zhangsan", accessMode = Schema.AccessMode.READ_ONLY)
     val username: String? = null,
     
-    @Schema(description = "密码")
-    @Size(min = 6, max = 100, message = "密码长度必须在 6-100 之间")
-    val password: String? = null,
-    
     @Schema(description = "昵称")
     @Size(max = 50, message = "昵称长度不能超过 50 个字符")
     val nickname: String? = null,

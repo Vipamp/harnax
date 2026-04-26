@@ -44,8 +44,9 @@ class ModelProviderServiceImpl(
     }
 
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
-        if (modelProviderMapper.countByType(request.type) > 0) {
-            throw BizException("供应商类型已存在")
+        // 检查供应商名称是否已存在
+        if (modelProviderMapper.countByName(request.name) > 0) {
+            throw BizException("供应商名称已存在")
         }
 
         val modelProvider = ModelProvider()
@@ -70,18 +71,20 @@ class ModelProviderServiceImpl(
         val modelProvider = modelProviderMapper.selectById(id)
             ?: throw BizException("供应商不存在")
 
-        // 如果修改了类型，检查是否重复
-        if (!request.type.isNullOrBlank() && request.type != modelProvider.type) {
-            if (modelProviderMapper.countByType(request.type) > 0) {
-                throw BizException("供应商类型已存在")
+        // 如果修改了名称，检查是否重复
+        if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
+            if (modelProviderMapper.countByName(request.name) > 0) {
+                throw BizException("供应商名称已存在")
             }
+            modelProvider.name = request.name
+        }
+
+        // 如果修改了类型，直接更新（类型不校验唯一性）
+        if (!request.type.isNullOrBlank() && request.type != modelProvider.type) {
             modelProvider.type = request.type
         }
 
         // 更新其他字段（只更新非 null 字段）
-        if (!request.name.isNullOrBlank()) {
-            modelProvider.name = request.name
-        }
         request.apiKey?.let { apiKey ->
             // 如果 API Key 不为空且不是脱敏格式，则更新
             if (apiKey.isNotBlank() && !apiKey.contains("****")) {

@@ -4,6 +4,7 @@ import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
+import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.service.SysUserService
 import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.common.page.mapRecords
@@ -24,7 +25,8 @@ import org.springframework.web.bind.annotation.*
 @RequestMapping("/admin/users")
 @Tag(name = "用户管理", description = "用户相关接口")
 class SysUserController(
-    private val sysUserService: SysUserService
+    private val sysUserService: SysUserService,
+    private val editionUtil: EditionUtil
 ) {
 
     private val log = LoggerFactory.getLogger(SysUserController::class.java)
@@ -72,7 +74,8 @@ class SysUserController(
         @Valid @RequestBody request: SysUserCreateRequest
     ): ResultVo<Void> {
         return try {
-            if (sysUserService.createUser(request)) ResultVo.success() else ResultVo.error("创建用户失败")
+            // 传递版本信息，个人版不强制要求 email 和 phone
+            if (sysUserService.createUser(request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("创建用户失败")
         } catch (e: Exception) {
             log.error("创建用户失败", e)
             ResultVo.error(e.message ?: "创建用户失败")
@@ -86,7 +89,8 @@ class SysUserController(
         @Valid @RequestBody request: SysUserUpdateRequest
     ): ResultVo<Void> {
         return try {
-            if (sysUserService.updateUser(id, request)) ResultVo.success() else ResultVo.error("更新用户失败")
+            // 传递版本信息，个人版不进行必填校验
+            if (sysUserService.updateUser(id, request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("更新用户失败")
         } catch (e: Exception) {
             log.error("更新用户失败", e)
             ResultVo.error(e.message ?: "更新用户失败")

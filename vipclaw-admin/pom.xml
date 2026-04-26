@@ -165,6 +165,23 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>**/edition.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>**/edition.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -229,4 +246,33 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- 个人版(默认) -->
+        <profile>
+            <id>personal</id>
+            <properties>
+                <edition.current>personal</edition.current>
+            </properties>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+        </profile>
+        
+        <!-- 企业版 -->
+        <profile>
+            <id>enterprise</id>
+            <properties>
+                <edition.current>enterprise</edition.current>
+            </properties>
+        </profile>
+        
+        <!-- 公网版 -->
+        <profile>
+            <id>public</id>
+            <properties>
+                <edition.current>public</edition.current>
+            </properties>
+        </profile>
+    </profiles>
 </project>

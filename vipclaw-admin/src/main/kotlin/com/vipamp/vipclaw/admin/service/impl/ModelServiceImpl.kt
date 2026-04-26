@@ -104,13 +104,13 @@ class ModelServiceImpl(
 
         // 如果修改了供应商,检查是否存在
         if (request.providerId != null && request.providerId != model.providerId) {
-            modelProviderMapper.selectById(request.providerId!!)
+            modelProviderMapper.selectById(request.providerId)
                 ?: throw BizException("模型供应商不存在")
         }
 
         // 如果修改了 name,检查是否与其他模型冲突
         if (request.name != null && request.name != model.name) {
-            if (modelMapper.countByProviderIdAndName(model.providerId, request.name!!) > 0) {
+            if (modelMapper.countByProviderIdAndName(model.providerId, request.name) > 0) {
                 throw BizException("该模型名称在当前供应商下已存在")
             }
             model.name = request.name
@@ -118,7 +118,7 @@ class ModelServiceImpl(
 
         // 如果修改了 modelName,检查是否与其他模型冲突
         if (request.modelName != null && request.modelName != model.modelName) {
-            if (modelMapper.countByProviderIdAndModelName(model.providerId, request.modelName!!) > 0) {
+            if (modelMapper.countByProviderIdAndModelName(model.providerId, request.modelName) > 0) {
                 throw BizException("该模型标识在当前供应商下已存在")
             }
             model.modelName = request.modelName
@@ -143,6 +143,15 @@ class ModelServiceImpl(
     override fun updateStatus(id: Long, status: Int): Boolean {
         val model = this.modelMapper.selectById(id)
             ?: throw BizException("模型不存在")
+
+        // 如果要启用模型，检查供应商是否启用
+        if (status == 1) {
+            val provider = modelProviderMapper.selectById(model.providerId)
+                ?: throw BizException("模型供应商不存在")
+            if (provider.status == 0) {
+                throw BizException("供应商已禁用，无法启用模型")
+            }
+        }
 
         return this.modelMapper.updateStatus(id, status) > 0
     }

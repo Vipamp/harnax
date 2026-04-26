@@ -30,7 +30,14 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth.requestMatchers("/admin/auth/login", "/admin/auth/logout", "/admin/auth/captcha")
                     .permitAll()
-                    .requestMatchers("/swagger-ui/**", "/v3/api-docs/**")
+                    .requestMatchers(
+                        "/swagger-ui.html",
+                        "/swagger-ui/**",
+                        "/swagger-ui/*.*",
+                        "/v3/api-docs",
+                        "/v3/api-docs/**",
+                        "/webjars/**"
+                    )
                     .permitAll()
                     .anyRequest()
                     .authenticated()

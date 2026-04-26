@@ -18,6 +18,10 @@ data class SkillResponse(
     val repositoryId: Long? = null,
     @Schema(description = "仓库名称", example = "qoder-skills")
     var repositoryName: String? = null,
+    @Schema(description = "仓库地址", example = "https://github.com/example/repo")
+    var repositoryUrl: String? = null,
+    @Schema(description = "分支名称", example = "main")
+    var repositoryBranch: String? = null,
     @Schema(description = "技能描述")
     val description: String? = null,
     @Schema(description = "skill.md 内容")
@@ -52,6 +56,8 @@ data class SkillResponse(
                 name = skill.name,
                 repositoryId = skill.repositoryId,
                 repositoryName = repository?.name,
+                repositoryUrl = repository?.url,
+                repositoryBranch = repository?.branch,
                 description = skill.description,
                 skillmd = skill.skillmd,
                 resources = skill.resources,

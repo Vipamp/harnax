@@ -79,4 +79,7 @@ session:
   password: 123456
 
 local:
-  tmp-dir:
+  tmp-dir: /Users/heqingsong/vipclaw-admin/tmp
+
+edition:
+  current: personal

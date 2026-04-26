@@ -34,6 +34,11 @@
         SELECT COUNT(*) FROM model_provider WHERE type = #{type} AND active = 1
     </select>
 
+    <!-- countByName -->
+    <select id="countByName" resultType="int">
+        SELECT COUNT(*) FROM model_provider WHERE name = #{name} AND active = 1
+    </select>
+
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model_provider (

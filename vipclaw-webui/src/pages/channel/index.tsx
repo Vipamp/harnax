@@ -230,9 +230,9 @@ const ChannelManagement: React.FC = () => {
         <Switch
           checked={status === 1}
           onChange={(checked) => handleToggleStatus(record.id!, checked ? 1 : 0)}
-          checkedChildren="启"
-          unCheckedChildren="停"
-          style={{ backgroundColor: status === 1 ? '#52c41a' : '#d9d9d9' }}
+          checkedChildren="启用"
+          unCheckedChildren="禁用"
+          style={{ backgroundColor: status === 1 ? '#4f6ef7' : '#d9d9d9' }}
         />
       ),
     },

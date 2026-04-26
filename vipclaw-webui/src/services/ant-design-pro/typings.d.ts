@@ -228,6 +228,8 @@ declare namespace API {
     name: string;
     repositoryId: number;
     repositoryName?: string;
+    repositoryUrl?: string;
+    repositoryBranch?: string;
     skillmd?: string;
     resources?: string;
     status: number;

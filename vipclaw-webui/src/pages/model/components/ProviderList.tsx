@@ -76,7 +76,6 @@ const ProviderList: React.FC<ProviderListProps> = ({
               }}
               checkedChildren="启用"
               unCheckedChildren="禁用"
-              size="small"
               style={{
                 backgroundColor: provider.status === 1 ? '#4f6ef7' : '#d9d9d9',
               }}

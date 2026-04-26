@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.*
 import com.vipamp.vipclaw.admin.service.McpServerService
 import com.vipamp.vipclaw.common.page.Page
@@ -21,7 +22,8 @@ import org.springframework.web.bind.annotation.*
 @RequestMapping("/admin/mcp")
 @Tag(name = "MCP 服务管理", description = "MCP 服务相关接口")
 class McpServerController(
-    private val mcpServerService: McpServerService
+    private val mcpServerService: McpServerService,
+    private val editionUtil: EditionUtil
 ) {
 
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
@@ -64,11 +66,20 @@ class McpServerController(
     @Operation(summary = "创建 MCP 服务", description = "新增 MCP 服务")
     fun createMcpServer(
         @Valid @RequestBody request: McpServerCreateRequest
-    ): ResultVo<Void> = try {
-        if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("创建 MCP 服务失败")
-    } catch (e: Exception) {
-        log.error("创建 MCP 服务失败", e)
-        ResultVo.error(e.message ?: "创建 MCP 服务失败")
+    ): ResultVo<Void> {
+        return try {
+            // 企业版和公网版不支持 stdio 模式
+            if ((editionUtil.isEnterprise() || editionUtil.isPublic()) &&
+                request.type == "stdio"
+            ) {
+                return ResultVo.error("当前版本不支持 stdio 模式")
+            }
+
+            if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("创建 MCP 服务失败")
+        } catch (e: Exception) {
+            log.error("创建 MCP 服务失败", e)
+            ResultVo.error(e.message ?: "创建 MCP 服务失败")
+        }
     }
 
     @PutMapping("/update/{id}")
@@ -119,16 +130,34 @@ class McpServerController(
     }
 
     @GetMapping("/{id}/list_tools")
-    @Operation(summary = "获取 MCP 工具列表", description = "获取 MCP 服务提供的工具列表（Mock 数据）")
+    @Operation(summary = "获取 MCP 工具列表", description = "获取 MCP 服务提供的工具列表")
     fun listTools(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long
     ): ResultVo<List<McpToolResponse>> = try {
-        // TODO: 后续替换为真实的工具列表获取逻辑
-        val mockTools = getMockTools()
-        ResultVo.success(mockTools)
+        val tools = mcpServerService.listTools(id)
+        val toolResponses = tools.map { tool ->
+            McpToolResponse(
+                name = tool.name,
+                parameters = tool.inputSchema.properties?.map { (key, value) ->
+                    McpToolResponse.McpToolParameter(
+                        name = key,
+                        type = when (value) {
+                            is Map<*, *> -> (value["type"] as? String) ?: "string"
+                            else -> "string"
+                        },
+                        description = when (value) {
+                            is Map<*, *> -> (value["description"] as? String) ?: ""
+                            else -> ""
+                        }
+                    )
+                } ?: emptyList()
+            )
+        }
+        ResultVo.success(toolResponses)
     } catch (e: Exception) {
-        log.error("获取 MCP 工具列表失败", e)
-        ResultVo.error(e.message ?: "获取 MCP 工具列表失败")
+        log.error("获取 MCP 工具列表失败, mcpId: {}", id, e)
+        val errorMessage = e.message ?: "获取 MCP 工具列表失败"
+        ResultVo.error(errorMessage)
     }
 
     /**

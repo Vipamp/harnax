@@ -66,14 +66,16 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       message.warning('请至少选择一个技能');
       return;
     }
-
+  
     setSaving(true);
     try {
-      await batchSaveSkills(repositoryId, selectedSkillsList);
-      message.success(`同步成功，共保存 ${selectedSkillsList.length} 个技能`);
+      // 只传递技能名称列表
+      const skillNames = selectedSkillsList.map((skill) => skill.name!);
+      await batchSaveSkills(repositoryId, skillNames);
+      message.success(`同步成功,共保存 ${selectedSkillsList.length} 个技能`);
       onSuccess();
     } catch (error) {
-      message.error('同步失败，请重试');
+      message.error('同步失败,请重试');
     } finally {
       setSaving(false);
     }

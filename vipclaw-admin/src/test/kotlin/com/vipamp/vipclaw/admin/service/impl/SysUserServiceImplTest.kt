@@ -202,7 +202,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request)
+            val result = sysUserService.createUser(request, isPersonal = false)
 
             // Then
             assertTrue(result)
@@ -233,7 +233,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request)
+                sysUserService.createUser(request, isPersonal = false)
             }
             assertEquals("用户名已存在", exception.message)
             // 使用 nullable 版本的 any
@@ -257,7 +257,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request)
+            val result = sysUserService.createUser(request, isPersonal = false)
 
             // Then
             assertTrue(result)
@@ -283,7 +283,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request)
+            val result = sysUserService.createUser(request, isPersonal = false)
 
             // Then
             assertTrue(result)
@@ -310,7 +310,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request)
+                sysUserService.createUser(request, isPersonal = false)
             }
             assertEquals("手机号已存在", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -335,10 +335,126 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request)
+                sysUserService.createUser(request, isPersonal = false)
             }
             assertEquals("邮箱已存在", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 企业版邮箱为空应该抛出异常")
+        fun `createUser should throw BizException when email is empty in enterprise mode`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser5",
+                password = "password123",
+                nickname = "新用户5",
+                email = null,
+                phone = "13900139005",
+                gender = 1,
+                avatar = ""
+            )
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request, isPersonal = false)
+            }
+            assertEquals("邮箱不能为空", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 企业版手机号为空应该抛出异常")
+        fun `createUser should throw BizException when phone is empty in enterprise mode`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser6",
+                password = "password123",
+                nickname = "新用户6",
+                email = "new6@example.com",
+                phone = null,
+                gender = 1,
+                avatar = ""
+            )
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request, isPersonal = false)
+            }
+            assertEquals("手机号不能为空", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 企业版邮箱格式不正确应该抛出异常")
+        fun `createUser should throw BizException when email format is invalid in enterprise mode`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser7",
+                password = "password123",
+                nickname = "新用户7",
+                email = "invalid-email",
+                phone = "13900139007",
+                gender = 1,
+                avatar = ""
+            )
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request, isPersonal = false)
+            }
+            assertEquals("邮箱格式不正确", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 企业版手机号格式不正确应该抛出异常")
+        fun `createUser should throw BizException when phone format is invalid in enterprise mode`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser8",
+                password = "password123",
+                nickname = "新用户8",
+                email = "new8@example.com",
+                phone = "12345678901",  // 不合法的手机号
+                gender = 1,
+                avatar = ""
+            )
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.createUser(request, isPersonal = false)
+            }
+            assertEquals("手机号格式不正确", exception.message)
+            verify(sysUserMapper, never()).insert(any<SysUser>())
+        }
+
+        @Test
+        @DisplayName("createUser - 个人版邮箱和手机号可为空")
+        fun `createUser should allow empty email and phone in personal mode`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "newuser9",
+                password = "password123",
+                nickname = "新用户9",
+                email = null,
+                phone = null,
+                gender = 1,
+                avatar = ""
+            )
+            `when`(sysUserMapper.selectByUsername("newuser9")).thenReturn(null)
+            `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
+
+            // When
+            val result = sysUserService.createUser(request, isPersonal = true)
+
+            // Then
+            assertTrue(result)
+            verify(sysUserMapper).insert(argThat { user ->
+                user!!.username == "newuser9" &&
+                        user.email == null &&
+                        user.phone == null
+            })
         }
     }
 
@@ -379,24 +495,6 @@ class SysUserServiceImplTest {
             }
             assertEquals("用户不存在", exception.message)
             verify(sysUserMapper, never()).updateById(any<SysUser>())
-        }
-
-        @Test
-        @DisplayName("updateUser - 更新密码时应该加密")
-        fun `updateUser should encrypt password when provided`() {
-            // Given
-            val request = SysUserUpdateRequest(password = "newpassword123")
-            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
-            `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
-
-            // When
-            val result = sysUserService.updateUser(1L, request)
-
-            // Then
-            assertTrue(result)
-            verify(sysUserMapper).updateById(argThat { user ->
-                user!!.password.startsWith("$2a$10$") // BCrypt 加密后的密码
-            })
         }
 
         @Test
@@ -454,7 +552,6 @@ class SysUserServiceImplTest {
         fun `updateUser should not update when password is empty`() {
             // Given
             val request = SysUserUpdateRequest(
-                password = "",
                 nickname = "新昵称"
             )
             `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
@@ -607,6 +704,32 @@ class SysUserServiceImplTest {
                 sysUserService.deleteUser(1L)
             }
             assertEquals("用户不存在", exception.message)
+        }
+
+        @Test
+        @DisplayName("deleteUser - 删除管理员应该抛出异常")
+        fun `deleteUser should throw BizException when deleting admin user`() {
+            // Given
+            val adminUser = SysUser().apply {
+                id = 2L
+                username = "admin"
+                password = BCrypt.hashpw("password123", BCrypt.gensalt())
+                nickname = "管理员"
+                email = "admin@example.com"
+                phone = "13800138000"
+                gender = 1
+                status = 1
+                isAdmin = 1  // 管理员
+                active = 1
+            }
+            `when`(sysUserMapper.selectById(2L)).thenReturn(adminUser)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.deleteUser(2L)
+            }
+            assertEquals("不允许删除管理员用户", exception.message)
+            verify(sysUserMapper, never()).deleteById(any<Long>())
         }
     }
 

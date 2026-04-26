@@ -11,7 +11,10 @@ import com.vipamp.vipclaw.admin.mapper.McpServerMapper
 import com.vipamp.vipclaw.admin.service.McpServerService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.agent.adaptor.McpConfigAdaptor
+import com.vipamp.vipclaw.agent.adaptor.mcp.McpHelper
 import com.vipamp.vipclaw.common.page.Page
+import io.modelcontextprotocol.spec.McpSchema
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -26,7 +29,8 @@ import org.springframework.util.StringUtils.hasText
 @Service
 class McpServerServiceImpl(
     private val jwtUtil: JwtUtil,
-    private val mcpServerMapper: McpServerMapper
+    private val mcpServerMapper: McpServerMapper,
+    private val mcpAdaptor: McpConfigAdaptor
 ) : McpServerService {
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
@@ -79,10 +83,10 @@ class McpServerServiceImpl(
 
         val mcpServer = McpServer()
         mcpServer.name = request.name
-        mcpServer.description = request.description!!
-        mcpServer.type = request.type!!
-        mcpServer.command = request.command!!
-        mcpServer.url = request.url!!
+        mcpServer.description = request.description ?: ""
+        mcpServer.type = request.type
+        mcpServer.command = request.command ?: ""
+        mcpServer.url = request.url ?: ""
         mcpServer.status = request.status ?: 1
         mcpServer.active = 1
 
@@ -104,7 +108,7 @@ class McpServerServiceImpl(
 
         // 如果修改了名称，需校验唯一性
         if (request.name != mcpServer.name) {
-            val existing = mcpServerMapper.selectByName(request.name!!)
+            val existing = mcpServerMapper.selectByName(request.name)
             if (existing != null) {
                 throw BizException("MCP 名称已存在")
             }
@@ -154,11 +158,7 @@ class McpServerServiceImpl(
 
     override fun connectivityTest(id: Long): Boolean {
         log.info("MCP 服务连通性测试，id: {}", id)
-
-        val mcpServer = this.mcpServerMapper.selectById(id)
-            ?: throw BizException("MCP 服务不存在")
-
-        // TODO: 实现实际的连通性测试逻辑
+        listTools(id)
         return true
     }
 
@@ -191,5 +191,10 @@ class McpServerServiceImpl(
 
     override fun convertToResponse(mcpServer: McpServer): McpServerResponse {
         return McpServerResponse.fromEntity(mcpServer)
+    }
+
+    override fun listTools(mcpId: Long): List<McpSchema.Tool> {
+        val mcpServer = mcpAdaptor.getConfig(mcpId) ?: throw BizException("MCP 服务不存在")
+        return McpHelper.listTools(mcpServer)
     }
 }

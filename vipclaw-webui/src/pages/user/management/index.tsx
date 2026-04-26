@@ -274,23 +274,26 @@ const UserManagement: React.FC = () => {
               })}
             </Button>
           </Tooltip>
-          <Tooltip title="删除">
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              style={{ borderRadius: '6px', fontWeight: 500 }}
-              onClick={() => {
-                handleRemove(record.id!);
-              }}
-            >
-              {intl.formatMessage({
-                id: 'pages.user.management.delete',
-                defaultMessage: '删除',
-              })}
-            </Button>
-          </Tooltip>
+          {/* 管理员用户不显示删除按钮 */}
+          {record.isAdmin !== 1 && (
+            <Tooltip title="删除">
+              <Button
+                type="text"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                style={{ borderRadius: '6px', fontWeight: 500 }}
+                onClick={() => {
+                  handleRemove(record.id!);
+                }}
+              >
+                {intl.formatMessage({
+                  id: 'pages.user.management.delete',
+                  defaultMessage: '删除',
+                })}
+              </Button>
+            </Tooltip>
+          )}
         </Space>
       ),
     },

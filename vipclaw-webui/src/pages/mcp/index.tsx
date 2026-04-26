@@ -30,8 +30,9 @@ const McpCard: React.FC<{
   onToggleStatus: (id: number, status: number) => void;
   onEdit: (item: API.McpServerItem) => void;
   onDelete: (id: number) => void;
+  onTest: (id: number, name: string) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission }) => {
+}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission }) => {
   const [isHovered, setIsHovered] = useState(false);
   const endpoint = item.type === 'stdio' ? item.command : item.url;
 
@@ -120,8 +121,8 @@ const McpCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren="启"
-                unCheckedChildren="停"
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}
@@ -181,6 +182,18 @@ const McpCard: React.FC<{
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
             <Space size={8}>
+              <Tooltip title="连通测试">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTest(item.id!, item.name);
+                  }}
+                  style={{ color: '#fa8c16' }}
+                />
+              </Tooltip>
               <Tooltip title="编辑">
                 <Button
                   type="text"
@@ -258,6 +271,9 @@ const McpManagement: React.FC = () => {
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [types, setTypes] = useState<string[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
+  const [testModalVisible, setTestModalVisible] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testLoading, setTestLoading] = useState<boolean>(false);
 
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
@@ -336,18 +352,54 @@ const McpManagement: React.FC = () => {
 
   /** 连通性测试 */
   const handleConnectivityTest = async (id: number, name: string) => {
-    const hide = message.loading(`正在测试 ${name} 的连通性...`);
+    // 显示测试弹窗
+    setTestModalVisible(true);
+    setTestResult(null);
+    setTestLoading(true);
+
+    // 创建超时Promise（15秒）
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('TIMEOUT'));
+      }, 15000);
+    });
+
     try {
-      const res = await connectivityTestMcpServer(id);
-      hide();
+      //  race between API call and timeout
+      const res = await Promise.race([
+        connectivityTestMcpServer(id),
+        timeoutPromise,
+      ]);
+
+      // API返回成功
+      setTestLoading(false);
       if (res.data === true) {
-        messageApi.success(`${name} 连通性测试通过`);
+        setTestResult({
+          success: true,
+          message: `${name} 连通性测试通过，服务连接正常`,
+        });
       } else {
-        messageApi.error(`${name} 连通性测试失败`);
+        setTestResult({
+          success: false,
+          message: `${name} 连通性测试失败，服务不可达`,
+        });
       }
-    } catch (error) {
-      hide();
-      messageApi.error(`${name} 连通性测试失败`);
+    } catch (error: any) {
+      setTestLoading(false);
+      if (error.message === 'TIMEOUT') {
+        // 超时错误
+        setTestResult({
+          success: false,
+          message: `${name} 连通性测试超时（15秒未响应），请检查服务是否正常运行`,
+        });
+      } else {
+        // 其他错误
+        const errorMsg = error?.message || error?.info?.errorMessage || '连接失败';
+        setTestResult({
+          success: false,
+          message: `${name} 连通性测试失败：${errorMsg}`,
+        });
+      }
     }
   };
 
@@ -444,6 +496,7 @@ const McpManagement: React.FC = () => {
                       setUpdateModalVisible(true);
                     }}
                     onDelete={handleRemove}
+                    onTest={handleConnectivityTest}
                     hasOperationPermission={hasOperationPermission}
                   />
                 </Col>
@@ -482,12 +535,20 @@ const McpManagement: React.FC = () => {
         onCancel={() => setCreateModalVisible(false)}
         onSubmit={async (values) => {
           try {
-            await createMcpServer(values);
-            messageApi.success('创建成功');
-            setCreateModalVisible(false);
-            loadData();
-          } catch (error) {
-            messageApi.error('创建失败，请重试');
+            const response = await createMcpServer(values);
+            if (response.code === 200) {
+              messageApi.success('创建成功');
+              setCreateModalVisible(false);
+              loadData();
+            } else {
+              // 显示后端返回的错误信息
+              const errorMsg = response.message || '创建失败，请重试';
+              messageApi.error(errorMsg);
+            }
+          } catch (error: any) {
+            // 显示错误信息给用户
+            const errorMsg = error?.message || error?.info?.errorMessage || '创建失败，请重试';
+            messageApi.error(errorMsg);
           }
         }}
         onConnectivityTest={async () => {
@@ -507,13 +568,21 @@ const McpManagement: React.FC = () => {
           }}
           onSubmit={async (values) => {
             try {
-              await updateMcpServer(currentRow.id!, values);
-              messageApi.success('更新成功');
-              setUpdateModalVisible(false);
-              setCurrentRow(undefined);
-              loadData();
-            } catch (error) {
-              messageApi.error('更新失败，请重试');
+              const response = await updateMcpServer(currentRow.id!, values);
+              if (response.code === 200) {
+                messageApi.success('更新成功');
+                setUpdateModalVisible(false);
+                setCurrentRow(undefined);
+                loadData();
+              } else {
+                // 显示后端返回的错误信息
+                const errorMsg = response.message || '更新失败，请重试';
+                messageApi.error(errorMsg);
+              }
+            } catch (error: any) {
+              // 显示错误信息给用户
+              const errorMsg = error?.message || error?.info?.errorMessage || '更新失败，请重试';
+              messageApi.error(errorMsg);
             }
           }}
           onConnectivityTest={async (id) => {
@@ -529,6 +598,135 @@ const McpManagement: React.FC = () => {
           }}
         />
       )}
+
+      {/* 连通性测试弹窗 */}
+      <Modal
+        title="连通性测试"
+        open={testModalVisible}
+        onCancel={() => {
+          setTestModalVisible(false);
+          setTestResult(null);
+          setTestLoading(false);
+        }}
+        footer={[
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => {
+              setTestModalVisible(false);
+              setTestResult(null);
+              setTestLoading(false);
+            }}
+          >
+            关闭
+          </Button>,
+        ]}
+        maskClosable={false}
+        closable={!testLoading}
+      >
+        <div style={{ padding: '20px 0', textAlign: 'center' }}>
+          {testLoading ? (
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <svg
+                  className="animate-spin"
+                  style={{
+                    width: 48,
+                    height: 48,
+                    animation: 'spin 1s linear infinite',
+                  }}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="#e0e0e0"
+                    strokeWidth="4"
+                  />
+                  <path
+                    d="M12 2a10 10 0 0 1 10 10"
+                    stroke="#4f6ef7"
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+              <Text style={{ fontSize: 16, color: '#666' }}>
+                正在测试连接，请稍候...
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 13 }}>
+                如果超过 15 秒未响应，测试将自动超时
+              </Text>
+            </div>
+          ) : testResult ? (
+            <div>
+              <div
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: '50%',
+                  background: testResult.success ? '#f6ffed' : '#fff2f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px',
+                  border: `2px solid ${testResult.success ? '#52c41a' : '#ff4d4f'}`,
+                }}
+              >
+                {testResult.success ? (
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M5 13l4 4L19 7"
+                      stroke="#52c41a"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M18 6L6 18M6 6l12 12"
+                      stroke="#ff4d4f"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </div>
+              <Text
+                style={{
+                  fontSize: 16,
+                  color: testResult.success ? '#52c41a' : '#ff4d4f',
+                  fontWeight: 500,
+                  display: 'block',
+                  marginBottom: 8,
+                }}
+              >
+                {testResult.success ? '测试成功' : '测试失败'}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 14, display: 'block' }}>
+                {testResult.message}
+              </Text>
+            </div>
+          ) : null}
+        </div>
+      </Modal>
+
+      {/* 添加旋转动画 */}
+      <style>{`
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </PageContainer>
   );
 };

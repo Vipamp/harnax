@@ -50,8 +50,33 @@ class SysUserServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createUser(request: SysUserCreateRequest): Boolean {
-        log.info("创建用户，username: {}", request.username)
+    override fun createUser(request: SysUserCreateRequest, isPersonal: Boolean): Boolean {
+        log.info("创建用户，username: {}, isPersonal: {}", request.username, isPersonal)
+
+        // 企业版和公网版：email 和 phone 必填且进行格式校验
+        if (!isPersonal) {
+            // 校验 email 必填
+            if (request.email.isNullOrBlank()) {
+                throw BizException("邮箱不能为空")
+            }
+
+            // 校验 phone 必填
+            if (request.phone.isNullOrBlank()) {
+                throw BizException("手机号不能为空")
+            }
+
+            // 校验 email 格式
+            val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+            if (!emailRegex.matches(request.email)) {
+                throw BizException("邮箱格式不正确")
+            }
+
+            // 校验 phone 格式
+            val phoneRegex = Regex("^1[3-9]\\d{9}$")
+            if (!phoneRegex.matches(request.phone)) {
+                throw BizException("手机号格式不正确")
+            }
+        }
 
         // 检查用户名是否存在（需要同时校验 active 字段）
         val existUser = getByUsername(request.username)
@@ -59,16 +84,16 @@ class SysUserServiceImpl(
             throw BizException("用户名已存在")
         }
 
-        // 检查手机号是否已存在
-        if (request.phone.isNotBlank()) {
+        // 检查手机号是否已存在（如果提供了手机号）
+        if (!request.phone.isNullOrBlank()) {
             val existPhone = sysUserMapper.selectByPhone(request.phone)
             if (existPhone != null) {
                 throw BizException("手机号已存在")
             }
         }
 
-        // 检查邮箱是否已存在
-        if (request.email.isNotBlank()) {
+        // 检查邮箱是否已存在（如果提供了邮箱）
+        if (!request.email.isNullOrBlank()) {
             val existEmail = sysUserMapper.selectByEmail(request.email)
             if (existEmail != null) {
                 throw BizException("邮箱已存在")
@@ -81,8 +106,8 @@ class SysUserServiceImpl(
         // 这样数据库中存储的是 BCrypt(SHA-256(明文密码))
         user.password = BCrypt.hashpw(request.password, BCrypt.gensalt())
         user.nickname = request.nickname
-        user.email = request.email
-        user.phone = request.phone
+        user.email = request.email ?: ""
+        user.phone = request.phone ?: ""
         user.gender = request.gender ?: 2
         user.status = 1 // 默认启用
         user.isAdmin = 0 // 默认非管理员
@@ -95,25 +120,73 @@ class SysUserServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun updateUser(id: Long, request: SysUserUpdateRequest): Boolean {
-        log.info("更新用户，id: {}", id)
+    override fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean): Boolean {
+        log.info("更新用户，id: {}, isPersonal: {}", id, isPersonal)
 
         val user = sysUserMapper.selectById(id)
             ?: throw BizException("用户不存在")
 
-        // 如果修改了手机号，检查是否已被其他用户使用
-        if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
-            val existPhone = sysUserMapper.selectByPhone(request.phone)
-            if (existPhone != null) {
-                throw BizException("手机号已存在")
+        // 企业版和公开版：email 和 phone 必填且进行格式校验
+        if (!isPersonal) {
+            // 校验 email 必填
+            if (request.email.isNullOrBlank()) {
+                throw BizException("邮箱不能为空")
             }
-        }
 
-        // 如果修改了邮箱，检查是否已被其他用户使用
-        if (!request.email.isNullOrBlank() && request.email != user.email) {
-            val existEmail = sysUserMapper.selectByEmail(request.email)
-            if (existEmail != null) {
-                throw BizException("邮箱已存在")
+            // 校验 phone 必填
+            if (request.phone.isNullOrBlank()) {
+                throw BizException("手机号不能为空")
+            }
+
+            // 校验 email 格式
+            val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+            if (!emailRegex.matches(request.email)) {
+                throw BizException("邮箱格式不正确")
+            }
+
+            // 校验 phone 格式
+            val phoneRegex = Regex("^1[3-9]\\d{9}$")
+            if (!phoneRegex.matches(request.phone)) {
+                throw BizException("手机号格式不正确")
+            }
+
+            // 检查 email 是否已被其他用户使用
+            if (request.email != user.email) {
+                val existEmail = sysUserMapper.selectByEmail(request.email)
+                if (existEmail != null) {
+                    throw BizException("邮箱已存在")
+                }
+            }
+
+            // 检查 phone 是否已被其他用户使用
+            if (request.phone != user.phone) {
+                val existPhone = sysUserMapper.selectByPhone(request.phone)
+                if (existPhone != null) {
+                    throw BizException("手机号已存在")
+                }
+            }
+        } else {
+            // 个人版：如果修改了 email 或 phone，才进行格式校验和唯一性校验
+            if (!request.email.isNullOrBlank() && request.email != user.email) {
+                val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+                if (!emailRegex.matches(request.email)) {
+                    throw BizException("邮箱格式不正确")
+                }
+                val existEmail = sysUserMapper.selectByEmail(request.email)
+                if (existEmail != null) {
+                    throw BizException("邮箱已存在")
+                }
+            }
+
+            if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
+                val phoneRegex = Regex("^1[3-9]\\d{9}$")
+                if (!phoneRegex.matches(request.phone)) {
+                    throw BizException("手机号格式不正确")
+                }
+                val existPhone = sysUserMapper.selectByPhone(request.phone)
+                if (existPhone != null) {
+                    throw BizException("手机号已存在")
+                }
             }
         }
 
@@ -124,12 +197,6 @@ class SysUserServiceImpl(
         request.gender?.let { user.gender = it }
         request.isAdmin?.let { user.isAdmin = it }
         request.avatar?.let { user.avatar = it }
-        // 如果提供了密码，进行加密
-        request.password?.let {
-            if (it.isNotEmpty()) {
-                user.password = BCrypt.hashpw(it, BCrypt.gensalt())
-            }
-        }
 
         val success = this.sysUserMapper.updateById(user) > 0
         log.info("用户更新{}，id: {}", if (success) "成功" else "失败", id)
@@ -147,6 +214,12 @@ class SysUserServiceImpl(
         log.info("删除用户，id: {}", id)
         val user = sysUserMapper.selectById(id)
             ?: throw BizException("用户不存在")
+
+        // 不允许删除管理员用户
+        if (user.isAdmin == 1) {
+            throw BizException("不允许删除管理员用户")
+        }
+
         return sysUserMapper.deleteById(id) > 0
     }
 

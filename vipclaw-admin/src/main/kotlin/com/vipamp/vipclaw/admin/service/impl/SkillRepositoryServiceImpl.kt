@@ -10,12 +10,16 @@ import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SkillRepositoryMapper
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
+import com.vipamp.vipclaw.admin.util.GitSkillLoader.loadSkillsFromGit
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
 import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.nio.file.Files
+import java.util.stream.Collectors
 
 /**
  * 技能仓库服务实现类
@@ -26,7 +30,8 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class SkillRepositoryServiceImpl(
     private val jwtUtil: JwtUtil,
-    private val skillRepositoryMapper: SkillRepositoryMapper
+    private val skillRepositoryMapper: SkillRepositoryMapper,
+    @Value($$"${local.tmp-dir}") private val localTmpDir: String?,
 ) : SkillRepositoryService {
 
     private val log = LoggerFactory.getLogger(SkillRepositoryServiceImpl::class.java)
@@ -77,12 +82,7 @@ class SkillRepositoryServiceImpl(
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        repository.creator = currentUsername!!
-
-        // 默认不公开
-        if (repository.isPublic == null) {
-            repository.isPublic = 0
-        }
+        repository.creator = currentUsername
 
         val success = this.skillRepositoryMapper.insert(repository) > 0
         log.info("技能仓库创建{}，repositoryId: {}", if (success) "成功" else "失败", repository.id)
@@ -137,38 +137,23 @@ class SkillRepositoryServiceImpl(
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {
         log.info("获取远程技能列表，repositoryId: {}", repositoryId)
-
-        // TODO: 实现真实的 Git 仓库拉取和 skill.md 解析逻辑
-        // 目前返回 Mock 测试数据
-
-        val mockData = mutableListOf<SyncSkillResponse>()
-
-        val skill1 = SyncSkillResponse()
-        skill1.name = "Java 编程助手"
-        skill1.description = "提供 Java 编程相关的技能帮助，包括代码编写、调试、优化等"
-        skill1.skillmd = "# Java 编程助手\n\n我可以帮助你：\n- Java 基础语法\n- Spring 框架\n- 多线程编程\n- JVM 调优"
-        skill1.resources = "[]"
-        skill1.exists = false
-        mockData.add(skill1)
-
-        val skill2 = SyncSkillResponse()
-        skill2.name = "Python 脚本专家"
-        skill2.description = "Python 脚本编写和问题解答，涵盖数据分析、自动化等领域"
-        skill2.skillmd = "# Python 脚本专家\n\n擅长领域：\n- Python 基础\n- Django/Flask\n- 数据处理\n- 自动化脚本"
-        skill2.resources = "[]"
-        skill2.exists = false
-        mockData.add(skill2)
-
-        val skill3 = SyncSkillResponse()
-        skill3.name = "前端 UI 设计师"
-        skill3.description = "前端界面设计和样式咨询，精通 React、Vue 等主流框架"
-        skill3.skillmd = "# 前端 UI 设计师\n\n专业技能：\n- React/Vue\n- CSS/Tailwind\n- 响应式设计\n- 用户体验优化"
-        skill3.resources = "{\"ref/doc1.md\":\"## 1. 简介\",\"ref/doc2.md\":\"## 2. 正文\"}"
-        skill3.exists = true // 模拟已存在的技能
-        mockData.add(skill3)
-
-        log.info("Mock 数据返回，共 {} 个技能", mockData.size)
-        return mockData
+        val repository = skillRepositoryMapper.selectById(repositoryId)
+            ?: throw BizException("技能仓库不存在")
+        val tmpDir = localTmpDir ?: Files.createTempDirectory("git-repo-").toFile().absolutePath
+        val allSkills = loadSkillsFromGit(
+            repository.url,
+            repository.branch,
+            tmpDir,
+            repository.name
+        ).stream().map {
+            SyncSkillResponse(
+                name = it.name,
+                description = it.description,
+                skillmd = it.skillContent,
+                resources = it.resources
+            )
+        }.collect(Collectors.toList())
+        return allSkills
     }
 
     override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse {

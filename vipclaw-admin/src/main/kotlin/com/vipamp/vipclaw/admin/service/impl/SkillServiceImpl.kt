@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.service.impl
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
@@ -8,11 +9,14 @@ import com.vipamp.vipclaw.admin.entity.Skill
 import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SkillMapper
+import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.service.SkillService
+import com.vipamp.vipclaw.admin.util.GitSkillLoader.loadSkillsFromGit
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
 import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -25,10 +29,13 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class SkillServiceImpl(
     private val jwtUtil: JwtUtil,
-    private val skillMapper: SkillMapper
+    private val skillMapper: SkillMapper,
+    private val skillRepositoryService: SkillRepositoryService,
+    @Value($$"${local.tmp-dir}") private val localTmpDir: String
 ) : SkillService {
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
+    private val objectMapper = ObjectMapper()
 
     override fun page(
         name: String?,
@@ -143,53 +150,54 @@ class SkillServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun batchSaveSkills(repositoryId: Long, skills: List<SkillResponse>): Int {
-        log.info("批量保存技能，repositoryId: {}, count: {}", repositoryId, skills?.size ?: 0)
+    override fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int {
+        log.info("批量保存技能,repositoryId: {}, count: {}", repositoryId, skills.size)
 
-        if (skills.isNullOrEmpty()) {
+        if (skills.isEmpty()) {
             return 0
         }
 
         var savedCount = 0
-        for (skillData in skills) {
+        for (skillName in skills) {
             try {
                 // 检查技能名称是否存在
-                val existSkill = getByNameAndRepo(repositoryId, skillData.name!!)
+                val existSkill = getByNameAndRepo(repositoryId, skillName)
+                val skillRepository =
+                    skillRepositoryService.getSkillRepository(repositoryId) ?: throw BizException("技能仓库不存在")
                 if (existSkill != null) {
-                    // 如果技能已存在，更新它，status 状态维持不变
-                    log.info("技能已存在，执行更新：{}", skillData.name)
-                    skillMapper.updateSkillFields(
-                        existSkill.id,
-                        skillData.description,
-                        skillData.skillmd,
-                        skillData.resources
-                    )
+                    // 如果技能已存在,保持现状,不更新
+                    log.info("技能已存在,跳过:{}", skillName)
                     savedCount++
                 } else {
-                    // 如果技能不存在，创建新技能
-                    log.info("技能不存在，执行创建：{}", skillData.name)
-                    val skill = Skill()
-                    skill.name = skillData.name
-                    skill.repositoryId = repositoryId
-                    skill.description = skillData.description!!
-                    skill.skillmd = skillData.skillmd!!
-                    skill.resources = skillData.resources!!
-                    skill.status = 1  // 默认启用
-                    skill.active = 1  // 默认生效
-                    this.skillMapper.insert(skill) > 0
+                    log.info("技能不存在,执行创建:{}", skillName)
+                    loadSkillsFromGit(skillRepository.url, skillRepository.branch, localTmpDir, skillRepository.name)
+                        .filter { it.name == skillName }
+                        .map {
+                            val skill = Skill()
+                            skill.name = skillName
+                            skill.repositoryId = repositoryId
+                            skill.description = it.description
+                            skill.skillmd = it.skillContent
+                            skill.resources = objectMapper.writeValueAsString(it.resources)
+                            skill.status = 1        // 默认启用
+                            skill.active = 1        // 默认生效
+                            skill
+                        }
+                        .forEach { this.skillMapper.insert(it) }
                     savedCount++
                 }
             } catch (e: Exception) {
-                log.error("保存技能失败：{}", skillData.name, e)
-                // 继续处理下一个技能，不中断整个流程
+                log.error("保存技能失败:{}", skillName, e)
+                // 继续处理下一个技能,不中断整个流程
             }
         }
 
-        log.info("批量保存技能完成，成功保存：{} 个", savedCount)
+        log.info("批量保存技能完成,成功保存:{} 个", savedCount)
         return savedCount
     }
 
     override fun convertToResponse(skill: Skill): SkillResponse {
-        return SkillResponse.fromEntity(skill)
+        val repository = skillRepositoryService.getSkillRepository(skill.repositoryId)
+        return SkillResponse.fromEntity(skill, repository)
     }
 }

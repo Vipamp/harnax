@@ -55,10 +55,10 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model (
         name, model_name, provider_id, description, model_type, support_internet, support_reasoning, support_tool,
-        support_mcp, support_vision, price, status, is_public, active, create_time, update_time
+        support_mcp, support_vision, price, status, is_public, creator, active, create_time, update_time
         ) VALUES (
         #{name}, #{modelName}, #{providerId}, #{description}, #{modelType}, #{supportInternet}, #{supportReasoning},
-        #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{active}, #{createTime},
+        #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
     </insert>

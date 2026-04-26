@@ -1,5 +1,5 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Descriptions, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb } from 'antd';
+import { Card, Descriptions, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
 import { 
   ArrowLeftOutlined, 
   ToolOutlined, 
@@ -83,9 +83,16 @@ const McpDetail: React.FC = () => {
       const res = await getMcpTools(mcpId);
       if (res.code === 200 && res.data) {
         setTools(res.data);
+      } else {
+        // 显示后端返回的错误信息
+        const errorMsg = res.message || '加载工具列表失败';
+        message.error(errorMsg);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('加载工具列表失败', error);
+      // 显示错误信息给用户
+      const errorMsg = error?.message || error?.info?.errorMessage || '加载工具列表失败';
+      message.error(errorMsg);
     } finally {
       setToolsLoading(false);
     }
@@ -274,9 +281,9 @@ const McpDetail: React.FC = () => {
                 </div>
               </div>
 
-              {/* 详细信息 */}
+              {/* 详细信息 - 参考技能详情页设计 */}
               <Descriptions 
-                column={2} 
+                column={1} 
                 size="small"
                 styles={{ 
                   label: { color: '#8c8c8c', fontWeight: 500 },
@@ -284,22 +291,14 @@ const McpDetail: React.FC = () => {
                 }}
                 style={{ padding: '24px' }}
               >
-                <Descriptions.Item label="MCP 描述" span={2}>
+                <Descriptions.Item label="MCP 描述" span={1}>
                   <Text style={{ lineHeight: 1.6 }}>{mcpInfo.description || '暂无描述'}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="连接方式" span={2}>
-                  <div style={{
-                    padding: '12px 16px',
-                    background: '#fafbfc',
-                    borderRadius: '8px',
-                    border: '1px solid #f0f0f5',
-                    fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                    fontSize: 13,
-                    color: '#262626'
-                  }}>
-                    <CodeOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
+                <Descriptions.Item label="连接方式" span={1}>
+                  <Text>
+                    <CodeOutlined style={{ marginRight: 6, color: '#4f6ef7' }} />
                     {mcpInfo.type === 'stdio' ? mcpInfo.command : mcpInfo.url || '-'}
-                  </div>
+                  </Text>
                 </Descriptions.Item>
                 <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>}>
                   <Text>{mcpInfo.creator || '未知'}</Text>

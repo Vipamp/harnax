@@ -142,8 +142,8 @@ const AgentCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren="启"
-                unCheckedChildren="停"
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}

@@ -5,6 +5,7 @@ import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
 import com.vipamp.vipclaw.admin.entity.McpServer
 import com.vipamp.vipclaw.common.page.Page
+import io.modelcontextprotocol.spec.McpSchema
 
 /**
  * MCP 服务接口
@@ -83,4 +84,12 @@ interface McpServerService {
      * @return MCP 服务响应对象
      */
     fun convertToResponse(mcpServer: McpServer): McpServerResponse
+
+    /**
+     * 列出 MCP 配置中的工具列表
+     *
+     * @param mcpConfig MCP 配置对象
+     * @return 工具列表
+     */
+    fun listTools(mcpId: Long): List<McpSchema.Tool>
 }

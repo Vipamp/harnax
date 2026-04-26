@@ -18,7 +18,7 @@ object McpHelper {
     fun listTools(mcpConfig: McpConfig): List<McpSchema.Tool> {
         val mcpClient = createMcpClient(mcpConfig, false)
         try {
-            mcpClient.initialize()?.block()
+            mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
         } catch (t: Throwable) {
             logger().error("Failed to initialize McpClient `${mcpConfig.name}`", t)
             throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpConfig.name)

@@ -77,16 +77,23 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
   const handleToggle = async (id: number, currentStatus: number) => {
     try {
       const newStatus = currentStatus === 1 ? 0 : 1;
-      await toggleModel(id, newStatus);
-      message.success('状态切换成功');
-      // 只更新当前卡片状态，不重新加载整个列表
-      setModels((prevModels) =>
-        prevModels.map((model) =>
-          model.id === id ? { ...model, status: newStatus } : model
-        )
-      );
-    } catch (error) {
-      message.error('状态切换失败');
+      const response = await toggleModel(id, newStatus);
+      
+      if (response.code === 200) {
+        message.success('状态切换成功');
+        // 只更新当前卡片状态，不重新加载整个列表
+        setModels((prevModels) =>
+          prevModels.map((model) =>
+            model.id === id ? { ...model, status: newStatus } : model
+          )
+        );
+      } else {
+        const errorMsg = response.message || '状态切换失败';
+        message.error(errorMsg);
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.info?.errorMessage || '状态切换失败';
+      message.error(errorMsg);
     }
   };
 
@@ -250,7 +257,9 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
               onChange={() => handleToggle(record.id, record.status)}
               checkedChildren="启用"
               unCheckedChildren="禁用"
-              size="small"
+              style={{
+                backgroundColor: record.status === 1 ? '#4f6ef7' : '#d9d9d9',
+              }}
             />
           </Space>
         ) : (
@@ -259,7 +268,9 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
             checked={record.status === 1}
             checkedChildren="启用"
             unCheckedChildren="禁用"
-            size="small"
+            style={{
+              backgroundColor: record.status === 1 ? '#4f6ef7' : '#d9d9d9',
+            }}
           />
         );
       },

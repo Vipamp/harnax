@@ -511,3 +511,333 @@ body {
     }
   }
 }
+
+/* ===== Skill 详情页面滚动控制 ===== */
+.skill-detail-page {
+  /* 禁用 Ant Design Pro 的 PageContainer 滚动 */
+  .ant-pro-page-container-children-content {
+    overflow: hidden !important;
+    height: 100% !important;
+  }
+  
+  /* 禁用 Tab 内容区域的滚动 */
+  .ant-tabs-content-holder {
+    overflow: hidden !important;
+    height: 100% !important;
+  }
+  
+  .ant-tabs-tabpane {
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+  
+  /* 确保 Tabs 内容区域正确显示 */
+  .ant-tabs-content {
+    height: 100% !important;
+  }
+  
+  .ant-tabs-tabpane-active {
+    height: 100% !important;
+    overflow: hidden !important;
+  }
+}
+
+/* ===== Resources Tab 样式优化 ===== */
+.resources-container {
+  /* 容器整体样式 */
+  .resources-toolbar {
+    .ant-tag {
+      font-size: 11px;
+      padding: 0 6px;
+      height: 20px;
+      line-height: 18px;
+    }
+  }
+}
+
+/* 文件树自定义样式 */
+.custom-file-tree {
+  .ant-tree {
+    background: transparent !important;
+    
+    .ant-tree-treenode {
+      padding: 4px 12px !important;
+      margin: 2px 8px !important;
+      border-radius: 6px !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        background: #f0f0f5 !important;
+      }
+      
+      &.ant-tree-node-selected {
+        background: #f0e6ff !important;
+        
+        .ant-tree-node-content-wrapper {
+          color: #722ed1 !important;
+          font-weight: 500 !important;
+        }
+      }
+    }
+    
+    .ant-tree-node-content-wrapper {
+      padding: 4px 8px !important;
+      border-radius: 4px !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        background: transparent !important;
+      }
+    }
+    
+    .ant-tree-iconEle {
+      width: 20px !important;
+      height: 20px !important;
+      line-height: 20px !important;
+    }
+    
+    .ant-tree-switcher {
+      width: 20px !important;
+      height: 20px !important;
+      line-height: 20px !important;
+    }
+  }
+}
+
+/* 文件内容区域样式 */
+.file-content-wrapper {
+  /* Markdown 样式优化 */
+  .markdown-body {
+    padding: 32px !important;
+    background: #ffffff !important;
+    line-height: 1.8 !important;
+    font-size: 15px !important;
+    
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 24px !important;
+      margin-bottom: 16px !important;
+      font-weight: 600 !important;
+      line-height: 1.25 !important;
+      color: #1a1a2e !important;
+    }
+    
+    h1 {
+      font-size: 2em !important;
+      padding-bottom: 0.3em !important;
+      border-bottom: 2px solid #e8e8e8 !important;
+    }
+    
+    h2 {
+      font-size: 1.5em !important;
+      padding-bottom: 0.3em !important;
+      border-bottom: 1px solid #e8e8e8 !important;
+    }
+    
+    p {
+      margin-bottom: 16px !important;
+      line-height: 1.8 !important;
+    }
+    
+    code {
+      background: #f5f6f8 !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 0.9em !important;
+      font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, monospace !important;
+    }
+    
+    pre {
+      margin: 16px 0 !important;
+      overflow: auto !important;
+      
+      code {
+        background: transparent !important;
+        padding: 0 !important;
+      }
+    }
+    
+    blockquote {
+      border-left: 4px solid #722ed1 !important;
+      padding: 8px 16px !important;
+      margin: 16px 0 !important;
+      background: #fafbfc !important;
+      color: #595959 !important;
+    }
+    
+    table {
+      border-collapse: collapse !important;
+      width: 100% !important;
+      margin: 16px 0 !important;
+      
+      th, td {
+        border: 1px solid #e8e8e8 !important;
+        padding: 8px 12px !important;
+        text-align: left !important;
+      }
+      
+      th {
+        background: #fafbfc !important;
+        font-weight: 600 !important;
+        color: #1a1a2e !important;
+      }
+      
+      tr:nth-child(even) {
+        background: #fafbfc !important;
+      }
+    }
+    
+    ul, ol {
+      padding-left: 24px !important;
+      margin: 16px 0 !important;
+      
+      li {
+        margin: 4px 0 !important;
+        line-height: 1.6 !important;
+      }
+    }
+    
+    a {
+      color: #722ed1 !important;
+      text-decoration: none !important;
+      
+      &:hover {
+        text-decoration: underline !important;
+      }
+    }
+    
+    img {
+      max-width: 100% !important;
+      border-radius: 8px !important;
+      margin: 16px 0 !important;
+    }
+  }
+  
+  /* 代码高亮样式优化 */
+  .react-syntax-highlighter-line-number {
+    color: #8c8c8c !important;
+    font-size: 12px !important;
+  }
+}
+
+/* 空状态样式优化 */
+.file-content-panel {
+  .ant-empty {
+    .ant-empty-image {
+      margin-bottom: 16px !important;
+    }
+    
+    .ant-empty-description {
+      color: #8c8c8c !important;
+      font-size: 14px !important;
+    }
+  }
+}
+
+/* 面包屑样式优化 */
+.file-content-panel {
+  .ant-breadcrumb {
+    font-size: 13px !important;
+    
+    a {
+      color: #595959 !important;
+      transition: color 0.2s ease !important;
+      
+      &:hover {
+        color: #722ed1 !important;
+      }
+    }
+    
+    .ant-breadcrumb-separator {
+      color: #bfbfbf !important;
+    }
+    
+    .ant-breadcrumb-link {
+      color: #595959 !important;
+    }
+  }
+}
+
+/* ===== 滚动条样式优化 ===== */
+.resources-container,
+.file-tree-panel,
+.file-content-wrapper,
+.file-content-panel {
+  /* 自定义滚动条样式 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #f5f6f8;
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #d9d9d9;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+    
+    &:hover {
+      background: #bfbfbf;
+    }
+  }
+  
+  ::-webkit-scrollbar-thumb:window-inactive {
+    background: #e8e8e8;
+  }
+}
+
+/* ===== 过渡动画 ===== */
+.resources-container {
+  /* 文件树节点过渡 */
+  .ant-tree-treenode {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  
+  /* 文件内容过渡 */
+  .file-content-wrapper {
+    animation: fadeIn 0.3s ease-out;
+  }
+  
+  /* 空状态过渡 */
+  .ant-empty {
+    animation: fadeIn 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== 文件树高亮样式 ===== */
+.custom-file-tree {
+  .ant-tree-treenode-selected {
+    background-color: #f0e6ff !important;
+    border-radius: 6px !important;
+  
+    .ant-tree-node-content-wrapper {
+      background-color: transparent !important;
+      color: #722ed1 !important;
+      font-weight: 500 !important;
+    }
+    
+    .ant-tree-iconEle {
+      color: #722ed1 !important;
+    }
+  }
+  
+  /* 文件树悬停效果 */
+  .ant-tree-treenode:hover {
+    background-color: #f5f6f8 !important;
+    border-radius: 6px !important;
+    transform: translateX(2px);
+  }
+}

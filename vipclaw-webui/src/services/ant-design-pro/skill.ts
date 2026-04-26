@@ -81,10 +81,10 @@ export async function deleteSkill(skillId: number, options?: { [key: string]: an
   });
 }
 
-/** 批量保存技能（同步用）POST /admin/skills/batch */
+/** 批量保存技能(同步用)POST /admin/skills/batch */
 export async function batchSaveSkills(
   repositoryId: number,
-  data: API.SkillSyncItem[],
+  data: string[],
   options?: { [key: string]: any },
 ) {
   return request('/admin/skills/batch', {

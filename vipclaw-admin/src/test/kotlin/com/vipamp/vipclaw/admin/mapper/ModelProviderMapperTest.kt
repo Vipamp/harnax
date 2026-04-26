@@ -220,5 +220,25 @@ class ModelProviderMapperTest {
             // Then
             assertEquals(1, count)
         }
+
+        @Test
+        @DisplayName("countByName - 统计指定名称服务商数量")
+        fun `countByName should count providers by name`() {
+            // When
+            val count = modelProviderMapper.countByName("阿里云百炼")
+
+            // Then
+            assertEquals(1, count)
+        }
+
+        @Test
+        @DisplayName("countByName - 不存在的名称返回 0")
+        fun `countByName should return 0 for non-existent name`() {
+            // When
+            val count = modelProviderMapper.countByName("不存在的名称")
+
+            // Then
+            assertEquals(0, count)
+        }
     }
 }

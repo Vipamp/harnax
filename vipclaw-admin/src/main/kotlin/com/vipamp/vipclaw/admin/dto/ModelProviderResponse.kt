@@ -2,6 +2,8 @@ package com.vipamp.vipclaw.admin.dto
 
 import com.vipamp.vipclaw.admin.entity.ModelProvider
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.Pattern
+import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
 
 /**
@@ -15,10 +17,18 @@ data class ModelProviderResponse(
     var type: String = "",
     @Schema(description = "名称", example = "阿里云 DashScope")
     var name: String = "",
-    @Schema(description = "API 密钥（脱敏显示）", example = "sk-****xxxx")
-    var apiKey: String? = null,
-    @Schema(description = "API 地址", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
-    var baseUrl: String? = null,
+
+    @field:Size(max = 500, message = "API 密钥长度不能超过 500 个字符")
+    @Schema(description = "API 密钥（敏感信息）", example = "sk-xxxxxxxxxxxxxxxx")
+    val apiKey: String? = null,
+
+    @field:Pattern(
+        regexp = "^(https?:\\/\\/)?([\\w.-]+)(:\\d+)?(\\/[^\\s]*)?$|^$",
+        message = "API 地址格式不正确"
+    )
+    @Schema(description = "API 基础地址（可为空）", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    val baseUrl: String? = null,
+
     @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
     var status: Int = 1,
     @Schema(description = "是否公开（0:否，1:是）", example = "1")

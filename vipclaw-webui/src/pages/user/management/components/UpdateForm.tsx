@@ -3,6 +3,7 @@ import { Modal, Switch } from 'antd';
 import type { ProColumns } from '@ant-design/pro-components';
 import { ProForm, ProFormSelect, ProFormText, ProFormTextArea, ProFormSwitch } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
+import { isPersonal } from '@/utils/edition';
 
 export interface UpdateFormProps {
   onCancel: () => void;
@@ -14,6 +15,51 @@ export interface UpdateFormProps {
 const UpdateForm: React.FC<UpdateFormProps> = (props) => {
   const { onCancel, onSubmit, visible, values } = props;
   const intl = useIntl();
+  
+  // 根据版本设置校验规则：企业版和公开版必填，个人版不强制
+  const isPersonalEdition = isPersonal();
+  
+  const emailRules: any[] = [
+    {
+      type: 'email',
+      message: intl.formatMessage({
+        id: 'pages.user.management.email.pattern',
+        defaultMessage: '请输入正确的邮箱格式',
+      }),
+    },
+  ];
+  
+  // 企业版和公开版：email 必填
+  if (!isPersonalEdition) {
+    emailRules.unshift({
+      required: true,
+      message: intl.formatMessage({
+        id: 'pages.user.management.email.required',
+        defaultMessage: '邮箱不能为空',
+      }),
+    });
+  }
+  
+  const phoneRules: any[] = [
+    {
+      pattern: /^1[3-9]\d{9}$/,
+      message: intl.formatMessage({
+        id: 'pages.user.management.phone.pattern',
+        defaultMessage: '请输入正确的手机号',
+      }),
+    },
+  ];
+  
+  // 企业版和公开版：phone 必填
+  if (!isPersonalEdition) {
+    phoneRules.unshift({
+      required: true,
+      message: intl.formatMessage({
+        id: 'pages.user.management.phone.required',
+        defaultMessage: '手机号不能为空',
+      }),
+    });
+  }
 
   return (
     <Modal
@@ -78,27 +124,6 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           readonly
         />
 
-        <ProFormText.Password
-          name="password"
-          label={intl.formatMessage({
-            id: 'pages.user.management.password',
-            defaultMessage: '密码',
-          })}
-          placeholder={intl.formatMessage({
-            id: 'pages.user.management.password.update.placeholder',
-            defaultMessage: '留空则不修改密码',
-          })}
-          rules={[
-            {
-              min: 6,
-              message: intl.formatMessage({
-                id: 'pages.user.management.password.min',
-                defaultMessage: '密码至少 6 个字符',
-              }),
-            },
-          ]}
-        />
-
         <ProFormText
           name="nickname"
           label={intl.formatMessage({
@@ -124,15 +149,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           fieldProps={{
             type: 'email',
           }}
-          rules={[
-            {
-              type: 'email',
-              message: intl.formatMessage({
-                id: 'pages.user.management.email.pattern',
-                defaultMessage: '请输入正确的邮箱格式',
-              }),
-            },
-          ]}
+          rules={emailRules}
         />
 
         <ProFormText
@@ -145,15 +162,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
             id: 'pages.user.management.phone.placeholder',
             defaultMessage: '请输入手机号',
           })}
-          rules={[
-            {
-              pattern: /^1[3-9]\d{9}$/,
-              message: intl.formatMessage({
-                id: 'pages.user.management.phone.pattern',
-                defaultMessage: '请输入正确的手机号',
-              }),
-            },
-          ]}
+          rules={phoneRules}
         />
 
         <ProFormSelect

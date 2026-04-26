@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.*
 
 /**
  * 同步技能响应对象
@@ -15,7 +14,5 @@ data class SyncSkillResponse(
     @Schema(description = "skill.md 内容")
     var skillmd: String? = null,
     @Schema(description = "资源信息")
-    var resources: String? = null,
-    @Schema(description = "是否已存在（true: 已存在，false: 不存在）", example = "false")
-    var exists: Boolean? = null
+    var resources: Map<String, String> = mapOf()
 )
