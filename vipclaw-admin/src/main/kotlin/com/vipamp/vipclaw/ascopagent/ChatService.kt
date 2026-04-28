@@ -10,6 +10,8 @@ import com.vipamp.vipclaw.agent.chat.MessageLogConverter
 import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
 import com.vipamp.vipclaw.ascopagent.dto.ChatRequest
 import com.vipamp.vipclaw.ascopagent.dto.ConfirmRequest
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigUpdateRequest
 import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
@@ -121,4 +123,34 @@ class ChatService(
 
     fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? =
         launcher.loadSessionCurrentPlanNote(sessionId)
+
+    /**
+     * 获取会话的聊天配置
+     */
+    fun getSessionConfig(sessionId: String): SessionConfigResponse {
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw IllegalArgumentException("Session not found: $sessionId")
+
+        return SessionConfigResponse(
+            sessionId = sessionId,
+            enableThink = session.enableThink == 1,
+            enableSearch = session.enableSearch == 1,
+            enablePlan = session.enablePlan == 1
+        )
+    }
+
+    /**
+     * 更新会话的聊天配置
+     */
+    fun updateSessionConfig(sessionId: String, request: SessionConfigUpdateRequest) {
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw IllegalArgumentException("Session not found: $sessionId")
+
+        session.enableThink = if (request.enableThink) 1 else 0
+        session.enableSearch = if (request.enableSearch) 1 else 0
+        session.enablePlan = if (request.enablePlan) 1 else 0
+
+        sessionMapper.updateById(session)
+        logger().info("Session config updated for sessionId: $sessionId")
+    }
 }

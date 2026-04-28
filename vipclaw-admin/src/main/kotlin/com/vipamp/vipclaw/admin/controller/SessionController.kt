@@ -1,13 +1,16 @@
 package com.vipamp.vipclaw.admin.controller
 
 import com.vipamp.vipclaw.admin.dto.ResultVo
+import com.vipamp.vipclaw.admin.dto.SessionChatUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
 import com.vipamp.vipclaw.admin.service.SessionService
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
 import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.common.page.mapRecords
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
 import org.springframework.validation.annotation.Validated
@@ -112,6 +115,33 @@ class SessionController(
         } catch (e: Exception) {
             log.error("更新会话失败", e)
             ResultVo.error(e.message ?: "更新会话失败")
+        }
+    }
+
+
+    @GetMapping("/{sessionId}/config")
+    @Schema(description = "获取会话的聊天配置")
+    fun getSessionConfig(
+        @PathVariable("sessionId") sessionId: String
+    ): ResultVo<SessionConfigResponse> {
+        return try {
+            ResultVo.success(sessionService.getSessionChatConfig(sessionId))
+        } catch (e: Exception) {
+            ResultVo.error(e.toString());
+        }
+    }
+
+    @PutMapping("/{sessionId}/config")
+    @Schema(description = "更新会话的聊天配置")
+    fun updateSessionConfig(
+        @PathVariable("sessionId") sessionId: String,
+        @RequestBody request: SessionChatUpdateRequest,
+    ): ResultVo<Void> {
+        return try {
+            sessionService.updateSessionChatConfig(sessionId, request)
+            ResultVo.success()
+        } catch (e: Exception) {
+            ResultVo.error(e.toString());
         }
     }
 

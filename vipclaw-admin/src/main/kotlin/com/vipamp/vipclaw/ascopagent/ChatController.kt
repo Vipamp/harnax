@@ -7,6 +7,8 @@ import com.vipamp.vipclaw.agent.chat.MessageLog
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.ascopagent.dto.ChatRequest
 import com.vipamp.vipclaw.ascopagent.dto.ConfirmRequest
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigUpdateRequest
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus

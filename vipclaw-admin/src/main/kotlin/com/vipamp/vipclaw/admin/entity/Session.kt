@@ -35,6 +35,15 @@ class Session : Serializable {
     @Schema(description = "对话模型 ID")
     var modelId: Long = 0
 
+    @Schema(description = "是否启用深度思考（0:否，1:是）")
+    var enableThink: Int = 0
+
+    @Schema(description = "是否启用联网搜索（0:否，1:是）")
+    var enableSearch: Int = 0
+
+    @Schema(description = "是否启用计划（0:否，1:是）")
+    var enablePlan: Int = 0
+
     @Schema(description = "MCP 服务列表（JSON 格式）")
     var mcpList: String= "[]"
 

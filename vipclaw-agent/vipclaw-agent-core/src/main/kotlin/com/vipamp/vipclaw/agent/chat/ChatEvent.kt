@@ -20,7 +20,8 @@ import io.agentscope.core.model.ChatUsage
     JsonSubTypes.Type(value = StreamTextChatEvent::class, name = "TextEvent"),
     JsonSubTypes.Type(value = ToolConfirmChatEvent::class, name = "ToolConfirmEvent"),
     JsonSubTypes.Type(value = CallToolChatEvent::class, name = "CallToolEvent"),
-    JsonSubTypes.Type(value = ToolResultChatEvent::class, name = "ToolResultEvent")
+    JsonSubTypes.Type(value = ToolResultChatEvent::class, name = "ToolResultEvent"),
+    JsonSubTypes.Type(value = EndEventChatEvent::class, name = "EndEvent")
 )
 interface ChatEvent {
     val eventType: EventType
@@ -99,10 +100,21 @@ data class ToolResultChatEvent(
     override val eventType: EventType = EventType.ToolResultEvent
 }
 
+/**
+ * 表示 AI 输出事件流结束的事件
+ * 前端可以通过此事件判断 AI 输出是否完成
+ */
+data class EndEventChatEvent(
+    override val tokenUsage: TokenUsage? = null
+) : ChatEvent {
+    override val eventType: EventType = EventType.EndEvent
+}
+
 enum class EventType {
     ThinkingEvent,
     CallToolEvent,
     ToolResultEvent,
     TextEvent,
-    ToolConfirmEvent
+    ToolConfirmEvent,
+    EndEvent
 }

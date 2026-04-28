@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.SessionChatUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
 import com.vipamp.vipclaw.admin.entity.Session
@@ -12,10 +13,12 @@ import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.admin.service.*
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
 import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
 import java.util.*
 
 /**
@@ -80,6 +83,10 @@ class SessionServiceImpl(
                 response.modelPrice = it.price
             }
         }
+
+        response.enableThink = session.enableThink
+        response.enableSearch = session.enableSearch
+        response.enablePlan = session.enablePlan
 
         response.owner = session.owner
         response.status = session.status
@@ -166,7 +173,7 @@ class SessionServiceImpl(
             }
 
             // 根据智能体ID获取智能体信息
-            val agent = agentService.getAgent(request.agentId!!)
+            val agent = agentService.getAgent(request.agentId)
                 ?: throw BizException("智能体不存在")
 
             val session = Session()
@@ -205,8 +212,48 @@ class SessionServiceImpl(
         val session = Session()
         session.title = request.title
         session.description = request.sessionDescription
-        request.agentId?.let { session.agentId = it }
+        request.agentId.let { session.agentId = it }
         return sessionMapper.updateById(session) > 0
+    }
+
+    override fun getSessionChatConfig(sessionId: String): SessionConfigResponse {
+        log.info("获取会话配置，sessionId: {}", sessionId)
+
+        // 根据 sessionId 查询会话（状态为启用）
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw BizException("会话不存在或已禁用")
+
+        return SessionConfigResponse(
+            sessionId = session.sessionId,
+            enableThink = session.enableThink == 1,
+            enableSearch = session.enableSearch == 1,
+            enablePlan = session.enablePlan == 1
+        )
+    }
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun updateSessionChatConfig(sessionId: String, request: SessionChatUpdateRequest) {
+        log.info("更新会话配置，sessionId: {}", sessionId)
+
+        // 根据 sessionId 查询会话（状态为启用）
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw BizException("会话不存在或已禁用")
+
+        // 更新配置字段（只更新非 null 的字段）
+        request.enableThink?.let { session.enableThink = if (it) 1 else 0 }
+        request.enableSearch?.let { session.enableSearch = if (it) 1 else 0 }
+        request.enablePlan?.let { session.enablePlan = if (it) 1 else 0 }
+
+        // 更新时间戳
+        session.updateTime = LocalDateTime.now()
+
+        // 执行更新
+        val result = sessionMapper.updateById(session)
+        if (result <= 0) {
+            throw BizException("更新会话配置失败")
+        }
+
+        log.info("会话配置更新成功，sessionId: {}", sessionId)
     }
 
     @Transactional(rollbackFor = [Exception::class])

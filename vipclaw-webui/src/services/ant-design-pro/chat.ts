@@ -37,3 +37,35 @@ export async function getSessionMessages(
     ...(options || {}),
   });
 }
+
+/**
+ * 获取会话的聊天配置
+ */
+export async function getSessionConfig(
+  sessionId: string,
+  options?: { [key: string]: any },
+) {
+  return request(`/admin/sessions/${sessionId}/config`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/**
+ * 更新会话的聊天配置
+ */
+export async function updateSessionConfig(
+  sessionId: string,
+  data: {
+    enableThink: boolean;
+    enableSearch: boolean;
+    enablePlan: boolean;
+  },
+  options?: { [key: string]: any },
+) {
+  return request(`/admin/sessions/${sessionId}/config`, {
+    method: 'PUT',
+    data,
+    ...(options || {}),
+  });
+}

@@ -23,5 +23,5 @@ data class SessionCreateRequest(
 
     @Schema(description = "关联的智能体ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull(message = "智能体ID不能为空")
-    val agentId: Long? = null
+    val agentId: Long = 0
 )

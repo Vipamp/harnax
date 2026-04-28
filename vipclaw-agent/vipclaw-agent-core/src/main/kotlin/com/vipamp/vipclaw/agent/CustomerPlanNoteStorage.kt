@@ -104,8 +104,8 @@ class CustomerPlanNoteStorage(
                 expectedOutcome = plan.expectedOutcome,
                 subtasks = subtasks,
                 createdAt = plan.createdAt,
-                finishedAt = plan.createdAt,
-                costTimeSeconds = 0L,
+                finishedAt = plan.finishedAt,
+                costTimeSeconds = compareTime(plan.createdAt, plan.finishedAt),
                 status = when (plan.state) {
                     PlanState.TODO -> TaskState.TODO
                     PlanState.IN_PROGRESS -> TaskState.IN_PROGRESS
@@ -120,7 +120,7 @@ class CustomerPlanNoteStorage(
          * 将 PlanNote 转换为 Plan
          */
         fun convertToPlan(planNote: PlanNote): Plan {
-            val subtasks = planNote.subtasks?.map { toSubTask(it) } ?: emptyList()
+            val subtasks = planNote.subtasks.map { toSubTask(it) } ?: emptyList()
             return Plan(
                 planNote.name,
                 planNote.description,

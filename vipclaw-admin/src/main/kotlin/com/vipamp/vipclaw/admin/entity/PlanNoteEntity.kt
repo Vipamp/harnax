@@ -2,7 +2,6 @@ package com.vipamp.vipclaw.admin.entity
 
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
-import java.time.LocalDateTime
 
 @Schema(description = "PlanNote实体类")
 class PlanNoteEntity : Serializable {
@@ -10,7 +9,7 @@ class PlanNoteEntity : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "ID")
+    @Schema(description = "ID")
     var id: Long = 0
 
     @Schema(description = "会话ID")
@@ -42,10 +41,4 @@ class PlanNoteEntity : Serializable {
 
     @Schema(description = "状态")
     var status: String = ""
-
-    @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
-
-    @Schema(description = "更新时间")
-        var updateTime: LocalDateTime? = null
 }

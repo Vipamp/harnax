@@ -18,17 +18,17 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="ProcessLogEntityResultMap">
-        SELECT * FROM process_log_entity WHERE id = #{id} LIMIT 1
+        SELECT * FROM process_log WHERE id = #{id} LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
-        UPDATE process_log_entity SET active = 0 WHERE id = #{id}
+        UPDATE process_log SET active = 0 WHERE id = #{id}
     </update>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO process_log_entity (
+        INSERT INTO process_log (
         agent_id, agent_name, session_id, message, log_type, stack_trace, ts
         ) VALUES (
         #{agentId}, #{agentName}, #{sessionId}, #{message}, #{logType}, #{stackTrace}, #{ts}
@@ -37,7 +37,7 @@
 
     <!-- updateById -->
     <update id="updateById">
-        UPDATE process_log_entity SET
+        UPDATE process_log SET
         agent_id = #{agentId},
         agent_name = #{agentName},
         session_id = #{sessionId},

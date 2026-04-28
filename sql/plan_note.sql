@@ -11,8 +11,6 @@ CREATE TABLE IF NOT EXISTS `plan_note` (
     `finished_at` VARCHAR(64) COMMENT '完成时间',
     `cost_timeseconds` BIGINT DEFAULT 0 COMMENT '耗时（秒）',
     `status` VARCHAR(32) DEFAULT 'TODO' COMMENT '状态（TODO, IN_PROGRESS, DONE, ABANDONED）',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     INDEX `idx_session_id` (`session_id`),
     INDEX `idx_plan_id` (`plan_id`)

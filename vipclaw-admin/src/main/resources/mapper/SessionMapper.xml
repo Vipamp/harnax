@@ -13,6 +13,9 @@
         <result column="description" property="description"/>
         <result column="system_prompt" property="systemPrompt"/>
         <result column="model_id" property="modelId"/>
+        <result column="enable_think" property="enableThink"/>
+        <result column="enable_search" property="enableSearch"/>
+        <result column="enable_plan" property="enablePlan"/>
         <result column="mcp_list" property="mcpList"/>
         <result column="skill_list" property="skillList"/>
         <result column="owner" property="owner"/>
@@ -55,9 +58,11 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO session (
         session_id, title, session_description, agent_id, model_id,
+        enable_think, enable_search, enable_plan,
         system_prompt, status, is_public, creator, active, create_time, update_time
         ) VALUES (
         #{sessionId}, #{title}, #{sessionDescription}, #{agentId}, #{modelId},
+        #{enableThink}, #{enableSearch}, #{enablePlan},
         #{systemPrompt}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
@@ -69,6 +74,9 @@
         session_description = #{sessionDescription},
         agent_id = #{agentId},
         model_id = #{modelId},
+        enable_think = #{enableThink},
+        enable_search = #{enableSearch},
+        enable_plan = #{enablePlan},
         system_prompt = #{systemPrompt},
         is_public = #{isPublic},
         active = #{active},

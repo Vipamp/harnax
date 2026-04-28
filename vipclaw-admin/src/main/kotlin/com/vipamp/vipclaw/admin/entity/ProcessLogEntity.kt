@@ -10,7 +10,7 @@ class ProcessLogEntity : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "ID")
+    @Schema(description = "ID")
     var id: Long = 0
 
     @Schema(description = "智能体 ID")

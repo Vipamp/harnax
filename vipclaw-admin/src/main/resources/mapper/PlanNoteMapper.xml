@@ -15,20 +15,18 @@
         <result column="finished_at" property="finishedAt"/>
         <result column="cost_timeseconds" property="costTimeseconds"/>
         <result column="status" property="status"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
     </resultMap>
 
     <!-- ==================== 基础 CRUD 方法 ==================== -->
 
     <!-- selectById -->
     <select id="selectById" resultMap="PlanNoteEntityResultMap">
-        SELECT * FROM plan_note_entity WHERE id = #{id} LIMIT 1
+        SELECT * FROM plan_note WHERE id = #{id} LIMIT 1
     </select>
 
     <!-- deleteById -->
     <update id="deleteById">
-        UPDATE plan_note_entity SET active = 0 WHERE id = #{id}
+        UPDATE plan_note SET active = 0 WHERE id = #{id}
     </update>
 
     <!-- selectBySessionIdAndPlanId -->
@@ -38,7 +36,7 @@
 
     <!-- selectBySessionId -->
     <select id="selectBySessionId" resultMap="PlanNoteEntityResultMap">
-        SELECT * FROM plan_note WHERE session_id = #{sessionId} ORDER BY create_time DESC
+        SELECT * FROM plan_note WHERE session_id = #{sessionId} ORDER BY created_at DESC
     </select>
 
     <!-- deleteBySessionId -->
@@ -48,18 +46,17 @@
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO plan_note_entity (
-        session_id, plan_id, name, description, expected_outcome, subtasks, created_at, cost_timeseconds, status,
-        create_time
+        INSERT INTO plan_note (
+        session_id, plan_id, name, description, expected_outcome, subtasks, created_at, finished_at, cost_timeseconds, status
         ) VALUES (
-        #{sessionId}, #{planId}, #{name}, #{description}, #{expectedOutcome}, #{subtasks}, #{createdAt},
-        #{costTimeseconds}, #{status}, #{createTime}
+        #{sessionId}, #{planId}, #{name}, #{description}, #{expectedOutcome}, #{subtasks}, #{createdAt}, #{finishedAt},
+        #{costTimeseconds}, #{status}
         )
     </insert>
 
     <!-- updateById -->
     <update id="updateById">
-        UPDATE plan_note_entity SET
+        UPDATE plan_note SET
         session_id = #{sessionId},
         plan_id = #{planId},
         name = #{name},
@@ -67,6 +64,7 @@
         expected_outcome = #{expectedOutcome},
         subtasks = #{subtasks},
         created_at = #{createdAt},
+        finished_at = #{finishedAt},
         cost_timeseconds = #{costTimeseconds},
         status = #{status}
         WHERE id = #{id}

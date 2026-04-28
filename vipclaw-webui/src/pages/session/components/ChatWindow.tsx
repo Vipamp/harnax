@@ -29,7 +29,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { getSessionMessages } from '@/services/ant-design-pro/chat';
+import { getSessionMessages, getSessionConfig, updateSessionConfig } from '@/services/ant-design-pro/chat';
 import styles from './ChatWindow.less';
 
 const { TextArea } = Input;
@@ -491,7 +491,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     };
   }, []);
 
-  // 当 sessionId 变化时，加载历史消息
+  // 当 sessionId 变化时，加载历史消息和会话配置
   useEffect(() => {
     if (!sessionId) {
       setMessages([]);
@@ -500,6 +500,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setCurrentPlan(null);
       currentPlanMessageIdRef.current = null; // 重置计划消息ID
       previousHasPlanRef.current = false; // 重置计划状态
+      // 重置三个开关
+      setEnableThink(false);
+      setEnableSearch(false);
+      setEnablePlan(false);
       return;
     }
 
@@ -507,13 +511,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     currentPlanMessageIdRef.current = null;
     previousHasPlanRef.current = false;
 
-    const loadHistoryMessages = async () => {
+    const loadSessionData = async () => {
       try {
         setLoading(true);
-        const response = await getSessionMessages(sessionId);
         
-        if (response.code === 200 && response.data) {
-          const logs: any[] = response.data;
+        // 并行加载历史消息和会话配置
+        const [messagesResponse, configResponse] = await Promise.all([
+          getSessionMessages(sessionId),
+          getSessionConfig(sessionId),
+        ]);
+        
+        // 加载会话配置
+        if (configResponse.code === 200 && configResponse.data) {
+          const config = configResponse.data;
+          setEnableThink(config.enableThink || false);
+          setEnableSearch(config.enableSearch || false);
+          setEnablePlan(config.enablePlan || false);
+        }
+        
+        // 加载历史消息
+        if (messagesResponse.code === 200 && messagesResponse.data) {
+          const logs: any[] = messagesResponse.data;
           const historyMessages: ChatMessage[] = [];
           
           // 遍历所有日志，将同一个 AI 回复的所有 segment 合并到一个消息中
@@ -644,7 +662,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       }
     };
 
-    loadHistoryMessages();
+    loadSessionData();
   }, [sessionId]);
 
   /* ─── 发送消息（fetch + ReadableStream，走代理） ─── */
@@ -745,14 +763,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             console.log('[SSE Event] eventType:', data.eventType, 'data:', data);
 
             if (data.eventType === 'TextEvent') {
-              // 如果当前不是 text 事件，表示上一个内容块结束
+              // 如果当前不是 text 事件，检查是否需要追加到上一个 text segment
               if (currentEventType !== 'text') {
-                accText = '';
-                activeTextIdx = -1;
+                // 检查上一个 segment 是否是 text 类型
+                const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                if (lastSeg && lastSeg.type === 'text') {
+                  // 如果最后一个是 text，继续追加到它
+                  activeTextIdx = currentSegs.length - 1;
+                  accText = lastSeg.content || ''; // 读取已有内容
+                } else {
+                  // 否则创建新的 text segment
+                  accText = '';
+                  activeTextIdx = -1;
+                }
               }
               currentEventType = 'text';
               
-              if (data.last === true) {
+              if (data.isLast === true) {
                 // 当前文本段结束
                 accText = '';
                 activeTextIdx = -1;
@@ -771,6 +798,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               changed = true;
               
             } else if (data.eventType === 'ThinkingEvent') {
+              // isLast=true 表示思考内容结束，不显示此事件的内容
+              if (data.isLast === true) {
+                accThinking = '';
+                activeThinkIdx = -1;
+                currentEventType = null;
+                continue;
+              }
+              
               // 如果当前不是 thinking 事件，检查是否需要追加到上一个 thinking segment
               if (currentEventType !== 'thinking') {
                 // 检查上一个 segment 是否是 thinking 类型
@@ -778,8 +813,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 if (lastSeg && lastSeg.type === 'thinking') {
                   // 如果最后一个是 thinking，继续追加到它
                   activeThinkIdx = currentSegs.length - 1;
-                  // 不读取旧内容，accThinking 只保存当前批次的内容
-                  accThinking = '';
+                  accThinking = lastSeg.content || ''; // 读取已有内容
                 } else {
                   // 否则创建新的 thinking segment
                   accThinking = '';
@@ -801,14 +835,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 currentSegs[activeThinkIdx].content = accThinking;
               }
               changed = true;
-              
-              if (data.last === true) {
-                // 当前思考批次结束，但不重置状态
-                // 如果下一次还是 ThinkingEvent，会继续追加到同一个 segment
-                // 只有遇到其他类型事件时，才会重新检查并可能创建新 segment
-                accThinking = '';
-                // 不重置 activeThinkIdx 和 currentEventType
-              }
               
             } else if (data.eventType === 'CallToolEvent') {
               const toolName = data.toolName;
@@ -935,6 +961,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 toolCallMap = new Map<string, number>();
               }
               
+            } else if (data.eventType === 'EndEvent') {
+              // 收到结束事件，表示 AI 输出已完成
+              console.log('[EndEvent] AI output completed');
+              currentEventType = null;
+              accText = '';
+              accThinking = '';
+              activeTextIdx = -1;
+              activeThinkIdx = -1;
+              // 立即释放 loading 状态，允许用户发送新消息
+              setLoading(false);
+              // 不需要创建新消息，只是标记当前事件流结束
+              changed = true;
+              
             } else if (data.eventType === 'ToolConfirmEvent') {
               // 收到工具确认事件，暂停并等待用户确认
               currentEventType = null;
@@ -1042,16 +1081,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     const confirmData = JSON.parse(confirmJsonStr);
                     
                     if (confirmData.eventType === 'TextEvent') {
-                      if (confirmData.last === true) {
+                      if (confirmData.isLast === true) {
                         accText = '';
                         activeTextIdx = -1;
                         currentEventType = null;
                         continue;
                       }
                       
+                      // 如果当前不是 text 事件，检查是否需要追加到上一个 text segment
                       if (currentEventType !== 'text') {
-                        accText = '';
-                        activeTextIdx = -1;
+                        // 检查上一个 segment 是否是 text 类型
+                        const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                        if (lastSeg && lastSeg.type === 'text') {
+                          // 如果最后一个是 text，继续追加到它
+                          activeTextIdx = currentSegs.length - 1;
+                          accText = lastSeg.content || ''; // 读取已有内容
+                        } else {
+                          // 否则创建新的 text segment
+                          accText = '';
+                          activeTextIdx = -1;
+                        }
                       }
                       currentEventType = 'text';
                       
@@ -1065,16 +1114,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       confirmChanged = true;
                       
                     } else if (confirmData.eventType === 'ThinkingEvent') {
-                      if (confirmData.last === true) {
+                      if (confirmData.isLast === true) {
                         accThinking = '';
                         activeThinkIdx = -1;
                         currentEventType = null;
                         continue;
                       }
                       
+                      // 如果当前不是 thinking 事件，检查是否需要追加到上一个 thinking segment
                       if (currentEventType !== 'thinking') {
-                        accThinking = '';
-                        activeThinkIdx = -1;
+                        // 检查上一个 segment 是否是 thinking 类型
+                        const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                        if (lastSeg && lastSeg.type === 'thinking') {
+                          // 如果最后一个是 thinking，继续追加到它
+                          activeThinkIdx = currentSegs.length - 1;
+                          accThinking = lastSeg.content || ''; // 读取已有内容
+                        } else {
+                          // 否则创建新的 thinking segment
+                          accThinking = '';
+                          activeThinkIdx = -1;
+                        }
                       }
                       currentEventType = 'thinking';
                       
@@ -1192,6 +1251,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         currentEventType = null;
                         toolCallMap = new Map<string, number>();
                       }
+                    } else if (confirmData.eventType === 'EndEvent') {
+                      // 收到结束事件，表示 AI 输出已完成
+                      console.log('[Confirm EndEvent] AI output completed');
+                      currentEventType = null;
+                      accText = '';
+                      accThinking = '';
+                      activeTextIdx = -1;
+                      activeThinkIdx = -1;
+                      // 立即释放 loading 状态，允许用户发送新消息
+                      setLoading(false);
+                      confirmChanged = true;
                     } else if (confirmData.eventType === 'ToolConfirmEvent') {
                       // 递归处理嵌套的工具确认
                       accText = '';
@@ -1290,16 +1360,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                             const nestedData = JSON.parse(nestedJsonStr);
                             
                             if (nestedData.eventType === 'TextEvent') {
-                              if (nestedData.last === true) {
+                              if (nestedData.isLast === true) {
                                 accText = '';
                                 activeTextIdx = -1;
                                 currentEventType = null;
                                 continue;
                               }
                               
+                              // 如果当前不是 text 事件，检查是否需要追加到上一个 text segment
                               if (currentEventType !== 'text') {
-                                accText = '';
-                                activeTextIdx = -1;
+                                // 检查上一个 segment 是否是 text 类型
+                                const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                                if (lastSeg && lastSeg.type === 'text') {
+                                  // 如果最后一个是 text，继续追加到它
+                                  activeTextIdx = currentSegs.length - 1;
+                                  accText = lastSeg.content || ''; // 读取已有内容
+                                } else {
+                                  // 否则创建新的 text segment
+                                  accText = '';
+                                  activeTextIdx = -1;
+                                }
                               }
                               currentEventType = 'text';
                               
@@ -1313,16 +1393,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               confirmChanged = true;
                               
                             } else if (nestedData.eventType === 'ThinkingEvent') {
-                              if (nestedData.last === true) {
+                              // isLast=true 表示思考内容结束，不显示此事件的内容
+                              if (nestedData.isLast === true) {
                                 accThinking = '';
                                 activeThinkIdx = -1;
                                 currentEventType = null;
                                 continue;
                               }
                               
+                              // 如果当前不是 thinking 事件，检查是否需要追加到上一个 thinking segment
                               if (currentEventType !== 'thinking') {
-                                accThinking = '';
-                                activeThinkIdx = -1;
+                                // 检查上一个 segment 是否是 thinking 类型
+                                const lastSeg = currentSegs.length > 0 ? currentSegs[currentSegs.length - 1] : null;
+                                if (lastSeg && lastSeg.type === 'thinking') {
+                                  // 如果最后一个是 thinking，继续追加到它
+                                  activeThinkIdx = currentSegs.length - 1;
+                                  accThinking = lastSeg.content || ''; // 读取已有内容
+                                } else {
+                                  // 否则创建新的 thinking segment
+                                  accThinking = '';
+                                  activeThinkIdx = -1;
+                                }
                               }
                               currentEventType = 'thinking';
                               
@@ -1439,6 +1530,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                                 currentEventType = null;
                                 toolCallMap = new Map<string, number>();
                               }
+                            } else if (nestedData.eventType === 'EndEvent') {
+                              // 收到结束事件，表示 AI 输出已完成
+                              console.log('[Nested EndEvent] AI output completed');
+                              currentEventType = null;
+                              accText = '';
+                              accThinking = '';
+                              activeTextIdx = -1;
+                              activeThinkIdx = -1;
+                              // 立即释放 loading 状态，允许用户发送新消息
+                              setLoading(false);
+                              confirmChanged = true;
                             }
                           } catch (err) {
                             console.error('解析嵌套SSE消息失败:', err, nestedLine);
@@ -1490,6 +1592,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   };
 
   const handleSend = () => doSend(inputValue);
+
+  /* ─── 保存会话配置 ─── */
+  const saveSessionConfig = async (newEnableThink: boolean, newEnableSearch: boolean, newEnablePlan: boolean) => {
+    if (!sessionId) return;
+    try {
+      await updateSessionConfig(sessionId, {
+        enableThink: newEnableThink,
+        enableSearch: newEnableSearch,
+        enablePlan: newEnablePlan,
+      });
+    } catch (error) {
+      console.error('保存会话配置失败:', error);
+      // 不显示错误提示,避免干扰用户体验
+    }
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -2428,7 +2545,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               >
                 <div
                   className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''}`}
-                  onClick={() => setEnableThink(!enableThink)}
+                  onClick={() => {
+                    const newValue = !enableThink;
+                    setEnableThink(newValue);
+                    saveSessionConfig(newValue, enableSearch, enablePlan);
+                  }}
                 >
                   <BulbOutlined />
                   <span>深度思考</span>
@@ -2436,14 +2557,22 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               </Dropdown>
               <div
                 className={`${styles.optionItem} ${enableSearch ? styles.optionActive : ''}`}
-                onClick={() => setEnableSearch(!enableSearch)}
+                onClick={() => {
+                  const newValue = !enableSearch;
+                  setEnableSearch(newValue);
+                  saveSessionConfig(enableThink, newValue, enablePlan);
+                }}
               >
                 <SearchOutlined />
                 <span>联网搜索</span>
               </div>
               <div
                 className={`${styles.optionItem} ${enablePlan ? styles.optionActive : ''}`}
-                onClick={() => setEnablePlan(!enablePlan)}
+                onClick={() => {
+                  const newValue = !enablePlan;
+                  setEnablePlan(newValue);
+                  saveSessionConfig(enableThink, enableSearch, newValue);
+                }}
               >
                 <UnorderedListOutlined />
                 <span>开启计划</span>

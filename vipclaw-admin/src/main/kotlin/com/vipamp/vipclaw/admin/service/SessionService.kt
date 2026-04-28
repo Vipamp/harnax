@@ -1,9 +1,11 @@
 package com.vipamp.vipclaw.admin.service
 
+import com.vipamp.vipclaw.admin.dto.SessionChatUpdateRequest
 import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
 import com.vipamp.vipclaw.admin.entity.Session
+import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
 
 /**
  * 会话服务接口
@@ -48,6 +50,22 @@ interface SessionService {
      * @return 更新结果
      */
     fun updateSession(id: Long, request: SessionCreateRequest): Boolean
+
+    /**
+     * 更新会话配置
+     *
+     * @param sessionId 会话 ID
+     * @param request   会话配置更新请求对象
+     */
+    fun updateSessionChatConfig(sessionId: String, request: SessionChatUpdateRequest)
+
+    /**
+     * 获取会话配置
+     *
+     * @param sessionId 会话 ID
+     * @return 会话配置响应对象
+     */
+    fun getSessionChatConfig(sessionId: String): SessionConfigResponse
 
     /**
      * 切换会话启用状态

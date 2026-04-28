@@ -72,7 +72,6 @@ class PlanNoteMapperTest {
         @Test
         @DisplayName("insert - 插入新计划")
         fun `insert should create new plan note`() {
-            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val newPlanNote = PlanNoteEntity().apply {
                 sessionId = "session-001"
                 planId = "plan-new"
@@ -82,8 +81,7 @@ class PlanNoteMapperTest {
                 subtasks = "[]"
                 status = "TODO"
                 costTimeseconds = 0L
-                createTime = now
-                updateTime = now
+                createdAt = "2026-04-28T10:00:00"
             }
 
             val result = planNoteMapper.insert(newPlanNote)
@@ -103,7 +101,6 @@ class PlanNoteMapperTest {
 
             planNote.name = "更新后的计划"
             planNote.status = "DONE"
-            planNote.updateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
             val result = planNoteMapper.updateById(planNote)
 
             assertEquals(1, result)

@@ -4,6 +4,7 @@ import com.vipamp.vipclaw.agent.adaptor.TokenStatAdaptor
 import com.vipamp.vipclaw.agent.adaptor.token.TokenStatBuilder
 import com.vipamp.vipclaw.agent.chat.ChatEvent
 import com.vipamp.vipclaw.agent.chat.ChatEventConverter
+import com.vipamp.vipclaw.agent.chat.EndEventChatEvent
 import io.agentscope.core.ReActAgent
 import io.agentscope.core.agent.StreamOptions
 import io.agentscope.core.message.*
@@ -49,6 +50,8 @@ class ReActAgentWrapper(
         .doOnNext { sessionManager?.saveSession() }
         .flatMap { ChatEventConverter.convert(it, dangerousTools) }
         .doOnNext { extracted(it) }
+        .doOnComplete { /* 流完成时会自动发射 EndEvent */ }
+        .concatWith(Flux.just(EndEventChatEvent()))
 
     private fun textBlock(prompt: String): TextBlock = TextBlock.builder().text(prompt).build()
 

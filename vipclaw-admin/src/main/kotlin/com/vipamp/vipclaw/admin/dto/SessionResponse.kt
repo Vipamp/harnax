@@ -30,6 +30,12 @@ data class SessionResponse(
     var modelName: String? = null,
     @Schema(description = "模型价格（元/百万token）", example = "15.0")
     var modelPrice: Double? = null,
+    @Schema(description = "是否启用深度思考（0:否，1:是）", example = "0")
+    var enableThink: Int? = null,
+    @Schema(description = "是否启用联网搜索（0:否，1:是）", example = "0")
+    var enableSearch: Int? = null,
+    @Schema(description = "是否启用计划（0:否，1:是）", example = "0")
+    var enablePlan: Int? = null,
     @Schema(description = "MCP 服务列表")
     var mcpList: List<McpItem> = listOf(),
     @Schema(description = "技能列表")

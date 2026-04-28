@@ -53,12 +53,22 @@ object ChatEventConverter {
         when (event.type) {
             EventType.REASONING -> {
                 val text: String? = MsgExtractHelper.extractText(msg)
-                if (!text.isNullOrEmpty() && !event.isLast) {
-                    events.add(StreamTextChatEvent(message = text, event.isLast, tokenUsage = tokenUsage))
+                if (!text.isNullOrEmpty()) {
+                    // 如果 isLast=true，发送一个空消息来标记结束，不发送实际内容
+                    val messageToSend = if (event.isLast) "" else text
+                    events.add(StreamTextChatEvent(message = messageToSend, event.isLast, tokenUsage = tokenUsage))
+                } else if (event.isLast) {
+                    // 即使没有文本，last=true 时也要发送一个空事件来标记结束
+                    events.add(StreamTextChatEvent(message = "", event.isLast, tokenUsage = tokenUsage))
                 }
                 val thinking: String? = MsgExtractHelper.extractThinking(msg)
-                if (!thinking.isNullOrEmpty() && !event.isLast) {
-                    events.add(StreamThinkingChatEvent(message = thinking, event.isLast, tokenUsage = tokenUsage))
+                if (!thinking.isNullOrEmpty()) {
+                    // 如果 isLast=true，发送一个空消息来标记结束，不发送实际内容
+                    val messageToSend = if (event.isLast) "" else thinking
+                    events.add(StreamThinkingChatEvent(message = messageToSend, event.isLast, tokenUsage = tokenUsage))
+                } else if (event.isLast) {
+                    // 即使没有思考，last=true 时也要发送一个空事件来标记结束
+                    events.add(StreamThinkingChatEvent(message = "", event.isLast, tokenUsage = tokenUsage))
                 }
                 if (event.isLast && msg.hasContentBlocks(ToolUseBlock::class.java)) {
                     val toolCalls = msg.getContentBlocks(ToolUseBlock::class.java)
