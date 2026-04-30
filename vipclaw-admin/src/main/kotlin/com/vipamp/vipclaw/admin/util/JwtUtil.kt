@@ -37,12 +37,18 @@ class JwtUtil {
      *
      * @param userId 用户 ID
      * @param username 用户名
+     * @param tenantId 租户 ID
+     * @param isAdmin 是否管理员
      * @return JWT Token
      */
-    fun generateToken(userId: Long, username: String): String {
+    fun generateToken(userId: Long, username: String, tenantId: Long? = null, isAdmin: Int = 0): String {
         val claims: MutableMap<String, Any> = HashMap()
         claims["userId"] = userId
         claims["username"] = username
+        if (tenantId != null) {
+            claims["tenantId"] = tenantId
+        }
+        claims["isAdmin"] = isAdmin
 
         val now = Date()
         val expirationDate = Date(now.time + expiration)
@@ -117,6 +123,21 @@ class JwtUtil {
             .build()
             .parseSignedClaims(token)
             .payload
+    }
+
+    /**
+     * 从 Token 中获取租户 ID
+     *
+     * @param token JWT Token
+     * @return 租户 ID
+     */
+    fun getTenantIdFromToken(token: String): Long? {
+        return try {
+            val claims = getClaimsFromToken(token)
+            claims["tenantId", Long::class.java]
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**
