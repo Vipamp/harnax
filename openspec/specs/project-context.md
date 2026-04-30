@@ -290,9 +290,10 @@ Controller → Service → Mapper → Entity
 
 ```sql
 `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+`status` TINYINT(1) DEFAULT 1 COMMENT '是否激活(0:否,1:是)',
 `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
 `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-`active` TINYINT(1) DEFAULT 1 COMMENT '是否激活(0:否,1:是)',
+`active` TINYINT(1) DEFAULT 1 COMMENT '是否逻辑删除',
 PRIMARY KEY (`id`)
 ```
 
@@ -408,13 +409,13 @@ class SysUserEntity : Serializable {
 
 #### RESTful API 设计
 
-- **路径**：`/api/{resource}`（复数形式）
+- **路径**：`/admin/{resource}`（复数形式）
 - **HTTP 方法**：
-    - `GET /api/users` - 获取列表
-    - `GET /api/users/{id}` - 获取单个
-    - `POST /api/users` - 创建
-    - `PUT /api/users/{id}` - 更新
-    - `DELETE /api/users/{id}` - 删除（逻辑删除）
+    - `GET /admin/users` - 获取列表
+    - `GET /admin/users/{id}` - 获取单个
+    - `POST /admin/users` - 创建
+    - `PUT /admin/users/{id}` - 更新
+    - `DELETE /admin/users/{id}` - 删除（逻辑删除）
 
 #### 统一响应格式
 
@@ -463,7 +464,7 @@ data class PageResult<T>(
 
 ```kotlin
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/admin/users")
 @Tag(name = "用户管理", description = "用户管理相关接口")
 class UserController {
 

@@ -1,11 +1,8 @@
 package com.vipamp.vipclaw.admin.adaptor
 
-import com.vipamp.vipclaw.admin.entity.PlanNoteEntity
 import com.vipamp.vipclaw.admin.mapper.PlanNoteMapper
 import com.vipamp.vipclaw.agent.CustomerPlanNoteStorage
 import com.vipamp.vipclaw.agent.adaptor.PlanNoteAdaptor
-import com.vipamp.vipclaw.agent.adaptor.PlanNote
-import com.vipamp.vipclaw.agent.adaptor.PlanSubTask
 import com.vipamp.vipclaw.agent.adaptor.TaskState
 import io.agentscope.core.plan.model.Plan
 import io.agentscope.core.plan.model.PlanState
@@ -47,12 +44,12 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 创建一个包含 finishedAt 的 Plan
         val createdAt = LocalDateTime.now().minusMinutes(10).format(dateTimeFormatter)
         val finishedAt = LocalDateTime.now().format(dateTimeFormatter)
-        
+
         val subTask = SubTask("Test SubTask", "Description", "Expected outcome")
         subTask.state = SubTaskState.DONE
         subTask.createdAt = createdAt
         subTask.finishedAt = finishedAt
-        
+
         val plan = Plan("Test Plan", "Plan description", "Expected outcome", listOf(subTask))
         plan.id = testPlanId
         plan.state = PlanState.DONE
@@ -66,30 +63,30 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 验证数据已保存到数据库
         val savedEntity = planNoteMapper.selectBySessionIdAndPlanId(testSessionId, testPlanId)
         assertNotNull(savedEntity)
-        assertEquals(testPlanId, savedEntity.planId)
-        assertEquals("Test Plan", savedEntity.name)
-        
+        assertEquals(testPlanId, savedEntity?.planId)
+        assertEquals("Test Plan", savedEntity?.name)
+
         // 验证 finishedAt 字段是否正确保存
-        assertEquals(finishedAt, savedEntity.finishedAt)
-        
+        assertEquals(finishedAt, savedEntity?.finishedAt)
+
         // 验证 costTimeSeconds 是否正确计算和保存
         // 10分钟 = 600秒
-        assertEquals(600L, savedEntity.costTimeseconds)
-        
+        assertEquals(600L, savedEntity?.costTimeseconds)
+
         // 验证状态
-        assertEquals(TaskState.DONE.name, savedEntity.status)
+        assertEquals(TaskState.DONE.name, savedEntity?.status)
     }
 
     @Test
     fun `test addPlan should handle null finishedAt correctly`() {
         // 创建一个没有 finishedAt 的 Plan（进行中）
         val createdAt = LocalDateTime.now().format(dateTimeFormatter)
-        
+
         val subTask = SubTask("Test SubTask", "Description", "Expected outcome")
         subTask.state = SubTaskState.IN_PROGRESS
         subTask.createdAt = createdAt
         // finishedAt 为 null
-        
+
         val plan = Plan("Test Plan In Progress", "Plan description", "Expected outcome", listOf(subTask))
         plan.id = testPlanId
         plan.state = PlanState.IN_PROGRESS
@@ -103,15 +100,15 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 验证数据已保存到数据库
         val savedEntity = planNoteMapper.selectBySessionIdAndPlanId(testSessionId, testPlanId)
         assertNotNull(savedEntity)
-        
+
         // 验证 finishedAt 为 null
-        assertNull(savedEntity.finishedAt)
-        
+        assertNull(savedEntity?.finishedAt)
+
         // 验证 costTimeSeconds 为 0（因为 finishedAt 为 null）
-        assertEquals(0L, savedEntity.costTimeseconds)
-        
+        assertEquals(0L, savedEntity?.costTimeseconds)
+
         // 验证状态
-        assertEquals(TaskState.IN_PROGRESS.name, savedEntity.status)
+        assertEquals(TaskState.IN_PROGRESS.name, savedEntity?.status)
     }
 
     @Test
@@ -120,17 +117,17 @@ class CustomerPlanNoteStorageIntegrationTest {
         val createdAt = LocalDateTime.now().minusMinutes(30).format(dateTimeFormatter)
         val finishedAt1 = LocalDateTime.now().minusMinutes(20).format(dateTimeFormatter)
         val finishedAt2 = LocalDateTime.now().minusMinutes(5).format(dateTimeFormatter)
-        
+
         val subTask1 = SubTask("SubTask 1", "Description 1", "Outcome 1")
         subTask1.state = SubTaskState.DONE
         subTask1.createdAt = createdAt
         subTask1.finishedAt = finishedAt1
-        
+
         val subTask2 = SubTask("SubTask 2", "Description 2", "Outcome 2")
         subTask2.state = SubTaskState.DONE
         subTask2.createdAt = createdAt
         subTask2.finishedAt = finishedAt2
-        
+
         val plan = Plan("Multi SubTask Plan", "Description", "Outcome", listOf(subTask1, subTask2))
         plan.id = testPlanId
         plan.state = PlanState.DONE
@@ -144,12 +141,12 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 验证数据已保存到数据库
         val savedEntity = planNoteMapper.selectBySessionIdAndPlanId(testSessionId, testPlanId)
         assertNotNull(savedEntity)
-        
+
         // 验证 finishedAt 字段
-        assertEquals(finishedAt2, savedEntity.finishedAt)
-        
+        assertEquals(finishedAt2, savedEntity?.finishedAt)
+
         // 验证 costTimeSeconds (30分钟 = 1800秒)
-        assertEquals(1800L, savedEntity.costTimeseconds)
+        assertEquals(1800L, savedEntity?.costTimeseconds)
     }
 
     @Test
@@ -164,10 +161,10 @@ class CustomerPlanNoteStorageIntegrationTest {
         for ((seconds, expectedSeconds) in testCases) {
             // 清理之前的数据
             planNoteMapper.deleteBySessionId(testSessionId)
-            
+
             val createdAt = LocalDateTime.now().minusSeconds(seconds).format(dateTimeFormatter)
             val finishedAt = LocalDateTime.now().format(dateTimeFormatter)
-            
+
             val plan = Plan("Time Test Plan", "Description", "Outcome", emptyList())
             plan.id = testPlanId
             plan.state = PlanState.DONE
@@ -181,11 +178,15 @@ class CustomerPlanNoteStorageIntegrationTest {
             // 验证数据
             val savedEntity = planNoteMapper.selectBySessionIdAndPlanId(testSessionId, testPlanId)
             assertNotNull(savedEntity)
-            
+
             // 验证 costTimeSeconds 应该接近预期值（允许1秒误差，因为时间计算可能有微小差异）
-            val actualSeconds = savedEntity.costTimeseconds
-            assertTrue(actualSeconds >= expectedSeconds - 1 && actualSeconds <= expectedSeconds + 1,
-                "Expected cost time to be around $expectedSeconds seconds, but was $actualSeconds")
+            val actualSeconds = savedEntity?.costTimeseconds
+            if (actualSeconds != null) {
+                assertTrue(
+                    actualSeconds >= expectedSeconds - 1 && actualSeconds <= expectedSeconds + 1,
+                    "Expected cost time to be around $expectedSeconds seconds, but was $actualSeconds"
+                )
+            }
         }
     }
 
@@ -194,7 +195,7 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 测试无效的时间格式
         val createdAt = "invalid-time-format"
         val finishedAt = "also-invalid"
-        
+
         val plan = Plan("Invalid Time Plan", "Description", "Outcome", emptyList())
         plan.id = testPlanId
         plan.state = PlanState.DONE
@@ -208,9 +209,9 @@ class CustomerPlanNoteStorageIntegrationTest {
         // 验证数据已保存到数据库
         val savedEntity = planNoteMapper.selectBySessionIdAndPlanId(testSessionId, testPlanId)
         assertNotNull(savedEntity)
-        
+
         // 验证 costTimeSeconds 为 0（因为时间格式无效）
-        assertEquals(0L, savedEntity.costTimeseconds)
+        assertEquals(0L, savedEntity?.costTimeseconds)
     }
 
     @Test

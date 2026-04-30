@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.vipamp.vipclaw.admin.mapper.TenantMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="TenantResultMap" type="com.vipamp.vipclaw.admin.entity.TenantEntity">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="status" property="status"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- 根据 ID 查询租户 -->
+    <select id="selectById" resultMap="TenantResultMap">
+        SELECT * FROM tenant
+        WHERE id = #{id}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 根据名称查询租户 -->
+    <select id="selectByName" resultMap="TenantResultMap">
+        SELECT * FROM tenant
+        WHERE name = #{name}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- 查询租户列表 -->
+    <select id="selectList" resultMap="TenantResultMap">
+        SELECT * FROM tenant
+        WHERE active = 1
+        <if test="name != null and name != ''">
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- 插入租户 -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tenant (
+            name,
+            status,
+            creator,
+            active,
+            create_time,
+            update_time
+        ) VALUES (
+            #{name},
+            #{status},
+            #{creator},
+            #{active},
+            #{createTime},
+            #{updateTime}
+        )
+    </insert>
+
+    <!-- 根据 ID 更新租户 -->
+    <update id="updateById">
+        UPDATE tenant
+        <set>
+            <if test="name != null and name != ''">
+                name = #{name},
+            </if>
+            <if test="status != null">
+                status = #{status},
+            </if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+    <!-- 更新租户状态 -->
+    <update id="updateStatus">
+        UPDATE tenant
+        SET status = #{status},
+            update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+    <!-- 根据 ID 删除租户（逻辑删除） -->
+    <update id="deleteById">
+        UPDATE tenant
+        SET active = 0,
+            update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+</mapper>

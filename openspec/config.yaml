@@ -18,4 +18,4 @@ rules:
   tasks:
     - Break tasks into chunks of max 2 hours
   code:
-    - 遵守 rules.md 中的规范
+    - vipclaw-admin 项目遵守 `vipclaw-admin-rules.md` 中的规范
