@@ -2,13 +2,13 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
 import com.github.pagehelper.PageInfo
-import com.vipamp.vipclaw.admin.common.BusinessException
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
 import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.admin.entity.TenantEntity
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
+import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
@@ -33,13 +33,13 @@ class TenantServiceImpl(
         // 检查租户名称是否已存在
         val existingTenant = tenantMapper.selectByName(request.name)
         if (existingTenant != null) {
-            throw BusinessException("租户名称已存在")
+            throw BizException("租户名称已存在")
         }
 
         // 检查用户是否存在
         val adminUser = sysUserMapper.selectById(request.adminUserId)
         if (adminUser == null) {
-            throw BusinessException("用户不存在")
+            throw BizException("用户不存在")
         }
 
         // 创建租户
@@ -79,28 +79,28 @@ class TenantServiceImpl(
         return Page(
             records = pageInfo.list.map { toTenantResponse(it) },
             total = pageInfo.total,
-            pageNum = pageInfo.pageNum,
-            pageSize = pageInfo.pageSize
+            pageNum = pageInfo.pageNum.toLong(),
+            pageSize = pageInfo.pageSize.toLong()
         )
     }
 
     @Transactional
     override fun updateTenant(id: Long, request: UpdateTenantRequest): Boolean {
         val tenant = tenantMapper.selectById(id)
-            ?: throw BusinessException("租户不存在")
+            ?: throw BizException("租户不存在")
 
         // 检查名称是否重复
         request.name?.let { newName ->
             val existingTenant = tenantMapper.selectByName(newName)
             if (existingTenant != null && existingTenant.id != id) {
-                throw BusinessException("租户名称已存在")
+                throw BizException("租户名称已存在")
             }
         }
 
         val updateEntity = TenantEntity().apply {
             this.id = id
-            this.name = request.name
-            this.status = request.status
+            this.name = request.name ?: ""
+            this.status = request.status ?: 1
             this.updateTime = LocalDateTime.now()
         }
 
@@ -110,7 +110,7 @@ class TenantServiceImpl(
     @Transactional
     override fun toggleStatus(id: Long): Boolean {
         val tenant = tenantMapper.selectById(id)
-            ?: throw BusinessException("租户不存在")
+            ?: throw BizException("租户不存在")
 
         val newStatus = if (tenant.status == 1) 0 else 1
         return tenantMapper.updateStatus(id, newStatus) > 0
@@ -119,7 +119,7 @@ class TenantServiceImpl(
     @Transactional
     override fun deleteTenant(id: Long): Boolean {
         val tenant = tenantMapper.selectById(id)
-            ?: throw BusinessException("租户不存在")
+            ?: throw BizException("租户不存在")
 
         // TODO: 检查租户下是否有可用资源（agent、session、mcp、skill）
         // 第一期暂不实现
@@ -153,8 +153,8 @@ class TenantServiceImpl(
         return Page(
             records = responses,
             total = pageInfo.total,
-            pageNum = pageInfo.pageNum,
-            pageSize = pageInfo.pageSize
+            pageNum = pageInfo.pageNum.toLong(),
+            pageSize = pageInfo.pageSize.toLong()
         )
     }
 
@@ -162,16 +162,16 @@ class TenantServiceImpl(
     override fun addUserToTenant(tenantId: Long, userId: Long, role: String): Boolean {
         // 检查租户是否存在
         tenantMapper.selectById(tenantId)
-            ?: throw BusinessException("租户不存在")
+            ?: throw BizException("租户不存在")
 
         // 检查用户是否存在
         sysUserMapper.selectById(userId)
-            ?: throw BusinessException("用户不存在")
+            ?: throw BizException("用户不存在")
 
         // 检查是否已存在
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
         if (existing != null) {
-            throw BusinessException("用户已在该租户中")
+            throw BizException("用户已在该租户中")
         }
 
         val userTenant = UserTenantEntity().apply {
@@ -188,7 +188,7 @@ class TenantServiceImpl(
     @Transactional
     override fun removeUserFromTenant(tenantId: Long, userId: Long): Boolean {
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-            ?: throw BusinessException("用户不在该租户中")
+            ?: throw BizException("用户不在该租户中")
 
         return userTenantMapper.deleteByUserIdAndTenantId(userId, tenantId) > 0
     }

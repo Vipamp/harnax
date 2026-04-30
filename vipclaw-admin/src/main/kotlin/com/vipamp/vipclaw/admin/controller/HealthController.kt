@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController
  * @Project: vipclaw
  */
 @RestController
-@RequestMapping("/admin")
+@RequestMapping("/api/")
 @Tag(name = "健康监测", description = "Health 监测")
 class HealthController(private val editionUtil: EditionUtil) {
 

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-12
  */
 @RestController
-@RequestMapping("/admin/mcp")
+@RequestMapping("/api/mcp")
 @Tag(name = "MCP 服务管理", description = "MCP 服务相关接口")
 class McpServerController(
     private val mcpServerService: McpServerService,

@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-06
  */
 @RestController
-@RequestMapping("/admin/users")
+@RequestMapping("/api/users")
 @Tag(name = "用户管理", description = "用户相关接口")
 class SysUserController(
     private val sysUserService: SysUserService,

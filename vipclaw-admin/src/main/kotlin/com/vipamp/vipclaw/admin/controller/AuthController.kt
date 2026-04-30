@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*
  */
 @Tag(name = "认证管理", description = "用户登录、登出、验证码等接口")
 @RestController
-@RequestMapping("/admin/auth")
+@RequestMapping("/api/auth")
 class AuthController(
     private val authService: AuthService, 
     private val captchaService: CaptchaService,

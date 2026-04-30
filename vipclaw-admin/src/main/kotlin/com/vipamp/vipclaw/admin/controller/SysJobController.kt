@@ -21,7 +21,7 @@ import java.time.LocalDateTime
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/admin/jobs")
+@RequestMapping("/api/jobs")
 @Tag(name = "定时任务管理", description = "定时任务相关接口")
 class SysJobController(
     private val sysJobService: SysJobService,

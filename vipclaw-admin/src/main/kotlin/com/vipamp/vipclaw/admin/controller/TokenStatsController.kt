@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter
  * @since 2026-04-11
  */
 @RestController
-@RequestMapping("/admin/token-stats")
+@RequestMapping("/api/token-stats")
 @Tag(name = "Token 消耗统计", description = "Token 消耗统计相关接口")
 class TokenStatsController(
     private val tokenStatsService: TokenStatsService

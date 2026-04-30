@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/admin/model-providers")
+@RequestMapping("/api/model-providers")
 @Tag(name = "模型服务商管理", description = "模型服务商的增删改查接口")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService

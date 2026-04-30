@@ -12,8 +12,8 @@
 export default {
   // 如果需要自定义本地开发服务器  请取消注释按需调整
   dev: {
-    // localhost:8000/admin/** -> http://localhost:8080/admin/**
-    '/admin/': {
+    // localhost:8000/api/** -> http://localhost:8080/api/**
+    '/api/': {
       target: 'http://localhost:8080',
       changeOrigin: true,
     },
@@ -44,10 +44,6 @@ export default {
           res.end();
         });
       },
-    },
-    '/api/': {
-      target: 'https://proapi.azurewebsites.net',
-      changeOrigin: true,
     },
   },
   /**

@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.vipamp.vipclaw.admin.common.BusinessException
+import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
@@ -48,7 +48,7 @@ class UserTenantServiceImpl(
     @Transactional
     override fun updateUserRole(userId: Long, tenantId: Long, role: String): Boolean {
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-            ?: throw BusinessException("用户不在该租户中")
+            ?: throw BizException("用户不在该租户中")
 
         return userTenantMapper.updateRole(userId, tenantId, role) > 0
     }

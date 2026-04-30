@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/admin/skills")
+@RequestMapping("/api/skills")
 @Tag(name = "技能管理", description = "技能相关接口")
 class SkillController(
     private val skillService: SkillService,

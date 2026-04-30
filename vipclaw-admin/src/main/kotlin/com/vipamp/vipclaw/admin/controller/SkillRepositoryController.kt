@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-16
  */
 @RestController
-@RequestMapping("/admin/skill-repositories")
+@RequestMapping("/api/skill-repositories")
 @Tag(name = "技能仓库管理", description = "技能仓库相关接口")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService

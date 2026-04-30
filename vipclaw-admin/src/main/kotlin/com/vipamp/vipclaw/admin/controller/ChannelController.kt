@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-04-08
  */
 @RestController
-@RequestMapping("/channels")
+@RequestMapping("/api/channels")
 @Tag(name = "Channel 管理", description = "Channel 通道相关接口")
 class ChannelController(
     private val channelService: ChannelService

@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-13
  */
 @RestController
-@RequestMapping("/admin/models")
+@RequestMapping("/api/models")
 @Tag(name = "模型管理", description = "模型的增删改查接口")
 class ModelController(
     private val modelService: ModelService

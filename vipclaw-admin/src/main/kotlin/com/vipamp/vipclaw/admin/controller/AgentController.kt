@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-18
  */
 @RestController
-@RequestMapping("/admin/agents")
+@RequestMapping("/api/agents")
 @Tag(name = "智能体管理", description = "智能体相关接口")
 class AgentController(
     private val agentService: AgentService

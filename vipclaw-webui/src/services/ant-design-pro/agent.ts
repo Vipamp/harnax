@@ -14,7 +14,7 @@ export async function getAgentPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/agents/page`, {
+  return request(`/api/agents/page`, {
     method: 'GET',
     params: {
       ...params,
@@ -40,7 +40,7 @@ export async function createAgent(
   data: API.AgentCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/admin/agents', {
+  return request('/api/agents', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,7 +58,7 @@ export async function updateAgent(
   data: API.AgentUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/agents/update/${id}`, {
+  return request(`/api/agents/update/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -76,7 +76,7 @@ export async function toggleAgentStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/agents/toggle/${id}`, {
+  return request(`/api/agents/toggle/${id}`, {
     method: 'PUT',
     params: { status },
     ...(options || {}),
@@ -103,7 +103,7 @@ export async function getMcpServerList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/mcp/page`, {
+  return request(`/api/mcp/page`, {
     method: 'GET',
     params: {
       pageNum: 1,
@@ -124,7 +124,7 @@ export async function getSkillRepositoryList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/skill-repositories/page`, {
+  return request(`/api/skill-repositories/page`, {
     method: 'GET',
     params: {
       pageNum: 1,
@@ -146,7 +146,7 @@ export async function getSkillListByRepository(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/skills/page`, {
+  return request(`/api/skills/page`, {
     method: 'GET',
     params: {
       repositoryId,
@@ -168,7 +168,7 @@ export async function getModelList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/models/page`, {
+  return request(`/api/models/page`, {
     method: 'GET',
     params: {
       pageNum: 1,

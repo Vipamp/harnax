@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.*
  * @since 2026-03-25
  */
 @RestController
-@RequestMapping("/admin/sessions")
+@RequestMapping("/api/sessions")
 @Tag(name = "会话管理", description = "会话相关接口")
 class SessionController(
     private val sessionService: SessionService

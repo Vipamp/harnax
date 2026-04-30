@@ -1,6 +1,6 @@
 package com.vipamp.vipclaw.admin.interceptor
 
-import com.vipamp.vipclaw.admin.common.BusinessException
+import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import com.vipamp.vipclaw.admin.security.SecurityUtils
@@ -31,10 +31,10 @@ class TenantInterceptor(
         }
 
         val tenantId = tenantIdHeader.toLongOrNull()
-            ?: throw BusinessException("无效的租户ID")
+            ?: throw BizException("无效的租户ID")
 
         val currentUser = SecurityUtils.getCurrentUser()
-            ?: throw BusinessException("用户未登录")
+            ?: throw BizException("用户未登录")
 
         // 全局管理员跳过验证
         if (currentUser.isAdmin == 1) {
@@ -46,11 +46,11 @@ class TenantInterceptor(
         val userTenant = userTenantMapper.selectByUserIdAndTenantId(currentUser.id, tenantId)
 
         if (userTenant == null) {
-            throw BusinessException("无权访问该租户")
+            throw BizException("无权访问该租户")
         }
 
         if (userTenant.status == 0) {
-            throw BusinessException("您在该租户下已被禁用")
+            throw BizException("您在该租户下已被禁用")
         }
 
         TenantContext.setTenantId(tenantId)
