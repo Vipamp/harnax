@@ -19,6 +19,9 @@ build/
 # IDE
 .idea/
 .vscode/
+.qoder/
+openspec/
+docs/
 *.iml
 *.ipr
 *.iws
