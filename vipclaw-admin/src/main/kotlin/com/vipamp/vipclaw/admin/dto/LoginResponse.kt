@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.dto
 
+import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
@@ -20,7 +21,13 @@ data class LoginResponse(
     val expiresAt: Long? = null,
 
     @Schema(description = "用户信息")
-    val userInfo: UserInfo? = null
+    val userInfo: UserInfo? = null,
+
+    @Schema(description = "用户所属租户列表")
+    val tenants: List<TenantResponse>? = null,
+
+    @Schema(description = "当前租户ID")
+    val currentTenantId: Long? = null
 ) {
     companion object {
         @JvmStatic
@@ -33,19 +40,25 @@ data class LoginResponse(
         private var expiresIn: Long? = null
         private var expiresAt: Long? = null
         private var userInfo: UserInfo? = null
+        private var tenants: List<TenantResponse>? = null
+        private var currentTenantId: Long? = null
 
         fun accessToken(accessToken: String?) = apply { this.accessToken = accessToken }
         fun tokenType(tokenType: String?) = apply { this.tokenType = tokenType }
         fun expiresIn(expiresIn: Long?) = apply { this.expiresIn = expiresIn }
         fun expiresAt(expiresAt: Long?) = apply { this.expiresAt = expiresAt }
         fun userInfo(userInfo: UserInfo?) = apply { this.userInfo = userInfo }
+        fun tenants(tenants: List<TenantResponse>?) = apply { this.tenants = tenants }
+        fun currentTenantId(currentTenantId: Long?) = apply { this.currentTenantId = currentTenantId }
 
         fun build() = LoginResponse(
             accessToken = accessToken,
             tokenType = tokenType,
             expiresIn = expiresIn,
             expiresAt = expiresAt,
-            userInfo = userInfo
+            userInfo = userInfo,
+            tenants = tenants,
+            currentTenantId = currentTenantId
         )
     }
 
