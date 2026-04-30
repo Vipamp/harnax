@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.vipamp.vipclaw.admin.dto.LoginRequest
 import com.vipamp.vipclaw.admin.dto.LoginResponse
 import com.vipamp.vipclaw.admin.dto.LoginResponse.UserInfo
+import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
@@ -10,6 +11,7 @@ import com.vipamp.vipclaw.admin.service.AuthService
 import com.vipamp.vipclaw.admin.service.CaptchaService
 import com.vipamp.vipclaw.admin.service.SysTokenBlacklistService
 import com.vipamp.vipclaw.admin.service.SysUserService
+import com.vipamp.vipclaw.admin.service.UserTenantService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.Logger
@@ -31,7 +33,8 @@ class AuthServiceImpl(
     private val captchaService: CaptchaService,
     private val jwtUtil: JwtUtil,
     private val tokenBlacklistService: SysTokenBlacklistService,
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
+    private val userTenantService: UserTenantService
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -66,8 +69,15 @@ class AuthServiceImpl(
             throw BizException("用户已被禁用，请联系管理员")
         }
 
-        // 4. 生成 JWT Token
-        val accessToken: String = jwtUtil.generateToken(user.id, user.username)
+        // 4. 检查用户是否属于任何租户
+        val userTenants = userTenantService.getUserTenants(user.id)
+        if (userTenants.isEmpty() && user.isAdmin != 1) {
+            throw BizException("您的账号暂无可用租户，请联系管理员")
+        }
+
+        // 5. 生成 JWT Token（使用第一个租户ID）
+        val defaultTenantId = if (userTenants.isNotEmpty()) userTenants[0].id else null
+        val accessToken: String = jwtUtil.generateToken(user.id, user.username, defaultTenantId, user.isAdmin)
 
         // 5. 计算过期时间戳
         val expiresAt: Long = System.currentTimeMillis() + jwtUtil.getExpirationTime()
@@ -91,6 +101,8 @@ class AuthServiceImpl(
             .expiresIn(jwtUtil.getExpirationTime() / 1000) // 转换为秒
             .expiresAt(expiresAt)
             .userInfo(userInfo)
+            .tenants(userTenants)
+            .currentTenantId(defaultTenantId)
             .build()
 
         // 7. 更新用户最近一次登录时间
