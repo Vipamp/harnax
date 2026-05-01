@@ -14,7 +14,7 @@ export async function getSessionPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/sessions/page`, {
+  return request(`/api/sessions/page`, {
     method: 'GET',
     params: {
       ...params,
@@ -27,7 +27,7 @@ export async function getSessionPage(
  * 获取会话详情
  */
 export async function getSessionById(id: number, options?: { [key: string]: any }) {
-  return request(`/admin/sessions/${id}`, {
+  return request(`/api/sessions/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -40,7 +40,7 @@ export async function checkSessionTitle(
   title: string,
   options?: { [key: string]: any },
 ) {
-  return request('/admin/sessions/check-title', {
+  return request('/api/sessions/check-title', {
     method: 'GET',
     params: { title },
     ...(options || {}),
@@ -54,7 +54,7 @@ export async function createSession(
   data: API.SessionCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/admin/sessions', {
+  return request('/api/sessions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,7 +72,7 @@ export async function toggleSessionStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/sessions/toggle/${id}`, {
+  return request(`/api/sessions/toggle/${id}`, {
     method: 'PUT',
     params: { status },
     ...(options || {}),
@@ -83,7 +83,7 @@ export async function toggleSessionStatus(
  * 删除会话
  */
 export async function deleteSession(id: number, options?: { [key: string]: any }) {
-  return request(`/admin/sessions/${id}`, {
+  return request(`/api/sessions/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });

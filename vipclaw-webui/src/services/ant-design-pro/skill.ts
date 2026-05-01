@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取技能列表 GET /admin/skills/page */
+/** 获取技能列表 GET /api/skills/page */
 export async function getSkillPage(
   params: {
     pageNum?: number;
@@ -13,7 +13,7 @@ export async function getSkillPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/skills/page', {
+  return request('/api/skills/page', {
     method: 'GET',
     params: {
       ...params,
@@ -22,17 +22,17 @@ export async function getSkillPage(
   });
 }
 
-/** 获取技能详情 GET /admin/skills/${id} */
+/** 获取技能详情 GET /api/skills/${id} */
 export async function getSkillById(id: number, options?: { [key: string]: any }) {
-  return request(`/admin/skills/${id}`, {
+  return request(`/api/skills/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
 }
 
-/** 创建技能 POST /admin/skills */
+/** 创建技能 POST /api/skills */
 export async function createSkill(data: API.SkillCreateRequest, options?: { [key: string]: any }) {
-  return request('/admin/skills', {
+  return request('/api/skills', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -42,13 +42,13 @@ export async function createSkill(data: API.SkillCreateRequest, options?: { [key
   });
 }
 
-/** 更新技能 PUT /admin/skills/update/${skillId} */
+/** 更新技能 PUT /api/skills/update/${skillId} */
 export async function updateSkill(
   skillId: number,
   data: API.SkillUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/skills/update/${skillId}`, {
+  return request(`/api/skills/update/${skillId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -58,13 +58,13 @@ export async function updateSkill(
   });
 }
 
-/** 切换技能状态 PUT /admin/skills/toggle/${skillId} */
+/** 切换技能状态 PUT /api/skills/toggle/${skillId} */
 export async function toggleSkillStatus(
   skillId: number,
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/admin/skills/toggle/${skillId}`, {
+  return request(`/api/skills/toggle/${skillId}`, {
     method: 'PUT',
     params: {
       status,
@@ -73,21 +73,21 @@ export async function toggleSkillStatus(
   });
 }
 
-/** 删除技能 DELETE /admin/skills/${skillId} */
+/** 删除技能 DELETE /api/skills/${skillId} */
 export async function deleteSkill(skillId: number, options?: { [key: string]: any }) {
-  return request(`/admin/skills/${skillId}`, {
+  return request(`/api/skills/${skillId}`, {
     method: 'DELETE',
     ...(options || {}),
   });
 }
 
-/** 批量保存技能(同步用)POST /admin/skills/batch */
+/** 批量保存技能(同步用)POST /api/skills/batch */
 export async function batchSaveSkills(
   repositoryId: number,
   data: string[],
   options?: { [key: string]: any },
 ) {
-  return request('/admin/skills/batch', {
+  return request('/api/skills/batch', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

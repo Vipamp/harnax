@@ -2,9 +2,9 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 用户登录 POST /admin/auth/login */
+/** 用户登录 POST /api/auth/login */
 export async function login(body: API.LoginParams, options?: { [key: string]: any }) {
-  return request('/admin/auth/login', {
+  return request('/api/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -14,17 +14,17 @@ export async function login(body: API.LoginParams, options?: { [key: string]: an
   });
 }
 
-/** 退出登录 POST /admin/auth/logout */
+/** 退出登录 POST /api/auth/logout */
 export async function logout(options?: { [key: string]: any }) {
- return request('/admin/auth/logout', {
+ return request('/api/auth/logout', {
   method: 'POST',
     ...(options || {}),
   });
 }
 
-/** 获取验证码 GET /admin/auth/captcha */
+/** 获取验证码 GET /api/auth/captcha */
 export async function getCaptcha(options?: { [key: string]: any }) {
- return request('/admin/auth/captcha', {
+ return request('/api/auth/captcha', {
  method: 'GET',
    ...(options || {}),
   });

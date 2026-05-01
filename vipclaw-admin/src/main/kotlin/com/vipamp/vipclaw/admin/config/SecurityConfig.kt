@@ -28,7 +28,7 @@ class SecurityConfig(
             .httpBasic { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/admin/auth/login", "/admin/auth/logout", "/admin/auth/captcha")
+                auth.requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/captcha")
                     .permitAll()
                     .requestMatchers(
                         "/swagger-ui.html",

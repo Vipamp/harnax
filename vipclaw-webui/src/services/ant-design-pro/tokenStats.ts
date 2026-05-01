@@ -12,7 +12,7 @@ export async function getTokenStatsAggregation(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/token-stats/aggregation', {
+  return request('/api/token-stats/aggregation', {
     method: 'GET',
     params: {
       startTime: params.startTime,
@@ -33,7 +33,7 @@ export async function getTokenStatsTimeSeries(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/token-stats/time-series', {
+  return request('/api/token-stats/time-series', {
     method: 'GET',
     params: {
       startTime: params.startTime,
@@ -55,7 +55,7 @@ export async function getModelTimeSeries(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/token-stats/time-series/model', {
+  return request('/api/token-stats/time-series/model', {
     method: 'GET',
     params: {
       startTime: params.startTime,
@@ -77,7 +77,7 @@ export async function getAgentTimeSeries(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/token-stats/time-series/agent', {
+  return request('/api/token-stats/time-series/agent', {
     method: 'GET',
     params: {
       startTime: params.startTime,
@@ -99,7 +99,7 @@ export async function getSessionTimeSeries(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/admin/token-stats/time-series/session', {
+  return request('/api/token-stats/time-series/session', {
     method: 'GET',
     params: {
       startTime: params.startTime,

@@ -27,7 +27,7 @@ export async function getAgentPage(
  * 获取智能体详情
  */
 export async function getAgentById(id: number, options?: { [key: string]: any }) {
-  return request(`/admin/agents/${id}`, {
+  return request(`/api/agents/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -87,7 +87,7 @@ export async function toggleAgentStatus(
  * 删除智能体
  */
 export async function deleteAgent(id: number, options?: { [key: string]: any }) {
-  return request(`/admin/agents/${id}`, {
+  return request(`/api/agents/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });

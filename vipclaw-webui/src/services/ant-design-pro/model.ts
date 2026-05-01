@@ -14,7 +14,7 @@ export async function modelPage(params: {
   minPrice?: number;
   maxPrice?: number;
 }) {
-  return request<API.Result<API.PageResult<API.ModelItem>>>('/admin/models/page', {
+  return request<API.Result<API.PageResult<API.ModelItem>>>('/api/models/page', {
     method: 'GET',
     params,
   });
@@ -24,7 +24,7 @@ export async function modelPage(params: {
  * 获取模型详情
  */
 export async function getModel(id: number) {
-  return request<API.Result<API.ModelItem>>(`/admin/models/${id}`, {
+  return request<API.Result<API.ModelItem>>(`/api/models/${id}`, {
     method: 'GET',
   });
 }
@@ -33,7 +33,7 @@ export async function getModel(id: number) {
  * 创建模型
  */
 export async function createModel(data: API.ModelCreateRequest) {
-  return request<API.Result<API.ModelItem>>('/admin/models', {
+  return request<API.Result<API.ModelItem>>('/api/models', {
     method: 'POST',
     data,
   });
@@ -43,7 +43,7 @@ export async function createModel(data: API.ModelCreateRequest) {
  * 更新模型
  */
 export async function updateModel(id: number, data: API.ModelUpdateRequest) {
-  return request<API.Result<API.ModelItem>>(`/admin/models/update/${id}`, {
+  return request<API.Result<API.ModelItem>>(`/api/models/update/${id}`, {
     method: 'PUT',
     data,
   });
@@ -53,7 +53,7 @@ export async function updateModel(id: number, data: API.ModelUpdateRequest) {
  * 切换模型状态
  */
 export async function toggleModel(id: number, status: number) {
-  return request<API.Result<API.ModelItem>>(`/admin/models/toggle/${id}`, {
+  return request<API.Result<API.ModelItem>>(`/api/models/toggle/${id}`, {
     method: 'PUT',
     params: { status },
   });
@@ -63,7 +63,7 @@ export async function toggleModel(id: number, status: number) {
  * 删除模型
  */
 export async function deleteModel(id: number) {
-  return request<API.Result<void>>(`/admin/models/${id}`, {
+  return request<API.Result<void>>(`/api/models/${id}`, {
     method: 'DELETE',
   });
 }

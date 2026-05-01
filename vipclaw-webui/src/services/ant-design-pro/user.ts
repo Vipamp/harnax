@@ -2,7 +2,7 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
-/** 获取用户列表 GET /admin/users/page */
+/** 获取用户列表 GET /api/users/page */
 export async function getUserPage(
   params: {
    pageNum?: number;
@@ -12,7 +12,7 @@ export async function getUserPage(
   },
   options?: { [key: string]: any },
 ) {
- return request('/admin/users/page', {
+ return request('/api/users/page', {
    method: 'GET',
    params: {
       ...params,
@@ -21,17 +21,17 @@ export async function getUserPage(
   });
 }
 
-/** 获取用户详情 GET /admin/users/${id} */
+/** 获取用户详情 GET /api/users/${id} */
 export async function getUserById(id: number, options?: { [key: string]: any }) {
- return request(`/admin/users/${id}`, {
+ return request(`/api/users/${id}`, {
    method: 'GET',
     ...(options || {}),
   });
 }
 
-/**创建用户 POST /admin/users */
+/**创建用户 POST /api/users */
 export async function createUser(data: API.SysUserCreateRequest, options?: { [key: string]: any }) {
- return request('/admin/users', {
+ return request('/api/users', {
    method: 'POST',
    headers: {
       'Content-Type': 'application/json',
@@ -41,13 +41,13 @@ export async function createUser(data: API.SysUserCreateRequest, options?: { [ke
   });
 }
 
-/**更新用户 PUT /admin/users/update/${userId} */
+/**更新用户 PUT /api/users/update/${userId} */
 export async function updateUser(
   userId: number,
   data: API.SysUserUpdateRequest,
   options?: { [key: string]: any },
 ) {
- return request(`/admin/users/update/${userId}`, {
+ return request(`/api/users/update/${userId}`, {
    method: 'PUT',
    headers: {
       'Content-Type': 'application/json',
@@ -57,13 +57,13 @@ export async function updateUser(
   });
 }
 
-/** 切换用户状态 PUT /admin/users/toggle/${userId} */
+/** 切换用户状态 PUT /api/users/toggle/${userId} */
 export async function toggleUserStatus(
   userId: number,
   status: number,
   options?: { [key: string]: any },
 ) {
- return request(`/admin/users/toggle/${userId}`, {
+ return request(`/api/users/toggle/${userId}`, {
    method: 'PUT',
    params: {
      status,
@@ -72,44 +72,44 @@ export async function toggleUserStatus(
   });
 }
 
-/** 删除用户 DELETE /admin/users/${userId} */
+/** 删除用户 DELETE /api/users/${userId} */
 export async function deleteUser(userId: number, options?: { [key: string]: any }) {
- return request(`/admin/users/${userId}`, {
+ return request(`/api/users/${userId}`, {
    method: 'DELETE',
     ...(options || {}),
   });
 }
 
-/** 检查用户名是否存在 GET /admin/users/check/username */
+/** 检查用户名是否存在 GET /api/users/check/username */
 export async function checkUsername(
   username: string,
   options?: { [key: string]: any },
 ) {
- return request('/admin/users/check/username', {
+ return request('/api/users/check/username', {
    method: 'GET',
    params: { username },
     ...(options || {}),
   });
 }
 
-/** 检查手机号是否存在 GET /admin/users/check/phone */
+/** 检查手机号是否存在 GET /api/users/check/phone */
 export async function checkPhone(
   phone: string,
   options?: { [key: string]: any },
 ) {
- return request('/admin/users/check/phone', {
+ return request('/api/users/check/phone', {
    method: 'GET',
    params: { phone },
     ...(options || {}),
   });
 }
 
-/** 检查邮箱是否存在 GET /admin/users/check/email */
+/** 检查邮箱是否存在 GET /api/users/check/email */
 export async function checkEmail(
   email: string,
   options?: { [key: string]: any },
 ) {
- return request('/admin/users/check/email', {
+ return request('/api/users/check/email', {
    method: 'GET',
    params: { email },
     ...(options || {}),

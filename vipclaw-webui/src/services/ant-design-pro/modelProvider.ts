@@ -10,7 +10,7 @@ export async function modelProviderPage(params: {
   status?: number;
   isPublic?: number;
 }) {
-  return request<API.Result<API.PageResult<API.ModelProviderItem>>>('/admin/model-providers/page', {
+  return request<API.Result<API.PageResult<API.ModelProviderItem>>>('/api/model-providers/page', {
     method: 'GET',
     params,
   });
@@ -20,7 +20,7 @@ export async function modelProviderPage(params: {
  * 获取模型服务商详情
  */
 export async function getModelProvider(id: number) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/api/model-providers/${id}`, {
     method: 'GET',
   });
 }
@@ -29,7 +29,7 @@ export async function getModelProvider(id: number) {
  * 创建模型服务商
  */
 export async function createModelProvider(data: API.ModelProviderCreateRequest) {
-  return request<API.Result<API.ModelProviderItem>>('/admin/model-providers', {
+  return request<API.Result<API.ModelProviderItem>>('/api/model-providers', {
     method: 'POST',
     data,
   });
