@@ -105,9 +105,14 @@ export default defineConfig({
     // default zh-CN
     default: 'zh-CN',
     antd: true,
-    // 不使用浏览器默认语言，强制使用配置的默认语言
+    // 只支持中英文
+    baseSeparator: '-',
     baseNavigator: false,
   },
+  locales: [
+    { name: '中文', locale: 'zh-CN' },
+    { name: 'English', locale: 'en-US' },
+  ],
   /**
    * @name antd 插件
    * @description 内置了 babel import 插件
