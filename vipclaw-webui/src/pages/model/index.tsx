@@ -18,6 +18,21 @@ const TAG_OPTIONS = [
   { label: '视觉', value: 'vision', icon: <EyeOutlined /> },
 ];
 
+// 国际化标签
+const getLocalizedTagLabel = (intl: any, label: string) => {
+  const tagLabels: Record<string, string> = {
+    '联网': 'Internet',
+    '推理': 'Reasoning',
+    '工具': 'Tool',
+    'MCP': 'MCP',
+    '视觉': 'Vision',
+  };
+  return intl.formatMessage({ 
+    id: `pages.model.tag.${TAG_OPTIONS.find(t => t.label === label)?.value}`, 
+    defaultMessage: tagLabels[label] || label 
+  });
+};
+
 const ModelManagement: React.FC = () => {
   const intl = useIntl();
   const [providers, setProviders] = useState<API.ModelProviderItem[]>([]);
@@ -64,7 +79,7 @@ const ModelManagement: React.FC = () => {
         }
       }
     } catch (error) {
-      message.error('加载服务商列表失败');
+      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setProviderLoading(false);
     }
@@ -81,7 +96,7 @@ const ModelManagement: React.FC = () => {
       const response = await toggleModelProvider(id, newStatus);
       
       if (response.code === 200) {
-        message.success('状态切换成功');
+        message.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
         // 只更新当前卡片状态，不重新加载整个列表
         setProviders((prevProviders) =>
           prevProviders.map((provider) =>
@@ -97,11 +112,11 @@ const ModelManagement: React.FC = () => {
           );
         }
       } else {
-        const errorMsg = response.message || '状态切换失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '状态切换失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' });
       message.error(errorMsg);
     }
   };
@@ -113,18 +128,18 @@ const ModelManagement: React.FC = () => {
       
       // 检查返回结果
       if (response.code === 200) {
-        message.success('删除成功');
+        message.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
         if (selectedProvider?.id === id) {
           setSelectedProvider(null);
         }
         loadProviders();
       } else {
         // 显示后端返回的错误信息
-        const errorMsg = response.message || '删除失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
       message.error(errorMsg);
     }
   };
@@ -134,12 +149,12 @@ const ModelManagement: React.FC = () => {
     try {
       const response = await connectivityTest(id);
       if (response.code === 200 && response.data) {
-        message.success('连接测试成功');
+        message.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
       } else {
-        message.error(response.message || '连接测试失败');
+        message.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '连接测试失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' });
       message.error(errorMsg);
     }
   };
@@ -171,7 +186,7 @@ const ModelManagement: React.FC = () => {
   // 打开创建模型表单
   const handleCreateModel = () => {
     if (!selectedProvider) {
-      message.warning('请先选择一个服务商');
+      message.warning(intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'menu.context.model', defaultMessage: 'Model' }));
       return;
     }
     setEditingModel(null);
@@ -263,7 +278,7 @@ const ModelManagement: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* 关键词搜索 */}
                 <Input
-                  placeholder="搜索模型名称"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
                   prefix={<SearchOutlined />}
                   value={filters.name}
                   onChange={(e) => setFilters({ ...filters, name: e.target.value })}
@@ -272,7 +287,7 @@ const ModelManagement: React.FC = () => {
                 />
                 {/* 模型类型 */}
                 <Select
-                  placeholder="模型类型"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
                   style={{ width: 120 }}
                   value={filters.modelType}
                   onChange={(value) => setFilters({ ...filters, modelType: value })}
@@ -302,7 +317,7 @@ const ModelManagement: React.FC = () => {
                 />
                 {/* 状态 */}
                 <Select
-                  placeholder="状态"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
                   style={{ width: 100 }}
                   value={filters.status}
                   onChange={(value) => setFilters({ ...filters, status: value })}
