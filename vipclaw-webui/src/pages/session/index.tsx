@@ -44,7 +44,7 @@ const SessionPage: React.FC = () => {
       }
     } catch (error) {
       console.error('加载会话列表失败', error);
-      message.error('加载会话列表失败');
+      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setLoading(false);
     }
@@ -72,7 +72,7 @@ const SessionPage: React.FC = () => {
     try {
       const res = await deleteSession(id);
       if (res.code === 200) {
-        message.success('删除成功');
+        message.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
         // 如果删除的是当前选中的会话，清除选中状态
         if (selectedSession?.id === id) {
           setSelectedSession(null);
@@ -81,10 +81,10 @@ const SessionPage: React.FC = () => {
         loadSessions();
       } else {
         // 显示后端返回的具体错误信息
-        message.error(res.message || '删除失败');
+        message.error(res.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' }));
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
       message.error(errorMsg);
     }
   };
