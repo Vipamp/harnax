@@ -55,6 +55,7 @@ const AgentCard: React.FC<{
   onDelete: (id: number) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
 }> = ({ item, index, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission }) => {
+  const intl = useIntl();
   const [isHovered, setIsHovered] = useState(false);
   const mcpCount = item.mcpList?.length || 0;
   const skillCount = item.skillList?.length || 0;
@@ -143,8 +144,8 @@ const AgentCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren="启用"
-                unCheckedChildren="禁用"
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}
@@ -449,7 +450,7 @@ const AgentCard: React.FC<{
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
             <Space size={4}>
-              <Tooltip title="编辑">
+              <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
                 <Button
                   type="text"
                   size="small"
@@ -462,7 +463,7 @@ const AgentCard: React.FC<{
                   }}
                 />
               </Tooltip>
-              <Tooltip title="删除">
+              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
                 <Button
                   type="text"
                   size="small"
@@ -513,7 +514,7 @@ const AgentManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setLoading(false);
     }
@@ -541,14 +542,14 @@ const AgentManagement: React.FC = () => {
         try {
           const response = await deleteAgent(id);
           if (response.code === 200) {
-            messageApi.success('删除成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
             loadData();
           } else {
-            const errorMsg = response.message || '删除失败，请重试';
+            const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
           }
         } catch (error: any) {
-          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
           messageApi.error(errorMsg);
         }
       },
@@ -559,7 +560,7 @@ const AgentManagement: React.FC = () => {
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
       await toggleAgentStatus(id, newStatus);
-      messageApi.success(newStatus === 1 ? '已启用' : '已禁用');
+      messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
       // 只更新当前卡片状态，不重新加载整个列表
       setData((prevData) =>
         prevData.map((item) =>
@@ -567,7 +568,7 @@ const AgentManagement: React.FC = () => {
         )
       );
     } catch (error) {
-      messageApi.error('操作失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
@@ -600,7 +601,7 @@ const AgentManagement: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
             <Input
-              placeholder="搜索智能体名称"
+              placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'menu.agent.management', defaultMessage: 'Agent Management' })}
               prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -755,11 +756,11 @@ const AgentManagement: React.FC = () => {
         onSubmit={async (values) => {
           try {
             await createAgent(values);
-            messageApi.success('创建成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
             setCreateModalVisible(false);
             loadData();
           } catch (error) {
-            messageApi.error('创建失败，请重试');
+            messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
         }}
       />
@@ -776,12 +777,12 @@ const AgentManagement: React.FC = () => {
           onSubmit={async (values) => {
             try {
               await updateAgent(currentRow.id!, values);
-              messageApi.success('更新成功');
+              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
               loadData();
             } catch (error) {
-              messageApi.error('更新失败，请重试');
+              messageApi.error(intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
             }
           }}
         />
