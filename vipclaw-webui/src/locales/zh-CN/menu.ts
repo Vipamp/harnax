@@ -48,19 +48,27 @@ export default {
   'menu.editor.flow': '流程编辑器',
   'menu.editor.mind': '脑图编辑器',
   'menu.editor.koni': '拓扑编辑器',
+  
+  // 上下文管理
   'menu.context': '上下文管理',
-  'menu.context.mcp': 'MCP 服务',
   'menu.context.model': '模型管理',
+  'menu.context.mcp': 'MCP 服务',
   'menu.context.skill': '技能管理',
   'menu.context.channel': 'Channel 管理',
+  
+  // 智能体
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
   'menu.agent.session': '会话',
+  
+  // 定时任务
+  'menu.job': '定时任务',
+  'menu.job.management': '任务管理',
+  'menu.job.log': '执行日志',
+  
+  // 系统管理
   'menu.system': '系统管理',
   'menu.system.user.management': '用户管理',
   'menu.system.tenant.management': '租户管理',
   'menu.system.token.monitor': 'Token 监控',
-  'menu.job': '定时任务',
-  'menu.job.management': '任务管理',
-  'menu.job.log': '执行日志',
 };

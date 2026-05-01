@@ -48,19 +48,27 @@ export default {
   'menu.editor.flow': 'Flow Editor',
   'menu.editor.mind': 'Mind Editor',
   'menu.editor.koni': 'Koni Editor',
+  
+  // Context Management
   'menu.context': 'Context Management',
-  'menu.context.mcp': 'MCP Services',
   'menu.context.model': 'Model Management',
+  'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
   'menu.context.channel': 'Channel Management',
+  
+  // Agent
   'menu.agent': 'Agent',
   'menu.agent.management': 'Agent Management',
   'menu.agent.session': 'Session',
+  
+  // Job
+  'menu.job': 'Scheduled Tasks',
+  'menu.job.management': 'Task Management',
+  'menu.job.log': 'Execution Log',
+  
+  // System
   'menu.system': 'System Management',
   'menu.system.user.management': 'User Management',
   'menu.system.tenant.management': 'Tenant Management',
   'menu.system.token.monitor': 'Token Monitor',
-  'menu.job': 'Scheduled Tasks',
-  'menu.job.management': 'Task Management',
-  'menu.job.log': 'Execution Log',
 };
