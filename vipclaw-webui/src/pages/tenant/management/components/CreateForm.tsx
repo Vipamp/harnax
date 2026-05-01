@@ -17,23 +17,42 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
     <Modal
       destroyOnClose
       title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
-          {intl.formatMessage({
-            id: 'pages.tenant.management.createNew',
-            defaultMessage: '新建租户',
-          })}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+          }}>
+            <span style={{ color: 'white', fontSize: 20 }}>🏢</span>
+          </div>
+          <span style={{ fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>
+            {intl.formatMessage({
+              id: 'pages.tenant.management.createNew',
+              defaultMessage: '新建租户',
+            })}
+          </span>
+        </div>
       }
-      width={640}
+      width={680}
       open={visible}
       footer={null}
       onCancel={() => onCancel()}
       styles={{
-        body: { padding: '24px 28px', background: '#fafbff' },
+        body: { 
+          padding: '32px', 
+          background: 'linear-gradient(135deg, #fafbff 0%, #f5f7ff 100%)',
+          borderRadius: '0 0 16px 16px'
+        },
         header: {
-          background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
-          borderBottom: '1px solid #e8ecfb',
-          padding: '18px 24px',
+          background: 'white',
+          borderBottom: '2px solid #e8ecfb',
+          padding: '24px 32px',
+          borderRadius: '16px 16px 0 0'
         },
       }}
     >

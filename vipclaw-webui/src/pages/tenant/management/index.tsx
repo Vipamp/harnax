@@ -1,8 +1,25 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useIntl, useRequest } from '@umijs/max';
-import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useIntl } from '@umijs/max';
+import { 
+  Button, 
+  Card, 
+  Input, 
+  message, 
+  Modal, 
+  Select, 
+  Space, 
+  Tag, 
+  Tooltip, 
+  Typography,
+  Divider,
+  Statistic,
+  Row,
+  Col,
+  Badge,
+  Avatar
+} from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   createTenant,
   deleteTenant,
@@ -12,9 +29,20 @@ import {
 } from '@/services/tenant';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { 
+  DeleteOutlined, 
+  EditOutlined, 
+  PlusOutlined, 
+  SearchOutlined,
+  ReloadOutlined,
+  ShopOutlined,
+  UserOutlined,
+  CheckCircleOutlined,
+  StopOutlined,
+  TrophyOutlined
+} from '@ant-design/icons';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 const TenantManagement: React.FC = () => {
   const actionRef = useRef<ActionType | null>(null);
@@ -262,17 +290,25 @@ const TenantManagement: React.FC = () => {
       },
       render: (_, record) => {
         return (
-          <Tag color={record.status === 1 ? 'success' : 'error'}>
-            {record.status === 1
-              ? intl.formatMessage({
-                  id: 'pages.tenant.management.enabled',
-                  defaultMessage: '启用',
-                })
-              : intl.formatMessage({
-                  id: 'pages.tenant.management.disabled',
-                  defaultMessage: '禁用',
-                })}
-          </Tag>
+          <Badge
+            status={record.status === 1 ? 'success' : 'error'}
+            text={
+              <span style={{ 
+                fontWeight: 600,
+                color: record.status === 1 ? '#52c41a' : '#ff4d4f'
+              }}>
+                {record.status === 1
+                  ? intl.formatMessage({
+                      id: 'pages.tenant.management.enabled',
+                      defaultMessage: '启用',
+                    })
+                  : intl.formatMessage({
+                      id: 'pages.tenant.management.disabled',
+                      defaultMessage: '禁用',
+                    })}
+              </span>
+            }
+          />
         );
       },
     },
@@ -304,7 +340,7 @@ const TenantManagement: React.FC = () => {
       valueType: 'option',
       width: 250,
       render: (_, record) => (
-        <Space>
+        <Space size="middle">
           <Tooltip
             title={intl.formatMessage({
               id: 'pages.tenant.management.toggleStatus',
@@ -312,9 +348,16 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="link"
+              type="text"
               size="small"
+              icon={record.status === 1 ? <StopOutlined /> : <CheckCircleOutlined />}
               onClick={() => handleToggleStatus(record.id)}
+              style={{
+                color: record.status === 1 ? '#faad14' : '#52c41a',
+                fontWeight: 600,
+                borderRadius: 8,
+                padding: '4px 12px'
+              }}
             >
               {record.status === 1 ? '禁用' : '启用'}
             </Button>
@@ -326,12 +369,18 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="link"
+              type="text"
               size="small"
               icon={<EditOutlined />}
               onClick={() => {
                 setCurrentRow(record);
                 setUpdateModalVisible(true);
+              }}
+              style={{
+                color: '#667eea',
+                fontWeight: 600,
+                borderRadius: 8,
+                padding: '4px 12px'
               }}
             >
               {intl.formatMessage({
@@ -347,11 +396,16 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="link"
+              type="text"
               danger
               size="small"
               icon={<DeleteOutlined />}
               onClick={() => handleRemove(record.id)}
+              style={{
+                fontWeight: 600,
+                borderRadius: 8,
+                padding: '4px 12px'
+              }}
             >
               {intl.formatMessage({
                 id: 'pages.tenant.management.delete',
@@ -365,56 +419,199 @@ const TenantManagement: React.FC = () => {
   ];
 
   return (
-    <PageContainer>
+    <PageContainer
+      header={{
+        title: (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Avatar 
+              size={48} 
+              icon={<ShopOutlined />} 
+              style={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+              }} 
+            />
+            <div>
+              <Title level={3} style={{ margin: 0, color: '#1a1a2e', fontWeight: 700 }}>
+                {intl.formatMessage({
+                  id: 'pages.tenant.management.title',
+                  defaultMessage: '租户管理',
+                })}
+              </Title>
+              <Text type="secondary" style={{ fontSize: 14 }}>
+                管理系统中的所有租户及其用户权限
+              </Text>
+            </div>
+          </div>
+        ),
+      }}
+    >
       {contextHolder}
-      <Card>
-        <ProTable<any>
-          headerTitle={intl.formatMessage({
-            id: 'pages.tenant.management.title',
-            defaultMessage: '租户管理',
-          })}
-          actionRef={actionRef}
-          rowKey="id"
-          search={{
-            labelWidth: 120,
-          }}
-          toolBarRender={() => [
-            <Button
-              type="primary"
-              key="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setCreateModalVisible(true)}
-            >
-              {intl.formatMessage({
-                id: 'pages.tenant.management.createNew',
-                defaultMessage: '新建租户',
-              })}
-            </Button>,
-          ]}
-          loading={tableLoading}
-          dataSource={data}
-          columns={columns}
-          pagination={{
-            current: pageNum,
-            pageSize: pageSize,
-            total: total,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) =>
-              intl.formatMessage(
-                {
-                  id: 'pages.tenant.management.total',
-                  defaultMessage: '共 {total} 条',
-                },
-                { total },
-              ),
-            onChange: (page, pageSize) => {
-              setPageNum(page);
-              setPageSize(pageSize);
-            },
-          }}
-        />
+
+      {/* 统计卡片 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col span={8}>
+          <Card 
+            hoverable
+            style={{ 
+              borderRadius: 16, 
+              border: 'none',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white'
+            }}
+          >
+            <Statistic
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>总租户数</span>}
+              value={total}
+              prefix={<ShopOutlined style={{ fontSize: 24 }} />}
+              valueStyle={{ color: 'white', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card 
+            hoverable
+            style={{ 
+              borderRadius: 16, 
+              border: 'none',
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              color: 'white'
+            }}
+          >
+            <Statistic
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>启用中</span>}
+              value={data.filter(d => d.status === 1).length}
+              prefix={<CheckCircleOutlined style={{ fontSize: 24 }} />}
+              valueStyle={{ color: 'white', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card 
+            hoverable
+            style={{ 
+              borderRadius: 16, 
+              border: 'none',
+              background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+              color: 'white'
+            }}
+          >
+            <Statistic
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>已禁用</span>}
+              value={data.filter(d => d.status === 0).length}
+              prefix={<StopOutlined style={{ fontSize: 24 }} />}
+              valueStyle={{ color: 'white', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 搜索和工具栏 */}
+      <Card
+        style={{ 
+          marginBottom: 24, 
+          borderRadius: 16, 
+          border: 'none',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+        }}
+        styles={{ body: { padding: '20px 24px' } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Input
+            placeholder="搜索租户名称"
+            prefix={<SearchOutlined style={{ color: '#667eea' }} />}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onPressEnter={handleSearch}
+            style={{ 
+              width: 320, 
+              borderRadius: 12,
+              border: '2px solid #e8ecfb'
+            }}
+            allowClear
+          />
+          <Select
+            placeholder="状态筛选"
+            value={status}
+            onChange={(val) => setStatus(val)}
+            style={{ 
+              width: 160, 
+              borderRadius: 12,
+              border: '2px solid #e8ecfb'
+            }}
+            allowClear
+            options={[
+              { label: '启用', value: 1 },
+              { label: '禁用', value: 0 },
+            ]}
+          />
+          <Button 
+            type="primary" 
+            onClick={handleSearch} 
+            style={{ 
+              borderRadius: 12, 
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              border: 'none',
+              boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+            }}
+          >
+            查询
+          </Button>
+          <Button 
+            onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} 
+            style={{ 
+              borderRadius: 12,
+              border: '2px solid #e8ecfb'
+            }}
+            icon={<ReloadOutlined />}
+          >
+            重置
+          </Button>
+          <div style={{ flex: 1 }} />
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setCreateModalVisible(true)}
+            style={{ 
+              borderRadius: 12, 
+              fontWeight: 600,
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              border: 'none',
+              boxShadow: '0 4px 12px rgba(245, 87, 108, 0.3)',
+              padding: '0 24px',
+              height: 40
+            }}
+          >
+            {intl.formatMessage({
+              id: 'pages.tenant.management.createNew',
+              defaultMessage: '新建租户',
+            })}
+          </Button>
+        </div>
       </Card>
+
+      <ProTable<any>
+        rowKey="id"
+        loading={tableLoading}
+        pagination={{
+          current: pageNum,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (page, size) => {
+            setPageNum(page);
+            if (size) setPageSize(size);
+          },
+        }}
+        dataSource={data}
+        search={false}
+        toolBarRender={false}
+        style={{ borderRadius: 16 }}
+        columns={columns}
+      />
 
       {/* 创建表单 */}
       <CreateForm
