@@ -7,6 +7,10 @@ spring:
   application:
     name: vipclaw-admin
   
+  # 激活版本 Profile(通过 Maven 编译时注入)
+  profiles:
+    active: ${edition.current:personal}
+  
   # 数据源配置
   datasource:
     url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
@@ -54,10 +58,10 @@ mybatis:
 springdoc:
   api-docs:
     path: /v3/api-docs
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:true}
   swagger-ui:
     path: /swagger-ui.html
-    enabled: true
+    enabled: ${SWAGGER_ENABLED:true}
     operations-sorter: alpha
     tags-sorter: alpha
   default-flat-param-object: true

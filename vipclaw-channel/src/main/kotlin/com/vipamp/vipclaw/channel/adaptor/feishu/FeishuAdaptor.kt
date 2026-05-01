@@ -1,13 +1,15 @@
 package com.vipamp.vipclaw.channel.adaptor.feishu
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.vipamp.vipclaw.channel.ChannelSpec
 import com.vipamp.vipclaw.channel.ChannelType
 import com.vipamp.vipclaw.channel.adaptor.ChannelAdaptor
-import com.vipamp.vipclaw.channel.message.ChannelMessage
-import com.vipamp.vipclaw.channel.message.MessageType
-import com.vipamp.vipclaw.channel.message.MessageRole
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.vipamp.vipclaw.channel.client.PlatformHttpClient
+import com.vipamp.vipclaw.channel.client.PlatformResponse
+import com.vipamp.vipclaw.channel.error.ChannelSendException
+import com.vipamp.vipclaw.channel.message.*
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.web.util.ContentCachingRequestWrapper
@@ -19,7 +21,9 @@ import javax.crypto.spec.SecretKeySpec
  * 飞书适配器
  * 处理飞书机器人的回调消息
  */
-class FeishuAdaptor : ChannelAdaptor {
+class FeishuAdaptor(
+    private val httpClient: PlatformHttpClient = PlatformHttpClient()
+) : ChannelAdaptor {
     
     private val logger = LoggerFactory.getLogger(FeishuAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
@@ -97,9 +101,92 @@ class FeishuAdaptor : ChannelAdaptor {
     }
     
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-        val webhookUrl = channel.webhookUrl ?: return
-        // TODO: 实现飞书消息推送
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.FEISHU,
+                platformErrorCode = null,
+                message = "Feishu webhook URL is not configured"
+            )
+        }
+
         logger.info("Sending message to Feishu webhook: $webhookUrl")
+
+        // 构建文本消息
+        val messageBody = FeishuMessageBuilder.buildText(message)
+
+        // 发送消息
+        val response = httpClient.postJson(webhookUrl, messageBody)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 发送富消息
+     */
+    suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.FEISHU,
+                platformErrorCode = null,
+                message = "Feishu webhook URL is not configured"
+            )
+        }
+
+        logger.info("Sending rich message to Feishu webhook: $webhookUrl")
+
+        // 构建富消息
+        val messageBody = FeishuMessageBuilder.buildFromRichMessage(richMessage)
+
+        // 发送消息
+        val response = httpClient.postJson(webhookUrl, messageBody)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 处理发送响应
+     */
+    private fun handleSendResponse(response: PlatformResponse) {
+        when (response) {
+            is PlatformResponse.Success -> {
+                try {
+                    val json = objectMapper.readTree(response.body)
+                    val statusCode = json.path("StatusCode").asInt(-1)
+                    val statusMessage = json.path("StatusMessage").asText("unknown")
+
+                    if (statusCode == 0) {
+                        logger.info("Feishu message sent successfully")
+                    } else {
+                        throw ChannelSendException(
+                            channelType = ChannelType.FEISHU,
+                            platformErrorCode = statusCode.toString(),
+                            message = "Feishu send failed: $statusMessage"
+                        )
+                    }
+                } catch (e: ChannelSendException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw ChannelSendException(
+                        channelType = ChannelType.FEISHU,
+                        platformErrorCode = null,
+                        message = "Failed to parse Feishu response: ${e.message}",
+                        cause = e
+                    )
+                }
+            }
+            is PlatformResponse.Error -> {
+                throw ChannelSendException(
+                    channelType = ChannelType.FEISHU,
+                    platformErrorCode = response.platformCode,
+                    message = "Feishu HTTP error: ${response.statusCode} - ${response.platformMessage ?: response.body}",
+                    cause = response.exception
+                )
+            }
+        }
     }
     
     override fun handleUrlVerification(request: HttpServletRequest, channel: ChannelSpec): Any? {

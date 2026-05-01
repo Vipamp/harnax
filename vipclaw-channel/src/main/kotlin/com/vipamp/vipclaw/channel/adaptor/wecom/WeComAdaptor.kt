@@ -1,31 +1,36 @@
 package com.vipamp.vipclaw.channel.adaptor.wecom
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.dataformat.xml.XmlMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.vipamp.vipclaw.channel.ChannelSpec
 import com.vipamp.vipclaw.channel.ChannelType
 import com.vipamp.vipclaw.channel.adaptor.ChannelAdaptor
-import com.vipamp.vipclaw.channel.message.ChannelMessage
-import com.vipamp.vipclaw.channel.message.MessageType
-import com.vipamp.vipclaw.channel.message.MessageRole
-import com.fasterxml.jackson.dataformat.xml.XmlMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.vipamp.vipclaw.channel.client.PlatformHttpClient
+import com.vipamp.vipclaw.channel.client.PlatformResponse
+import com.vipamp.vipclaw.channel.error.ChannelSendException
+import com.vipamp.vipclaw.channel.message.*
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.web.util.ContentCachingRequestWrapper
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.*
 
 /**
  * 企业微信适配器
  * 处理企业微信机器人的回调消息
  */
-class WeComAdaptor : ChannelAdaptor {
+class WeComAdaptor(
+    private val httpClient: PlatformHttpClient = PlatformHttpClient()
+) : ChannelAdaptor {
     
     private val logger = LoggerFactory.getLogger(WeComAdaptor::class.java)
     private val xmlMapper = XmlMapper.builder()
         .defaultUseWrapper(false)
         .build()
         .registerKotlinModule()
+    private val objectMapper = ObjectMapper().registerKotlinModule()
     
     override fun getType(): ChannelType = ChannelType.WECOM
     
@@ -96,10 +101,92 @@ class WeComAdaptor : ChannelAdaptor {
     }
     
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-        // 企业微信主动发送消息需要调用 webhook_url
-        val webhookUrl = channel.webhookUrl ?: return
-        // TODO: 实现通过 webhook 发送消息
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.WECOM,
+                platformErrorCode = null,
+                message = "WeCom webhook URL is not configured"
+            )
+        }
+
         logger.info("Sending message to WeCom webhook: $webhookUrl")
+
+        // 构建文本消息
+        val messageBody = WeComMessageBuilder.buildText(message)
+
+        // 发送消息
+        val response = httpClient.postJson(webhookUrl, messageBody)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 发送富消息
+     */
+    suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.WECOM,
+                platformErrorCode = null,
+                message = "WeCom webhook URL is not configured"
+            )
+        }
+
+        logger.info("Sending rich message to WeCom webhook: $webhookUrl")
+
+        // 构建富消息
+        val messageBody = WeComMessageBuilder.buildFromRichMessage(richMessage)
+
+        // 发送消息
+        val response = httpClient.postJson(webhookUrl, messageBody)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 处理发送响应
+     */
+    private fun handleSendResponse(response: PlatformResponse) {
+        when (response) {
+            is PlatformResponse.Success -> {
+                try {
+                    val json = objectMapper.readTree(response.body)
+                    val errcode = json.path("errcode").asInt(-1)
+                    val errmsg = json.path("errmsg").asText("unknown")
+
+                    if (errcode == 0) {
+                        logger.info("WeCom message sent successfully")
+                    } else {
+                        throw ChannelSendException(
+                            channelType = ChannelType.WECOM,
+                            platformErrorCode = errcode.toString(),
+                            message = "WeCom send failed: $errmsg"
+                        )
+                    }
+                } catch (e: ChannelSendException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw ChannelSendException(
+                        channelType = ChannelType.WECOM,
+                        platformErrorCode = null,
+                        message = "Failed to parse WeCom response: ${e.message}",
+                        cause = e
+                    )
+                }
+            }
+            is PlatformResponse.Error -> {
+                throw ChannelSendException(
+                    channelType = ChannelType.WECOM,
+                    platformErrorCode = response.platformCode,
+                    message = "WeCom HTTP error: ${response.statusCode} - ${response.platformMessage ?: response.body}",
+                    cause = response.exception
+                )
+            }
+        }
     }
     
     override fun handleUrlVerification(request: HttpServletRequest, channel: ChannelSpec): Any? {

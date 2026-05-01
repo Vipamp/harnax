@@ -153,7 +153,7 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
         style={oneLight}
         language={match[1]}
         PreTag="div"
-        customStyle={{ margin: 0, padding: '14px 16px', fontSize: 13, background: '#fafafa' }}
+        customStyle={{ margin: 0, padding: '14px 16px', fontSize: 13, background: 'var(--vip-bg-elevated)' }}
       >
         {code}
       </SyntaxHighlighter>
@@ -303,11 +303,11 @@ const ToolConfirmChatCard: React.FC<{
       </div>
       {expanded && (
         <div className={styles.toolConfirmCardBody}>
-          <div style={{ marginBottom: 8, fontSize: 13, color: '#666' }}>
+          <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--vip-text-secondary)' }}>
             AI 想要调用以下工具：
           </div>
           {pendingCallTools.map((tool) => (
-            <div key={tool.toolId} style={{ marginBottom: 8, padding: 8, background: '#fafafa', borderRadius: 4 }}>
+            <div key={tool.toolId} style={{ marginBottom: 8, padding: 8, background: 'var(--vip-bg-elevated)', borderRadius: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 4 }}>
                 <ToolOutlined /> {tool.toolName}
                 {tool.isDangerous && <Tag color="red" style={{ marginLeft: 8 }}>高风险</Tag>}

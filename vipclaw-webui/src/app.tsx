@@ -5,8 +5,9 @@ import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
 import { Space, Typography } from 'antd';
 import React from 'react';
-import { AvatarDropdown, AvatarName, Footer, Question, SelectLang } from '@/components';
+import { AvatarDropdown, AvatarName, Footer, Question, SelectLang, ThemeSwitcher } from '@/components';
 import TenantSwitcher from '@/components/TenantSwitcher';
+import { ThemeProvider } from '@/contexts/ThemeProvider';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
@@ -83,6 +84,7 @@ export const layout: RunTimeLayoutConfig = ({
   return {
     actionsRender: () => [
       <TenantSwitcher key="TenantSwitcher" />,
+      <ThemeSwitcher key="ThemeSwitcher" />,
       <Question key="doc" />,
       <SelectLang key="SelectLang" />,
     ],
@@ -177,3 +179,11 @@ export const layout: RunTimeLayoutConfig = ({
 export const request: RequestConfig = {
   ...errorConfig,
 };
+
+/**
+ * 根容器配置,包裹整个应用
+ * @doc https://umijs.org/docs/api/runtime-config#rootcontainer
+ */
+export function rootContainer(container: React.ReactNode) {
+  return <ThemeProvider>{container}</ThemeProvider>;
+}

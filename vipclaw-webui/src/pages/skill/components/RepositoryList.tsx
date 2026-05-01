@@ -69,27 +69,27 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
           style={{
             padding: '16px',
             cursor: 'pointer',
-            backgroundColor: selectedRepository?.id === repository.id ? '#f0f7ff' : '#ffffff',
+            backgroundColor: selectedRepository?.id === repository.id ? 'var(--vip-primary-light)' : 'var(--vip-bg-container)',
             borderRadius: '10px',
             marginBottom: '12px',
-            border: selectedRepository?.id === repository.id ? '2px solid #1890ff' : '1.5px solid #e8e8e8',
+            border: selectedRepository?.id === repository.id ? '2px solid #1890ff' : '1.5px solid var(--vip-border)',
             boxShadow: selectedRepository?.id === repository.id 
               ? '0 2px 8px rgba(24, 144, 255, 0.15)' 
-              : '0 1px 4px rgba(0, 0, 0, 0.06)',
+              : 'var(--vip-shadow-sm)',
             transition: 'all 0.3s ease',
           }}
           onMouseEnter={(e) => {
             if (selectedRepository?.id !== repository.id) {
-              e.currentTarget.style.borderColor = '#b3d9ff';
-              e.currentTarget.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.1)';
-              e.currentTarget.style.backgroundColor = '#fafafa';
+              e.currentTarget.style.borderColor = 'var(--vip-primary)';
+              e.currentTarget.style.boxShadow = 'var(--vip-shadow-md)';
+              e.currentTarget.style.backgroundColor = 'var(--vip-bg-elevated)';
             }
           }}
           onMouseLeave={(e) => {
             if (selectedRepository?.id !== repository.id) {
-              e.currentTarget.style.borderColor = '#e8e8e8';
-              e.currentTarget.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.06)';
-              e.currentTarget.style.backgroundColor = '#ffffff';
+              e.currentTarget.style.borderColor = 'var(--vip-border)';
+              e.currentTarget.style.boxShadow = 'var(--vip-shadow-sm)';
+              e.currentTarget.style.backgroundColor = 'var(--vip-bg-container)';
             }
           }}
         >
@@ -139,7 +139,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 </div>
               )}
               {/* 是否公开、创建时间、创建人和操作按钮 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid var(--vip-border-secondary)', paddingTop: 8 }}>
                 {repository.isPublic === 1 && (
                   <Tag color="blue" style={{ fontSize: '11px' }}>公开</Tag>
                 )}

@@ -1,0 +1,20 @@
+# 个人版功能开关配置
+vipclaw:
+  edition: personal
+  features:
+    user-management: false
+    token-monitor: false
+    billing: false
+    multi-tenant: false
+    agent-sharing: false
+    model-market: false
+    skill-market: false
+    phone-login: false
+    email-login: false
+
+# 生产环境禁用 Swagger
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

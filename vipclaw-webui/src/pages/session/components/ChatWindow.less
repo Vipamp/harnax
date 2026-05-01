@@ -22,7 +22,7 @@
   flex: 1;
   height: 100%;
   min-height: 0;
-  background: #f5f5f8;
+  background: var(--vip-bg-layout);
   overflow: hidden;
   position: relative;
 }
@@ -273,7 +273,7 @@
     h1, h2, h3, h4, h5, h6 {
       margin: 18px 0 8px;
       font-weight: 600;
-      color: #1e1e2e;
+      color: #2c3e50;
       &:first-child { margin-top: 0; }
     }
     h1 { font-size: 20px; }
@@ -293,7 +293,7 @@
       border-left: 3px solid #6366f1;
       background: rgba(99, 102, 241, 0.04);
       border-radius: 0 8px 8px 0;
-      color: #555;
+      color: #34495e;
     }
 
     code {
@@ -302,7 +302,7 @@
       background: rgba(99, 102, 241, 0.07);
       padding: 2px 6px;
       border-radius: 4px;
-      color: #6366f1;
+      color: #4f46e5;
     }
 
     pre {
@@ -673,24 +673,24 @@
   padding: 4px 12px;
   border-radius: 14px;
   font-size: 12px;
-  color: #c0c0cc;
+  color: var(--vip-text-tertiary);
   cursor: pointer;
   user-select: none;
   transition: all 0.2s;
 
   &:hover {
-    color: #9ca3af;
-    background: rgba(0, 0, 0, 0.02);
+    color: var(--vip-text-secondary);
+    background: rgba(99, 102, 241, 0.05);
   }
 }
 
 .optionActive {
-  color: #6366f1 !important;
-  background: rgba(99, 102, 241, 0.06);
+  color: var(--vip-primary) !important;
+  background: rgba(99, 102, 241, 0.1);
 
   &:hover {
-    color: #4f46e5 !important;
-    background: rgba(99, 102, 241, 0.1);
+    color: var(--vip-primary-hover) !important;
+    background: rgba(99, 102, 241, 0.15);
   }
 }
 
@@ -843,8 +843,8 @@
   top: 0;
   bottom: 0;
   width: 450px;
-  background: #fff;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  background: var(--vip-bg-container);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -867,7 +867,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--vip-border);
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: #fff;
 
@@ -897,13 +897,13 @@
     width: 6px;
   }
   &::-webkit-scrollbar-track {
-    background: #f5f5f5;
+    background: var(--vip-bg-layout);
   }
   &::-webkit-scrollbar-thumb {
-    background: #d9d9d9;
+    background: var(--vip-border);
     border-radius: 3px;
     &:hover {
-      background: #bfbfbf;
+      background: var(--vip-text-tertiary);
     }
   }
 }
@@ -915,7 +915,7 @@
   justify-content: center;
   padding: 60px 20px;
   gap: 12px;
-  color: #8c8c8c;
+  color: var(--vip-text-tertiary);
   font-size: 14px;
 }
 
@@ -927,7 +927,7 @@
   padding: 60px 20px;
   gap: 12px;
   text-align: center;
-  color: #8c8c8c;
+  color: var(--vip-text-tertiary);
 
   p {
     margin: 0;
@@ -950,10 +950,10 @@
   padding: 40px 20px;
   gap: 12px;
   text-align: center;
-  color: #8c8c8c;
-  background: #fafafa;
+  color: var(--vip-text-tertiary);
+  background: var(--vip-bg-elevated);
   border-radius: 8px;
-  border: 1px dashed #d9d9d9;
+  border: 1px dashed var(--vip-border);
 
   p {
     margin: 0;
@@ -993,25 +993,25 @@
 .planDescription {
   margin: 8px 0;
   padding: 8px 12px;
-  background: #f5f5f5;
+  background: var(--vip-bg-elevated);
   border-radius: 4px;
   font-size: 13px;
-  color: #595959;
+  color: var(--vip-text-primary);
   line-height: 1.6;
 }
 
 .planOutcome {
   margin: 8px 0;
   padding: 8px 12px;
-  background: #f0f5ff;
-  border-left: 3px solid #6366f1;
+  background: rgba(99, 102, 241, 0.08);
+  border-left: 3px solid var(--vip-primary);
   border-radius: 4px;
   font-size: 13px;
-  color: #595959;
+  color: var(--vip-text-primary);
   line-height: 1.6;
 
   strong {
-    color: #262626;
+    color: var(--vip-text-primary);
     margin-right: 4px;
   }
 }
@@ -1023,23 +1023,23 @@
     margin: 0 0 8px 0;
     font-size: 14px;
     font-weight: 600;
-    color: #262626;
+    color: var(--vip-text-primary);
   }
 }
 
 .subtaskDetail {
   padding: 8px 12px;
-  background: #fafafa;
+  background: var(--vip-bg-elevated);
   border-radius: 4px;
   font-size: 13px;
   line-height: 1.6;
 
   p {
     margin: 4px 0;
-    color: #595959;
+    color: var(--vip-text-primary);
 
     strong {
-      color: #262626;
+      color: var(--vip-text-primary);
     }
   }
 }
@@ -1047,11 +1047,11 @@
 .planFooter {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--vip-border);
   display: flex;
   justify-content: space-between;
   font-size: 12px;
-  color: #8c8c8c;
+  color: var(--vip-text-tertiary);
 
   span {
     display: flex;
@@ -1063,11 +1063,11 @@
 /* ─── 当前计划卡片（在消息中显示） ─── */
 .currentPlanCard {
   margin: 12px 0;
-  background: linear-gradient(135deg, #f8f9ff 0%, #ffffff 100%);
-  border: 1px solid #e0e7ff;
+  background: var(--vip-bg-container);
+  border: 1px solid var(--vip-border);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.08);
+  box-shadow: var(--vip-shadow-sm);
 }
 
 .currentPlanHeader {
@@ -1114,14 +1114,14 @@
 
 .currentPlanContent {
   padding: 0 16px 16px;
-  border-top: 1px solid #e8e8e8;
+  border-top: 1px solid var(--vip-border);
 }
 
 /* ─── 当前计划区域（旧版，可以删除） ─── */
 .currentPlanSection {
   margin-bottom: 28px;
   padding-bottom: 28px;
-  border-bottom: 2px solid #f5f5f5;
+  border-bottom: 2px solid var(--vip-border);
 }
 
 .currentPlanHeader {
@@ -1172,11 +1172,11 @@
 }
 
 .activePlanCard {
-  background: #ffffff;
+  background: var(--vip-bg-container);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f0f0f0;
+  box-shadow: var(--vip-shadow-md);
+  border: 1px solid var(--vip-border);
   position: relative;
   overflow: hidden;
   
@@ -1239,7 +1239,7 @@
 .planTitle {
   font-size: 17px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--vip-text-primary);
   margin: 0 0 6px 0;
   line-height: 1.4;
   letter-spacing: 0.2px;
@@ -1248,7 +1248,7 @@
 .planDesc {
   margin: 0;
   font-size: 13px;
-  color: #666666;
+  color: var(--vip-text-secondary);
   line-height: 1.6;
 }
 
@@ -1291,7 +1291,7 @@
   gap: 12px;
   padding: 12px 14px;
   margin-bottom: 10px;
-  background: #fafafa;
+  background: var(--vip-bg-elevated);
   border-radius: 10px;
   border: 1.5px solid transparent;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1414,7 +1414,7 @@
     justify-content: space-between;
     margin-bottom: 16px;
     padding-bottom: 12px;
-    border-bottom: 2px solid #f0f0f0;
+    border-bottom: 2px solid var(--vip-border);
     
     .historyPlansTitle {
       display: flex;
@@ -1425,7 +1425,7 @@
         margin: 0;
         font-size: 15px;
         font-weight: 600;
-        color: #262626;
+        color: var(--vip-text-primary);
         letter-spacing: 0.3px;
       }
       
@@ -1642,5 +1642,291 @@
   to {
     opacity: 1;
     max-height: 1000px;
+  }
+}
+
+/* ─── 深色主题适配 ─── */
+html.dark {
+  .chatWindow {
+    background: var(--vip-bg-layout);
+  }
+
+  .emptyTitle {
+    color: var(--vip-text-primary);
+  }
+
+  .emptySubtitle {
+    color: var(--vip-text-tertiary);
+  }
+
+  .suggestionChip {
+    color: var(--vip-primary);
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.25);
+
+    &:hover {
+      background: rgba(99, 102, 241, 0.18);
+      border-color: rgba(99, 102, 241, 0.35);
+    }
+  }
+
+  .bubbleAssistant {
+    color: var(--vip-text-primary);
+  }
+
+  .timestamp {
+    color: var(--vip-text-tertiary);
+  }
+
+  .markdownBody {
+    :global {
+      h1, h2, h3, h4, h5, h6 {
+        color: var(--vip-text-primary);
+      }
+
+      p {
+        color: var(--vip-text-secondary);
+        line-height: 1.7;
+      }
+
+      li {
+        color: var(--vip-text-secondary);
+      }
+
+      blockquote {
+        border-left-color: var(--vip-primary);
+        background: rgba(99, 102, 241, 0.08);
+        color: var(--vip-text-secondary);
+      }
+
+      code {
+        background: rgba(99, 102, 241, 0.12);
+        color: var(--vip-primary-hover);
+      }
+
+      table {
+        th, td {
+          border-color: var(--vip-border);
+        }
+        th {
+          background: var(--vip-bg-elevated);
+          color: var(--vip-text-primary);
+        }
+        tr:hover td {
+          background: rgba(99, 102, 241, 0.05);
+        }
+      }
+
+      a {
+        color: var(--vip-primary-hover);
+        border-bottom-color: rgba(99, 102, 241, 0.4);
+        &:hover {
+          border-color: var(--vip-primary-hover);
+        }
+      }
+
+      hr {
+        border-top-color: var(--vip-border);
+      }
+
+      strong {
+        color: var(--vip-text-primary);
+      }
+    }
+  }
+
+  .codeBlockWrapper {
+    background: var(--vip-bg-elevated);
+    border-color: var(--vip-border);
+  }
+
+  .codeBlockHeader {
+    background: var(--vip-bg-container);
+    border-bottom-color: var(--vip-border);
+  }
+
+  .codeBlockLang {
+    color: var(--vip-text-tertiary);
+  }
+
+  .codeBlockCopy {
+    color: var(--vip-text-tertiary);
+
+    &:hover {
+      color: var(--vip-primary-hover);
+      background: rgba(99, 102, 241, 0.12);
+    }
+  }
+
+  .thinkingToggle {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.25);
+    color: var(--vip-primary-hover);
+
+    &:hover {
+      background: rgba(99, 102, 241, 0.18);
+    }
+  }
+
+  .thinkingContent {
+    background: rgba(99, 102, 241, 0.06);
+    border-left-color: rgba(99, 102, 241, 0.4);
+    color: var(--vip-text-secondary);
+  }
+
+  .toolCard {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+  }
+
+  .toolCardHeader {
+    color: #fbbf24;
+  }
+
+  .toolCardBody {
+    color: #f59e0b;
+  }
+
+  .toolResultCard {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.25);
+  }
+
+  .toolResultHeader {
+    color: #34d399;
+  }
+
+  .toolResultBody {
+    color: #10b981;
+  }
+
+  .toolConfirmCard {
+    background: rgba(249, 115, 22, 0.08);
+    border-color: rgba(249, 115, 22, 0.25);
+  }
+
+  .toolConfirmCardHeader {
+    color: #fb923c;
+
+    &:hover {
+      background: rgba(249, 115, 22, 0.1);
+    }
+  }
+
+  .toolConfirmCardBody {
+    border-top-color: rgba(249, 115, 22, 0.2);
+  }
+
+  .inputCard {
+    background: var(--vip-bg-container);
+    border-color: var(--vip-border);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+
+    &:focus-within {
+      border-color: var(--vip-primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), 0 2px 12px rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  .inputCardBody {
+    :global {
+      .ant-input {
+        color: var(--vip-text-primary);
+
+        &::placeholder {
+          color: var(--vip-text-tertiary);
+        }
+      }
+    }
+  }
+
+  .imageUploadPreviewItem {
+    border-color: var(--vip-border);
+  }
+
+  .imageUploadPreviewRemove {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+  }
+
+  .sendButton {
+    &:disabled {
+      background: var(--vip-bg-elevated);
+      color: var(--vip-text-tertiary);
+    }
+  }
+
+  .currentPlanCard {
+    background: var(--vip-bg-container);
+    border-color: var(--vip-border);
+  }
+
+  .currentPlanTitle {
+    color: var(--vip-text-primary);
+  }
+
+  .currentPlanHeader {
+    border-bottom-color: var(--vip-border);
+  }
+
+  .currentPlanProgress {
+    background: var(--vip-bg-elevated);
+  }
+
+  .subtaskItem {
+    &:hover {
+      background: var(--vip-bg-elevated);
+    }
+  }
+
+  .subtaskName {
+    color: var(--vip-text-primary);
+  }
+
+  .planHistoryPanel {
+    background: var(--vip-bg-container);
+    border-left-color: var(--vip-border);
+  }
+
+  .planHistoryHeader {
+    border-bottom-color: var(--vip-border);
+    color: var(--vip-text-primary);
+  }
+
+  .planHistoryItem {
+    border-bottom-color: var(--vip-border);
+
+    &:hover {
+      background: var(--vip-bg-elevated);
+    }
+  }
+
+  .planHistoryItemTitle {
+    color: var(--vip-text-primary);
+  }
+
+  .planHistoryItemMeta {
+    color: var(--vip-text-secondary);
+  }
+
+  .mergedToolCall,
+  .mergedToolArgs,
+  .mergedToolResult {
+    background: var(--vip-bg-elevated);
+  }
+  
+  .mergedToolResult {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, var(--vip-bg-container) 100%);
+    border-top-color: #10b981;
+  }
+  
+  .mergedToolSectionLabel {
+    color: var(--vip-primary-hover);
+  }
+  
+  .mergedToolCode {
+    background: var(--vip-bg-container);
+    border-color: var(--vip-border);
+    color: var(--vip-text-primary);
   }
 }

@@ -64,7 +64,7 @@ class TokenController(
         } catch (e: Exception) {
             log.error("Token刷新失败", e)
             ResultVo.error(e.message ?: "Token刷新失败")
-        }
+        } as ResultVo<Map<String, Any>>
     }
 
     /**

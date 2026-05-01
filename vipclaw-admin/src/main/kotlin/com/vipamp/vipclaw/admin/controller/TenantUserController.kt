@@ -1,9 +1,8 @@
 package com.vipamp.vipclaw.admin.controller
 
-import com.vipamp.vipclaw.admin.context.TenantContext
+import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.security.SecurityUtils
 import com.vipamp.vipclaw.admin.service.UserTenantService
-import com.vipamp.vipclaw.admin.vo.ResultVo
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 

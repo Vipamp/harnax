@@ -1,0 +1,20 @@
+# 公有云版功能开关配置
+vipclaw:
+  edition: public
+  features:
+    user-management: true
+    token-monitor: true
+    billing: true
+    multi-tenant: true
+    agent-sharing: true
+    model-market: true
+    skill-market: true
+    phone-login: true
+    email-login: true
+
+# 生产环境禁用 Swagger
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

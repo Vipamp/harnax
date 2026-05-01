@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import {
@@ -21,7 +21,6 @@ import {
   Badge,
   Popover,
 } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
 import {
   createChannel,
   updateChannel,

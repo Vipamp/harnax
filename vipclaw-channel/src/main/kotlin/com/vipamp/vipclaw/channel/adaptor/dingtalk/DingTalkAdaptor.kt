@@ -1,13 +1,15 @@
 package com.vipamp.vipclaw.channel.adaptor.dingtalk
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.vipamp.vipclaw.channel.ChannelSpec
 import com.vipamp.vipclaw.channel.ChannelType
 import com.vipamp.vipclaw.channel.adaptor.ChannelAdaptor
-import com.vipamp.vipclaw.channel.message.ChannelMessage
-import com.vipamp.vipclaw.channel.message.MessageType
-import com.vipamp.vipclaw.channel.message.MessageRole
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.vipamp.vipclaw.channel.client.PlatformHttpClient
+import com.vipamp.vipclaw.channel.client.PlatformResponse
+import com.vipamp.vipclaw.channel.error.ChannelSendException
+import com.vipamp.vipclaw.channel.message.*
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.web.util.ContentCachingRequestWrapper
@@ -19,7 +21,9 @@ import javax.crypto.spec.SecretKeySpec
  * 钉钉适配器
  * 处理钉钉机器人的回调消息
  */
-class DingTalkAdaptor : ChannelAdaptor {
+class DingTalkAdaptor(
+    private val httpClient: PlatformHttpClient = PlatformHttpClient()
+) : ChannelAdaptor {
     
     private val logger = LoggerFactory.getLogger(DingTalkAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
@@ -88,9 +92,94 @@ class DingTalkAdaptor : ChannelAdaptor {
     }
     
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-        val webhookUrl = channel.webhookUrl ?: return
-        // TODO: 实现钉钉消息推送
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.DINGTALK,
+                platformErrorCode = null,
+                message = "DingTalk webhook URL is not configured"
+            )
+        }
+
         logger.info("Sending message to DingTalk webhook: $webhookUrl")
+
+        // 构建文本消息
+        val messageBody = DingTalkMessageBuilder.buildText(message)
+
+        // 发送消息（钉钉需要签名）
+        val appSecret = channel.appSecret ?: ""
+        val response = httpClient.postWithSign(webhookUrl, messageBody, appSecret)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 发送富消息
+     */
+    suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+        val webhookUrl = channel.webhookUrl
+        if (webhookUrl.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.DINGTALK,
+                platformErrorCode = null,
+                message = "DingTalk webhook URL is not configured"
+            )
+        }
+
+        logger.info("Sending rich message to DingTalk webhook: $webhookUrl")
+
+        // 构建富消息
+        val messageBody = DingTalkMessageBuilder.buildFromRichMessage(richMessage)
+
+        // 发送消息（钉钉需要签名）
+        val appSecret = channel.appSecret ?: ""
+        val response = httpClient.postWithSign(webhookUrl, messageBody, appSecret)
+
+        // 处理响应
+        handleSendResponse(response)
+    }
+
+    /**
+     * 处理发送响应
+     */
+    private fun handleSendResponse(response: PlatformResponse) {
+        when (response) {
+            is PlatformResponse.Success -> {
+                try {
+                    val json = objectMapper.readTree(response.body)
+                    val errcode = json.path("errcode").asInt(-1)
+                    val errmsg = json.path("errmsg").asText("unknown")
+
+                    if (errcode == 0) {
+                        logger.info("DingTalk message sent successfully")
+                    } else {
+                        throw ChannelSendException(
+                            channelType = ChannelType.DINGTALK,
+                            platformErrorCode = errcode.toString(),
+                            message = "DingTalk send failed: $errmsg"
+                        )
+                    }
+                } catch (e: ChannelSendException) {
+                    throw e
+                } catch (e: Exception) {
+                    throw ChannelSendException(
+                        channelType = ChannelType.DINGTALK,
+                        platformErrorCode = null,
+                        message = "Failed to parse DingTalk response: ${e.message}",
+                        cause = e
+                    )
+                }
+            }
+            is PlatformResponse.Error -> {
+                throw ChannelSendException(
+                    channelType = ChannelType.DINGTALK,
+                    platformErrorCode = response.platformCode,
+                    message = "DingTalk HTTP error: ${response.statusCode} - ${response.platformMessage ?: response.body}",
+                    cause = response.exception
+                )
+            }
+        }
     }
     
     private fun hmacSha256(key: String, data: String): String {

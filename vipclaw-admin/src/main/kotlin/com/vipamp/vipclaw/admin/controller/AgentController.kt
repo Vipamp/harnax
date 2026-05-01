@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 智能体管理控制器
+ * 企业版和公有云版可用(Agent 共享功能)
  *
  * @author vipamp
  * @since 2026-03-18
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/agents")
 @Tag(name = "智能体管理", description = "智能体相关接口")
+@RequiresEdition("enterprise", "public")
 class AgentController(
     private val agentService: AgentService
 ) {

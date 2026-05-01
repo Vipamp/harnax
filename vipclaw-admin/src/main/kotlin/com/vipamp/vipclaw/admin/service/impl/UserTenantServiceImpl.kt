@@ -2,10 +2,10 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
 import com.github.pagehelper.PageInfo
-import com.vipamp.vipclaw.admin.exception.BizException
-import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
+import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
@@ -65,12 +65,12 @@ class UserTenantServiceImpl(
 
     override fun getUsersByTenantId(tenantId: Long, pageNum: Int, pageSize: Int): Any {
         // 使用PageHelper进行分页
-        PageHelper.startPage(pageNum, pageSize)
-        
+        PageHelper.startPage<UserTenantEntity>(pageNum, pageSize)
+
         // 查询租户下的用户关联
         val userTenants = userTenantMapper.selectByTenantId(tenantId)
         val pageInfo = PageInfo(userTenants)
-        
+
         // 组装用户信息
         val records = userTenants.map { ut ->
             val user = sysUserMapper.selectById(ut.userId)
@@ -83,7 +83,7 @@ class UserTenantServiceImpl(
                 "joinedAt" to ut.joinedAt
             )
         }
-        
+
         return mapOf(
             "records" to records,
             "total" to pageInfo.total,
@@ -109,14 +109,13 @@ class UserTenantServiceImpl(
         }
 
         // 添加用户到租户
-        val userTenant = UserTenantEntity(
-            userId = userId,
-            tenantId = tenantId,
-            role = role,
-            status = 1,
+        val userTenant = UserTenantEntity().apply {
+            this.userId = userId
+            this.tenantId = tenantId
+            this.role = role
+            status = 1
             joinedAt = LocalDateTime.now()
-        )
-        
+        }
         return userTenantMapper.insert(userTenant) > 0
     }
 

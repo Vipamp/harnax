@@ -129,8 +129,10 @@ class ChannelMessageBuilder {
  */
 enum class MessageType {
     TEXT,       // 文本消息
+    MARKDOWN,   // Markdown 格式消息
     IMAGE,      // 图片消息
     FILE,       // 文件消息
+    CARD,       // 卡片消息（交互式卡片）
     EVENT       // 事件消息
 }
 

@@ -3,7 +3,7 @@ import { Table, Button, Modal, message, Tag, Space } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { getAllTenants } from '@/services/tenant';
+import { getTenantList } from '@/services/tenant';
 
 export interface UserTenantListProps {
   userId: number;
@@ -48,7 +48,7 @@ const UserTenantList: React.FC<UserTenantListProps> = ({ userId, visible }) => {
   const loadAvailableTenants = async () => {
     setTenantLoading(true);
     try {
-      const response = await getAllTenants();
+      const response = await getTenantList({ current: 1, pageSize: 1000 });
 
       if (response.code === 200) {
         const allTenants = response.data || [];

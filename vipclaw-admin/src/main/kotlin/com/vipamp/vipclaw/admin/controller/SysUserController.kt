@@ -5,6 +5,7 @@ import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.config.EditionUtil
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.service.SysUserService
 import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.common.page.mapRecords
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 用户管理控制器
+ * 仅企业版和公有云版可用
  *
  * @author vipamp
  * @since 2026-03-06
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/users")
 @Tag(name = "用户管理", description = "用户相关接口")
+@RequiresEdition("enterprise", "public")
 class SysUserController(
     private val sysUserService: SysUserService,
     private val editionUtil: EditionUtil

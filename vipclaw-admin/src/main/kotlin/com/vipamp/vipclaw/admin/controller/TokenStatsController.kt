@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse
 import com.vipamp.vipclaw.admin.service.TokenStatsService
@@ -14,6 +15,7 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Token 消耗统计控制器
+ * 仅企业版和公有云版可用
  *
  * @author vipamp
  * @since 2026-04-11
@@ -21,6 +23,7 @@ import java.time.format.DateTimeFormatter
 @RestController
 @RequestMapping("/api/token-stats")
 @Tag(name = "Token 消耗统计", description = "Token 消耗统计相关接口")
+@RequiresEdition("enterprise", "public")
 class TokenStatsController(
     private val tokenStatsService: TokenStatsService
 ) {

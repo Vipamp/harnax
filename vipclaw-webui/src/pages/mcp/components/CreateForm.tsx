@@ -69,7 +69,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
     <Modal
       destroyOnClose
       title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
+        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
           新建 MCP 服务
         </span>
       }
@@ -78,10 +78,10 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
       footer={null}
       onCancel={onCancel}
       styles={{
-        body: { padding: '24px 28px', background: '#fafbff' },
+        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
         header: {
-          background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
-          borderBottom: '1px solid #e8ecfb',
+          background: 'var(--vip-primary-light)',
+          borderBottom: '1px solid var(--vip-border)',
           padding: '18px 24px',
         },
       }}

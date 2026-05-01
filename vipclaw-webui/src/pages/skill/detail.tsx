@@ -120,7 +120,7 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
     return (
       <pre
         style={{
-          background: '#fafbfc',
+          background: 'var(--vip-bg-elevated)',
           padding: '24px',
           overflow: 'auto',
           height: '100%',
@@ -129,7 +129,7 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
           whiteSpace: 'pre-wrap',
           wordWrap: 'break-word',
           fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Monaco, monospace',
-          color: '#24292e',
+          color: 'var(--vip-text-primary)',
           margin: 0,
           boxSizing: 'border-box'
         }}
@@ -285,7 +285,7 @@ const SkillDetail: React.FC = () => {
           <Card
             style={{
               borderRadius: '12px',
-              border: '1px solid #f0f0f0',
+              border: '1px solid var(--vip-border)',
               height: '100%',
               display: 'flex',
               flexDirection: 'column'
@@ -340,24 +340,24 @@ const SkillDetail: React.FC = () => {
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
-          background: 'linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%)',
+          background: 'var(--vip-bg-layout)',
           borderRadius: '12px',
           overflow: 'hidden',
-          border: '1px solid #e8e8e8'
+          border: '1px solid var(--vip-border)'
         }}>
           {/* 顶部工具栏 */}
           <div className="resources-toolbar" style={{
             padding: '12px 16px',
-            background: '#ffffff',
-            borderBottom: '1px solid #e8e8e8',
+            background: 'var(--vip-bg-container)',
+            borderBottom: '1px solid var(--vip-border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+            boxShadow: 'var(--vip-shadow-sm)'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FolderOpenOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
-              <Text strong style={{ color: '#1a1a2e' }}>资源文件</Text>
+              <Text strong style={{ color: 'var(--vip-text-primary)' }}>资源文件</Text>
               <Tag color="purple" style={{ marginLeft: '8px', borderRadius: '4px' }}>
                 {Object.keys(fileContents).length} 个文件
               </Tag>
@@ -367,17 +367,7 @@ const SkillDetail: React.FC = () => {
                 size="small" 
                 icon={<FolderOutlined />} 
                 style={{ 
-                  borderColor: '#d9d9d9',
-                  color: '#595959',
                   transition: 'all 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#722ed1';
-                  e.currentTarget.style.color = '#722ed1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#d9d9d9';
-                  e.currentTarget.style.color = '#595959';
                 }}
               >
                 展开全部
@@ -394,18 +384,18 @@ const SkillDetail: React.FC = () => {
             {/* 左侧文件树 */}
             <div className="file-tree-panel" style={{
               width: '320px',
-              background: '#ffffff',
-              borderRight: '1px solid #e8e8e8',
+              background: 'var(--vip-bg-container)',
+              borderRight: '1px solid var(--vip-border)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden'
             }}>
               <div style={{ 
                 padding: '12px 16px', 
-                background: '#fafbfc',
-                borderBottom: '1px solid #e8e8e8',
+                background: 'var(--vip-bg-elevated)',
+                borderBottom: '1px solid var(--vip-border)',
                 fontSize: '12px',
-                color: '#8c8c8c',
+                color: 'var(--vip-text-tertiary)',
                 fontWeight: 500
               }}>
                 文件结构
@@ -435,7 +425,7 @@ const SkillDetail: React.FC = () => {
                   <div style={{ 
                     padding: '40px 20px', 
                     textAlign: 'center',
-                    color: '#8c8c8c'
+                    color: 'var(--vip-text-tertiary)'
                   }}>
                     <Empty 
                       description="暂无资源文件" 
@@ -451,30 +441,30 @@ const SkillDetail: React.FC = () => {
               flex: 1,
               display: 'flex',
               flexDirection: 'column',
-              background: '#ffffff',
+              background: 'var(--vip-bg-container)',
               overflow: 'hidden'
             }}>
               {/* 文件路径面包屑 */}
               {selectedFile && (
                 <div style={{
                   padding: '12px 16px',
-                  background: '#fafbfc',
-                  borderBottom: '1px solid #e8e8e8',
+                  background: 'var(--vip-bg-elevated)',
+                  borderBottom: '1px solid var(--vip-border)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                   fontSize: '13px',
-                  color: '#595959'
+                  color: 'var(--vip-text-secondary)'
                 }}>
                   <FileMarkdownOutlined style={{ color: '#722ed1' }} />
                   <Breadcrumb>
                     <Breadcrumb.Item>
-                      <span style={{ color: '#8c8c8c' }}>resources</span>
+                      <span style={{ color: 'var(--vip-text-tertiary)' }}>resources</span>
                     </Breadcrumb.Item>
                     {selectedFile.split('/').map((part, index, arr) => (
                       <Breadcrumb.Item key={index}>
                         <span style={{ 
-                          color: index === arr.length - 1 ? '#1a1a2e' : '#595959',
+                          color: index === arr.length - 1 ? 'var(--vip-text-primary)' : 'var(--vip-text-secondary)',
                           fontWeight: index === arr.length - 1 ? 500 : 400
                         }}>
                           {part}
@@ -508,26 +498,26 @@ const SkillDetail: React.FC = () => {
                     alignItems: 'center', 
                     justifyContent: 'center', 
                     height: '100%',
-                    background: 'linear-gradient(135deg, #fafbfc 0%, #f5f6f8 100%)',
-                    color: '#8c8c8c'
+                    background: 'var(--vip-bg-layout)',
+                    color: 'var(--vip-text-tertiary)'
                   }}>
                     <div style={{
                       width: '80px',
                       height: '80px',
                       borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #f0e6ff 0%, #e6d5ff 100%)',
+                      background: 'var(--vip-primary-light)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       marginBottom: '16px',
-                      boxShadow: '0 4px 12px rgba(114, 46, 209, 0.1)'
+                      boxShadow: 'var(--vip-shadow-md)'
                     }}>
                       <FileOutlined style={{ fontSize: '32px', color: '#722ed1' }} />
                     </div>
-                    <Text style={{ fontSize: '16px', marginBottom: '8px', color: '#595959' }}>
+                    <Text style={{ fontSize: '16px', marginBottom: '8px', color: 'var(--vip-text-secondary)' }}>
                       选择文件查看内容
                     </Text>
-                    <Text style={{ fontSize: '13px', color: '#8c8c8c' }}>
+                    <Text style={{ fontSize: '13px', color: 'var(--vip-text-tertiary)' }}>
                       从左侧文件树中选择一个文件以查看其内容
                     </Text>
                   </div>
@@ -566,7 +556,7 @@ const SkillDetail: React.FC = () => {
             >
               返回
             </Button>
-            <div style={{ width: 1, height: 24, background: '#e8e8e8' }} />
+            <div style={{ width: 1, height: 24, background: 'var(--vip-border)' }} />
             <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
               <ThunderboltOutlined style={{ marginRight: 10, color: '#531dab' }} />
               技能详情
@@ -589,8 +579,8 @@ const SkillDetail: React.FC = () => {
               style={{
                 marginBottom: 24,
                 borderRadius: '16px',
-                border: '1px solid #f0f0f5',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                border: '1px solid var(--vip-border)',
+                boxShadow: 'var(--vip-shadow-sm)',
                 overflow: 'hidden'
               }}
               styles={{ body: { padding: 0 } }}
@@ -598,8 +588,8 @@ const SkillDetail: React.FC = () => {
               {/* 顶部标题栏 */}
               <div style={{ 
                 padding: '20px 24px', 
-                background: 'linear-gradient(135deg, #faf5ff 0%, #f0e6ff 100%)',
-                borderBottom: '1px solid #e8d5ff'
+                background: 'var(--vip-primary-light)',
+                borderBottom: '1px solid var(--vip-border)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -616,7 +606,7 @@ const SkillDetail: React.FC = () => {
                       <ThunderboltOutlined style={{ fontSize: 24, color: '#fff' }} />
                     </div>
                     <div>
-                      <Text strong style={{ fontSize: 20, color: '#1a1a2e', display: 'block', marginBottom: 4 }}>
+                      <Text strong style={{ fontSize: 20, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
                         {skillInfo.name}
                       </Text>
                       <div style={{ display: 'flex', gap: 8 }}>
@@ -640,8 +630,8 @@ const SkillDetail: React.FC = () => {
                 column={2} 
                 size="small"
                 styles={{ 
-                  label: { color: '#8c8c8c', fontWeight: 500 },
-                  content: { color: '#262626' }
+                  label: { color: 'var(--vip-text-tertiary)', fontWeight: 500 },
+                  content: { color: 'var(--vip-text-primary)' }
                 }}
                 style={{ padding: '24px' }}
               >
@@ -654,7 +644,7 @@ const SkillDetail: React.FC = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ 
-                        color: '#722ed1',
+                        color: 'var(--vip-primary)',
                         textDecoration: 'none',
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -691,8 +681,8 @@ const SkillDetail: React.FC = () => {
             <Card
               style={{
                 borderRadius: '16px',
-                border: '1px solid #f0f0f5',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                border: '1px solid var(--vip-border)',
+                boxShadow: 'var(--vip-shadow-sm)',
                 overflow: 'hidden',
                 height: 'calc(100vh - 280px)',
                 display: 'flex',

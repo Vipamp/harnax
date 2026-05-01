@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 技能管理控制器
+ * 仅公有云版可用(技能市场功能)
  *
  * @author vipamp
  * @since 2026-03-16
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/skills")
 @Tag(name = "技能管理", description = "技能相关接口")
+@RequiresEdition("public")
 class SkillController(
     private val skillService: SkillService,
     private val skillRepositoryService: SkillRepositoryService

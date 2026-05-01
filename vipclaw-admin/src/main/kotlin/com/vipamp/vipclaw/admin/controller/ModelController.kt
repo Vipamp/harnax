@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 模型控制器
+ * 仅公有云版可用(模型市场功能)
  *
  * @author vipamp
  * @since 2026-03-13
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/models")
 @Tag(name = "模型管理", description = "模型的增删改查接口")
+@RequiresEdition("public")
 class ModelController(
     private val modelService: ModelService
 ) {

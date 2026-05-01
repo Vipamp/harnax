@@ -244,6 +244,25 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.4.0</version>
+                <executions>
+                    <execution>
+                        <id>add-edition-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${edition.source.dir}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -253,6 +272,7 @@
             <id>personal</id>
             <properties>
                 <edition.current>personal</edition.current>
+                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/personal</edition.source.dir>
             </properties>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -264,6 +284,7 @@
             <id>enterprise</id>
             <properties>
                 <edition.current>enterprise</edition.current>
+                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/enterprise</edition.source.dir>
             </properties>
         </profile>
         
@@ -272,6 +293,7 @@
             <id>public</id>
             <properties>
                 <edition.current>public</edition.current>
+                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/public</edition.source.dir>
             </properties>
         </profile>
     </profiles>

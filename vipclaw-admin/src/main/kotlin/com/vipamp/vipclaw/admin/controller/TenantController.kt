@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.request.AddUserToTenantRequest
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 租户管理控制器
+ * 仅公有云版可用
  *
  * @author vipamp
  * @since 2026-04-28
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/tenant")
 @Tag(name = "租户管理", description = "租户相关接口")
+@RequiresEdition("public")
 class TenantController(
     private val tenantService: TenantService,
     private val jwtUtil: JwtUtil,

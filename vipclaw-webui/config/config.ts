@@ -109,10 +109,6 @@ export default defineConfig({
     baseSeparator: '-',
     baseNavigator: false,
   },
-  locales: [
-    { name: '中文', locale: 'zh-CN' },
-    { name: 'English', locale: 'en-US' },
-  ],
   /**
    * @name antd 插件
    * @description 内置了 babel import 插件
