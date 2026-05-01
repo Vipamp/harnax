@@ -108,4 +108,5 @@ export default {
   'pages.tenant.management.adminUserId.placeholder': '请选择管理员用户',
   'pages.tenant.management.adminUserId.required': '请选择管理员用户',
   'pages.tenant.management.status.required': '请选择状态',
+  'pages.tenant.management.manageUsers': '管理用户',
 };

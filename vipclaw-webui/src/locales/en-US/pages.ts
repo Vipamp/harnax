@@ -75,4 +75,5 @@ export default {
   'pages.tenant.management.adminUserId.placeholder': 'Please select admin user',
   'pages.tenant.management.adminUserId.required': 'Please select admin user',
   'pages.tenant.management.status.required': 'Please select status',
+  'pages.tenant.management.manageUsers': 'Manage Users',
 };
