@@ -7,6 +7,7 @@ import com.vipamp.vipclaw.admin.dto.LoginResponse.UserInfo
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.service.AuthService
@@ -38,7 +39,8 @@ class AuthServiceImpl(
     private val sysUserMapper: SysUserMapper,
     private val userTenantService: UserTenantService,
     private val editionUtil: EditionUtil,
-    private val tenantMapper: TenantMapper
+    private val tenantMapper: TenantMapper,
+    private val messageUtil: MessageUtil
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -47,30 +49,30 @@ class AuthServiceImpl(
         log.info("用户登录，username: {}", request.username)
 
         // 1. 验证用户名和密码
-        val user: SysUser = sysUserService.getByUsername(request.username) ?: throw BizException("用户名不存在")
+        val user: SysUser = sysUserService.getByUsername(request.username) ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
         // 前端使用 SHA-256 加密密码，数据库中存储的是 BCrypt(SHA-256(明文密码))
         // 使用 BCrypt 验证前端传来的 SHA-256 密码
         if (!BCrypt.checkpw(request.password, user.password)) {
-            throw BizException("用户名或密码错误")
+            throw BizException(messageUtil.getMessage("error.user.invalid_credentials"))
         }
 
         // 2. 校验验证码
         val captcha = request.captcha
         val captchaKey = request.captchaKey
         if (captcha == null || captcha.trim { it <= ' ' }.isEmpty()) {
-            throw BizException("请输入验证码")
+            throw BizException(messageUtil.getMessage("error.captcha.required"))
         }
         if (captchaKey == null || captchaKey.trim { it <= ' ' }.isEmpty()) {
-            throw BizException("验证码 key 不能为空")
+            throw BizException(messageUtil.getMessage("error.captcha.key_required"))
         }
         if (!captchaService.validateCaptcha(captchaKey, captcha)) {
-            throw BizException("验证码错误，请重新输入")
+            throw BizException(messageUtil.getMessage("error.captcha.invalid"))
         }
 
         // 3. 检查用户状态
         if (user.status == 0) {
-            throw BizException("用户已被禁用，请联系管理员")
+            throw BizException(messageUtil.getMessage("error.user.disabled"))
         }
 
         // 4. 检查用户是否属于任何租户
@@ -95,7 +97,7 @@ class AuthServiceImpl(
         }
         
         if (userTenants.isEmpty() && user.isAdmin != 1) {
-            throw BizException("您的账号暂无可用租户，请联系管理员")
+            throw BizException(messageUtil.getMessage("error.user.no_tenant"))
         }
 
         // 5. 生成 JWT Token（使用第一个租户ID）
