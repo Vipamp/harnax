@@ -84,6 +84,7 @@ export default {
   'pages.user.management.phone': 'Phone',
   'pages.user.management.phone.placeholder': 'Please enter phone number',
   'pages.user.management.phone.pattern': 'Please enter correct phone number',
+  'pages.user.management.phone.required': 'Please enter phone number',
   'pages.user.management.gender': 'Gender',
   'pages.user.management.status': 'Status',
   'pages.user.management.isAdmin': 'Admin',
