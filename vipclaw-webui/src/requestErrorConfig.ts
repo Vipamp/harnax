@@ -32,11 +32,15 @@ export const errorConfig: RequestConfig = {
  // 默认请求配置
  withCredentials: true, // 允许携带凭证（cookies）
  
- // 请求拦截器 - 添加 JWT Token 和 X-Tenant-ID
+ // 请求拦截器 - 添加 JWT Token、X-Tenant-ID 和 Accept-Language
  requestInterceptors: [
  async (url, options) => {
  // 从 localStorage 获取 token
  const tokenInfoStr = localStorage.getItem('tokenInfo');
+ 
+ let headers: Record<string, string> = {
+   ...options.headers,
+ };
 
  if (tokenInfoStr) {
   try {
@@ -44,23 +48,23 @@ export const errorConfig: RequestConfig = {
  
   if (tokenInfo.accessToken) {
    // 在请求头中添加 Authorization
- const headers: Record<string, string> = {
-    ...options.headers,
- Authorization: `Bearer ${tokenInfo.accessToken}`,
-   };
+   headers['Authorization'] = `Bearer ${tokenInfo.accessToken}`;
    
    // 添加 X-Tenant-ID 请求头（如果存在当前租户ID）
    if (tokenInfo.currentUser?.currentTenantId) {
      headers['X-Tenant-ID'] = String(tokenInfo.currentUser.currentTenantId);
    }
-   
- return { url, options: { ...options, headers } };
- }
+  }
  } catch (e) {
  console.error('[请求拦截器] 解析 token 失败:', e);
  }
  }
- return { url, options };
+ 
+ // 添加 Accept-Language 请求头
+ const locale = localStorage.getItem('umi_locale') || 'zh-CN';
+ headers['Accept-Language'] = locale;
+ 
+ return { url, options: { ...options, headers } };
  },
  ],
 
