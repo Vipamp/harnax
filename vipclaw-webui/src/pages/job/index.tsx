@@ -229,7 +229,7 @@ const JobManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setTableLoading(false);
     }
@@ -259,15 +259,15 @@ const JobManagement: React.FC = () => {
           const response = await deleteJob(jobId);
           hide();
           if (response.code === 200) {
-            messageApi.success('删除成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
             loadData();
           } else {
-            const errorMsg = response.message || '删除失败，请重试';
+            const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
           }
         } catch (error: any) {
           hide();
-          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
           messageApi.error(errorMsg);
         }
       },
@@ -278,10 +278,10 @@ const JobManagement: React.FC = () => {
   const handleStart = async (jobId: number) => {
     try {
       await startJob(jobId);
-      messageApi.success('启动成功');
+      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
       loadData();
     } catch (error) {
-      messageApi.error('启动失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
@@ -289,10 +289,10 @@ const JobManagement: React.FC = () => {
   const handlePause = async (jobId: number) => {
     try {
       await pauseJob(jobId);
-      messageApi.success('暂停成功');
+      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
       loadData();
     } catch (error) {
-      messageApi.error('暂停失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
@@ -300,9 +300,9 @@ const JobManagement: React.FC = () => {
   const handleRunOnce = async (jobId: number) => {
     try {
       await runJobOnce(jobId);
-      messageApi.success('任务已触发执行');
+      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
     } catch (error) {
-      messageApi.error('执行失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
@@ -598,11 +598,11 @@ const JobManagement: React.FC = () => {
         onSubmit={async (values: API.SysJobCreateRequest) => {
           try {
             await createJob(values);
-            messageApi.success('创建成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
             setCreateModalVisible(false);
             loadData();
           } catch (error) {
-            messageApi.error('创建失败，请重试');
+            messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
         }}
         visible={createModalVisible}
@@ -614,7 +614,7 @@ const JobManagement: React.FC = () => {
           onSubmit={async (values) => {
             try {
               await updateJob(currentRow.id || 0, values as API.SysJobUpdateRequest);
-              messageApi.success('更新成功');
+              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
               loadData();
