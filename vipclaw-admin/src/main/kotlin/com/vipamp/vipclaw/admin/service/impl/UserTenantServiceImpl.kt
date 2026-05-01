@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.github.pagehelper.PageHelper
 import com.github.pagehelper.PageInfo
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
@@ -21,7 +22,8 @@ import java.time.LocalDateTime
 class UserTenantServiceImpl(
     private val userTenantMapper: UserTenantMapper,
     private val tenantMapper: TenantMapper,
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
+    private val messageUtil: MessageUtil
 ) : UserTenantService {
 
     private val log = LoggerFactory.getLogger(UserTenantServiceImpl::class.java)
@@ -56,7 +58,7 @@ class UserTenantServiceImpl(
     @Transactional
     override fun updateUserRole(userId: Long, tenantId: Long, role: String): Boolean {
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-            ?: throw BizException("用户不在该租户中")
+            ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
 
         return userTenantMapper.updateRole(userId, tenantId, role) > 0
     }
@@ -94,16 +96,16 @@ class UserTenantServiceImpl(
     override fun addUserToTenant(tenantId: Long, userId: Long, role: String, operator: String): Boolean {
         // 检查租户是否存在
         val tenant = tenantMapper.selectById(tenantId)
-            ?: throw BizException("租户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
         // 检查用户是否存在
         val user = sysUserMapper.selectById(userId)
-            ?: throw BizException("用户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
         // 检查用户是否已经在租户中
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
         if (existing != null) {
-            throw BizException("用户已在该租户中")
+            throw BizException(messageUtil.getMessage("error.user.already_in_tenant"))
         }
 
         // 添加用户到租户
@@ -122,7 +124,7 @@ class UserTenantServiceImpl(
     override fun removeUserFromTenant(tenantId: Long, userId: Long, operator: String): Boolean {
         // 检查用户是否在租户中
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-            ?: throw BizException("用户不在该租户中")
+            ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
 
         // 删除用户租户关联
         return userTenantMapper.deleteByUserIdAndTenantId(userId, tenantId) > 0
