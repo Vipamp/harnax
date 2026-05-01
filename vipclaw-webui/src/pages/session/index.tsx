@@ -7,11 +7,12 @@ import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
 // @ts-ignore
-import { useModel, useLocation } from '@umijs/max';
+import { useModel, useLocation, useIntl } from '@umijs/max';
 
 const { Text, Title } = Typography;
 
 const SessionPage: React.FC = () => {
+  const intl = useIntl();
   const location = useLocation();
   const [sessions, setSessions] = useState<API.SessionItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -117,7 +118,10 @@ const SessionPage: React.FC = () => {
       header={{
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            会话管理
+            {intl.formatMessage({
+              id: 'menu.agent.session',
+              defaultMessage: 'Session',
+            })}
           </span>
         ),
       }}
