@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useIntl } from '@umijs/max';
 import { Row, Col, Card, Button, message, Spin, Empty, Tag, Input, Select } from 'antd';
 import { GithubOutlined, SearchOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
@@ -9,6 +10,7 @@ import SyncSkillModal from './components/SyncSkillModal';
 import { getSkillRepositoryPage, fetchRemoteSkills } from '@/services/ant-design-pro/skillRepository';
 
 const SkillManagement: React.FC = () => {
+  const intl = useIntl();
   // 仓库相关状态
   const [repositories, setRepositories] = useState<API.SkillRepositoryItem[]>([]);
   const [selectedRepository, setSelectedRepository] = useState<API.SkillRepositoryItem | null>(null);
@@ -44,7 +46,7 @@ const SkillManagement: React.FC = () => {
         }
       }
     } catch (error) {
-      message.error('加载仓库列表失败');
+      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setRepositoryLoading(false);
     }
@@ -113,10 +115,10 @@ const SkillManagement: React.FC = () => {
         setRemoteSkills(response.data.records);
         setSyncModalVisible(true);
       } else {
-        message.warning('未获取到技能数据');
+        message.warning(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
     } catch (error) {
-      message.error('获取远程技能失败');
+      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setSyncLoading(false);
     }
