@@ -30,4 +30,19 @@ interface UserTenantService {
      * 更新用户在租户中的角色
      */
     fun updateUserRole(userId: Long, tenantId: Long, role: String): Boolean
+
+    /**
+     * 获取租户下的用户列表（分页）
+     */
+    fun getUsersByTenantId(tenantId: Long, pageNum: Int, pageSize: Int): Any
+
+    /**
+     * 添加用户到租户
+     */
+    fun addUserToTenant(tenantId: Long, userId: Long, role: String, operator: String): Boolean
+
+    /**
+     * 从租户移除用户
+     */
+    fun removeUserFromTenant(tenantId: Long, userId: Long, operator: String): Boolean
 }
