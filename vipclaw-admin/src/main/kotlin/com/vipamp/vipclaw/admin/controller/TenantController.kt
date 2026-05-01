@@ -6,8 +6,10 @@ import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
 import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
-import com.vipamp.vipclaw.admin.security.SecurityUtils
+import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.TenantService
+import com.vipamp.vipclaw.admin.util.UserContextUtil
+import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.common.page.Page
 import com.vipamp.vipclaw.common.page.mapRecords
 import io.swagger.v3.oas.annotations.Operation
@@ -27,7 +29,9 @@ import org.springframework.web.bind.annotation.*
 @RequestMapping("/api/tenant")
 @Tag(name = "租户管理", description = "租户相关接口")
 class TenantController(
-    private val tenantService: TenantService
+    private val tenantService: TenantService,
+    private val jwtUtil: JwtUtil,
+    private val sysUserMapper: SysUserMapper
 ) {
 
     private val log = LoggerFactory.getLogger(TenantController::class.java)
@@ -38,10 +42,18 @@ class TenantController(
         @Valid @RequestBody request: CreateTenantRequest
     ): ResultVo<TenantResponse> {
         return try {
-            val currentUser = SecurityUtils.getCurrentUser()
-                ?: return ResultVo.error("用户未登录")
-
+            log.info("[TenantController] 开始创建租户，请求参数: {}", request)
+            
+            // 获取当前登录用户名
+            val username = UserContextUtil.getCurrentUsername(jwtUtil)
+            log.info("[TenantController] 当前登录用户: {}", username)
+            
+            // 查询用户信息
+            val currentUser = sysUserMapper.selectByUsername(username)
+                ?: return ResultVo.error("用户不存在")
+            
             if (currentUser.isAdmin != 1) {
+                log.error("[TenantController] 用户不是全局管理员，userId: {}, isAdmin: {}", currentUser.id, currentUser.isAdmin)
                 return ResultVo.error("仅全局管理员可以创建租户")
             }
 
@@ -123,8 +135,12 @@ class TenantController(
         @Parameter(description = "租户ID") @PathVariable id: Long
     ): ResultVo<Boolean> {
         return try {
-            val currentUser = SecurityUtils.getCurrentUser()
-                ?: return ResultVo.error("用户未登录")
+            // 获取当前登录用户名
+            val username = UserContextUtil.getCurrentUsername(jwtUtil)
+            
+            // 查询用户信息
+            val currentUser = sysUserMapper.selectByUsername(username)
+                ?: return ResultVo.error("用户不存在")
 
             if (currentUser.isAdmin != 1) {
                 return ResultVo.error("仅全局管理员可以删除租户")
