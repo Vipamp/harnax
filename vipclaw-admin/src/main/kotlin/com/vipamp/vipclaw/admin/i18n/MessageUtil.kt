@@ -23,7 +23,7 @@ class MessageUtil(
     fun getMessage(code: String, vararg args: Any): String {
         val locale = LocaleContextHolder.getLocale()
         return try {
-            messageSource.getMessage(code, args.toTypedArray(), locale)
+            messageSource.getMessage(code, args, locale)
         } catch (e: Exception) {
             // 如果找不到消息，返回 code 本身
             code
@@ -41,7 +41,7 @@ class MessageUtil(
     fun getMessage(code: String, defaultMessage: String, vararg args: Any): String {
         val locale = LocaleContextHolder.getLocale()
         return try {
-            messageSource.getMessage(code, args.toTypedArray(), locale)
+            messageSource.getMessage(code, args, locale)
         } catch (e: Exception) {
             defaultMessage
         }
