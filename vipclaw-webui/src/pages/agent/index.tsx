@@ -20,6 +20,7 @@ import {
   List,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useIntl } from '@umijs/max';
 import {
   createAgent,
   updateAgent,
@@ -483,6 +484,7 @@ const AgentCard: React.FC<{
 };
 
 const AgentManagement: React.FC = () => {
+  const intl = useIntl();
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.AgentItem>();
@@ -575,7 +577,10 @@ const AgentManagement: React.FC = () => {
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
             <RobotOutlined style={{ marginRight: 10, color: '#722ed1' }} />
-            智能体管理
+            {intl.formatMessage({
+              id: 'menu.agent.management',
+              defaultMessage: 'Agent Management',
+            })}
           </span>
         ),
       }}
