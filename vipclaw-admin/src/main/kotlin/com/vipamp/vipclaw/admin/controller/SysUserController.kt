@@ -41,11 +41,12 @@ class SysUserController(
             name = "pageSize", defaultValue = "10"
         ) pageSize: Int?,
         @Parameter(description = "模糊查询字段") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?
+        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "租户ID过滤") @RequestParam(name = "tenantId", required = false) tenantId: Long?
     ): ResultVo<Page<SysUserResponse>> {
         return try {
             val page = sysUserService.page(
-                keyword, status, pageNum ?: 1, pageSize ?: 10
+                keyword, status, tenantId, pageNum ?: 1, pageSize ?: 10
             )
             ResultVo.success(page.mapRecords { sysUserService.convertToResponse(it) })
         } catch (e: Exception) {

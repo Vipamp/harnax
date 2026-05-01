@@ -6,7 +6,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteUser, getUserPage, updateUser as updateUserApi, createUser } from '@/services/ant-design-pro/user';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
+import UserTenantList from './components/UserTenantList';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -23,6 +24,10 @@ const UserManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
+  const [tenantId, setTenantId] = useState<number | undefined>(undefined);
+  const [tenantModalVisible, setTenantModalVisible] = useState<boolean>(false);
+  const [selectedUserId, setSelectedUserId] = useState<number>(0);
+  const [currentUserTenants, setCurrentUserTenants] = useState<number>(0);
 
   const intl = useIntl();
   const [messageApi, contextHolder] = message.useMessage();
@@ -36,6 +41,7 @@ const UserManagement: React.FC = () => {
         pageSize: size,
         keyword: keyword || undefined,
         status: status,
+        tenantId: tenantId,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -224,6 +230,22 @@ const UserManagement: React.FC = () => {
     },
     {
       title: intl.formatMessage({
+        id: 'pages.user.management.tenantCount',
+        defaultMessage: '所属租户',
+      }),
+     dataIndex: 'tenantCount',
+      hideInSearch: true,
+     render: (_, record) => {
+       const count = (record as any).tenantCount || 0;
+       return (
+          <Tag color="purple">
+            {count} 个租户
+          </Tag>
+        );
+      },
+    },
+    {
+      title: intl.formatMessage({
         id: 'pages.user.management.createTime',
         defaultMessage: '创建时间',
       }),
@@ -272,6 +294,24 @@ const UserManagement: React.FC = () => {
                 id: 'pages.user.management.edit',
                 defaultMessage: '编辑',
               })}
+            </Button>
+          </Tooltip>
+          <Tooltip title="管理租户">
+            <Button
+              type="text"
+              size="small"
+              icon={<TeamOutlined />}
+              style={{
+                color: '#722ed1',
+                borderRadius: '6px',
+                fontWeight: 500,
+              }}
+              onClick={() => {
+                setSelectedUserId(record.id!);
+                setTenantModalVisible(true);
+              }}
+            >
+              管理租户
             </Button>
           </Tooltip>
           {/* 管理员用户不显示删除按钮 */}
@@ -344,7 +384,7 @@ const UserManagement: React.FC = () => {
           <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
             查询
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTenantId(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
             重置
           </Button>
           <div style={{ flex: 1 }} />
@@ -428,6 +468,39 @@ const UserManagement: React.FC = () => {
           values={currentRow}
         />
       )}
+
+      {/* 管理租户弹窗 */}
+      <Modal
+        title={
+          <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
+            <TeamOutlined style={{ marginRight: 8, color: '#722ed1' }} />
+            管理用户租户
+          </span>
+        }
+        open={tenantModalVisible}
+        onCancel={() => {
+          setTenantModalVisible(false);
+          setSelectedUserId(0);
+        }}
+        footer={null}
+        width={900}
+        destroyOnClose
+        styles={{
+          body: { padding: '24px' },
+          header: {
+            background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
+            borderBottom: '1px solid #e8ecfb',
+            padding: '18px 24px',
+          },
+        }}
+      >
+        {selectedUserId > 0 && (
+          <UserTenantList
+            userId={selectedUserId}
+            visible={tenantModalVisible}
+          />
+        )}
+      </Modal>
     </PageContainer>
   );
 };

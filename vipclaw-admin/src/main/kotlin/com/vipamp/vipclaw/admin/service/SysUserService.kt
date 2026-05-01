@@ -19,11 +19,12 @@ interface SysUserService {
      *
      * @param keyword  模糊查询字段
      * @param status   状态筛选字段
+     * @param tenantId 租户ID过滤
      * @param pageNum  当前页码
      * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun page(keyword: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SysUser>
+    fun page(keyword: String?, status: Int?, tenantId: Long?, pageNum: Int, pageSize: Int): Page<SysUser>
 
     /**
      * 获取单个用户详情

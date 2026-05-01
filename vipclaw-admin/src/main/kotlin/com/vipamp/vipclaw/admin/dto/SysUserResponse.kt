@@ -48,7 +48,10 @@ data class SysUserResponse(
     val createTime: LocalDateTime,
 
     @Schema(description = "更新时间", example = "2026-03-05 12:00:00")
-    val updateTime: LocalDateTime
+    val updateTime: LocalDateTime,
+
+    @Schema(description = "所属租户数量", example = "2")
+    val tenantCount: Int = 0
 ) {
     companion object {
         @JvmStatic

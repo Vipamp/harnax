@@ -88,20 +88,28 @@
 
     <!-- 查询用户列表（带条件） -->
     <select id="selectUserList" resultMap="SysUserResultMap">
-        SELECT * FROM sys_user
-        WHERE active = 1
+        SELECT 
+            u.*,
+            COUNT(ut.id) as tenantCount
+        FROM sys_user u
+        LEFT JOIN user_tenant ut ON u.id = ut.user_id AND ut.active = 1
+        <if test="tenantId != null">
+            INNER JOIN user_tenant ut_filter ON u.id = ut_filter.user_id AND ut_filter.tenant_id = #{tenantId} AND ut_filter.active = 1
+        </if>
+        WHERE u.active = 1
         <if test="keyword != null and keyword != ''">
             AND (
-            username LIKE CONCAT('%', #{keyword}, '%')
-            OR nickname LIKE CONCAT('%', #{keyword}, '%')
-            OR email LIKE CONCAT('%', #{keyword}, '%')
-            OR phone LIKE CONCAT('%', #{keyword}, '%')
+            u.username LIKE CONCAT('%', #{keyword}, '%')
+            OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            OR u.email LIKE CONCAT('%', #{keyword}, '%')
+            OR u.phone LIKE CONCAT('%', #{keyword}, '%')
             )
         </if>
         <if test="status != null">
-            AND status = #{status, jdbcType=INTEGER}
+            AND u.status = #{status, jdbcType=INTEGER}
         </if>
-        ORDER BY update_time DESC
+        GROUP BY u.id
+        ORDER BY u.update_time DESC
     </select>
 
     <!-- 根据用户名查询 -->

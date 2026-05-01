@@ -54,11 +54,13 @@ interface SysUserMapper {
      *
      * @param keyword 关键字（搜索 username/nickname/email/phone）
      * @param status 用户状态
+     * @param tenantId 租户ID过滤
      * @return 用户列表
      */
     fun selectUserList(
         @Param("keyword") keyword: String?,
-        @Param("status") status: Int?
+        @Param("status") status: Int?,
+        @Param("tenantId") tenantId: Long?
     ): List<SysUser>
 
     /**

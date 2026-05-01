@@ -7,6 +7,7 @@ import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.SysUserService
 import com.vipamp.vipclaw.common.page.Page
@@ -23,7 +24,8 @@ import org.springframework.transaction.annotation.Transactional
  */
 @Service
 class SysUserServiceImpl(
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
+    private val messageUtil: MessageUtil
 ) : SysUserService {
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
@@ -31,18 +33,20 @@ class SysUserServiceImpl(
     override fun page(
         keyword: String?,
         status: Int?,
+        tenantId: Long?,
         pageNum: Int,
         pageSize: Int
     ): Page<SysUser> {
         log.info(
-            "分页查询用户列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}",
+            "分页查询用户列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, tenantId: {}",
             pageNum,
             pageSize,
             keyword,
-            status
+            status,
+            tenantId
         )
         PageHelper.startPage<Agent>(pageNum, pageSize)
-        return Page.fromPageInfo(sysUserMapper.selectUserList(keyword, status))
+        return Page.fromPageInfo(sysUserMapper.selectUserList(keyword, status, tenantId))
     }
 
     override fun getSysUser(id: Long): SysUser? {
@@ -81,14 +85,14 @@ class SysUserServiceImpl(
         // 检查用户名是否存在（需要同时校验 active 字段）
         val existUser = getByUsername(request.username)
         if (existUser != null) {
-            throw BizException("用户名已存在")
+            throw BizException(messageUtil.getMessage("error.user.username_exists"))
         }
 
         // 检查手机号是否已存在（如果提供了手机号）
         if (!request.phone.isNullOrBlank()) {
             val existPhone = sysUserMapper.selectByPhone(request.phone)
             if (existPhone != null) {
-                throw BizException("手机号已存在")
+                throw BizException(messageUtil.getMessage("error.user.phone_exists"))
             }
         }
 
@@ -96,7 +100,7 @@ class SysUserServiceImpl(
         if (!request.email.isNullOrBlank()) {
             val existEmail = sysUserMapper.selectByEmail(request.email)
             if (existEmail != null) {
-                throw BizException("邮箱已存在")
+                throw BizException(messageUtil.getMessage("error.user.email_exists"))
             }
         }
 
@@ -124,37 +128,37 @@ class SysUserServiceImpl(
         log.info("更新用户，id: {}, isPersonal: {}", id, isPersonal)
 
         val user = sysUserMapper.selectById(id)
-            ?: throw BizException("用户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
         // 企业版和公开版：email 和 phone 必填且进行格式校验
         if (!isPersonal) {
             // 校验 email 必填
             if (request.email.isNullOrBlank()) {
-                throw BizException("邮箱不能为空")
+                throw BizException(messageUtil.getMessage("error.validation.required", "邮箱"))
             }
 
             // 校验 phone 必填
             if (request.phone.isNullOrBlank()) {
-                throw BizException("手机号不能为空")
+                throw BizException(messageUtil.getMessage("error.validation.required", "手机号"))
             }
 
             // 校验 email 格式
             val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
             if (!emailRegex.matches(request.email)) {
-                throw BizException("邮箱格式不正确")
+                throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
             }
 
             // 校验 phone 格式
             val phoneRegex = Regex("^1[3-9]\\d{9}$")
             if (!phoneRegex.matches(request.phone)) {
-                throw BizException("手机号格式不正确")
+                throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
             }
 
             // 检查 email 是否已被其他用户使用
             if (request.email != user.email) {
                 val existEmail = sysUserMapper.selectByEmail(request.email)
                 if (existEmail != null) {
-                    throw BizException("邮箱已存在")
+                    throw BizException(messageUtil.getMessage("error.user.email_exists"))
                 }
             }
 
@@ -162,7 +166,7 @@ class SysUserServiceImpl(
             if (request.phone != user.phone) {
                 val existPhone = sysUserMapper.selectByPhone(request.phone)
                 if (existPhone != null) {
-                    throw BizException("手机号已存在")
+                    throw BizException(messageUtil.getMessage("error.user.phone_exists"))
                 }
             }
         } else {
@@ -170,11 +174,11 @@ class SysUserServiceImpl(
             if (!request.email.isNullOrBlank() && request.email != user.email) {
                 val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
                 if (!emailRegex.matches(request.email)) {
-                    throw BizException("邮箱格式不正确")
+                    throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
                 }
                 val existEmail = sysUserMapper.selectByEmail(request.email)
                 if (existEmail != null) {
-                    throw BizException("邮箱已存在")
+                    throw BizException(messageUtil.getMessage("error.user.email_exists"))
                 }
             }
 
