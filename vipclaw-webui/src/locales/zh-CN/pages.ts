@@ -104,8 +104,8 @@ export default {
   'pages.tenant.management.tenantName.placeholder': '请输入租户名称',
   'pages.tenant.management.tenantName.required': '请输入租户名称',
   'pages.tenant.management.tenantName.min': '租户名称至少 2 个字符',
-  'pages.tenant.management.adminUserId': '管理员用户ID',
-  'pages.tenant.management.adminUserId.placeholder': '请输入管理员用户ID',
-  'pages.tenant.management.adminUserId.required': '请输入管理员用户ID',
+  'pages.tenant.management.adminUserId': '管理员用户',
+  'pages.tenant.management.adminUserId.placeholder': '请选择管理员用户',
+  'pages.tenant.management.adminUserId.required': '请选择管理员用户',
   'pages.tenant.management.status.required': '请选择状态',
 };
