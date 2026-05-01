@@ -17,6 +17,7 @@ import {
   Pagination,
 } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
+import { useIntl } from '@umijs/max';
 // @ts-ignore
 import { useModel, history } from '@umijs/max';
 
@@ -33,6 +34,7 @@ const McpCard: React.FC<{
   onTest: (id: number, name: string) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
 }> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission }) => {
+  const intl = useIntl();
   const [isHovered, setIsHovered] = useState(false);
   const endpoint = item.type === 'stdio' ? item.command : item.url;
 
@@ -259,6 +261,7 @@ const MCP_TYPE_CONFIG: Record<
 };
 
 const McpManagement: React.FC = () => {
+  const intl = useIntl();
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.McpServerItem>();
@@ -292,7 +295,7 @@ const McpManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setLoading(false);
     }
@@ -320,14 +323,14 @@ const McpManagement: React.FC = () => {
         try {
           const response = await deleteMcpServer(id);
           if (response.code === 200) {
-            messageApi.success('删除成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
             loadData();
           } else {
-            const errorMsg = response.message || '删除失败，请重试';
+            const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
           }
         } catch (error: any) {
-          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
           messageApi.error(errorMsg);
         }
       },
@@ -338,7 +341,7 @@ const McpManagement: React.FC = () => {
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
       await toggleMcpServerStatus(id, newStatus);
-      messageApi.success(newStatus === 1 ? '已启用' : '已禁用');
+      messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
       // 只更新当前卡片状态，不重新加载整个列表
       setData((prevData) =>
         prevData.map((item) =>
@@ -346,7 +349,7 @@ const McpManagement: React.FC = () => {
         )
       );
     } catch (error) {
-      messageApi.error('操作失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
@@ -505,7 +508,7 @@ const McpManagement: React.FC = () => {
           </Row>
 
           {/* 分页 */}
-          <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
             <Pagination
               current={pageNum}
               pageSize={pageSize}
@@ -537,12 +540,12 @@ const McpManagement: React.FC = () => {
           try {
             const response = await createMcpServer(values);
             if (response.code === 200) {
-              messageApi.success('创建成功');
+              messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
               loadData();
             } else {
               // 显示后端返回的错误信息
-              const errorMsg = response.message || '创建失败，请重试';
+              const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' });
               messageApi.error(errorMsg);
             }
           } catch (error: any) {
@@ -570,13 +573,13 @@ const McpManagement: React.FC = () => {
             try {
               const response = await updateMcpServer(currentRow.id!, values);
               if (response.code === 200) {
-                messageApi.success('更新成功');
+                messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
                 loadData();
               } else {
                 // 显示后端返回的错误信息
-                const errorMsg = response.message || '更新失败，请重试';
+                const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' });
                 messageApi.error(errorMsg);
               }
             } catch (error: any) {
