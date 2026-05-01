@@ -1,24 +1,7 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { 
-  Button, 
-  Card, 
-  Input, 
-  message, 
-  Modal, 
-  Select, 
-  Space, 
-  Tag, 
-  Tooltip, 
-  Typography,
-  Divider,
-  Statistic,
-  Row,
-  Col,
-  Badge,
-  Avatar
-} from 'antd';
+import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   createTenant,
@@ -29,20 +12,9 @@ import {
 } from '@/services/tenant';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
-import { 
-  DeleteOutlined, 
-  EditOutlined, 
-  PlusOutlined, 
-  SearchOutlined,
-  ReloadOutlined,
-  ShopOutlined,
-  UserOutlined,
-  CheckCircleOutlined,
-  StopOutlined,
-  TrophyOutlined
-} from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const TenantManagement: React.FC = () => {
   const actionRef = useRef<ActionType | null>(null);
@@ -290,25 +262,17 @@ const TenantManagement: React.FC = () => {
       },
       render: (_, record) => {
         return (
-          <Badge
-            status={record.status === 1 ? 'success' : 'error'}
-            text={
-              <span style={{ 
-                fontWeight: 600,
-                color: record.status === 1 ? '#52c41a' : '#ff4d4f'
-              }}>
-                {record.status === 1
-                  ? intl.formatMessage({
-                      id: 'pages.tenant.management.enabled',
-                      defaultMessage: '启用',
-                    })
-                  : intl.formatMessage({
-                      id: 'pages.tenant.management.disabled',
-                      defaultMessage: '禁用',
-                    })}
-              </span>
-            }
-          />
+          <Tag color={record.status === 1 ? 'success' : 'error'}>
+            {record.status === 1
+              ? intl.formatMessage({
+                  id: 'pages.tenant.management.enabled',
+                  defaultMessage: '启用',
+                })
+              : intl.formatMessage({
+                  id: 'pages.tenant.management.disabled',
+                  defaultMessage: '禁用',
+                })}
+          </Tag>
         );
       },
     },
@@ -340,7 +304,7 @@ const TenantManagement: React.FC = () => {
       valueType: 'option',
       width: 250,
       render: (_, record) => (
-        <Space size="middle">
+        <Space>
           <Tooltip
             title={intl.formatMessage({
               id: 'pages.tenant.management.toggleStatus',
@@ -348,16 +312,9 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="text"
+              type="link"
               size="small"
-              icon={record.status === 1 ? <StopOutlined /> : <CheckCircleOutlined />}
               onClick={() => handleToggleStatus(record.id)}
-              style={{
-                color: record.status === 1 ? '#faad14' : '#52c41a',
-                fontWeight: 600,
-                borderRadius: 8,
-                padding: '4px 12px'
-              }}
             >
               {record.status === 1 ? '禁用' : '启用'}
             </Button>
@@ -369,18 +326,12 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="text"
+              type="link"
               size="small"
               icon={<EditOutlined />}
               onClick={() => {
                 setCurrentRow(record);
                 setUpdateModalVisible(true);
-              }}
-              style={{
-                color: '#667eea',
-                fontWeight: 600,
-                borderRadius: 8,
-                padding: '4px 12px'
               }}
             >
               {intl.formatMessage({
@@ -396,16 +347,11 @@ const TenantManagement: React.FC = () => {
             })}
           >
             <Button
-              type="text"
+              type="link"
               danger
               size="small"
               icon={<DeleteOutlined />}
               onClick={() => handleRemove(record.id)}
-              style={{
-                fontWeight: 600,
-                borderRadius: 8,
-                padding: '4px 12px'
-              }}
             >
               {intl.formatMessage({
                 id: 'pages.tenant.management.delete',
@@ -422,150 +368,48 @@ const TenantManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Avatar 
-              size={48} 
-              icon={<ShopOutlined />} 
-              style={{ 
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
-              }} 
-            />
-            <div>
-              <Title level={3} style={{ margin: 0, color: '#1a1a2e', fontWeight: 700 }}>
-                {intl.formatMessage({
-                  id: 'pages.tenant.management.title',
-                  defaultMessage: '租户管理',
-                })}
-              </Title>
-              <Text type="secondary" style={{ fontSize: 14 }}>
-                管理系统中的所有租户及其用户权限
-              </Text>
-            </div>
-          </div>
+          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+            <ShopOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+            {intl.formatMessage({
+              id: 'pages.tenant.management.title',
+              defaultMessage: '租户管理',
+            })}
+          </span>
         ),
       }}
     >
       {contextHolder}
 
-      {/* 统计卡片 */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={8}>
-          <Card 
-            hoverable
-            style={{ 
-              borderRadius: 16, 
-              border: 'none',
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              color: 'white'
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>总租户数</span>}
-              value={total}
-              prefix={<ShopOutlined style={{ fontSize: 24 }} />}
-              valueStyle={{ color: 'white', fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card 
-            hoverable
-            style={{ 
-              borderRadius: 16, 
-              border: 'none',
-              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-              color: 'white'
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>启用中</span>}
-              value={data.filter(d => d.status === 1).length}
-              prefix={<CheckCircleOutlined style={{ fontSize: 24 }} />}
-              valueStyle={{ color: 'white', fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card 
-            hoverable
-            style={{ 
-              borderRadius: 16, 
-              border: 'none',
-              background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-              color: 'white'
-            }}
-          >
-            <Statistic
-              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>已禁用</span>}
-              value={data.filter(d => d.status === 0).length}
-              prefix={<StopOutlined style={{ fontSize: 24 }} />}
-              valueStyle={{ color: 'white', fontWeight: 700 }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
       {/* 搜索和工具栏 */}
       <Card
-        style={{ 
-          marginBottom: 24, 
-          borderRadius: 16, 
-          border: 'none',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
-        }}
-        styles={{ body: { padding: '20px 24px' } }}
+        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+        styles={{ body: { padding: '16px 20px' } }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Input
             placeholder="搜索租户名称"
-            prefix={<SearchOutlined style={{ color: '#667eea' }} />}
+            prefix={<SearchOutlined />}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onPressEnter={handleSearch}
-            style={{ 
-              width: 320, 
-              borderRadius: 12,
-              border: '2px solid #e8ecfb'
-            }}
+            style={{ width: 280, borderRadius: '8px' }}
             allowClear
           />
           <Select
             placeholder="状态筛选"
             value={status}
             onChange={(val) => setStatus(val)}
-            style={{ 
-              width: 160, 
-              borderRadius: 12,
-              border: '2px solid #e8ecfb'
-            }}
+            style={{ width: 140, borderRadius: '8px' }}
             allowClear
             options={[
               { label: '启用', value: 1 },
               { label: '禁用', value: 0 },
             ]}
           />
-          <Button 
-            type="primary" 
-            onClick={handleSearch} 
-            style={{ 
-              borderRadius: 12, 
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
-            }}
-          >
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
             查询
           </Button>
-          <Button 
-            onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} 
-            style={{ 
-              borderRadius: 12,
-              border: '2px solid #e8ecfb'
-            }}
-            icon={<ReloadOutlined />}
-          >
+          <Button onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
             重置
           </Button>
           <div style={{ flex: 1 }} />
@@ -573,15 +417,7 @@ const TenantManagement: React.FC = () => {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ 
-              borderRadius: 12, 
-              fontWeight: 600,
-              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-              border: 'none',
-              boxShadow: '0 4px 12px rgba(245, 87, 108, 0.3)',
-              padding: '0 24px',
-              height: 40
-            }}
+            style={{ borderRadius: '8px', fontWeight: 600 }}
           >
             {intl.formatMessage({
               id: 'pages.tenant.management.createNew',
@@ -592,6 +428,7 @@ const TenantManagement: React.FC = () => {
       </Card>
 
       <ProTable<any>
+        headerTitle={undefined}
         rowKey="id"
         loading={tableLoading}
         pagination={{
@@ -609,7 +446,6 @@ const TenantManagement: React.FC = () => {
         dataSource={data}
         search={false}
         toolBarRender={false}
-        style={{ borderRadius: 16 }}
         columns={columns}
       />
 
