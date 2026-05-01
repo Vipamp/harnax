@@ -66,6 +66,7 @@ export default {
   'pages.searchTable.batchApproval': 'batch approval',
 
   // User Management
+  'pages.user.management.title': 'User Management',
   'pages.user.management.userId': 'User ID',
   'pages.user.management.username': 'Username',
   'pages.user.management.username.placeholder': 'Please enter username',
