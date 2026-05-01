@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import {
   Button,
@@ -52,6 +54,7 @@ const CHANNEL_TYPES = [
 ];
 
 const ChannelManagement: React.FC = () => {
+  const intl = useIntl();
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.ChannelItem>();
@@ -94,7 +97,7 @@ const ChannelManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setLoading(false);
     }
@@ -123,14 +126,14 @@ const ChannelManagement: React.FC = () => {
         try {
           const response = await deleteChannel(id);
           if (response.code === 200) {
-            messageApi.success('删除成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
             loadData();
           } else {
-            const errorMsg = response.message || '删除失败，请重试';
+            const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
           }
         } catch (error: any) {
-          const errorMsg = error?.message || error?.info?.errorMessage || '删除失败，请重试';
+          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
           messageApi.error(errorMsg);
         }
       },
@@ -141,21 +144,21 @@ const ChannelManagement: React.FC = () => {
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
       await toggleChannelStatus(id, newStatus);
-      messageApi.success(newStatus === 1 ? '已启用' : '已禁用');
+      messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
       setData((prevData) =>
         prevData.map((item) =>
           item.id === id ? { ...item, status: newStatus } : item
         )
       );
     } catch (error) {
-      messageApi.error('操作失败，请重试');
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
   };
 
   /** 复制回调 URL */
   const copyCallbackUrl = (url: string) => {
     navigator.clipboard.writeText(url);
-    messageApi.success('已复制回调 URL');
+    messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
   };
 
   /** 获取类型标签颜色 */
@@ -390,7 +393,7 @@ const ChannelManagement: React.FC = () => {
         />
 
         {/* 分页 */}
-        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'center' }}>
+        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
           <Pagination
             current={pageNum}
             pageSize={pageSize}
@@ -415,11 +418,11 @@ const ChannelManagement: React.FC = () => {
         onSubmit={async (values) => {
           try {
             await createChannel(values);
-            messageApi.success('创建成功');
+            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
             setCreateModalVisible(false);
             loadData();
           } catch (error) {
-            messageApi.error('创建失败，请重试');
+            messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
         }}
       />
@@ -437,12 +440,12 @@ const ChannelManagement: React.FC = () => {
           onSubmit={async (values) => {
             try {
               await updateChannel(currentRow.id!, values);
-              messageApi.success('更新成功');
+              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
               loadData();
             } catch (error) {
-              messageApi.error('更新失败，请重试');
+              messageApi.error(intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
             }
           }}
         />
