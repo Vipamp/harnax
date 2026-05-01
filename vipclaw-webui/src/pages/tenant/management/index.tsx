@@ -1,7 +1,7 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
+import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography, Tabs } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   createTenant,
@@ -12,7 +12,8 @@ import {
 } from '@/services/tenant';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, ShopOutlined } from '@ant-design/icons';
+import TenantUserList from './components/TenantUserList';
+import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -21,7 +22,9 @@ const TenantManagement: React.FC = () => {
 
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
+  const [userModalVisible, setUserModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<any>();
+  const [currentTenantId, setCurrentTenantId] = useState<number>(0);
   const [tableLoading, setTableLoading] = useState<boolean>(false);
   const [data, setData] = useState<any[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -342,6 +345,27 @@ const TenantManagement: React.FC = () => {
           </Tooltip>
           <Tooltip
             title={intl.formatMessage({
+              id: 'pages.tenant.management.manageUsers',
+              defaultMessage: '管理用户',
+            })}
+          >
+            <Button
+              type="link"
+              size="small"
+              icon={<UserOutlined />}
+              onClick={() => {
+                setCurrentTenantId(record.id);
+                setUserModalVisible(true);
+              }}
+            >
+              {intl.formatMessage({
+                id: 'pages.tenant.management.manageUsers',
+                defaultMessage: '管理用户',
+              })}
+            </Button>
+          </Tooltip>
+          <Tooltip
+            title={intl.formatMessage({
               id: 'pages.tenant.management.delete',
               defaultMessage: '删除',
             })}
@@ -468,6 +492,24 @@ const TenantManagement: React.FC = () => {
           values={currentRow}
         />
       )}
+
+      {/* 管理用户模态框 */}
+      <Modal
+        title="管理租户用户"
+        open={userModalVisible}
+        onCancel={() => {
+          setUserModalVisible(false);
+          setCurrentTenantId(0);
+        }}
+        footer={null}
+        width={900}
+        destroyOnClose
+      >
+        <TenantUserList
+          tenantId={currentTenantId}
+          visible={userModalVisible}
+        />
+      </Modal>
     </PageContainer>
   );
 };

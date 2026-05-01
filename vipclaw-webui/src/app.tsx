@@ -6,6 +6,7 @@ import { history, Link } from '@umijs/max';
 import { Space, Typography } from 'antd';
 import React from 'react';
 import { AvatarDropdown, AvatarName, Footer, Question, SelectLang } from '@/components';
+import TenantSwitcher from '@/components/TenantSwitcher';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
@@ -81,6 +82,7 @@ export const layout: RunTimeLayoutConfig = ({
 }) => {
   return {
     actionsRender: () => [
+      <TenantSwitcher key="TenantSwitcher" />,
       <Question key="doc" />,
       <SelectLang key="SelectLang" />,
     ],
