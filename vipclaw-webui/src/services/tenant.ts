@@ -1,4 +1,6 @@
-import { request } from 'umi';
+// @ts-ignore
+/* eslint-disable */
+import { request } from '@umijs/max';
 
 /**
  * 租户管理 API
