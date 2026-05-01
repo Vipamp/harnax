@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useIntl } from '@umijs/max';
 import { Row, Col, Card, Button, Switch, message, Spin, Empty, Tag, Popconfirm, Input, Select } from 'antd';
 import { PlusOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, SearchOutlined, ReloadOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, EyeOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
@@ -18,6 +19,7 @@ const TAG_OPTIONS = [
 ];
 
 const ModelManagement: React.FC = () => {
+  const intl = useIntl();
   const [providers, setProviders] = useState<API.ModelProviderItem[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<API.ModelProviderItem | null>(null);
   const [providerLoading, setProviderLoading] = useState(false);
@@ -201,7 +203,10 @@ const ModelManagement: React.FC = () => {
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
             <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            模型管理
+            {intl.formatMessage({
+              id: 'menu.context.model',
+              defaultMessage: 'Model Management',
+            })}
           </span>
         ),
       }}
