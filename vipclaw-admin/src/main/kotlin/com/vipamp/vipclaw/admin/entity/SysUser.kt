@@ -13,6 +13,9 @@ class SysUser : Serializable {
     @Schema(description = "用户 ID")
     var id: Long = 0
 
+    @Schema(description = "所属租户ID（主要租户）")
+    var tenantId: Long? = null
+
     @Schema(description = "用户名")
     var username: String = ""
 
