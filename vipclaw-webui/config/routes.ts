@@ -116,6 +116,12 @@ export default [
         access: 'canAccessUserManagement',
       },
       {
+        name: 'tenant.management',
+        path: '/system/tenant',
+        component: './tenant/management',
+        access: 'canAccessUserManagement',
+      },
+      {
         name: 'token.monitor',
         path: '/system/token-monitor',
         component: './token-monitor',

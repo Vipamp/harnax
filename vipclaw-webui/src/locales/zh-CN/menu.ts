@@ -58,6 +58,7 @@ export default {
   'menu.agent.session': '会话',
   'menu.system': '系统管理',
   'menu.system.user.management': '用户管理',
+  'menu.system.tenant.management': '租户管理',
   'menu.system.token.monitor': 'Token 监控',
   'menu.job': '定时任务',
   'menu.job.management': '任务管理',
