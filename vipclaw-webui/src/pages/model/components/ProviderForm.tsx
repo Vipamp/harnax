@@ -1,4 +1,5 @@
 import React from 'react';
+import { useIntl } from '@umijs/max';
 import { Modal, Form, Input, Select, Switch, Typography } from 'antd';
 import { createModelProvider, updateModelProvider } from '@/services/ant-design-pro/modelProvider';
 import { message } from 'antd';
@@ -20,6 +21,7 @@ const PROVIDER_OPTIONS = [
 ];
 
 const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, onSuccess }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = React.useState(false);
   const { username, isAdmin } = getCurrentUserInfo();
@@ -60,10 +62,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         });
         
         if (response.code === 200) {
-          message.success('更新成功');
+          message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
           onSuccess();
         } else {
-          const errorMsg = response.message || '更新失败';
+          const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed' });
           message.error(errorMsg);
         }
       } else {
@@ -77,15 +79,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         });
         
         if (response.code === 200) {
-          message.success('创建成功');
+          message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
           onSuccess();
         } else {
-          const errorMsg = response.message || '创建失败';
+          const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed' });
           message.error(errorMsg);
         }
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || (values ? '更新失败' : '创建失败');
+      const errorMsg = error?.message || error?.info?.errorMessage || (values ? intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed' }) : intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed' }));
       message.error(errorMsg);
     } finally {
       setLoading(false);
@@ -94,7 +96,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
 
   return (
     <Modal
-      title={values ? '编辑服务商' : '新增服务商'}
+      title={values ? intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' }) + intl.formatMessage({ id: 'pages.model.provider', defaultMessage: 'Provider' }) : intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' }) + intl.formatMessage({ id: 'pages.model.provider', defaultMessage: 'Provider' })}
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
