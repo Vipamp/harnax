@@ -205,7 +205,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             <Row gutter={16} style={{ marginTop: '8px' }}>
               <Col span={8}>
                 <Form.Item name="supportMcp" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="MCP" unCheckedChildren="MCP" />
+                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} unCheckedChildren={intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} />
                 </Form.Item>
               </Col>
               <Col span={8}>

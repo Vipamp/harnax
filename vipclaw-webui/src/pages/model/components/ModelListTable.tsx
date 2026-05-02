@@ -272,10 +272,10 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
             <Switch
               checked={record.status === 1}
               onChange={() => handleToggle(record.id, record.status)}
-              checkedChildren="启用"
-              unCheckedChildren="禁用"
+              checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+              unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
               style={{
-                backgroundColor: record.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                backgroundColor: record.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
               }}
             />
           </Space>
@@ -283,10 +283,10 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
           <Switch
             disabled
             checked={record.status === 1}
-            checkedChildren="启用"
-            unCheckedChildren="禁用"
+            checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
             style={{
-              backgroundColor: record.status === 1 ? '#4f6ef7' : '#d9d9d9',
+              backgroundColor: record.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
             }}
           />
         );
