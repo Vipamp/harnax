@@ -256,10 +256,10 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
               />
             </Tooltip>
             <Popconfirm
-              title="确定要删除此模型吗？"
+              title={intl.formatMessage({ id: 'pages.message.modelDeleteConfirm', defaultMessage: 'Are you sure to delete this model?' })}
               onConfirm={() => handleDelete(record.id)}
             >
-              <Tooltip title="删除">
+              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
                 <Button
                   type="link"
                   size="small"
