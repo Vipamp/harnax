@@ -136,36 +136,36 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
     const capabilities = [];
     if (model.supportInternet) {
       capabilities.push(
-        <Tooltip key="internet" title="支持联网">
-          <Tag icon={<GlobalOutlined />} color="cyan">联网</Tag>
+        <Tooltip key="internet" title={intl.formatMessage({ id: 'pages.model.supportInternet', defaultMessage: 'Support Internet' })}>
+          <Tag icon={<GlobalOutlined />} color="cyan">{intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportReasoning) {
       capabilities.push(
-        <Tooltip key="reasoning" title="支持推理">
-          <Tag icon={<ThunderboltOutlined />} color="orange">推理</Tag>
+        <Tooltip key="reasoning" title={intl.formatMessage({ id: 'pages.model.supportReasoning', defaultMessage: 'Support Reasoning' })}>
+          <Tag icon={<ThunderboltOutlined />} color="orange">{intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportTool) {
       capabilities.push(
-        <Tooltip key="tool" title="支持工具调用">
-          <Tag icon={<ToolOutlined />} color="geekblue">工具</Tag>
+        <Tooltip key="tool" title={intl.formatMessage({ id: 'pages.model.supportTool', defaultMessage: 'Support Tool Call' })}>
+          <Tag icon={<ToolOutlined />} color="geekblue">{intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportMcp) {
       capabilities.push(
-        <Tooltip key="mcp" title="支持 MCP">
+        <Tooltip key="mcp" title={intl.formatMessage({ id: 'pages.model.supportMcp', defaultMessage: 'Support MCP' })}>
           <Tag icon={<ApiOutlined />} color="green">MCP</Tag>
         </Tooltip>
       );
     }
     if (model.supportVision) {
       capabilities.push(
-        <Tooltip key="vision" title="支持视觉">
-          <Tag icon={<EyeOutlined />} color="purple">视觉</Tag>
+        <Tooltip key="vision" title={intl.formatMessage({ id: 'pages.model.supportVision', defaultMessage: 'Support Vision' })}>
+          <Tag icon={<EyeOutlined />} color="purple">{intl.formatMessage({ id: 'pages.model.tag.vision', defaultMessage: 'Vision' })}</Tag>
         </Tooltip>
       );
     }
@@ -174,7 +174,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
 
   const columns: ColumnsType<API.ModelItem> = [
     {
-      title: '模型',
+      title: intl.formatMessage({ id: 'pages.model.model', defaultMessage: 'Model' }),
       key: 'model',
       width: 160,
       render: (_, record) => (
@@ -186,7 +186,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       ),
     },
     {
-      title: '类型',
+      title: intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Type' }),
       dataIndex: 'modelType',
       key: 'modelType',
       width: 100,
@@ -197,7 +197,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       ),
     },
     {
-      title: '价格',
+      title: intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' }),
       dataIndex: 'price',
       key: 'price',
       width: 80,
@@ -205,19 +205,19 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       render: (text) => (text !== undefined && text !== null ? `¥${text}` : '-'),
     },
     {
-      title: '描述',
+      title: intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' }),
       dataIndex: 'description',
       key: 'description',
       width: 140,
       ellipsis: true,
       render: (text) => (
         <Text type="secondary" style={{ fontSize: '12px' }}>
-          {text || '暂无描述'}
+          {text || intl.formatMessage({ id: 'pages.model.noDescription', defaultMessage: 'No description' })}
         </Text>
       ),
     },
     {
-      title: '能力',
+      title: intl.formatMessage({ id: 'pages.model.capabilities', defaultMessage: 'Capabilities' }),
       key: 'capabilities',
       width: 280,
       render: (_, record) => (
@@ -227,18 +227,18 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       ),
     },
     {
-      title: '状态',
+      title: intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' }),
       dataIndex: 'status',
       key: 'status',
       width: 80,
       render: (status) => (
         <Tag color={status === 1 ? 'green' : 'red'}>
-          {status === 1 ? '启用' : '禁用'}
+          {status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
         </Tag>
       ),
     },
     {
-      title: '操作',
+      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Operation' }),
       key: 'action',
       width: 150,
       fixed: 'right',
@@ -246,7 +246,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
         const canOperate = hasOperationPermission(isAdmin, currentUser, record.creator);
         return canOperate ? (
           <Space size={8}>
-            <Tooltip title="编辑">
+            <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
               <Button
                 type="link"
                 size="small"
