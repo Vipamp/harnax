@@ -196,7 +196,7 @@ const McpCard: React.FC<{
                   style={{ color: '#fa8c16' }}
                 />
               </Tooltip>
-              <Tooltip title="编辑">
+              <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
                 <Button
                   type="text"
                   size="small"
@@ -208,7 +208,7 @@ const McpCard: React.FC<{
                   style={{ color: '#1890ff' }}
                 />
               </Tooltip>
-              <Tooltip title="删除">
+              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
                 <Button
                   type="text"
                   size="small"
@@ -314,10 +314,10 @@ const McpManagement: React.FC = () => {
   /** 删除 MCP */
   const handleRemove = async (id: number) => {
     Modal.confirm({
-      title: '确认删除该 MCP 服务吗？',
-      content: '此操作不可恢复，请谨慎操作',
-      okText: '确定',
-      cancelText: '取消',
+      title: intl.formatMessage({ id: 'pages.message.mcpDeleteConfirm', defaultMessage: 'Are you sure to delete this MCP service?' }),
+      content: intl.formatMessage({ id: 'pages.message.irreversibleOperation', defaultMessage: 'This operation cannot be undone, please proceed with caution' }),
+      okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
@@ -379,12 +379,12 @@ const McpManagement: React.FC = () => {
       if (res.data === true) {
         setTestResult({
           success: true,
-          message: `${name} 连通性测试通过，服务连接正常`,
+          message: intl.formatMessage({ id: 'pages.message.mcpTestSuccess', defaultMessage: 'MCP connectivity test passed, service connection is normal' }, { name }),
         });
       } else {
         setTestResult({
           success: false,
-          message: `${name} 连通性测试失败，服务不可达`,
+          message: intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name }),
         });
       }
     } catch (error: any) {
@@ -393,14 +393,14 @@ const McpManagement: React.FC = () => {
         // 超时错误
         setTestResult({
           success: false,
-          message: `${name} 连通性测试超时（15秒未响应），请检查服务是否正常运行`,
+          message: intl.formatMessage({ id: 'pages.message.mcpTestTimeout', defaultMessage: 'MCP connectivity test timed out (15s no response), please check if the service is running' }, { name }),
         });
       } else {
         // 其他错误
-        const errorMsg = error?.message || error?.info?.errorMessage || '连接失败';
+        const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.connectionFailed', defaultMessage: 'Connection failed' });
         setTestResult({
           success: false,
-          message: `${name} 连通性测试失败：${errorMsg}`,
+          message: intl.formatMessage({ id: 'pages.message.mcpTestFailedWithMsg', defaultMessage: 'MCP connectivity test failed: {errorMsg}' }, { name, errorMsg }),
         });
       }
     }
@@ -520,7 +520,7 @@ const McpManagement: React.FC = () => {
                 setPageNum(page);
                 if (size) setPageSize(size);
               }}
-              style={{ padding: '12px 24px', background: '#fff', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+              style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
             />
           </div>
         </>

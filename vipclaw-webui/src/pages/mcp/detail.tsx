@@ -73,7 +73,7 @@ const McpDetail: React.FC = () => {
         setMcpInfo(res.data);
       }
     } catch (error) {
-      console.error('加载 MCP 详情失败', error);
+      console.error(intl.formatMessage({ id: 'pages.message.loadMcpDetailFailed', defaultMessage: 'Failed to load MCP details' }), error);
     } finally {
       setLoading(false);
     }
@@ -87,13 +87,13 @@ const McpDetail: React.FC = () => {
         setTools(res.data);
       } else {
         // 显示后端返回的错误信息
-        const errorMsg = res.message || '加载工具列表失败';
+        const errorMsg = res.message || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      console.error('加载工具列表失败', error);
+      console.error(intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' }), error);
       // 显示错误信息给用户
-      const errorMsg = error?.message || error?.info?.errorMessage || '加载工具列表失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
       message.error(errorMsg);
     } finally {
       setToolsLoading(false);

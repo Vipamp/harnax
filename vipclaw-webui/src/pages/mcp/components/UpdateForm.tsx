@@ -62,12 +62,12 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     try {
       const result = await onConnectivityTest(values.id);
       if (result) {
-        message.success(`${values.name} 连通性测试通过`);
+        message.success(intl.formatMessage({ id: 'pages.message.mcpTestSuccess', defaultMessage: 'MCP connectivity test passed, service connection is normal' }, { name: values.name }));
       } else {
-        message.error(`${values.name} 连通性测试失败`);
+        message.error(intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name: values.name }));
       }
     } catch (error) {
-      message.error(`${values.name} 连通性测试失败`);
+      message.error(intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name: values.name }));
     } finally {
       setTesting(false);
     }
