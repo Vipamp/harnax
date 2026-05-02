@@ -98,7 +98,7 @@ const McpCard: React.FC<{
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Text strong style={{ fontSize: '16px', color: '#1a1a2e' }}>
+              <Text strong style={{ fontSize: '16px', color: 'var(--vip-text-primary)' }}>
                 {item.name}
               </Text>
             </div>
@@ -136,7 +136,7 @@ const McpCard: React.FC<{
         {/* 描述 */}
         <Paragraph
           ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: '#666', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
+          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
         >
           {item.description || '暂无描述'}
         </Paragraph>
@@ -144,11 +144,11 @@ const McpCard: React.FC<{
         {/* 命令/地址 */}
         <div
           style={{
-            background: isHovered ? `${config.color}08` : '#f7f8ff',
+            background: 'var(--vip-bg-layout)',
             borderRadius: '10px',
             padding: '12px 14px',
             marginBottom: 16,
-            border: isHovered ? `1px solid ${config.color}20` : '1px solid transparent',
+            border: '1px solid var(--vip-border)',
             transition: 'all 0.3s ease',
           }}
         >
@@ -156,7 +156,7 @@ const McpCard: React.FC<{
             code
             style={{
               fontSize: '12px',
-              color: '#4a4a6a',
+              color: 'var(--vip-text-secondary)',
               display: 'block',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -171,7 +171,7 @@ const McpCard: React.FC<{
         </div>
 
         {/* 是否公开、创建时间、创建人和操作按钮 */}
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
           {item.isPublic === 1 && (
             <Tag color="blue">公开</Tag>
           )}
@@ -255,9 +255,9 @@ const MCP_TYPE_CONFIG: Record<
   string,
   { color: string; label: string; icon: React.ReactNode; bg: string }
 > = {
-  stdio: { color: '#4f6ef7', label: 'STDIO', icon: <CodeOutlined />, bg: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)' },
-  sse: { color: '#52c41a', label: 'SSE', icon: <ApiOutlined />, bg: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
-  streamablehttp: { color: '#fa8c16', label: 'Streamable HTTP', icon: <LinkOutlined />, bg: 'linear-gradient(135deg, #fa8c16 0%, #ffc53d 100%)' },
+  stdio: { color: 'var(--vip-primary)', label: 'STDIO', icon: <CodeOutlined />, bg: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)' },
+  sse: { color: 'var(--vip-success)', label: 'SSE', icon: <ApiOutlined />, bg: 'linear-gradient(135deg, var(--vip-success) 0%, var(--vip-success-hover) 100%)' },
+  streamablehttp: { color: 'var(--vip-warning)', label: 'Streamable HTTP', icon: <LinkOutlined />, bg: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-hover) 100%)' },
 };
 
 const McpManagement: React.FC = () => {
@@ -410,9 +410,9 @@ const McpManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            MCP 服务管理
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.mcp.title', defaultMessage: 'MCP Service Management' })}
           </span>
         ),
       }}
@@ -461,10 +461,10 @@ const McpManagement: React.FC = () => {
               { label: 'Streamable HTTP', value: 'streamablehttp' },
             ]}
           />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
             查询
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
             重置
           </Button>
           <div style={{ flex: 1 }} />

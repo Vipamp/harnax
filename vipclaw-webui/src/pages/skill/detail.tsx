@@ -1,3 +1,4 @@
+import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import { Card, Descriptions, Tag, Typography, Spin, Empty, Button, Tabs, Tree, Breadcrumb } from 'antd';
 import { 
@@ -160,6 +161,7 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
 };
 
 const SkillDetail: React.FC = () => {
+  const intl = useIntl();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [skillInfo, setSkillInfo] = useState<API.SkillItem | null>(null);
@@ -565,8 +567,8 @@ const SkillDetail: React.FC = () => {
         ),
         breadcrumb: {
           items: [
-            { title: <a onClick={() => history.push('/context/skill')}>技能管理</a> },
-            { title: skillInfo?.name || '技能详情' }
+            { title: <a onClick={() => history.push('/context/skill')}>{intl.formatMessage({ id: 'menu.context.skill', defaultMessage: 'Skill Management' })}</a> },
+            { title: skillInfo?.name || intl.formatMessage({ id: 'pages.skill.detail', defaultMessage: 'Skill Detail' }) }
           ]
         }
       }}

@@ -281,9 +281,9 @@ const ChannelManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ApiOutlined style={{ marginRight: 10, color: '#1890ff' }} />
-            Channel 管理
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.channel.title', defaultMessage: 'Channel Management' })}
           </span>
         ),
       }}
@@ -341,6 +341,8 @@ const ChannelManagement: React.FC = () => {
                 borderRadius: '10px',
                 height: '40px',
                 padding: '0 20px',
+                background: 'var(--vip-primary)',
+                borderColor: 'var(--vip-primary)',
               }}
             >
               查询
@@ -351,6 +353,9 @@ const ChannelManagement: React.FC = () => {
                 borderRadius: '10px',
                 height: '40px',
                 padding: '0 20px',
+                color: 'var(--vip-text-primary)',
+                borderColor: 'var(--vip-border)',
+                background: 'var(--vip-bg-container)',
               }}
             >
               重置

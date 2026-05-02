@@ -144,9 +144,9 @@ const SkillManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ThunderboltOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            技能管理
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ThunderboltOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.skill.title', defaultMessage: 'Skill Management' })}
           </span>
         ),
       }}
@@ -232,7 +232,7 @@ const SkillManagement: React.FC = () => {
                   ]}
                 />
                 {/* 重置按钮 */}
-                <Button icon={<ReloadOutlined />} onClick={handleResetFilters}>
+                <Button icon={<ReloadOutlined />} onClick={handleResetFilters} style={{ color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
                   重置
                 </Button>
               </div>

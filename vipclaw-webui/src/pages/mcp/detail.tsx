@@ -1,3 +1,4 @@
+import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import { Card, Descriptions, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
 import { 
@@ -28,6 +29,7 @@ interface ToolItem {
 }
 
 const McpDetail: React.FC = () => {
+  const intl = useIntl();
   const location = useLocation();
   const [loading, setLoading] = useState(false);
   const [toolsLoading, setToolsLoading] = useState(false);
@@ -114,14 +116,14 @@ const McpDetail: React.FC = () => {
             width: 32,
             height: 32,
             borderRadius: '8px',
-            background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f0ff 100%)',
+            background: 'var(--vip-bg-layout)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <ToolOutlined style={{ color: '#4f6ef7', fontSize: 14 }} />
+            <ToolOutlined style={{ color: 'var(--vip-primary)', fontSize: 14 }} />
           </div>
-          <Text strong style={{ color: '#1a1a2e', fontSize: 14 }}>
+          <Text strong style={{ color: 'var(--vip-text-primary)', fontSize: 14 }}>
             {text}
           </Text>
         </div>
@@ -142,8 +144,8 @@ const McpDetail: React.FC = () => {
                 key={index}
                 style={{
                   padding: '12px 16px',
-                  background: '#fafbfc',
-                  border: '1px solid #f0f0f5',
+                  background: 'var(--vip-bg-layout)',
+                  border: '1px solid var(--vip-border)',
                   borderRadius: '10px',
                   transition: 'all 0.3s ease'
                 }}
@@ -169,7 +171,7 @@ const McpDetail: React.FC = () => {
                   >
                     {param.type}
                   </Tag>
-                  <Text style={{ fontSize: 13, color: '#595959', flex: 1 }}>
+                  <Text style={{ fontSize: 13, color: 'var(--vip-text-secondary)', flex: 1 }}>
                     {param.description || '无描述'}
                   </Text>
                 </div>
@@ -215,8 +217,8 @@ const McpDetail: React.FC = () => {
         ),
         breadcrumb: {
           items: [
-            { title: <a onClick={() => history.push('/context/mcp')}>MCP 管理</a> },
-            { title: mcpInfo?.name || 'MCP 详情' }
+            { title: <a onClick={() => history.push('/context/mcp')}>{intl.formatMessage({ id: 'menu.context.mcp', defaultMessage: 'MCP Management' })}</a> },
+            { title: mcpInfo?.name || intl.formatMessage({ id: 'pages.mcp.detail', defaultMessage: 'MCP Detail' }) }
           ]
         }
       }}
@@ -229,8 +231,8 @@ const McpDetail: React.FC = () => {
               style={{
                 marginBottom: 24,
                 borderRadius: '16px',
-                border: '1px solid #f0f0f5',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                border: '1px solid var(--vip-border)',
+                boxShadow: 'var(--vip-card-shadow)',
                 overflow: 'hidden'
               }}
               styles={{ body: { padding: 0 } }}
@@ -238,8 +240,8 @@ const McpDetail: React.FC = () => {
               {/* 顶部标题栏 */}
               <div style={{ 
                 padding: '20px 24px', 
-                background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f0ff 100%)',
-                borderBottom: '1px solid #d6e4ff'
+                background: 'var(--vip-bg-layout)',
+                borderBottom: '1px solid var(--vip-border)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -247,16 +249,16 @@ const McpDetail: React.FC = () => {
                       width: 48,
                       height: 48,
                       borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)',
+                      background: 'var(--vip-primary)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      boxShadow: '0 4px 12px rgba(79, 110, 247, 0.25)'
+                      boxShadow: '0 4px 12px var(--vip-shadow)'
                     }}>
                       <ApiOutlined style={{ fontSize: 22, color: '#fff' }} />
                     </div>
                     <div>
-                      <Text strong style={{ fontSize: 20, color: '#1a1a2e', display: 'block', marginBottom: 4 }}>
+                      <Text strong style={{ fontSize: 20, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
                         {mcpInfo.name}
                       </Text>
                       <div style={{ display: 'flex', gap: 8 }}>
@@ -286,8 +288,8 @@ const McpDetail: React.FC = () => {
                 column={1} 
                 size="small"
                 styles={{ 
-                  label: { color: '#8c8c8c', fontWeight: 500 },
-                  content: { color: '#262626' }
+                  label: { color: 'var(--vip-text-secondary)', fontWeight: 500 },
+                  content: { color: 'var(--vip-text-primary)' }
                 }}
                 style={{ padding: '24px' }}
               >
@@ -296,7 +298,7 @@ const McpDetail: React.FC = () => {
                 </Descriptions.Item>
                 <Descriptions.Item label="连接方式" span={1}>
                   <Text>
-                    <CodeOutlined style={{ marginRight: 6, color: '#4f6ef7' }} />
+                    <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
                     {mcpInfo.type === 'stdio' ? mcpInfo.command : mcpInfo.url || '-'}
                   </Text>
                 </Descriptions.Item>
@@ -313,7 +315,7 @@ const McpDetail: React.FC = () => {
             <Card
               title={
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <ToolOutlined style={{ color: '#4f6ef7' }} />
+                  <ToolOutlined style={{ color: 'var(--vip-primary)' }} />
                   工具列表
                   {tools.length > 0 && (
                     <Tag 
@@ -331,8 +333,8 @@ const McpDetail: React.FC = () => {
               }
               style={{
                 borderRadius: '16px',
-                border: '1px solid #f0f0f5',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                border: '1px solid var(--vip-border)',
+                boxShadow: 'var(--vip-card-shadow)',
                 overflow: 'hidden'
               }}
               styles={{ body: { padding: 0 } }}
@@ -354,10 +356,10 @@ const McpDetail: React.FC = () => {
                           {...props} 
                           style={{ 
                             ...props.style, 
-                            background: '#fafbfc',
+                            background: 'var(--vip-bg-layout)',
                             fontWeight: 600,
-                            color: '#262626',
-                            borderBottom: '2px solid #f0f0f5'
+                            color: 'var(--vip-text-primary)',
+                            borderBottom: '2px solid var(--vip-border)'
                           }}
                         />
                       ),
