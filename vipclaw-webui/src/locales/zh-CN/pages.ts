@@ -61,6 +61,9 @@ export default {
   
   // 模型管理
   'pages.model.type': '模型类型',
+  'pages.model.tags': '标签',
+  'pages.model.minPrice': '最低价格',
+  'pages.model.maxPrice': '最高价格',
   'pages.model.tag.internet': '联网',
   'pages.model.tag.reasoning': '推理',
   'pages.model.tag.tool': '工具',

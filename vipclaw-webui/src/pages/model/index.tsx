@@ -299,7 +299,7 @@ const ModelManagement: React.FC = () => {
                 />
                 {/* 标签筛选 */}
                 <Select
-                  placeholder="标签"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.tags', defaultMessage: 'Tags' })}
                   mode="multiple"
                   style={{ width: 200 }}
                   value={filters.tags}
@@ -309,7 +309,7 @@ const ModelManagement: React.FC = () => {
                   options={TAG_OPTIONS.map(tag => ({
                     label: (
                       <span>
-                        {tag.icon} {tag.label}
+                        {tag.icon} {getLocalizedTagLabel(intl, tag.label)}
                       </span>
                     ),
                     value: tag.value,
@@ -323,13 +323,13 @@ const ModelManagement: React.FC = () => {
                   onChange={(value) => setFilters({ ...filters, status: value })}
                   allowClear
                   options={[
-                    { label: '启用', value: 1 },
-                    { label: '禁用', value: 0 },
+                    { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+                    { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
                   ]}
                 />
                 {/* 价格范围 */}
                 <Input
-                  placeholder="最低价格"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.minPrice', defaultMessage: 'Min Price' })}
                   type="number"
                   step="0.0001"
                   value={filters.minPrice}
@@ -338,7 +338,7 @@ const ModelManagement: React.FC = () => {
                 />
                 <span style={{ color: '#999' }}>-</span>
                 <Input
-                  placeholder="最高价格"
+                  placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.maxPrice', defaultMessage: 'Max Price' })}
                   type="number"
                   step="0.0001"
                   value={filters.maxPrice}
@@ -350,7 +350,7 @@ const ModelManagement: React.FC = () => {
                   icon={<ReloadOutlined />}
                   onClick={handleResetFilters}
                 >
-                  重置
+                  {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                 </Button>
                 {/* 新增按钮 */}
                 <Button
@@ -359,7 +359,7 @@ const ModelManagement: React.FC = () => {
                   onClick={handleCreateModel}
                   disabled={!selectedProvider}
                 >
-                  新增
+                  {intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' })}
                 </Button>
               </div>
             }

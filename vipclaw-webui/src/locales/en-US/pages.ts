@@ -61,6 +61,9 @@ export default {
   
   // Model Management
   'pages.model.type': 'Model Type',
+  'pages.model.tags': 'Tags',
+  'pages.model.minPrice': 'Min Price',
+  'pages.model.maxPrice': 'Max Price',
   'pages.model.tag.internet': 'Internet',
   'pages.model.tag.reasoning': 'Reasoning',
   'pages.model.tag.tool': 'Tool',
