@@ -123,8 +123,8 @@ const McpCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren="启用"
-                unCheckedChildren="禁用"
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}
@@ -138,7 +138,7 @@ const McpCard: React.FC<{
           ellipsis={{ rows: 2 }}
           style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
         >
-          {item.description || '暂无描述'}
+          {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
         </Paragraph>
 
         {/* 命令/地址 */}
@@ -173,7 +173,7 @@ const McpCard: React.FC<{
         {/* 是否公开、创建时间、创建人和操作按钮 */}
         <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
           {item.isPublic === 1 && (
-            <Tag color="blue">公开</Tag>
+            <Tag color="blue">{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
           )}
           <Text type="secondary" style={{ fontSize: '12px' }}>
             {item.createTime?.replace('T', ' ')}
@@ -184,7 +184,7 @@ const McpCard: React.FC<{
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
             <Space size={8}>
-              <Tooltip title="连通测试">
+              <Tooltip title={intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}>
                 <Button
                   type="text"
                   size="small"
@@ -555,7 +555,7 @@ const McpManagement: React.FC = () => {
           }
         }}
         onConnectivityTest={async () => {
-          messageApi.info('请先保存 MCP 服务后再进行连通测试');
+          messageApi.info(intl.formatMessage({ id: 'pages.mcp.testAfterSave', defaultMessage: 'Please save the MCP service before testing connectivity' }));
           return false;
         }}
       />
@@ -589,7 +589,7 @@ const McpManagement: React.FC = () => {
             }
           }}
           onConnectivityTest={async (id) => {
-            const hide = message.loading('正在测试连通性...');
+            const hide = message.loading(intl.formatMessage({ id: 'pages.mcp.testing', defaultMessage: 'Testing connectivity...' }));
             try {
               const res = await connectivityTestMcpServer(id);
               hide();
@@ -604,7 +604,7 @@ const McpManagement: React.FC = () => {
 
       {/* 连通性测试弹窗 */}
       <Modal
-        title="连通性测试"
+        title={intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
         open={testModalVisible}
         onCancel={() => {
           setTestModalVisible(false);
@@ -657,10 +657,10 @@ const McpManagement: React.FC = () => {
                 </svg>
               </div>
               <Text style={{ fontSize: 16, color: '#666' }}>
-                正在测试连接，请稍候...
+                {intl.formatMessage({ id: 'pages.mcp.testingConnection', defaultMessage: 'Testing connection, please wait...' })}
               </Text>
               <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 13 }}>
-                如果超过 15 秒未响应，测试将自动超时
+                {intl.formatMessage({ id: 'pages.mcp.timeoutHint', defaultMessage: 'If no response within 15 seconds, the test will timeout' })}
               </Text>
             </div>
           ) : testResult ? (
@@ -709,7 +709,7 @@ const McpManagement: React.FC = () => {
                   marginBottom: 8,
                 }}
               >
-                {testResult.success ? '测试成功' : '测试失败'}
+                {testResult.success ? intl.formatMessage({ id: 'pages.mcp.testSuccess', defaultMessage: 'Test Successful' }) : intl.formatMessage({ id: 'pages.mcp.testFailed', defaultMessage: 'Test Failed' })}
               </Text>
               <Text type="secondary" style={{ fontSize: 14, display: 'block' }}>
                 {testResult.message}

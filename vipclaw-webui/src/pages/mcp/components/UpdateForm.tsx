@@ -78,7 +78,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       destroyOnClose
       title={
         <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          编辑 MCP 服务
+          {intl.formatMessage({ id: 'pages.mcp.edit', defaultMessage: 'Edit MCP Service' })}
         </span>
       }
       width={640}
@@ -98,7 +98,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         onFinish={(formValues) => onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0 })}
         submitter={{
           searchConfig: {
-            submitText: '保存',
+            submitText: intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }),
             resetText: '重置',
           },
           render: (props, dom) => [
@@ -126,7 +126,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       >
         <ProFormText
           name="name"
-          label="MCP 名称"
+          label={intl.formatMessage({ id: 'pages.mcp.name', defaultMessage: 'MCP Name' })}
           placeholder="请输入 MCP 名称"
           rules={[
             { required: true, message: '请输入 MCP 名称' },
@@ -137,14 +137,14 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
         <ProFormTextArea
           name="description"
-          label="描述"
+          label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
           placeholder="请输入 MCP 服务的描述信息（可选）"
           fieldProps={{ rows: 3 }}
         />
 
         <ProFormSelect
           name="type"
-          label="类型"
+          label={intl.formatMessage({ id: 'pages.mcp.type', defaultMessage: 'Type' })}
           options={getMcpTypeOptions()}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
@@ -156,7 +156,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         {mcpType === 'stdio' && (
           <ProFormText
             name="command"
-            label="执行命令"
+            label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
             placeholder="如：npx -y @modelcontextprotocol/server-filesystem /tmp"
             rules={[{ required: true, message: 'stdio 类型必须填写执行命令' }]}
             fieldProps={{ size: 'large' }}
@@ -167,7 +167,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         {(mcpType === 'sse' || mcpType === 'streamablehttp') && (
           <ProFormText
             name="url"
-            label="服务地址"
+            label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
             placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
             rules={[
               { required: true, message: `${mcpType === 'sse' ? 'SSE' : 'Streamable HTTP'} 类型必须填写服务地址` },
@@ -180,20 +180,20 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
         <ProFormSelect
           name="status"
-          label="状态"
+          label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
           options={[
-            { label: '启用', value: 1 },
-            { label: '禁用', value: 0 },
+            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
           ]}
           fieldProps={{ size: 'large' }}
         />
 
         <ProForm.Item
-          label="是否公开"
+          label={intl.formatMessage({ id: 'pages.common.isPublic', defaultMessage: 'Public' })}
           extra={
             isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)
-              ? '您没有权限修改此设置（已公开的实体不能改为非公开）'
-              : '公开后其他用户也可以查看此 MCP 服务'
+              ? intl.formatMessage({ id: 'pages.mcp.noPermission', defaultMessage: 'You do not have permission to modify this setting (public entities cannot be changed to private)' })
+              : intl.formatMessage({ id: 'pages.mcp.publicHint', defaultMessage: 'Other users can view this MCP service after making it public' })
           }
         >
           <Switch

@@ -46,7 +46,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
     if (!onConnectivityTest) {
-      message.info('新建模式下暂不支持连通测试，请先保存后再测试');
+      message.info(intl.formatMessage({ id: 'pages.mcp.testAfterSave', defaultMessage: 'Please save the MCP service before testing connectivity' }));
       return;
     }
     try {
@@ -70,7 +70,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
       destroyOnClose
       title={
         <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          新建 MCP 服务
+          {intl.formatMessage({ id: 'pages.mcp.create', defaultMessage: 'Create MCP Service' })}
         </span>
       }
       width={640}
@@ -91,8 +91,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         onFinish={(values) => onSubmit({ ...values, isPublic: isPublic ? 1 : 0 })}
         submitter={{
           searchConfig: {
-            submitText: '创建',
-            resetText: '重置',
+            submitText: intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' }),
+            resetText: intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' }),
           },
           render: (props, dom) => [
             <Button
@@ -110,8 +110,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
       >
         <ProFormText
           name="name"
-          label="MCP 名称"
-          placeholder="请输入 MCP 名称，如：filesystem-server"
+          label={intl.formatMessage({ id: 'pages.mcp.name', defaultMessage: 'MCP Name' })}
+          placeholder={intl.formatMessage({ id: 'pages.mcp.namePlaceholder', defaultMessage: 'Enter MCP name, e.g.: filesystem-server' })}
           rules={[
             { required: true, message: '请输入 MCP 名称' },
             { max: 100, message: '名称不能超过 100 个字符' },
@@ -121,14 +121,14 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
 
         <ProFormTextArea
           name="description"
-          label="描述"
-          placeholder="请输入 MCP 服务的描述信息（可选）"
+          label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
+          placeholder={intl.formatMessage({ id: 'pages.mcp.descriptionPlaceholder', defaultMessage: 'Enter MCP service description (optional)' })}
           fieldProps={{ rows: 3 }}
         />
 
         <ProFormSelect
           name="type"
-          label="类型"
+          label={intl.formatMessage({ id: 'pages.mcp.type', defaultMessage: 'Type' })}
           options={getMcpTypeOptions()}
           initialValue={isPersonal() ? 'stdio' : 'sse'}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
@@ -142,8 +142,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         {mcpType === 'stdio' && (
           <ProFormText
             name="command"
-            label="执行命令"
-            placeholder="如：npx -y @modelcontextprotocol/server-filesystem /tmp"
+            label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
+            placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
             rules={[{ required: true, message: 'stdio 类型必须填写执行命令' }]}
             fieldProps={{ size: 'large' }}
             extra="stdio 类型：填写启动 MCP 进程的命令行，支持参数"
@@ -153,7 +153,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         {(mcpType === 'sse' || mcpType === 'streamablehttp') && (
           <ProFormText
             name="url"
-            label="服务地址"
+            label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
             placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
             rules={[
               { required: true, message: `${mcpType === 'sse' ? 'SSE' : 'Streamable HTTP'} 类型必须填写服务地址` },
@@ -166,18 +166,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
 
         <ProFormSelect
           name="status"
-          label="状态"
+          label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
           options={[
-            { label: '启用', value: 1 },
-            { label: '禁用', value: 0 },
+            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
           ]}
           initialValue={1}
           fieldProps={{ size: 'large', defaultValue: 1 }}
         />
 
         <ProForm.Item
-          label="是否公开"
-          extra="公开后其他用户也可以查看此 MCP 服务"
+          label={intl.formatMessage({ id: 'pages.common.isPublic', defaultMessage: 'Public' })}
+          extra={intl.formatMessage({ id: 'pages.mcp.publicHint', defaultMessage: 'Other users can view this MCP service after making it public' })}
         >
           <Switch
             checked={isPublic}
