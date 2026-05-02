@@ -54,9 +54,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
       setTesting(true);
       const result = await onConnectivityTest(values);
       if (result) {
-        message.success('连通性测试通过');
+        message.success(intl.formatMessage({ id: 'pages.mcp.testSuccess', defaultMessage: 'Test Successful' }));
       } else {
-        message.error('连通性测试失败');
+        message.error(intl.formatMessage({ id: 'pages.mcp.testFailed', defaultMessage: 'Test Failed' }));
       }
     } catch (error) {
       // 表单验证失败
@@ -102,7 +102,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
               onClick={handleConnectivityTest}
               style={{ marginRight: 8 }}
             >
-              连通测试
+              {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
             </Button>,
             ...dom,
           ],

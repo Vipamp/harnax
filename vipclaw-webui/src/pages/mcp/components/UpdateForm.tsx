@@ -99,7 +99,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         submitter={{
           searchConfig: {
             submitText: intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }),
-            resetText: '重置',
+            resetText: intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' }),
           },
           render: (props, dom) => [
             <Button
@@ -109,7 +109,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               onClick={handleConnectivityTest}
               style={{ marginRight: 8 }}
             >
-              连通测试
+              {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
             </Button>,
             ...dom,
           ],
