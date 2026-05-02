@@ -88,6 +88,8 @@ export default {
   'pages.model.apiUrl': 'API URL',
   'pages.model.invalidUrl': 'Please enter a valid URL',
   'pages.model.providerPublicHint': 'Other users can view this provider after making it public',
+  'pages.model.providerList': 'Model Providers',
+  'pages.model.modelList': 'Model List',
   'pages.model.tags': 'Tags',
   'pages.model.minPrice': 'Min Price',
   'pages.model.maxPrice': 'Max Price',

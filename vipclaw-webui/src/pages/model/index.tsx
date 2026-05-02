@@ -216,8 +216,8 @@ const ModelManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.context.model',
               defaultMessage: 'Model Management',
@@ -231,10 +231,10 @@ const ModelManagement: React.FC = () => {
         {/* 左侧：服务商列表 */}
         <Col span={6}>
           <Card
-            title="模型服务商"
+            title={intl.formatMessage({ id: 'pages.model.providerList', defaultMessage: 'Model Providers' })}
             extra={
               <Button type="primary" icon={<PlusOutlined />} onClick={handleCreateProvider}>
-                新增
+                {intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' })}
               </Button>
             }
             styles={{
@@ -265,13 +265,13 @@ const ModelManagement: React.FC = () => {
             title={
               selectedProvider ? (
                 <span>
-                  模型列表
+                  {intl.formatMessage({ id: 'pages.model.modelList', defaultMessage: 'Model List' })}
                   <Tag color="blue" style={{ marginLeft: 8 }}>
                     {selectedProvider.name}
                   </Tag>
                 </span>
               ) : (
-                '模型列表'
+                intl.formatMessage({ id: 'pages.model.modelList', defaultMessage: 'Model List' })
               )
             }
             extra={

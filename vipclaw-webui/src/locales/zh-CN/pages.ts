@@ -88,6 +88,8 @@ export default {
   'pages.model.apiUrl': 'API 地址',
   'pages.model.invalidUrl': '请输入有效的 URL 地址',
   'pages.model.providerPublicHint': '公开后其他用户也可以查看此服务商',
+  'pages.model.providerList': '模型服务商',
+  'pages.model.modelList': '模型列表',
   'pages.model.tags': '标签',
   'pages.model.minPrice': '最低价格',
   'pages.model.maxPrice': '最高价格',
