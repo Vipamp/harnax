@@ -460,7 +460,7 @@ const AgentCard: React.FC<{
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => onEdit(item)}
-                  style={{ color: '#4f6ef7' }}
+                  style={{ color: 'var(--vip-primary)' }}
                 />
               </Tooltip>
               <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
@@ -590,7 +590,7 @@ const AgentManagement: React.FC = () => {
           marginBottom: 24, 
           borderRadius: '16px', 
           boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid #f0f0f8',
+          border: '1px solid var(--vip-border)',
         }}
         styles={{ body: { padding: '20px 24px' } }}
       >
