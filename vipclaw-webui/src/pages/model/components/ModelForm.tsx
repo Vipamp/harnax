@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useIntl } from '@umijs/max';
 import { Modal, Form, Input, Select, Switch, Row, Col, Typography } from 'antd';
 import { createModel, updateModel } from '@/services/ant-design-pro/model';
 import { message } from 'antd';
@@ -20,6 +21,7 @@ const MODEL_TYPE_OPTIONS = [
 ];
 
 const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCancel, onSuccess }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [modelType, setModelType] = useState<string | undefined>(values?.modelType);
@@ -96,16 +98,16 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
       if (values) {
         // 更新
         await updateModel(values.id, data);
-        message.success('更新成功');
+        message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
       } else {
         // 创建
         await createModel(data);
-        message.success('创建成功');
+        message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
       }
 
       onSuccess();
     } catch (error) {
-      message.error(values ? '更新失败' : '创建失败');
+      message.error(values ? intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed' }) : intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed' }));
     } finally {
       setLoading(false);
     }
@@ -113,7 +115,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
 
   return (
     <Modal
-      title={values ? '编辑模型' : '新增模型'}
+      title={values ? intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' }) + intl.formatMessage({ id: 'menu.context.model', defaultMessage: 'Model' }) : intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' }) + intl.formatMessage({ id: 'menu.context.model', defaultMessage: 'Model' })}
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
@@ -129,19 +131,19 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           <Col span={12}>
             <Form.Item
               name="name"
-              label="名称"
-              rules={[{ required: true, message: '请输入名称' }]}
+              label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}
             >
-              <Input placeholder="请输入名称" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
             </Form.Item>
           </Col>
           <Col span={12}>
             <Form.Item
               name="modelName"
-              label="模型名称"
-              rules={[{ required: true, message: '请输入模型名称' }]}
+              label={intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' })}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' }) }]}
             >
-              <Input placeholder="如：gpt-4, qwen-max" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} />
             </Form.Item>
           </Col>
         </Row>
@@ -150,12 +152,15 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           <Col span={12}>
             <Form.Item
               name="modelType"
-              label="模型类型"
-              rules={[{ required: true, message: '请选择模型类型' }]}
+              label={intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' }) }]}
             >
               <Select 
-                placeholder="请选择模型类型" 
-                options={MODEL_TYPE_OPTIONS} 
+                placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })} 
+                options={MODEL_TYPE_OPTIONS.map(opt => ({
+                  label: intl.formatMessage({ id: `pages.model.${opt.value}`, defaultMessage: opt.label }),
+                  value: opt.value,
+                }))} 
                 onChange={handleModelTypeChange}
               />
             </Form.Item>
@@ -163,37 +168,37 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           <Col span={12}>
             <Form.Item
               name="price"
-              label="价格（元/百万token）"
+              label={intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price (CNY/M tokens)' })}
             >
-              <Input type="number" step="0.0001" placeholder="请输入价格" />
+              <Input type="number" step="0.0001" placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} />
             </Form.Item>
           </Col>
         </Row>
 
         <Form.Item
           name="description"
-          label="描述"
+          label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
         >
-          <Input.TextArea rows={2} placeholder="请输入描述" />
+          <Input.TextArea rows={2} placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })} />
         </Form.Item>
 
         {/* 只有对话模型才显示能力选项 */}
         {modelType === 'chat' && (
-          <Form.Item label="模型能力">
+          <Form.Item label={intl.formatMessage({ id: 'pages.model.capabilities', defaultMessage: 'Capabilities' })}>
             <Row gutter={16}>
               <Col span={8}>
                 <Form.Item name="supportInternet" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="联网" unCheckedChildren="联网" />
+                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })} />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item name="supportReasoning" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="推理" unCheckedChildren="推理" />
+                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })} />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item name="supportTool" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="工具" unCheckedChildren="工具" />
+                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })} />
                 </Form.Item>
               </Col>
             </Row>
@@ -205,7 +210,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
               </Col>
               <Col span={8}>
                 <Form.Item name="supportVision" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="视觉" unCheckedChildren="视觉" />
+                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.vision', defaultMessage: 'Vision' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.vision', defaultMessage: 'Vision' })} />
                 </Form.Item>
               </Col>
             </Row>
@@ -215,13 +220,13 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         {/* 状态选择 */}
         <Form.Item
           name="status"
-          label="状态"
+          label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
           initialValue={1}
         >
           <Select
             options={[
-              { label: '启用', value: 1 },
-              { label: '禁用', value: 0 },
+              { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+              { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
             ]}
           />
         </Form.Item>
@@ -229,18 +234,18 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         {/* 是否公开 */}
         <Form.Item
           name="isPublic"
-          label="是否公开"
+          label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}
           valuePropName="checked"
           initialValue={false}
           extra={
             isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
-              ? '您没有权限修改此设置'
-              : '公开后其他用户也可以查看此模型'
+              ? intl.formatMessage({ id: 'pages.model.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
+              : intl.formatMessage({ id: 'pages.model.publicHint', defaultMessage: 'Other users can view this model after making it public' })
           }
         >
           <Switch
-            checkedChildren="公开"
-            unCheckedChildren="私有"
+            checkedChildren={intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.model.private', defaultMessage: 'Private' })}
             disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
