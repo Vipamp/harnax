@@ -223,7 +223,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                       <Tag color="orange">¥{model.price}</Tag>
                     )}
                     <Tag color={model.status === 1 ? 'green' : 'red'}>
-                      {model.status === 1 ? '启用' : '禁用'}
+                      {model.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                     </Tag>
                     <Tag color={getModelTypeColor(model.modelType)}>
                       {getModelTypeLabel(intl, model.modelType)}
@@ -256,7 +256,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                 {/* 是否公开、创建时间、创建人和操作按钮 */}
                 <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
                   {model.isPublic === 1 && (
-                    <Tag color="blue">公开</Tag>
+                    <Tag color="blue">{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
                   )}
                   <Text type="secondary" style={{ fontSize: '12px' }}>
                     {model.createTime?.replace('T', ' ')}
@@ -294,8 +294,8 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                         <Switch
                           checked={model.status === 1}
                           onChange={() => handleToggle(model.id, model.status)}
-                          checkedChildren="启用"
-                          unCheckedChildren="禁用"
+                          checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                          unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                           style={{
                             backgroundColor: model.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
                           }}
