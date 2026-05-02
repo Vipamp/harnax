@@ -193,7 +193,7 @@ const McpCard: React.FC<{
                     e.stopPropagation();
                     onTest(item.id!, item.name);
                   }}
-                  style={{ color: '#fa8c16' }}
+                  style={{ color: 'var(--vip-warning)' }}
                 />
               </Tooltip>
               <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
@@ -205,7 +205,7 @@ const McpCard: React.FC<{
                     e.stopPropagation();
                     onEdit(item);
                   }}
-                  style={{ color: '#1890ff' }}
+                  style={{ color: 'var(--vip-primary)' }}
                 />
               </Tooltip>
               <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
@@ -427,18 +427,18 @@ const McpManagement: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Input
             placeholder={intl.formatMessage({ id: 'pages.mcp.searchPlaceholder', defaultMessage: 'Search MCP name or description' })}
-            prefix={<SearchOutlined />}
+            prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onPressEnter={handleSearch}
-            style={{ width: 280, borderRadius: '8px' }}
+            style={{ width: 260, borderRadius: '10px', height: '40px' }}
             allowClear
           />
           <Select
             placeholder={intl.formatMessage({ id: 'pages.mcp.statusFilter', defaultMessage: 'Status Filter' })}
             value={status}
             onChange={(val) => setStatus(val)}
-            style={{ width: 140, borderRadius: '8px' }}
+            style={{ width: 140, borderRadius: '10px', height: '40px' }}
             allowClear
             options={[
               { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
@@ -453,7 +453,7 @@ const McpManagement: React.FC = () => {
               setTypes(val);
               setPageNum(1);
             }}
-            style={{ width: 200, borderRadius: '8px' }}
+            style={{ width: 200, borderRadius: '10px', height: '40px' }}
             allowClear
             options={[
               { label: 'STDIO', value: 'stdio' },
@@ -461,10 +461,10 @@ const McpManagement: React.FC = () => {
               { label: 'Streamable HTTP', value: 'streamablehttp' },
             ]}
           />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}>
             {intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '10px', height: '40px', padding: '0 20px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
             {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
           </Button>
           <div style={{ flex: 1 }} />
@@ -472,7 +472,7 @@ const McpManagement: React.FC = () => {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ borderRadius: '8px', fontWeight: 600 }}
+            style={{ borderRadius: '10px', height: '44px', padding: '0 24px', fontWeight: 600 }}
           >
             {intl.formatMessage({ id: 'pages.mcp.createMcp', defaultMessage: 'Create MCP' })}
           </Button>
