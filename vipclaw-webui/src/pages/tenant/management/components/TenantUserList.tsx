@@ -84,22 +84,22 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
       });
 
       if (response.code === 200) {
-        message.success('添加用户成功');
+        message.success(intl.formatMessage({ id: 'pages.tenant.userAddSuccess', defaultMessage: 'User added successfully' }));
         setAddModalVisible(false);
         loadTenantUsers();
       } else {
-        message.error(response.message || '添加用户失败');
+        message.error(response.message || intl.formatMessage({ id: 'pages.tenant.userAddFailed', defaultMessage: 'Failed to add user' }));
       }
     } catch (error: any) {
-      message.error(error?.message || '添加用户失败');
+      message.error(error?.message || intl.formatMessage({ id: 'pages.tenant.userAddFailed', defaultMessage: 'Failed to add user' }));
     }
   };
 
   // 从租户移除用户
   const handleRemoveUser = async (userId: number) => {
     Modal.confirm({
-      title: '确认移除',
-      content: '确定要从该租户中移除此用户吗？',
+      title: intl.formatMessage({ id: 'pages.tenant.confirmRemove', defaultMessage: 'Confirm Remove' }),
+      content: intl.formatMessage({ id: 'pages.tenant.confirmRemoveUser', defaultMessage: 'Are you sure to remove this user from the tenant?' }),
       onOk: async () => {
         try {
           const response = await removeUserFromTenant(tenantId, userId);
@@ -184,7 +184,7 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
             setAddModalVisible(true);
           }}
         >
-          添加用户
+          {intl.formatMessage({ id: 'pages.tenant.addUser', defaultMessage: 'Add User' })}
         </Button>
       </div>
 
@@ -202,7 +202,7 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
       />
 
       <Modal
-        title="添加用户到租户"
+        title={intl.formatMessage({ id: 'pages.tenant.addUserToTenant', defaultMessage: 'Add User to Tenant' })}
         open={addModalVisible}
         onCancel={() => setAddModalVisible(false)}
         footer={null}
@@ -211,10 +211,10 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
         <ProForm onFinish={handleAddUser} submitter={{}}>
           <ProFormSelect
             name="userId"
-            label="选择用户"
-            placeholder="请选择要添加的用户"
+            label={intl.formatMessage({ id: 'pages.tenant.selectUser', defaultMessage: 'Select User' })}
+            placeholder={intl.formatMessage({ id: 'pages.tenant.placeholder.selectUser', defaultMessage: 'Please select user to add' })}
             options={userOptions}
-            rules={[{ required: true, message: '请选择用户' }]}
+            rules={[{ required: true, message: intl.formatMessage({ id: 'pages.tenant.userRequired', defaultMessage: 'Please select user' }) }]}
             fieldProps={{
               loading: userLoading,
               showSearch: true,
