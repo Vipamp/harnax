@@ -20,6 +20,19 @@ const PROVIDER_OPTIONS = [
   { label: 'Ollama（本地）', value: 'ollama' },
 ];
 
+// 国际化服务商选项
+const getProviderLabel = (intl: any, label: string) => {
+  const providerMap: Record<string, string> = {
+    'DashScope（阿里云）': 'DashScope (Alibaba Cloud)',
+    'OpenAI': 'OpenAI',
+    'Ollama（本地）': 'Ollama (Local)',
+  };
+  return intl.formatMessage({ 
+    id: `pages.model.provider${label.split('（')[0]}`, 
+    defaultMessage: providerMap[label] || label 
+  });
+};
+
 const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, onSuccess }) => {
   const intl = useIntl();
   const [form] = Form.useForm();
@@ -107,60 +120,63 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       <Form form={form} layout="vertical">
         <Form.Item
           name="type"
-          label="服务商类型"
-          rules={[{ required: true, message: '请选择服务商类型' }]}
+          label={intl.formatMessage({ id: 'pages.model.providerType', defaultMessage: 'Provider Type' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.providerType', defaultMessage: 'Provider Type' }) }]}
         >
           <Select
-            placeholder="请选择服务商类型"
-            options={PROVIDER_OPTIONS}
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.providerType', defaultMessage: 'Provider Type' })}
+            options={PROVIDER_OPTIONS.map(opt => ({
+              label: getProviderLabel(intl, opt.label),
+              value: opt.value,
+            }))}
             disabled={!!values}
           />
         </Form.Item>
 
         <Form.Item
           name="name"
-          label="名称"
-          rules={[{ required: true, message: '请输入名称' }]}
+          label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}
         >
-          <Input placeholder="请输入名称" />
+          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
         </Form.Item>
 
         <Form.Item
           name="apiKey"
-          label="API Key"
-          extra={values ? '留空表示不修改' : ''}
+          label={intl.formatMessage({ id: 'pages.model.apiKey', defaultMessage: 'API Key' })}
+          extra={values ? intl.formatMessage({ id: 'pages.model.apiKeyHint', defaultMessage: 'Leave blank to keep unchanged' }) : ''}
         >
-          <Input.Password placeholder="请输入 API Key" />
+          <Input.Password placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + ' API Key'} />
         </Form.Item>
 
         <Form.Item
           name="baseUrl"
-          label="API 地址"
+          label={intl.formatMessage({ id: 'pages.model.apiUrl', defaultMessage: 'API URL' })}
           rules={[
             { 
               type: 'url', 
-              message: '请输入有效的 URL 地址',
+              message: intl.formatMessage({ id: 'pages.model.invalidUrl', defaultMessage: 'Please enter a valid URL' }),
               transform: (value) => value && value.trim() !== '' ? value : undefined
             }
           ]}
         >
-          <Input placeholder="如：https://dashscope.aliyuncs.com/compatible-mode/v1" />
+          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'https://dashscope.aliyuncs.com/compatible-mode/v1'} />
         </Form.Item>
 
         <Form.Item
           name="isPublic"
-          label="是否公开"
+          label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}
           valuePropName="checked"
           initialValue={false}
           extra={
             isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
-              ? '您没有权限修改此设置'
-              : '公开后其他用户也可以查看此服务商'
+              ? intl.formatMessage({ id: 'pages.model.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
+              : intl.formatMessage({ id: 'pages.model.providerPublicHint', defaultMessage: 'Other users can view this provider after making it public' })
           }
         >
           <Switch
-            checkedChildren="公开"
-            unCheckedChildren="私有"
+            checkedChildren={intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.model.private', defaultMessage: 'Private' })}
             disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
