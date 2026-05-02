@@ -102,6 +102,8 @@ export default {
   'pages.skill.title': '技能管理',
   'pages.skill.detail': '技能详情',
   'pages.channel.title': 'Channel 管理',
+  'pages.job.title': '定时任务',
+  'pages.job.log.title': '任务执行日志',
   'pages.model.noModels': '暂无模型',
   'pages.model.noCapabilities': '无特殊能力',
   'pages.message.providerDeleteConfirm': '确定要删除此服务商吗？',

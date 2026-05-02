@@ -102,6 +102,8 @@ export default {
   'pages.skill.title': 'Skill Management',
   'pages.skill.detail': 'Skill Detail',
   'pages.channel.title': 'Channel Management',
+  'pages.job.title': 'Scheduled Tasks',
+  'pages.job.log.title': 'Task Execution Log',
   'pages.model.noModels': 'No models',
   'pages.model.noCapabilities': 'No special capabilities',
   'pages.message.providerDeleteConfirm': 'Are you sure to delete this provider?',

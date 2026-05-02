@@ -1,6 +1,6 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
-import { useSearchParams } from '@umijs/max';
+import { useIntl, useSearchParams } from '@umijs/max';
 import { Button, Card, DatePicker, Input, message, Modal, Select, Space, Tag, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { getJobLogPage } from '@/services/ant-design-pro/job';
@@ -16,6 +16,7 @@ const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const JobLog: React.FC = () => {
+  const intl = useIntl();
   const actionRef = useRef<ActionType | null>(null);
   const [searchParams] = useSearchParams();
 
@@ -72,7 +73,7 @@ const JobLog: React.FC = () => {
       width: 800,
       content: (
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          <pre style={{ background: '#f5f5f5', padding: 16, borderRadius: 4 }}>
+          <pre style={{ background: 'var(--vip-bg-layout)', padding: 16, borderRadius: 4 }}>
             {record.exceptionInfo}
           </pre>
         </div>
@@ -193,9 +194,9 @@ const JobLog: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <HistoryOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            任务执行日志
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <HistoryOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.job.log.title', defaultMessage: 'Task Execution Log' })}
           </span>
         ),
       }}
@@ -235,7 +236,7 @@ const JobLog: React.FC = () => {
             style={{ borderRadius: '8px' }}
             placeholder={['开始时间', '结束时间']}
           />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
             查询
           </Button>
           <Button
@@ -247,7 +248,7 @@ const JobLog: React.FC = () => {
               setPageNum(1);
               loadData(1);
             }}
-            style={{ borderRadius: '8px' }}
+            style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}
           >
             重置
           </Button>

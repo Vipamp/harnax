@@ -442,7 +442,7 @@ const JobManagement: React.FC = () => {
               <Button
                 type="text"
                 size="small"
-                icon={<CaretRightOutlined style={{ fontSize: 16, color: '#52c41a' }} />}
+                icon={<CaretRightOutlined style={{ fontSize: 16, color: 'var(--vip-success)' }} />}
                 onClick={() => handleStart(record.id!)}
               />
             </Tooltip>
@@ -451,7 +451,7 @@ const JobManagement: React.FC = () => {
               <Button
                 type="text"
                 size="small"
-                icon={<PauseOutlined style={{ fontSize: 16, color: '#faad14' }} />}
+                icon={<PauseOutlined style={{ fontSize: 16, color: 'var(--vip-warning)' }} />}
                 onClick={() => handlePause(record.id!)}
               />
             </Tooltip>
@@ -460,7 +460,7 @@ const JobManagement: React.FC = () => {
             <Button
               type="text"
               size="small"
-              icon={<PlayCircleOutlined style={{ fontSize: 16, color: '#1890ff' }} />}
+              icon={<PlayCircleOutlined style={{ fontSize: 16, color: 'var(--vip-info)' }} />}
               onClick={() => handleRunOnce(record.id!)}
             />
           </Tooltip>
@@ -468,7 +468,7 @@ const JobManagement: React.FC = () => {
             <Button
               type="text"
               size="small"
-              icon={<EditOutlined style={{ fontSize: 16, color: '#4f6ef7' }} />}
+              icon={<EditOutlined style={{ fontSize: 16, color: 'var(--vip-primary)' }} />}
               onClick={() => {
                 setCurrentRow(record);
                 setUpdateModalVisible(true);
@@ -479,7 +479,7 @@ const JobManagement: React.FC = () => {
             <Button
               type="text"
               size="small"
-              icon={<DeleteOutlined style={{ fontSize: 16, color: '#ff4d4f' }} />}
+              icon={<DeleteOutlined style={{ fontSize: 16, color: 'var(--vip-danger)' }} />}
               onClick={() => handleRemove(record.id!)}
             />
           </Tooltip>
@@ -492,9 +492,9 @@ const JobManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ScheduleOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-            定时任务
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ScheduleOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.job.title', defaultMessage: 'Scheduled Tasks' })}
           </span>
         ),
       }}
@@ -515,7 +515,7 @@ const JobManagement: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
             <Input
               placeholder="搜索任务名称"
-              prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
+              prefix={<SearchOutlined style={{ color: 'var(--vip-text-tertiary)' }} />}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onPressEnter={handleSearch}
@@ -536,7 +536,7 @@ const JobManagement: React.FC = () => {
             <Button 
               type="primary" 
               onClick={handleSearch} 
-              style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}
+              style={{ borderRadius: '10px', height: '40px', padding: '0 20px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}
             >
               查询
             </Button>
@@ -547,7 +547,7 @@ const JobManagement: React.FC = () => {
                 setPageNum(1);
                 loadData(1);
               }}
-              style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}
+              style={{ borderRadius: '10px', height: '40px', padding: '0 20px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}
             >
               重置
             </Button>
