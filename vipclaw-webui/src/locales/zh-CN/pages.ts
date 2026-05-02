@@ -59,6 +59,14 @@ export default {
   'pages.status.running': '运行中',
   'pages.status.stopped': '已停止',
   
+  // 模型管理
+  'pages.model.type': '模型类型',
+  'pages.model.tag.internet': '联网',
+  'pages.model.tag.reasoning': '推理',
+  'pages.model.tag.tool': '工具',
+  'pages.model.tag.mcp': 'MCP',
+  'pages.model.tag.vision': '视觉',
+  
   'pages.layouts.userLayout.title':
     'Ant Design 是西湖区最具影响力的 Web 设计规范',
   'pages.login.accountLogin.tab': '账户密码登录',

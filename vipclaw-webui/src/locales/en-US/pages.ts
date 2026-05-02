@@ -59,6 +59,14 @@ export default {
   'pages.status.running': 'Running',
   'pages.status.stopped': 'Stopped',
   
+  // Model Management
+  'pages.model.type': 'Model Type',
+  'pages.model.tag.internet': 'Internet',
+  'pages.model.tag.reasoning': 'Reasoning',
+  'pages.model.tag.tool': 'Tool',
+  'pages.model.tag.mcp': 'MCP',
+  'pages.model.tag.vision': 'Vision',
+  
   'pages.layouts.userLayout.title': 'The most influential web design specification in Xihu District',
   'pages.login.accountLogin.tab': 'Account Password Login',
   'pages.login.accountLogin.errorMessage': 'Incorrect username/password (admin/ant.design)',
