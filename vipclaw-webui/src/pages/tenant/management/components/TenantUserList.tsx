@@ -233,10 +233,10 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
           />
           <div style={{ textAlign: 'right', marginTop: 24 }}>
             <Button style={{ marginRight: 8 }} onClick={() => setAddModalVisible(false)}>
-              取消
+              {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
             </Button>
             <Button type="primary" htmlType="submit">
-              提交
+              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
             </Button>
           </div>
         </ProForm>

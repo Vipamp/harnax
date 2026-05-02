@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useIntl } from '@umijs/max';
 import { Modal, Form, Input, Select, Radio, Button, Space, Alert, Typography, Card, Tag, Tooltip, Switch } from 'antd';
 import { QuestionCircleOutlined, ClockCircleOutlined, EyeOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
@@ -14,6 +15,7 @@ interface JobFormProps {
 }
 
 const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const isUpdate = !!values;
   const [nextExecutions, setNextExecutions] = useState<string[]>([]);
@@ -310,9 +312,9 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
       width={600}
       footer={
         <Space>
-          <Button onClick={onCancel}>取消</Button>
+          <Button onClick={onCancel}>{intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}</Button>
           <Button type="primary" onClick={handleSubmit}>
-            确定
+            {intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' })}
           </Button>
         </Space>
       }

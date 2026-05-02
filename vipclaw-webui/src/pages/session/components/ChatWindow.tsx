@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useIntl } from '@umijs/max';
 import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin, Dropdown } from 'antd';
 import {
   SendOutlined,
@@ -417,6 +418,7 @@ const LoadingDots: React.FC = () => (
 
 /* ═══════════════ 主组件 ═══════════════ */
 const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
+  const intl = useIntl();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2248,7 +2250,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   loading={loadingPlans}
                   size="small"
                 >
-                  <span className={styles.refreshButtonText}>刷新</span>
+                  <span className={styles.refreshButtonText}>{intl.formatMessage({ id: 'pages.common.refresh', defaultMessage: 'Refresh' })}</span>
                 </Button>
               </div>
               <Collapse accordion defaultActiveKey={[plans[0]?.planId]}>
