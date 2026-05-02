@@ -84,7 +84,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
         setModels(response.data.records || []);
       }
     } catch (error) {
-      message.error('加载模型列表失败');
+      message.error(intl.formatMessage({ id: 'pages.message.loadFailed', defaultMessage: 'Failed to load model list' }));
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
     try {
       const newStatus = currentStatus === 1 ? 0 : 1;
       await toggleModel(id, newStatus);
-      message.success('状态切换成功');
+      message.success(intl.formatMessage({ id: 'pages.message.toggleSuccess', defaultMessage: 'Status toggled successfully' }));
       // 只更新当前卡片状态，不重新加载整个列表
       setModels((prevModels) =>
         prevModels.map((model) =>
@@ -109,7 +109,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
         )
       );
     } catch (error) {
-      message.error('状态切换失败');
+      message.error(intl.formatMessage({ id: 'pages.message.toggleFailed', defaultMessage: 'Failed to toggle status' }));
     }
   };
 
@@ -118,14 +118,14 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
     try {
       const response = await deleteModel(id);
       if (response.code === 200) {
-        message.success('删除成功');
+        message.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
         loadModels();
       } else {
-        const errorMsg = response.message || '删除失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' });
       message.error(errorMsg);
     }
   };
@@ -135,46 +135,46 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
     const capabilities = [];
     if (model.supportInternet) {
       capabilities.push(
-        <Tooltip key="internet" title="支持联网">
-          <Tag icon={<GlobalOutlined />} color="cyan">联网</Tag>
+        <Tooltip key="internet" title={intl.formatMessage({ id: 'pages.model.supportInternet', defaultMessage: 'Support Internet' })}>
+          <Tag icon={<GlobalOutlined />} color="cyan">{intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportReasoning) {
       capabilities.push(
-        <Tooltip key="reasoning" title="支持推理">
-          <Tag icon={<ThunderboltOutlined />} color="orange">推理</Tag>
+        <Tooltip key="reasoning" title={intl.formatMessage({ id: 'pages.model.supportReasoning', defaultMessage: 'Support Reasoning' })}>
+          <Tag icon={<ThunderboltOutlined />} color="orange">{intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportTool) {
       capabilities.push(
-        <Tooltip key="tool" title="支持工具调用">
-          <Tag icon={<ToolOutlined />} color="geekblue">工具</Tag>
+        <Tooltip key="tool" title={intl.formatMessage({ id: 'pages.model.supportTool', defaultMessage: 'Support Tool Call' })}>
+          <Tag icon={<ToolOutlined />} color="geekblue">{intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })}</Tag>
         </Tooltip>
       );
     }
     if (model.supportMcp) {
       capabilities.push(
-        <Tooltip key="mcp" title="支持 MCP">
+        <Tooltip key="mcp" title={intl.formatMessage({ id: 'pages.model.supportMcp', defaultMessage: 'Support MCP' })}>
           <Tag icon={<ApiOutlined />} color="green">MCP</Tag>
         </Tooltip>
       );
     }
     if (model.supportVision) {
       capabilities.push(
-        <Tooltip key="vision" title="支持视觉">
-          <Tag icon={<EyeOutlined />} color="purple">视觉</Tag>
+        <Tooltip key="vision" title={intl.formatMessage({ id: 'pages.model.supportVision', defaultMessage: 'Support Vision' })}>
+          <Tag icon={<EyeOutlined />} color="purple">{intl.formatMessage({ id: 'pages.model.tag.vision', defaultMessage: 'Vision' })}</Tag>
         </Tooltip>
       );
     }
-    return capabilities.length > 0 ? capabilities : <Tag>无特殊能力</Tag>;
+    return capabilities.length > 0 ? capabilities : <Tag>{intl.formatMessage({ id: 'pages.model.noCapabilities', defaultMessage: 'No special capabilities' })}</Tag>;
   };
 
   return (
     <Spin spinning={loading}>
       {models.length === 0 ? (
-        <Empty description="暂无模型" />
+        <Empty description={intl.formatMessage({ id: 'pages.model.noModels', defaultMessage: 'No models' })} />
       ) : (
         <Row gutter={[12, 12]}>
           {models.map((model) => (
@@ -268,7 +268,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                   <Space size={8}>
                     {hasOperationPermission(isAdmin, currentUser, model.creator) && (
                       <>
-                        <Tooltip title="编辑">
+                        <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
                           <Button
                             type="link"
                             size="small"
@@ -278,10 +278,10 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                           />
                         </Tooltip>
                         <Popconfirm
-                          title="确定要删除此模型吗？"
+                          title={intl.formatMessage({ id: 'pages.message.modelDeleteConfirm', defaultMessage: 'Are you sure to delete this model?' })}
                           onConfirm={() => handleDelete(model.id)}
                         >
-                          <Tooltip title="删除">
+                          <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
                             <Button
                               type="link"
                               size="small"
@@ -297,7 +297,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                           checkedChildren="启用"
                           unCheckedChildren="禁用"
                           style={{
-                            backgroundColor: model.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                            backgroundColor: model.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
                           }}
                         />
                       </>

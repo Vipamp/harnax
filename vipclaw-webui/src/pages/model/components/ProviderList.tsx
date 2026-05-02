@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useIntl } from '@umijs/max';
 import { Card, Switch, Button, Space, Popconfirm, Tag, Typography, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, ApiOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
@@ -24,6 +25,7 @@ const ProviderList: React.FC<ProviderListProps> = ({
   onDelete,
   onConnectivityTest,
 }) => {
+  const intl = useIntl();
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
 
@@ -74,10 +76,10 @@ const ProviderList: React.FC<ProviderListProps> = ({
               onChange={() => {
                 onToggle(provider.id, provider.status);
               }}
-              checkedChildren="启用"
-              unCheckedChildren="禁用"
+              checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+              unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
               style={{
-                backgroundColor: provider.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                backgroundColor: provider.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
               }}
             />
           </div>
@@ -85,7 +87,7 @@ const ProviderList: React.FC<ProviderListProps> = ({
           {/* 是否公开、创建时间、创建人和操作按钮 */}
           <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {provider.isPublic === 1 && (
-              <Tag color="blue" style={{ marginLeft: 0 }}>公开</Tag>
+              <Tag color="blue" style={{ marginLeft: 0 }}>{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
             )}
             <Text type="secondary" style={{ fontSize: '12px' }}>
               {provider.createTime?.replace('T', ' ')}
@@ -95,7 +97,7 @@ const ProviderList: React.FC<ProviderListProps> = ({
             )}
             <div style={{ flex: 1 }} />
             <Space size={8}>
-              <Tooltip title="测试">
+              <Tooltip title={intl.formatMessage({ id: 'pages.model.test', defaultMessage: 'Test' })}>
                 <Button
                   type="link"
                   size="small"
@@ -109,7 +111,7 @@ const ProviderList: React.FC<ProviderListProps> = ({
               </Tooltip>
               {hasOperationPermission(isAdmin, currentUser, provider.creator) && (
                 <>
-                  <Tooltip title="编辑">
+                  <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
                     <Button
                       type="link"
                       size="small"
@@ -122,14 +124,14 @@ const ProviderList: React.FC<ProviderListProps> = ({
                     />
                   </Tooltip>
                   <Popconfirm
-                    title="确定要删除此服务商吗？"
+                    title={intl.formatMessage({ id: 'pages.message.providerDeleteConfirm', defaultMessage: 'Are you sure to delete this provider?' })}
                     onConfirm={(e) => {
                       e?.stopPropagation();
                       onDelete(provider.id);
                     }}
                     onCancel={(e) => e?.stopPropagation()}
                   >
-                    <Tooltip title="删除">
+                    <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
                       <Button
                         type="link"
                         size="small"

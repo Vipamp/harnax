@@ -96,6 +96,14 @@ export default {
   'pages.model.tag.tool': '工具',
   'pages.model.tag.mcp': 'MCP',
   'pages.model.tag.vision': '视觉',
+  'pages.model.test': '测试',
+  'pages.model.noModels': '暂无模型',
+  'pages.model.noCapabilities': '无特殊能力',
+  'pages.message.providerDeleteConfirm': '确定要删除此服务商吗？',
+  'pages.message.modelDeleteConfirm': '确定要删除此模型吗？',
+  'pages.message.loadFailed': '加载模型列表失败',
+  'pages.message.toggleSuccess': '状态切换成功',
+  'pages.message.toggleFailed': '状态切换失败',
   
   'pages.layouts.userLayout.title':
     'Ant Design 是西湖区最具影响力的 Web 设计规范',
