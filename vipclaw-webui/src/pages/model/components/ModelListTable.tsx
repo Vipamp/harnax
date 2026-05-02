@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useIntl } from '@umijs/max';
 import { Table, Tag, Switch, Button, Space, Popconfirm, Empty, Spin, Typography, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { EditOutlined, DeleteOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, ApiOutlined, EyeOutlined } from '@ant-design/icons';
@@ -21,12 +22,28 @@ interface ModelListProps {
   };
 }
 
-const MODEL_TYPE_MAP: Record<string, { label: string; color: string }> = {
-  chat: { label: '对话模型', color: 'blue' },
-  embedding: { label: '嵌入模型', color: 'purple' },
+// 获取模型类型标签（国际化）
+const getModelTypeLabel = (intl: any, type: string) => {
+  const typeMap: Record<string, string> = {
+    chat: 'Chat Model',
+    embedding: 'Embedding Model',
+  };
+  return intl.formatMessage({ 
+    id: `pages.model.${type}`, 
+    defaultMessage: typeMap[type] || type 
+  });
+};
+
+const getModelTypeColor = (type: string) => {
+  const colorMap: Record<string, string> = {
+    chat: 'blue',
+    embedding: 'purple',
+  };
+  return colorMap[type] || 'default';
 };
 
 const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) => {
+  const intl = useIntl();
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [columnsWidth, setColumnsWidth] = useState<Record<string, number>>({});
@@ -174,8 +191,8 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       key: 'modelType',
       width: 100,
       render: (text) => (
-        <Tag color={MODEL_TYPE_MAP[text]?.color || 'default'}>
-          {MODEL_TYPE_MAP[text]?.label || text}
+        <Tag color={getModelTypeColor(text)}>
+          {getModelTypeLabel(intl, text)}
         </Tag>
       ),
     },

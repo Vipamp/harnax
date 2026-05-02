@@ -61,6 +61,8 @@ export default {
   
   // 模型管理
   'pages.model.type': '模型类型',
+  'pages.model.chat': '对话模型',
+  'pages.model.embedding': '嵌入模型',
   'pages.model.tags': '标签',
   'pages.model.minPrice': '最低价格',
   'pages.model.maxPrice': '最高价格',

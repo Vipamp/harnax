@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useIntl } from '@umijs/max';
 import { Card, Row, Col, Tag, Switch, Button, Space, Popconfirm, Empty, Spin, Typography, Tooltip } from 'antd';
 import { EditOutlined, DeleteOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, ApiOutlined, EyeOutlined } from '@ant-design/icons';
 import { modelPage, toggleModel, deleteModel } from '@/services/ant-design-pro/model';
@@ -20,12 +21,36 @@ interface ModelListProps {
   };
 }
 
-const MODEL_TYPE_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  chat: { label: '对话模型', color: 'blue', bg: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)' },
-  embedding: { label: '嵌入模型', color: 'purple', bg: 'linear-gradient(135deg, #722ed1 0%, #b37feb 100%)' },
+// 获取模型类型标签（国际化）
+const getModelTypeLabel = (intl: any, type: string) => {
+  const typeMap: Record<string, string> = {
+    chat: 'Chat Model',
+    embedding: 'Embedding Model',
+  };
+  return intl.formatMessage({ 
+    id: `pages.model.${type}`, 
+    defaultMessage: typeMap[type] || type 
+  });
+};
+
+const getModelTypeColor = (type: string) => {
+  const colorMap: Record<string, string> = {
+    chat: 'blue',
+    embedding: 'purple',
+  };
+  return colorMap[type] || 'default';
+};
+
+const getModelTypeBg = (type: string) => {
+  const bgMap: Record<string, string> = {
+    chat: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)',
+    embedding: 'linear-gradient(135deg, #722ed1 0%, #b37feb 100%)',
+  };
+  return bgMap[type] || '#999';
 };
 
 const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) => {
+  const intl = useIntl();
   const [models, setModels] = useState<API.ModelItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -183,7 +208,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                 <div
                   style={{
                     height: '4px',
-                    background: MODEL_TYPE_MAP[model.modelType]?.bg || '#999',
+                    background: getModelTypeBg(model.modelType),
                   }}
                 />
                 <div style={{ padding: '16px' }}>
@@ -200,8 +225,8 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                     <Tag color={model.status === 1 ? 'green' : 'red'}>
                       {model.status === 1 ? '启用' : '禁用'}
                     </Tag>
-                    <Tag color={MODEL_TYPE_MAP[model.modelType]?.color || 'default'}>
-                      {MODEL_TYPE_MAP[model.modelType]?.label || model.modelType}
+                    <Tag color={getModelTypeColor(model.modelType)}>
+                      {getModelTypeLabel(intl, model.modelType)}
                     </Tag>
                   </div>
                 </div>

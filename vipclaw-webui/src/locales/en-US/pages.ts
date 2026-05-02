@@ -61,6 +61,8 @@ export default {
   
   // Model Management
   'pages.model.type': 'Model Type',
+  'pages.model.chat': 'Chat Model',
+  'pages.model.embedding': 'Embedding Model',
   'pages.model.tags': 'Tags',
   'pages.model.minPrice': 'Min Price',
   'pages.model.maxPrice': 'Max Price',

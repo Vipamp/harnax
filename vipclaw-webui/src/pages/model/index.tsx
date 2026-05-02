@@ -293,8 +293,8 @@ const ModelManagement: React.FC = () => {
                   onChange={(value) => setFilters({ ...filters, modelType: value })}
                   allowClear
                   options={[
-                    { label: '对话模型', value: 'chat' },
-                    { label: '嵌入模型', value: 'embedding' },
+                    { label: intl.formatMessage({ id: 'pages.model.chat', defaultMessage: 'Chat Model' }), value: 'chat' },
+                    { label: intl.formatMessage({ id: 'pages.model.embedding', defaultMessage: 'Embedding Model' }), value: 'embedding' },
                   ]}
                 />
                 {/* 标签筛选 */}
