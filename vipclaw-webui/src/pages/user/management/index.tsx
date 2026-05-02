@@ -1,13 +1,14 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useIntl, useRequest } from '@umijs/max';
-import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
+import { Button, message, Modal, Space, Tag, Tooltip, Typography } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteUser, getUserPage, updateUser as updateUserApi, createUser } from '@/services/ant-design-pro/user';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import UserTenantList from './components/UserTenantList';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 const { Text } = Typography;
 
@@ -377,69 +378,72 @@ const UserManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Input
-            placeholder={intl.formatMessage({
-              id: 'pages.user.management.search.placeholder',
-              defaultMessage: '搜索用户名或邮箱',
-            })}
-            prefix={<SearchOutlined />}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 280, borderRadius: '8px' }}
-            allowClear
-          />
-          <Select
-            placeholder={intl.formatMessage({
-              id: 'pages.user.management.status.filter.placeholder',
-              defaultMessage: '状态筛选',
-            })}
-            value={status}
-            onChange={(val) => setStatus(val)}
-            style={{ width: 140, borderRadius: '8px' }}
-            allowClear
-            options={[
-              { label: intl.formatMessage({
-                id: 'pages.status.enabled',
-                defaultMessage: '启用',
-              }), value: 1 },
-              { label: intl.formatMessage({
-                id: 'pages.status.disabled',
-                defaultMessage: '禁用',
-              }), value: 0 },
-            ]}
-          />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
-            {intl.formatMessage({
-              id: 'pages.common.query',
-              defaultMessage: '查询',
-            })}
-          </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTenantId(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
-            {intl.formatMessage({
-              id: 'pages.common.reset',
-              defaultMessage: '重置',
-            })}
-          </Button>
-          <div style={{ flex: 1 }} />
-          <Button
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => {
+          setKeyword('');
+          setStatus(undefined);
+          setTenantId(undefined);
+          setPageNum(1);
+          loadData(1);
+        }}
+        searchText={intl.formatMessage({
+          id: 'pages.common.search',
+          defaultMessage: 'Search',
+        })}
+        resetText={intl.formatMessage({
+          id: 'pages.common.reset',
+          defaultMessage: 'Reset',
+        })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ borderRadius: '8px', fontWeight: 600 }}
           >
             {intl.formatMessage({
               id: 'pages.user.management.add',
               defaultMessage: '新建用户',
             })}
-          </Button>
-        </div>
-      </Card>
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={keyword}
+          onChange={setKeyword}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({
+            id: 'pages.user.management.search.placeholder',
+            defaultMessage: '搜索用户名或邮箱',
+          })}
+          width="auto"
+        />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          placeholder={intl.formatMessage({
+            id: 'pages.user.management.status.filter.placeholder',
+            defaultMessage: '状态筛选',
+          })}
+          width="auto"
+          options={[
+            { 
+              label: intl.formatMessage({
+                id: 'pages.status.enabled',
+                defaultMessage: '启用',
+              }), 
+              value: 1 
+            },
+            { 
+              label: intl.formatMessage({
+                id: 'pages.status.disabled',
+                defaultMessage: '禁用',
+              }), 
+              value: 0 
+            },
+          ]}
+        />
+      </SearchFilterBar>
 
       <ProTable<API.UserItem>
         headerTitle={undefined}
@@ -549,7 +553,7 @@ const UserManagement: React.FC = () => {
           body: { padding: '24px' },
           header: {
             background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
-            borderBottom: '1px solid #e8ecfb',
+            borderBottom: '1px solid var(--vip-border)',
             padding: '18px 24px',
           },
         }}

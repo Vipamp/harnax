@@ -20,6 +20,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useIntl } from '@umijs/max';
 // @ts-ignore
 import { useModel, history } from '@umijs/max';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 // MCP 卡片组件
 const McpCard: React.FC<{
@@ -420,64 +421,53 @@ const McpManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Input
-            placeholder={intl.formatMessage({ id: 'pages.mcp.searchPlaceholder', defaultMessage: 'Search MCP name or description' })}
-            prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 260, borderRadius: '10px', height: '40px' }}
-            allowClear
-          />
-          <Select
-            placeholder={intl.formatMessage({ id: 'pages.mcp.statusFilter', defaultMessage: 'Status Filter' })}
-            value={status}
-            onChange={(val) => setStatus(val)}
-            style={{ width: 140, borderRadius: '10px', height: '40px' }}
-            allowClear
-            options={[
-              { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
-              { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-            ]}
-          />
-          <Select
-            mode="multiple"
-            placeholder={intl.formatMessage({ id: 'pages.mcp.typeFilter', defaultMessage: 'Type Filter' })}
-            value={types}
-            onChange={(val) => {
-              setTypes(val);
-              setPageNum(1);
-            }}
-            style={{ width: 200, borderRadius: '10px', height: '40px' }}
-            allowClear
-            options={[
-              { label: 'STDIO', value: 'stdio' },
-              { label: 'SSE', value: 'sse' },
-              { label: 'Streamable HTTP', value: 'streamablehttp' },
-            ]}
-          />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '10px', height: '40px', padding: '0 20px' }}>
-            {intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
-          </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '10px', height: '40px', padding: '0 20px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
-            {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-          </Button>
-          <div style={{ flex: 1 }} />
-          <Button
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }}
+        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ borderRadius: '10px', height: '44px', padding: '0 24px', fontWeight: 600 }}
           >
             {intl.formatMessage({ id: 'pages.mcp.createMcp', defaultMessage: 'Create MCP' })}
-          </Button>
-        </div>
-      </Card>
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={keyword}
+          onChange={setKeyword}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({ id: 'pages.mcp.searchPlaceholder', defaultMessage: 'Search MCP name or description' })}
+          width="auto"
+        />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          placeholder={intl.formatMessage({ id: 'pages.mcp.statusFilter', defaultMessage: 'Status Filter' })}
+          width="auto"
+          options={[
+            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
+          ]}
+        />
+        <FilterSelect
+          value={types[0] || undefined}
+          onChange={(val) => {
+            setTypes(val ? [val] : []);
+            setPageNum(1);
+          }}
+          placeholder={intl.formatMessage({ id: 'pages.mcp.typeFilter', defaultMessage: 'Type Filter' })}
+          width="auto"
+          options={[
+            { label: 'STDIO', value: 'stdio' },
+            { label: 'SSE', value: 'sse' },
+            { label: 'Streamable HTTP', value: 'streamablehttp' },
+          ]}
+        />
+      </SearchFilterBar>
 
       {/* 卡片列表 */}
       {data.length > 0 ? (

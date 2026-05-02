@@ -346,3 +346,316 @@ axios.interceptors.request.use((config) => {
 - 消息文件无遗漏的 key
 - 代码审查 100% 通过国际化检查项
 - 无硬编码文本（除特殊场景如品牌名称）
+
+### 2.5 搜索筛选框统一规范
+
+#### 组件架构
+
+所有管理页面的搜索筛选区域必须使用统一的公共组件，确保样式一致性和代码可维护性。
+
+**组件位置**: `src/components/SearchFilterBar/`
+
+**核心组件**:
+| 组件名 | 说明 | 用途 |
+|--------|------|------|
+| `SearchFilterBar` | 搜索筛选栏容器 | 主容器，包含搜索区和操作区 |
+| `SearchInput` | 搜索输入框 | 带搜索图标的输入框 |
+| `FilterSelect` | 筛选下拉框 | 统一样式的筛选下拉框 |
+| `ActionButton` | 操作按钮 | 右侧操作按钮（新建、导入等） |
+
+#### 强制要求
+
+- ✅ **必须使用公共组件**：所有管理页面的筛选框必须使用 `SearchFilterBar` 及其子组件
+- ✅ **禁止硬编码样式**：不得手动设置 borderRadius、height、fontSize 等统一样式
+- ✅ **保持样式一致**：所有页面的筛选框必须保持相同的视觉规格
+- ✅ **支持国际化**：按钮文本必须通过 props 传入翻译后的文本
+
+#### 样式规格标准
+
+##### 搜索卡片 (SearchFilterBar)
+```typescript
+{
+  borderRadius: '12px',           // 圆角
+  padding: '12px 20px',           // 内边距
+  border: '1px solid var(--vip-border)',  // 边框
+  boxShadow: '0 2px 12px rgba(0,0,0,0.04)', // 阴影
+  marginBottom: 24                // 下边距
+}
+```
+
+##### 筛选组件通用规格
+```typescript
+{
+  height: '28px',                 // 统一高度
+  fontSize: '12px',               // 统一字体
+  borderRadius: '6px'             // 统一圆角
+}
+```
+
+##### 搜索输入框 (SearchInput)
+```typescript
+{
+  width: 240,                     // 默认宽度（可通过 props 调整）
+  prefix: {
+    color: '#8c8c9a',             // 图标颜色
+    fontSize: '12px'              // 图标大小
+  }
+}
+```
+
+##### 筛选下拉框 (FilterSelect)
+```typescript
+{
+  width: 120                      // 默认宽度（可通过 props 调整）
+}
+```
+
+##### 按钮规格
+```typescript
+// 搜索/重置按钮
+{
+  height: '28px',
+  padding: '0 12px',
+  fontSize: '12px'
+}
+
+// 操作按钮（右侧）
+{
+  height: '28px',
+  padding: '0 16px',
+  fontSize: '12px',
+  fontWeight: 500
+}
+```
+
+##### 布局规格
+```typescript
+// 主容器
+{
+  display: 'flex',
+  alignItems: 'center',
+  gap: 16,                        // 搜索区和操作区间距
+  flexWrap: 'wrap'                // 支持响应式换行
+}
+
+// 搜索组容器
+{
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,                        // 筛选组件间距
+  flex: 1,
+  minWidth: 300                   // 最小宽度
+}
+```
+
+#### 使用标准
+
+##### 基础示例
+```tsx
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import { PlusOutlined } from '@ant-design/icons';
+
+<SearchFilterBar
+  onSearch={handleSearch}
+  onReset={handleReset}
+  searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+  resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+  extra={
+    <ActionButton
+      type="primary"
+      icon={<PlusOutlined />}
+      onClick={handleCreate}
+    >
+      {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
+    </ActionButton>
+  }
+>
+  <SearchInput
+    value={keyword}
+    onChange={setKeyword}
+    onSearch={handleSearch}
+    placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' })}
+  />
+  <FilterSelect
+    value={status}
+    onChange={setStatus}
+    placeholder={intl.formatMessage({ id: 'pages.placeholder.statusFilter', defaultMessage: 'Status filter' })}
+    options={[
+      { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+      { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
+    ]}
+  />
+</SearchFilterBar>
+```
+
+##### 多选筛选示例
+```tsx
+<FilterSelect
+  mode="multiple"
+  value={types}
+  onChange={setTypes}
+  placeholder="类型筛选"
+  width={160}
+  options={[
+    { label: 'STDIO', value: 'stdio' },
+    { label: 'SSE', value: 'sse' },
+    { label: 'HTTP', value: 'http' },
+  ]}
+/>
+```
+
+##### 自定义宽度示例
+```tsx
+<SearchInput
+  value={keyword}
+  onChange={setKeyword}
+  placeholder="搜索..."
+  width={280}  // 自定义宽度
+/>
+
+<FilterSelect
+  value={status}
+  onChange={setStatus}
+  placeholder="状态"
+  width={140}  // 自定义宽度
+  options={[...]}
+/>
+```
+
+#### 迁移指南
+
+##### 旧代码模式（禁止）
+```tsx
+// ❌ 错误：手动编写样式
+<Card
+  style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+  styles={{ body: { padding: '12px 20px' } }}
+>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
+      <Input
+        placeholder="搜索..."
+        value={keyword}
+        onChange={(e) => setKeyword(e.target.value)}
+        style={{ width: 240, borderRadius: '6px', height: '28px', fontSize: '12px' }}
+      />
+      <Select
+        placeholder="状态"
+        value={status}
+        onChange={(val) => setStatus(val)}
+        style={{ width: 120, height: '28px', fontSize: '12px' }}
+        options={[...]}
+      />
+      <Button type="primary" onClick={handleSearch} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
+        查询
+      </Button>
+      <Button onClick={handleReset} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
+        重置
+      </Button>
+    </div>
+    <Button type="primary" onClick={handleCreate} style={{ borderRadius: '6px', height: '28px', padding: '0 16px', fontSize: '12px' }}>
+      新建
+    </Button>
+  </div>
+</Card>
+```
+
+##### 新代码模式（推荐）
+```tsx
+// ✅ 正确：使用公共组件
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+
+<SearchFilterBar
+  onSearch={handleSearch}
+  onReset={handleReset}
+  extra={
+    <ActionButton type="primary" onClick={handleCreate}>
+      新建
+    </ActionButton>
+  }
+>
+  <SearchInput
+    value={keyword}
+    onChange={setKeyword}
+    onSearch={handleSearch}
+    placeholder="搜索..."
+  />
+  <FilterSelect
+    value={status}
+    onChange={setStatus}
+    placeholder="状态"
+    options={[...]}
+  />
+</SearchFilterBar>
+```
+
+**代码减少**: 约 50%（从 ~40 行减少到 ~20 行）
+
+#### 验收检查
+
+##### 代码审查检查项
+- [ ] 使用 `SearchFilterBar` 公共组件，而非手动编写 Card 和样式
+- [ ] 使用 `SearchInput` 组件，而非直接使用 Ant Design Input
+- [ ] 使用 `FilterSelect` 组件，而非直接使用 Ant Design Select
+- [ ] 使用 `ActionButton` 组件，而非直接使用 Ant Design Button
+- [ ] 未手动设置 borderRadius、height、fontSize 等统一样式
+- [ ] 按钮文本通过 `searchText`、`resetText` 等 props 传入
+- [ ] 支持国际化（使用 `intl.formatMessage`）
+- [ ] 响应式布局正常（小屏幕自动换行）
+
+##### 视觉验收检查项
+- [ ] 搜索卡片圆角为 12px
+- [ ] 搜索卡片内边距为 12px 20px
+- [ ] 搜索卡片有边框（1px solid var(--vip-border)）
+- [ ] 所有筛选组件高度为 28px
+- [ ] 所有筛选组件字体为 12px
+- [ ] 所有筛选组件圆角为 6px
+- [ ] 搜索输入框宽度为 240px（或自定义宽度）
+- [ ] 筛选下拉框宽度为 120px（或自定义宽度）
+- [ ] 搜索图标颜色为 #8c8c9a
+- [ ] 搜索区和操作区间距为 16px
+- [ ] 筛选组件间距为 12px
+
+#### 已应用页面
+
+- ✅ Agent 管理页面
+- ⏳ MCP 管理页面（待迁移）
+- ⏳ Channel 管理页面（待迁移）
+- ⏳ Job 管理页面（待迁移）
+- ⏳ Job Log 执行日志页面（待迁移）
+- ⏳ 用户管理页面（待迁移）
+- ⏳ 租户管理页面（待迁移）
+
+#### 禁止行为
+
+- ❌ 禁止在管理页面中手动编写筛选框样式
+- ❌ 禁止直接使用 Ant Design 的 Input、Select、Button 组件作为筛选框
+- ❌ 禁止在筛选框中使用硬编码的 borderRadius、height、fontSize
+- ❌ 禁止在不同的页面使用不同的筛选框样式规格
+- ❌ 禁止在筛选框中混用多种样式规范
+
+#### 开发流程
+
+##### 新增管理页面
+1. 导入 `SearchFilterBar` 及其子组件
+2. 使用 `SearchFilterBar` 作为筛选栏容器
+3. 在 children 中添加 `SearchInput` 和 `FilterSelect`
+4. 在 extra 中添加 `ActionButton`（如需要）
+5. 实现 `onSearch` 和 `onReset` 回调
+6. 测试样式是否与其他页面一致
+
+##### 迁移旧页面
+1. 识别现有的筛选框代码（Card + Input + Select + Button）
+2. 替换为 `SearchFilterBar` 组件
+3. 移除所有手动设置的样式（borderRadius、height、fontSize 等）
+4. 使用 `SearchInput` 替换 Input
+5. 使用 `FilterSelect` 替换 Select
+6. 使用 `ActionButton` 替换操作按钮
+7. 测试功能和样式
+
+#### 组件文档
+
+详细使用说明和 API 文档请参考：
+- 组件实现：`src/components/SearchFilterBar/index.tsx`
+- 类型声明：`src/components/SearchFilterBar/index.d.ts`
+- 使用说明：`src/components/SearchFilterBar/README.md`

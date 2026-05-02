@@ -26,6 +26,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 const { Text } = Typography;
 
@@ -502,73 +503,44 @@ const JobManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ 
-          marginBottom: 24, 
-          borderRadius: '16px', 
-          boxShadow: '0 2px 12px rgba(var(--vip-text-primary-rgb), 0.04)',
-          border: '1px solid var(--vip-border)',
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => {
+          setKeyword('');
+          setJobStatus(undefined);
+          setPageNum(1);
+          loadData(1);
         }}
-        styles={{ body: { padding: '20px 24px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
-            <Input
-              placeholder="搜索任务名称"
-              prefix={<SearchOutlined style={{ color: 'var(--vip-text-tertiary)' }} />}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 260, borderRadius: '10px', height: '40px' }}
-              allowClear
-            />
-            <Select
-              placeholder="状态筛选"
-              value={jobStatus}
-              onChange={(val) => setJobStatus(val)}
-              style={{ width: 140 }}
-              allowClear
-              options={[
-                { label: '运行中', value: 1 },
-                { label: '暂停', value: 0 },
-              ]}
-            />
-            <Button 
-              type="primary" 
-              onClick={handleSearch} 
-              style={{ borderRadius: '10px', height: '40px', padding: '0 20px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}
-            >
-              查询
-            </Button>
-            <Button
-              onClick={() => {
-                setKeyword('');
-                setJobStatus(undefined);
-                setPageNum(1);
-                loadData(1);
-              }}
-              style={{ borderRadius: '10px', height: '40px', padding: '0 20px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}
-            >
-              重置
-            </Button>
-          </div>
-          <Button
+        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ 
-              borderRadius: '10px', 
-              height: '44px',
-              padding: '0 24px',
-              fontWeight: 600,
-              fontSize: '14px',
-              boxShadow: '0 4px 16px rgba(var(--vip-primary-rgb), 0.3)',
-            }}
           >
-            新建任务
-          </Button>
-        </div>
-      </Card>
+            {intl.formatMessage({ id: 'pages.job.create', defaultMessage: 'Create Task' })}
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={keyword}
+          onChange={setKeyword}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({ id: 'pages.job.search.placeholder', defaultMessage: 'Search task name' })}
+          width="auto"
+        />
+        <FilterSelect
+          value={jobStatus}
+          onChange={setJobStatus}
+          placeholder={intl.formatMessage({ id: 'pages.job.filter.status', defaultMessage: 'Status filter' })}
+          width="auto"
+          options={[
+            { label: intl.formatMessage({ id: 'pages.job.status.running', defaultMessage: 'Running' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.job.status.paused', defaultMessage: 'Paused' }), value: 0 },
+          ]}
+        />
+      </SearchFilterBar>
 
       <ProTable<API.JobItem>
         headerTitle={undefined}

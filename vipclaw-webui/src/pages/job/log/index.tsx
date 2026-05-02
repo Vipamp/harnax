@@ -11,6 +11,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import SearchFilterBar, { SearchInput, FilterSelect, FilterDatePicker } from '@/components/SearchFilterBar';
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -50,7 +51,7 @@ const JobLog: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({ id: 'pages.job.log.fetchFailed', defaultMessage: 'Failed to fetch data' }));
     } finally {
       setTableLoading(false);
     }
@@ -69,7 +70,7 @@ const JobLog: React.FC = () => {
   /** 查看异常详情 */
   const handleViewException = (record: API.JobLogItem) => {
     Modal.info({
-      title: '异常详情',
+      title: intl.formatMessage({ id: 'pages.job.log.exceptionDetail', defaultMessage: 'Exception Details' }),
       width: 800,
       content: (
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
@@ -84,77 +85,77 @@ const JobLog: React.FC = () => {
 
   const columns: ProColumns<API.JobLogItem>[] = [
     {
-      title: '日志ID',
+      title: intl.formatMessage({ id: 'pages.job.log.column.logId', defaultMessage: 'Log ID' }),
       dataIndex: 'id',
       valueType: 'text',
       width: 80,
     },
     {
-      title: '任务ID',
+      title: intl.formatMessage({ id: 'pages.job.log.column.jobId', defaultMessage: 'Task ID' }),
       dataIndex: 'jobId',
       valueType: 'text',
       width: 80,
     },
     {
-      title: '任务名称',
+      title: intl.formatMessage({ id: 'pages.job.log.column.jobName', defaultMessage: 'Task Name' }),
       dataIndex: 'jobName',
       valueType: 'text',
       ellipsis: true,
     },
     {
-      title: '任务组名',
+      title: intl.formatMessage({ id: 'pages.job.log.column.jobGroup', defaultMessage: 'Task Group' }),
       dataIndex: 'jobGroup',
       valueType: 'text',
       width: 120,
     },
     {
-      title: '调用目标',
+      title: intl.formatMessage({ id: 'pages.job.log.column.invokeTarget', defaultMessage: 'Invoke Target' }),
       dataIndex: 'invokeTarget',
       valueType: 'text',
       ellipsis: true,
     },
     {
-      title: '执行状态',
+      title: intl.formatMessage({ id: 'pages.job.log.column.status', defaultMessage: 'Execution Status' }),
       dataIndex: 'status',
       filters: true,
       onFilter: true,
       valueEnum: {
-        0: { text: '失败', status: 'Error' },
-        1: { text: '成功', status: 'Success' },
+        0: { text: intl.formatMessage({ id: 'pages.job.log.status.failed', defaultMessage: 'Failed' }), status: 'Error' },
+        1: { text: intl.formatMessage({ id: 'pages.job.log.status.success', defaultMessage: 'Success' }), status: 'Success' },
       },
       render: (_, record) => {
         return record.status === 1 ? (
           <Tag color="success" icon={<CheckCircleOutlined />}>
-            成功
+            {intl.formatMessage({ id: 'pages.job.log.status.success', defaultMessage: 'Success' })}
           </Tag>
         ) : (
           <Tag color="error" icon={<CloseCircleOutlined />}>
-            失败
+            {intl.formatMessage({ id: 'pages.job.log.status.failed', defaultMessage: 'Failed' })}
           </Tag>
         );
       },
       width: 100,
     },
     {
-      title: '执行信息',
+      title: intl.formatMessage({ id: 'pages.job.log.column.message', defaultMessage: 'Execution Message' }),
       dataIndex: 'jobMessage',
       valueType: 'text',
       ellipsis: true,
     },
     {
-      title: '开始时间',
+      title: intl.formatMessage({ id: 'pages.job.log.column.startTime', defaultMessage: 'Start Time' }),
       dataIndex: 'startTime',
       valueType: 'dateTime',
       width: 180,
     },
     {
-      title: '结束时间',
+      title: intl.formatMessage({ id: 'pages.job.log.column.endTime', defaultMessage: 'End Time' }),
       dataIndex: 'endTime',
       valueType: 'dateTime',
       width: 180,
     },
     {
-      title: '耗时(ms)',
+      title: intl.formatMessage({ id: 'pages.job.log.column.duration', defaultMessage: 'Duration(ms)' }),
       dataIndex: 'duration',
       valueType: 'text',
       render: (_, record) => {
@@ -169,7 +170,7 @@ const JobLog: React.FC = () => {
       width: 100,
     },
     {
-      title: '操作',
+      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Operation' }),
       valueType: 'option',
       key: 'option',
       width: 120,
@@ -182,7 +183,7 @@ const JobLog: React.FC = () => {
               danger
               onClick={() => handleViewException(record)}
             >
-              查看异常
+              {intl.formatMessage({ id: 'pages.job.log.viewException', defaultMessage: 'View Exception' })}
             </Button>
           )}
         </Space>
@@ -204,56 +205,46 @@ const JobLog: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => {
+          setJobName('');
+          setJobId(undefined);
+          setStatus(undefined);
+          setDateRange(null);
+          setPageNum(1);
+          loadData(1);
+        }}
+        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+        showSearchButton={true}
+        showResetButton={true}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Input
-            placeholder="搜索任务名称"
-            prefix={<SearchOutlined />}
-            value={jobName}
-            onChange={(e) => setJobName(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 200, borderRadius: '8px' }}
-            allowClear
-          />
-          <Select
-            placeholder="执行状态"
-            value={status}
-            onChange={(val) => setStatus(val)}
-            style={{ width: 140, borderRadius: '8px' }}
-            allowClear
-            options={[
-              { label: '成功', value: 1 },
-              { label: '失败', value: 0 },
-            ]}
-          />
-          <RangePicker
-            showTime
-            value={dateRange}
-            onChange={(dates) => setDateRange(dates)}
-            style={{ borderRadius: '8px' }}
-            placeholder={['开始时间', '结束时间']}
-          />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
-            查询
-          </Button>
-          <Button
-            onClick={() => {
-              setJobName('');
-              setJobId(undefined);
-              setStatus(undefined);
-              setDateRange(null);
-              setPageNum(1);
-              loadData(1);
-            }}
-            style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}
-          >
-            重置
-          </Button>
-        </div>
-      </Card>
+        <SearchInput
+          value={jobName}
+          onChange={setJobName}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({ id: 'pages.job.log.search.placeholder', defaultMessage: 'Search task name' })}
+          width="auto"
+        />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          placeholder={intl.formatMessage({ id: 'pages.job.log.filter.status', defaultMessage: 'Execution status' })}
+          width="auto"
+          options={[
+            { label: intl.formatMessage({ id: 'pages.job.log.status.success', defaultMessage: 'Success' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.job.log.status.failed', defaultMessage: 'Failed' }), value: 0 },
+          ]}
+        />
+        <FilterDatePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder={[intl.formatMessage({ id: 'pages.job.log.filter.startTime', defaultMessage: 'Start time' }), intl.formatMessage({ id: 'pages.job.log.filter.endTime', defaultMessage: 'End time' })]}
+          showTime
+          width="auto"
+        />
+      </SearchFilterBar>
 
       <ProTable<API.JobLogItem>
         headerTitle={undefined}
@@ -265,7 +256,7 @@ const JobLog: React.FC = () => {
           total,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (t) => intl.formatMessage({ id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' }, { total: t }),
           onChange: (page, size) => {
             setPageNum(page);
             if (size) setPageSize(size);

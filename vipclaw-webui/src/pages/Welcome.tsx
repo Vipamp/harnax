@@ -171,7 +171,7 @@ const AnimatedFeatureCard: React.FC<{
       onMouseLeave={() => setIsHovered(false)}
       style={{
         borderRadius: '16px',
-        border: isHovered ? `1px solid ${color}40` : '1px solid #f0f0f8',
+        border: isHovered ? `1px solid ${color}40` : '1px solid var(--vip-border)',
         boxShadow: isHovered 
           ? `0 12px 32px ${color}20` 
           : '0 2px 12px rgba(79,110,247,0.06)',
@@ -374,7 +374,7 @@ const Welcome: React.FC = () => {
       <Card
         style={{
           borderRadius: '16px',
-          border: '1px solid #f0f0f8',
+          border: '1px solid var(--vip-border)',
           boxShadow: '0 2px 16px rgba(79,110,247,0.06)',
         }}
         styles={{ body: { padding: '28px 28px 8px' } }}

@@ -254,7 +254,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                 </div>
 
                 {/* 是否公开、创建时间、创建人和操作按钮 */}
-                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f0f0f0', paddingTop: '12px' }}>
+                <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
                   {model.isPublic === 1 && (
                     <Tag color="blue">{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
                   )}

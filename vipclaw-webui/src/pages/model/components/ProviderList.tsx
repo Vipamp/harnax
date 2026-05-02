@@ -46,8 +46,8 @@ const ProviderList: React.FC<ProviderListProps> = ({
           hoverable
           size="small"
           style={{
-            border: selectedProvider?.id === provider.id ? '2px solid #1890ff' : '1px solid #d9d9d9',
-            background: selectedProvider?.id === provider.id ? '#e6f7ff' : '#fff',
+            border: selectedProvider?.id === provider.id ? '2px solid #1890ff' : '1px solid var(--vip-border)',
+            background: selectedProvider?.id === provider.id ? 'var(--vip-primary-light)' : 'var(--vip-bg-container)',
           }}
           styles={{
             body: { padding: '12px' }

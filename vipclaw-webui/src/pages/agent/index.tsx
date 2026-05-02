@@ -41,6 +41,7 @@ import {
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 const { Text, Paragraph } = Typography;
 
@@ -54,17 +55,96 @@ const AgentCard: React.FC<{
   onEdit: (item: API.AgentItem) => void;
   onDelete: (id: number) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-}> = ({ item, index, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission }) => {
+  // 响应式参数
+  screenSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
+}> = ({ item, index, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission, screenSize = 'lg' }) => {
   const intl = useIntl();
   const [isHovered, setIsHovered] = useState(false);
   const mcpCount = item.mcpList?.length || 0;
   const skillCount = item.skillList?.length || 0;
   const sessionCount = item.sessionCount || 0;
 
+  // 响应式配置
+  const responsiveConfig = {
+    xs: { 
+      padding: '12px', 
+      iconSize: 36, 
+      titleSize: 'clamp(12px, 2.5vw, 13px)', 
+      descSize: 'clamp(9px, 2vw, 10px)', 
+      tagSize: 'clamp(8px, 1.8vw, 9px)', 
+      statIconSize: 20, 
+      statLabelSize: 'clamp(8px, 1.8vw, 9px)', 
+      statNumSize: 'clamp(10px, 2vw, 11px)', 
+      minHeight: 200,
+      infoSize: 'clamp(8px, 1.8vw, 9px)' 
+    },
+    sm: { 
+      padding: '14px', 
+      iconSize: 40, 
+      titleSize: 'clamp(12px, 2.2vw, 13px)', 
+      descSize: 'clamp(10px, 2vw, 11px)', 
+      tagSize: 'clamp(9px, 1.8vw, 10px)', 
+      statIconSize: 22, 
+      statLabelSize: 'clamp(9px, 1.8vw, 10px)', 
+      statNumSize: 'clamp(11px, 2vw, 12px)', 
+      minHeight: 210,
+      infoSize: 'clamp(9px, 1.8vw, 10px)' 
+    },
+    md: { 
+      padding: '14px', 
+      iconSize: 42, 
+      titleSize: 'clamp(13px, 2vw, 14px)', 
+      descSize: 'clamp(10px, 1.8vw, 11px)', 
+      tagSize: 'clamp(9px, 1.6vw, 10px)', 
+      statIconSize: 24, 
+      statLabelSize: 'clamp(9px, 1.6vw, 10px)', 
+      statNumSize: 'clamp(11px, 1.8vw, 12px)', 
+      minHeight: 220,
+      infoSize: 'clamp(9px, 1.6vw, 10px)' 
+    },
+    lg: { 
+      padding: '16px', 
+      iconSize: 44, 
+      titleSize: 'clamp(13px, 1.8vw, 14px)', 
+      descSize: 'clamp(10px, 1.6vw, 11px)', 
+      tagSize: 'clamp(9px, 1.4vw, 10px)', 
+      statIconSize: 24, 
+      statLabelSize: 'clamp(9px, 1.4vw, 10px)', 
+      statNumSize: 'clamp(11px, 1.6vw, 12px)', 
+      minHeight: 230,
+      infoSize: 'clamp(10px, 1.4vw, 11px)' 
+    },
+    xl: { 
+      padding: '16px', 
+      iconSize: 44, 
+      titleSize: 'clamp(13px, 1.5vw, 14px)', 
+      descSize: 'clamp(10px, 1.3vw, 11px)', 
+      tagSize: 'clamp(9px, 1.2vw, 10px)', 
+      statIconSize: 24, 
+      statLabelSize: 'clamp(9px, 1.2vw, 10px)', 
+      statNumSize: 'clamp(11px, 1.3vw, 12px)', 
+      minHeight: 230,
+      infoSize: 'clamp(10px, 1.2vw, 11px)' 
+    },
+    xxl: { 
+      padding: '18px', 
+      iconSize: 48, 
+      titleSize: 'clamp(14px, 1.2vw, 15px)', 
+      descSize: 'clamp(11px, 1vw, 12px)', 
+      tagSize: 'clamp(10px, 0.9vw, 11px)', 
+      statIconSize: 26, 
+      statLabelSize: 'clamp(10px, 0.9vw, 11px)', 
+      statNumSize: 'clamp(12px, 1vw, 13px)', 
+      minHeight: 240,
+      infoSize: 'clamp(10px, 0.9vw, 11px)' 
+    },
+  };
+  const config = responsiveConfig[screenSize];
+
   return (
     <Card
       style={{
-        borderRadius: '16px',
+        borderRadius: '12px',
         border: 'none',
         boxShadow: isHovered 
           ? '0 12px 32px rgba(114, 46, 209, 0.15)' 
@@ -74,8 +154,11 @@ const AgentCard: React.FC<{
         transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         transform: isHovered ? 'translateY(-6px)' : 'translateY(0)',
         animation: `vipSlideUp 0.5s ease-out ${index * 80}ms both`,
+        minHeight: config.minHeight,
+        display: 'flex',
+        flexDirection: 'column',
       }}
-      styles={{ body: { padding: 0 } }}
+      styles={{ body: { padding: 0, height: '100%', display: 'flex', flexDirection: 'column' } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -89,21 +172,21 @@ const AgentCard: React.FC<{
         }}
       />
 
-      <div style={{ padding: '20px' }}>
+      <div style={{ padding: config.padding, flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 头部：图标 + 名称 + 状态 + 标签 */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
           <div
             style={{
-              width: 52,
-              height: 52,
-              borderRadius: '14px',
+              width: config.iconSize,
+              height: config.iconSize,
+              borderRadius: '12px',
               background: isHovered 
                 ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)' 
                 : 'var(--vip-primary-light)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '24px',
+              fontSize: config.iconSize * 0.45,
               color: isHovered ? '#fff' : 'var(--vip-primary)',
               flexShrink: 0,
               transition: 'all 0.3s ease',
@@ -113,25 +196,19 @@ const AgentCard: React.FC<{
             <RobotOutlined />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-              <Text strong style={{ fontSize: '16px', color: 'var(--vip-text-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+              <Text strong style={{ fontSize: config.titleSize, color: 'var(--vip-text-primary)' }}>
                 {item.name}
               </Text>
-              {/* 状态指示点 */}
-              <Badge 
-                status={item.status === 1 ? 'success' : 'default'} 
-                text={item.status === 1 ? intl.formatMessage({ id: 'pages.agent.status.running', defaultMessage: 'Running' }) : intl.formatMessage({ id: 'pages.agent.status.disabled', defaultMessage: 'Disabled' })}
-                style={{ fontSize: '12px' }}
-              />
             </div>
             {/* 对话模型标签 */}
             {item.modelName && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                <Tag color="blue" icon={<ApiOutlined />} style={{ fontSize: '11px' }}>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
+                <Tag color="blue" icon={<ApiOutlined />} style={{ fontSize: config.tagSize }}>
                   {item.modelName}
                 </Tag>
                 {item.modelPrice !== undefined && item.modelPrice !== null && (
-                  <Tag color="cyan" style={{ fontSize: '11px' }}>
+                  <Tag color="cyan" style={{ fontSize: config.tagSize }}>
                     ¥{item.modelPrice}/M
                   </Tag>
                 )}
@@ -144,8 +221,8 @@ const AgentCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+                checkedChildren="启用"
+                unCheckedChildren="禁用"
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}
@@ -157,7 +234,7 @@ const AgentCard: React.FC<{
         {/* 描述 */}
         <Paragraph
           ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
+          style={{ margin: '0 0 12px', color: 'var(--vip-text-secondary)', fontSize: config.descSize, minHeight: 32, lineHeight: 1.5 }}
         >
           {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
         </Paragraph>
@@ -165,11 +242,11 @@ const AgentCard: React.FC<{
         {/* MCP、Skill 和 Session 统计 */}
         <div style={{ 
           display: 'flex', 
-          gap: 12, 
-          marginBottom: 16,
-          padding: '10px 12px',
+          gap: 10, 
+          marginBottom: 12,
+          padding: '8px 10px',
           background: 'var(--vip-bg-layout)',
-          borderRadius: '10px',
+          borderRadius: '8px',
         }}>
           {/* MCP 统计 */}
           <Popover
@@ -213,13 +290,13 @@ const AgentCard: React.FC<{
                                 background: 'var(--vip-primary)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
+                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
                                 {mcp.mcpName || `MCP #${mcp.mcpId}`}
                               </Text>
                             </div>
                             {mcp.mcpDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
+                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
                                   {mcp.mcpDescription}
                                 </Text>
                               </div>
@@ -238,16 +315,16 @@ const AgentCard: React.FC<{
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <div style={{
-                width: 28, height: 28,
-                borderRadius: '8px',
+                width: config.statIconSize, height: config.statIconSize,
+                borderRadius: '6px',
                 background: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <ApiOutlined style={{ fontSize: '14px', color: '#fff' }} />
+                <ApiOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>MCPs</Text>
-                <Text strong style={{ fontSize: '13px', color: 'var(--vip-primary)' }}>{mcpCount}</Text>
+                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>MCPs</Text>
+                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-primary)' }}>{mcpCount}</Text>
               </div>
             </div>
           </Popover>
@@ -296,20 +373,20 @@ const AgentCard: React.FC<{
                                 background: 'var(--vip-success)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
+                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
                                 {skill.skillName || `Skill #${skill.skillId}`}
                               </Text>
                             </div>
                             {skill.repositoryName && (
                               <div style={{ paddingLeft: 12, marginBottom: 2 }}>
-                                <Text style={{ fontSize: 11, color: 'var(--vip-text-tertiary)' }}>
+                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-tertiary)' }}>
                                   仓库: {skill.repositoryName}
                                 </Text>
                               </div>
                             )}
                             {skill.skillDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
+                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
                                   {skill.skillDescription}
                                 </Text>
                               </div>
@@ -328,16 +405,16 @@ const AgentCard: React.FC<{
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <div style={{
-                width: 28, height: 28,
-                borderRadius: '8px',
+                width: config.statIconSize, height: config.statIconSize,
+                borderRadius: '6px',
                 background: 'linear-gradient(135deg, var(--vip-success) 0%, var(--vip-success-hover) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <ToolOutlined style={{ fontSize: '14px', color: '#fff' }} />
+                <ToolOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Skills</Text>
-                <Text strong style={{ fontSize: '13px', color: 'var(--vip-success)' }}>{skillCount}</Text>
+                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>Skills</Text>
+                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-success)' }}>{skillCount}</Text>
               </div>
             </div>
           </Popover>
@@ -386,13 +463,13 @@ const AgentCard: React.FC<{
                                 background: 'var(--vip-info)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 12, color: 'var(--vip-text-primary)' }}>
+                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
                                 {session.title || `会话 #${session.id}`}
                               </Text>
                             </div>
                             {session.sessionDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 11, color: 'var(--vip-text-secondary)' }}>
+                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
                                   {session.sessionDescription}
                                 </Text>
                               </div>
@@ -411,16 +488,16 @@ const AgentCard: React.FC<{
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <div style={{
-                width: 28, height: 28,
-                borderRadius: '8px',
+                width: config.statIconSize, height: config.statIconSize,
+                borderRadius: '6px',
                 background: 'linear-gradient(135deg, #5c7cff 0%, #94aaff 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <MessageOutlined style={{ fontSize: '14px', color: '#fff' }} />
+                <MessageOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Sessions</Text>
-                <Text strong style={{ fontSize: '13px', color: 'var(--vip-info)' }}>{sessionCount}</Text>
+                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>Sessions</Text>
+                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-info)' }}>{sessionCount}</Text>
               </div>
             </div>
           </Popover>
@@ -430,24 +507,25 @@ const AgentCard: React.FC<{
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
-          gap: 8, 
+          gap: 6, 
           borderTop: '1px solid var(--vip-border)', 
-          paddingTop: '12px' 
+          paddingTop: '10px',
+          marginTop: 'auto',
         }}>
           {item.isPublic === 1 ? (
-            <Tag color="blue" style={{ margin: 0, fontSize: '11px' }}>
+            <Tag color="blue" style={{ margin: 0, fontSize: config.infoSize }}>
               {intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
             </Tag>
           ) : (
-            <Tag style={{ margin: 0, fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
+            <Tag style={{ margin: 0, fontSize: config.infoSize, color: 'var(--vip-text-tertiary)' }}>
               {intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
             </Tag>
           )}
-          <Text type="secondary" style={{ fontSize: '12px' }}>
+          <Text type="secondary" style={{ fontSize: config.infoSize + 1 }}>
             {item.createTime?.replace('T', ' ')}
           </Text>
           {item.creator && (
-            <Text type="secondary" style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
+            <Text type="secondary" style={{ fontSize: config.infoSize, color: 'var(--vip-text-tertiary)' }}>
               {item.creator}
             </Text>
           )}
@@ -585,90 +663,46 @@ const AgentManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ 
-          marginBottom: 24, 
-          borderRadius: '16px', 
-          boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid var(--vip-border)',
-        }}
-        styles={{ body: { padding: '20px 24px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
-            <Input
-              placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'menu.agent.management', defaultMessage: 'Agent Management' })}
-              prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ 
-                width: 260, 
-                borderRadius: '10px',
-                height: '40px',
-              }}
-              allowClear
-            />
-            <Select
-              placeholder={intl.formatMessage({ id: 'pages.placeholder.statusFilter', defaultMessage: 'Status filter' })}
-              value={status}
-              onChange={(val) => setStatus(val)}
-              style={{ width: 140 }}
-              allowClear
-              options={[
-                { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
-                { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-              ]}
-            />
-            <Button 
-              type="primary" 
-              onClick={handleSearch} 
-              style={{ 
-                borderRadius: '10px',
-                height: '40px',
-                padding: '0 20px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
-            </Button>
-            <Button 
-              onClick={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }} 
-              style={{ 
-                borderRadius: '10px',
-                height: '40px',
-                padding: '0 20px',
-                background: 'var(--vip-bg-container)',
-                borderColor: 'var(--vip-border)',
-                color: 'var(--vip-text-primary)',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-            </Button>
-          </div>
-          <Button
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }}
+        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
+        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ 
-              borderRadius: '10px', 
-              height: '44px',
-              padding: '0 24px',
-              fontWeight: 600,
-              fontSize: '14px',
-              boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
-            }}
           >
             {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
-          </Button>
-        </div>
-      </Card>
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={keyword}
+          onChange={setKeyword}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'menu.agent.management', defaultMessage: 'Agent Management' })}
+          width="auto"
+        />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          placeholder={intl.formatMessage({ id: 'pages.placeholder.statusFilter', defaultMessage: 'Status filter' })}
+          width="auto"
+          options={[
+            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
+          ]}
+        />
+      </SearchFilterBar>
 
       {/* 卡片列表 */}
       {data.length > 0 ? (
         <>
-          <Row gutter={[20, 20]}>
+          <Row gutter={[16, 16]}>
             {data.map((item, index) => (
-              <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
+              <Col xs={24} sm={12} md={12} lg={8} xl={6} xxl={6} key={item.id}>
                 <AgentCard
                   item={item}
                   index={index}
@@ -681,6 +715,11 @@ const AgentManagement: React.FC = () => {
                   }}
                   onDelete={handleRemove}
                   hasOperationPermission={hasOperationPermission}
+                  screenSize={typeof window !== 'undefined' && window.innerWidth < 576 ? 'xs' : 
+                              typeof window !== 'undefined' && window.innerWidth < 768 ? 'sm' : 
+                              typeof window !== 'undefined' && window.innerWidth < 992 ? 'md' : 
+                              typeof window !== 'undefined' && window.innerWidth < 1200 ? 'lg' : 
+                              typeof window !== 'undefined' && window.innerWidth < 1600 ? 'xl' : 'xxl'}
                 />
               </Col>
             ))}

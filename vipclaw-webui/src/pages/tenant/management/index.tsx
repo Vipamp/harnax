@@ -1,7 +1,7 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
 import { PageContainer, ProTable } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography, Tabs } from 'antd';
+import { Button, message, Modal, Space, Tag, Tooltip, Typography, Tabs } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   createTenant,
@@ -13,7 +13,8 @@ import {
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import TenantUserList from './components/TenantUserList';
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 const { Text } = Typography;
 
@@ -410,63 +411,71 @@ const TenantManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Input
-            placeholder={intl.formatMessage({
-              id: 'pages.tenant.management.search.placeholder',
-              defaultMessage: 'Search tenant name',
-            })}
-            prefix={<SearchOutlined />}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onPressEnter={handleSearch}
-            style={{ width: 280, borderRadius: '8px' }}
-            allowClear
-          />
-          <Select
-            placeholder={intl.formatMessage({
-              id: 'pages.tenant.management.status.filter.placeholder',
-              defaultMessage: 'Filter by status',
-            })}
-            value={status}
-            onChange={(val) => setStatus(val)}
-            style={{ width: 140, borderRadius: '8px' }}
-            allowClear
-            options={[
-              { label: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), value: 1 },
-              { label: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), value: 0 },
-            ]}
-          />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
-            {intl.formatMessage({
-              id: 'pages.common.query',
-              defaultMessage: 'Query',
-            })}
-          </Button>
-          <Button onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
-            {intl.formatMessage({
-              id: 'pages.common.reset',
-              defaultMessage: 'Reset',
-            })}
-          </Button>
-          <div style={{ flex: 1 }} />
-          <Button
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => {
+          setName('');
+          setStatus(undefined);
+          setPageNum(1);
+          loadData(1);
+        }}
+        searchText={intl.formatMessage({
+          id: 'pages.common.search',
+          defaultMessage: 'Search',
+        })}
+        resetText={intl.formatMessage({
+          id: 'pages.common.reset',
+          defaultMessage: 'Reset',
+        })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{ borderRadius: '8px', fontWeight: 600 }}
           >
             {intl.formatMessage({
               id: 'pages.tenant.management.createNew',
               defaultMessage: '新建租户',
             })}
-          </Button>
-        </div>
-      </Card>
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={name}
+          onChange={setName}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({
+            id: 'pages.tenant.management.search.placeholder',
+            defaultMessage: 'Search tenant name',
+          })}
+          width="auto"
+        />
+        <FilterSelect
+          value={status}
+          onChange={setStatus}
+          placeholder={intl.formatMessage({
+            id: 'pages.tenant.management.status.filter.placeholder',
+            defaultMessage: 'Filter by status',
+          })}
+          width="auto"
+          options={[
+            { 
+              label: intl.formatMessage({ 
+                id: 'pages.status.enabled', 
+                defaultMessage: 'Enabled' 
+              }), 
+              value: 1 
+            },
+            { 
+              label: intl.formatMessage({ 
+                id: 'pages.status.disabled', 
+                defaultMessage: 'Disabled' 
+              }), 
+              value: 0 
+            },
+          ]}
+        />
+      </SearchFilterBar>
 
       <ProTable<any>
         headerTitle={undefined}

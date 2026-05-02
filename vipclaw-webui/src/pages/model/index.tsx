@@ -275,20 +275,20 @@ const ModelManagement: React.FC = () => {
               )
             }
             extra={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {/* 关键词搜索 */}
                 <Input
                   placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
-                  prefix={<SearchOutlined />}
+                  prefix={<SearchOutlined style={{ color: '#8c8c9a', fontSize: '12px' }} />}
                   value={filters.name}
                   onChange={(e) => setFilters({ ...filters, name: e.target.value })}
                   allowClear
-                  style={{ width: 180 }}
+                  style={{ width: 240, borderRadius: '6px', height: '28px', fontSize: '12px' }}
                 />
                 {/* 模型类型 */}
                 <Select
                   placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
-                  style={{ width: 120 }}
+                  style={{ width: 120, height: '28px', fontSize: '12px' }}
                   value={filters.modelType}
                   onChange={(value) => setFilters({ ...filters, modelType: value })}
                   allowClear
@@ -301,7 +301,7 @@ const ModelManagement: React.FC = () => {
                 <Select
                   placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.tags', defaultMessage: 'Tags' })}
                   mode="multiple"
-                  style={{ width: 200 }}
+                  style={{ width: 200, height: '28px', fontSize: '12px' }}
                   value={filters.tags}
                   onChange={(value) => setFilters({ ...filters, tags: value })}
                   allowClear
@@ -318,7 +318,7 @@ const ModelManagement: React.FC = () => {
                 {/* 状态 */}
                 <Select
                   placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-                  style={{ width: 100 }}
+                  style={{ width: 120, height: '28px', fontSize: '12px' }}
                   value={filters.status}
                   onChange={(value) => setFilters({ ...filters, status: value })}
                   allowClear
@@ -334,7 +334,7 @@ const ModelManagement: React.FC = () => {
                   step="0.0001"
                   value={filters.minPrice}
                   onChange={(e) => setFilters({ ...filters, minPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
-                  style={{ width: 100 }}
+                  style={{ width: 100, borderRadius: '6px', height: '28px', fontSize: '12px' }}
                 />
                 <span style={{ color: '#999' }}>-</span>
                 <Input
@@ -343,13 +343,17 @@ const ModelManagement: React.FC = () => {
                   step="0.0001"
                   value={filters.maxPrice}
                   onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
-                  style={{ width: 100 }}
+                  style={{ width: 100, borderRadius: '6px', height: '28px', fontSize: '12px' }}
                 />
                 {/* 重置按钮 */}
                 <Button
                   icon={<ReloadOutlined />}
                   onClick={handleResetFilters}
                   style={{ 
+                    borderRadius: '6px',
+                    height: '28px',
+                    padding: '0 12px',
+                    fontSize: '12px',
                     color: 'var(--vip-text-primary)', 
                     borderColor: 'var(--vip-border)', 
                     background: 'var(--vip-bg-container)' 
@@ -363,6 +367,13 @@ const ModelManagement: React.FC = () => {
                   icon={<PlusOutlined />}
                   onClick={handleCreateModel}
                   disabled={!selectedProvider}
+                  style={{
+                    borderRadius: '6px',
+                    height: '28px',
+                    padding: '0 16px',
+                    fontWeight: 500,
+                    fontSize: '12px',
+                  }}
                 >
                   {intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' })}
                 </Button>

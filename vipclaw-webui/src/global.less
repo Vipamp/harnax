@@ -247,6 +247,8 @@ html.dark .ant-btn-dashed {
 .ant-input {
   border-radius: var(--vip-radius-md) !important;
   border: 1px solid var(--vip-border) !important;
+  background: var(--vip-bg-container) !important;
+  color: var(--vip-text-primary) !important;
   transition: all 0.2s ease;
   
   &:hover {
@@ -258,6 +260,16 @@ html.dark .ant-btn-dashed {
     border-color: var(--vip-primary) !important;
     box-shadow: 0 0 0 3px rgba(var(--vip-primary-rgb), 0.1) !important;
   }
+  
+  &::placeholder {
+    color: var(--vip-text-tertiary) !important;
+  }
+}
+
+/* 浅色主题输入框适配 */
+html:not(.dark) .ant-input {
+  background: var(--vip-bg-container) !important;
+  color: var(--vip-text-primary) !important;
 }
 
 /* 深色主题输入框适配 */
@@ -270,6 +282,7 @@ html.dark .ant-input {
 .ant-input-affix-wrapper {
   border-radius: var(--vip-radius-md) !important;
   border: 1px solid var(--vip-border) !important;
+  background: var(--vip-bg-container) !important;
   transition: all 0.2s ease;
   
   &:hover {
@@ -286,6 +299,8 @@ html.dark .ant-input {
     border: none !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+    background: transparent !important;
+    color: var(--vip-text-primary) !important;
     
     &:hover,
     &:focus {
@@ -293,17 +308,39 @@ html.dark .ant-input {
       box-shadow: none !important;
       border-radius: 0 !important;
     }
+    
+    &::placeholder {
+      color: var(--vip-text-tertiary) !important;
+    }
   }
   
   /* 增加图标与输入框内容的间距 */
   .ant-input-prefix {
     margin-right: 8px !important;
+    color: var(--vip-text-tertiary) !important;
+  }
+  
+  .ant-input-suffix {
+    color: var(--vip-text-tertiary) !important;
+  }
+}
+
+/* 浅色主题输入框包装器适配 */
+html:not(.dark) .ant-input-affix-wrapper {
+  background: var(--vip-bg-container) !important;
+  
+  .ant-input {
+    color: var(--vip-text-primary) !important;
   }
 }
 
 /* 深色主题输入框包装器适配 */
 html.dark .ant-input-affix-wrapper {
   background: var(--vip-bg-container) !important;
+  
+  .ant-input {
+    color: var(--vip-text-primary) !important;
+  }
 }
 
 /* ===== 深色主题 DatePicker/RangePicker 适配 ===== */
@@ -394,6 +431,7 @@ html.dark {
 
         &-selected .ant-picker-cell-inner {
           background: var(--vip-primary) !important;
+          color: #ffffff !important;
         }
       }
 
@@ -627,20 +665,43 @@ html.dark .ant-pagination {
   .ant-modal-content {
     border-radius: var(--vip-radius-lg) !important;
     box-shadow: var(--vip-shadow-lg) !important;
+    border: 1px solid var(--vip-border) !important;
   }
   
   .ant-modal-header {
     border-bottom: 1px solid var(--vip-border);
     padding: 20px 24px;
+    background: var(--vip-bg-container);
   }
   
   .ant-modal-body {
     padding: 24px;
+    background: var(--vip-bg-container);
   }
   
   .ant-modal-footer {
     border-top: 1px solid var(--vip-border);
     padding: 16px 24px;
+    background: var(--vip-bg-container);
+  }
+}
+
+/* 浅色主题模态框适配 */
+html:not(.dark) .ant-modal {
+  .ant-modal-content {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-modal-header {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-modal-title {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-modal-close {
+    color: var(--vip-text-secondary) !important;
   }
 }
 
@@ -668,13 +729,154 @@ html.dark .ant-modal {
   border-radius: var(--vip-radius-md) !important;
   box-shadow: var(--vip-shadow-md) !important;
   padding: 6px;
+  border: 1px solid var(--vip-border) !important;
+  background: var(--vip-bg-container) !important;
   
   .ant-dropdown-menu-item {
     border-radius: var(--vip-radius-sm) !important;
     transition: all 0.2s ease;
+    color: var(--vip-text-primary) !important;
     
     &:hover {
       background: var(--vip-primary-light);
+      color: var(--vip-primary) !important;
+    }
+    
+    &.ant-dropdown-menu-item-selected {
+      background: var(--vip-primary-light) !important;
+      color: var(--vip-primary) !important;
+      font-weight: 500;
+      
+      &:hover {
+        background: var(--vip-primary-light);
+        color: var(--vip-primary) !important;
+      }
+    }
+  }
+}
+
+/* 浅色主题下拉菜单适配 */
+html:not(.dark) .ant-dropdown-menu {
+  background: var(--vip-bg-container) !important;
+  
+  .ant-dropdown-menu-item {
+    color: var(--vip-text-primary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-light);
+      color: var(--vip-primary) !important;
+    }
+    
+    &.ant-dropdown-menu-item-selected {
+      background: var(--vip-primary-light) !important;
+      color: var(--vip-primary) !important;
+    }
+  }
+}
+
+/* 深色主题下拉菜单适配 */
+html.dark .ant-dropdown-menu {
+  background: var(--vip-bg-container) !important;
+  
+  .ant-dropdown-menu-item {
+    color: var(--vip-text-primary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-light);
+      color: var(--vip-primary-hover) !important;
+    }
+    
+    &.ant-dropdown-menu-item-selected {
+      background: var(--vip-primary-light) !important;
+      color: var(--vip-primary-hover) !important;
+    }
+  }
+}
+
+/* ===== 抽屉样式优化 ===== */
+.ant-drawer {
+  .ant-drawer-content {
+    border: 1px solid var(--vip-border) !important;
+  }
+  
+  .ant-drawer-header {
+    border-bottom: 1px solid var(--vip-border);
+    background: var(--vip-bg-container);
+  }
+  
+  .ant-drawer-title {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-drawer-body {
+    background: var(--vip-bg-container);
+  }
+  
+  .ant-drawer-footer {
+    border-top: 1px solid var(--vip-border);
+    background: var(--vip-bg-container);
+  }
+  
+  .ant-drawer-close {
+    color: var(--vip-text-secondary) !important;
+  }
+}
+
+/* 浅色主题抽屉适配 */
+html:not(.dark) .ant-drawer {
+  .ant-drawer-content {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-drawer-header {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-drawer-title {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-drawer-close {
+    color: var(--vip-text-secondary) !important;
+  }
+}
+
+/* 深色主题抽屉适配 */
+html.dark .ant-drawer {
+  .ant-drawer-content {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-drawer-header {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-drawer-title {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-drawer-close {
+    color: var(--vip-text-secondary) !important;
+  }
+}
+
+/* ===== Popover 和 Popconfirm 样式优化 ===== */
+.ant-popover,
+.ant-popconfirm {
+  .ant-popover-inner {
+    border: 1px solid var(--vip-border) !important;
+    border-radius: var(--vip-radius-md) !important;
+    box-shadow: var(--vip-shadow-md) !important;
+  }
+  
+  .ant-popover-inner-content {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-popover-arrow {
+    &::before {
+      background: var(--vip-bg-container) !important;
+      border: 1px solid var(--vip-border) !important;
     }
   }
 }
@@ -731,6 +933,58 @@ html.dark .ant-modal {
   &.ant-select-disabled .ant-select-selector {
     background: var(--vip-bg-layout) !important;
     color: var(--vip-text-tertiary) !important;
+  }
+}
+
+/* 浅色主题选择器适配 */
+html:not(.dark) .ant-select {
+  .ant-select-selection-item,
+  .ant-select-selection-placeholder {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-select-dropdown {
+    background: var(--vip-bg-elevated) !important;
+    
+    .ant-select-item {
+      color: var(--vip-text-primary) !important;
+      
+      &.ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+        background: var(--vip-primary-light) !important;
+      }
+      
+      &.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary) !important;
+        font-weight: 500;
+      }
+    }
+  }
+}
+
+/* 深色主题选择器适配 */
+html.dark .ant-select {
+  .ant-select-selection-item,
+  .ant-select-selection-placeholder {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-select-dropdown {
+    background: var(--vip-bg-elevated) !important;
+    
+    .ant-select-item {
+      color: var(--vip-text-primary) !important;
+      
+      &.ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+        background: var(--vip-primary-light) !important;
+      }
+      
+      &.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary-hover) !important;
+        font-weight: 500;
+      }
+    }
   }
 }
 
@@ -852,8 +1106,60 @@ html.dark {
 .ant-breadcrumb {
   font-size: 13px;
   
-  a:hover {
-    color: var(--vip-primary);
+  a {
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      color: var(--vip-primary) !important;
+    }
+  }
+  
+  .ant-breadcrumb-separator {
+    color: var(--vip-text-tertiary) !important;
+  }
+  
+  .ant-breadcrumb-link {
+    color: var(--vip-text-secondary) !important;
+  }
+  
+  .ant-breadcrumb-overlay-link {
+    color: var(--vip-text-secondary) !important;
+  }
+  
+  /* 当前页面(最后一个面包屑项) */
+  > span:last-child {
+    .ant-breadcrumb-link {
+      color: var(--vip-text-primary) !important;
+    }
+  }
+}
+
+/* 浅色主题面包屑适配 */
+html:not(.dark) .ant-breadcrumb {
+  a {
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      color: var(--vip-primary) !important;
+    }
+  }
+  
+  .ant-breadcrumb-separator {
+    color: var(--vip-text-tertiary) !important;
+  }
+  
+  .ant-breadcrumb-link {
+    color: var(--vip-text-secondary) !important;
+  }
+  
+  .ant-breadcrumb-overlay-link {
+    color: var(--vip-text-secondary) !important;
+  }
+  
+  > span:last-child {
+    .ant-breadcrumb-link {
+      color: var(--vip-text-primary) !important;
+    }
   }
 }
 
@@ -890,6 +1196,61 @@ html.dark .ant-breadcrumb {
 }
 
 /* ProLayout 页面头部面包屑适配 */
+/* 浅色主题 ProLayout 面包屑 */
+html:not(.dark) {
+  .ant-pro-page-container {
+    .ant-pro-page-container-header {
+      .ant-breadcrumb {
+        a,
+        span {
+          color: var(--vip-text-secondary) !important;
+        }
+        
+        .ant-breadcrumb-separator {
+          color: var(--vip-text-tertiary) !important;
+        }
+        
+        a:hover {
+          color: var(--vip-primary) !important;
+        }
+        
+        > span:last-child {
+          a,
+          span {
+            color: var(--vip-text-primary) !important;
+          }
+        }
+      }
+    }
+  }
+  
+  /* 兼容 ProComponents 的 PageHeader */
+  .ant-pro-page-header-wrap {
+    .ant-breadcrumb {
+      a,
+      span {
+        color: var(--vip-text-secondary) !important;
+      }
+      
+      .ant-breadcrumb-separator {
+        color: var(--vip-text-tertiary) !important;
+      }
+      
+      a:hover {
+        color: var(--vip-primary) !important;
+      }
+      
+      > span:last-child {
+        a,
+        span {
+          color: var(--vip-text-primary) !important;
+        }
+      }
+    }
+  }
+}
+
+/* 深色主题 ProLayout 面包屑 */
 html.dark {
   .ant-pro-page-container {
     .ant-pro-page-container-header {

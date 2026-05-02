@@ -4,7 +4,6 @@ import {
   Row,
   Col,
   Statistic,
-  DatePicker,
   Spin,
   Empty,
   theme,
@@ -24,11 +23,8 @@ import {
 } from '@ant-design/icons';
 import { getTokenStatsAggregation, getTokenStatsTimeSeries, getModelTimeSeries, getAgentTimeSeries, getSessionTimeSeries } from '@/services/ant-design-pro/tokenStats';
 import { Pie, Line } from '@ant-design/plots';
-import { Select } from 'antd';
-
-const { RangePicker } = DatePicker;
-const { Text, Title } = Typography;
-const { Option } = Select;
+import SearchFilterBar, { FilterSelect, FilterDatePicker } from '@/components/SearchFilterBar';
+import { useIntl } from '@umijs/max';
 
 interface TokenStatsData {
   overall: {
@@ -69,6 +65,7 @@ interface TokenStatsData {
 
 const TokenMonitor: React.FC = () => {
   const { token: themeToken } = theme.useToken();
+  const intl = useIntl();
   const [loading, setLoading] = useState(false);
   const [statsData, setStatsData] = useState<TokenStatsData | null>(null);
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
@@ -788,57 +785,90 @@ const TokenMonitor: React.FC = () => {
       }}
     >
       {/* 筛选区域 */}
-      <Card
-        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-        styles={{ body: { padding: '16px 20px' } }}
+      <SearchFilterBar
+        onSearch={() => {
+          if (dateRange) {
+            const startTime = dateRange[0].format('YYYY-MM-DD HH:mm:ss');
+            const endTime = dateRange[1].format('YYYY-MM-DD HH:mm:ss');
+            fetchStats(startTime, endTime);
+            fetchTimeSeries(startTime, endTime, timeGranularity);
+            fetchModelTimeSeries(startTime, endTime, timeGranularity);
+            fetchAgentTimeSeries(startTime, endTime, timeGranularity);
+            fetchSessionTimeSeries(startTime, endTime, timeGranularity);
+          }
+        }}
+        onReset={() => {
+          setDateRange([dayjs().subtract(7, 'day'), dayjs()]);
+          setTimeGranularity('day');
+          setStatDimension('token');
+        }}
+        searchText={intl.formatMessage({
+          id: 'pages.common.search',
+          defaultMessage: 'Search',
+        })}
+        resetText={intl.formatMessage({
+          id: 'pages.common.reset',
+          defaultMessage: 'Reset',
+        })}
+        showSearchButton={false}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <Col>
-            <RangePicker
-              showTime={{
-                format: 'HH:mm:ss',
-              }}
-              format="YYYY-MM-DD HH:mm:ss"
-              value={dateRange}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setDateRange([dates[0], dates[1]]);
-                }
-              }}
-              presets={[
-                { label: '最近 3 天', value: [dayjs().subtract(3, 'day'), dayjs()] },
-                { label: '最近 7 天', value: [dayjs().subtract(7, 'day'), dayjs()] },
-                { label: '最近 30 天', value: [dayjs().subtract(30, 'day'), dayjs()] },
-                { label: '最近 90 天', value: [dayjs().subtract(90, 'day'), dayjs()] },
-              ]}
-              style={{ borderRadius: '8px' }}
-            />
-          </Col>
-          <Col>
-            <Select
-              value={timeGranularity}
-              onChange={setTimeGranularity}
-              style={{ width: 120, borderRadius: '8px' }}
-              placeholder="时间粒度"
-            >
-              <Option value="hour">按小时</Option>
-              <Option value="day">按天</Option>
-              <Option value="month">按月</Option>
-            </Select>
-          </Col>
-          <Col>
-            <Select
-              value={statDimension}
-              onChange={setStatDimension}
-              style={{ width: 120, borderRadius: '8px' }}
-              placeholder="统计维度"
-            >
-              <Option value="token">Token</Option>
-              <Option value="fee">费用</Option>
-            </Select>
-          </Col>
-        </div>
-      </Card>
+        <FilterDatePicker
+          value={dateRange}
+          onChange={(dates) => {
+            if (dates && dates[0] && dates[1]) {
+              setDateRange([dates[0], dates[1]]);
+            }
+          }}
+          placeholder={[
+            intl.formatMessage({ id: 'pages.tokenMonitor.startDate', defaultMessage: 'Start date' }),
+            intl.formatMessage({ id: 'pages.tokenMonitor.endDate', defaultMessage: 'End date' }),
+          ]}
+          showTime
+          width="auto"
+        />
+        <FilterSelect
+          value={timeGranularity}
+          onChange={setTimeGranularity}
+          placeholder={intl.formatMessage({
+            id: 'pages.tokenMonitor.timeGranularity',
+            defaultMessage: 'Time granularity',
+          })}
+          width="auto"
+          options={[
+            { 
+              label: intl.formatMessage({ id: 'pages.tokenMonitor.byHour', defaultMessage: 'By hour' }), 
+              value: 'hour' 
+            },
+            { 
+              label: intl.formatMessage({ id: 'pages.tokenMonitor.byDay', defaultMessage: 'By day' }), 
+              value: 'day' 
+            },
+            { 
+              label: intl.formatMessage({ id: 'pages.tokenMonitor.byMonth', defaultMessage: 'By month' }), 
+              value: 'month' 
+            },
+          ]}
+        />
+        <FilterSelect
+          value={statDimension}
+          onChange={setStatDimension}
+          placeholder={intl.formatMessage({
+            id: 'pages.tokenMonitor.statDimension',
+            defaultMessage: 'Stat dimension',
+          })}
+          width="auto"
+          options={[
+            { 
+              label: 'Token', 
+              value: 'token' 
+            },
+            { 
+              label: intl.formatMessage({ id: 'pages.tokenMonitor.fee', defaultMessage: 'Fee' }), 
+              value: 'fee' 
+            },
+          ]}
+        />
+      </SearchFilterBar>
 
       <Spin spinning={loading}>
         {!statsData || statsData.overall.grandTotalToken === 0 ? (

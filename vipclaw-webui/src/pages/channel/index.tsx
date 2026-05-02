@@ -41,6 +41,7 @@ import {
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
+import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 
 const { Text, Paragraph } = Typography;
 
@@ -290,100 +291,53 @@ const ChannelManagement: React.FC = () => {
       {contextHolder}
 
       {/* 搜索和工具栏 */}
-      <Card
-        style={{
-          marginBottom: 24,
-          borderRadius: '16px',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid #f0f0f8',
-        }}
-        styles={{ body: { padding: '20px 24px' } }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
-            <Input
-              placeholder={intl.formatMessage({ id: 'pages.channel.search.placeholder.name', defaultMessage: 'Search channel name' })}
-              prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{
-                width: 200,
-                borderRadius: '10px',
-                height: '40px',
-              }}
-              allowClear
-            />
-            <Select
-              placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.type', defaultMessage: 'Filter by type' })}
-              value={typeFilter}
-              onChange={(val) => setTypeFilter(val)}
-              style={{ width: 120 }}
-              allowClear
-              options={CHANNEL_TYPES}
-            />
-            <Select
-              placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.status', defaultMessage: 'Filter by status' })}
-              value={statusFilter}
-              onChange={(val) => setStatusFilter(val)}
-              style={{ width: 100 }}
-              allowClear
-              options={[
-                { label: intl.formatMessage({ id: 'pages.channel.status.enabled', defaultMessage: 'Enabled' }), value: 1 },
-                { label: intl.formatMessage({ id: 'pages.channel.status.disabled', defaultMessage: 'Disabled' }), value: 0 },
-              ]}
-            />
-            <Button
-              type="primary"
-              onClick={handleSearch}
-              style={{
-                borderRadius: '10px',
-                height: '40px',
-                padding: '0 20px',
-                background: 'var(--vip-primary)',
-                borderColor: 'var(--vip-primary)',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.channel.button.search', defaultMessage: 'Search' })}
-            </Button>
-            <Button
-              onClick={() => { setKeyword(''); setTypeFilter(undefined); setStatusFilter(undefined); setPageNum(1); loadData(1); }}
-              style={{
-                borderRadius: '10px',
-                height: '40px',
-                padding: '0 20px',
-                color: 'var(--vip-text-primary)',
-                borderColor: 'var(--vip-border)',
-                background: 'var(--vip-bg-container)',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.channel.button.reset', defaultMessage: 'Reset' })}
-            </Button>
-          </div>
-          <Button
+      <SearchFilterBar
+        onSearch={handleSearch}
+        onReset={() => { setKeyword(''); setTypeFilter(undefined); setStatusFilter(undefined); setPageNum(1); loadData(1); }}
+        searchText={intl.formatMessage({ id: 'pages.channel.button.search', defaultMessage: 'Search' })}
+        resetText={intl.formatMessage({ id: 'pages.channel.button.reset', defaultMessage: 'Reset' })}
+        extra={
+          <ActionButton
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateModalVisible(true)}
-            style={{
-              borderRadius: '10px',
-              height: '44px',
-              padding: '0 24px',
-              fontWeight: 600,
-              fontSize: '14px',
-              boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
-            }}
           >
             {intl.formatMessage({ id: 'pages.channel.button.create', defaultMessage: 'Create Channel' })}
-          </Button>
-        </div>
-      </Card>
+          </ActionButton>
+        }
+      >
+        <SearchInput
+          value={keyword}
+          onChange={setKeyword}
+          onSearch={handleSearch}
+          placeholder={intl.formatMessage({ id: 'pages.channel.search.placeholder.name', defaultMessage: 'Search channel name' })}
+          width="auto"
+        />
+        <FilterSelect
+          value={typeFilter}
+          onChange={setTypeFilter}
+          placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.type', defaultMessage: 'Filter by type' })}
+          width="auto"
+          options={CHANNEL_TYPES}
+        />
+        <FilterSelect
+          value={statusFilter}
+          onChange={setStatusFilter}
+          placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.status', defaultMessage: 'Filter by status' })}
+          width="auto"
+          options={[
+            { label: intl.formatMessage({ id: 'pages.channel.status.enabled', defaultMessage: 'Enabled' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.channel.status.disabled', defaultMessage: 'Disabled' }), value: 0 },
+          ]}
+        />
+      </SearchFilterBar>
 
       {/* 数据表格 */}
       <Card
         style={{
           borderRadius: '16px',
           boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid #f0f0f8',
+          border: '1px solid var(--vip-border)',
         }}
       >
         <Table

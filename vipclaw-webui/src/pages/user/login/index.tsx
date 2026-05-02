@@ -203,7 +203,7 @@ const useStyles = createStyles(({ token }) => {
       height: 40,
       borderRadius: '50%',
       background: '#f9fafb',
-      border: '1px solid #e5e7eb',
+      border: '1px solid var(--vip-border)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -620,7 +620,7 @@ const Login: React.FC = () => {
                       flexShrink: 0,
                       borderRadius: '8px',
                       overflow: 'hidden',
-                      border: '1px solid #e5e7eb',
+                      border: '1px solid var(--vip-border)',
                     }}
                   >
                     {loadingCaptcha ? (
@@ -743,7 +743,7 @@ const Login: React.FC = () => {
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = '#f9fafb';
-                  e.currentTarget.style.borderColor = '#e5e7eb';
+                  e.currentTarget.style.borderColor = '#e8eaf2';
                   e.currentTarget.style.color = '#6b7280';
                 }}
               >
