@@ -83,7 +83,7 @@ const AgentCard: React.FC<{
       <div
         style={{
           height: '4px',
-          background: `linear-gradient(90deg, #722ed1 0%, #b37feb 50%, #722ed1 100%)`,
+          background: `linear-gradient(90deg, var(--vip-primary) 0%, var(--vip-primary-hover) 50%, var(--vip-primary) 100%)`,
           backgroundSize: '200% 100%',
           animation: isHovered ? 'gradientShift 2s linear infinite' : 'none',
         }}
@@ -98,13 +98,13 @@ const AgentCard: React.FC<{
               height: 52,
               borderRadius: '14px',
               background: isHovered 
-                ? 'linear-gradient(135deg, #722ed1 0%, #b37feb 100%)' 
-                : '#722ed115',
+                ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)' 
+                : 'var(--vip-primary-light)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               fontSize: '24px',
-              color: isHovered ? '#fff' : '#722ed1',
+              color: isHovered ? '#fff' : 'var(--vip-primary)',
               flexShrink: 0,
               transition: 'all 0.3s ease',
               boxShadow: isHovered ? '0 8px 20px rgba(114, 46, 209, 0.3)' : 'none',
@@ -114,7 +114,7 @@ const AgentCard: React.FC<{
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-              <Text strong style={{ fontSize: '16px', color: '#1a1a2e' }}>
+              <Text strong style={{ fontSize: '16px', color: 'var(--vip-text-primary)' }}>
                 {item.name}
               </Text>
               {/* 状态指示点 */}
@@ -157,7 +157,7 @@ const AgentCard: React.FC<{
         {/* 描述 */}
         <Paragraph
           ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: '#666', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
+          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
         >
           {item.description || '暂无描述'}
         </Paragraph>
@@ -168,7 +168,7 @@ const AgentCard: React.FC<{
           gap: 12, 
           marginBottom: 16,
           padding: '10px 12px',
-          background: '#f8f9fc',
+          background: 'var(--vip-bg-layout)',
           borderRadius: '10px',
         }}>
           {/* MCP 统计 */}
@@ -187,7 +187,7 @@ const AgentCard: React.FC<{
                         <List.Item 
                           style={{ 
                             padding: '8px 12px',
-                            background: index % 2 === 0 ? '#fafbfc' : '#ffffff',
+                            background: 'var(--vip-bg-container)',
                             transition: 'all 0.2s ease',
                             cursor: 'pointer',
                           }}
@@ -196,11 +196,11 @@ const AgentCard: React.FC<{
                             window.open(`/context/mcp/detail/${mcp.mcpId}`, '_blank');
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#722ed108';
+                            e.currentTarget.style.background = 'var(--vip-primary-light)';
                             e.currentTarget.style.paddingLeft = '16px';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = index % 2 === 0 ? '#fafbfc' : '#ffffff';
+                            e.currentTarget.style.background = 'var(--vip-bg-container)';
                             e.currentTarget.style.paddingLeft = '12px';
                           }}
                         >
@@ -210,16 +210,16 @@ const AgentCard: React.FC<{
                                 width: 6,
                                 height: 6,
                                 borderRadius: '50%',
-                                background: '#722ed1',
+                                background: 'var(--vip-primary)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: '#1a1a2e' }}>
+                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
                                 {mcp.mcpName || `MCP #${mcp.mcpId}`}
                               </Text>
                             </div>
                             {mcp.mcpDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: '#666' }}>
+                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
                                   {mcp.mcpDescription}
                                 </Text>
                               </div>
@@ -240,19 +240,19 @@ const AgentCard: React.FC<{
               <div style={{
                 width: 28, height: 28,
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #722ed1 0%, #b37feb 100%)',
+                background: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <ApiOutlined style={{ fontSize: '14px', color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: '#888', display: 'block' }}>MCP</Text>
-                <Text strong style={{ fontSize: '14px', color: '#722ed1' }}>{mcpCount}</Text>
+                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>MCP</Text>
+                <Text strong style={{ fontSize: '14px', color: 'var(--vip-primary)' }}>{mcpCount}</Text>
               </div>
             </div>
           </Popover>
 
-          <div style={{ width: 1, background: '#e8eaf2' }} />
+          <div style={{ width: 1, background: 'var(--vip-border)' }} />
 
           {/* Skill 统计 */}
           <Popover
@@ -270,7 +270,7 @@ const AgentCard: React.FC<{
                         <List.Item 
                           style={{ 
                             padding: '8px 12px',
-                            background: index % 2 === 0 ? '#fafbfc' : '#ffffff',
+                            background: 'var(--vip-bg-container)',
                             transition: 'all 0.2s ease',
                             cursor: 'pointer',
                           }}
@@ -279,11 +279,11 @@ const AgentCard: React.FC<{
                             window.open(`/context/skill/detail/${skill.skillId}`, '_blank');
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#52c41a08';
+                            e.currentTarget.style.background = 'var(--vip-primary-light)';
                             e.currentTarget.style.paddingLeft = '16px';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = index % 2 === 0 ? '#fafbfc' : '#ffffff';
+                            e.currentTarget.style.background = 'var(--vip-bg-container)';
                             e.currentTarget.style.paddingLeft = '12px';
                           }}
                         >
@@ -293,23 +293,23 @@ const AgentCard: React.FC<{
                                 width: 6,
                                 height: 6,
                                 borderRadius: '50%',
-                                background: '#52c41a',
+                                background: 'var(--vip-success)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: '#1a1a2e' }}>
+                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
                                 {skill.skillName || `Skill #${skill.skillId}`}
                               </Text>
                             </div>
                             {skill.repositoryName && (
                               <div style={{ paddingLeft: 12, marginBottom: 2 }}>
-                                <Text style={{ fontSize: 11, color: '#888' }}>
+                                <Text style={{ fontSize: 11, color: 'var(--vip-text-tertiary)' }}>
                                   仓库: {skill.repositoryName}
                                 </Text>
                               </div>
                             )}
                             {skill.skillDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: '#666' }}>
+                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
                                   {skill.skillDescription}
                                 </Text>
                               </div>
@@ -330,19 +330,19 @@ const AgentCard: React.FC<{
               <div style={{
                 width: 28, height: 28,
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)',
+                background: 'linear-gradient(135deg, var(--vip-success) 0%, var(--vip-success-hover) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <ToolOutlined style={{ fontSize: '14px', color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: '#888', display: 'block' }}>Skills</Text>
-                <Text strong style={{ fontSize: '14px', color: '#52c41a' }}>{skillCount}</Text>
+                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Skills</Text>
+                <Text strong style={{ fontSize: '14px', color: 'var(--vip-success)' }}>{skillCount}</Text>
               </div>
             </div>
           </Popover>
 
-          <div style={{ width: 1, background: '#e8eaf2' }} />
+          <div style={{ width: 1, background: 'var(--vip-border)' }} />
 
           {/* Session 统计 */}
           <Popover
@@ -360,7 +360,7 @@ const AgentCard: React.FC<{
                         <List.Item
                           style={{ 
                             padding: '8px 12px',
-                            background: index % 2 === 0 ? '#fafbfc' : '#ffffff',
+                            background: 'var(--vip-bg-container)',
                             cursor: 'pointer',
                             transition: 'all 0.2s ease',
                           }}
@@ -369,11 +369,11 @@ const AgentCard: React.FC<{
                             window.open(`/agent/session?id=${session.id}`, '_blank');
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#1890ff08';
+                            e.currentTarget.style.background = 'var(--vip-primary-light)';
                             e.currentTarget.style.paddingLeft = '16px';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = index % 2 === 0 ? '#fafbfc' : '#ffffff';
+                            e.currentTarget.style.background = 'var(--vip-bg-container)';
                             e.currentTarget.style.paddingLeft = '12px';
                           }}
                         >
@@ -383,16 +383,16 @@ const AgentCard: React.FC<{
                                 width: 6,
                                 height: 6,
                                 borderRadius: '50%',
-                                background: '#1890ff',
+                                background: 'var(--vip-info)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: '#1a1a2e' }}>
+                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
                                 {session.title || `会话 #${session.id}`}
                               </Text>
                             </div>
                             {session.sessionDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: '#666' }}>
+                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
                                   {session.sessionDescription}
                                 </Text>
                               </div>
@@ -413,14 +413,14 @@ const AgentCard: React.FC<{
               <div style={{
                 width: 28, height: 28,
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)',
+                background: 'linear-gradient(135deg, var(--vip-info) 0%, var(--vip-info-hover) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <MessageOutlined style={{ fontSize: '14px', color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: '#888', display: 'block' }}>Sessions</Text>
-                <Text strong style={{ fontSize: '14px', color: '#1890ff' }}>{sessionCount}</Text>
+                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Sessions</Text>
+                <Text strong style={{ fontSize: '14px', color: 'var(--vip-info)' }}>{sessionCount}</Text>
               </div>
             </div>
           </Popover>
@@ -431,19 +431,19 @@ const AgentCard: React.FC<{
           display: 'flex', 
           alignItems: 'center', 
           gap: 8, 
-          borderTop: '1px solid #f0f0f8', 
+          borderTop: '1px solid var(--vip-border)', 
           paddingTop: '12px' 
         }}>
           {item.isPublic === 1 ? (
             <Tag color="blue" style={{ margin: 0, fontSize: '11px' }}>公开</Tag>
           ) : (
-            <Tag style={{ margin: 0, fontSize: '11px', color: '#888' }}>私有</Tag>
+            <Tag style={{ margin: 0, fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>私有</Tag>
           )}
           <Text type="secondary" style={{ fontSize: '12px' }}>
             {item.createTime?.replace('T', ' ')}
           </Text>
           {item.creator && (
-            <Text type="secondary" style={{ fontSize: '11px', color: '#8c8c9a' }}>
+            <Text type="secondary" style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
               {item.creator}
             </Text>
           )}
@@ -643,7 +643,7 @@ const AgentManagement: React.FC = () => {
                 padding: '0 20px',
               }}
             >
-              重置
+              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
             </Button>
           </div>
           <Button
@@ -731,7 +731,7 @@ const AgentManagement: React.FC = () => {
             暂无智能体
           </Text>
           <Text style={{ fontSize: '14px', color: '#888', marginBottom: 24 }}>
-            创建您的第一个智能体，开始 AI 之旅
+            {intl.formatMessage({ id: 'pages.agent.createFirst', defaultMessage: 'Create your first agent to start your AI journey' })}
           </Text>
           <Button
             type="primary"

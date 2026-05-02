@@ -1,10 +1,9 @@
+import { useIntl, useModel } from '@umijs/max';
 import { Modal, Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
 import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
-// @ts-ignore
-import { useModel } from '@umijs/max';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
@@ -18,6 +17,7 @@ interface UpdateFormProps {
 }
 
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSubmit }) => {
+  const intl = useIntl();
   const [currentStep, setCurrentStep] = useState(0);
   const [form] = Form.useForm();
   const { initialState } = useModel('@@initialState');
@@ -275,7 +275,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
   return (
     <Modal
-      title="编辑智能体"
+      title={intl.formatMessage({ id: 'pages.agent.edit', defaultMessage: 'Edit Agent' })}
       open={visible}
       onCancel={handleClose}
       footer={null}
@@ -349,8 +349,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               label="是否公开"
               extra={
                 isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, false)
-                  ? '您没有权限修改此设置（已公开的实体不能改为非公开）'
-                  : '公开后其他用户也可以查看此智能体'
+                  ? intl.formatMessage({ id: 'pages.agent.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
+                  : intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })
               }
             >
               <Switch
@@ -387,7 +387,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                       onClick={() => removeMcpConfig(index)}
                       size="small"
                     >
-                      删除
+                      {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
                     </Button>
                   )}
                 </div>
@@ -438,7 +438,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                       onClick={() => removeSkillConfig(index)}
                       size="small"
                     >
-                      删除
+                      {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
                     </Button>
                   )}
                 </div>
@@ -492,7 +492,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           type="primary" 
           onClick={handleNext}
         >
-          {currentStep === 2 ? '保存' : '下一步'}
+          {currentStep === 2 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
     </Modal>
