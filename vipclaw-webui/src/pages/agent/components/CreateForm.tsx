@@ -1,10 +1,9 @@
+import { useIntl, useModel } from '@umijs/max';
 import { Modal, Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
 import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
-// @ts-ignore
-import { useModel } from '@umijs/max';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
@@ -17,6 +16,7 @@ interface CreateFormProps {
 }
 
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) => {
+  const intl = useIntl();
   const [currentStep, setCurrentStep] = useState(0);
   const [form] = Form.useForm();
   const { initialState } = useModel('@@initialState');
@@ -127,7 +127,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   // 删除 MCP 配置
   const removeMcpConfig = (index: number) => {
     if (mcpConfigs.length === 1) {
-      message.warning('至少保留一个 MCP 配置');
+      message.warning(intl.formatMessage({ id: 'pages.agent.keepOneMcp', defaultMessage: 'Keep at least one MCP configuration' }));
       return;
     }
     const newConfigs = mcpConfigs.filter((_, i) => i !== index);
@@ -172,7 +172,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   // 删除技能配置
   const removeSkillConfig = (index: number) => {
     if (skillConfigs.length === 1) {
-      message.warning('至少保留一个技能配置');
+      message.warning(intl.formatMessage({ id: 'pages.agent.keepOneSkill', defaultMessage: 'Keep at least one skill configuration' }));
       return;
     }
     const newConfigs = skillConfigs.filter((_, i) => i !== index);
@@ -250,7 +250,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
 
   return (
     <Modal
-      title="创建智能体"
+      title={intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
       open={visible}
       onCancel={handleClose}
       footer={null}
@@ -258,9 +258,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
       destroyOnClose
     >
       <Steps current={currentStep} style={{ marginBottom: 24 }}>
-        <Step title="基本信息" />
-        <Step title="MCP 配置" />
-        <Step title="技能配置" />
+        <Step title={intl.formatMessage({ id: 'pages.agent.basicInfo', defaultMessage: 'Basic Info' })} />
+        <Step title={intl.formatMessage({ id: 'pages.agent.mcpConfig', defaultMessage: 'MCP Config' })} />
+        <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
       </Steps>
 
       <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
@@ -331,7 +331,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 unCheckedChildren="私有"
               />
               <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>
-                公开后其他用户也可以查看此智能体
+                {intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}
               </div>
             </Form.Item>
           </>
@@ -342,17 +342,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           <div>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: '#666', fontSize: '14px' }}>
-                配置 MCP 服务（可选，可跳过）
+                {intl.formatMessage({ id: 'pages.agent.mcpOptional', defaultMessage: 'Configure MCP services (optional, can be skipped)' })}
               </span>
               <Button type="dashed" icon={<PlusOutlined />} onClick={addMcpConfig}>
-                添加 MCP
+                {intl.formatMessage({ id: 'pages.agent.addMcp', defaultMessage: 'Add MCP' })}
               </Button>
             </div>
 
             {mcpConfigs.map((config, index) => (
               <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid #d9d9d9', borderRadius: '8px', background: '#fafafa' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500 }}>MCP #{index + 1}</span>
+                  <span style={{ fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
                   {mcpConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -361,7 +361,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                       onClick={() => removeMcpConfig(index)}
                       size="small"
                     >
-                      删除
+                      {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
                     </Button>
                   )}
                 </div>
@@ -413,7 +413,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                       onClick={() => removeSkillConfig(index)}
                       size="small"
                     >
-                      删除
+                      {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
                     </Button>
                   )}
                 </div>
@@ -459,7 +459,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           type="primary" 
           onClick={handleNext}
         >
-          {currentStep === 2 ? '完成' : '下一步'}
+          {currentStep === 2 ? intl.formatMessage({ id: 'pages.agent.finish', defaultMessage: 'Finish' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
     </Modal>
