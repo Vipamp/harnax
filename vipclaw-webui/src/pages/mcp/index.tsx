@@ -426,7 +426,7 @@ const McpManagement: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Input
-            placeholder="搜索 MCP 名称或描述"
+            placeholder={intl.formatMessage({ id: 'pages.mcp.searchPlaceholder', defaultMessage: 'Search MCP name or description' })}
             prefix={<SearchOutlined />}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
@@ -435,19 +435,19 @@ const McpManagement: React.FC = () => {
             allowClear
           />
           <Select
-            placeholder="状态筛选"
+            placeholder={intl.formatMessage({ id: 'pages.mcp.statusFilter', defaultMessage: 'Status Filter' })}
             value={status}
             onChange={(val) => setStatus(val)}
             style={{ width: 140, borderRadius: '8px' }}
             allowClear
             options={[
-              { label: '启用', value: 1 },
-              { label: '禁用', value: 0 },
+              { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+              { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
             ]}
           />
           <Select
             mode="multiple"
-            placeholder="类型筛选"
+            placeholder={intl.formatMessage({ id: 'pages.mcp.typeFilter', defaultMessage: 'Type Filter' })}
             value={types}
             onChange={(val) => {
               setTypes(val);
@@ -462,10 +462,10 @@ const McpManagement: React.FC = () => {
             ]}
           />
           <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
-            查询
+            {intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
           </Button>
           <Button onClick={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
-            重置
+            {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
           </Button>
           <div style={{ flex: 1 }} />
           <Button
@@ -474,7 +474,7 @@ const McpManagement: React.FC = () => {
             onClick={() => setCreateModalVisible(true)}
             style={{ borderRadius: '8px', fontWeight: 600 }}
           >
-            新建 MCP
+            {intl.formatMessage({ id: 'pages.mcp.createMcp', defaultMessage: 'Create MCP' })}
           </Button>
         </div>
       </Card>
