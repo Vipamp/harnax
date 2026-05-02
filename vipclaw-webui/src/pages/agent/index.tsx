@@ -247,7 +247,7 @@ const AgentCard: React.FC<{
               </div>
               <div>
                 <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>MCPs</Text>
-                <Text strong style={{ fontSize: '14px', color: 'var(--vip-primary)' }}>{mcpCount}</Text>
+                <Text strong style={{ fontSize: '13px', color: 'var(--vip-primary)' }}>{mcpCount}</Text>
               </div>
             </div>
           </Popover>
@@ -337,7 +337,7 @@ const AgentCard: React.FC<{
               </div>
               <div>
                 <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Skills</Text>
-                <Text strong style={{ fontSize: '14px', color: 'var(--vip-success)' }}>{skillCount}</Text>
+                <Text strong style={{ fontSize: '13px', color: 'var(--vip-success)' }}>{skillCount}</Text>
               </div>
             </div>
           </Popover>
@@ -386,13 +386,13 @@ const AgentCard: React.FC<{
                                 background: 'var(--vip-info)',
                                 flexShrink: 0,
                               }} />
-                              <Text strong style={{ fontSize: 13, color: 'var(--vip-text-primary)' }}>
+                              <Text strong style={{ fontSize: 12, color: 'var(--vip-text-primary)' }}>
                                 {session.title || `会话 #${session.id}`}
                               </Text>
                             </div>
                             {session.sessionDescription && (
                               <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: 12, color: 'var(--vip-text-secondary)' }}>
+                                <Text style={{ fontSize: 11, color: 'var(--vip-text-secondary)' }}>
                                   {session.sessionDescription}
                                 </Text>
                               </div>
@@ -420,7 +420,7 @@ const AgentCard: React.FC<{
               </div>
               <div>
                 <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>Sessions</Text>
-                <Text strong style={{ fontSize: '14px', color: 'var(--vip-info)' }}>{sessionCount}</Text>
+                <Text strong style={{ fontSize: '13px', color: 'var(--vip-info)' }}>{sessionCount}</Text>
               </div>
             </div>
           </Popover>

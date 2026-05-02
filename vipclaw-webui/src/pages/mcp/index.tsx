@@ -98,7 +98,7 @@ const McpCard: React.FC<{
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Text strong style={{ fontSize: '16px', color: 'var(--vip-text-primary)' }}>
+              <Text strong style={{ fontSize: '14px', color: 'var(--vip-text-primary)' }}>
                 {item.name}
               </Text>
             </div>
@@ -136,7 +136,7 @@ const McpCard: React.FC<{
         {/* 描述 */}
         <Paragraph
           ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
+          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '12px', minHeight: 40, lineHeight: 1.6 }}
         >
           {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
         </Paragraph>
