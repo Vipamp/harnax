@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getAgentPage } from '@/services/ant-design-pro/agent';
 import { createSession, checkSessionTitle } from '@/services/ant-design-pro/session';
 // @ts-ignore
-import { useModel } from '@umijs/max';
+import { useModel, useIntl } from '@umijs/max';
 import { debounce } from 'lodash';
 
 const { TextArea } = Input;
@@ -16,6 +16,7 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSuccess }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
@@ -103,22 +104,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
 
   return (
     <Modal
-      title="创建会话"
+      title={intl.formatMessage({ id: 'pages.session.createSession', defaultMessage: 'Create Session' })}
       open={visible}
       onCancel={handleClose}
       onOk={handleCreateSubmit}
       confirmLoading={loading}
-      okText="创建"
-      cancelText="取消"
+      okText={intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
+      cancelText={intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
       width={600}
       destroyOnClose
     >
       <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
         <Form.Item
-          label="会话名称"
+          label={intl.formatMessage({ id: 'pages.session.sessionName', defaultMessage: 'Session Name' })}
           name="title"
           rules={[
-            { required: true, message: '请输入会话名称' },
+            { required: true, message: intl.formatMessage({ id: 'pages.session.titleRequired', defaultMessage: 'Please enter session name' }) },
             {
               validator: async (_, value) => {
                 if (!value) {
@@ -126,7 +127,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
                 }
                 const res = await checkSessionTitle(value);
                 if (res.code === 200 && res.data) {
-                  return Promise.reject(new Error('会话名称已存在，请使用其他名称'));
+                  return Promise.reject(new Error(intl.formatMessage({ id: 'pages.session.titleExists', defaultMessage: 'Session name already exists, please use another name' })));
                 }
                 return Promise.resolve();
               },
@@ -134,28 +135,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
           ]}
           validateTrigger="onBlur"
         >
-          <Input placeholder="请输入会话名称" />
+          <Input placeholder={intl.formatMessage({ id: 'pages.session.namePlaceholder', defaultMessage: 'Please enter session name' })} />
         </Form.Item>
 
         <Form.Item
-          label="会话描述"
+          label={intl.formatMessage({ id: 'pages.session.sessionDescription', defaultMessage: 'Session Description' })}
           name="sessionDescription"
         >
           <TextArea
             rows={3}
-            placeholder="请输入会话描述（可选）"
+            placeholder={intl.formatMessage({ id: 'pages.session.descriptionPlaceholder', defaultMessage: 'Please enter session description (optional)' })}
             showCount
             maxLength={500}
           />
         </Form.Item>
 
         <Form.Item
-          label="选择智能体"
+          label={intl.formatMessage({ id: 'pages.session.selectAgent', defaultMessage: 'Select Agent' })}
           name="agentId"
-          rules={[{ required: true, message: '请选择智能体' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.session.agentRequired', defaultMessage: "Please select agent" }) }]}
         >
           <Select
-            placeholder="请选择智能体"
+            placeholder={intl.formatMessage({ id: 'pages.session.selectAgentPlaceholder', defaultMessage: 'Please select agent' })}
             loading={loading}
             showSearch
             optionFilterProp="label"
@@ -168,14 +169,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
 
         {/* 是否公开 */}
         <Form.Item
-          label="是否公开"
-          extra="公开后其他用户也可以查看此会话"
+          label={intl.formatMessage({ id: 'pages.session.isPublic', defaultMessage: 'Is Public' })}
+          extra={intl.formatMessage({ id: 'pages.session.publicHint', defaultMessage: 'After making public, other users can also view this session' })}
         >
           <Switch
             checked={isPublic}
             onChange={setIsPublic}
-            checkedChildren="公开"
-            unCheckedChildren="私有"
+            checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
           />
         </Form.Item>
       </Form>

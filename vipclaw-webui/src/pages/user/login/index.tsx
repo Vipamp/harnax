@@ -19,7 +19,7 @@ import { Footer } from '@/components';
 import { login as loginApi, getCaptcha } from '@/services/ant-design-pro/login';
 import Settings from '../../../../config/defaultSettings';
 import CryptoJS from 'crypto-js';
-import { isPersonal, isPublic } from '@/utils/edition';
+import { isPersonal, isPublic, FEATURES } from '@/utils/edition';
 
 const useStyles = createStyles(({ token }) => {
   return {
@@ -561,7 +561,7 @@ const Login: React.FC = () => {
                   key: 'account',
                   label: '账号密码登录',
                 },
-                ...(!isPersonal() ? [{
+                ...(FEATURES.phoneLogin ? [{
                   key: 'mobile',
                   label: '验证码登录',
                 }] : []),

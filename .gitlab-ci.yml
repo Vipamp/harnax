@@ -1,0 +1,233 @@
+# VIPClaw 多版本 CI/CD 配置
+# 支持个人版、企业版、公有云版的并行构建
+
+stages:
+  - build
+  - test
+  - verify
+  - docker
+  - deploy
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  DOCKER_DRIVER: overlay2
+
+# 缓存 Maven 依赖
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .m2/repository/
+  policy: pull-push
+
+# ==================== 构建阶段 ====================
+
+# 个人版后端构建
+build-backend-personal:
+  stage: build
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - cd vipclaw-admin
+    - mvn clean package -Ppersonal -DskipTests $MAVEN_OPTS
+    - mkdir -p ../dist/personal
+    - cp target/vipclaw-admin-*.jar ../dist/personal/
+  artifacts:
+    paths:
+      - dist/personal/
+    expire_in: 1 week
+  tags:
+    - docker
+
+# 企业版后端构建
+build-backend-enterprise:
+  stage: build
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - cd vipclaw-admin
+    - mvn clean package -Penterprise -DskipTests $MAVEN_OPTS
+    - mkdir -p ../dist/enterprise
+    - cp target/vipclaw-admin-*.jar ../dist/enterprise/
+  artifacts:
+    paths:
+      - dist/enterprise/
+    expire_in: 1 week
+  tags:
+    - docker
+
+# 公有云版后端构建
+build-backend-public:
+  stage: build
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - cd vipclaw-admin
+    - mvn clean package -Ppublic -DskipTests $MAVEN_OPTS
+    - mkdir -p ../dist/public
+    - cp target/vipclaw-admin-*.jar ../dist/public/
+  artifacts:
+    paths:
+      - dist/public/
+    expire_in: 1 week
+  tags:
+    - docker
+
+# ==================== 测试阶段 ====================
+
+# 后端单元测试
+test-backend:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - cd vipclaw-admin
+    - mvn test $MAVEN_OPTS
+  artifacts:
+    reports:
+      junit: vipclaw-admin/target/surefire-reports/TEST-*.xml
+    expire_in: 30 days
+  tags:
+    - docker
+
+# 前端构建测试(个人版)
+test-frontend-personal:
+  stage: test
+  image: node:20-alpine
+  script:
+    - cd vipclaw-webui
+    - npm ci
+    - npm run build:personal
+  artifacts:
+    paths:
+      - vipclaw-webui/dist/
+    expire_in: 1 day
+  tags:
+    - docker
+
+# ==================== 验证阶段 ====================
+
+# 验证构建产物
+verify-editions:
+  stage: verify
+  image: ubuntu:22.04
+  before_script:
+    - apt-get update && apt-get install -y unzip
+  script:
+    - chmod +x verify-edition.sh
+    - ./verify-edition.sh
+  dependencies:
+    - build-backend-personal
+    - build-backend-enterprise
+    - build-backend-public
+  tags:
+    - docker
+
+# ==================== Docker 镜像构建 ====================
+
+# 个人版 Docker 镜像
+docker-personal:
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker build --build-arg EDITION=personal -t vipclaw-admin:personal -f Dockerfile.backend .
+    - docker tag vipclaw-admin:personal $CI_REGISTRY_IMAGE/vipclaw-admin:personal-$CI_COMMIT_SHORT_SHA
+    - docker tag vipclaw-admin:personal $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:personal-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest
+  dependencies:
+    - build-backend-personal
+  only:
+    - main
+    - tags
+  tags:
+    - docker
+
+# 企业版 Docker 镜像
+docker-enterprise:
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker build --build-arg EDITION=enterprise -t vipclaw-admin:enterprise -f Dockerfile.backend .
+    - docker tag vipclaw-admin:enterprise $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-$CI_COMMIT_SHORT_SHA
+    - docker tag vipclaw-admin:enterprise $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-latest
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-latest
+  dependencies:
+    - build-backend-enterprise
+  only:
+    - main
+    - tags
+  tags:
+    - docker
+
+# 公有云版 Docker 镜像
+docker-public:
+  stage: docker
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker build --build-arg EDITION=public -t vipclaw-admin:public -f Dockerfile.backend .
+    - docker tag vipclaw-admin:public $CI_REGISTRY_IMAGE/vipclaw-admin:public-$CI_COMMIT_SHORT_SHA
+    - docker tag vipclaw-admin:public $CI_REGISTRY_IMAGE/vipclaw-admin:public-latest
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:public-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:public-latest
+  dependencies:
+    - build-backend-public
+  only:
+    - main
+    - tags
+  tags:
+    - docker
+
+# ==================== 部署阶段 ====================
+
+# 部署个人版(示例)
+deploy-personal:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "部署个人版到测试环境"
+    # 实际部署命令根据环境配置
+    # - ssh deploy@personal-server "docker pull $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest && docker-compose up -d"
+  environment:
+    name: personal-test
+    url: https://personal.vipclaw.example.com
+  only:
+    - main
+  tags:
+    - docker
+
+# 部署企业版(示例)
+deploy-enterprise:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "部署企业版到测试环境"
+    # 实际部署命令根据环境配置
+  environment:
+    name: enterprise-test
+    url: https://enterprise.vipclaw.example.com
+  only:
+    - main
+  tags:
+    - docker
+
+# 部署公有云版(示例)
+deploy-public:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "部署公有云版到生产环境"
+    # 实际部署命令根据环境配置
+  environment:
+    name: public-prod
+    url: https://vipclaw.example.com
+  only:
+    - tags
+  when: manual
+  tags:
+    - docker

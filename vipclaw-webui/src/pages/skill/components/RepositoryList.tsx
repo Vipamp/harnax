@@ -3,6 +3,7 @@ import { List, Switch, Button, Space, Typography, Tag, Popconfirm, message, Tool
 import { EditOutlined, DeleteOutlined, GithubOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons';
 import { deleteSkillRepository, toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
+import { useIntl } from '@umijs/max';
 
 const { Text, Paragraph } = Typography;
 
@@ -27,6 +28,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
 }) => {
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
+  const intl = useIntl();
 
   const handleDelete = async (id: number) => {
     try {
@@ -107,8 +109,8 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                       onSelect(repository);
                       handleToggle(repository.id, checked ? 1 : 0);
                     }}
-                    checkedChildren="启用"
-                    unCheckedChildren="禁用"
+                    checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                    unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                     style={{
                       backgroundColor: repository.status === 1 ? '#4f6ef7' : '#d9d9d9',
                     }}
@@ -141,7 +143,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
               {/* 是否公开、创建时间、创建人和操作按钮 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid var(--vip-border-secondary)', paddingTop: 8 }}>
                 {repository.isPublic === 1 && (
-                  <Tag color="blue" style={{ fontSize: '11px' }}>公开</Tag>
+                  <Tag color="blue" style={{ fontSize: '11px' }}>{intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}</Tag>
                 )}
                 <Text type="secondary" style={{ fontSize: '11px' }}>
                   {repository.createTime?.replace('T', ' ')}
@@ -151,7 +153,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 )}
                 {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>
-                    <Tooltip title="同步">
+                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.sync', defaultMessage: 'Sync' })}>
                       <Button
                         type="link"
                         size="small"
@@ -164,7 +166,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                         style={{ padding: '4px', color: '#1890ff' }}
                       />
                     </Tooltip>
-                    <Tooltip title="编辑">
+                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit' })}>
                       <Button
                         type="link"
                         size="small"
@@ -177,7 +179,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                         style={{ padding: '4px', color: '#1890ff' }}
                       />
                     </Tooltip>
-                    <Tooltip title="删除">
+                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.delete', defaultMessage: 'Delete' })}>
                       <Button
                         type="link"
                         size="small"

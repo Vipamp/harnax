@@ -94,6 +94,8 @@
 
 ### 2.1 前端技术栈及版本
 
+- **暗黑模式支持**: 已完整实现并归档，覆盖 ThemeContext、ThemeProvider、系统偏好检测、主题解析、动态更新监听等核心能力，以及所有 UI 组件（卡片、分页、渐变效果、滚动条、文件树、Markdown、代码高亮等）的深色模式适配
+
 #### 核心框架
 | 组件 | 版本 | 说明 |
 |------|------|------|
@@ -180,3 +182,167 @@
 - **JSX**: React
 - **Source Map**: 启用
 - **模块解析**: Node
+
+### 2.3 暗黑模式支持规范
+
+#### 强制要求
+- 所有新开发的前端组件必须同时支持浅色模式（light mode）和深色模式（dark mode）
+- 必须使用 CSS 变量系统管理所有颜色，禁止硬编码颜色值（#hex, rgb(), rgba(), hsl(), hsla(), color names）
+- 必须提供完整的主题变量映射，包括主色调、功能色、文本色、背景色、边框色、阴影等
+- 必须为所有 rgba() 函数提供对应的 RGB 组件变量（如 --vip-primary-rgb: 79, 110, 247）
+- 必须在 HTML 根元素上使用 `html.dark` 类进行主题切换
+
+#### 实现标准
+- 使用 ThemeContext 和 ThemeProvider 管理主题状态
+- 支持系统偏好检测（prefers-color-scheme）
+- 主题切换必须平滑过渡，包含适当的 CSS 过渡动画
+- 所有 UI 组件（卡片、分页、渐变效果、滚动条、文件树、Markdown、代码高亮等）必须完整适配
+- 必须测试所有组件在 light/dark 模式下的显示效果和交互体验
+
+#### 验收检查
+- 新组件提交前必须通过暗黑模式兼容性检查
+- 所有颜色相关的 CSS 属性必须使用 CSS 变量
+- 不得存在任何硬编码颜色值
+- 主题切换必须实时生效且无闪烁
+
+### 2.4 国际化（i18n）开发规范
+
+#### 架构设计
+- **后端**: 基于 Spring Boot MessageSource + LocaleResolver 实现
+- **前端**: 基于 Umi Max 国际化插件 + react-intl 实现
+- **语言同步**: 通过 HTTP 请求头 `Accept-Language` 传递用户语言偏好
+
+#### 后端国际化规范
+
+##### 消息资源文件管理
+- 所有消息资源文件必须放置在 `src/main/resources/i18n/` 目录下
+- 文件命名规范：`{module}_{locale}.properties`
+  - 默认文件：`messages.properties`（英文）
+  - 中文文件：`messages_zh_CN.properties`
+  - 错误消息：`messages_error.properties`, `messages_error_zh_CN.properties`
+- 必须保持中英文消息文件的 key 完全一致
+- 新增消息时必须同时更新中英文文件
+
+##### 消息 Key 命名规范
+- 采用点分隔的层级命名：`{module}.{submodule}.{messageType}`
+- 示例：
+  - `user.login.success` - 用户登录成功消息
+  - `user.validation.email.invalid` - 用户邮箱验证错误
+  - `agent.create.failed` - 智能体创建失败
+- Key 必须使用小写字母和点号，避免使用特殊字符
+- 错误消息 Key 必须以 `error.` 开头
+
+##### 消息内容规范
+- 消息中需要动态替换的参数使用 `{0}`, `{1}`, `{2}` 占位符
+- 示例：`user.welcome=Welcome, {0}! Your last login was {1}`
+- 避免在消息中硬编码 HTML 或 Markdown 格式
+- 消息文本应该完整，不要拼接多个消息 key
+
+##### 代码使用规范
+```kotlin
+// 使用 MessageUtil 工具类获取国际化消息
+val message = MessageUtil.getMessage("user.login.success")
+val messageWithParams = MessageUtil.getMessage("user.welcome", userName, lastLoginTime)
+
+// 在异常中使用
+throw BusinessException(ErrorCode.USER_NOT_FOUND, 
+    MessageUtil.getMessage("error.user.notFound", userId))
+```
+
+##### 错误消息国际化
+- 所有 `BusinessException` 必须使用国际化消息
+- 错误码（ErrorCode）与消息 key 建立映射关系
+- 全局异常处理器必须根据请求头 `Accept-Language` 返回对应语言的消息
+- 禁止在代码中硬编码错误消息文本
+
+#### 前端国际化规范
+
+##### 消息文件管理
+- 所有国际化文案放置在 `src/locales/` 目录下
+- 中文文件：`zh-CN.ts`
+- 英文文件：`en-US.ts`
+- 必须保持两个文件的 key 结构和数量完全一致
+
+##### 消息 Key 命名规范
+- 采用点分隔的层级命名：`{page}.{component}.{messageType}`
+- 示例：
+  - `pages.login.title` - 登录页面标题
+  - `pages.agent.create.success` - 智能体创建成功提示
+  - `components.table.noData` - 表格无数据提示
+- Key 必须使用小写字母和点号
+- 公共消息使用 `global.*` 前缀
+
+##### 组件使用规范
+```typescript
+import { useIntl } from 'umi';
+
+const MyComponent = () => {
+  const intl = useIntl();
+  
+  // 简单消息
+  const title = intl.formatMessage({ 
+    id: 'pages.agent.title',
+    defaultMessage: 'Agent Management' 
+  });
+  
+  // 带参数的消息
+  const welcome = intl.formatMessage(
+    { 
+      id: 'pages.user.welcome',
+      defaultMessage: 'Welcome, {name}!'
+    },
+    { name: userName }
+  );
+  
+  return <h1>{title}</h1>;
+};
+```
+
+##### 语言同步机制
+- Axios 请求拦截器必须添加 `Accept-Language` 请求头
+- 从 `localStorage` 读取 `umi_locale` 作为语言设置
+- 语言切换时自动更新请求头
+
+```typescript
+// requestErrorConfig.ts
+axios.interceptors.request.use((config) => {
+  const locale = localStorage.getItem('umi_locale') || 'zh-CN';
+  config.headers['Accept-Language'] = locale;
+  return config;
+});
+```
+
+##### 禁止行为
+- ❌ 禁止在组件中硬编码中文或英文文本
+- ❌ 禁止在同一个组件中混用 `intl.formatMessage` 和硬编码文本
+- ❌ 禁止在消息文件中使用 HTML 标签（特殊场景除外）
+- ❌ 禁止删除或遗漏任何一种语言的消息 key
+
+#### 开发流程
+
+##### 新增页面/组件
+1. 在 `zh-CN.ts` 和 `en-US.ts` 中添加对应的消息 key
+2. 在组件中使用 `useIntl()` 获取 intl 对象
+3. 使用 `intl.formatMessage()` 渲染文本
+4. 测试中英文切换是否正常
+
+##### 新增后端消息
+1. 在 `messages.properties` 和 `messages_zh_CN.properties` 中添加 key
+2. 使用 `MessageUtil.getMessage()` 获取消息
+3. 编写单元测试验证消息获取
+4. 测试不同语言下的响应
+
+##### 代码审查检查项
+- [ ] 所有用户可见文本已国际化
+- [ ] 消息 key 遵循命名规范
+- [ ] 中英文消息文件保持同步
+- [ ] 错误消息使用国际化
+- [ ] 无硬编码文本残留
+- [ ] 参数化消息使用正确的占位符
+
+#### 验收标准
+- 所有页面和组件支持中英文切换
+- 所有 API 错误消息根据请求头返回对应语言
+- 消息文件无遗漏的 key
+- 代码审查 100% 通过国际化检查项
+- 无硬编码文本（除特殊场景如品牌名称）

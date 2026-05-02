@@ -106,7 +106,7 @@ const McpDetail: React.FC = () => {
 
   const columns = [
     {
-      title: '工具名称',
+      title: intl.formatMessage({ id: 'pages.mcp.detail.toolName', defaultMessage: 'Tool Name' }),
       dataIndex: 'name',
       key: 'name',
       width: 280,
@@ -130,7 +130,7 @@ const McpDetail: React.FC = () => {
       ),
     },
     {
-      title: '参数列表',
+      title: intl.formatMessage({ id: 'pages.mcp.detail.parameterList', defaultMessage: 'Parameter List' }),
       dataIndex: 'parameters',
       key: 'parameters',
       render: (parameters: ToolParameter[]) => {
@@ -172,7 +172,7 @@ const McpDetail: React.FC = () => {
                     {param.type}
                   </Tag>
                   <Text style={{ fontSize: 13, color: 'var(--vip-text-secondary)', flex: 1 }}>
-                    {param.description || '无描述'}
+                    {param.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
                   </Text>
                 </div>
               </div>
@@ -275,7 +275,7 @@ const McpDetail: React.FC = () => {
                           color={mcpInfo.status === 1 ? 'success' : 'default'} 
                           style={{ borderRadius: '6px', fontWeight: 500 }}
                         >
-                          {mcpInfo.status === 1 ? '启用' : '禁用'}
+                          {mcpInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                         </Tag>
                       </div>
                     </div>
@@ -294,19 +294,19 @@ const McpDetail: React.FC = () => {
                 style={{ padding: '24px' }}
               >
                 <Descriptions.Item label="MCP 描述" span={1}>
-                  <Text style={{ lineHeight: 1.6 }}>{mcpInfo.description || '暂无描述'}</Text>
+                  <Text style={{ lineHeight: 1.6 }}>{mcpInfo.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="连接方式" span={1}>
+                <Descriptions.Item label={intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' })} span={1}>
                   <Text>
                     <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
                     {mcpInfo.type === 'stdio' ? mcpInfo.command : mcpInfo.url || '-'}
                   </Text>
                 </Descriptions.Item>
                 <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>}>
-                  <Text>{mcpInfo.creator || '未知'}</Text>
+                  <Text>{mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />创建时间</span>}>
-                  <Text>{mcpInfo.createTime?.replace('T', ' ') || '未知'}</Text>
+                  <Text>{mcpInfo.createTime?.replace('T', ' ') || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
               </Descriptions>
             </Card>
@@ -346,7 +346,7 @@ const McpDetail: React.FC = () => {
                   rowKey="name"
                   pagination={false}
                   locale={{
-                    emptyText: toolsLoading ? '加载中...' : '暂无工具',
+                    emptyText: toolsLoading ? intl.formatMessage({ id: 'pages.common.loading', defaultMessage: 'Loading...' }) : intl.formatMessage({ id: 'pages.mcp.detail.noTools', defaultMessage: 'No tools' }),
                   }}
                   style={{ borderRadius: '12px' }}
                   components={{

@@ -1,0 +1,66 @@
+# Git
+.git
+.gitignore
+.gitlab-ci.yml
+
+# IDE
+.idea
+.vscode
+*.iml
+*.swp
+*.swo
+*~
+
+# Maven
+.m2
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+
+# Build outputs
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+PRD/
+openspec/
+sql/
+
+# Test
+test/
+src/test/
+**/test/
+
+# Misc
+.env.local
+.env.*.local

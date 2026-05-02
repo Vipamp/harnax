@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Table, Tag, Button, message, Checkbox } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { batchSaveSkills } from '@/services/ant-design-pro/skill';
+import { useIntl } from '@umijs/max';
 
 interface SyncSkillModalProps {
   visible: boolean;
@@ -26,6 +27,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
   onCancel,
   onSuccess,
 }) => {
+  const intl = useIntl();
   const [saving, setSaving] = React.useState(false);
   const [selectedSkills, setSelectedSkills] = useState<SkillWithSelected[]>([]);
 
@@ -63,7 +65,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
   const handleSync = async () => {
     const selectedSkillsList = getSelectedSkills();
     if (selectedSkillsList.length === 0) {
-      message.warning('请至少选择一个技能');
+      message.warning(intl.formatMessage({ id: 'pages.skill.sync.selectAtLeastOne', defaultMessage: "Please select at least one skill" }));
       return;
     }
   
@@ -72,10 +74,10 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       // 只传递技能名称列表
       const skillNames = selectedSkillsList.map((skill) => skill.name!);
       await batchSaveSkills(repositoryId, skillNames);
-      message.success(`同步成功,共保存 ${selectedSkillsList.length} 个技能`);
+      message.success(intl.formatMessage({ id: 'pages.skill.sync.success', defaultMessage: 'Sync successful, saved {count} skills' }, { count: selectedSkillsList.length }));
       onSuccess();
     } catch (error) {
-      message.error('同步失败,请重试');
+      message.error(intl.formatMessage({ id: 'pages.skill.sync.error', defaultMessage: 'Sync failed, please try again' }));
     } finally {
       setSaving(false);
     }
@@ -86,7 +88,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       title: (
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <Checkbox onChange={handleSelectAll} style={{ marginRight: 8 }} />
-          全选
+          {intl.formatMessage({ id: "pages.skill.sync.selectAll", defaultMessage: "Select All" })}
         </div>
       ),
       dataIndex: 'selected',
@@ -101,28 +103,28 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       ),
     },
     {
-      title: '技能名称',
+      title: intl.formatMessage({ id: 'pages.skill.sync.name', defaultMessage: 'Skill Name' }),
       dataIndex: 'name',
       key: 'name',
       width: 200,
       render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
     },
     {
-      title: '描述',
+      title: intl.formatMessage({ id: "pages.skill.sync.description", defaultMessage: "Description" }),
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
-      render: (text: string) => text || '暂无描述',
+      render: (text: string) => text || intl.formatMessage({ id: "pages.common.noDescription", defaultMessage: "No description" }),
     },
     {
-      title: '是否已存在',
+      title: intl.formatMessage({ id: "pages.skill.sync.exists", defaultMessage: "Already Exists" }),
       dataIndex: 'exists',
       key: 'exists',
       width: 100,
       align: 'center',
       render: (exists: boolean) => (
         <Tag color={exists ? 'orange' : 'green'}>
-          {exists ? '已存在' : '不存在'}
+          {intl.formatMessage({ id: "pages.skill.sync.existsYes", defaultMessage: "Exists" })}
         </Tag>
       ),
     },
@@ -132,7 +134,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
     <Modal
       title={
         <span>
-          同步技能到仓库：<Tag color="blue">{repositoryName}</Tag>
+          {intl.formatMessage({ id: "pages.skill.sync.title", defaultMessage: "Sync Skills to Repository" })}:<Tag color="blue">{repositoryName}</Tag>
         </span>
       }
       open={visible}
@@ -141,16 +143,16 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       footer={[
         <div key="select-info" style={{ flex: 1 }}>
           <span style={{ color: '#666' }}>
-            已选择{' '}
+            {intl.formatMessage({ id: 'pages.skill.sync.selectedCount', defaultMessage: 'Selected' })}{' '}
             <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
               {getSelectedSkills().length}
             </span>{' '}
-            个技能，共{' '}
-            <span style={{ fontWeight: 'bold' }}>{skills.length}</span> 个技能
+            {intl.formatMessage({ id: 'pages.skill.sync.skills', defaultMessage: 'skills' })}, {intl.formatMessage({ id: 'pages.skill.sync.total', defaultMessage: 'total' })}{' '}
+            <span style={{ fontWeight: 'bold' }}>{skills.length}</span> {intl.formatMessage({ id: 'pages.skill.sync.skills', defaultMessage: 'skills' })}
           </span>
         </div>,
         <Button key="cancel" onClick={onCancel}>
-          取消
+          {intl.formatMessage({ id: "pages.common.cancel", defaultMessage: "Cancel" })}
         </Button>,
         <Button
           key="sync"
@@ -159,13 +161,13 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
           onClick={handleSync}
           disabled={getSelectedSkills().length === 0}
         >
-          确认同步 ({getSelectedSkills().length} 个技能)
+          {intl.formatMessage({ id: "pages.skill.sync.confirm", defaultMessage: "Confirm Sync" })} ({getSelectedSkills().length} {intl.formatMessage({ id: "pages.skill.sync.skills", defaultMessage: "skills" })})
         </Button>,
       ]}
     >
       <div style={{ marginBottom: 16 }}>
         <span style={{ color: '#666' }}>
-          以下技能将同步到仓库中，重名技能将会被覆盖。请勾选需要同步的技能。
+          {intl.formatMessage({ id: "pages.skill.sync.description", defaultMessage: "The following skills will be synchronized to the repository. Duplicate skills will be overwritten. Please select the skills you want to sync." })}
         </span>
       </div>
       <Table

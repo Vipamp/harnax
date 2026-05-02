@@ -527,7 +527,7 @@ const McpManagement: React.FC = () => {
       ) : (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="暂无 MCP 服务"
+          description={intl.formatMessage({ id: 'pages.mcp.noServices', defaultMessage: 'No MCP services' })}
           style={{ marginTop: 80 }}
         />
       )}

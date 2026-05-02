@@ -344,8 +344,8 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
                   display: 'flex',
                   alignItems: 'center',
                   padding: '12px 16px',
-                  background: index === 0 ? '#f6ffed' : '#f0f5ff',
-                  border: `1px solid ${index === 0 ? '#b7eb8f' : '#d6e4ff'}`,
+                  background: index === 0 ? 'rgba(82, 196, 26, 0.08)' : 'rgba(79, 110, 247, 0.06)',
+                  border: `1px solid ${index === 0 ? 'rgba(82, 196, 26, 0.3)' : 'rgba(79, 110, 247, 0.2)'}`,
                   borderRadius: '8px',
                 }}
               >
@@ -353,7 +353,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
                   style={{
                     marginRight: 12,
                     fontSize: '16px',
-                    color: index === 0 ? '#52c41a' : '#1890ff',
+                    color: index === 0 ? 'var(--vip-success)' : 'var(--vip-primary)',
                   }}
                 />
                 <div>

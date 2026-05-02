@@ -49,7 +49,10 @@ const TenantManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({
+        id: 'pages.message.loadFailed',
+        defaultMessage: 'Failed to load data',
+      }));
     } finally {
       setTableLoading(false);
     }
@@ -260,8 +263,8 @@ const TenantManagement: React.FC = () => {
       filters: true,
       onFilter: true,
       valueEnum: {
-        0: { text: '禁用', status: 'Error' },
-        1: { text: '启用', status: 'Success' },
+        0: { text: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), status: 'Error' },
+        1: { text: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), status: 'Success' },
       },
       render: (_, record) => {
         return (
@@ -319,7 +322,9 @@ const TenantManagement: React.FC = () => {
               size="small"
               onClick={() => handleToggleStatus(record.id)}
             >
-              {record.status === 1 ? '禁用' : '启用'}
+              {record.status === 1 
+                ? intl.formatMessage({ id: 'pages.tenant.management.disabled', defaultMessage: 'Disable' })
+                : intl.formatMessage({ id: 'pages.tenant.management.enabled', defaultMessage: 'Enable' })}
             </Button>
           </Tooltip>
           <Tooltip
@@ -392,8 +397,8 @@ const TenantManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <ShopOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <ShopOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'pages.tenant.management.title',
               defaultMessage: '租户管理',
@@ -411,7 +416,10 @@ const TenantManagement: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Input
-            placeholder="搜索租户名称"
+            placeholder={intl.formatMessage({
+              id: 'pages.tenant.management.search.placeholder',
+              defaultMessage: 'Search tenant name',
+            })}
             prefix={<SearchOutlined />}
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -420,21 +428,30 @@ const TenantManagement: React.FC = () => {
             allowClear
           />
           <Select
-            placeholder="状态筛选"
+            placeholder={intl.formatMessage({
+              id: 'pages.tenant.management.status.filter.placeholder',
+              defaultMessage: 'Filter by status',
+            })}
             value={status}
             onChange={(val) => setStatus(val)}
             style={{ width: 140, borderRadius: '8px' }}
             allowClear
             options={[
-              { label: '启用', value: 1 },
-              { label: '禁用', value: 0 },
+              { label: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), value: 1 },
+              { label: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), value: 0 },
             ]}
           />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
-            查询
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
+            {intl.formatMessage({
+              id: 'pages.common.query',
+              defaultMessage: 'Query',
+            })}
           </Button>
-          <Button onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
-            重置
+          <Button onClick={() => { setName(''); setStatus(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
+            {intl.formatMessage({
+              id: 'pages.common.reset',
+              defaultMessage: 'Reset',
+            })}
           </Button>
           <div style={{ flex: 1 }} />
           <Button
@@ -461,7 +478,10 @@ const TenantManagement: React.FC = () => {
           total,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (t) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: t }
+          ),
           onChange: (page, size) => {
             setPageNum(page);
             if (size) setPageSize(size);
@@ -495,7 +515,10 @@ const TenantManagement: React.FC = () => {
 
       {/* 管理用户模态框 */}
       <Modal
-        title="管理租户用户"
+        title={intl.formatMessage({
+          id: 'pages.tenant.management.manageUsers.title',
+          defaultMessage: 'Manage Tenant Users',
+        })}
         open={userModalVisible}
         onCancel={() => {
           setUserModalVisible(false);

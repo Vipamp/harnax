@@ -1,0 +1,99 @@
+# VIPClaw Docker Compose - 本地开发环境
+# 包含: MySQL + 后端 + 前端
+
+version: '3.8'
+
+services:
+  # MySQL 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: vipclaw-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: vipclaw
+      MYSQL_USER: vipclaw
+      MYSQL_PASSWORD: vipclaw123
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d  # 初始化脚本
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=500
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vipclaw-network
+
+  # 后端服务
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        EDITION: ${EDITION:-personal}
+    container_name: vipclaw-backend-${EDITION:-personal}
+    restart: always
+    environment:
+      # Spring Boot 配置
+      SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
+      # 数据库配置
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: vipclaw
+      SPRING_DATASOURCE_PASSWORD: vipclaw123
+      # 日志配置
+      LOG_LEVEL: DEBUG
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend-logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - vipclaw-network
+
+  # 前端服务
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        EDITION: ${EDITION:-personal}
+    container_name: vipclaw-frontend-${EDITION:-personal}
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - vipclaw-network
+
+volumes:
+  mysql-data:
+    driver: local
+  backend-logs:
+    driver: local
+
+networks:
+  vipclaw-network:
+    driver: bridge

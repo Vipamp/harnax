@@ -1,15 +1,10 @@
-import { Modal, Form, Input, Select, message } from 'antd';
-import React, { useState, useEffect } from 'react';
+import { Modal, Form, Input, Select, message, Typography, Tooltip } from 'antd';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useIntl } from '@umijs/max';
+import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
 
 const { TextArea } = Input;
-
-// Channel 类型选项
-const CHANNEL_TYPES = [
-  { label: '企业微信', value: 'wecom' },
-  { label: '飞书', value: 'feishu' },
-  { label: '钉钉', value: 'dingtalk' },
-  { label: 'HTTP接口', value: 'http' },
-];
+const { Text } = Typography;
 
 interface UpdateFormProps {
   visible: boolean;
@@ -20,9 +15,18 @@ interface UpdateFormProps {
 }
 
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCancel, onSubmit }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('');
+
+  // Channel 类型选项
+  const CHANNEL_TYPES = [
+    { label: intl.formatMessage({ id: 'pages.channel.type.wecom', defaultMessage: 'WeCom' }), value: 'wecom' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.feishu', defaultMessage: 'Feishu' }), value: 'feishu' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
+  ];
 
   // 初始化表单数据
   useEffect(() => {
@@ -72,16 +76,16 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         return (
           <>
             <Form.Item
-              label="Token"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Token' })}
               name="token"
             >
-              <Input.Password placeholder="企业微信验证Token" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'WeCom verification token' })} />
             </Form.Item>
             <Form.Item
-              label="EncodingAESKey"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'EncodingAESKey' })}
               name="encodingAesKey"
             >
-              <Input.Password placeholder="企业微信消息加密密钥" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'WeCom message encryption key' })} />
             </Form.Item>
           </>
         );
@@ -89,16 +93,16 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         return (
           <>
             <Form.Item
-              label="App ID"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appId', defaultMessage: 'App ID' })}
               name="appId"
             >
-              <Input placeholder="飞书应用 App ID" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appId', defaultMessage: 'Feishu app App ID' })} />
             </Form.Item>
             <Form.Item
-              label="App Secret"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appSecret', defaultMessage: 'App Secret' })}
               name="appSecret"
             >
-              <Input.Password placeholder="飞书应用 App Secret" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'Feishu app App Secret' })} />
             </Form.Item>
           </>
         );
@@ -106,26 +110,26 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         return (
           <>
             <Form.Item
-              label="App Key"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appKey', defaultMessage: 'App Key' })}
               name="appId"
             >
-              <Input placeholder="钉钉应用 App Key" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appKey', defaultMessage: 'DingTalk app App Key' })} />
             </Form.Item>
             <Form.Item
-              label="App Secret"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appSecret', defaultMessage: 'App Secret' })}
               name="appSecret"
             >
-              <Input.Password placeholder="钉钉应用 App Secret" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'DingTalk app App Secret' })} />
             </Form.Item>
           </>
         );
       case 'http':
         return (
           <Form.Item
-            label="Webhook URL"
+            label={intl.formatMessage({ id: 'pages.channel.form.label.webhookUrl', defaultMessage: 'Webhook URL' })}
             name="webhookUrl"
           >
-            <Input placeholder="HTTP 回调地址（可选）" />
+            <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.webhookUrl', defaultMessage: 'HTTP callback URL (optional)' })} />
           </Form.Item>
         );
       default:
@@ -135,7 +139,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
 
   return (
     <Modal
-      title="编辑 Channel"
+      title={intl.formatMessage({ id: 'pages.channel.modal.title.update', defaultMessage: 'Edit Channel' })}
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
@@ -145,32 +149,32 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
     >
       <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
         <Form.Item
-          label="通道名称"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.name', defaultMessage: 'Channel Name' })}
           name="name"
-          rules={[{ required: true, message: '请输入通道名称' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.name', defaultMessage: 'Please enter channel name' }) }]}
         >
-          <Input placeholder="请输入通道名称" />
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.name', defaultMessage: 'Please enter channel name' })} />
         </Form.Item>
 
         <Form.Item
-          label="通道类型"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.type', defaultMessage: 'Channel Type' })}
           name="type"
-          rules={[{ required: true, message: '请选择通道类型' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.type', defaultMessage: 'Please select channel type' }) }]}
         >
           <Select
-            placeholder="请选择通道类型"
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.type', defaultMessage: 'Please select channel type' })}
             options={CHANNEL_TYPES}
             onChange={(value) => setSelectedType(value)}
           />
         </Form.Item>
 
         <Form.Item
-          label="关联智能体"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.agent', defaultMessage: 'Associated Agent' })}
           name="agentId"
-          rules={[{ required: true, message: '请选择关联的智能体' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.agent', defaultMessage: 'Please select associated agent' }) }]}
         >
           <Select
-            placeholder="请选择关联的智能体"
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.agent', defaultMessage: 'Please select associated agent' })}
             showSearch
             optionFilterProp="label"
             options={agents.map(agent => ({
@@ -183,20 +187,84 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         {renderTypeSpecificFields()}
 
         <Form.Item
-          label="描述"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.description', defaultMessage: 'Description' })}
           name="description"
         >
-          <TextArea rows={3} placeholder="请输入通道描述" />
+          <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.description', defaultMessage: 'Please enter channel description' })} />
         </Form.Item>
-      </Form>
 
-      {/* 显示回调 URL */}
-      {values?.callbackUrl && (
-        <div style={{ marginTop: 16, padding: 12, background: '#f5f5f5', borderRadius: 8 }}>
-          <div style={{ marginBottom: 4, fontWeight: 500 }}>回调 URL</div>
-          <div style={{ color: '#666', wordBreak: 'break-all' }}>{values.callbackUrl}</div>
-        </div>
-      )}
+        {/* 回调 URL - 使用 Form.Item 标签在外显示 */}
+        {values?.callbackUrl && (
+          <Form.Item
+            label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <LinkOutlined style={{ color: 'var(--vip-primary)', fontSize: 13 }} />
+                {intl.formatMessage({ id: 'pages.channel.form.label.callbackUrl', defaultMessage: 'Callback URL' })}
+              </span>
+            }
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 14px',
+                background: 'var(--vip-bg-component)',
+                border: '1px solid var(--vip-border)',
+                borderRadius: 8,
+                transition: 'border-color 0.2s, box-shadow 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--vip-primary)';
+                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(99, 102, 241, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--vip-border)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <Text
+                copyable={{
+                  text: values.callbackUrl,
+                  icon: [
+                    <CopyOutlined key="copy" style={{ color: 'var(--vip-text-tertiary)', fontSize: 14 }} />,
+                    <CopyOutlined key="copied" style={{ color: 'var(--vip-primary)', fontSize: 14 }} />,
+                  ],
+                }}
+                style={{
+                  flex: 1,
+                  color: 'var(--vip-text-secondary)',
+                  fontSize: 13,
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                  wordBreak: 'break-all',
+                  lineHeight: 1.6,
+                }}
+              >
+                {values.callbackUrl}
+              </Text>
+              <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.autoGenerated', defaultMessage: 'Auto-generated' })}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    color: 'var(--vip-primary)',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  {intl.formatMessage({ id: 'pages.channel.label.auto', defaultMessage: 'AUTO' })}
+                </span>
+              </Tooltip>
+            </div>
+          </Form.Item>
+        )}
+      </Form>
     </Modal>
   );
 };

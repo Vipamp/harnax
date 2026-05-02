@@ -1,15 +1,8 @@
 import { Modal, Form, Input, Select, message } from 'antd';
 import React, { useState, useEffect } from 'react';
+import { useIntl } from '@umijs/max';
 
 const { TextArea } = Input;
-
-// Channel 类型选项
-const CHANNEL_TYPES = [
-  { label: '企业微信', value: 'wecom' },
-  { label: '飞书', value: 'feishu' },
-  { label: '钉钉', value: 'dingtalk' },
-  { label: 'HTTP接口', value: 'http' },
-];
 
 interface CreateFormProps {
   visible: boolean;
@@ -19,9 +12,18 @@ interface CreateFormProps {
 }
 
 const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSubmit }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('');
+
+  // Channel 类型选项
+  const CHANNEL_TYPES = [
+    { label: intl.formatMessage({ id: 'pages.channel.type.wecom', defaultMessage: 'WeCom' }), value: 'wecom' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.feishu', defaultMessage: 'Feishu' }), value: 'feishu' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
+  ];
 
   // 重置表单
   useEffect(() => {
@@ -53,18 +55,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         return (
           <>
             <Form.Item
-              label="Token"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Token' })}
               name="token"
-              rules={[{ required: true, message: '请输入验证Token' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.token', defaultMessage: 'Please enter verification token' }) }]}
             >
-              <Input.Password placeholder="企业微信验证Token" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'WeCom verification token' })} />
             </Form.Item>
             <Form.Item
-              label="EncodingAESKey"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'EncodingAESKey' })}
               name="encodingAesKey"
-              rules={[{ required: true, message: '请输入加密密钥' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.encodingAesKey', defaultMessage: 'Please enter encryption key' }) }]}
             >
-              <Input.Password placeholder="企业微信消息加密密钥" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'WeCom message encryption key' })} />
             </Form.Item>
           </>
         );
@@ -72,18 +74,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         return (
           <>
             <Form.Item
-              label="App ID"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appId', defaultMessage: 'App ID' })}
               name="appId"
-              rules={[{ required: true, message: '请输入飞书应用ID' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.appId', defaultMessage: 'Please enter Feishu app ID' }) }]}
             >
-              <Input placeholder="飞书应用 App ID" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appId', defaultMessage: 'Feishu app App ID' })} />
             </Form.Item>
             <Form.Item
-              label="App Secret"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appSecret', defaultMessage: 'App Secret' })}
               name="appSecret"
-              rules={[{ required: true, message: '请输入飞书应用密钥' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.appSecret', defaultMessage: 'Please enter Feishu app secret' }) }]}
             >
-              <Input.Password placeholder="飞书应用 App Secret" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'Feishu app App Secret' })} />
             </Form.Item>
           </>
         );
@@ -91,28 +93,28 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         return (
           <>
             <Form.Item
-              label="App Key"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appKey', defaultMessage: 'App Key' })}
               name="appId"
-              rules={[{ required: true, message: '请输入钉钉应用Key' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.appKey', defaultMessage: 'Please enter DingTalk app key' }) }]}
             >
-              <Input placeholder="钉钉应用 App Key" />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appKey', defaultMessage: 'DingTalk app App Key' })} />
             </Form.Item>
             <Form.Item
-              label="App Secret"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.appSecret', defaultMessage: 'App Secret' })}
               name="appSecret"
-              rules={[{ required: true, message: '请输入钉钉应用密钥' }]}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.appSecret', defaultMessage: 'Please enter DingTalk app secret' }) }]}
             >
-              <Input.Password placeholder="钉钉应用 App Secret" />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'DingTalk app App Secret' })} />
             </Form.Item>
           </>
         );
       case 'http':
         return (
           <Form.Item
-            label="Webhook URL"
+            label={intl.formatMessage({ id: 'pages.channel.form.label.webhookUrl', defaultMessage: 'Webhook URL' })}
             name="webhookUrl"
           >
-            <Input placeholder="HTTP 回调地址（可选）" />
+            <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.webhookUrl', defaultMessage: 'HTTP callback URL (optional)' })} />
           </Form.Item>
         );
       default:
@@ -122,7 +124,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
 
   return (
     <Modal
-      title="创建 Channel"
+      title={intl.formatMessage({ id: 'pages.channel.modal.title.create', defaultMessage: 'Create Channel' })}
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
@@ -132,20 +134,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
     >
       <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
         <Form.Item
-          label="通道名称"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.name', defaultMessage: 'Channel Name' })}
           name="name"
-          rules={[{ required: true, message: '请输入通道名称' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.name', defaultMessage: 'Please enter channel name' }) }]}
         >
-          <Input placeholder="请输入通道名称，如：企业微信客服" />
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.name', defaultMessage: 'Please enter channel name, e.g. WeCom Customer Service' })} />
         </Form.Item>
 
         <Form.Item
-          label="通道类型"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.type', defaultMessage: 'Channel Type' })}
           name="type"
-          rules={[{ required: true, message: '请选择通道类型' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.type', defaultMessage: 'Please select channel type' }) }]}
         >
           <Select
-            placeholder="请选择通道类型"
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.type', defaultMessage: 'Please select channel type' })}
             options={CHANNEL_TYPES}
             onChange={(value) => setSelectedType(value)}
           />
@@ -157,7 +159,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
           rules={[{ required: true, message: '请选择关联的智能体' }]}
         >
           <Select
-            placeholder="请选择关联的智能体"
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.agent', defaultMessage: 'Please select associated agent' })}
             showSearch
             optionFilterProp="label"
             options={agents.map(agent => ({
@@ -170,10 +172,10 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         {renderTypeSpecificFields()}
 
         <Form.Item
-          label="描述"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.description', defaultMessage: 'Description' })}
           name="description"
         >
-          <TextArea rows={3} placeholder="请输入通道描述" />
+          <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.description', defaultMessage: 'Please enter channel description' })} />
         </Form.Item>
       </Form>
     </Modal>

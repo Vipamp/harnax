@@ -1,0 +1,82 @@
+# VIPClaw Docker Compose - 生产环境
+# 包含: 后端 + 前端(使用外部数据库)
+
+version: '3.8'
+
+services:
+  # 后端服务
+  backend:
+    image: vipclaw-admin:${EDITION:-personal}
+    container_name: vipclaw-backend-${EDITION:-personal}
+    restart: always
+    environment:
+      # Spring Boot 配置
+      SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
+      # 数据库配置(外部数据库)
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-vipclaw}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
+      # JVM 配置
+      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      # 日志配置
+      LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/log/vipclaw:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - vipclaw-network
+
+  # 前端服务
+  frontend:
+    image: vipclaw-frontend:${EDITION:-personal}
+    container_name: vipclaw-frontend-${EDITION:-personal}
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro  # SSL 证书
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - vipclaw-network
+
+networks:
+  vipclaw-network:
+    driver: bridge

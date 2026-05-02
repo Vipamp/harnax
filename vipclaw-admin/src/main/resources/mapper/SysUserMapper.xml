@@ -92,9 +92,9 @@
             u.*,
             COUNT(ut.id) as tenantCount
         FROM sys_user u
-        LEFT JOIN user_tenant ut ON u.id = ut.user_id AND ut.active = 1
+        LEFT JOIN user_tenant ut ON u.id = ut.user_id AND ut.status = 1
         <if test="tenantId != null">
-            INNER JOIN user_tenant ut_filter ON u.id = ut_filter.user_id AND ut_filter.tenant_id = #{tenantId} AND ut_filter.active = 1
+            INNER JOIN user_tenant ut_filter ON u.id = ut_filter.user_id AND ut_filter.tenant_id = #{tenantId} AND ut_filter.status = 1
         </if>
         WHERE u.active = 1
         <if test="keyword != null and keyword != ''">

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, Select, Switch, Typography, message } from 'antd';
 import { createSkillRepository, updateSkillRepository } from '@/services/ant-design-pro/skillRepository';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+import { useIntl } from '@umijs/max';
 
 const { Text } = Typography;
 
@@ -15,6 +16,7 @@ interface RepositoryFormProps {
 }
 
 const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCancel, onSuccess }) => {
+  const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const { username, isAdmin } = getCurrentUserInfo();
@@ -76,7 +78,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
 
   return (
     <Modal
-      title={values ? '编辑仓库' : '新建仓库'}
+      title={values ? intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit Repository' }) : intl.formatMessage({ id: 'pages.skill.repository.create', defaultMessage: 'Create Repository' })}
       open={visible}
       onOk={handleSubmit}
       onCancel={onCancel}
@@ -86,8 +88,8 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
       <Form form={form} layout="vertical">
         <Form.Item
           name="name"
-          label="仓库名称"
-          rules={[{ required: true, message: '请输入仓库名称' }]}
+          label={intl.formatMessage({ id: 'pages.skill.repository.name', defaultMessage: 'Repository Name' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.skill.repository.nameRequired', defaultMessage: 'Please enter repository name' }) }]}
         >
           <Input placeholder="请输入仓库名称" />
         </Form.Item>

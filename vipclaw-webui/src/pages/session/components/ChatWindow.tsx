@@ -92,12 +92,6 @@ interface PlanNote {
 }
 
 /* ─── 快捷建议 ─── */
-const SUGGESTIONS = [
-  '帮我写一段 Java 排序算法',
-  '解释一下 Spring Boot 的自动装配原理',
-  '用 Python 实现一个简单的 Web 服务器',
-  '如何优化 SQL 慢查询？',
-];
 
 /* ─── 辅助函数：获取 JWT Token（与 requestInterceptors 逻辑一致） ─── */
 const getAuthHeaders = (): Record<string, string> => {
@@ -114,7 +108,7 @@ const getAuthHeaders = (): Record<string, string> => {
       }
     }
   } catch (e) {
-    console.error('[ChatWindow] 获取 token 失败:', e);
+    console.error(`[ChatWindow] Failed to get token:`, e);
   }
   return {};
 };
@@ -124,6 +118,7 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
   className,
   children,
 }) => {
+  const intl = useIntl();
   const [copied, setCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || '');
   const code = String(children).replace(/\n$/, '');
@@ -147,7 +142,7 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
           onClick={handleCopy}
         >
           {copied ? <CheckOutlined /> : <CopyOutlined />}
-          {copied ? '已复制' : '复制'}
+          {copied ? intl.formatMessage({ id: 'pages.common.copied', defaultMessage: 'Copied' }) : intl.formatMessage({ id: 'pages.common.copy', defaultMessage: 'Copy' })}
         </button>
       </div>
       <SyntaxHighlighter
@@ -164,12 +159,13 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
 
 /* ─── 思考折叠 ─── */
 const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
+  const intl = useIntl();
   const [expanded, setExpanded] = useState(true); // 默认展开
   return (
     <div className={styles.thinkingBlock}>
       <div className={styles.thinkingToggle} onClick={() => setExpanded(!expanded)}>
         <BulbOutlined />
-        <span>思考过程</span>
+        <span>{intl?.formatMessage({ id: 'pages.session.thinkingProcess', defaultMessage: 'Thinking Process' })}</span>
         {expanded ? (
           <DownOutlined style={{ fontSize: 10 }} />
         ) : (
@@ -189,16 +185,17 @@ const MergedToolCard: React.FC<{
   confirmStatus?: 'pending' | 'confirmed' | 'rejected';
   onToggleResult?: () => void;
 }> = ({ toolName, arguments: args, result, confirmStatus, onToggleResult }) => {
+  const intl = useIntl();
   const [expanded, setExpanded] = useState(false); // 默认折叠
   const hasResult = !!result;
   
   // 根据确认状态显示不同的文本和颜色
   const statusConfig = {
-    pending: { text: '待确认', color: '#faad14', icon: <ExclamationCircleOutlined /> },
-    confirmed: { text: '已允许', color: '#52c41a', icon: <CheckCircleOutlined /> },
-    rejected: { text: '已拒绝', color: '#ff4d4f', icon: <CloseOutlined /> },
-    calling: { text: '调用中', color: '#1890ff', icon: <ClockCircleOutlined spin /> },
-    completed: { text: '已完成', color: '#52c41a', icon: <CheckCircleOutlined /> },
+    pending: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.pending', defaultMessage: 'Pending confirmation' }), color: 'var(--vip-warning)', icon: <ExclamationCircleOutlined /> },
+    confirmed: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.confirmed', defaultMessage: 'Confirmed' }), color: 'var(--vip-success)', icon: <CheckCircleOutlined /> },
+    rejected: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }), color: 'var(--vip-error)', icon: <CloseOutlined /> },
+    calling: { text: intl.formatMessage({ id: 'pages.session.toolStatus.calling', defaultMessage: 'Calling' }), color: 'var(--vip-primary)', icon: <ClockCircleOutlined spin /> },
+    completed: { text: intl.formatMessage({ id: 'pages.session.toolStatus.completed', defaultMessage: 'Completed' }), color: 'var(--vip-success)', icon: <CheckCircleOutlined /> },
   };
   
   let status = 'calling';
@@ -236,7 +233,7 @@ const MergedToolCard: React.FC<{
           {/* 工具参数 */}
           {args && (
             <div className={styles.mergedToolArgs}>
-              <div className={styles.mergedToolSectionLabel}>参数</div>
+              <div className={styles.mergedToolSectionLabel}>{intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' })}</div>
               <pre className={styles.mergedToolCode}>{args}</pre>
             </div>
           )}
@@ -244,7 +241,7 @@ const MergedToolCard: React.FC<{
           {/* 工具返回结果 */}
           {hasResult && (
             <div className={styles.mergedToolResult}>
-              <div className={styles.mergedToolSectionLabel}>返回结果</div>
+              <div className={styles.mergedToolSectionLabel}>{intl.formatMessage({ id: 'pages.session.toolResult', defaultMessage: 'Result' })}</div>
               <pre className={styles.mergedToolCode}>{result}</pre>
             </div>
           )}
@@ -260,22 +257,23 @@ const ToolCallCard: React.FC<{
   content: string;
   confirmStatus?: 'pending' | 'confirmed' | 'rejected';
 }> = ({ toolName, content, confirmStatus }) => {
+  const intl = useIntl();
   const [expanded, setExpanded] = useState(false);
   
   // 根据确认状态显示不同的文本
   const statusText = confirmStatus === 'confirmed' 
-    ? '（已允许）' 
+    ? intl.formatMessage({ id: 'pages.session.allowed', defaultMessage: '(Allowed)' }) 
     : confirmStatus === 'rejected' 
-    ? '（已拒绝）' 
+    ? `(${intl.formatMessage({ id: 'pages.session.rejected', defaultMessage: 'Rejected' })})` 
     : confirmStatus === 'pending' 
-    ? '（待确认）' 
+    ? intl.formatMessage({ id: 'pages.session.pendingConfirm', defaultMessage: '(Pending Confirmation)' }) 
     : '';
   
   return (
     <div style={{ display: 'block', width: '100%' }}>
       <div className={styles.toolCard}>
         <div className={styles.toolCardHeader} onClick={() => setExpanded(!expanded)}>
-          <ToolOutlined /> 调用工具: {toolName}{statusText}
+          <ToolOutlined /> {intl.formatMessage({ id: 'pages.session.callTool', defaultMessage: 'Call Tool:' })} {toolName}{statusText}
           {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
         </div>
         {expanded && content && <div className={styles.toolCardBody}>{content}</div>}
@@ -289,29 +287,30 @@ const ToolConfirmChatCard: React.FC<{
   pendingCallTools: PendingCallTool[];
   status: 'pending' | 'confirmed' | 'rejected';
 }> = ({ pendingCallTools, status }) => {
+  const intl = useIntl();
   const [expanded, setExpanded] = useState(false);
   
-  const statusText = status === 'confirmed' ? '已允许' : status === 'rejected' ? '已拒绝' : '等待确认';
+  const statusText = status === 'confirmed' ? intl.formatMessage({ id: 'pages.session.confirmStatus.confirmed', defaultMessage: 'Confirmed' }) : status === 'rejected' ? intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }) : intl.formatMessage({ id: 'pages.session.confirmStatus.pending', defaultMessage: 'Pending' });
   const statusColor = status === 'confirmed' ? 'green' : status === 'rejected' ? 'red' : 'orange';
   
   return (
     <div className={styles.toolConfirmCard}>
       <div className={styles.toolConfirmCardHeader} onClick={() => setExpanded(!expanded)}>
-        <ExclamationCircleOutlined style={{ color: '#faad14' }} />
-        <span>工具执行确认</span>
+        <ExclamationCircleOutlined style={{ color: 'var(--vip-warning)' }} />
+        <span>{intl.formatMessage({ id: 'pages.session.toolConfirmTitle', defaultMessage: 'Tool Execution Confirmation' })}</span>
         <Tag color={statusColor}>{statusText}</Tag>
         {expanded ? <DownOutlined style={{ fontSize: 10, marginLeft: 4 }} /> : <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />}
       </div>
       {expanded && (
         <div className={styles.toolConfirmCardBody}>
           <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--vip-text-secondary)' }}>
-            AI 想要调用以下工具：
+            {intl.formatMessage({ id: 'pages.session.toolConfirmDescriptionShort', defaultMessage: "AI wants to call the following tools:" })}
           </div>
           {pendingCallTools.map((tool) => (
             <div key={tool.toolId} style={{ marginBottom: 8, padding: 8, background: 'var(--vip-bg-elevated)', borderRadius: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 4 }}>
                 <ToolOutlined /> {tool.toolName}
-                {tool.isDangerous && <Tag color="red" style={{ marginLeft: 8 }}>高风险</Tag>}
+                {tool.isDangerous && <Tag color="red" style={{ marginLeft: 8 }}>{intl.formatMessage({ id: 'pages.session.highRisk', defaultMessage: 'High Risk' })}</Tag>}
               </div>
               <pre style={{ margin: 0, fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
                 {JSON.stringify(tool.arguments, null, 2)}
@@ -341,15 +340,16 @@ const ToolConfirmCard: React.FC<{
     onConfirm(false);
   };
 
+  const intl = useIntl();
   const columns = [
     {
-      title: '工具名称',
+      title: intl.formatMessage({ id: 'pages.session.toolName', defaultMessage: 'Tool Name' }),
       dataIndex: 'toolName',
       key: 'toolName',
       width: 150,
     },
     {
-      title: '参数',
+      title: intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' }),
       dataIndex: 'arguments',
       key: 'arguments',
       render: (args: Record<string, any>) => (
@@ -359,13 +359,13 @@ const ToolConfirmCard: React.FC<{
       ),
     },
     {
-      title: '风险级别',
+      title: intl.formatMessage({ id: 'pages.session.toolRiskLevel', defaultMessage: 'Risk Level' }),
       dataIndex: 'isDangerous',
       key: 'isDangerous',
       width: 100,
       render: (isDangerous: boolean) => (
         <Tag color={isDangerous ? 'red' : 'green'}>
-          {isDangerous ? '高风险' : '低风险'}
+          {isDangerous ? intl.formatMessage({ id: 'pages.session.highRisk', defaultMessage: 'High Risk' }) : intl.formatMessage({ id: 'pages.session.lowRisk', defaultMessage: 'Low Risk' })}
         </Tag>
       ),
     },
@@ -376,7 +376,7 @@ const ToolConfirmCard: React.FC<{
       title={
         <span>
           <ExclamationCircleOutlined style={{ color: '#faad14', marginRight: 8 }} />
-          工具执行确认
+          {intl.formatMessage({ id: 'pages.session.toolConfirmTitle', defaultMessage: 'Tool Execution Confirmation' })}
         </span>
       }
       open={modalVisible}
@@ -384,17 +384,17 @@ const ToolConfirmCard: React.FC<{
       footer={
         <Space>
           <Button danger onClick={handleReject}>
-            拒绝
+            {intl.formatMessage({ id: 'pages.common.reject', defaultMessage: 'Reject' })}
           </Button>
           <Button type="primary" onClick={handleConfirm}>
-            允许执行
+            {intl.formatMessage({ id: 'pages.session.allowExecution', defaultMessage: 'Allow Execution' })}
           </Button>
         </Space>
       }
       width={700}
     >
       <div style={{ marginBottom: 16 }}>
-        <p>AI 想要调用以下工具，请确认是否允许执行：</p>
+        <p>{intl.formatMessage({ id: 'pages.session.toolConfirmDescription', defaultMessage: "AI wants to call the following tools, please confirm whether to allow execution:" })}</p>
       </div>
       <Table
         columns={columns}
@@ -419,6 +419,12 @@ const LoadingDots: React.FC = () => (
 /* ═══════════════ 主组件 ═══════════════ */
 const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const intl = useIntl();
+  const SUGGESTIONS = [
+    intl.formatMessage({ id: 'pages.session.quickSuggestion.javaSort', defaultMessage: 'Help me write a Java sorting algorithm' }),
+    intl.formatMessage({ id: 'pages.session.quickSuggestion.springBootAutoConfiguration', defaultMessage: 'Explain the automatic configuration principle of Spring Boot' }),
+    intl.formatMessage({ id: 'pages.session.quickSuggestion.pythonWebServer', defaultMessage: 'Implement a simple web server in Python' }),
+    intl.formatMessage({ id: 'pages.session.quickSuggestion.sqlOptimization', defaultMessage: 'How to optimize slow SQL queries?' }),
+  ];
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -657,8 +663,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           setMessages(historyMessages);
         }
       } catch (error) {
-        console.error('加载历史消息失败:', error);
-        message.error('加载历史消息失败');
+        console.error(`${intl.formatMessage({ id: 'pages.session.loadHistoryFailed', defaultMessage: 'Failed to load history messages' })}:`, error);
+        message.error(intl.formatMessage({ id: 'pages.session.loadHistoryFailed', defaultMessage: 'Failed to load history messages' }));
       } finally {
         setLoading(false);
       }
@@ -1545,7 +1551,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               confirmChanged = true;
                             }
                           } catch (err) {
-                            console.error('解析嵌套SSE消息失败:', err, nestedLine);
+                            console.error(`${intl.formatMessage({ id: 'pages.session.parseNestedSSEFailed', defaultMessage: "Failed to parse nested SSE message" })}:`, err, nestedLine);
                           }
                         }
                         
@@ -1555,7 +1561,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       }
                     }
                   } catch (err) {
-                    console.error('解析confirm SSE消息失败:', err, line);
+                    console.error(`${intl.formatMessage({ id: 'pages.session.parseConfirmSSEFailed', defaultMessage: "Failed to parse confirm SSE message" })}:`, err, line);
                   }
                 }
                 
@@ -1565,7 +1571,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               }
             }
           } catch (err) {
-            console.error('解析SSE消息失败:', err, line);
+            console.error(`${intl.formatMessage({ id: 'pages.session.parseSSEFailed', defaultMessage: "Failed to parse SSE message" })}:`, err, line);
           }
         }
 
@@ -1576,10 +1582,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       }
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
-      console.error('发送消息失败:', error);
-      message.error('发送消息失败');
+      console.error(`${intl.formatMessage({ id: 'pages.session.sendMessageFailed', defaultMessage: 'Failed to send message' })}:`, error);
+      message.error(intl.formatMessage({ id: 'pages.session.sendMessageFailed', defaultMessage: 'Failed to send message' }));
       if (currentSegs.length === 0) {
-        currentSegs.push({ type: 'text', content: '消息发送失败，请重试' });
+        currentSegs.push({ type: 'text', content: intl.formatMessage({ id: 'pages.session.sendMessageFailedContent', defaultMessage: "Message sending failed, please try again" }) });
         flushUI();
       }
     } finally {
@@ -1605,7 +1611,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         enablePlan: newEnablePlan,
       });
     } catch (error) {
-      console.error('保存会话配置失败:', error);
+      console.error(`${intl.formatMessage({ id: 'pages.session.saveSessionConfigFailed', defaultMessage: "Failed to save session configuration" })}:`, error);
       // 不显示错误提示,避免干扰用户体验
     }
   };
@@ -1638,8 +1644,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       const base64Urls = await Promise.all(base64Promises);
       setImageUrls((prev) => [...prev, ...base64Urls]);
     } catch (error) {
-      console.error('图片转换失败:', error);
-      message.error('图片转换失败');
+      console.error(`${intl.formatMessage({ id: 'pages.session.imageConversionFailed', defaultMessage: 'Failed to convert image' })}:`, error);
+      message.error(intl.formatMessage({ id: 'pages.session.imageConversionFailed', defaultMessage: 'Failed to convert image' }));
     }
 
     // 清空 input 以允许重复上传同一文件
@@ -1776,7 +1782,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       previousHasPlanRef.current = hasValidPlan;
     } catch (error) {
       // 静默失败，不影响用户体验
-      console.error('加载当前计划失败:', error);
+      console.error(`${intl.formatMessage({ id: 'pages.session.loadCurrentPlanFailed', defaultMessage: "Failed to load current plan" })}:`, error);
     }
   };
 
@@ -1821,7 +1827,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         }
       }
     } catch (error) {
-      console.error('加载计划列表失败:', error);
+      console.error(`${intl.formatMessage({ id: 'pages.session.loadPlansFailed', defaultMessage: "Failed to load plans list" })}:`, error);
       // 不显示错误消息，静默失败
     } finally {
       setLoadingPlans(false);
@@ -1890,10 +1896,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         plansListTimerRef.current = null;
       }
       
-      message.success('聊天记录已清空');
+      message.success(intl.formatMessage({ id: 'pages.session.clearChatSuccess', defaultMessage: 'Chat history cleared' }));
     } catch (error) {
-      console.error('清空聊天记录失败:', error);
-      message.error('清空聊天记录失败');
+      console.error(`${intl.formatMessage({ id: 'pages.session.clearChatFailed', defaultMessage: 'Failed to clear chat history' })}:`, error);
+      message.error(intl.formatMessage({ id: 'pages.session.clearChatFailed', defaultMessage: 'Failed to clear chat history' }));
     }
   };
 
@@ -2010,10 +2016,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   /* ─── 渲染计划状态标签 ─── */
   const renderPlanState = (state: string) => {
     const stateMap: Record<string, { color: string; text: string }> = {
-      TODO: { color: 'default', text: '待处理' },
-      IN_PROGRESS: { color: 'processing', text: '进行中' },
-      DONE: { color: 'success', text: '已完成' },
-      ABANDONED: { color: 'error', text: '已放弃' },
+      TODO: { color: 'default', text: intl.formatMessage({ id: 'pages.session.planState.todo', defaultMessage: 'To Do' }) },
+      IN_PROGRESS: { color: 'processing', text: intl.formatMessage({ id: 'pages.session.planState.inProgress', defaultMessage: 'In Progress' }) },
+      DONE: { color: 'success', text: intl.formatMessage({ id: 'pages.session.planState.done', defaultMessage: 'Done' }) },
+      ABANDONED: { color: 'error', text: intl.formatMessage({ id: 'pages.session.planState.abandoned', defaultMessage: 'Abandoned' }) },
     };
     const config = stateMap[state] || { color: 'default', text: state };
     return <Tag color={config.color}>{config.text}</Tag>;
@@ -2119,7 +2125,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     return (
       <div className={styles.planPanel}>
         <div className={styles.planPanelHeader}>
-          <h3>执行计划</h3>
+          <h3>{intl.formatMessage({ id: 'pages.session.planPanelTitle', defaultMessage: 'Execution Plan' })}</h3>
           <Button
             type="text"
             icon={<CloseOutlined />}
@@ -2131,11 +2137,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           {/* 当前计划 */}
           <div className={styles.currentPlanSection}>
             <div className={styles.currentPlanHeader}>
-              <h4>当前计划</h4>
+              <h4>{intl.formatMessage({ id: 'pages.session.currentPlanTitle', defaultMessage: 'Current Plan' })}</h4>
               {hasValidCurrentPlan() && (
                 <div className={styles.refreshIndicator}>
                   <ClockCircleOutlined spin />
-                  <span>实时更新</span>
+                  <span>{intl.formatMessage({ id: 'pages.session.realtimeUpdate', defaultMessage: 'Realtime Update' })}</span>
                 </div>
               )}
             </div>
@@ -2194,10 +2200,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         <div className={styles.subtaskInfo}>
                           <div className={styles.subtaskName}>{subtask.name}</div>
                           {subtask.state === 'IN_PROGRESS' && (
-                            <div className={styles.subtaskStatus}>执行中...</div>
+                            <div className={styles.subtaskStatus}>{intl.formatMessage({ id: 'pages.session.executing', defaultMessage: 'Executing...' })}</div>
                           )}
                           {subtask.state === 'ABANDONED' && (
-                            <div className={styles.subtaskStatus}>已放弃</div>
+                            <div className={styles.subtaskStatus}>{intl.formatMessage({ id: 'pages.session.abandoned', defaultMessage: 'Abandoned' })}</div>
                           )}
                         </div>
                         {subtask.costTimeSeconds > 0 && (
@@ -2214,8 +2220,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             ) : (
               <div className={styles.noCurrentPlan}>
                 <UnorderedListOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
-                <p>无当前计划</p>
-                <span>开启"开启计划"选项后，AI 会自动创建计划</span>
+                <p>{intl.formatMessage({ id: 'pages.session.noCurrentPlan', defaultMessage: 'No Current Plan' })}</p>
+                <span>{intl.formatMessage({ id: 'pages.session.noCurrentPlanHint', defaultMessage: 'Enable "Enable Plan" option and AI will automatically create plans' })}</span>
               </div>
             )}
           </div>
@@ -2230,8 +2236,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           {!loadingPlans && plans.length === 0 && !currentPlan && (
             <div className={styles.planEmpty}>
               <ClockCircleOutlined style={{ fontSize: 32, color: '#d9d9d9' }} />
-              <p>暂无计划</p>
-              <span>开启"开启计划"选项后，AI 会自动创建计划</span>
+              <p>{intl.formatMessage({ id: 'pages.session.noPlans', defaultMessage: 'No Plans' })}</p>
+              <span>{intl.formatMessage({ id: 'pages.session.noPlansHint', defaultMessage: 'Enable "Enable Plan" option and AI will automatically create plans' })}</span>
             </div>
           )}
           
@@ -2239,7 +2245,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             <div className={styles.historyPlansSection}>
               <div className={styles.historyPlansHeader}>
                 <div className={styles.historyPlansTitle}>
-                  <h4>历史计划</h4>
+                  <h4>{intl.formatMessage({ id: 'pages.session.historyPlansTitle', defaultMessage: 'History Plans' })}</h4>
                   <span className={styles.planCount}>{plans.length}</span>
                 </div>
                 <Button
@@ -2270,10 +2276,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                             } 
                             style={{ marginLeft: 8 }}
                           >
-                            {plan.status === 'DONE' ? '已完成' :
-                             plan.status === 'IN_PROGRESS' ? '执行中' :
-                             plan.status === 'ABANDONED' ? '已废弃' :
-                             '待执行'}
+                            {plan.status === 'DONE' ? intl.formatMessage({ id: 'pages.session.completed', defaultMessage: 'Completed' }) :
+                             plan.status === 'IN_PROGRESS' ? intl.formatMessage({ id: 'pages.session.inProgress', defaultMessage: 'In Progress' }) :
+                             plan.status === 'ABANDONED' ? intl.formatMessage({ id: 'pages.session.abandoned', defaultMessage: 'Abandoned' }) :
+                             intl.formatMessage({ id: 'pages.session.pending', defaultMessage: 'Pending' })}
                           </Tag>
                         )}
                       </div>
@@ -2284,13 +2290,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     )}
                     {plan.expectedOutcome && (
                       <div className={styles.planOutcome}>
-                        <strong>预期结果：</strong>
+                        <strong>{intl.formatMessage({ id: 'pages.session.expectedResult', defaultMessage: 'Expected Result:' })}</strong>
                         <span>{plan.expectedOutcome}</span>
                       </div>
                     )}
                     {plan.subtasks && plan.subtasks.length > 0 && (
                       <div className={styles.planSubtasks}>
-                        <h4>子任务 ({plan.subtasks.length})</h4>
+                        <h4>{intl.formatMessage({ id: 'pages.session.subtasks', defaultMessage: 'Subtasks' })} ({plan.subtasks.length})</h4>
                         <Table
                           dataSource={plan.subtasks}
                           rowKey={(record) => record.name}
@@ -2298,20 +2304,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           pagination={false}
                           columns={[
                             {
-                              title: '状态',
+                              title: intl.formatMessage({ id: 'pages.session.status', defaultMessage: 'Status' }),
                               dataIndex: 'state',
                               key: 'state',
                               width: 90,
                               render: (state: string) => renderPlanState(state),
                             },
                             {
-                              title: '任务名称',
+                              title: intl.formatMessage({ id: 'pages.session.taskName', defaultMessage: 'Task Name' }),
                               dataIndex: 'name',
                               key: 'name',
                               ellipsis: true,
                             },
                             {
-                              title: '耗时',
+                              title: intl.formatMessage({ id: 'pages.session.costTime', defaultMessage: 'Cost Time' }),
                               dataIndex: 'costTimeSeconds',
                               key: 'costTimeSeconds',
                               width: 70,
@@ -2323,19 +2329,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               <div className={styles.subtaskDetail}>
                                 {record.description && (
                                   <p>
-                                    <strong>描述：</strong>
+                                    <strong>{intl.formatMessage({ id: 'pages.session.description', defaultMessage: 'Description:' })}</strong>
                                     {record.description}
                                   </p>
                                 )}
                                 {record.expectedOutcome && (
                                   <p>
-                                    <strong>预期结果：</strong>
+                                    <strong>{intl.formatMessage({ id: 'pages.session.expectedResult', defaultMessage: 'Expected Result:' })}</strong>
                                     {record.expectedOutcome}
                                   </p>
                                 )}
                                 {record.outcome && (
                                   <p>
-                                    <strong>实际结果：</strong>
+                                    <strong>{intl.formatMessage({ id: 'pages.session.actualResult', defaultMessage: 'Actual Result:' })}</strong>
                                     {record.outcome}
                                   </p>
                                 )}
@@ -2346,9 +2352,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       </div>
                     )}
                     <div className={styles.planFooter}>
-                      <span>创建时间：{plan.createdAt}</span>
+                      <span>{intl.formatMessage({ id: 'pages.session.createdAt', defaultMessage: 'Created At:' })}{plan.createdAt}</span>
                       {plan.costTimeseconds > 0 && (
-                        <span>总耗时：{plan.costTimeseconds}s</span>
+                        <span>{intl.formatMessage({ id: 'pages.session.totalCostTime', defaultMessage: 'Total Cost Time:' })}{plan.costTimeseconds}s</span>
                       )}
                     </div>
                   </Collapse.Panel>
@@ -2393,8 +2399,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             <div className={styles.emptyIcon}>
               <RobotOutlined style={{ color: '#fff' }} />
             </div>
-            <div className={styles.emptyTitle}>有什么可以帮你的？</div>
-            <div className={styles.emptySubtitle}>选择一个话题，或直接输入你的问题</div>
+            <div className={styles.emptyTitle}>{intl.formatMessage({ id: 'pages.session.emptyTitle', defaultMessage: "What can I help you with?" })}</div>
+            <div className={styles.emptySubtitle}>{intl.formatMessage({ id: 'pages.session.emptySubtitle', defaultMessage: "Select a topic or enter your question directly" })}</div>
             <div className={styles.suggestions}>
               {SUGGESTIONS.map((s) => (
                 <div key={s} className={styles.suggestionChip} onClick={() => doSend(s)}>
@@ -2498,7 +2504,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 onClick={() => uploadRef.current?.click()}
               >
                 <PictureOutlined />
-                <span>图片 ({imageUrls.length})</span>
+                <span>{intl.formatMessage({ id: 'pages.session.imageUpload', defaultMessage: 'Image' })} ({imageUrls.length})</span>
               </div>
               <Dropdown
                 menu={{
@@ -2508,7 +2514,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       label: (
                         <span className={styles.menuItemLabel}>
                           <EyeOutlined className={styles.menuIcon} />
-                          <span>显示思考过程</span>
+                          <span>{intl.formatMessage({ id: 'pages.session.showThinking', defaultMessage: 'Show Thinking Process' })}</span>
                           {showThinking && <CheckOutlined className={styles.menuCheck} />}
                         </span>
                       ),
@@ -2519,7 +2525,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       label: (
                         <span className={styles.menuItemLabel}>
                           <EyeInvisibleOutlined className={styles.menuIcon} />
-                          <span>隐藏思考过程</span>
+                          <span>{intl.formatMessage({ id: 'pages.session.hideThinking', defaultMessage: 'Hide Thinking Process' })}</span>
                           {!showThinking && <CheckOutlined className={styles.menuCheck} />}
                         </span>
                       ),
@@ -2539,7 +2545,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   <div className={styles.thinkingMenu}>
                     <div className={styles.menuHeader}>
                       <BulbOutlined className={styles.menuHeaderIcon} />
-                      <span>思考过程显示设置</span>
+                      <span>{intl.formatMessage({ id: 'pages.session.thinkingMenuTitle', defaultMessage: 'Thinking Process Display Settings' })}</span>
                     </div>
                     {menu}
                   </div>
@@ -2554,7 +2560,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   }}
                 >
                   <BulbOutlined />
-                  <span>深度思考</span>
+                  <span>{intl.formatMessage({ id: 'pages.session.deepThinking', defaultMessage: 'Deep Thinking' })}</span>
                 </div>
               </Dropdown>
               <div
@@ -2566,7 +2572,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 }}
               >
                 <SearchOutlined />
-                <span>联网搜索</span>
+                <span>{intl.formatMessage({ id: 'pages.session.internetSearch', defaultMessage: 'Internet Search' })}</span>
               </div>
               <div
                 className={`${styles.optionItem} ${enablePlan ? styles.optionActive : ''}`}
@@ -2577,19 +2583,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 }}
               >
                 <UnorderedListOutlined />
-                <span>开启计划</span>
+                <span>{intl.formatMessage({ id: 'pages.session.enablePlan', defaultMessage: 'Enable Plan' })}</span>
               </div>
               <Popconfirm
-                title="清空聊天记录"
-                description="确定要清空当前会话的所有聊天记录吗?"
+                title={intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' })}
+                description={intl.formatMessage({ id: 'pages.session.clearChatConfirm', defaultMessage: 'Are you sure you want to clear all chat history for this session?' })}
                 onConfirm={handleClearChat}
-                okText="确定"
-                cancelText="取消"
+                okText={intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' })}
+                cancelText={intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
                 placement="topLeft"
               >
                 <div className={`${styles.optionItem} ${styles.clearOption}`}>
                   <DeleteOutlined />
-                  <span>清空记录</span>
+                  <span>{intl.formatMessage({ id: 'pages.session.clearRecord', defaultMessage: 'Clear Record' })}</span>
                 </div>
               </Popconfirm>
             </div>

@@ -117,7 +117,8 @@ const SessionPage: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <RobotOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.agent.session',
               defaultMessage: 'Session',
@@ -135,27 +136,28 @@ const SessionPage: React.FC = () => {
             flexDirection: 'column',
             borderRadius: '14px',
             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            border: '1px solid #ebebf0',
+            border: '1px solid var(--vip-border)',
+            background: 'var(--vip-bg-container)',
           }}
           styles={{ body: { flex: 1, overflow: 'auto', padding: '12px' } }}
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>会话列表</span>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{intl.formatMessage({ id: 'pages.session.listTitle', defaultMessage: 'Session List' })}</span>
               <Button 
                 type="primary" 
                 icon={<PlusOutlined />} 
                 size="small" 
                 onClick={handleCreateSession}
-                style={{ borderRadius: '8px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', border: 'none' }}
+                style={{ borderRadius: '8px', background: 'var(--vip-primary)', border: 'none' }}
               >
-                新建
+                {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
               </Button>
             </div>
           }
         >
           <Spin spinning={loading}>
             {sessions.length === 0 ? (
-              <Empty description="暂无会话" style={{ marginTop: 40 }} />
+              <Empty description={intl.formatMessage({ id: 'pages.session.noSessions', defaultMessage: 'No sessions' })} style={{ marginTop: 40 }} />
             ) : (
               <List
                 dataSource={sessions}
@@ -191,7 +193,7 @@ const SessionPage: React.FC = () => {
                           }}
                         />
                         <Popconfirm
-                          title="确定删除该会话吗？"
+                          title={intl.formatMessage({ id: 'pages.session.confirmDelete', defaultMessage: 'Are you sure you want to delete this session?' })}
                           onConfirm={(e) => {
                             e?.stopPropagation();
                             handleDeleteSession(session.id);
@@ -223,7 +225,8 @@ const SessionPage: React.FC = () => {
             flexDirection: 'column',
             borderRadius: '14px',
             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            border: '1px solid #ebebf0',
+            border: '1px solid var(--vip-border)',
+            background: 'var(--vip-bg-container)',
             overflow: 'hidden',
           }}
           styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', minHeight: 0, height: 0 } }}
@@ -233,8 +236,8 @@ const SessionPage: React.FC = () => {
               {/* 会话标题栏 */}
               <div style={{ 
                 padding: '14px 24px',
-                borderBottom: '1px solid #ebebf0',
-                background: '#fff',
+                borderBottom: '1px solid var(--vip-border)',
+                background: 'var(--vip-bg-container)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
@@ -275,8 +278,8 @@ const SessionPage: React.FC = () => {
               }}>
                 <RobotOutlined />
               </div>
-              <Text style={{ fontSize: 15, fontWeight: 600, color: '#1e1e2e' }}>选择一个会话开始对话</Text>
-              <Text style={{ fontSize: 13, color: '#9ca3af' }}>或点击左侧「新建」创建新会话</Text>
+              <Text style={{ fontSize: 15, fontWeight: 600, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.session.selectSession', defaultMessage: 'Select a session to start conversation' })}</Text>
+              <Text style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>{intl.formatMessage({ id: 'pages.session.createNew', defaultMessage: 'or click "Create" on the left to create a new session' })}</Text>
             </div>
           )}
         </Card>

@@ -349,6 +349,11 @@ const ModelManagement: React.FC = () => {
                 <Button
                   icon={<ReloadOutlined />}
                   onClick={handleResetFilters}
+                  style={{ 
+                    color: 'var(--vip-text-primary)', 
+                    borderColor: 'var(--vip-border)', 
+                    background: 'var(--vip-bg-container)' 
+                  }}
                 >
                   {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                 </Button>

@@ -120,7 +120,7 @@ const AgentCard: React.FC<{
               {/* 状态指示点 */}
               <Badge 
                 status={item.status === 1 ? 'success' : 'default'} 
-                text={item.status === 1 ? '运行中' : '已停用'}
+                text={item.status === 1 ? intl.formatMessage({ id: 'pages.agent.status.running', defaultMessage: 'Running' }) : intl.formatMessage({ id: 'pages.agent.status.disabled', defaultMessage: 'Disabled' })}
                 style={{ fontSize: '12px' }}
               />
             </div>
@@ -159,7 +159,7 @@ const AgentCard: React.FC<{
           ellipsis={{ rows: 2 }}
           style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '13px', minHeight: 40, lineHeight: 1.6 }}
         >
-          {item.description || '暂无描述'}
+          {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
         </Paragraph>
 
         {/* MCP、Skill 和 Session 统计 */}
@@ -177,7 +177,7 @@ const AgentCard: React.FC<{
               <div style={{ maxWidth: 320 }}>
                 {mcpCount === 0 ? (
                   <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">暂无 MCP 配置</Text>
+                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.mcp.noConfig', defaultMessage: 'No MCP configuration' })}</Text>
                   </div>
                 ) : (
                   <List
@@ -246,7 +246,7 @@ const AgentCard: React.FC<{
                 <ApiOutlined style={{ fontSize: '14px', color: '#fff' }} />
               </div>
               <div>
-                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>MCP</Text>
+                <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', display: 'block' }}>MCPs</Text>
                 <Text strong style={{ fontSize: '14px', color: 'var(--vip-primary)' }}>{mcpCount}</Text>
               </div>
             </div>
@@ -260,7 +260,7 @@ const AgentCard: React.FC<{
               <div style={{ maxWidth: 320 }}>
                 {skillCount === 0 ? (
                   <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">暂无技能配置</Text>
+                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.skill.noConfig', defaultMessage: 'No skill configuration' })}</Text>
                   </div>
                 ) : (
                   <List
@@ -350,7 +350,7 @@ const AgentCard: React.FC<{
               <div style={{ maxWidth: 350 }}>
                 {!item.sessionList || item.sessionList.length === 0 ? (
                   <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">暂无会话</Text>
+                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.session.noSession', defaultMessage: 'No sessions' })}</Text>
                   </div>
                 ) : (
                   <List
@@ -413,7 +413,7 @@ const AgentCard: React.FC<{
               <div style={{
                 width: 28, height: 28,
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, var(--vip-info) 0%, var(--vip-info-hover) 100%)',
+                background: 'linear-gradient(135deg, #5c7cff 0%, #94aaff 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <MessageOutlined style={{ fontSize: '14px', color: '#fff' }} />
@@ -435,9 +435,13 @@ const AgentCard: React.FC<{
           paddingTop: '12px' 
         }}>
           {item.isPublic === 1 ? (
-            <Tag color="blue" style={{ margin: 0, fontSize: '11px' }}>公开</Tag>
+            <Tag color="blue" style={{ margin: 0, fontSize: '11px' }}>
+              {intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
+            </Tag>
           ) : (
-            <Tag style={{ margin: 0, fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>私有</Tag>
+            <Tag style={{ margin: 0, fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
+              {intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
+            </Tag>
           )}
           <Text type="secondary" style={{ fontSize: '12px' }}>
             {item.createTime?.replace('T', ' ')}
@@ -449,18 +453,14 @@ const AgentCard: React.FC<{
           )}
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-            <Space size={4}>
+            <Space size={8}>
               <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
                 <Button
                   type="text"
                   size="small"
                   icon={<EditOutlined />}
                   onClick={() => onEdit(item)}
-                  style={{ 
-                    color: '#4f6ef7',
-                    background: isHovered ? '#eef1fe' : 'transparent',
-                    transition: 'all 0.2s ease',
-                  }}
+                  style={{ color: '#4f6ef7' }}
                 />
               </Tooltip>
               <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
@@ -470,10 +470,6 @@ const AgentCard: React.FC<{
                   danger
                   icon={<DeleteOutlined />}
                   onClick={() => onDelete(item.id!)}
-                  style={{ 
-                    background: isHovered ? '#fff1f0' : 'transparent',
-                    transition: 'all 0.2s ease',
-                  }}
                 />
               </Tooltip>
             </Space>
@@ -533,10 +529,10 @@ const AgentManagement: React.FC = () => {
   /** 删除智能体 */
   const handleRemove = async (id: number) => {
     Modal.confirm({
-      title: '确认删除该智能体吗？',
-      content: '此操作不可恢复，请谨慎操作',
-      okText: '确定',
-      cancelText: '取消',
+      title: intl.formatMessage({ id: 'pages.agent.confirm.deleteTitle', defaultMessage: 'Confirm delete agent?' }),
+      content: intl.formatMessage({ id: 'pages.agent.confirm.deleteContent', defaultMessage: 'This operation cannot be undone, please proceed with caution.' }),
+      okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
@@ -576,8 +572,8 @@ const AgentManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <RobotOutlined style={{ marginRight: 10, color: '#722ed1' }} />
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <RobotOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.agent.management',
               defaultMessage: 'Agent Management',
@@ -614,14 +610,14 @@ const AgentManagement: React.FC = () => {
               allowClear
             />
             <Select
-              placeholder="状态筛选"
+              placeholder={intl.formatMessage({ id: 'pages.placeholder.statusFilter', defaultMessage: 'Status filter' })}
               value={status}
               onChange={(val) => setStatus(val)}
               style={{ width: 140 }}
               allowClear
               options={[
-                { label: '启用', value: 1 },
-                { label: '禁用', value: 0 },
+                { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+                { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
               ]}
             />
             <Button 
@@ -633,7 +629,7 @@ const AgentManagement: React.FC = () => {
                 padding: '0 20px',
               }}
             >
-              查询
+              {intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
             </Button>
             <Button 
               onClick={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }} 
@@ -641,6 +637,9 @@ const AgentManagement: React.FC = () => {
                 borderRadius: '10px',
                 height: '40px',
                 padding: '0 20px',
+                background: 'var(--vip-bg-container)',
+                borderColor: 'var(--vip-border)',
+                color: 'var(--vip-text-primary)',
               }}
             >
               {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
@@ -659,7 +658,7 @@ const AgentManagement: React.FC = () => {
               boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
             }}
           >
-            新建智能体
+            {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
           </Button>
         </div>
       </Card>
@@ -700,7 +699,7 @@ const AgentManagement: React.FC = () => {
                 setPageNum(page);
                 if (size) setPageSize(size);
               }}
-              style={{ padding: '12px 24px', background: '#fff', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+              style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
             />
           </div>
         </>
@@ -711,26 +710,26 @@ const AgentManagement: React.FC = () => {
           alignItems: 'center', 
           justifyContent: 'center',
           padding: '80px 20px',
-          background: 'linear-gradient(135deg, #f8f9fc 0%, #ffffff 100%)',
+          background: 'var(--vip-bg-layout)',
           borderRadius: '20px',
-          border: '2px dashed #e8eaf2',
+          border: '2px dashed var(--vip-border)',
         }}>
           <div style={{
             width: 120,
             height: 120,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #722ed115 0%, #b37feb15 100%)',
+            background: 'rgba(114, 46, 209, 0.08)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: 24,
           }}>
-            <RobotOutlined style={{ fontSize: 48, color: '#722ed1' }} />
+            <RobotOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
           </div>
-          <Text style={{ fontSize: '18px', fontWeight: 600, color: '#1a1a2e', marginBottom: 8 }}>
-            暂无智能体
+          <Text style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)', marginBottom: 8 }}>
+            {intl.formatMessage({ id: 'pages.agent.noAgent', defaultMessage: 'No agents' })}
           </Text>
-          <Text style={{ fontSize: '14px', color: '#888', marginBottom: 24 }}>
+          <Text style={{ fontSize: '14px', color: 'var(--vip-text-tertiary)', marginBottom: 24 }}>
             {intl.formatMessage({ id: 'pages.agent.createFirst', defaultMessage: 'Create your first agent to start your AI journey' })}
           </Text>
           <Button
@@ -744,7 +743,7 @@ const AgentManagement: React.FC = () => {
               fontWeight: 600,
             }}
           >
-            新建智能体
+            {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
           </Button>
         </div>
       )}

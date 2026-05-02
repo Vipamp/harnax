@@ -33,7 +33,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
     <Modal
       destroyOnClose
       title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
+        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
           {intl.formatMessage({
             id: 'pages.user.management.add',
             defaultMessage: '新建用户',
@@ -45,10 +45,10 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
       footer={null}
       onCancel={() => onCancel()}
       styles={{
-        body: { padding: '24px 28px', background: '#fafbff' },
+        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
         header: {
-          background: 'linear-gradient(135deg, #f7f8ff 0%, #eef1fe 100%)',
-          borderBottom: '1px solid #e8ecfb',
+          background: 'var(--vip-primary-light)',
+          borderBottom: '1px solid var(--vip-border)',
           padding: '18px 24px',
         },
       }}
@@ -109,7 +109,10 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
               try {
                 const res = await checkUsername(value);
                 if (res.code === 200 && res.data) {
-                  message.error('用户名已被注册');
+                  message.error(intl.formatMessage({
+                    id: 'pages.message.usernameAlreadyExists',
+                    defaultMessage: 'Username already exists',
+                  }));
                 }
               } catch (error) {
                 // 忽略错误
@@ -199,7 +202,10 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
               try {
                 const res = await checkEmail(value);
                 if (res.code === 200 && res.data) {
-                  message.error('邮箱已被注册');
+                  message.error(intl.formatMessage({
+                    id: 'pages.message.emailAlreadyExists',
+                    defaultMessage: 'Email already exists',
+                  }));
                 }
               } catch (error) {
                 // 忽略错误
@@ -241,7 +247,10 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
               try {
                 const res = await checkPhone(value);
                 if (res.code === 200 && res.data) {
-                  message.error('手机号已被注册');
+                  message.error(intl.formatMessage({
+                    id: 'pages.message.phoneAlreadyExists',
+                    defaultMessage: 'Phone number already exists',
+                  }));
                 }
               } catch (error) {
                 // 忽略错误
@@ -273,9 +282,9 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
             defaultMessage: '性别',
           })}
           options={[
-            { label: '男', value: 1 },
-            { label: '女', value: 0 },
-            { label: '未知', value: 2 },
+            { label: intl.formatMessage({ id: 'pages.gender.male', defaultMessage: 'Male' }), value: 1 },
+            { label: intl.formatMessage({ id: 'pages.gender.female', defaultMessage: 'Female' }), value: 0 },
+            { label: intl.formatMessage({ id: 'pages.gender.unknown', defaultMessage: 'Unknown' }), value: 2 },
           ]}
           initialValue={2}
           fieldProps={{ defaultValue: 2 }}

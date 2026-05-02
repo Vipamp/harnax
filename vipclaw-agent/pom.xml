@@ -4,10 +4,12 @@
     <parent>
         <groupId>com.vipamp</groupId>
         <artifactId>vipclaw</artifactId>
-        <version>${revision}</version>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>..</relativePath>
     </parent>
 
     <artifactId>vipclaw-agent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>vipclaw-core</name>

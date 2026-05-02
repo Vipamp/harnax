@@ -273,7 +273,7 @@ const TokenMonitor: React.FC = () => {
         itemName: {
           style: {
             fontSize: 12,
-            fill: '#666',
+            fill: 'var(--vip-text-secondary)',
           },
           formatter: (datum: any) => {
             const total = statDimension === 'token' 
@@ -296,7 +296,7 @@ const TokenMonitor: React.FC = () => {
       ],
     },
     style: {
-      stroke: '#fff',
+      stroke: 'var(--vip-bg-container)',
       lineWidth: 2,
       radius: 4,
     },
@@ -358,7 +358,7 @@ const TokenMonitor: React.FC = () => {
           textAlign: 'center' as const,
           fontSize: 14,
           fontStyle: 'bold' as const,
-          fill: '#666',
+          fill: 'var(--vip-text-secondary)',
         },
       },
     ] : [],
@@ -779,12 +779,20 @@ const TokenMonitor: React.FC = () => {
   return (
     <PageContainer
       header={{
-        title: 'Token 消耗监控',
-        subTitle: '实时监控和分析 Token 消耗情况',
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <PieChartOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            Token 消耗监控
+          </span>
+        ),
       }}
     >
-      <div style={{ marginBottom: 24 }}>
-        <Row gutter={[16, 16]} align="middle">
+      {/* 筛选区域 */}
+      <Card
+        style={{ marginBottom: 24, borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+        styles={{ body: { padding: '16px 20px' } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Col>
             <RangePicker
               showTime={{
@@ -803,13 +811,14 @@ const TokenMonitor: React.FC = () => {
                 { label: '最近 30 天', value: [dayjs().subtract(30, 'day'), dayjs()] },
                 { label: '最近 90 天', value: [dayjs().subtract(90, 'day'), dayjs()] },
               ]}
+              style={{ borderRadius: '8px' }}
             />
           </Col>
           <Col>
             <Select
               value={timeGranularity}
               onChange={setTimeGranularity}
-              style={{ width: 120 }}
+              style={{ width: 120, borderRadius: '8px' }}
               placeholder="时间粒度"
             >
               <Option value="hour">按小时</Option>
@@ -821,15 +830,15 @@ const TokenMonitor: React.FC = () => {
             <Select
               value={statDimension}
               onChange={setStatDimension}
-              style={{ width: 120 }}
+              style={{ width: 120, borderRadius: '8px' }}
               placeholder="统计维度"
             >
               <Option value="token">Token</Option>
               <Option value="fee">费用</Option>
             </Select>
           </Col>
-        </Row>
-      </div>
+        </div>
+      </Card>
 
       <Spin spinning={loading}>
         {!statsData || statsData.overall.grandTotalToken === 0 ? (
@@ -843,19 +852,49 @@ const TokenMonitor: React.FC = () => {
                   <Card
                     hoverable
                     style={{
-                      borderRadius: 12,
-                      border: `1px solid ${card.color}20`,
-                      background: `linear-gradient(135deg, ${card.color}08 0%, ${card.color}02 100%)`,
+                      borderRadius: '12px',
+                      border: '1px solid var(--vip-border)',
+                      background: 'var(--vip-bg-container)',
                       minHeight: 150,
+                      boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    }}
+                    styles={{
+                      body: { padding: '20px' }
                     }}
                   >
                     <div>
-                      <div style={{ fontSize: 13, color: '#666', marginBottom: 10 }}>
-                        {card.icon}
-                        <span style={{ marginLeft: 8 }}>{card.title}</span>
+                      <div style={{ 
+                        fontSize: 13, 
+                        color: 'var(--vip-text-secondary)', 
+                        marginBottom: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        fontWeight: 500,
+                      }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '8px',
+                          background: `${card.color}15`,
+                          color: card.color,
+                          fontSize: '14px',
+                        }}>
+                          {card.icon}
+                        </span>
+                        <span>{card.title}</span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                        <span style={{ color: card.color, fontSize: 36, fontWeight: 'bold', lineHeight: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: '8px' }}>
+                        <span style={{ 
+                          color: card.color, 
+                          fontSize: 32, 
+                          fontWeight: 700, 
+                          lineHeight: 1,
+                          letterSpacing: '-0.5px',
+                        }}>
                           {card.formatter ? card.formatter(card.value) : formatToken(card.value)}
                         </span>
                         {card.suffix && (
@@ -890,14 +929,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <AppstoreOutlined style={{ color: '#0ea5e9', fontSize: 16 }} />
-                      <span>模型消耗分布</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>模型消耗分布</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(14, 165, 233, 0.1)',
-                    border: '1px solid #e0f2fe'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {statsData.modelStats.length > 0 ? (
@@ -916,14 +956,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <TeamOutlined style={{ color: '#f97316', fontSize: 16 }} />
-                      <span>智能体消耗分布</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>智能体消耗分布</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(249, 115, 22, 0.1)',
-                    border: '1px solid #ffedd5'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {statsData.agentStats.length > 0 ? (
@@ -942,14 +983,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <MessageOutlined style={{ color: '#10b981', fontSize: 16 }} />
-                      <span>会话消耗分布 (Top 10)</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>会话消耗分布 (Top 10)</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(16, 185, 129, 0.1)',
-                    border: '1px solid #d1fae5'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {statsData.sessionStats.length > 0 ? (
@@ -971,14 +1013,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <BarChartOutlined style={{ color: '#0ea5e9', fontSize: 16 }} />
-                      <span>模型消耗趋势</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>模型消耗趋势</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(14, 165, 233, 0.1)',
-                    border: '1px solid #e0f2fe'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {modelTimeSeriesData.length > 0 ? (
@@ -997,14 +1040,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <BarChartOutlined style={{ color: '#f97316', fontSize: 16 }} />
-                      <span>智能体消耗趋势</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>智能体消耗趋势</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(249, 115, 22, 0.1)',
-                    border: '1px solid #ffedd5'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {agentTimeSeriesData.length > 0 ? (
@@ -1023,14 +1067,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <BarChartOutlined style={{ color: '#10b981', fontSize: 16 }} />
-                      <span>会话消耗趋势</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>会话消耗趋势</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(16, 185, 129, 0.1)',
-                    border: '1px solid #d1fae5'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {sessionTimeSeriesData.length > 0 ? (
@@ -1051,14 +1096,15 @@ const TokenMonitor: React.FC = () => {
                   title={
                     <Space>
                       <BarChartOutlined style={{ color: '#10b981', fontSize: 16 }} />
-                      <span>{statDimension === 'token' ? 'Token 消耗趋势' : '费用消耗趋势'}</span>
+                      <span style={{ color: 'var(--vip-text-primary)', fontWeight: 600 }}>{statDimension === 'token' ? 'Token 消耗趋势' : '费用消耗趋势'}</span>
                     </Space>
                   }
                   bordered={false}
                   style={{ 
-                    borderRadius: 16,
-                    boxShadow: '0 4px 20px rgba(16, 185, 129, 0.1)',
-                    border: '1px solid #d1fae5'
+                    borderRadius: '12px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                    border: '1px solid var(--vip-border)',
+                    background: 'var(--vip-bg-container)',
                   }}
                 >
                   {timeSeriesData.length > 0 ? (

@@ -268,67 +268,63 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         {currentStep === 0 && (
           <>
             <Form.Item
-              label="智能体名称"
+              label={intl.formatMessage({ id: 'pages.agent.name', defaultMessage: 'Agent Name' })}
               name="name"
-              rules={[{ required: true, message: '请输入智能体名称' }]}
-            >
-              <Input placeholder="请输入智能体名称" />
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.nameRequired', defaultMessage: 'Please enter agent name' }) }]}>
+              <Input placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })} />
             </Form.Item>
 
             <Form.Item
-              label="智能体描述"
+              label={intl.formatMessage({ id: 'pages.agent.description', defaultMessage: 'Description' })}
               name="description"
-              rules={[{ required: true, message: '请输入智能体描述' }]}
-            >
-              <TextArea rows={3} placeholder="请输入智能体描述" />
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.descriptionRequired', defaultMessage: 'Please enter description' }) }]}>
+              <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })} />
             </Form.Item>
 
             <Form.Item
-              label="系统提示词"
+              label={intl.formatMessage({ id: 'pages.agent.systemPrompt', defaultMessage: 'System Prompt' })}
               name="systemPrompt"
-              rules={[{ required: true, message: '请输入系统提示词' }]}
-            >
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.systemPromptRequired', defaultMessage: 'Please enter system prompt' }) }]}>
               <TextArea 
                 rows={8} 
-                placeholder="请输入系统提示词，支持 Markdown 语法"
+                placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt, supports Markdown syntax' })}
                 style={{ fontFamily: 'monospace' }}
               />
             </Form.Item>
 
             <Form.Item
-              label="对话模型"
+              label={intl.formatMessage({ id: 'pages.agent.model', defaultMessage: 'Model' })}
               name="modelId"
-              rules={[{ required: true, message: '请选择对话模型' }]}
-            >
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.modelRequired', defaultMessage: 'Please select model' }) }]}>
               <Select
-                placeholder="请选择对话模型"
+                placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })}
                 allowClear
                 options={models.map(model => ({
-                  label: `${model.modelName} - ${model.providerName || '未知供应商'} ¥${model.price || 0}/M`,
+                  label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`,
                   value: model.id,
                 }))}
               />
             </Form.Item>
 
             <Form.Item
-              label="所有者"
+              label={intl.formatMessage({ id: 'pages.agent.owner', defaultMessage: 'Owner' })}
               name="owner"
             >
               <Input 
-                placeholder="自动填充当前登录用户"
+                placeholder={intl.formatMessage({ id: 'pages.agent.ownerPlaceholder', defaultMessage: 'Auto-filled with current user' })}
                 disabled
               />
             </Form.Item>
 
             {/* 是否公开 */}
             <Form.Item
-              label="是否公开"
+              label={intl.formatMessage({ id: 'pages.agent.isPublic', defaultMessage: 'Is Public' })}
             >
               <Switch
                 checked={isPublic}
                 onChange={setIsPublic}
-                checkedChildren="公开"
-                unCheckedChildren="私有"
+                checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
               />
               <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>
                 {intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}
@@ -341,7 +337,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         {currentStep === 1 && (
           <div>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#666', fontSize: '14px' }}>
+              <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
                 {intl.formatMessage({ id: 'pages.agent.mcpOptional', defaultMessage: 'Configure MCP services (optional, can be skipped)' })}
               </span>
               <Button type="dashed" icon={<PlusOutlined />} onClick={addMcpConfig}>
@@ -350,9 +346,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             </div>
 
             {mcpConfigs.map((config, index) => (
-              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid #d9d9d9', borderRadius: '8px', background: '#fafafa' }} direction="vertical">
+              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
                   {mcpConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -377,7 +373,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                   }))}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>允许跳过</span>
+                  <span style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}</span>
                   <Switch
                     size="small"
                     checked={config.enableSkip}
@@ -393,18 +389,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         {currentStep === 2 && (
           <div>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#666', fontSize: '14px' }}>
-                配置技能（可选，可跳过）
+              <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({ id: 'pages.agent.skillConfigOptional', defaultMessage: 'Configure skills (optional, can be skipped)' })}
               </span>
               <Button type="dashed" icon={<PlusOutlined />} onClick={addSkillConfig}>
-                添加技能
+                {intl.formatMessage({ id: 'pages.agent.addSkill', defaultMessage: 'Add Skill' })}
               </Button>
             </div>
 
             {skillConfigs.map((config, index) => (
-              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid #d9d9d9', borderRadius: '8px', background: '#fafafa' }} direction="vertical">
+              <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500 }}>技能 #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}</span>
                   {skillConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -452,8 +448,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         <Button 
           disabled={currentStep === 0} 
           onClick={handlePrev}
+          style={{
+            background: 'var(--vip-bg-container)',
+            borderColor: 'var(--vip-border)',
+            color: 'var(--vip-text-primary)',
+          }}
         >
-          上一步
+          {intl.formatMessage({ id: 'pages.common.previousStep', defaultMessage: 'Previous Step' })}
         </Button>
         <Button 
           type="primary" 

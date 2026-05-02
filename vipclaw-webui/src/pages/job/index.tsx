@@ -342,8 +342,8 @@ const JobManagement: React.FC = () => {
       align: 'center',
       render: (_, record) => (
         <Tooltip title={getNextExecutionHint(record.cronExpression || '')}>
-          <Tag color="blue" style={{ fontFamily: 'monospace', cursor: 'help' }}>
-            <ClockCircleOutlined style={{ marginRight: 4 }} />
+          <Tag color="default" style={{ fontFamily: 'monospace', cursor: 'help', backgroundColor: 'var(--vip-primary)', color: 'white' }}>
+            <ClockCircleOutlined style={{ marginRight: 4, color: 'white' }} />
             {record.cronExpression}
           </Tag>
         </Tooltip>
@@ -369,9 +369,9 @@ const JobManagement: React.FC = () => {
       },
       render: (_, record) => {
         return record.jobStatus === 1 ? (
-          <Tag color="success" icon={<PlayCircleOutlined />}>运行中</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-success)', color: 'white' }} icon={<PlayCircleOutlined style={{ color: 'white' }} />}>运行中</Tag>
         ) : (
-          <Tag color="default" icon={<PauseOutlined />}>暂停</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-warning)', color: 'white' }} icon={<PauseOutlined style={{ color: 'white' }} />}>暂停</Tag>
         );
       },
       width: 80,
@@ -383,9 +383,9 @@ const JobManagement: React.FC = () => {
       hideInSearch: true,
       render: (_, record) => {
         return record.concurrent === 1 ? (
-          <Tag color="processing">允许</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-success)', color: 'white' }}>允许</Tag>
         ) : (
-          <Tag color="warning">禁止</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-warning)', color: 'white' }}>禁止</Tag>
         );
       },
       width: 80,
@@ -407,7 +407,7 @@ const JobManagement: React.FC = () => {
       hideInSearch: true,
       width: 100,
       align: 'center',
-      render: (_, record) => record.isPublic === 1 ? <Tag color="blue">公开</Tag> : <Tag>私有</Tag>,
+      render: (_, record) => record.isPublic === 1 ? <Tag color="default" style={{ backgroundColor: 'var(--vip-primary)', color: 'white' }}>公开</Tag> : <Tag>私有</Tag>,
     },
     {
       title: '创建人',
@@ -506,8 +506,8 @@ const JobManagement: React.FC = () => {
         style={{ 
           marginBottom: 24, 
           borderRadius: '16px', 
-          boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid #f0f0f8',
+          boxShadow: '0 2px 12px rgba(var(--vip-text-primary-rgb), 0.04)',
+          border: '1px solid var(--vip-border)',
         }}
         styles={{ body: { padding: '20px 24px' } }}
       >
@@ -562,7 +562,7 @@ const JobManagement: React.FC = () => {
               padding: '0 24px',
               fontWeight: 600,
               fontSize: '14px',
-              boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
+              boxShadow: '0 4px 16px rgba(var(--vip-primary-rgb), 0.3)',
             }}
           >
             新建任务

@@ -159,12 +159,12 @@ const SkillManagement: React.FC = () => {
             title={
               <span>
                 <GithubOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
-                技能仓库
+                {intl.formatMessage({ id: 'pages.skill.repository', defaultMessage: 'Skill Repository' })}
               </span>
             }
             extra={
               <Button type="primary" icon={<GithubOutlined />} onClick={handleCreateRepository}>
-                新增
+                {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
               </Button>
             }
             styles={{
@@ -173,7 +173,7 @@ const SkillManagement: React.FC = () => {
           >
             <Spin spinning={repositoryLoading}>
               {repositories.length === 0 ? (
-                <Empty description="暂无仓库" />
+                <Empty description={intl.formatMessage({ id: 'pages.skill.noRepository', defaultMessage: 'No repository' })} />
               ) : (
                 <RepositoryList
                   repositories={repositories}
@@ -196,7 +196,7 @@ const SkillManagement: React.FC = () => {
               selectedRepository ? (
                 <span>
                   <ThunderboltOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
-                  技能列表
+                  {intl.formatMessage({ id: 'pages.skill.list', defaultMessage: 'Skill List' })}
                   <Tag color="blue" style={{ marginLeft: 8 }}>
                     {selectedRepository.name}
                   </Tag>
@@ -204,7 +204,7 @@ const SkillManagement: React.FC = () => {
               ) : (
                 <span>
                   <ThunderboltOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
-                  技能列表
+                  {intl.formatMessage({ id: 'pages.skill.list', defaultMessage: 'Skill List' })}
                 </span>
               )
             }
@@ -212,7 +212,7 @@ const SkillManagement: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* 关键词搜索 */}
                 <Input
-                  placeholder="搜索技能名称"
+                  placeholder={intl.formatMessage({ id: 'pages.skill.searchPlaceholder', defaultMessage: 'Search skill name' })}
                   prefix={<SearchOutlined />}
                   value={filters.name}
                   onChange={(e) => setFilters({ ...filters, name: e.target.value })}
@@ -221,19 +221,19 @@ const SkillManagement: React.FC = () => {
                 />
                 {/* 状态 */}
                 <Select
-                  placeholder="状态"
+                  placeholder={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
                   style={{ width: 100 }}
                   value={filters.status}
                   onChange={(value) => setFilters({ ...filters, status: value })}
                   allowClear
                   options={[
-                    { label: '启用', value: 1 },
-                    { label: '禁用', value: 0 },
+                    { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
+                    { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
                   ]}
                 />
                 {/* 重置按钮 */}
                 <Button icon={<ReloadOutlined />} onClick={handleResetFilters} style={{ color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
-                  重置
+                  {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                 </Button>
               </div>
             }
@@ -249,7 +249,7 @@ const SkillManagement: React.FC = () => {
                 onRefresh={() => setSkillListKey((prev) => prev + 1)}
               />
             ) : (
-              <Empty description="请选择一个仓库" />
+              <Empty description={intl.formatMessage({ id: 'pages.skill.selectRepository', defaultMessage: "Please select a repository" })} />
             )}
           </Card>
         </Col>

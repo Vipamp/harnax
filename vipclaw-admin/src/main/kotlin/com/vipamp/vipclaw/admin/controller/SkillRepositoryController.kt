@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.*
 import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.common.page.Page
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * 技能仓库管理控制器
+ * 仅公有云版可用(技能市场功能)
  *
  * @author vipamp
  * @since 2026-03-16
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/skill-repositories")
 @Tag(name = "技能仓库管理", description = "技能仓库相关接口")
+@RequiresEdition("public")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService
 ) {

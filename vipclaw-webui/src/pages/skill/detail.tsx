@@ -279,7 +279,7 @@ const SkillDetail: React.FC = () => {
       label: (
         <span>
           <FileOutlined />
-          SKILL.md
+          {intl.formatMessage({ id: 'pages.skill.detail.tab.skillmd', defaultMessage: 'SKILL.md' })}
         </span>
       ),
       children: (
@@ -334,7 +334,7 @@ const SkillDetail: React.FC = () => {
       label: (
         <span>
           <FolderOutlined />
-          Resources
+          {intl.formatMessage({ id: 'pages.skill.detail.tab.resources', defaultMessage: 'Resources' })}
         </span>
       ),
       children: (
@@ -359,7 +359,7 @@ const SkillDetail: React.FC = () => {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FolderOpenOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
-              <Text strong style={{ color: 'var(--vip-text-primary)' }}>资源文件</Text>
+              <Text strong style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.skill.detail.resources', defaultMessage: 'Resources' })}</Text>
               <Tag color="purple" style={{ marginLeft: '8px', borderRadius: '4px' }}>
                 {Object.keys(fileContents).length} 个文件
               </Tag>
@@ -372,7 +372,7 @@ const SkillDetail: React.FC = () => {
                   transition: 'all 0.2s ease'
                 }}
               >
-                展开全部
+                {intl.formatMessage({ id: 'pages.skill.detail.expandAll', defaultMessage: 'Expand All' })}
               </Button>
             </div>
           </div>
@@ -400,7 +400,7 @@ const SkillDetail: React.FC = () => {
                 color: 'var(--vip-text-tertiary)',
                 fontWeight: 500
               }}>
-                文件结构
+                {intl.formatMessage({ id: 'pages.skill.detail.fileStructure', defaultMessage: 'File Structure' })}
               </div>
               <div style={{ 
                 flex: 1, 
@@ -430,7 +430,7 @@ const SkillDetail: React.FC = () => {
                     color: 'var(--vip-text-tertiary)'
                   }}>
                     <Empty 
-                      description="暂无资源文件" 
+                      description={intl.formatMessage({ id: 'pages.skill.detail.noResources', defaultMessage: 'No resource files' })} 
                       image={Empty.PRESENTED_IMAGE_SIMPLE} 
                     />
                   </div>
@@ -517,10 +517,10 @@ const SkillDetail: React.FC = () => {
                       <FileOutlined style={{ fontSize: '32px', color: '#722ed1' }} />
                     </div>
                     <Text style={{ fontSize: '16px', marginBottom: '8px', color: 'var(--vip-text-secondary)' }}>
-                      选择文件查看内容
+                      {intl.formatMessage({ id: 'pages.skill.detail.selectFile', defaultMessage: 'Select file to view content' })}
                     </Text>
                     <Text style={{ fontSize: '13px', color: 'var(--vip-text-tertiary)' }}>
-                      从左侧文件树中选择一个文件以查看其内容
+                      {intl.formatMessage({ id: 'pages.skill.detail.selectFileHint', defaultMessage: 'Select a file from the left file tree to view its content' })}
                     </Text>
                   </div>
                 )}
@@ -535,7 +535,7 @@ const SkillDetail: React.FC = () => {
   if (!skillInfo && !loading) {
     return (
       <PageContainer>
-        <Empty description="技能不存在" />
+        <Empty description={intl.formatMessage({ id: 'pages.skill.detail.notFound', defaultMessage: 'Skill not found' })} />
       </PageContainer>
     );
   }
@@ -556,12 +556,12 @@ const SkillDetail: React.FC = () => {
                 transition: 'all 0.3s ease'
               }}
             >
-              返回
+              {intl.formatMessage({ id: 'pages.common.back', defaultMessage: 'Back' })}
             </Button>
             <div style={{ width: 1, height: 24, background: 'var(--vip-border)' }} />
             <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
               <ThunderboltOutlined style={{ marginRight: 10, color: '#531dab' }} />
-              技能详情
+              {intl.formatMessage({ id: 'pages.skill.detail.title', defaultMessage: 'Skill Detail' })}
             </Title>
           </div>
         ),
@@ -613,13 +613,13 @@ const SkillDetail: React.FC = () => {
                       </Text>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {skillInfo.isPublic === 1 && (
-                          <Tag color="purple" style={{ borderRadius: '6px', fontWeight: 500 }}>公开</Tag>
+                          <Tag color="purple" style={{ borderRadius: '6px', fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.skill.detail.public', defaultMessage: 'Public' })}</Tag>
                         )}
                         <Tag 
                           color={skillInfo.status === 1 ? 'success' : 'default'} 
                           style={{ borderRadius: '6px', fontWeight: 500 }}
                         >
-                          {skillInfo.status === 1 ? '启用' : '禁用'}
+                          {skillInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                         </Tag>
                       </div>
                     </div>
@@ -637,7 +637,7 @@ const SkillDetail: React.FC = () => {
                 }}
                 style={{ padding: '24px' }}
               >
-                <Descriptions.Item label="仓库地址" span={2}>
+                <Descriptions.Item label={intl.formatMessage({ id: 'pages.skill.detail.repositoryUrl', defaultMessage: 'Repository URL' })} span={2}>
                   {skillInfo.repositoryUrl ? (
                     <a
                       href={skillInfo.repositoryBranch 
@@ -664,17 +664,17 @@ const SkillDetail: React.FC = () => {
                       )}
                     </a>
                   ) : (
-                    <Text type="secondary">暂无仓库地址</Text>
+                    <Text type="secondary">{intl.formatMessage({ id: 'pages.skill.detail.noRepositoryUrl', defaultMessage: 'No repository URL' })}</Text>
                   )}
                 </Descriptions.Item>
-                <Descriptions.Item label="技能描述" span={2}>
-                  <Text style={{ lineHeight: 1.6 }}>{skillInfo.description || '暂无描述'}</Text>
+                <Descriptions.Item label={intl.formatMessage({ id: 'pages.skill.detail.description', defaultMessage: 'Description' })} span={2}>
+                  <Text style={{ lineHeight: 1.6 }}>{skillInfo.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>} span={2}>
-                  <Text>{skillInfo.creator || '未知'}</Text>
+                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.skill.detail.creator', defaultMessage: 'Creator' })}</span>} span={2}>
+                  <Text>{skillInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />最近同步时间</span>} span={2}>
-                  <Text>{skillInfo.updateTime?.replace('T', ' ') || '未知'}</Text>
+                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.skill.detail.lastSyncTime', defaultMessage: 'Last Sync Time' })}</span>} span={2}>
+                  <Text>{skillInfo.updateTime?.replace('T', ' ') || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
               </Descriptions>
             </Card>

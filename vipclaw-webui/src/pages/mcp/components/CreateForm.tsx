@@ -18,22 +18,6 @@ export interface CreateFormProps {
   onConnectivityTest?: (values: API.McpServerCreateRequest) => Promise<boolean>;
 }
 
-// MCP 类型选项 - 根据版本动态生成
-const getMcpTypeOptions = () => {
-  const allOptions = [
-    { label: 'STDIO（本地进程）', value: 'stdio' },
-    { label: 'SSE（Server-Sent Events）', value: 'sse' },
-    { label: 'Streamable HTTP', value: 'streamablehttp' },
-  ];
-  
-  // 个人版支持所有模式,企业版和公网版不支持 stdio
-  if (isPersonal()) {
-    return allOptions;
-  } else {
-    return allOptions.filter(opt => opt.value !== 'stdio');
-  }
-};
-
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
   // 个人版默认 stdio,企业版和公网版默认 sse
@@ -42,6 +26,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   const [testing, setTesting] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
   const [isPublic, setIsPublic] = useState(false);
+
+  // MCP 类型选项 - 根据版本动态生成
+  const mcpTypeOptions = [
+    { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
+    { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
+    { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
+  ].filter(opt => isPersonal() || opt.value !== 'stdio');
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
@@ -129,7 +120,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         <ProFormSelect
           name="type"
           label={intl.formatMessage({ id: 'pages.mcp.type', defaultMessage: 'Type' })}
-          options={getMcpTypeOptions()}
+          options={mcpTypeOptions}
           initialValue={isPersonal() ? 'stdio' : 'sse'}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
@@ -182,8 +173,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           <Switch
             checked={isPublic}
             onChange={setIsPublic}
-            checkedChildren="公开"
-            unCheckedChildren="私有"
+            checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
           />
         </ProForm.Item>
       </ProForm>

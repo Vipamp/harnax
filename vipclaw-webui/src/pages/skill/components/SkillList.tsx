@@ -5,6 +5,7 @@ import { getSkillPage, toggleSkillStatus } from '@/services/ant-design-pro/skill
 // @ts-ignore
 import { history } from '@umijs/max';
 import dayjs from 'dayjs';
+import { useIntl } from '@umijs/max';
 
 interface SkillListProps {
   repositoryId: number;
@@ -13,11 +14,70 @@ interface SkillListProps {
 }
 
 const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh }) => {
+  const intl = useIntl();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<API.SkillItem[]>([]);
   const [total, setTotal] = useState(0);
   const [pageNum, setPageNum] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+
+  const columns: ColumnsType<API.SkillItem> = [
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.name', defaultMessage: 'Skill Name' }),
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      render: (text: string, record: API.SkillItem) => (
+        <a
+          onClick={() => history.push(`/context/skill/detail/${record.id}`)}
+          style={{ fontWeight: 500, cursor: 'pointer' }}
+        >
+          {text}
+        </a>
+      ),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.description', defaultMessage: 'Description' }),
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      render: (text: string) => text || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' }),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.isPublic', defaultMessage: 'Is Public' }),
+      dataIndex: 'isPublic',
+      key: 'isPublic',
+      width: 100,
+      render: (isPublic: number) => isPublic === 1 ? <Tag color="blue">{intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}</Tag> : <Tag>{intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}</Tag>,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.creator', defaultMessage: 'Creator' }),
+      dataIndex: 'creator',
+      key: 'creator',
+      width: 120,
+      render: (creator: string) => creator || '-',
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.updateTime', defaultMessage: 'Sync Time' }),
+      dataIndex: 'updateTime',
+      key: 'updateTime',
+      width: 180,
+      render: (time: string) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-'),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.skill.list.status', defaultMessage: 'Status' }),
+      key: 'status',
+      width: 120,
+      render: (_, record) => (
+        <Switch
+          checked={record.status === 1}
+          checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+          unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+          onChange={(checked) => handleToggle(record.id, checked ? 1 : 0)}
+        />
+      ),
+    },
+  ];
 
   const loadData = async () => {
     setLoading(true);
@@ -32,7 +92,7 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      message.error('加载技能列表失败');
+      message.error(intl.formatMessage({ id: 'pages.skill.list.loadFailed', defaultMessage: 'Failed to load skill list' }));
     } finally {
       setLoading(false);
     }
@@ -61,64 +121,6 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
     }
   };
 
-  const columns: ColumnsType<API.SkillItem> = [
-    {
-      title: '技能名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 200,
-      render: (text: string, record: API.SkillItem) => (
-        <a
-          onClick={() => history.push(`/context/skill/detail/${record.id}`)}
-          style={{ fontWeight: 500, cursor: 'pointer' }}
-        >
-          {text}
-        </a>
-      ),
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
-      render: (text: string) => text || '暂无描述',
-    },
-    {
-      title: '是否公开',
-      dataIndex: 'isPublic',
-      key: 'isPublic',
-      width: 100,
-      render: (isPublic: number) => isPublic === 1 ? <Tag color="blue">公开</Tag> : <Tag>私有</Tag>,
-    },
-    {
-      title: '创建人',
-      dataIndex: 'creator',
-      key: 'creator',
-      width: 120,
-      render: (creator: string) => creator || '-',
-    },
-    {
-      title: '同步时间',
-      dataIndex: 'updateTime',
-      key: 'updateTime',
-      width: 180,
-      render: (time: string) => (time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-'),
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 120,
-      render: (_, record) => (
-        <Switch
-          checked={record.status === 1}
-          checkedChildren="启用"
-          unCheckedChildren="禁用"
-          onChange={(checked) => handleToggle(record.id, checked ? 1 : 0)}
-        />
-      ),
-    },
-  ];
-
   return (
     <Table
       rowKey="id"
@@ -130,7 +132,7 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
         pageSize,
         total,
         showSizeChanger: true,
-        showTotal: (t) => `共 ${t} 条`,
+        showTotal: (t) => `${intl.formatMessage({ id: 'pages.common.total', defaultMessage: 'Total' })} ${t} ${intl.formatMessage({ id: 'pages.common.items', defaultMessage: 'items' })}`,
         onChange: (page, size) => {
           setPageNum(page);
           setPageSize(size);

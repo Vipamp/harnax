@@ -1,0 +1,69 @@
+# VIPClaw 后端 Dockerfile - 多阶段构建
+# Stage 1: 使用 Maven 构建应用
+FROM maven:3.8-openjdk-17 AS builder
+
+ARG EDITION=personal
+ENV EDITION_CURRENT=${EDITION}
+
+WORKDIR /app
+
+# 复制 Maven 包装器和 pom 文件
+COPY pom.xml .
+COPY vipclaw-common/pom.xml vipclaw-common/
+COPY vipclaw-agent/pom.xml vipclaw-agent/
+COPY vipclaw-channel/pom.xml vipclaw-channel/
+COPY vipclaw-admin/pom.xml vipclaw-admin/
+
+# 下载依赖(利用 Docker 缓存)
+RUN mvn dependency:go-offline -B || true
+
+# 复制源代码
+COPY vipclaw-common/ vipclaw-common/
+COPY vipclaw-agent/ vipclaw-agent/
+COPY vipclaw-channel/ vipclaw-channel/
+COPY vipclaw-admin/ vipclaw-admin/
+
+# 构建整个项目
+WORKDIR /app
+# 使用 -pl 参数只构建 vipclaw-admin 模块及其依赖
+RUN mvn clean package -pl vipclaw-admin -am -P${EDITION} -Dmaven.test.skip=true -Dmaven.install.skip=true -Dmaven.deploy.skip=true -Dmaven.site.skip=true -Dmaven.javadoc.skip=true -Dmaven.source.skip=true -Dmaven.gpg.skip=true -Dmaven.resources.skip=true -Dmaven.dependency.skip=true -Dmaven.enforcer.skip=true -Dmaven.checkstyle.skip=true -Dmaven.pmd.skip=true -Dmaven.findbugs.skip=true -Dmaven.surefire.skip=true -Dmaven.failsafe.skip=true -Dmaven.jar.skip=true -Dmaven.resources.skip=true -Dmaven.dependency.skip=true -Dmaven.plugin.skip=true -Dmaven.project.skip=true -Dmaven.build.skip=true -Dmaven.compile.skip=true -Dmaven.resources.skip=true -Dmaven.dependency.skip=true -Dmaven.build.skip=true -Dmaven.dependency.skip=true -B -Drevision=1.0.0-SNAPSHOT
+
+# Stage 2: 使用 JRE 运行应用
+FROM eclipse-temurin:21-jre AS runtime
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 创建非 root 用户
+RUN groupadd -r vipclaw && useradd -r -g vipclaw vipclaw
+
+WORKDIR /app
+
+# 从构建阶段复制 JAR 文件
+COPY --from=builder /app/vipclaw-admin/target/vipclaw-admin-*.jar app.jar
+
+# 创建日志目录
+RUN mkdir -p /app/logs && chown -R vipclaw:vipclaw /app
+
+# 切换到非 root 用户
+USER vipclaw
+
+# 暴露端口
+EXPOSE 8080
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:8080/api/health || exit 1
+
+# JVM 参数优化
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
+
+# 启动应用
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar --spring.profiles.active=${EDITION_CURRENT}"]
+
+# 元数据
+LABEL maintainer="vipamp"
+LABEL version="1.0.0"
+LABEL description="VIPClaw Admin Backend - ${EDITION} Edition"
+LABEL edition="${EDITION}"

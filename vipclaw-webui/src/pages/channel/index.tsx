@@ -44,16 +44,15 @@ import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUt
 
 const { Text, Paragraph } = Typography;
 
-// Channel 类型选项
-const CHANNEL_TYPES = [
-  { label: '企业微信', value: 'wecom' },
-  { label: '飞书', value: 'feishu' },
-  { label: '钉钉', value: 'dingtalk' },
-  { label: 'HTTP接口', value: 'http' },
-];
-
 const ChannelManagement: React.FC = () => {
   const intl = useIntl();
+  // Channel 类型选项
+  const CHANNEL_TYPES = [
+    { label: intl.formatMessage({ id: 'pages.channel.type.wecom', defaultMessage: 'WeCom' }), value: 'wecom' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.feishu', defaultMessage: 'Feishu' }), value: 'feishu' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
+  ];
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.ChannelItem>();
@@ -116,10 +115,10 @@ const ChannelManagement: React.FC = () => {
   /** 删除 Channel */
   const handleRemove = async (id: number) => {
     Modal.confirm({
-      title: '确认删除该 Channel 吗？',
-      content: '此操作不可恢复，请谨慎操作',
-      okText: '确定',
-      cancelText: '取消',
+      title: intl.formatMessage({ id: 'pages.channel.delete.confirm.title', defaultMessage: 'Confirm deletion?' }),
+      content: intl.formatMessage({ id: 'pages.channel.delete.confirm.content', defaultMessage: 'This operation cannot be undone. Please proceed with caution.' }),
+      okText: intl.formatMessage({ id: 'pages.channel.delete.confirm.ok', defaultMessage: 'Confirm' }),
+      cancelText: intl.formatMessage({ id: 'pages.channel.delete.confirm.cancel', defaultMessage: 'Cancel' }),
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
@@ -174,20 +173,20 @@ const ChannelManagement: React.FC = () => {
   // 表格列定义
   const columns = [
     {
-      title: 'ID',
+      title: intl.formatMessage({ id: 'pages.channel.table.id', defaultMessage: 'ID' }),
       dataIndex: 'id',
       key: 'id',
       width: 60,
     },
     {
-      title: '通道名称',
+      title: intl.formatMessage({ id: 'pages.channel.table.name', defaultMessage: 'Channel Name' }),
       dataIndex: 'name',
       key: 'name',
       width: 150,
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
-      title: '类型',
+      title: intl.formatMessage({ id: 'pages.channel.table.type', defaultMessage: 'Type' }),
       dataIndex: 'type',
       key: 'type',
       width: 100,
@@ -198,14 +197,14 @@ const ChannelManagement: React.FC = () => {
       ),
     },
     {
-      title: '关联智能体',
+      title: intl.formatMessage({ id: 'pages.channel.table.agent', defaultMessage: 'Associated Agent' }),
       dataIndex: 'agentName',
       key: 'agentName',
       width: 150,
       render: (text: string) => text || '-',
     },
     {
-      title: '回调 URL',
+      title: intl.formatMessage({ id: 'pages.channel.table.callbackUrl', defaultMessage: 'Callback URL' }),
       dataIndex: 'callbackUrl',
       key: 'callbackUrl',
       width: 250,
@@ -224,7 +223,7 @@ const ChannelManagement: React.FC = () => {
       ),
     },
     {
-      title: '状态',
+      title: intl.formatMessage({ id: 'pages.channel.table.status', defaultMessage: 'Status' }),
       dataIndex: 'status',
       key: 'status',
       width: 100,
@@ -232,26 +231,26 @@ const ChannelManagement: React.FC = () => {
         <Switch
           checked={status === 1}
           onChange={(checked) => handleToggleStatus(record.id!, checked ? 1 : 0)}
-          checkedChildren="启用"
-          unCheckedChildren="禁用"
+          checkedChildren={intl.formatMessage({ id: 'pages.channel.status.enabled', defaultMessage: 'Enabled' })}
+          unCheckedChildren={intl.formatMessage({ id: 'pages.channel.status.disabled', defaultMessage: 'Disabled' })}
           style={{ backgroundColor: status === 1 ? '#4f6ef7' : '#d9d9d9' }}
         />
       ),
     },
     {
-      title: '创建时间',
+      title: intl.formatMessage({ id: 'pages.channel.table.createTime', defaultMessage: 'Creation Time' }),
       dataIndex: 'createTime',
       key: 'createTime',
       width: 180,
       render: (text: string) => text?.replace('T', ' ') || '-',
     },
     {
-      title: '操作',
+      title: intl.formatMessage({ id: 'pages.channel.table.action', defaultMessage: 'Action' }),
       key: 'action',
       width: 120,
       render: (_: any, record: API.ChannelItem) => (
         <Space size={4}>
-          <Tooltip title="编辑">
+          <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.edit', defaultMessage: 'Edit' })}>
             <Button
               type="text"
               size="small"
@@ -263,7 +262,7 @@ const ChannelManagement: React.FC = () => {
               style={{ color: '#4f6ef7' }}
             />
           </Tooltip>
-          <Tooltip title="删除">
+          <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.delete', defaultMessage: 'Delete' })}>
             <Button
               type="text"
               size="small"
@@ -303,7 +302,7 @@ const ChannelManagement: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
             <Input
-              placeholder="搜索通道名称"
+              placeholder={intl.formatMessage({ id: 'pages.channel.search.placeholder.name', defaultMessage: 'Search channel name' })}
               prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -316,7 +315,7 @@ const ChannelManagement: React.FC = () => {
               allowClear
             />
             <Select
-              placeholder="类型筛选"
+              placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.type', defaultMessage: 'Filter by type' })}
               value={typeFilter}
               onChange={(val) => setTypeFilter(val)}
               style={{ width: 120 }}
@@ -324,14 +323,14 @@ const ChannelManagement: React.FC = () => {
               options={CHANNEL_TYPES}
             />
             <Select
-              placeholder="状态筛选"
+              placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.status', defaultMessage: 'Filter by status' })}
               value={statusFilter}
               onChange={(val) => setStatusFilter(val)}
               style={{ width: 100 }}
               allowClear
               options={[
-                { label: '启用', value: 1 },
-                { label: '禁用', value: 0 },
+                { label: intl.formatMessage({ id: 'pages.channel.status.enabled', defaultMessage: 'Enabled' }), value: 1 },
+                { label: intl.formatMessage({ id: 'pages.channel.status.disabled', defaultMessage: 'Disabled' }), value: 0 },
               ]}
             />
             <Button
@@ -345,7 +344,7 @@ const ChannelManagement: React.FC = () => {
                 borderColor: 'var(--vip-primary)',
               }}
             >
-              查询
+              {intl.formatMessage({ id: 'pages.channel.button.search', defaultMessage: 'Search' })}
             </Button>
             <Button
               onClick={() => { setKeyword(''); setTypeFilter(undefined); setStatusFilter(undefined); setPageNum(1); loadData(1); }}
@@ -358,7 +357,7 @@ const ChannelManagement: React.FC = () => {
                 background: 'var(--vip-bg-container)',
               }}
             >
-              重置
+              {intl.formatMessage({ id: 'pages.channel.button.reset', defaultMessage: 'Reset' })}
             </Button>
           </div>
           <Button
@@ -374,7 +373,7 @@ const ChannelManagement: React.FC = () => {
               boxShadow: '0 4px 16px rgba(79, 110, 247, 0.3)',
             }}
           >
-            新建 Channel
+            {intl.formatMessage({ id: 'pages.channel.button.create', defaultMessage: 'Create Channel' })}
           </Button>
         </div>
       </Card>
@@ -404,12 +403,12 @@ const ChannelManagement: React.FC = () => {
             total={total}
             showSizeChanger
             showQuickJumper
-            showTotal={(t) => `共 ${t} 条`}
+            showTotal={(t) => intl.formatMessage({ id: 'pages.channel.pagination.total', defaultMessage: `Total ${t} items` })}
             onChange={(page, size) => {
               setPageNum(page);
               if (size) setPageSize(size);
             }}
-            style={{ padding: '12px 24px', background: '#fff', borderRadius: '10px' }}
+            style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
           />
         </div>
       </Card>

@@ -1,0 +1,53 @@
+# VIPClaw 前端 Dockerfile - 多阶段构建
+# Stage 1: 使用 Node.js 构建前端应用
+FROM node:20-alpine AS builder
+
+ARG EDITION=personal
+ENV REACT_APP_EDITION=${EDITION}
+
+WORKDIR /app
+
+# 复制 package 文件(利用 Docker 缓存)
+COPY vipclaw-webui/package.json vipclaw-webui/package-lock.json ./
+
+# 安装依赖
+RUN npm ci --production=false
+
+# 复制源代码
+COPY vipclaw-webui/ .
+
+# 构建前端
+# 设置 REACT_APP_EDITION 环境变量
+RUN npm run build:${EDITION}
+
+# Stage 2: 使用 Nginx 提供静态文件服务
+FROM nginx:alpine AS runtime
+
+# 安装 curl 用于健康检查
+RUN apk add --no-cache curl
+
+# 复制 Nginx 配置
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# 从构建阶段复制前端文件
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 创建非 root 用户目录权限
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:80/ || exit 1
+
+# 启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]
+
+# 元数据
+LABEL maintainer="vipamp"
+LABEL version="1.0.0"
+LABEL description="VIPClaw Frontend - ${EDITION} Edition"
+LABEL edition="${EDITION}"

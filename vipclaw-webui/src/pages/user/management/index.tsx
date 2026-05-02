@@ -46,7 +46,10 @@ const UserManagement: React.FC = () => {
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
-      messageApi.error('获取数据失败');
+      messageApi.error(intl.formatMessage({
+        id: 'pages.message.loadFailed',
+        defaultMessage: 'Failed to load data',
+      }));
     } finally {
       setTableLoading(false);
     }
@@ -82,7 +85,10 @@ const UserManagement: React.FC = () => {
         defaultMessage: '取消',
       }),
       onOk: async () => {
-        const hide = message.loading('正在删除');
+        const hide = message.loading(intl.formatMessage({
+          id: 'pages.message.deleting',
+          defaultMessage: 'Deleting...',
+        }));
         if (!userId) return;
         try {
           const response = await deleteUser(userId);
@@ -117,7 +123,10 @@ const UserManagement: React.FC = () => {
   /** 批量删除 */
   const handleBatchRemove = useCallback(async () => {
     // TODO: 实现批量删除逻辑
-    messageApi.warning('批量删除功能开发中');
+    messageApi.warning(intl.formatMessage({
+      id: 'pages.message.batchRemovalDevelopment',
+      defaultMessage: 'Batch removal feature is under development',
+    }));
   }, []);
 
   const columns: ProColumns<API.UserItem>[] = [
@@ -183,9 +192,9 @@ const UserManagement: React.FC = () => {
       }),
      dataIndex: 'gender',
       valueEnum: {
-        0: { text: '女' },
-        1: { text: '男' },
-        2: { text: '保密' },
+        0: { text: intl.formatMessage({ id: 'pages.gender.female', defaultMessage: 'Female' }) },
+        1: { text: intl.formatMessage({ id: 'pages.gender.male', defaultMessage: 'Male' }) },
+        2: { text: intl.formatMessage({ id: 'pages.gender.confidential', defaultMessage: 'Confidential' }) },
       },
      hideInSearch: true,
     },
@@ -198,13 +207,13 @@ const UserManagement: React.FC = () => {
       filters: true,
      onFilter: true,
       valueEnum: {
-        0: { text: '禁用', status: 'Error' },
-        1: { text: '正常', status: 'Success' },
+        0: { text: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), status: 'Error' },
+        1: { text: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), status: 'Success' },
       },
      render: (_, record) => {
        return (
           <Tag color={record.status === 1 ? 'success' : 'error'}>
-            {record.status === 1 ? '正常' : '禁用'}
+            {record.status === 1 ? intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' })}
           </Tag>
         );
       },
@@ -216,14 +225,14 @@ const UserManagement: React.FC = () => {
       }),
      dataIndex: 'isAdmin',
       valueEnum: {
-        0: { text: '否' },
-        1: { text: '是' },
+        0: { text: intl.formatMessage({ id: 'pages.common.no', defaultMessage: 'No' }) },
+        1: { text: intl.formatMessage({ id: 'pages.common.yes', defaultMessage: 'Yes' }) },
       },
      hideInSearch: true,
      render: (_, record) => {
        return (
           <Tag color={record.isAdmin === 1 ? 'blue' : 'default'}>
-            {record.isAdmin === 1 ? '是' : '否'}
+            {record.isAdmin === 1 ? intl.formatMessage({ id: 'pages.common.yes', defaultMessage: 'Yes' }) : intl.formatMessage({ id: 'pages.common.no', defaultMessage: 'No' })}
           </Tag>
         );
       },
@@ -239,7 +248,7 @@ const UserManagement: React.FC = () => {
        const count = (record as any).tenantCount || 0;
        return (
           <Tag color="purple">
-            {count} 个租户
+            {count} {intl.formatMessage({ id: 'pages.user.management.tenantCount.unit', defaultMessage: 'tenants' })}
           </Tag>
         );
       },
@@ -275,13 +284,16 @@ const UserManagement: React.FC = () => {
       key: 'option',
      render: (text, record) => (
         <Space size={4}>
-          <Tooltip title="编辑">
+          <Tooltip title={intl.formatMessage({
+            id: 'pages.common.edit',
+            defaultMessage: 'Edit',
+          })}>
             <Button
               type="text"
               size="small"
               icon={<EditOutlined />}
               style={{
-                color: '#4f6ef7',
+                color: 'var(--vip-primary)',
                 borderRadius: '6px',
                 fontWeight: 500,
               }}
@@ -296,7 +308,10 @@ const UserManagement: React.FC = () => {
               })}
             </Button>
           </Tooltip>
-          <Tooltip title="管理租户">
+          <Tooltip title={intl.formatMessage({
+              id: 'pages.user.management.tenant.management',
+              defaultMessage: 'Manage Tenant',
+            })}>
             <Button
               type="text"
               size="small"
@@ -311,12 +326,18 @@ const UserManagement: React.FC = () => {
                 setTenantModalVisible(true);
               }}
             >
-              管理租户
+              {intl.formatMessage({
+                id: 'pages.user.management.tenant.management',
+                defaultMessage: 'Manage Tenant',
+              })}
             </Button>
           </Tooltip>
           {/* 管理员用户不显示删除按钮 */}
           {record.isAdmin !== 1 && (
-            <Tooltip title="删除">
+            <Tooltip title={intl.formatMessage({
+              id: 'pages.common.delete',
+              defaultMessage: 'Delete',
+            })}>
               <Button
                 type="text"
                 size="small"
@@ -343,8 +364,8 @@ const UserManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: '#1a1a2e' }}>
-            <UserOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <UserOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'pages.user.management.title',
               defaultMessage: '用户管理',
@@ -362,7 +383,10 @@ const UserManagement: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Input
-            placeholder="搜索用户名或邮箱"
+            placeholder={intl.formatMessage({
+              id: 'pages.user.management.search.placeholder',
+              defaultMessage: '搜索用户名或邮箱',
+            })}
             prefix={<SearchOutlined />}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
@@ -371,21 +395,36 @@ const UserManagement: React.FC = () => {
             allowClear
           />
           <Select
-            placeholder="状态筛选"
+            placeholder={intl.formatMessage({
+              id: 'pages.user.management.status.filter.placeholder',
+              defaultMessage: '状态筛选',
+            })}
             value={status}
             onChange={(val) => setStatus(val)}
             style={{ width: 140, borderRadius: '8px' }}
             allowClear
             options={[
-              { label: '启用', value: 1 },
-              { label: '禁用', value: 0 },
+              { label: intl.formatMessage({
+                id: 'pages.status.enabled',
+                defaultMessage: '启用',
+              }), value: 1 },
+              { label: intl.formatMessage({
+                id: 'pages.status.disabled',
+                defaultMessage: '禁用',
+              }), value: 0 },
             ]}
           />
-          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px' }}>
-            查询
+          <Button type="primary" onClick={handleSearch} style={{ borderRadius: '8px', background: 'var(--vip-primary)', borderColor: 'var(--vip-primary)' }}>
+            {intl.formatMessage({
+              id: 'pages.common.query',
+              defaultMessage: '查询',
+            })}
           </Button>
-          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTenantId(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px' }}>
-            重置
+          <Button onClick={() => { setKeyword(''); setStatus(undefined); setTenantId(undefined); setPageNum(1); loadData(1); }} style={{ borderRadius: '8px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
+            {intl.formatMessage({
+              id: 'pages.common.reset',
+              defaultMessage: '重置',
+            })}
           </Button>
           <div style={{ flex: 1 }} />
           <Button
@@ -412,7 +451,10 @@ const UserManagement: React.FC = () => {
           total,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (t) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: t }
+          ),
           onChange: (page, size) => {
             setPageNum(page);
             if (size) setPageSize(size);
@@ -433,14 +475,23 @@ const UserManagement: React.FC = () => {
             
             // 检查后端返回的 code 字段
             if (res.code === 200) {
-              messageApi.success('创建成功');
+              messageApi.success(intl.formatMessage({
+                id: 'pages.user.management.createSuccess',
+                defaultMessage: 'Created successfully',
+              }));
               setCreateModalVisible(false);
               loadData();
             } else {
-              messageApi.error(res.message || '创建失败');
+              messageApi.error(res.message || intl.formatMessage({
+                id: 'pages.user.management.createFailed',
+                defaultMessage: 'Create failed, please try again',
+              }));
             }
           } catch (error: any) {
-            messageApi.error(error?.message || '创建失败，请重试');
+            messageApi.error(error?.message || intl.formatMessage({
+              id: 'pages.user.management.createFailed',
+              defaultMessage: 'Create failed, please try again',
+            }));
           }
         }}
         visible={createModalVisible}
@@ -452,12 +503,18 @@ const UserManagement: React.FC = () => {
           onSubmit={async (values) => {
             try {
               await updateUserApi(currentRow.id || 0, values);
-              messageApi.success('更新成功');
+              messageApi.success(intl.formatMessage({
+                id: 'pages.user.management.updateSuccess',
+                defaultMessage: 'Updated successfully',
+              }));
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
               loadData();
             } catch (error) {
-              messageApi.error('更新失败，请重试');
+              messageApi.error(intl.formatMessage({
+                id: 'pages.user.management.updateFailed',
+                defaultMessage: 'Update failed, please try again',
+              }));
             }
           }}
           onCancel={() => {
@@ -472,9 +529,12 @@ const UserManagement: React.FC = () => {
       {/* 管理租户弹窗 */}
       <Modal
         title={
-          <span style={{ fontSize: '16px', fontWeight: 600, color: '#1a1a2e' }}>
-            <TeamOutlined style={{ marginRight: 8, color: '#722ed1' }} />
-            管理用户租户
+          <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <TeamOutlined style={{ marginRight: 8, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({
+              id: 'pages.user.management.tenant.management.title',
+              defaultMessage: '管理用户租户',
+            })}
           </span>
         }
         open={tenantModalVisible}

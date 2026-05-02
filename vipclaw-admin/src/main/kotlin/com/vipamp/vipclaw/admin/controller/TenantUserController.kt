@@ -1,5 +1,6 @@
 package com.vipamp.vipclaw.admin.controller
 
+import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.security.SecurityUtils
 import com.vipamp.vipclaw.admin.service.UserTenantService
@@ -9,12 +10,14 @@ import org.springframework.web.bind.annotation.*
 /**
  * 租户用户管理控制器
  * 管理租户与用户的关联关系
+ * 仅公有云版可用(多租户功能)
  *
  * @author vipamp
  * @since 2026-04-28
  */
 @RestController
 @RequestMapping("/api/tenant")
+@RequiresEdition("public")
 class TenantUserController(
     private val userTenantService: UserTenantService
 ) {
