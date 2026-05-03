@@ -7,10 +7,15 @@ set -e  # 遇到错误立即退出
 
 # 检查参数
 BUILD_DOCKER=false
+BUILD_NATIVE=false
 for arg in "$@"; do
     case $arg in
         --docker)
         BUILD_DOCKER=true
+        shift
+        ;;
+        --docker-native)
+        BUILD_NATIVE=true
         shift
         ;;
     esac
@@ -170,42 +175,60 @@ fi
 echo ""
 
 # Docker 镜像构建(可选)
-if [ "$BUILD_DOCKER" = true ]; then
+if [ "$BUILD_DOCKER" = true ] || [ "$BUILD_NATIVE" = true ]; then
     echo "========================================="
     echo "  Docker 镜像构建"
     echo "========================================="
     echo ""
-    
+        
     for edition in personal enterprise public; do
-        echo -e "${YELLOW}[${edition}] 构建 Docker 镜像...${NC}"
-        
-        # 构建后端镜像
-        if docker build --build-arg EDITION=${edition} -t vipclaw-admin:${edition} -f Dockerfile.backend .; then
-            echo -e "${GREEN}[${edition}] 后端镜像构建成功: vipclaw-admin:${edition}${NC}"
-            
-            # 显示镜像大小
-            IMAGE_SIZE=$(docker images vipclaw-admin:${edition} --format "{{.Size}}")
-            echo -e "${GREEN}[${edition}] 镜像大小: ${IMAGE_SIZE}${NC}"
-        else
-            echo -e "${RED}[${edition}] 后端镜像构建失败!${NC}"
-            exit 1
+        if [ "$BUILD_NATIVE" = true ]; then
+            echo -e "${YELLOW}[${edition}] 构建 Native Docker 镜像...${NC}"
+                
+            # 构建 Native 后端镜像
+            if docker build --build-arg EDITION=${edition} -t vipclaw-admin:${edition}-native -f Dockerfile.backend.native .; then
+                echo -e "${GREEN}[${edition}] Native 后端镜像构建成功: vipclaw-admin:${edition}-native${NC}"
+                    
+                # 显示镜像大小
+                IMAGE_SIZE=$(docker images vipclaw-admin:${edition}-native --format "{{.Size}}")
+                echo -e "${GREEN}[${edition}] Native 镜像大小: ${IMAGE_SIZE}${NC}"
+            else
+                echo -e "${RED}[${edition}] Native 后端镜像构建失败!${NC}"
+                exit 1
+            fi
         fi
-        
-        # 构建前端镜像
-        if docker build --build-arg EDITION=${edition} -t vipclaw-frontend:${edition} -f Dockerfile.frontend .; then
-            echo -e "${GREEN}[${edition}] 前端镜像构建成功: vipclaw-frontend:${edition}${NC}"
             
-            # 显示镜像大小
-            IMAGE_SIZE=$(docker images vipclaw-frontend:${edition} --format "{{.Size}}")
-            echo -e "${GREEN}[${edition}] 前端镜像大小: ${IMAGE_SIZE}${NC}"
-        else
-            echo -e "${RED}[${edition}] 前端镜像构建失败!${NC}"
-            exit 1
+        if [ "$BUILD_DOCKER" = true ]; then
+            echo -e "${YELLOW}[${edition}] 构建 Docker 镜像...${NC}"
+                
+            # 构建后端镜像
+            if docker build --build-arg EDITION=${edition} -t vipclaw-admin:${edition} -f Dockerfile.backend .; then
+                echo -e "${GREEN}[${edition}] 后端镜像构建成功: vipclaw-admin:${edition}${NC}"
+                    
+                # 显示镜像大小
+                IMAGE_SIZE=$(docker images vipclaw-admin:${edition} --format "{{.Size}}")
+                echo -e "${GREEN}[${edition}] 镜像大小: ${IMAGE_SIZE}${NC}"
+            else
+                echo -e "${RED}[${edition}] 后端镜像构建失败!${NC}"
+                exit 1
+            fi
+                
+            # 构建前端镜像
+            if docker build --build-arg EDITION=${edition} -t vipclaw-frontend:${edition} -f Dockerfile.frontend .; then
+                echo -e "${GREEN}[${edition}] 前端镜像构建成功: vipclaw-frontend:${edition}${NC}"
+                    
+                # 显示镜像大小
+                IMAGE_SIZE=$(docker images vipclaw-frontend:${edition} --format "{{.Size}}")
+                echo -e "${GREEN}[${edition}] 前端镜像大小: ${IMAGE_SIZE}${NC}"
+            else
+                echo -e "${RED}[${edition}] 前端镜像构建失败!${NC}"
+                exit 1
+            fi
         fi
-        
+            
         echo ""
     done
-    
+        
     echo "========================================="
     echo "  Docker 镜像列表"
     echo "========================================="

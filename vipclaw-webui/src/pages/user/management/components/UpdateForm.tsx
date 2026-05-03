@@ -1,9 +1,10 @@
 import React from 'react';
-import { Modal, Switch } from 'antd';
-import type { ProColumns } from '@ant-design/pro-components';
-import { ProForm, ProFormSelect, ProFormText, ProFormTextArea, ProFormSwitch } from '@ant-design/pro-components';
+import { Switch } from 'antd';
+import { EditOutlined } from '@ant-design/icons';
+import { ProForm, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { isPersonal } from '@/utils/edition';
+import { FormModal } from '@/components/FormModal';
 
 export interface UpdateFormProps {
   onCancel: () => void;
@@ -62,33 +63,53 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
   }
 
   return (
-    <Modal
-      destroyOnClose
-      title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({
-            id: 'pages.user.management.edit',
-            defaultMessage: '编辑用户',
-          })}
-        </span>
-      }
-      width={640}
+    <FormModal
       open={visible}
-      footer={null}
-      onCancel={() => onCancel()}
-      styles={{
-        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
-        header: {
-          background: 'var(--vip-primary-light)',
-          borderBottom: '1px solid var(--vip-border)',
-          padding: '18px 24px',
-        },
+      onCancel={onCancel}
+      size="md"
+      titleConfig={{
+        mainTitle: intl.formatMessage({
+          id: 'pages.user.management.edit',
+          defaultMessage: '编辑用户',
+        }),
+        subtitle: intl.formatMessage({
+          id: 'pages.user.management.edit.subtitle',
+          defaultMessage: '修改用户信息，保存后即时生效',
+        }),
+        icon: <EditOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: 'rgba(var(--vip-warning-rgb), 0.25)',
       }}
     >
       <ProForm<API.UserItem>
         onFinish={onSubmit}
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         submitter={{
-          render: (_, dom) => [dom],
+          render: (_, dom) => (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '10px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--vip-border)'
+            }}>
+              {dom.map((item: any) => 
+                React.cloneElement(item, {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    height: '32px',
+                    padding: '4px 20px',
+                    borderRadius: '6px',
+                    ...(item.props.style || {})
+                  }
+                })
+              )}
+            </div>
+          ),
           searchConfig: {
             submitText: intl.formatMessage({
               id: 'pages.user.management.submit',
@@ -190,7 +211,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           })}
         />
       </ProForm>
-    </Modal>
+    </FormModal>
   );
 };
 

@@ -1,7 +1,8 @@
 import React from 'react';
-import { Modal } from 'antd';
+import { ShopOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
+import { FormModal } from '@/components/FormModal';
 
 export interface UpdateFormProps {
   onCancel: () => void;
@@ -15,27 +16,22 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
   const intl = useIntl();
 
   return (
-    <Modal
-      destroyOnClose
-      title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({
-            id: 'pages.tenant.management.edit',
-            defaultMessage: '编辑租户',
-          })}
-        </span>
-      }
-      width={640}
+    <FormModal
       open={visible}
-      footer={null}
-      onCancel={() => onCancel()}
-      styles={{
-        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
-        header: {
-          background: 'var(--vip-primary-light)',
-          borderBottom: '1px solid var(--vip-border)',
-          padding: '18px 24px',
-        },
+      onCancel={onCancel}
+      size="sm"
+      titleConfig={{
+        mainTitle: intl.formatMessage({
+          id: 'pages.tenant.management.edit',
+          defaultMessage: '编辑租户',
+        }),
+        subtitle: intl.formatMessage({
+          id: 'pages.tenant.management.edit.subtitle',
+          defaultMessage: '修改租户信息，保存后即时生效',
+        }),
+        icon: <ShopOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
       }}
     >
       <ProForm
@@ -44,8 +40,33 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           status: values?.status,
         }}
         onFinish={onSubmit}
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         submitter={{
-          render: (_, dom) => [dom],
+          render: (_, dom) => (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '10px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--vip-border)'
+            }}>
+              {dom.map((item: any) => 
+                React.cloneElement(item, {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    height: '32px',
+                    padding: '4px 20px',
+                    borderRadius: '6px',
+                    ...(item.props.style || {})
+                  }
+                })
+              )}
+            </div>
+          ),
           searchConfig: {
             submitText: intl.formatMessage({
               id: 'pages.tenant.management.submit',
@@ -109,7 +130,7 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           ]}
         />
       </ProForm>
-    </Modal>
+    </FormModal>
   );
 };
 

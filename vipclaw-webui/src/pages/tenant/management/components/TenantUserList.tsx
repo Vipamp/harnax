@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, message, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, message, Tag, Space } from 'antd';
+import { PlusOutlined, UsergroupAddOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { getUserPage } from '@/services/ant-design-pro/user';
 import { getTenantUsers, addUserToTenant, removeUserFromTenant } from '@/services/tenant';
+import DeleteButton from '@/components/DeleteButton';
+import { FormModal } from '@/components/FormModal';
 
 export interface TenantUserListProps {
   tenantId: number;
@@ -40,7 +42,7 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
         setTotal(response.data?.total || 0);
       }
     } catch (error) {
-      message.error('加载租户用户列表失败');
+      message.error(intl.formatMessage({ id: 'pages.tenant.userListLoadFailed', defaultMessage: 'Failed to load tenant user list' }));
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
         setUserOptions(options);
       }
     } catch (error) {
-      message.error('加载用户列表失败');
+      message.error(intl.formatMessage({ id: 'pages.tenant.availableUserListLoadFailed', defaultMessage: 'Failed to load available user list' }));
     } finally {
       setUserLoading(false);
     }
@@ -104,13 +106,13 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
         try {
           const response = await removeUserFromTenant(tenantId, userId);
           if (response.code === 200) {
-            message.success('移除用户成功');
+            message.success(intl.formatMessage({ id: 'pages.tenant.userRemoveSuccess', defaultMessage: 'User removed successfully' }));
             loadTenantUsers();
           } else {
-            message.error(response.message || '移除用户失败');
+            message.error(response.message || intl.formatMessage({ id: 'pages.tenant.userRemoveFailed', defaultMessage: 'Failed to remove user' }));
           }
         } catch (error: any) {
-          message.error(error?.message || '移除用户失败');
+          message.error(error?.message || intl.formatMessage({ id: 'pages.tenant.userRemoveFailed', defaultMessage: 'Failed to remove user' }));
         }
       },
     });
@@ -118,52 +120,48 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
 
   const columns = [
     {
-      title: '用户名',
+      title: intl.formatMessage({ id: 'pages.tenant.user.list.column.username', defaultMessage: 'Username' }),
       dataIndex: 'username',
       key: 'username',
     },
     {
-      title: '昵称',
+      title: intl.formatMessage({ id: 'pages.tenant.user.list.column.nickname', defaultMessage: 'Nickname' }),
       dataIndex: 'nickname',
       key: 'nickname',
     },
     {
-      title: '角色',
+      title: intl.formatMessage({ id: 'pages.tenant.user.list.column.role', defaultMessage: 'Role' }),
       dataIndex: 'role',
       key: 'role',
       render: (role: string) => (
         <Tag color={role === 'admin' ? 'blue' : 'default'}>
-          {role === 'admin' ? '管理员' : '成员'}
+          {role === 'admin' ? intl.formatMessage({ id: 'pages.tenant.role.admin', defaultMessage: 'Admin' }) : intl.formatMessage({ id: 'pages.tenant.role.member', defaultMessage: 'Member' })}
         </Tag>
       ),
     },
     {
-      title: '状态',
+      title: intl.formatMessage({ id: 'pages.tenant.user.list.column.status', defaultMessage: 'Status' }),
       dataIndex: 'status',
       key: 'status',
       render: (status: number) => (
         <Tag color={status === 1 ? 'green' : 'red'}>
-          {status === 1 ? '启用' : '禁用'}
+          {status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
         </Tag>
       ),
     },
     {
-      title: '加入时间',
+      title: intl.formatMessage({ id: 'pages.tenant.user.list.column.joinedAt', defaultMessage: 'Joined At' }),
       dataIndex: 'joinedAt',
       key: 'joinedAt',
     },
     {
-      title: '操作',
+      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Action' }),
       key: 'action',
       render: (_: any, record: any) => (
-        <Button
-          type="link"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleRemoveUser(record.userId)}
-        >
-          移除
-        </Button>
+        <DeleteButton 
+          onConfirm={() => handleRemoveUser(record.userId)}
+          confirmTitle={intl.formatMessage({ id: 'pages.tenant.confirmRemoveUser', defaultMessage: 'Are you sure to remove this user from the tenant?' })}
+        />
       ),
     },
   ];
@@ -175,7 +173,7 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
   return (
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-        <h3>租户用户列表</h3>
+        <h3>{intl.formatMessage({ id: 'pages.tenant.user.list.title', defaultMessage: 'Tenant User List' })}</h3>
         <Button
           type="primary"
           icon={<PlusOutlined />}
@@ -197,18 +195,61 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
           total,
           pageSize: 10,
           showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 条`,
+          showTotal: (total) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: total }
+          ),
         }}
       />
 
-      <Modal
-        title={intl.formatMessage({ id: 'pages.tenant.addUserToTenant', defaultMessage: 'Add User to Tenant' })}
+      <FormModal
         open={addModalVisible}
         onCancel={() => setAddModalVisible(false)}
-        footer={null}
-        width={600}
+        size="sm"
+        titleConfig={{
+          mainTitle: intl.formatMessage({ id: 'pages.tenant.addUserToTenant', defaultMessage: 'Add User to Tenant' }),
+          subtitle: intl.formatMessage({
+            id: 'pages.tenant.addUserToTenant.subtitle',
+            defaultMessage: 'Select a user and assign a role to add to the current tenant',
+          }),
+          icon: <UsergroupAddOutlined />,
+        }}
       >
-        <ProForm onFinish={handleAddUser} submitter={{}}>
+        <ProForm 
+          onFinish={handleAddUser}
+          layout="horizontal"
+          labelCol={{ span: 6 }}
+          wrapperCol={{ span: 18 }}
+          submitter={{
+            render: (_, dom) => (
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                gap: '10px',
+                marginTop: '12px',
+                paddingTop: '10px',
+                borderTop: '1px solid var(--vip-border)'
+              }}>
+                {dom.map((item: any) => 
+                  React.cloneElement(item, {
+                    style: {
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      height: '32px',
+                      padding: '4px 20px',
+                      borderRadius: '6px',
+                      ...(item.props.style || {})
+                    }
+                  })
+                )}
+              </div>
+            ),
+            searchConfig: {
+              submitText: intl.formatMessage({ id: 'pages.common.submit', defaultMessage: '提交' }),
+              resetText: intl.formatMessage({ id: 'pages.common.reset', defaultMessage: '重置' }),
+            },
+          }}
+        >
           <ProFormSelect
             name="userId"
             label={intl.formatMessage({ id: 'pages.tenant.selectUser', defaultMessage: 'Select User' })}
@@ -222,25 +263,23 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
           />
           <ProFormSelect
             name="role"
-            label="用户角色"
-            placeholder="请选择用户角色"
+            label={intl.formatMessage({ id: 'pages.tenant.userRole', defaultMessage: '用户角色' })}
+            placeholder={intl.formatMessage({ id: 'pages.tenant.userRole.placeholder', defaultMessage: '请选择用户角色' })}
             initialValue="member"
             options={[
-              { label: '成员', value: 'member' },
-              { label: '管理员', value: 'admin' },
+              { 
+                label: intl.formatMessage({ id: 'pages.tenant.role.member', defaultMessage: '成员' }), 
+                value: 'member' 
+              },
+              { 
+                label: intl.formatMessage({ id: 'pages.tenant.role.admin', defaultMessage: '管理员' }), 
+                value: 'admin' 
+              },
             ]}
-            rules={[{ required: true, message: '请选择用户角色' }]}
+            rules={[{ required: true, message: intl.formatMessage({ id: 'pages.tenant.userRole.required', defaultMessage: '请选择用户角色' }) }]}
           />
-          <div style={{ textAlign: 'right', marginTop: 24 }}>
-            <Button style={{ marginRight: 8 }} onClick={() => setAddModalVisible(false)}>
-              {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
-            </Button>
-            <Button type="primary" htmlType="submit">
-              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
-            </Button>
-          </div>
         </ProForm>
-      </Modal>
+      </FormModal>
     </div>
   );
 };

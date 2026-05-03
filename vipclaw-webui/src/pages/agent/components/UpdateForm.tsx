@@ -1,5 +1,5 @@
 import { useIntl, useModel } from '@umijs/max';
-import { Modal, Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
+import { Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
@@ -274,13 +274,17 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   };
 
   return (
-    <Modal
-      title={intl.formatMessage({ id: 'pages.agent.edit', defaultMessage: 'Edit Agent' })}
+    <FormModal
       open={visible}
       onCancel={handleClose}
-      footer={null}
-      width={800}
-      destroyOnClose
+      size="xl"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.agent.edit', defaultMessage: 'Edit Agent' }),
+        subtitle: intl.formatMessage({ id: 'pages.agent.edit.subtitle', defaultMessage: 'Modify agent configuration, MCP services and skills' }),
+        icon: <RocketOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
+      }}
     >
       <Steps current={currentStep} style={{ marginBottom: 24 }}>
         <Step title={intl.formatMessage({ id: 'pages.agent.basicInfo', defaultMessage: 'Basic Info' })} />
@@ -496,8 +500,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           {currentStep === 2 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
-    </Modal>
+    </FormModal>
   );
 };
 
+export default UpdateForm;
 export default UpdateForm;

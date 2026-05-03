@@ -1,10 +1,11 @@
 import { useIntl, useModel } from '@umijs/max';
-import { Modal, Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
+import { Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
-import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
+import { PlusOutlined, MinusOutlined, RocketOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
+import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -249,13 +250,15 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   };
 
   return (
-    <Modal
-      title={intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
+    <FormModal
       open={visible}
       onCancel={handleClose}
-      footer={null}
-      width={800}
-      destroyOnClose
+      size="xl"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' }),
+        subtitle: intl.formatMessage({ id: 'pages.agent.create.subtitle', defaultMessage: 'Configure agent basic info, MCP services and skills' }),
+        icon: <RocketOutlined />,
+      }}
     >
       <Steps current={currentStep} style={{ marginBottom: 24 }}>
         <Step title={intl.formatMessage({ id: 'pages.agent.basicInfo', defaultMessage: 'Basic Info' })} />
@@ -463,7 +466,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           {currentStep === 2 ? intl.formatMessage({ id: 'pages.agent.finish', defaultMessage: 'Finish' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
-    </Modal>
+    </FormModal>
   );
 };
 

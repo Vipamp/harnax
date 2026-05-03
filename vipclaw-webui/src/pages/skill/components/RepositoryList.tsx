@@ -1,9 +1,13 @@
 import React, { useMemo } from 'react';
-import { List, Switch, Button, Space, Typography, Tag, Popconfirm, message, Tooltip } from 'antd';
-import { EditOutlined, DeleteOutlined, GithubOutlined, SyncOutlined, LinkOutlined } from '@ant-design/icons';
+import { List, Space, Typography, Tag, message, Tooltip } from 'antd';
+import { GithubOutlined, LinkOutlined } from '@ant-design/icons';
 import { deleteSkillRepository, toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import { useIntl } from '@umijs/max';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import SyncButton from '@/components/SyncButton';
+import StatusSwitch from '@/components/StatusSwitch';
 
 const { Text, Paragraph } = Typography;
 
@@ -34,14 +38,14 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
     try {
       const response = await deleteSkillRepository(id);
       if (response.code === 200) {
-        message.success('删除成功');
+        message.success(intl.formatMessage({ id: 'pages.skill.repository.delete.success', defaultMessage: 'Delete successful' }));
         onDelete(id);
       } else {
-        const errorMsg = response.message || '删除失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.skill.repository.delete.failed', defaultMessage: 'Delete failed' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.skill.repository.delete.failed', defaultMessage: 'Delete failed' });
       message.error(errorMsg);
     }
   };
@@ -50,14 +54,14 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
     try {
       const response = await toggleSkillRepositoryStatus(id, status);
       if (response.code === 200) {
-        message.success('状态切换成功');
+        message.success(intl.formatMessage({ id: 'pages.skill.repository.toggle.success', defaultMessage: 'Status toggled successfully' }));
         onToggle(id, status);
       } else {
-        const errorMsg = response.message || '状态切换失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.skill.repository.toggle.failed', defaultMessage: 'Status toggle failed' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '状态切换失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.skill.repository.toggle.failed', defaultMessage: 'Status toggle failed' });
       message.error(errorMsg);
     }
   };
@@ -103,16 +107,11 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   {repository.name}
                 </Text>
                 {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
-                  <Switch
-                    checked={repository.status === 1}
-                    onChange={(checked) => {
+                  <StatusSwitch
+                    status={repository.status}
+                    onChange={(newStatus) => {
                       onSelect(repository);
-                      handleToggle(repository.id, checked ? 1 : 0);
-                    }}
-                    checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-                    unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-                    style={{
-                      backgroundColor: repository.status === 1 ? '#4f6ef7' : '#d9d9d9',
+                      handleToggle(repository.id, newStatus);
                     }}
                   />
                 )}
@@ -153,46 +152,24 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 )}
                 {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>
-                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.sync', defaultMessage: 'Sync' })}>
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<SyncOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelect(repository);
-                          onSync(repository);
-                        }}
-                        style={{ padding: '4px', color: '#1890ff' }}
-                      />
-                    </Tooltip>
-                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit' })}>
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<EditOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelect(repository);
-                          onEdit(repository);
-                        }}
-                        style={{ padding: '4px', color: '#1890ff' }}
-                      />
-                    </Tooltip>
-                    <Tooltip title={intl.formatMessage({ id: 'pages.skill.repository.delete', defaultMessage: 'Delete' })}>
-                      <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelect(repository);
-                          handleDelete(repository.id);
-                        }}
-                        style={{ padding: '4px' }}
-                      />
-                    </Tooltip>
+                    <SyncButton 
+                      onClick={(e) => {
+                        e?.stopPropagation();
+                        onSelect(repository);
+                        onSync(repository);
+                      }} 
+                    />
+                    <EditButton 
+                      onClick={(e) => {
+                        e?.stopPropagation();
+                        onSelect(repository);
+                        onEdit(repository);
+                      }} 
+                    />
+                    <DeleteButton 
+                      onConfirm={() => handleDelete(repository.id)}
+                      confirmTitle={intl.formatMessage({ id: 'pages.skill.repository.confirmDelete', defaultMessage: 'Are you sure to delete this repository?' })}
+                    />
                   </Space>
                 )}
               </div>

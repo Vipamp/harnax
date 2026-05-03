@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Switch, message, Tag } from 'antd';
+import { Table, message, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getSkillPage, toggleSkillStatus } from '@/services/ant-design-pro/skill';
 // @ts-ignore
 import { history } from '@umijs/max';
 import dayjs from 'dayjs';
 import { useIntl } from '@umijs/max';
+import StatusSwitch from '@/components/StatusSwitch';
 
 interface SkillListProps {
   repositoryId: number;
@@ -69,11 +70,9 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       key: 'status',
       width: 120,
       render: (_, record) => (
-        <Switch
-          checked={record.status === 1}
-          checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-          unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-          onChange={(checked) => handleToggle(record.id, checked ? 1 : 0)}
+        <StatusSwitch
+          status={record.status}
+          onChange={(newStatus) => handleToggle(record.id, newStatus)}
         />
       ),
     },
@@ -108,25 +107,27 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
     try {
       const response = await toggleSkillStatus(id, status);
       if (response.code === 200) {
-        message.success('状态切换成功');
+
         // 局部更新状态，不刷新列表
         setData((prev) =>
           prev.map((item) => (item.id === id ? { ...item, status } : item))
         );
       } else {
-        message.error(response.message || '状态切换失败');
+        message.error(response.message || intl.formatMessage({ id: 'pages.skill.list.toggleFailed', defaultMessage: 'Status toggle failed' }));
       }
     } catch (error: any) {
-      message.error(error?.message || error?.info?.errorMessage || '状态切换失败');
+      message.error(error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.skill.list.toggleFailed', defaultMessage: 'Status toggle failed' }));
     }
   };
 
   return (
     <Table
+      className="styled-pro-table"
       rowKey="id"
       columns={columns}
       dataSource={data}
       loading={loading}
+      size="small"
       pagination={{
         current: pageNum,
         pageSize,

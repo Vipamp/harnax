@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useIntl } from '@umijs/max';
-import { Table, Tag, Switch, Button, Space, Popconfirm, Empty, Spin, Typography, Tooltip } from 'antd';
+import { Table, Tag, Empty, Spin, Typography, Tooltip, Space } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { EditOutlined, DeleteOutlined, GlobalOutlined, ThunderboltOutlined, ToolOutlined, ApiOutlined, EyeOutlined } from '@ant-design/icons';
+import { GlobalOutlined, ThunderboltOutlined, ToolOutlined, ApiOutlined, EyeOutlined } from '@ant-design/icons';
 import { modelPage, toggleModel, deleteModel } from '@/services/ant-design-pro/model';
 import { message } from 'antd';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import StatusSwitch from '@/components/StatusSwitch';
 
 const { Text } = Typography;
 
@@ -78,7 +81,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
         setModels(response.data.records || []);
       }
     } catch (error) {
-      message.error('加载模型列表失败');
+      message.error(intl.formatMessage({ id: 'pages.message.loadFailed', defaultMessage: 'Failed to load data' }));
     } finally {
       setLoading(false);
     }
@@ -97,7 +100,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       const response = await toggleModel(id, newStatus);
       
       if (response.code === 200) {
-        message.success('状态切换成功');
+        message.success(intl.formatMessage({ id: 'pages.message.toggleSuccess', defaultMessage: 'Status toggled successfully' }));
         // 只更新当前卡片状态，不重新加载整个列表
         setModels((prevModels) =>
           prevModels.map((model) =>
@@ -105,7 +108,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
           )
         );
       } else {
-        const errorMsg = response.message || '状态切换失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.toggleFailed', defaultMessage: 'Failed to toggle status' });
         message.error(errorMsg);
       }
     } catch (error: any) {
@@ -119,14 +122,14 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
     try {
       const response = await deleteModel(id);
       if (response.code === 200) {
-        message.success('删除成功');
+        message.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
         loadModels();
       } else {
-        const errorMsg = response.message || '删除失败';
+        const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
         message.error(errorMsg);
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '删除失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
       message.error(errorMsg);
     }
   };
@@ -227,18 +230,7 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
       ),
     },
     {
-      title: intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' }),
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status) => (
-        <Tag color={status === 1 ? 'green' : 'red'}>
-          {status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-        </Tag>
-      ),
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Operation' }),
+      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Action' }),
       key: 'action',
       width: 150,
       fixed: 'right',
@@ -246,50 +238,18 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
         const canOperate = hasOperationPermission(isAdmin, currentUser, record.creator);
         return canOperate ? (
           <Space size={8}>
-            <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => onEdit(record)}
-                style={{ padding: '4px', color: '#1890ff' }}
-              />
-            </Tooltip>
-            <Popconfirm
-              title={intl.formatMessage({ id: 'pages.message.modelDeleteConfirm', defaultMessage: 'Are you sure to delete this model?' })}
+            <StatusSwitch
+              status={record.status}
+              onChange={(newStatus) => handleToggle(record.id, newStatus)}
+              disabled={!canOperate}
+            />
+            <EditButton onClick={() => onEdit(record)} />
+            <DeleteButton 
               onConfirm={() => handleDelete(record.id)}
-            >
-              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
-                <Button
-                  type="link"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  style={{ padding: '4px' }}
-                />
-              </Tooltip>
-            </Popconfirm>
-            <Switch
-              checked={record.status === 1}
-              onChange={() => handleToggle(record.id, record.status)}
-              checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-              unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-              style={{
-                backgroundColor: record.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
-              }}
+              confirmTitle={intl.formatMessage({ id: 'pages.message.modelDeleteConfirm', defaultMessage: 'Are you sure to delete this model?' })}
             />
           </Space>
-        ) : (
-          <Switch
-            disabled
-            checked={record.status === 1}
-            checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-            unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-            style={{
-              backgroundColor: record.status === 1 ? 'var(--vip-primary)' : 'var(--vip-border)',
-            }}
-          />
-        );
+        ) : null;
       },
     },
   ];
@@ -297,14 +257,15 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
   return (
     <Spin spinning={loading}>
       {models.length === 0 ? (
-        <Empty description="暂无模型" />
+        <Empty description={intl.formatMessage({ id: 'pages.model.noModels', defaultMessage: 'No models' })} />
       ) : (
         <Table
+          className="styled-pro-table"
           columns={columns}
           dataSource={models}
           rowKey="id"
           pagination={false}
-          size="middle"
+          size="small"
           scroll={{ x: 1200 }}
         />
       )}

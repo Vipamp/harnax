@@ -51,6 +51,7 @@
   /* 边框色 */
   --vip-border: #e8eaf2;
   --vip-border-secondary: #f0f2f8;
+  --vip-border-light: #f5f6fa;
   
   /* 阴影 */
   --vip-shadow-sm: 0 2px 8px rgba(26, 26, 46, 0.08);
@@ -1016,20 +1017,113 @@ html.dark .ant-select {
 
 /* ===== 菜单样式优化 ===== */
 .ant-menu {
+  background: var(--vip-bg-layout) !important;
+  
+  /* 一级菜单项 */
   .ant-menu-item {
     border-radius: var(--vip-radius-md) !important;
     margin: 4px 8px !important;
     width: calc(100% - 16px) !important;
+    color: var(--vip-text-secondary) !important;
     
     &:hover {
       background: var(--vip-primary-lighter) !important;
+      color: var(--vip-text-primary) !important;
     }
     
     &.ant-menu-item-selected {
       background: var(--vip-primary-light) !important;
       color: var(--vip-primary) !important;
       font-weight: 500;
+      
+      &:hover {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary) !important;
+      }
     }
+  }
+  
+  /* 一级菜单分组标题 */
+  .ant-menu-item-group-title {
+    color: var(--vip-text-tertiary) !important;
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+  
+  /* 子菜单标题 */
+  .ant-menu-submenu-title {
+    border-radius: var(--vip-radius-md) !important;
+    margin: 4px 8px !important;
+    width: calc(100% - 16px) !important;
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-lighter) !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    .ant-menu-submenu-arrow {
+      color: var(--vip-text-secondary) !important;
+    }
+  }
+  
+  /* 子菜单容器 */
+  .ant-menu-sub {
+    background: var(--vip-bg-layout) !important;
+    
+    .ant-menu-item {
+      margin-left: 8px !important;
+      width: calc(100% - 24px) !important;
+    }
+  }
+  
+  /* 垂直菜单 */
+  &.ant-menu-vertical {
+    .ant-menu-submenu-title {
+      margin: 4px 8px !important;
+    }
+    
+    .ant-menu-submenu {
+      .ant-menu-sub {
+        background: transparent !important;
+      }
+    }
+  }
+}
+
+/* 浅色主题菜单适配 */
+html:not(.dark) .ant-menu {
+  background: var(--vip-bg-layout) !important;
+  
+  .ant-menu-item {
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-lighter) !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    &.ant-menu-item-selected {
+      background: var(--vip-primary-light) !important;
+      color: var(--vip-primary) !important;
+    }
+  }
+  
+  .ant-menu-submenu-title {
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-lighter) !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    .ant-menu-submenu-arrow {
+      color: var(--vip-text-secondary) !important;
+    }
+  }
+  
+  .ant-menu-sub {
+    background: var(--vip-bg-layout) !important;
   }
 }
 
@@ -1048,6 +1142,125 @@ html.dark .ant-menu {
     &.ant-menu-item-selected {
       background: var(--vip-primary-light) !important;
       color: var(--vip-primary-hover) !important;
+    }
+  }
+  
+  .ant-menu-submenu-title {
+    color: var(--vip-text-secondary) !important;
+    
+    &:hover {
+      background: var(--vip-primary-lighter) !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    .ant-menu-submenu-arrow {
+      color: var(--vip-text-secondary) !important;
+    }
+  }
+  
+  .ant-menu-sub {
+    background: var(--vip-bg-layout) !important;
+    
+    .ant-menu-item {
+      color: var(--vip-text-secondary) !important;
+      
+      &:hover {
+        background: var(--vip-primary-lighter) !important;
+        color: var(--vip-text-primary) !important;
+      }
+      
+      &.ant-menu-item-selected {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary-hover) !important;
+      }
+    }
+  }
+}
+
+/* ProLayout 侧边栏菜单适配 */
+.ant-pro-sider {
+  .ant-menu {
+    background: var(--vip-bg-layout) !important;
+    
+    .ant-menu-item,
+    .ant-menu-submenu-title {
+      color: var(--vip-text-secondary) !important;
+      
+      &:hover {
+        background: var(--vip-primary-lighter) !important;
+        color: var(--vip-text-primary) !important;
+      }
+      
+      &.ant-menu-item-selected {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary) !important;
+      }
+    }
+    
+    .ant-menu-submenu {
+      &.ant-menu-submenu-open > .ant-menu-submenu-title {
+        color: var(--vip-text-primary) !important;
+        background: var(--vip-primary-lighter) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-text-primary) !important;
+        }
+      }
+    }
+    
+    .ant-menu-sub {
+      background: var(--vip-bg-layout) !important;
+    }
+  }
+}
+
+/* 深色主题 ProLayout 侧边栏菜单适配 */
+html.dark .ant-pro-sider {
+  .ant-menu {
+    background: var(--vip-bg-layout) !important;
+    
+    .ant-menu-item,
+    .ant-menu-submenu-title {
+      color: var(--vip-text-secondary) !important;
+      
+      &:hover {
+        background: var(--vip-primary-lighter) !important;
+        color: var(--vip-text-primary) !important;
+      }
+      
+      &.ant-menu-item-selected {
+        background: var(--vip-primary-light) !important;
+        color: var(--vip-primary-hover) !important;
+      }
+    }
+    
+    .ant-menu-submenu {
+      &.ant-menu-submenu-open > .ant-menu-submenu-title {
+        color: var(--vip-text-primary) !important;
+        background: var(--vip-primary-lighter) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-text-primary) !important;
+        }
+      }
+    }
+    
+    .ant-menu-sub {
+      background: var(--vip-bg-layout) !important;
+      
+      .ant-menu-item {
+        color: var(--vip-text-secondary) !important;
+        
+        &:hover {
+          background: var(--vip-primary-lighter) !important;
+          color: var(--vip-text-primary) !important;
+        }
+        
+        &.ant-menu-item-selected {
+          background: var(--vip-primary-light) !important;
+          color: var(--vip-primary-hover) !important;
+        }
+      }
     }
   }
 }
@@ -1892,5 +2105,342 @@ html.dark {
     background-color: var(--vip-bg-layout) !important;
     border-radius: 6px !important;
     transform: translateX(2px);
+  }
+}
+
+/* ===== 用户管理表格优化 ===== */
+.user-management-table {
+  /* 表格单元格文字缩小 */
+  .ant-table-cell {
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    text-align: center !important;
+  }
+
+  /* 表头样式 */
+  .ant-table-thead > tr > th {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 10px 12px !important;
+    background-color: var(--vip-bg-layout) !important;
+    border-bottom: 1px solid var(--vip-border) !important;
+    text-align: center !important;
+  }
+
+  /* 操作栏左对齐 */
+  td.ant-table-cell:last-child,
+  th.ant-table-cell:last-child {
+    text-align: left !important;
+  }
+
+  /* 表格行高优化 */
+  .ant-table-tbody > tr > td {
+    padding: 8px 12px !important;
+    border-bottom: 1px solid var(--vip-border-light) !important;
+  }
+
+  /* 表格行悬停效果 */
+  .ant-table-tbody > tr:hover > td {
+    background-color: var(--vip-primary-lighter) !important;
+  }
+
+  /* Tag 组件文字大小 */
+  .ant-tag {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    line-height: 18px !important;
+  }
+
+  /* 分页器文字大小 */
+  .ant-pagination {
+    font-size: 12px !important;
+  }
+
+  .ant-pagination-item,
+  .ant-pagination-prev,
+  .ant-pagination-next {
+    font-size: 12px !important;
+  }
+
+  /* 保持操作栏按钮不变 */
+  .ant-space-item {
+    button {
+      font-size: inherit !important;
+    }
+  }
+}
+
+/* ===== StatusSwitch 启停开关全局优化 ===== */
+.ant-switch {
+  /* 去掉外边框 */
+  border: none !important;
+  
+  /* 开关内部文字调小 */
+  .ant-switch-inner {
+    font-size: 10px !important;
+  }
+}
+
+/* 确保所有StatusSwitch组件都应用样式 */
+.ant-switch-checked .ant-switch-inner,
+.ant-switch .ant-switch-inner {
+  font-size: 10px !important;
+}
+
+/* ===== StyledProTable 统一表格样式 ===== */
+.styled-pro-table {
+  /* 表格容器 */
+  .ant-table {
+    border: 1px solid var(--vip-border) !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
+    background: var(--vip-bg-container, #ffffff) !important;
+  }
+
+  /* 表格内容区域 */
+  .ant-table-tbody {
+    font-size: 12px !important;
+    
+    > tr > td {
+      font-size: 12px !important;
+      line-height: 1.5 !important;
+      padding: 8px 12px !important;
+      text-align: center !important;
+      border-bottom: 1px solid var(--vip-border, #e8e8e8) !important;
+      background: var(--vip-bg-container, #ffffff) !important;
+    }
+
+    > tr:last-child > td {
+      border-bottom: none !important;
+    }
+  }
+
+  /* 表格单元格 */
+  .ant-table-cell {
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    text-align: center !important;
+  }
+
+  /* 表头样式 */
+  .ant-table-thead > tr > th {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 10px 12px !important;
+    background: var(--vip-bg-layout, #fafafa) !important;
+    border-bottom: 1px solid var(--vip-border) !important;
+    text-align: center !important;
+    color: var(--vip-text-primary, #1f1f1f) !important;
+    
+    &::before {
+      display: none !important;
+    }
+  }
+
+  /* 操作栏左对齐（最后一列）*/
+  td.ant-table-cell:last-child,
+  th.ant-table-cell:last-child {
+    text-align: left !important;
+  }
+
+  /* 表格行悬停效果 */
+  .ant-table-tbody > tr {
+    &:hover > td {
+      background: var(--vip-bg-hover, #f5f5f5) !important;
+    }
+  }
+
+  /* Tag 组件文字大小 */
+  .ant-tag {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+    line-height: 18px !important;
+  }
+
+  /* 确保表格内所有文本元素统一 */
+  .ant-table-tbody {
+    span,
+    div,
+    p,
+    a {
+      font-size: 12px !important;
+    }
+  }
+
+  /* 分页器文字大小 */
+  .ant-pagination {
+    font-size: 12px !important;
+  }
+
+  .ant-pagination-item,
+  .ant-pagination-prev,
+  .ant-pagination-next {
+    font-size: 12px !important;
+  }
+
+  /* 保持操作栏按钮不变 */
+  .ant-space-item {
+    button {
+      font-size: inherit !important;
+    }
+  }
+}
+
+/* ===== SearchFilterBar 筛选框全局优化 ===== */
+/* 筛选下拉框选项字体调小 */
+.ant-select-dropdown {
+  font-size: 12px !important;
+  
+  .ant-select-item {
+    font-size: 12px !important;
+    padding: 4px 12px !important;
+  }
+  
+  .ant-select-item-option-content {
+    font-size: 12px !important;
+  }
+}
+
+/* 筛选框输入框字体 */
+.ant-select {
+  font-size: 12px !important;
+  
+  .ant-select-selection-item,
+  .ant-select-selection-placeholder {
+    font-size: 12px !important;
+  }
+}
+
+/* ===== 用户管理弹窗表单样式优化 ===== */
+/* 用户弹窗容器 */
+.ant-modal:has(.ant-pro-form) {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15) !important;
+  
+  .ant-pro-form {
+    font-size: 12px !important;
+  }
+  
+  /* 水平布局表单 */
+  &.ant-modal:has(.ant-pro-form[layout="horizontal"]),
+  .ant-pro-form[layout="horizontal"] {
+    .ant-form-item {
+      display: flex !important;
+      align-items: center !important;
+    }
+  }
+  
+  /* 表单项标签 */
+  .ant-form-item-label {
+    > label {
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      padding-right: 16px !important;
+      color: var(--vip-text-primary) !important;
+    }
+  }
+  
+  /* 表单项控件 */
+  .ant-form-item-control {
+    /* 普通输入框 - 只给外层容器添加样式 */
+    .ant-input {
+      font-size: 13px !important;
+      height: 36px !important;
+      padding: 6px 12px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &:focus {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+      }
+    }
+    
+    /* 密码输入框等带后缀的输入框 */
+    .ant-input-affix-wrapper {
+      font-size: 13px !important;
+      height: 36px !important;
+      padding: 0 12px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &.ant-input-affix-wrapper-focused,
+      &:focus,
+      &:focus-within {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+      }
+      
+      input {
+        height: 34px !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        
+        &:focus {
+          box-shadow: none !important;
+        }
+      }
+    }
+    
+    /* 选择器 */
+    .ant-select {
+      font-size: 13px !important;
+      
+      .ant-select-selector {
+        height: 36px !important;
+        padding: 0 12px !important;
+        border-radius: 6px !important;
+        
+        .ant-select-selection-item,
+        .ant-select-selection-placeholder {
+          line-height: 34px !important;
+          font-size: 13px !important;
+        }
+      }
+    }
+    
+    /* 日期选择器 */
+    .ant-picker {
+      font-size: 13px !important;
+      height: 36px !important;
+      padding: 6px 12px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &:focus,
+      &.ant-picker-focused {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+      }
+    }
+  }
+  
+  /* 表单项整体间距 */
+  .ant-form-item {
+    margin-bottom: 18px !important;
   }
 }

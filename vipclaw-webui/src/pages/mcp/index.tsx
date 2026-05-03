@@ -21,6 +21,10 @@ import { useIntl } from '@umijs/max';
 // @ts-ignore
 import { useModel, history } from '@umijs/max';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import TestButton from '@/components/TestButton';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
 
 // MCP 卡片组件
 const McpCard: React.FC<{
@@ -34,10 +38,78 @@ const McpCard: React.FC<{
   onDelete: (id: number) => void;
   onTest: (id: number, name: string) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission }) => {
+  // 响应式参数
+  screenSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
+}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission, screenSize = 'lg' }) => {
   const intl = useIntl();
   const [isHovered, setIsHovered] = useState(false);
   const endpoint = item.type === 'stdio' ? item.command : item.url;
+
+  // 响应式配置
+  const responsiveConfig = {
+    xs: { 
+      padding: '14px', 
+      iconSize: 40, 
+      titleSize: 'clamp(13px, 3vw, 14px)', 
+      descSize: 'clamp(11px, 2.5vw, 12px)', 
+      tagSize: 'clamp(10px, 2vw, 11px)', 
+      infoSize: 'clamp(10px, 2vw, 11px)',
+      codeSize: 'clamp(10px, 2.2vw, 11px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+    sm: { 
+      padding: '16px', 
+      iconSize: 44, 
+      titleSize: 'clamp(13px, 2.5vw, 14px)', 
+      descSize: 'clamp(11px, 2vw, 12px)', 
+      tagSize: 'clamp(10px, 1.8vw, 11px)', 
+      infoSize: 'clamp(10px, 1.8vw, 11px)',
+      codeSize: 'clamp(10px, 2vw, 11px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+    md: { 
+      padding: '18px', 
+      iconSize: 48, 
+      titleSize: 'clamp(14px, 2vw, 15px)', 
+      descSize: 'clamp(11px, 1.8vw, 12px)', 
+      tagSize: 'clamp(10px, 1.6vw, 11px)', 
+      infoSize: 'clamp(11px, 1.6vw, 12px)',
+      codeSize: 'clamp(11px, 1.8vw, 12px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+    lg: { 
+      padding: '20px', 
+      iconSize: 52, 
+      titleSize: 'clamp(14px, 1.8vw, 15px)', 
+      descSize: 'clamp(11px, 1.6vw, 12px)', 
+      tagSize: 'clamp(10px, 1.4vw, 11px)', 
+      infoSize: 'clamp(11px, 1.4vw, 12px)',
+      codeSize: 'clamp(11px, 1.6vw, 12px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+    xl: { 
+      padding: '20px', 
+      iconSize: 52, 
+      titleSize: 'clamp(14px, 1.5vw, 15px)', 
+      descSize: 'clamp(11px, 1.3vw, 12px)', 
+      tagSize: 'clamp(10px, 1.2vw, 11px)', 
+      infoSize: 'clamp(11px, 1.2vw, 12px)',
+      codeSize: 'clamp(11px, 1.3vw, 12px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+    xxl: { 
+      padding: '22px', 
+      iconSize: 56, 
+      titleSize: 'clamp(15px, 1.2vw, 16px)', 
+      descSize: 'clamp(12px, 1vw, 13px)', 
+      tagSize: 'clamp(11px, 0.9vw, 12px)', 
+      infoSize: 'clamp(11px, 0.9vw, 12px)',
+      codeSize: 'clamp(11px, 1vw, 12px)',
+      minHeight: 'calc(100% * 1.4)',
+    },
+  };
+
+  const responsiveCfg = responsiveConfig[screenSize];
 
   // 点击卡片跳转到详情页
   const handleCardClick = () => {
@@ -58,8 +130,12 @@ const McpCard: React.FC<{
         transform: isHovered ? 'translateY(-6px)' : 'translateY(0)',
         animation: `vipSlideUp 0.5s ease-out ${index * 80}ms both`,
         cursor: 'pointer',
+        width: '100%',
+        height: '260px',
+        display: 'flex',
+        flexDirection: 'column',
       }}
-      styles={{ body: { padding: 0 } }}
+      styles={{ body: { padding: 0, flex: 1, display: 'flex', flexDirection: 'column' } }}
       onClick={handleCardClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -74,13 +150,13 @@ const McpCard: React.FC<{
         }}
       />
 
-      <div style={{ padding: '20px' }}>
+      <div style={{ padding: responsiveCfg.padding, flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* 头部：图标 + 名称 + 类型标签 */}
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: responsiveCfg.iconSize,
+              height: responsiveCfg.iconSize,
               borderRadius: '14px',
               background: isHovered 
                 ? config.bg 
@@ -88,7 +164,7 @@ const McpCard: React.FC<{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '24px',
+              fontSize: responsiveCfg.iconSize * 0.46,
               color: isHovered ? '#fff' : config.color,
               flexShrink: 0,
               transition: 'all 0.3s ease',
@@ -99,7 +175,7 @@ const McpCard: React.FC<{
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Text strong style={{ fontSize: '14px', color: 'var(--vip-text-primary)' }}>
+              <Text strong style={{ fontSize: responsiveCfg.titleSize, color: 'var(--vip-text-primary)' }}>
                 {item.name}
               </Text>
             </div>
@@ -109,7 +185,7 @@ const McpCard: React.FC<{
                 color: isHovered ? '#fff' : config.color,
                 border: 'none',
                 borderRadius: '6px',
-                fontSize: '11px',
+                fontSize: responsiveCfg.tagSize,
                 fontWeight: 600,
                 padding: '2px 10px',
                 transition: 'all 0.3s ease',
@@ -137,7 +213,7 @@ const McpCard: React.FC<{
         {/* 描述 */}
         <Paragraph
           ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: '12px', minHeight: 40, lineHeight: 1.6 }}
+          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: responsiveCfg.descSize, minHeight: '40px', lineHeight: 1.6, flex: '0 0 auto' }}
         >
           {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
         </Paragraph>
@@ -151,12 +227,13 @@ const McpCard: React.FC<{
             marginBottom: 16,
             border: '1px solid var(--vip-border)',
             transition: 'all 0.3s ease',
+            flex: '0 0 auto',
           }}
         >
           <Text
             code
             style={{
-              fontSize: '12px',
+              fontSize: responsiveCfg.codeSize,
               color: 'var(--vip-text-secondary)',
               display: 'block',
               overflow: 'hidden',
@@ -172,55 +249,22 @@ const McpCard: React.FC<{
         </div>
 
         {/* 是否公开、创建时间、创建人和操作按钮 */}
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
+        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
           {item.isPublic === 1 && (
             <Tag color="blue">{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
           )}
-          <Text type="secondary" style={{ fontSize: '12px' }}>
+          <Text type="secondary" style={{ fontSize: responsiveCfg.infoSize }}>
             {item.createTime?.replace('T', ' ')}
           </Text>
           {item.creator && (
-            <Text type="secondary" style={{ fontSize: '11px' }}>{item.creator}</Text>
+            <Text type="secondary" style={{ fontSize: responsiveCfg.infoSize }}>{item.creator}</Text>
           )}
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
             <Space size={8}>
-              <Tooltip title={intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ThunderboltOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTest(item.id!, item.name);
-                  }}
-                  style={{ color: 'var(--vip-warning)' }}
-                />
-              </Tooltip>
-              <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EditOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(item);
-                  }}
-                  style={{ color: 'var(--vip-primary)' }}
-                />
-              </Tooltip>
-              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(item.id!);
-                  }}
-                />
-              </Tooltip>
+              <TestButton onClick={() => onTest(item.id!, item.name)} />
+              <EditButton onClick={() => onEdit(item)} />
+              <DeleteButton onConfirm={() => onDelete(item.id!)} />
             </Space>
           )}
         </div>
@@ -278,9 +322,34 @@ const McpManagement: React.FC = () => {
   const [testModalVisible, setTestModalVisible] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [testLoading, setTestLoading] = useState<boolean>(false);
+  const [screenSize, setScreenSize] = useState<'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl'>('lg');
 
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
+
+  // 响应式屏幕尺寸检测
+  useEffect(() => {
+    const updateScreenSize = () => {
+      const width = window.innerWidth;
+      if (width < 576) {
+        setScreenSize('xs');
+      } else if (width < 768) {
+        setScreenSize('sm');
+      } else if (width < 992) {
+        setScreenSize('md');
+      } else if (width < 1200) {
+        setScreenSize('lg');
+      } else if (width < 1600) {
+        setScreenSize('xl');
+      } else {
+        setScreenSize('xxl');
+      }
+    };
+
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+    return () => window.removeEventListener('resize', updateScreenSize);
+  }, []);
 
   /** 加载数据 */
   const loadData = async (page = pageNum, size = pageSize) => {
@@ -470,57 +539,41 @@ const McpManagement: React.FC = () => {
       </SearchFilterBar>
 
       {/* 卡片列表 */}
-      {data.length > 0 ? (
-        <>
-          <Row gutter={[20, 20]}>
-            {data.map((item, index) => {
-              const config = MCP_TYPE_CONFIG[item.type] || { color: '#999', label: item.type, icon: <ApiOutlined />, bg: '#999' };
-              return (
-                <Col xs={24} sm={12} lg={8} xl={6} key={item.id}>
-                  <McpCard
-                    item={item}
-                    index={index}
-                    config={config}
-                    isAdmin={isAdmin}
-                    currentUser={currentUser}
-                    onToggleStatus={handleToggleStatus}
-                    onEdit={(item) => {
-                      setCurrentRow(item);
-                      setUpdateModalVisible(true);
-                    }}
-                    onDelete={handleRemove}
-                    onTest={handleConnectivityTest}
-                    hasOperationPermission={hasOperationPermission}
-                  />
-                </Col>
-              );
-            })}
-          </Row>
-
-          {/* 分页 */}
-          <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
-            <Pagination
-              current={pageNum}
-              pageSize={pageSize}
-              total={total}
-              showSizeChanger
-              showQuickJumper
-              showTotal={(t) => `共 ${t} 条`}
-              onChange={(page, size) => {
-                setPageNum(page);
-                if (size) setPageSize(size);
+      <ResponsiveCardGrid
+        data={data}
+        cardHeight={260}
+        minAspectRatio={1.4}
+        gutter={[20, 20]}
+        loading={loading}
+        emptyText={
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={intl.formatMessage({ id: 'pages.mcp.noServices', defaultMessage: 'No MCP services' })}
+            style={{ marginTop: 80 }}
+          />
+        }
+        renderCard={(item, index) => {
+          const config = MCP_TYPE_CONFIG[item.type] || { color: '#999', label: item.type, icon: <ApiOutlined />, bg: '#999' };
+          return (
+            <McpCard
+              item={item}
+              index={index}
+              config={config}
+              isAdmin={isAdmin}
+              currentUser={currentUser}
+              onToggleStatus={handleToggleStatus}
+              onEdit={(item) => {
+                setCurrentRow(item);
+                setUpdateModalVisible(true);
               }}
-              style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
+              onDelete={handleRemove}
+              onTest={handleConnectivityTest}
+              hasOperationPermission={hasOperationPermission}
+              screenSize={screenSize}
             />
-          </div>
-        </>
-      ) : (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={intl.formatMessage({ id: 'pages.mcp.noServices', defaultMessage: 'No MCP services' })}
-          style={{ marginTop: 80 }}
-        />
-      )}
+          );
+        }}
+      />
 
       {/* 新建 MCP 弹窗 */}
       <CreateForm

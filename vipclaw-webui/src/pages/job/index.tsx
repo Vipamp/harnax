@@ -1,5 +1,5 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { PageContainer } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { Button, Card, Input, message, Modal, Select, Space, Tag, Tooltip, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
@@ -16,8 +16,6 @@ import JobForm from './components/JobForm';
 import {
   CaretRightOutlined,
   ClockCircleOutlined,
-  DeleteOutlined,
-  EditOutlined,
   HistoryOutlined,
   PauseOutlined,
   PlayCircleOutlined,
@@ -27,6 +25,11 @@ import {
 } from '@ant-design/icons';
 import { history } from '@umijs/max';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import RunButton from '@/components/RunButton';
+import StatusSwitch from '@/components/StatusSwitch';
+import StyledProTable from '@/components/StyledProTable';
 
 const { Text } = Typography;
 
@@ -309,37 +312,49 @@ const JobManagement: React.FC = () => {
 
   const columns: ProColumns<API.JobItem>[] = [
     {
-      title: '任务 ID',
+      title: intl.formatMessage({
+        id: 'pages.common.id',
+        defaultMessage: 'ID',
+      }),
       dataIndex: 'id',
       valueType: 'text',
       hideInForm: true,
       hideInSearch: true,
-      width: 60,
+      width: 70,
       align: 'center',
     },
     {
-      title: '任务名称',
+      title: intl.formatMessage({
+        id: 'pages.job.column.jobName',
+        defaultMessage: 'Task Name',
+      }),
       dataIndex: 'jobName',
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
-      width: 150,
+      width: 180,
       align: 'center',
     },
     {
-      title: '任务组名',
+      title: intl.formatMessage({
+        id: 'pages.job.column.jobGroup',
+        defaultMessage: 'Task Group',
+      }),
       dataIndex: 'jobGroup',
       valueType: 'text',
       hideInSearch: true,
-      width: 120,
+      width: 130,
       align: 'center',
     },
     {
-      title: 'Cron 表达式',
+      title: intl.formatMessage({
+        id: 'pages.job.column.cronExpression',
+        defaultMessage: 'Cron Expression',
+      }),
       dataIndex: 'cronExpression',
       valueType: 'text',
       hideInSearch: true,
-      width: 180,
+      width: 200,
       align: 'center',
       render: (_, record) => (
         <Tooltip title={getNextExecutionHint(record.cronExpression || '')}>
@@ -351,67 +366,63 @@ const JobManagement: React.FC = () => {
       ),
     },
     {
-      title: '执行类',
+      title: intl.formatMessage({
+        id: 'pages.job.column.jobClass',
+        defaultMessage: 'Execution Class',
+      }),
       dataIndex: 'jobClass',
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
-      width: 280,
+      width: 320,
       align: 'center',
     },
     {
-      title: '状态',
-      dataIndex: 'jobStatus',
-      filters: true,
-      onFilter: true,
-      valueEnum: {
-        0: { text: '暂停', status: 'Default' },
-        1: { text: '运行中', status: 'Success' },
-      },
-      render: (_, record) => {
-        return record.jobStatus === 1 ? (
-          <Tag color="default" style={{ backgroundColor: 'var(--vip-success)', color: 'white' }} icon={<PlayCircleOutlined style={{ color: 'white' }} />}>运行中</Tag>
-        ) : (
-          <Tag color="default" style={{ backgroundColor: 'var(--vip-warning)', color: 'white' }} icon={<PauseOutlined style={{ color: 'white' }} />}>暂停</Tag>
-        );
-      },
-      width: 80,
-      align: 'center',
-    },
-    {
-      title: '并发',
+      title: intl.formatMessage({
+        id: 'pages.job.column.concurrent',
+        defaultMessage: 'Concurrent',
+      }),
       dataIndex: 'concurrent',
       hideInSearch: true,
       render: (_, record) => {
         return record.concurrent === 1 ? (
-          <Tag color="default" style={{ backgroundColor: 'var(--vip-success)', color: 'white' }}>允许</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-success)', color: 'white' }}>{intl.formatMessage({ id: 'pages.job.concurrent.allow', defaultMessage: 'Allow' })}</Tag>
         ) : (
-          <Tag color="default" style={{ backgroundColor: 'var(--vip-warning)', color: 'white' }}>禁止</Tag>
+          <Tag color="default" style={{ backgroundColor: 'var(--vip-warning)', color: 'white' }}>{intl.formatMessage({ id: 'pages.job.concurrent.deny', defaultMessage: 'Deny' })}</Tag>
         );
       },
-      width: 80,
+      width: 90,
       align: 'center',
     },
     {
-      title: '描述',
+      title: intl.formatMessage({
+        id: 'pages.job.column.description',
+        defaultMessage: 'Description',
+      }),
       dataIndex: 'description',
       valueType: 'text',
       hideInSearch: true,
       ellipsis: true,
-      width: 180,
+      width: 200,
       align: 'center',
     },
     {
-      title: '是否公开',
+      title: intl.formatMessage({
+        id: 'pages.job.column.isPublic',
+        defaultMessage: 'Public',
+      }),
       dataIndex: 'isPublic',
       valueType: 'text',
       hideInSearch: true,
-      width: 100,
+      width: 90,
       align: 'center',
-      render: (_, record) => record.isPublic === 1 ? <Tag color="default" style={{ backgroundColor: 'var(--vip-primary)', color: 'white' }}>公开</Tag> : <Tag>私有</Tag>,
+      render: (_, record) => record.isPublic === 1 ? <Tag color="default" style={{ backgroundColor: 'var(--vip-primary)', color: 'white' }}>{intl.formatMessage({ id: 'pages.job.public', defaultMessage: 'Public' })}</Tag> : <Tag>{intl.formatMessage({ id: 'pages.job.private', defaultMessage: 'Private' })}</Tag>,
     },
     {
-      title: '创建人',
+      title: intl.formatMessage({
+        id: 'pages.job.column.creator',
+        defaultMessage: 'Creator',
+      }),
       dataIndex: 'creator',
       valueType: 'text',
       hideInSearch: true,
@@ -419,71 +430,50 @@ const JobManagement: React.FC = () => {
       align: 'center',
     },
     {
-      title: '创建时间',
+      title: intl.formatMessage({
+        id: 'pages.job.column.createTime',
+        defaultMessage: 'Create Time',
+      }),
       dataIndex: 'createTime',
       valueType: 'dateTime',
       hideInForm: true,
       hideInSearch: true,
       sorter: true,
       defaultSortOrder: 'descend',
-      width: 150,
+      width: 170,
       align: 'center',
     },
     {
-      title: '操作',
+      title: intl.formatMessage({
+        id: 'pages.common.operation',
+        defaultMessage: 'Action',
+      }),
       valueType: 'option',
       key: 'option',
-      width: 200,
+      width: 220,
       fixed: 'right',
       align: 'center',
       render: (text, record) => (
         <Space size={8}>
-          {record.jobStatus === 0 ? (
-            <Tooltip title="启动">
-              <Button
-                type="text"
-                size="small"
-                icon={<CaretRightOutlined style={{ fontSize: 16, color: 'var(--vip-success)' }} />}
-                onClick={() => handleStart(record.id!)}
-              />
-            </Tooltip>
-          ) : (
-            <Tooltip title="暂停">
-              <Button
-                type="text"
-                size="small"
-                icon={<PauseOutlined style={{ fontSize: 16, color: 'var(--vip-warning)' }} />}
-                onClick={() => handlePause(record.id!)}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title="立即执行">
-            <Button
-              type="text"
-              size="small"
-              icon={<PlayCircleOutlined style={{ fontSize: 16, color: 'var(--vip-info)' }} />}
-              onClick={() => handleRunOnce(record.id!)}
-            />
-          </Tooltip>
-          <Tooltip title="编辑">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined style={{ fontSize: 16, color: 'var(--vip-primary)' }} />}
-              onClick={() => {
-                setCurrentRow(record);
-                setUpdateModalVisible(true);
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="删除">
-            <Button
-              type="text"
-              size="small"
-              icon={<DeleteOutlined style={{ fontSize: 16, color: 'var(--vip-danger)' }} />}
-              onClick={() => handleRemove(record.id!)}
-            />
-          </Tooltip>
+          <StatusSwitch 
+            status={record.jobStatus}
+            onChange={(newStatus) => {
+              if (newStatus === 1) {
+                handleStart(record.id!);
+              } else {
+                handlePause(record.id!);
+              }
+            }}
+          />
+          <RunButton onClick={() => handleRunOnce(record.id!)} />
+          <EditButton onClick={() => {
+            setCurrentRow(record);
+            setUpdateModalVisible(true);
+          }} />
+          <DeleteButton 
+            onConfirm={() => handleRemove(record.id!)}
+            confirmTitle={intl.formatMessage({ id: 'pages.job.deleteConfirm', defaultMessage: 'Are you sure to delete this task?' })}
+          />
         </Space>
       ),
     },
@@ -542,7 +532,7 @@ const JobManagement: React.FC = () => {
         />
       </SearchFilterBar>
 
-      <ProTable<API.JobItem>
+      <StyledProTable<API.JobItem>
         headerTitle={undefined}
         rowKey="id"
         loading={tableLoading}
@@ -552,7 +542,10 @@ const JobManagement: React.FC = () => {
           total,
           showSizeChanger: true,
           showQuickJumper: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (t) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: t }
+          ),
           onChange: (page, size) => {
             setPageNum(page);
             if (size) setPageSize(size);

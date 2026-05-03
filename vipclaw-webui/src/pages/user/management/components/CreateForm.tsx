@@ -1,11 +1,12 @@
-import React, { useRef, useMemo } from 'react';
-import { Modal, message } from 'antd';
-import type { ProColumns } from '@ant-design/pro-components';
-import { ProForm, ProFormSelect, ProFormText, ProFormSwitch } from '@ant-design/pro-components';
+import React, { useMemo } from 'react';
+import { message } from 'antd';
+import { UserOutlined } from '@ant-design/icons';
+import { ProForm, ProFormSelect, ProFormText } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import * as CryptoJS from 'crypto-js';
 import { checkUsername, checkPhone, checkEmail } from '@/services/ant-design-pro/user';
 import { isPersonal } from '@/utils/edition';
+import { FormModal } from '@/components/FormModal';
 
 export interface CreateFormProps {
   onCancel: () => void;
@@ -30,33 +31,51 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
   };
 
   return (
-    <Modal
-      destroyOnClose
-      title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({
-            id: 'pages.user.management.add',
-            defaultMessage: '新建用户',
-          })}
-        </span>
-      }
-      width={640}
+    <FormModal
       open={visible}
-      footer={null}
-      onCancel={() => onCancel()}
-      styles={{
-        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
-        header: {
-          background: 'var(--vip-primary-light)',
-          borderBottom: '1px solid var(--vip-border)',
-          padding: '18px 24px',
-        },
+      onCancel={onCancel}
+      size="lg"
+      titleConfig={{
+        mainTitle: intl.formatMessage({
+          id: 'pages.user.management.add',
+          defaultMessage: '新建用户',
+        }),
+        subtitle: intl.formatMessage({
+          id: 'pages.user.management.add.subtitle',
+          defaultMessage: '填写用户基本信息，创建系统账号',
+        }),
+        icon: <UserOutlined />,
       }}
     >
       <ProForm<API.SysUserCreateRequest>
         onFinish={handleFinish}
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         submitter={{
-          render: (_, dom) => [dom],
+          render: (_, dom) => (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '10px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--vip-border)'
+            }}>
+              {dom.map((item: any) => 
+                React.cloneElement(item, {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    height: '32px',
+                    padding: '4px 20px',
+                    borderRadius: '6px',
+                    ...(item.props.style || {})
+                  }
+                })
+              )}
+            </div>
+          ),
           searchConfig: {
             submitText: intl.formatMessage({
               id: 'pages.user.management.submit',
@@ -302,7 +321,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           })}
         />
       </ProForm>
-    </Modal>
+    </FormModal>
   );
 };
 

@@ -323,7 +323,7 @@ const SkillDetail: React.FC = () => {
                 </ReactMarkdown>
               </div>
             ) : (
-              <Empty description="暂无 SKILL.md 内容" />
+              <Empty description={intl.formatMessage({ id: 'pages.skill.detail.noContent', defaultMessage: 'No SKILL.md content' })} />
             )}
           </Card>
         </div>
@@ -361,7 +361,7 @@ const SkillDetail: React.FC = () => {
               <FolderOpenOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
               <Text strong style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.skill.detail.resources', defaultMessage: 'Resources' })}</Text>
               <Tag color="purple" style={{ marginLeft: '8px', borderRadius: '4px' }}>
-                {Object.keys(fileContents).length} 个文件
+                {intl.formatMessage({ id: 'pages.skill.detail.fileCount', defaultMessage: '{count} files' }, { count: Object.keys(fileContents).length })}
               </Tag>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

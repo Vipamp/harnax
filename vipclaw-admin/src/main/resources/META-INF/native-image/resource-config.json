@@ -1,0 +1,17 @@
+{
+  "resources": [
+    {
+      "pattern": "application.*\\.yml"
+    },
+    {
+      "pattern": "edition\\.properties"
+    },
+    {
+      "pattern": "META-INF/native-image/.*"
+    },
+    {
+      "pattern": "mapper/.*\\.xml"
+    }
+  ],
+  "bundles": []
+}

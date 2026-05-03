@@ -1,11 +1,10 @@
 import React from 'react';
 import { useIntl } from '@umijs/max';
-import { Modal, Form, Input, Select, Switch, Typography } from 'antd';
+import { Form, Input, Select, Switch, Button, message } from 'antd';
 import { createModelProvider, updateModelProvider } from '@/services/ant-design-pro/modelProvider';
-import { message } from 'antd';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
-
-const { Text } = Typography;
+import { ApartmentOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 
 interface ProviderFormProps {
   visible: boolean;
@@ -65,7 +64,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       setLoading(true);
 
       if (values) {
-        // 更新
         const response = await updateModelProvider(values.id, {
           type: formValues.type,
           name: formValues.name,
@@ -82,7 +80,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           message.error(errorMsg);
         }
       } else {
-        // 创建
         const response = await createModelProvider({
           type: formValues.type,
           name: formValues.name,
@@ -107,17 +104,50 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
     }
   };
 
+  const handleReset = () => {
+    if (values) {
+      form.setFieldsValue({
+        type: values.type,
+        name: values.name,
+        apiKey: '',
+        baseUrl: values.baseUrl,
+        isPublic: values.isPublic === 1,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({
+        isPublic: true,
+      });
+    }
+  };
+
   return (
-    <Modal
-      title={values ? intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' }) + intl.formatMessage({ id: 'pages.model.provider', defaultMessage: 'Provider' }) : intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' }) + intl.formatMessage({ id: 'pages.model.provider', defaultMessage: 'Provider' })}
+    <FormModal
       open={visible}
       onCancel={onCancel}
-      onOk={handleSubmit}
-      confirmLoading={loading}
-      destroyOnClose
-      width={500}
+      size="md"
+      titleConfig={{
+        mainTitle: isCreate
+          ? intl.formatMessage({ id: 'pages.model.provider.create', defaultMessage: 'Create Provider' })
+          : intl.formatMessage({ id: 'pages.model.provider.edit', defaultMessage: 'Edit Provider' }),
+        subtitle: isCreate
+          ? intl.formatMessage({ id: 'pages.model.provider.create.subtitle', defaultMessage: 'Configure model provider connection and API settings' })
+          : intl.formatMessage({ id: 'pages.model.provider.edit.subtitle', defaultMessage: 'Modify provider configuration, changes take effect immediately' }),
+        icon: <ApartmentOutlined />,
+        iconGradient: isCreate
+          ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)'
+          : 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: isCreate
+          ? 'rgba(79, 110, 247, 0.25)'
+          : 'rgba(250, 173, 20, 0.25)',
+      }}
     >
-      <Form form={form} layout="vertical">
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+      >
         <Form.Item
           name="type"
           label={intl.formatMessage({ id: 'pages.model.providerType', defaultMessage: 'Provider Type' })}
@@ -138,7 +168,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
+          <Input placeholder={intl.formatMessage({ id: 'pages.model.provider.name.placeholder', defaultMessage: 'Please enter provider name' })} />
         </Form.Item>
 
         <Form.Item
@@ -146,7 +176,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.model.apiKey', defaultMessage: 'API Key' })}
           extra={values ? intl.formatMessage({ id: 'pages.model.apiKeyHint', defaultMessage: 'Leave blank to keep unchanged' }) : ''}
         >
-          <Input.Password placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + ' API Key'} />
+          <Input.Password placeholder={intl.formatMessage({ id: 'pages.model.apiKey.placeholder', defaultMessage: 'Please enter API Key' })} />
         </Form.Item>
 
         <Form.Item
@@ -160,7 +190,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
             }
           ]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'https://dashscope.aliyuncs.com/compatible-mode/v1'} />
+          <Input placeholder={intl.formatMessage({ id: 'pages.model.apiUrl.placeholder', defaultMessage: 'e.g.: https://dashscope.aliyuncs.com/compatible-mode/v1' })} />
         </Form.Item>
 
         <Form.Item
@@ -175,13 +205,52 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           }
         >
           <Switch
-            checkedChildren={intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}
-            unCheckedChildren={intl.formatMessage({ id: 'pages.model.private', defaultMessage: 'Private' })}
+            checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
             disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)}
           />
         </Form.Item>
+
+        {/* 按钮区域 */}
+        <Form.Item wrapperCol={{ offset: 6, span: 18 }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '12px',
+            marginTop: '24px',
+            paddingTop: '20px',
+            borderTop: '1px solid var(--vip-border)'
+          }}>
+            <Button 
+              onClick={handleReset}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+            </Button>
+            <Button 
+              type="primary" 
+              onClick={handleSubmit}
+              loading={loading}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
+            </Button>
+          </div>
+        </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   );
 };
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, message, Switch } from 'antd';
+import { Button, message, Switch } from 'antd';
 import {
   ProForm,
   ProFormSelect,
@@ -7,9 +7,10 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, EditOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { isPersonal } from '@/utils/edition';
+import { FormModal } from '@/components/FormModal';
 
 export interface UpdateFormProps {
   visible: boolean;
@@ -24,15 +25,19 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [mcpType, setMcpType] = useState<string>(values.type);
   const [testing, setTesting] = useState(false);
   const [isPublic, setIsPublic] = useState(values.isPublic === 1);
+  const [status, setStatus] = useState<number>(values.status || 1);
   const { username, isAdmin } = getCurrentUserInfo();
 
-  // 当外部 values 变化时更新 mcpType 和 isPublic
+  // 当外部 values 变化时更新 mcpType、isPublic 和 status
   useEffect(() => {
     if (values?.type) {
       setMcpType(values.type);
     }
     if (values?.isPublic !== undefined) {
       setIsPublic(values.isPublic === 1);
+    }
+    if (values?.status !== undefined) {
+      setStatus(values.status);
     }
   }, [values]);
 
@@ -65,45 +70,66 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   };
 
   return (
-    <Modal
-      destroyOnClose
-      title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({ id: 'pages.mcp.edit', defaultMessage: 'Edit MCP Service' })}
-        </span>
-      }
-      width={640}
+    <FormModal
       open={visible}
-      footer={null}
       onCancel={onCancel}
-      styles={{
-        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
-        header: {
-          background: 'var(--vip-primary-light)',
-          borderBottom: '1px solid var(--vip-border)',
-          padding: '18px 24px',
-        },
+      size="md"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.mcp.edit', defaultMessage: 'Edit MCP Service' }),
+        subtitle: intl.formatMessage({ id: 'pages.mcp.edit.subtitle', defaultMessage: 'Modify MCP service configuration, changes take effect immediately' }),
+        icon: <EditOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
       }}
     >
       <ProForm<API.McpServerUpdateRequest>
-        onFinish={(formValues) => onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0 })}
+        onFinish={(formValues) => onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0, status })}
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         submitter={{
+          render: (_, dom) => (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '10px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--vip-border)'
+            }}>
+              <Button
+                key="test"
+                icon={<ThunderboltOutlined />}
+                loading={testing}
+                onClick={handleConnectivityTest}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  height: '32px',
+                  padding: '4px 20px',
+                  borderRadius: '6px'
+                }}
+              >
+                {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
+              </Button>
+              {dom.map((item: any) => 
+                React.cloneElement(item, {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    height: '32px',
+                    padding: '4px 20px',
+                    borderRadius: '6px',
+                    ...(item.props.style || {})
+                  }
+                })
+              )}
+            </div>
+          ),
           searchConfig: {
-            submitText: intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }),
+            submitText: intl.formatMessage({ id: 'pages.mcp.submit', defaultMessage: 'Submit' }),
             resetText: intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' }),
           },
-          render: (props, dom) => [
-            <Button
-              key="test"
-              icon={<ThunderboltOutlined />}
-              loading={testing}
-              onClick={handleConnectivityTest}
-              style={{ marginRight: 8 }}
-            >
-              {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
-            </Button>,
-            ...dom,
-          ],
         }}
         initialValues={{
           id: values.id,
@@ -112,7 +138,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           type: values.type,
           command: values.command,
           url: values.url,
-          status: values.status,
         }}
       >
         <ProFormText
@@ -123,7 +148,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             { required: true, message: '请输入 MCP 名称' },
             { max: 100, message: '名称不能超过 100 个字符' },
           ]}
-          fieldProps={{ size: 'large' }}
         />
 
         <ProFormTextArea
@@ -139,7 +163,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           options={mcpTypeOptions}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
-            size: 'large',
             onChange: (val: string) => setMcpType(val),
           }}
         />
@@ -150,7 +173,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
             placeholder="如：npx -y @modelcontextprotocol/server-filesystem /tmp"
             rules={[{ required: true, message: 'stdio 类型必须填写执行命令' }]}
-            fieldProps={{ size: 'large' }}
             extra="stdio 类型：填写启动 MCP 进程的命令行，支持参数"
           />
         )}
@@ -164,20 +186,23 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               { required: true, message: `${mcpType === 'sse' ? 'SSE' : 'Streamable HTTP'} 类型必须填写服务地址` },
               { type: 'url', message: '请输入正确的 URL 格式' },
             ]}
-            fieldProps={{ size: 'large' }}
             extra={mcpType === 'sse' ? 'SSE 类型：填写 SSE 事件流端点地址' : 'Streamable HTTP 类型：填写 HTTP 端点地址'}
           />
         )}
 
-        <ProFormSelect
-          name="status"
+        <ProForm.Item
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-          options={[
-            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
-            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-          ]}
-          fieldProps={{ size: 'large' }}
-        />
+        >
+          <Switch
+            checked={status === 1}
+            onChange={(checked) => setStatus(checked ? 1 : 0)}
+            checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+            style={{
+              backgroundColor: status === 1 ? '#4f6ef7' : '#d9d9d9',
+            }}
+          />
+        </ProForm.Item>
 
         <ProForm.Item
           label={intl.formatMessage({ id: 'pages.common.isPublic', defaultMessage: 'Public' })}
@@ -196,7 +221,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           />
         </ProForm.Item>
       </ProForm>
-    </Modal>
+    </FormModal>
   );
 };
 

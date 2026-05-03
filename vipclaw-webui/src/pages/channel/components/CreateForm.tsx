@@ -1,8 +1,11 @@
-import { Modal, Form, Input, Select, message } from 'antd';
+import { Form, Input, Select, message, Typography, Tooltip, Button } from 'antd';
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
+import { LinkOutlined, CopyOutlined, PlusOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 interface CreateFormProps {
   visible: boolean;
@@ -123,16 +126,25 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
   };
 
   return (
-    <Modal
-      title={intl.formatMessage({ id: 'pages.channel.modal.title.create', defaultMessage: 'Create Channel' })}
+    <FormModal
       open={visible}
       onCancel={onCancel}
-      onOk={handleSubmit}
-      confirmLoading={loading}
-      width={600}
-      destroyOnClose
+      size="md"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.channel.modal.title.create', defaultMessage: 'Create Channel' }),
+        subtitle: intl.formatMessage({
+          id: 'pages.channel.modal.title.create.subtitle',
+          defaultMessage: 'Configure channel connection settings',
+        }),
+        icon: <PlusOutlined />,
+      }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+      >
         <Form.Item
           label={intl.formatMessage({ id: 'pages.channel.form.label.name', defaultMessage: 'Channel Name' })}
           name="name"
@@ -154,9 +166,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         </Form.Item>
 
         <Form.Item
-          label="关联智能体"
+          label={intl.formatMessage({ id: 'pages.channel.form.label.agent', defaultMessage: 'Associated Agent' })}
           name="agentId"
-          rules={[{ required: true, message: '请选择关联的智能体' }]}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.agent', defaultMessage: 'Please select associated agent' }) }]}
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.agent', defaultMessage: 'Please select associated agent' })}
@@ -177,8 +189,47 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         >
           <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.description', defaultMessage: 'Please enter channel description' })} />
         </Form.Item>
+
+        {/* 按钮区域 */}
+        <Form.Item wrapperCol={{ span: 24 }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '12px',
+            marginTop: '24px',
+            paddingTop: '20px',
+            borderTop: '1px solid var(--vip-border)'
+          }}>
+            <Button 
+              onClick={() => form.resetFields()}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+            </Button>
+            <Button 
+              type="primary" 
+              onClick={handleSubmit}
+              loading={loading}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
+            </Button>
+          </div>
+        </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   );
 };
 

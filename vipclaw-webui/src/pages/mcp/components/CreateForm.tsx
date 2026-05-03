@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Button, message, Switch } from 'antd';
+import { Button, message, Switch } from 'antd';
 import {
   ProForm,
   ProFormSelect,
@@ -7,9 +7,10 @@ import {
   ProFormTextArea,
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, PlusOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { isPersonal } from '@/utils/edition';
+import { FormModal } from '@/components/FormModal';
 
 export interface CreateFormProps {
   visible: boolean;
@@ -20,12 +21,12 @@ export interface CreateFormProps {
 
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
-  // 个人版默认 stdio,企业版和公网版默认 sse
   const [mcpType, setMcpType] = useState<string>(isPersonal() ? 'stdio' : 'sse');
   const [form] = ProForm.useForm();
   const [testing, setTesting] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
   const [isPublic, setIsPublic] = useState(false);
+  const [status, setStatus] = useState<number>(1);
 
   // MCP 类型选项 - 根据版本动态生成
   const mcpTypeOptions = [
@@ -57,46 +58,65 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   };
 
   return (
-    <Modal
-      destroyOnClose
-      title={
-        <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({ id: 'pages.mcp.create', defaultMessage: 'Create MCP Service' })}
-        </span>
-      }
-      width={640}
+    <FormModal
       open={visible}
-      footer={null}
       onCancel={onCancel}
-      styles={{
-        body: { padding: '24px 28px', background: 'var(--vip-bg-layout)' },
-        header: {
-          background: 'var(--vip-primary-light)',
-          borderBottom: '1px solid var(--vip-border)',
-          padding: '18px 24px',
-        },
+      size="md"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.mcp.create', defaultMessage: 'Create MCP Service' }),
+        subtitle: intl.formatMessage({ id: 'pages.mcp.create.subtitle', defaultMessage: 'Configure MCP service connection and parameters' }),
+        icon: <PlusOutlined />,
       }}
     >
       <ProForm<API.McpServerCreateRequest>
         form={form}
-        onFinish={(values) => onSubmit({ ...values, isPublic: isPublic ? 1 : 0 })}
+        onFinish={(values) => onSubmit({ ...values, isPublic: isPublic ? 1 : 0, status })}
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
         submitter={{
+          render: (_, dom) => (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end', 
+              gap: '10px',
+              marginTop: '12px',
+              paddingTop: '10px',
+              borderTop: '1px solid var(--vip-border)'
+            }}>
+              <Button
+                key="test"
+                icon={<ThunderboltOutlined />}
+                loading={testing}
+                onClick={handleConnectivityTest}
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  height: '32px',
+                  padding: '4px 20px',
+                  borderRadius: '6px'
+                }}
+              >
+                {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
+              </Button>
+              {dom.map((item: any) => 
+                React.cloneElement(item, {
+                  style: {
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    height: '32px',
+                    padding: '4px 20px',
+                    borderRadius: '6px',
+                    ...(item.props.style || {})
+                  }
+                })
+              )}
+            </div>
+          ),
           searchConfig: {
-            submitText: intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' }),
+            submitText: intl.formatMessage({ id: 'pages.mcp.submit', defaultMessage: 'Submit' }),
             resetText: intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' }),
           },
-          render: (props, dom) => [
-            <Button
-              key="test"
-              icon={<ThunderboltOutlined />}
-              loading={testing}
-              onClick={handleConnectivityTest}
-              style={{ marginRight: 8 }}
-            >
-              {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
-            </Button>,
-            ...dom,
-          ],
         }}
       >
         <ProFormText
@@ -107,7 +127,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             { required: true, message: '请输入 MCP 名称' },
             { max: 100, message: '名称不能超过 100 个字符' },
           ]}
-          fieldProps={{ size: 'large' }}
         />
 
         <ProFormTextArea
@@ -124,7 +143,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           initialValue={isPersonal() ? 'stdio' : 'sse'}
           rules={[{ required: true, message: '请选择 MCP 类型' }]}
           fieldProps={{
-            size: 'large',
             defaultValue: isPersonal() ? 'stdio' : 'sse',
             onChange: (val: string) => setMcpType(val),
           }}
@@ -136,7 +154,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
             placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
             rules={[{ required: true, message: 'stdio 类型必须填写执行命令' }]}
-            fieldProps={{ size: 'large' }}
             extra="stdio 类型：填写启动 MCP 进程的命令行，支持参数"
           />
         )}
@@ -150,21 +167,23 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
               { required: true, message: `${mcpType === 'sse' ? 'SSE' : 'Streamable HTTP'} 类型必须填写服务地址` },
               { type: 'url', message: '请输入正确的 URL 格式' },
             ]}
-            fieldProps={{ size: 'large' }}
             extra={mcpType === 'sse' ? 'SSE 类型：填写 SSE 事件流端点地址' : 'Streamable HTTP 类型：填写 HTTP 端点地址'}
           />
         )}
 
-        <ProFormSelect
-          name="status"
+        <ProForm.Item
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-          options={[
-            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
-            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-          ]}
-          initialValue={1}
-          fieldProps={{ size: 'large', defaultValue: 1 }}
-        />
+        >
+          <Switch
+            checked={status === 1}
+            onChange={(checked) => setStatus(checked ? 1 : 0)}
+            checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
+            style={{
+              backgroundColor: status === 1 ? '#4f6ef7' : '#d9d9d9',
+            }}
+          />
+        </ProForm.Item>
 
         <ProForm.Item
           label={intl.formatMessage({ id: 'pages.common.isPublic', defaultMessage: 'Public' })}
@@ -178,7 +197,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           />
         </ProForm.Item>
       </ProForm>
-    </Modal>
+    </FormModal>
   );
 };
 

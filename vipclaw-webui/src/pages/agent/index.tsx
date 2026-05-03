@@ -29,8 +29,6 @@ import {
   toggleAgentStatus,
 } from '@/services/ant-design-pro/agent';
 import {
-  DeleteOutlined,
-  EditOutlined,
   PlusOutlined,
   RobotOutlined,
   SearchOutlined,
@@ -42,6 +40,9 @@ import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
 
 const { Text, Paragraph } = Typography;
 
@@ -221,8 +222,8 @@ const AgentCard: React.FC<{
               <Switch
                 checked={item.status === 1}
                 onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren="启用"
-                unCheckedChildren="禁用"
+                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
+                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                 style={{
                   backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
                 }}
@@ -532,24 +533,8 @@ const AgentCard: React.FC<{
           <div style={{ flex: 1 }} />
           {hasOperationPermission(isAdmin, currentUser, item.creator) && (
             <Space size={8}>
-              <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EditOutlined />}
-                  onClick={() => onEdit(item)}
-                  style={{ color: 'var(--vip-primary)' }}
-                />
-              </Tooltip>
-              <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => onDelete(item.id!)}
-                />
-              </Tooltip>
+              <EditButton onClick={() => onEdit(item)} />
+              <DeleteButton onConfirm={() => onDelete(item.id!)} />
             </Space>
           )}
         </div>
@@ -570,10 +555,35 @@ const AgentManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(12);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
+  const [screenSize, setScreenSize] = useState<'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl'>('lg');
 
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
   const [messageApi, contextHolder] = message.useMessage();
+
+  // 响应式屏幕尺寸检测
+  useEffect(() => {
+    const updateScreenSize = () => {
+      const width = window.innerWidth;
+      if (width < 576) {
+        setScreenSize('xs');
+      } else if (width < 768) {
+        setScreenSize('sm');
+      } else if (width < 992) {
+        setScreenSize('md');
+      } else if (width < 1200) {
+        setScreenSize('lg');
+      } else if (width < 1600) {
+        setScreenSize('xl');
+      } else {
+        setScreenSize('xxl');
+      }
+    };
+
+    updateScreenSize();
+    window.addEventListener('resize', updateScreenSize);
+    return () => window.removeEventListener('resize', updateScreenSize);
+  }, []);
 
   /** 加载数据 */
   const loadData = async (page = pageNum, size = pageSize) => {
@@ -698,94 +708,73 @@ const AgentManagement: React.FC = () => {
       </SearchFilterBar>
 
       {/* 卡片列表 */}
-      {data.length > 0 ? (
-        <>
-          <Row gutter={[16, 16]}>
-            {data.map((item, index) => (
-              <Col xs={24} sm={12} md={12} lg={8} xl={6} xxl={6} key={item.id}>
-                <AgentCard
-                  item={item}
-                  index={index}
-                  isAdmin={isAdmin}
-                  currentUser={currentUser}
-                  onToggleStatus={handleToggleStatus}
-                  onEdit={(item) => {
-                    setCurrentRow(item);
-                    setUpdateModalVisible(true);
-                  }}
-                  onDelete={handleRemove}
-                  hasOperationPermission={hasOperationPermission}
-                  screenSize={typeof window !== 'undefined' && window.innerWidth < 576 ? 'xs' : 
-                              typeof window !== 'undefined' && window.innerWidth < 768 ? 'sm' : 
-                              typeof window !== 'undefined' && window.innerWidth < 992 ? 'md' : 
-                              typeof window !== 'undefined' && window.innerWidth < 1200 ? 'lg' : 
-                              typeof window !== 'undefined' && window.innerWidth < 1600 ? 'xl' : 'xxl'}
-                />
-              </Col>
-            ))}
-          </Row>
-
-          {/* 分页 */}
-          <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center' }}>
-            <Pagination
-              current={pageNum}
-              pageSize={pageSize}
-              total={total}
-              showSizeChanger
-              showQuickJumper
-              showTotal={(t) => `共 ${t} 条`}
-              onChange={(page, size) => {
-                setPageNum(page);
-                if (size) setPageSize(size);
-              }}
-              style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-            />
-          </div>
-        </>
-      ) : (
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          justifyContent: 'center',
-          padding: '80px 20px',
-          background: 'var(--vip-bg-layout)',
-          borderRadius: '20px',
-          border: '2px dashed var(--vip-border)',
-        }}>
-          <div style={{
-            width: 120,
-            height: 120,
-            borderRadius: '50%',
-            background: 'rgba(114, 46, 209, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
+      <ResponsiveCardGrid
+        data={data}
+        cardHeight={260}
+        minAspectRatio={1.4}
+        gutter={[16, 16]}
+        loading={loading}
+        emptyText={
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
             justifyContent: 'center',
-            marginBottom: 24,
+            padding: '80px 20px',
+            background: 'var(--vip-bg-layout)',
+            borderRadius: '20px',
+            border: '2px dashed var(--vip-border)',
           }}>
-            <RobotOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
+            <div style={{
+              width: 120,
+              height: 120,
+              borderRadius: '50%',
+              background: 'rgba(114, 46, 209, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 24,
+            }}>
+              <RobotOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
+            </div>
+            <Text style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)', marginBottom: 8 }}>
+              {intl.formatMessage({ id: 'pages.agent.noAgent', defaultMessage: 'No agents' })}
+            </Text>
+            <Text style={{ fontSize: '14px', color: 'var(--vip-text-tertiary)', marginBottom: 24 }}>
+              {intl.formatMessage({ id: 'pages.agent.createFirst', defaultMessage: 'Create your first agent to start your AI journey' })}
+            </Text>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateModalVisible(true)}
+              style={{ 
+                borderRadius: '10px', 
+                height: '44px',
+                padding: '0 24px',
+                fontWeight: 600,
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
+            </Button>
           </div>
-          <Text style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)', marginBottom: 8 }}>
-            {intl.formatMessage({ id: 'pages.agent.noAgent', defaultMessage: 'No agents' })}
-          </Text>
-          <Text style={{ fontSize: '14px', color: 'var(--vip-text-tertiary)', marginBottom: 24 }}>
-            {intl.formatMessage({ id: 'pages.agent.createFirst', defaultMessage: 'Create your first agent to start your AI journey' })}
-          </Text>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateModalVisible(true)}
-            style={{ 
-              borderRadius: '10px', 
-              height: '44px',
-              padding: '0 24px',
-              fontWeight: 600,
+        }
+        renderCard={(item, index) => (
+          <AgentCard
+            item={item}
+            index={index}
+            isAdmin={isAdmin}
+            currentUser={currentUser}
+            onToggleStatus={handleToggleStatus}
+            onEdit={(item) => {
+              setCurrentRow(item);
+              setUpdateModalVisible(true);
             }}
-          >
-            {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
-          </Button>
-        </div>
-      )}
+            onDelete={handleRemove}
+            hasOperationPermission={hasOperationPermission}
+            screenSize={screenSize}
+          />
+        )}
+      />
 
       {/* 新建智能体弹窗 */}
       <CreateForm

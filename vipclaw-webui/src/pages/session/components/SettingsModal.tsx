@@ -1,4 +1,4 @@
-import { Modal, Form, Input, Button, message, Select, Switch } from 'antd';
+import { Form, Input, Button, message, Select, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getAgentPage } from '@/services/ant-design-pro/agent';
@@ -6,6 +6,8 @@ import { createSession, checkSessionTitle } from '@/services/ant-design-pro/sess
 // @ts-ignore
 import { useModel, useIntl } from '@umijs/max';
 import { debounce } from 'lodash';
+import { BulbOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
 
@@ -85,7 +87,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
         message.success('创建成功');
         form.resetFields();
         onSuccess(res.data || (createData as unknown as API.SessionItem));
-        // 关闭弹窗
         onCancel();
       } else {
         message.error(res.message || '创建失败');
@@ -103,18 +104,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
   };
 
   return (
-    <Modal
-      title={intl.formatMessage({ id: 'pages.session.createSession', defaultMessage: 'Create Session' })}
+    <FormModal
       open={visible}
       onCancel={handleClose}
-      onOk={handleCreateSubmit}
-      confirmLoading={loading}
-      okText={intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
-      cancelText={intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
-      width={600}
-      destroyOnClose
+      size="sm"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.session.createSession', defaultMessage: 'Create Session' }),
+        subtitle: intl.formatMessage({ id: 'pages.session.create.subtitle', defaultMessage: 'Start a new session with agent and description' }),
+        icon: <BulbOutlined />,
+      }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+      <Form form={form} layout="vertical" style={{ marginTop: 12 }}>
         <Form.Item
           label={intl.formatMessage({ id: 'pages.session.sessionName', defaultMessage: 'Session Name' })}
           name="title"
@@ -167,7 +167,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
           />
         </Form.Item>
 
-        {/* 是否公开 */}
         <Form.Item
           label={intl.formatMessage({ id: 'pages.session.isPublic', defaultMessage: 'Is Public' })}
           extra={intl.formatMessage({ id: 'pages.session.publicHint', defaultMessage: 'After making public, other users can also view this session' })}
@@ -179,8 +178,47 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
             unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
           />
         </Form.Item>
+
+        {/* 按钮区域 */}
+        <Form.Item>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '12px',
+            marginTop: '12px',
+            paddingTop: '10px',
+            borderTop: '1px solid var(--vip-border)'
+          }}>
+            <Button 
+              onClick={handleClose}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
+            </Button>
+            <Button 
+              type="primary" 
+              onClick={handleCreateSubmit}
+              loading={loading}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
+            </Button>
+          </div>
+        </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   );
 };
 

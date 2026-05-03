@@ -1,0 +1,334 @@
+/**
+ * FormModal 公共样式
+ * 用于统一所有弹窗表单的样式
+ */
+
+/* ===== 弹窗容器样式 ===== */
+.form-modal {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15) !important;
+  
+  .ant-modal-content {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+  }
+  
+  /* 弹窗头部 */
+  .ant-modal-header {
+    background: transparent !important;
+    border-bottom: 1px solid var(--vip-border) !important;
+    padding: 16px 24px !important;
+    border-radius: 12px 12px 0 0 !important;
+  }
+  
+  /* 弹窗标题 */
+  .ant-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0;
+  }
+  
+  /* 标题容器（自定义类） */
+  .form-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  /* 标题图标容器 */
+  .form-modal-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    
+    .anticon {
+      font-size: 16px;
+      color: #fff;
+    }
+  }
+  
+  /* 标题文本容器 */
+  .form-modal-title-text {
+    .form-modal-title-main {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--vip-text-primary);
+      line-height: 1.4;
+    }
+    
+    .form-modal-title-subtitle {
+      font-size: 11px;
+      color: var(--vip-text-secondary);
+      margin-top: 2px;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+  }
+  
+  /* 弹窗主体 */
+  .ant-modal-body {
+    padding: 20px 24px !important;
+    background: var(--vip-bg-container) !important;
+    border-radius: 0 0 12px 12px !important;
+  }
+  
+  /* 遮罩层 */
+  .ant-modal-mask {
+    backdrop-filter: blur(4px);
+  }
+}
+
+/* ===== ProForm / 原生 Form 表单样式 ===== */
+.form-modal .ant-pro-form,
+.form-modal .ant-form {
+  /* 水平布局 */
+  &[layout="horizontal"] {
+    .ant-form-item {
+      display: flex;
+      align-items: center;
+    }
+  }
+  
+  /* 表单项标签 */
+  .ant-form-item-label {
+    > label {
+      font-size: 12px !important;
+      font-weight: 500 !important;
+      height: 32px !important;
+      line-height: 32px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      padding-right: 12px !important;
+      color: var(--vip-text-primary) !important;
+    }
+  }
+  
+  /* 表单项控件容器 */
+  .ant-form-item-control {
+    /* 控件宽度根据弹窗宽度动态计算：弹窗宽度 - 标签宽度(120px) - 间距(48px) */
+    width: calc(100% - 168px);
+    max-width: 100%;
+    
+    /* 普通输入框 */
+    .ant-input {
+      font-size: 12px !important;
+      height: 32px !important;
+      padding: 4px 10px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      background: var(--vip-bg-container) !important;
+      color: var(--vip-text-primary) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &:focus,
+      &.ant-input-focused {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+      }
+      
+      &::placeholder {
+        color: var(--vip-text-tertiary) !important;
+      }
+    }
+    
+    /* 密码输入框等带后缀的输入框 */
+    .ant-input-affix-wrapper {
+      font-size: 12px !important;
+      height: 32px !important;
+      padding: 0 10px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      background: var(--vip-bg-container) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &.ant-input-affix-wrapper-focused,
+      &:focus,
+      &:focus-within {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+      }
+      
+      input {
+        height: 30px !important;
+        padding: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        color: var(--vip-text-primary) !important;
+        
+        &:focus {
+          box-shadow: none !important;
+        }
+        
+        &::placeholder {
+          color: var(--vip-text-tertiary) !important;
+        }
+      }
+      
+      .ant-input-suffix {
+        color: var(--vip-text-tertiary) !important;
+      }
+    }
+    
+    /* 选择器 */
+    .ant-select {
+      font-size: 12px !important;
+      
+      .ant-select-selector {
+        height: 32px !important;
+        padding: 0 10px !important;
+        border-radius: 6px !important;
+        border: 1px solid var(--vip-border) !important;
+        background: var(--vip-bg-container) !important;
+        transition: all 0.2s ease !important;
+        
+        .ant-select-selection-item,
+        .ant-select-selection-placeholder {
+          line-height: 30px !important;
+          font-size: 12px !important;
+          color: var(--vip-text-primary) !important;
+        }
+      }
+      
+      &:hover .ant-select-selector {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &.ant-select-focused .ant-select-selector,
+      &.ant-select-open .ant-select-selector {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+      }
+      
+      .ant-select-arrow {
+        color: var(--vip-text-secondary) !important;
+      }
+    }
+    
+    /* 日期选择器 */
+    .ant-picker {
+      font-size: 12px !important;
+      height: 32px !important;
+      padding: 4px 10px !important;
+      border-radius: 6px !important;
+      border: 1px solid var(--vip-border) !important;
+      background: var(--vip-bg-container) !important;
+      transition: all 0.2s ease !important;
+      
+      &:hover {
+        border-color: var(--vip-primary) !important;
+      }
+      
+      &:focus,
+      &.ant-picker-focused {
+        border-color: var(--vip-primary) !important;
+        box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+      }
+      
+      input {
+        color: var(--vip-text-primary) !important;
+        
+        &::placeholder {
+          color: var(--vip-text-tertiary) !important;
+        }
+      }
+      
+      .ant-picker-suffix {
+        color: var(--vip-text-tertiary) !important;
+      }
+    }
+    
+    /* 文本域 */
+    .ant-input-textarea {
+      .ant-input {
+        height: auto !important;
+        min-height: 80px !important;
+        padding: 8px 12px !important;
+      }
+    }
+  }
+  
+  /* 表单项整体间距 */
+  .ant-form-item {
+    margin-bottom: 14px !important;
+  }
+}
+
+/* ===== 表单操作按钮区域 ===== */
+.form-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--vip-border);
+  
+  button {
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    height: 32px !important;
+    padding: 4px 20px !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
+  }
+}
+
+/* ===== 深色主题适配 ===== */
+html.dark .form-modal {
+  .form-modal-icon {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+html.dark .form-modal .ant-pro-form,
+html.dark .form-modal .ant-form {
+  .ant-form-item-control {
+    .ant-input {
+      background: var(--vip-bg-container) !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    .ant-input-affix-wrapper {
+      background: var(--vip-bg-container) !important;
+      
+      input {
+        background: transparent !important;
+        color: var(--vip-text-primary) !important;
+      }
+    }
+    
+    .ant-select {
+      .ant-select-selector {
+        background: var(--vip-bg-container) !important;
+        
+        .ant-select-selection-item,
+        .ant-select-selection-placeholder {
+          color: var(--vip-text-primary) !important;
+        }
+      }
+    }
+    
+    .ant-picker {
+      background: var(--vip-bg-container) !important;
+      
+      input {
+        color: var(--vip-text-primary) !important;
+      }
+    }
+  }
+}

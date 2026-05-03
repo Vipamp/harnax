@@ -2,24 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import {
-  Button,
-  Card,
-  Col,
-  Empty,
-  Input,
   message,
   Modal,
-  Pagination,
-  Row,
-  Select,
   Space,
-  Switch,
-  Table,
   Tag,
-  Tooltip,
   Typography,
-  Badge,
-  Popover,
 } from 'antd';
 import {
   createChannel,
@@ -30,18 +17,17 @@ import {
   getAgentList,
 } from '@/services/ant-design-pro/channel';
 import {
-  DeleteOutlined,
-  EditOutlined,
   PlusOutlined,
   ApiOutlined,
-  SearchOutlined,
-  CopyOutlined,
-  LinkOutlined,
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import StatusSwitch from '@/components/StatusSwitch';
+import StyledProTable from '@/components/StyledProTable';
 
 const { Text, Paragraph } = Typography;
 
@@ -174,23 +160,26 @@ const ChannelManagement: React.FC = () => {
   // 表格列定义
   const columns = [
     {
-      title: intl.formatMessage({ id: 'pages.channel.table.id', defaultMessage: 'ID' }),
+      title: intl.formatMessage({ id: 'pages.common.id', defaultMessage: 'ID' }),
       dataIndex: 'id',
       key: 'id',
-      width: 60,
+      width: 70,
+      align: 'center' as const,
     },
     {
       title: intl.formatMessage({ id: 'pages.channel.table.name', defaultMessage: 'Channel Name' }),
       dataIndex: 'name',
       key: 'name',
-      width: 150,
+      width: 180,
+      align: 'center' as const,
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
       title: intl.formatMessage({ id: 'pages.channel.table.type', defaultMessage: 'Type' }),
       dataIndex: 'type',
       key: 'type',
-      width: 100,
+      width: 120,
+      align: 'center' as const,
       render: (type: string) => (
         <Tag color={getTypeColor(type)}>
           {CHANNEL_TYPES.find(t => t.value === type)?.label || type}
@@ -202,19 +191,21 @@ const ChannelManagement: React.FC = () => {
       dataIndex: 'agentName',
       key: 'agentName',
       width: 150,
+      align: 'center' as const,
       render: (text: string) => text || '-',
     },
     {
       title: intl.formatMessage({ id: 'pages.channel.table.callbackUrl', defaultMessage: 'Callback URL' }),
       dataIndex: 'callbackUrl',
       key: 'callbackUrl',
-      width: 250,
+      width: 280,
+      align: 'center' as const,
       render: (url: string, record: API.ChannelItem) => (
         url ? (
           <Space>
             <Paragraph 
               copyable={{ text: url }} 
-              style={{ margin: 0, maxWidth: 200 }}
+              style={{ margin: 0, maxWidth: 240 }}
               ellipsis
             >
               {url}
@@ -224,56 +215,38 @@ const ChannelManagement: React.FC = () => {
       ),
     },
     {
-      title: intl.formatMessage({ id: 'pages.channel.table.status', defaultMessage: 'Status' }),
-      dataIndex: 'status',
-      key: 'status',
-      width: 100,
-      render: (status: number, record: API.ChannelItem) => (
-        <Switch
-          checked={status === 1}
-          onChange={(checked) => handleToggleStatus(record.id!, checked ? 1 : 0)}
-          checkedChildren={intl.formatMessage({ id: 'pages.channel.status.enabled', defaultMessage: 'Enabled' })}
-          unCheckedChildren={intl.formatMessage({ id: 'pages.channel.status.disabled', defaultMessage: 'Disabled' })}
-          style={{ backgroundColor: status === 1 ? '#4f6ef7' : '#d9d9d9' }}
-        />
-      ),
-    },
-    {
       title: intl.formatMessage({ id: 'pages.channel.table.createTime', defaultMessage: 'Creation Time' }),
       dataIndex: 'createTime',
       key: 'createTime',
-      width: 180,
+      width: 170,
+      align: 'center' as const,
       render: (text: string) => text?.replace('T', ' ') || '-',
     },
     {
-      title: intl.formatMessage({ id: 'pages.channel.table.action', defaultMessage: 'Action' }),
+      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Action' }),
       key: 'action',
-      width: 120,
-      render: (_: any, record: API.ChannelItem) => (
-        <Space size={4}>
-          <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.edit', defaultMessage: 'Edit' })}>
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => {
-                setCurrentRow(record);
-                setUpdateModalVisible(true);
-              }}
-              style={{ color: '#4f6ef7' }}
+      width: 200,
+      align: 'center' as const,
+      render: (_: any, record: API.ChannelItem) => {
+        const canOperate = hasOperationPermission(isAdmin, currentUser, record.creator);
+        return canOperate ? (
+          <Space size={8}>
+            <StatusSwitch
+              status={record.status}
+              onChange={(newStatus) => handleToggleStatus(record.id!, newStatus)}
+              disabled={!canOperate}
             />
-          </Tooltip>
-          <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.delete', defaultMessage: 'Delete' })}>
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => handleRemove(record.id!)}
+            <EditButton onClick={() => {
+              setCurrentRow(record);
+              setUpdateModalVisible(true);
+            }} />
+            <DeleteButton 
+              onConfirm={() => handleRemove(record.id!)}
+              confirmTitle={intl.formatMessage({ id: 'pages.channel.deleteConfirm', defaultMessage: 'Are you sure to delete this channel?' })}
             />
-          </Tooltip>
-        </Space>
-      ),
+          </Space>
+        ) : null;
+      },
     },
   ];
 
@@ -333,39 +306,31 @@ const ChannelManagement: React.FC = () => {
       </SearchFilterBar>
 
       {/* 数据表格 */}
-      <Card
-        style={{
-          borderRadius: '16px',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-          border: '1px solid var(--vip-border)',
+      <StyledProTable<API.ChannelItem>
+        headerTitle={undefined}
+        rowKey="id"
+        loading={loading}
+        pagination={{
+          current: pageNum,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (t) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: t }
+          ),
+          onChange: (page, size) => {
+            setPageNum(page);
+            if (size) setPageSize(size);
+          },
         }}
-      >
-        <Table
-          columns={columns}
-          dataSource={data}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-          scroll={{ x: 1200 }}
-        />
-
-        {/* 分页 */}
-        <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-          <Pagination
-            current={pageNum}
-            pageSize={pageSize}
-            total={total}
-            showSizeChanger
-            showQuickJumper
-            showTotal={(t) => intl.formatMessage({ id: 'pages.channel.pagination.total', defaultMessage: `Total ${t} items` })}
-            onChange={(page, size) => {
-              setPageNum(page);
-              if (size) setPageSize(size);
-            }}
-            style={{ padding: '12px 24px', background: 'var(--vip-bg-container)', borderRadius: '10px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}
-          />
-        </div>
-      </Card>
+        dataSource={data}
+        search={false}
+        toolBarRender={false}
+        columns={columns}
+        scroll={{ x: 1200 }}
+      />
 
       {/* 新建 Channel 弹窗 */}
       <CreateForm

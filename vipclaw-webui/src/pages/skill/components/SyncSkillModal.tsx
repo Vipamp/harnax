@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Modal, Table, Tag, Button, message, Checkbox } from 'antd';
+import { Table, Tag, Button, message, Checkbox } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { batchSaveSkills } from '@/services/ant-design-pro/skill';
 import { useIntl } from '@umijs/max';
+import { SyncOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 
 interface SyncSkillModalProps {
   visible: boolean;
@@ -71,7 +73,6 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
   
     setSaving(true);
     try {
-      // 只传递技能名称列表
       const skillNames = selectedSkillsList.map((skill) => skill.name!);
       await batchSaveSkills(repositoryId, skillNames);
       message.success(intl.formatMessage({ id: 'pages.skill.sync.success', defaultMessage: 'Sync successful, saved {count} skills' }, { count: selectedSkillsList.length }));
@@ -131,18 +132,18 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
   ];
 
   return (
-    <Modal
-      title={
-        <span>
-          {intl.formatMessage({ id: "pages.skill.sync.title", defaultMessage: "Sync Skills to Repository" })}:<Tag color="blue">{repositoryName}</Tag>
-        </span>
-      }
+    <FormModal
       open={visible}
       onCancel={onCancel}
-      width={900}
+      size="xl"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: "pages.skill.sync.title", defaultMessage: "Sync Skills to Repository" }),
+        subtitle: intl.formatMessage({ id: "pages.skill.sync.subtitle", defaultMessage: "Select skills to sync to repository {name}" }, { name: repositoryName }),
+        icon: <SyncOutlined />,
+      }}
       footer={[
         <div key="select-info" style={{ flex: 1 }}>
-          <span style={{ color: '#666' }}>
+          <span>
             {intl.formatMessage({ id: 'pages.skill.sync.selectedCount', defaultMessage: 'Selected' })}{' '}
             <span style={{ fontWeight: 'bold', color: '#1890ff' }}>
               {getSelectedSkills().length}
@@ -166,11 +167,12 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       ]}
     >
       <div style={{ marginBottom: 16 }}>
-        <span style={{ color: '#666' }}>
+        <span>
           {intl.formatMessage({ id: "pages.skill.sync.description", defaultMessage: "The following skills will be synchronized to the repository. Duplicate skills will be overwritten. Please select the skills you want to sync." })}
         </span>
       </div>
       <Table
+        className="styled-pro-table"
         columns={columns}
         dataSource={selectedSkills}
         loading={loading}
@@ -179,7 +181,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
         size="small"
         scroll={{ y: 400 }}
       />
-    </Modal>
+    </FormModal>
   );
 };
 

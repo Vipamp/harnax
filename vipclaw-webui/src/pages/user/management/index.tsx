@@ -1,14 +1,18 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { PageContainer } from '@ant-design/pro-components';
 import { useIntl, useRequest } from '@umijs/max';
 import { Button, message, Modal, Space, Tag, Tooltip, Typography } from 'antd';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { deleteUser, getUserPage, updateUser as updateUserApi, createUser } from '@/services/ant-design-pro/user';
+import { deleteUser, getUserPage, updateUser as updateUserApi, createUser, toggleUserStatus } from '@/services/ant-design-pro/user';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import UserTenantList from './components/UserTenantList';
-import { DeleteOutlined, EditOutlined, PlusOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import StatusSwitch from '@/components/StatusSwitch';
+import StyledProTable from '@/components/StyledProTable';
 
 const { Text } = Typography;
 
@@ -64,6 +68,40 @@ const UserManagement: React.FC = () => {
   const handleSearch = () => {
     setPageNum(1);
     loadData(1);
+  };
+
+  /** 切换用户状态 */
+  const handleToggle = async (userId: number, status: number) => {
+    const hide = message.loading(intl.formatMessage({
+      id: 'pages.message.updating',
+      defaultMessage: 'Updating...',
+    }));
+    try {
+      const response = await toggleUserStatus(userId, status);
+      hide();
+      if (response.code === 200) {
+        messageApi.success(
+          intl.formatMessage({
+            id: 'pages.user.management.updateSuccess',
+            defaultMessage: '更新成功',
+          }),
+        );
+        loadData();
+      } else {
+        const errorMsg = response.message || intl.formatMessage({
+          id: 'pages.user.management.updateFailed',
+          defaultMessage: '更新失败，请重试',
+        });
+        messageApi.error(errorMsg);
+      }
+    } catch (error: any) {
+      hide();
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({
+        id: 'pages.user.management.updateFailed',
+        defaultMessage: '更新失败，请重试',
+      });
+      messageApi.error(errorMsg);
+    }
   };
 
   /** 删除节点 */
@@ -133,8 +171,8 @@ const UserManagement: React.FC = () => {
   const columns: ProColumns<API.UserItem>[] = [
     {
       title: intl.formatMessage({
-        id: 'pages.user.management.userId',
-        defaultMessage: '用户 ID',
+        id: 'pages.common.id',
+        defaultMessage: 'ID',
       }),
      dataIndex: 'id',
       valueType: 'text',
@@ -201,26 +239,6 @@ const UserManagement: React.FC = () => {
     },
     {
       title: intl.formatMessage({
-        id: 'pages.user.management.status',
-        defaultMessage: '状态',
-      }),
-     dataIndex: 'status',
-      filters: true,
-     onFilter: true,
-      valueEnum: {
-        0: { text: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), status: 'Error' },
-        1: { text: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), status: 'Success' },
-      },
-     render: (_, record) => {
-       return (
-          <Tag color={record.status === 1 ? 'success' : 'error'}>
-            {record.status === 1 ? intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' })}
-          </Tag>
-        );
-      },
-    },
-    {
-      title: intl.formatMessage({
         id: 'pages.user.management.isAdmin',
         defaultMessage: '管理员',
       }),
@@ -247,11 +265,7 @@ const UserManagement: React.FC = () => {
       hideInSearch: true,
      render: (_, record) => {
        const count = (record as any).tenantCount || 0;
-       return (
-          <Tag color="purple">
-            {count} {intl.formatMessage({ id: 'pages.user.management.tenantCount.unit', defaultMessage: 'tenants' })}
-          </Tag>
-        );
+       return count;
       },
     },
     {
@@ -284,77 +298,24 @@ const UserManagement: React.FC = () => {
       valueType: 'option',
       key: 'option',
      render: (text, record) => (
-        <Space size={4}>
-          <Tooltip title={intl.formatMessage({
-            id: 'pages.common.edit',
-            defaultMessage: 'Edit',
-          })}>
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              style={{
-                color: 'var(--vip-primary)',
-                borderRadius: '6px',
-                fontWeight: 500,
-              }}
-              onClick={() => {
-                setCurrentRow(record);
-                setUpdateModalVisible(true);
-              }}
-            >
-              {intl.formatMessage({
-                id: 'pages.user.management.edit',
-                defaultMessage: '编辑',
-              })}
-            </Button>
-          </Tooltip>
-          <Tooltip title={intl.formatMessage({
-              id: 'pages.user.management.tenant.management',
-              defaultMessage: 'Manage Tenant',
-            })}>
-            <Button
-              type="text"
-              size="small"
-              icon={<TeamOutlined />}
-              style={{
-                color: '#722ed1',
-                borderRadius: '6px',
-                fontWeight: 500,
-              }}
-              onClick={() => {
-                setSelectedUserId(record.id!);
-                setTenantModalVisible(true);
-              }}
-            >
-              {intl.formatMessage({
-                id: 'pages.user.management.tenant.management',
-                defaultMessage: 'Manage Tenant',
-              })}
-            </Button>
-          </Tooltip>
+        <Space size={8}>
+          <StatusSwitch 
+            status={record.status}
+            onChange={(newStatus) => handleToggle(record.id!, newStatus)}
+            disabled={record.isAdmin === 1}
+          />
+          <EditButton 
+            onClick={() => {
+              setCurrentRow(record);
+              setUpdateModalVisible(true);
+            }}
+          />
           {/* 管理员用户不显示删除按钮 */}
           {record.isAdmin !== 1 && (
-            <Tooltip title={intl.formatMessage({
-              id: 'pages.common.delete',
-              defaultMessage: 'Delete',
-            })}>
-              <Button
-                type="text"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                style={{ borderRadius: '6px', fontWeight: 500 }}
-                onClick={() => {
-                  handleRemove(record.id!);
-                }}
-              >
-                {intl.formatMessage({
-                  id: 'pages.user.management.delete',
-                  defaultMessage: '删除',
-                })}
-              </Button>
-            </Tooltip>
+            <DeleteButton 
+              onConfirm={() => handleRemove(record.id!)}
+              confirmTitle={intl.formatMessage({ id: 'pages.user.management.deleteConfirm', defaultMessage: 'Are you sure to delete this user?' })}
+            />
           )}
         </Space>
       ),
@@ -403,7 +364,7 @@ const UserManagement: React.FC = () => {
           >
             {intl.formatMessage({
               id: 'pages.user.management.add',
-              defaultMessage: '新建用户',
+              defaultMessage: 'New User',
             })}
           </ActionButton>
         }
@@ -445,7 +406,7 @@ const UserManagement: React.FC = () => {
         />
       </SearchFilterBar>
 
-      <ProTable<API.UserItem>
+      <StyledProTable<API.UserItem>
         headerTitle={undefined}
         rowKey="id"
         loading={tableLoading}
@@ -467,8 +428,8 @@ const UserManagement: React.FC = () => {
         dataSource={data}
         search={false}
         toolBarRender={false}
-    columns={columns}
-   />
+        columns={columns}
+      />
 
       {/* 新建用户弹窗 */}
       <CreateForm

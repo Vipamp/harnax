@@ -1,7 +1,8 @@
-import { Modal, Form, Input, Select, message, Typography, Tooltip } from 'antd';
-import React, { useState, useEffect, useCallback } from 'react';
+import { Form, Input, Select, message, Typography, Tooltip, Button } from 'antd';
+import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
+import { LinkOutlined, CopyOutlined, EditOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -138,16 +139,27 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
   };
 
   return (
-    <Modal
-      title={intl.formatMessage({ id: 'pages.channel.modal.title.update', defaultMessage: 'Edit Channel' })}
+    <FormModal
       open={visible}
       onCancel={onCancel}
-      onOk={handleSubmit}
-      confirmLoading={loading}
-      width={600}
-      destroyOnClose
+      size="lg"
+      titleConfig={{
+        mainTitle: intl.formatMessage({ id: 'pages.channel.modal.title.update', defaultMessage: 'Edit Channel' }),
+        subtitle: intl.formatMessage({
+          id: 'pages.channel.modal.title.update.subtitle',
+          defaultMessage: 'Modify channel configuration, changes take effect immediately',
+        }),
+        icon: <EditOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
+        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
+      }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+      >
         <Form.Item
           label={intl.formatMessage({ id: 'pages.channel.form.label.name', defaultMessage: 'Channel Name' })}
           name="name"
@@ -264,8 +276,47 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
             </div>
           </Form.Item>
         )}
+
+        {/* 按钮区域 */}
+        <Form.Item wrapperCol={{ span: 24 }}>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-end', 
+            gap: '12px',
+            marginTop: '24px',
+            paddingTop: '20px',
+            borderTop: '1px solid var(--vip-border)'
+          }}>
+            <Button 
+              onClick={() => form.resetFields()}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+            </Button>
+            <Button 
+              type="primary" 
+              onClick={handleSubmit}
+              loading={loading}
+              style={{
+                fontSize: '13px',
+                fontWeight: 500,
+                height: '36px',
+                padding: '6px 24px',
+                borderRadius: '6px',
+              }}
+            >
+              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
+            </Button>
+          </div>
+        </Form.Item>
       </Form>
-    </Modal>
+    </FormModal>
   );
 };
 

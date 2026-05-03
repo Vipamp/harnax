@@ -211,7 +211,7 @@ const UserTenantList: React.FC<UserTenantListProps> = ({ userId, visible }) => {
     },
     {
       title: intl.formatMessage({
-        id: 'pages.user.management.tenant.list.column.action',
+        id: 'pages.common.operation',
         defaultMessage: 'Action',
       }),
       key: 'action',

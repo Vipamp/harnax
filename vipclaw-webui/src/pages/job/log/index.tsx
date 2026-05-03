@@ -1,7 +1,7 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { PageContainer } from '@ant-design/pro-components';
 import { useIntl, useSearchParams } from '@umijs/max';
-import { Button, Card, DatePicker, Input, message, Modal, Select, Space, Tag, Typography } from 'antd';
+import { Button, Card, DatePicker, Input, message, Select, Tag, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { getJobLogPage } from '@/services/ant-design-pro/job';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import SearchFilterBar, { SearchInput, FilterSelect, FilterDatePicker } from '@/components/SearchFilterBar';
+import StyledProTable from '@/components/StyledProTable';
 
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -67,25 +68,9 @@ const JobLog: React.FC = () => {
     loadData(1);
   };
 
-  /** 查看异常详情 */
-  const handleViewException = (record: API.JobLogItem) => {
-    Modal.info({
-      title: intl.formatMessage({ id: 'pages.job.log.exceptionDetail', defaultMessage: 'Exception Details' }),
-      width: 800,
-      content: (
-        <div style={{ maxHeight: 400, overflow: 'auto' }}>
-          <pre style={{ background: 'var(--vip-bg-layout)', padding: 16, borderRadius: 4 }}>
-            {record.exceptionInfo}
-          </pre>
-        </div>
-      ),
-      onOk() {},
-    });
-  };
-
   const columns: ProColumns<API.JobLogItem>[] = [
     {
-      title: intl.formatMessage({ id: 'pages.job.log.column.logId', defaultMessage: 'Log ID' }),
+      title: intl.formatMessage({ id: 'pages.common.id', defaultMessage: 'ID' }),
       dataIndex: 'id',
       valueType: 'text',
       width: 80,
@@ -169,26 +154,6 @@ const JobLog: React.FC = () => {
       },
       width: 100,
     },
-    {
-      title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Operation' }),
-      valueType: 'option',
-      key: 'option',
-      width: 120,
-      render: (text, record) => (
-        <Space size={4}>
-          {record.status === 0 && record.exceptionInfo && (
-            <Button
-              type="link"
-              size="small"
-              danger
-              onClick={() => handleViewException(record)}
-            >
-              {intl.formatMessage({ id: 'pages.job.log.viewException', defaultMessage: 'View Exception' })}
-            </Button>
-          )}
-        </Space>
-      ),
-    },
   ];
 
   return (
@@ -246,7 +211,7 @@ const JobLog: React.FC = () => {
         />
       </SearchFilterBar>
 
-      <ProTable<API.JobLogItem>
+      <StyledProTable<API.JobLogItem>
         headerTitle={undefined}
         rowKey="id"
         loading={tableLoading}
@@ -255,8 +220,10 @@ const JobLog: React.FC = () => {
           pageSize,
           total,
           showSizeChanger: true,
-          showQuickJumper: true,
-          showTotal: (t) => intl.formatMessage({ id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' }, { total: t }),
+          showTotal: (t) => intl.formatMessage(
+            { id: 'pages.common.pagination.total', defaultMessage: 'Total {total} items' },
+            { total: t }
+          ),
           onChange: (page, size) => {
             setPageNum(page);
             if (size) setPageSize(size);

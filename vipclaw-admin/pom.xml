@@ -8,7 +8,7 @@
         <groupId>com.vipamp</groupId>
         <artifactId>vipclaw</artifactId>
         <version>1.0.0-SNAPSHOT</version>
-        <relativePath>..</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>vipclaw-admin</artifactId>
@@ -187,6 +187,13 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>
@@ -264,6 +271,55 @@
                     </execution>
                 </executions>
             </plugin>
+
+<!--            &lt;!&ndash; Native Maven Plugin &ndash;&gt;-->
+<!--            <plugin>-->
+<!--                <groupId>org.graalvm.buildtools</groupId>-->
+<!--                <artifactId>native-maven-plugin</artifactId>-->
+<!--                <version>0.10.1</version>-->
+<!--                <executions>-->
+<!--                    <execution>-->
+<!--                        <id>build-native</id>-->
+<!--                        <goals>-->
+<!--                            <goal>build</goal>-->
+<!--                        </goals>-->
+<!--                        <phase>package</phase>-->
+<!--                    </execution>-->
+<!--                </executions>-->
+<!--                <configuration>-->
+<!--                    <classesDirectory>${project.build.outputDirectory}</classesDirectory>-->
+<!--                    <metadataRepository>-->
+<!--                        <enabled>true</enabled>-->
+<!--                    </metadataRepository>-->
+<!--&lt;!&ndash;                    <resources>&ndash;&gt;-->
+<!--&lt;!&ndash;                        <includes>&ndash;&gt;-->
+<!--&lt;!&ndash;                            <include>**/*</include>&ndash;&gt;-->
+<!--&lt;!&ndash;                        </includes>&ndash;&gt;-->
+<!--&lt;!&ndash;                    </resources>&ndash;&gt;-->
+<!--                    <jvmArgs>-->
+<!--                        <arg>-Xmx4g</arg>-->
+<!--                    </jvmArgs>-->
+<!--                    <imageName>${project.artifactId}-${edition.current}-native</imageName>-->
+<!--                    <mainClass>com.vipamp.vipclaw.VipclawAdminApplication</mainClass>-->
+<!--                    <buildArgs>-->
+<!--                        <arg>&#45;&#45;no-fallback</arg>-->
+<!--                        <arg>&#45;&#45;enable-http</arg>-->
+<!--                        <arg>&#45;&#45;enable-https</arg>-->
+<!--                        <arg>&#45;&#45;enable-url-protocols=http,https</arg>-->
+<!--                        <arg>&#45;&#45;enable-jni</arg>-->
+<!--                        <arg>&#45;&#45;enable-reflection</arg>-->
+<!--                        <arg>&#45;&#45;enable-resources</arg>-->
+<!--                        <arg>&#45;&#45;enable-file-io</arg>-->
+<!--                        <arg>&#45;&#45;enable-system-properties</arg>-->
+<!--                        <arg>&#45;&#45;enable-jdk-proxies</arg>-->
+<!--                        <arg>&#45;&#45;enable-cp1252</arg>-->
+<!--                        <arg>&#45;&#45;enable-utf-8</arg>-->
+<!--                    </buildArgs>-->
+<!--                    <agent>-->
+<!--                        <enabled>false</enabled>-->
+<!--                    </agent>-->
+<!--                </configuration>-->
+<!--            </plugin>-->
         </plugins>
     </build>
 
@@ -297,5 +353,32 @@
                 <edition.source.dir>${project.basedir}/src/main/kotlin-edition/public</edition.source.dir>
             </properties>
         </profile>
+<!--        &lt;!&ndash; Native 构建 Profile &ndash;&gt;-->
+<!--        <profile>-->
+<!--            <id>native</id>-->
+<!--            <properties>-->
+<!--                <native.enabled>true</native.enabled>-->
+<!--            </properties>-->
+<!--            <activation>-->
+<!--                <activeByDefault>false</activeByDefault>-->
+<!--            </activation>-->
+<!--            <build>-->
+<!--                <plugins>-->
+<!--                    <plugin>-->
+<!--                        <groupId>org.springframework.boot</groupId>-->
+<!--                        <artifactId>spring-boot-maven-plugin</artifactId>-->
+<!--                        <configuration>-->
+<!--                            <image>-->
+<!--                                <builder>paketobuildpacks/builder-jammy-base:latest</builder>-->
+<!--                                <env>-->
+<!--                                    <BP_NATIVE_IMAGE>true</BP_NATIVE_IMAGE>-->
+<!--                                    <BP_JVM_VERSION>21</BP_JVM_VERSION>-->
+<!--                                </env>-->
+<!--                            </image>-->
+<!--                        </configuration>-->
+<!--                    </plugin>-->
+<!--                </plugins>-->
+<!--            </build>-->
+<!--        </profile>-->
     </profiles>
 </project>

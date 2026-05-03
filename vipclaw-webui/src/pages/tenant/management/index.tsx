@@ -1,5 +1,5 @@
 import type { ActionType, ProColumns } from '@ant-design/pro-components';
-import { PageContainer, ProTable } from '@ant-design/pro-components';
+import { PageContainer } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { Button, message, Modal, Space, Tag, Tooltip, Typography, Tabs } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
@@ -13,8 +13,13 @@ import {
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import TenantUserList from './components/TenantUserList';
-import { DeleteOutlined, EditOutlined, PlusOutlined, ShopOutlined, UserOutlined } from '@ant-design/icons';
+import { PlusOutlined, ShopOutlined } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import EditButton from '@/components/EditButton';
+import DeleteButton from '@/components/DeleteButton';
+import ManageUsersButton from '@/components/ManageUsersButton';
+import StatusSwitch from '@/components/StatusSwitch';
+import StyledProTable from '@/components/StyledProTable';
 
 const { Text } = Typography;
 
@@ -220,8 +225,8 @@ const TenantManagement: React.FC = () => {
   const columns: ProColumns<any>[] = [
     {
       title: intl.formatMessage({
-        id: 'pages.tenant.management.tenantId',
-        defaultMessage: '租户 ID',
+        id: 'pages.common.id',
+        defaultMessage: 'ID',
       }),
       dataIndex: 'id',
       valueType: 'text',
@@ -257,30 +262,14 @@ const TenantManagement: React.FC = () => {
     },
     {
       title: intl.formatMessage({
-        id: 'pages.tenant.management.status',
-        defaultMessage: '状态',
+        id: 'pages.tenant.management.admin',
+        defaultMessage: '管理员',
       }),
-      dataIndex: 'status',
-      filters: true,
-      onFilter: true,
-      valueEnum: {
-        0: { text: intl.formatMessage({ id: 'pages.status.disabled', defaultMessage: 'Disabled' }), status: 'Error' },
-        1: { text: intl.formatMessage({ id: 'pages.status.enabled', defaultMessage: 'Enabled' }), status: 'Success' },
-      },
+      dataIndex: 'adminName',
+      valueType: 'text',
+      hideInSearch: true,
       render: (_, record) => {
-        return (
-          <Tag color={record.status === 1 ? 'success' : 'error'}>
-            {record.status === 1
-              ? intl.formatMessage({
-                  id: 'pages.tenant.management.enabled',
-                  defaultMessage: '启用',
-                })
-              : intl.formatMessage({
-                  id: 'pages.tenant.management.disabled',
-                  defaultMessage: '禁用',
-                })}
-          </Tag>
-        );
+        return record.adminName || '-';
       },
     },
     {
@@ -306,89 +295,31 @@ const TenantManagement: React.FC = () => {
     {
       title: intl.formatMessage({
         id: 'pages.tenant.management.operation',
-        defaultMessage: '操作',
+        defaultMessage: 'Action',
       }),
       valueType: 'option',
       width: 250,
       render: (_, record) => (
-        <Space>
-          <Tooltip
-            title={intl.formatMessage({
-              id: 'pages.tenant.management.toggleStatus',
-              defaultMessage: '切换状态',
-            })}
-          >
-            <Button
-              type="link"
-              size="small"
-              onClick={() => handleToggleStatus(record.id)}
-            >
-              {record.status === 1 
-                ? intl.formatMessage({ id: 'pages.tenant.management.disabled', defaultMessage: 'Disable' })
-                : intl.formatMessage({ id: 'pages.tenant.management.enabled', defaultMessage: 'Enable' })}
-            </Button>
-          </Tooltip>
-          <Tooltip
-            title={intl.formatMessage({
-              id: 'pages.tenant.management.edit',
-              defaultMessage: '编辑',
-            })}
-          >
-            <Button
-              type="link"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => {
-                setCurrentRow(record);
-                setUpdateModalVisible(true);
-              }}
-            >
-              {intl.formatMessage({
-                id: 'pages.tenant.management.edit',
-                defaultMessage: '编辑',
-              })}
-            </Button>
-          </Tooltip>
-          <Tooltip
-            title={intl.formatMessage({
-              id: 'pages.tenant.management.manageUsers',
-              defaultMessage: '管理用户',
-            })}
-          >
-            <Button
-              type="link"
-              size="small"
-              icon={<UserOutlined />}
-              onClick={() => {
-                setCurrentTenantId(record.id);
-                setUserModalVisible(true);
-              }}
-            >
-              {intl.formatMessage({
-                id: 'pages.tenant.management.manageUsers',
-                defaultMessage: '管理用户',
-              })}
-            </Button>
-          </Tooltip>
-          <Tooltip
-            title={intl.formatMessage({
-              id: 'pages.tenant.management.delete',
-              defaultMessage: '删除',
-            })}
-          >
-            <Button
-              type="link"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              onClick={() => handleRemove(record.id)}
-            >
-              {intl.formatMessage({
-                id: 'pages.tenant.management.delete',
-                defaultMessage: '删除',
-              })}
-            </Button>
-          </Tooltip>
+        <Space size={8}>
+          <StatusSwitch 
+            status={record.status}
+            onChange={() => handleToggleStatus(record.id)}
+          />
+          <EditButton 
+            onClick={() => {
+              setCurrentRow(record);
+              setUpdateModalVisible(true);
+            }}
+          />
+          <ManageUsersButton 
+            onClick={() => {
+              setCurrentTenantId(record.id);
+              setUserModalVisible(true);
+            }}
+          />
+          <DeleteButton 
+            onConfirm={() => handleRemove(record.id)}
+          />
         </Space>
       ),
     },
@@ -477,7 +408,7 @@ const TenantManagement: React.FC = () => {
         />
       </SearchFilterBar>
 
-      <ProTable<any>
+      <StyledProTable<any>
         headerTitle={undefined}
         rowKey="id"
         loading={tableLoading}
