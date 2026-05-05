@@ -667,7 +667,9 @@ import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/comp
 - 弹窗宽度根据内容高度的 1.3 倍自动计算（`width = height × 1.3`）
 - 最小宽度为浏览器窗口宽度的 50%（`minWidth = window.innerWidth × 0.5`）
 - 最终宽度取计算宽度和最小宽度中的较大值：`finalWidth = max(height × 1.3, window.innerWidth × 0.5)`
+- 支持通过 `size` 属性使用预设尺寸：`sm`(480px)、`md`(620px)、`lg`(760px)、`xl`(900px)
 - 支持通过 `width` 属性传入自定义宽度覆盖默认计算
+- 优先级：`width` > `size` > 自动计算
 - 输入框宽度根据弹窗宽度自适应：`width: calc(100% - 168px)`
 
 ##### 2. 标题布局
@@ -917,6 +919,29 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
   }}
 >
   {/* 表单内容 */}
+</FormModal>
+```
+
+##### 预设尺寸示例
+```tsx
+// 小尺寸弹窗（480px）
+<FormModal size="sm" titleConfig={...}>
+  {/* 简单表单 */}
+</FormModal>
+
+// 中等尺寸弹窗（620px）
+<FormModal size="md" titleConfig={...}>
+  {/* 标准表单 */}
+</FormModal>
+
+// 大尺寸弹窗（760px）
+<FormModal size="lg" titleConfig={...}>
+  {/* 复杂表单 */}
+</FormModal>
+
+// 超大尺寸弹窗（900px）
+<FormModal size="xl" titleConfig={...}>
+  {/* 大型表单 */}
 </FormModal>
 ```
 

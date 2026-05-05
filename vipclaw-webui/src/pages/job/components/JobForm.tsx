@@ -392,11 +392,11 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         </Form.Item>
 
         <Form.Item wrapperCol={{ span: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', paddingTop: '20px', borderTop: '1px solid var(--vip-border)' }}>
-            <Button onClick={() => form.resetFields()} style={{ fontSize: '13px', fontWeight: 500, height: '36px', padding: '6px 24px', borderRadius: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--vip-border)' }}>
+            <Button onClick={() => form.resetFields()} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
               {intl.formatMessage({ id: 'pages.job.reset', defaultMessage: 'Reset' })}
             </Button>
-            <Button type="primary" onClick={handleSubmit} style={{ fontSize: '13px', fontWeight: 500, height: '36px', padding: '6px 24px', borderRadius: '6px' }}>
+            <Button type="primary" onClick={handleSubmit} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
               {intl.formatMessage({ id: 'pages.job.submit', defaultMessage: 'Submit' })}
             </Button>
           </div>

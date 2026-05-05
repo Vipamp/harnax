@@ -900,9 +900,13 @@ html.dark .ant-drawer {
   }
   
   /* Select 输入框文本颜色 */
-  .ant-select-selection-item,
-  .ant-select-selection-placeholder {
+  .ant-select-selection-item {
     color: var(--vip-text-primary) !important;
+  }
+  
+  /* Select placeholder 颜色与 Input 保持一致 */
+  .ant-select-selection-placeholder {
+    color: var(--vip-text-tertiary) !important;
   }
   
   /* Select 箭头图标颜色 */
@@ -939,9 +943,12 @@ html.dark .ant-drawer {
 
 /* 浅色主题选择器适配 */
 html:not(.dark) .ant-select {
-  .ant-select-selection-item,
-  .ant-select-selection-placeholder {
+  .ant-select-selection-item {
     color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-select-selection-placeholder {
+    color: var(--vip-text-tertiary) !important;
   }
   
   .ant-select-dropdown {
@@ -965,9 +972,12 @@ html:not(.dark) .ant-select {
 
 /* 深色主题选择器适配 */
 html.dark .ant-select {
-  .ant-select-selection-item,
-  .ant-select-selection-placeholder {
+  .ant-select-selection-item {
     color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-select-selection-placeholder {
+    color: var(--vip-text-tertiary) !important;
   }
   
   .ant-select-dropdown {
@@ -1197,6 +1207,32 @@ html.dark .ant-menu {
       }
     }
     
+    /* 折叠状态下菜单项样式 */
+    &.ant-menu-inline-collapsed {
+      .ant-menu-item,
+      .ant-menu-submenu-title {
+        padding: 0 !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        
+        .ant-menu-item-icon {
+          margin: 0 !important;
+          font-size: 16px;
+        }
+      }
+      
+      /* 折叠状态下，包含选中子项的父级菜单高亮 */
+      .ant-menu-submenu-selected > .ant-menu-submenu-title {
+        color: var(--vip-primary) !important;
+        background: var(--vip-primary-lighter) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-primary) !important;
+        }
+      }
+    }
+    
     .ant-menu-submenu {
       &.ant-menu-submenu-open > .ant-menu-submenu-title {
         color: var(--vip-text-primary) !important;
@@ -1204,6 +1240,16 @@ html.dark .ant-menu {
         
         .ant-menu-submenu-arrow {
           color: var(--vip-text-primary) !important;
+        }
+      }
+      
+      /* 折叠状态下，包含选中子项的父级菜单高亮 */
+      &.ant-menu-submenu-selected > .ant-menu-submenu-title {
+        color: var(--vip-primary) !important;
+        background: var(--vip-primary-lighter) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-primary) !important;
         }
       }
     }
@@ -1234,6 +1280,32 @@ html.dark .ant-pro-sider {
       }
     }
     
+    /* 折叠状态下菜单项样式 */
+    &.ant-menu-inline-collapsed {
+      .ant-menu-item,
+      .ant-menu-submenu-title {
+        padding: 0 !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        
+        .ant-menu-item-icon {
+          margin: 0 !important;
+          font-size: 16px;
+        }
+      }
+      
+      /* 折叠状态下，包含选中子项的父级菜单高亮 */
+      .ant-menu-submenu-selected > .ant-menu-submenu-title {
+        color: var(--vip-primary-hover) !important;
+        background: var(--vip-primary-light) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-primary-hover) !important;
+        }
+      }
+    }
+    
     .ant-menu-submenu {
       &.ant-menu-submenu-open > .ant-menu-submenu-title {
         color: var(--vip-text-primary) !important;
@@ -1241,6 +1313,16 @@ html.dark .ant-pro-sider {
         
         .ant-menu-submenu-arrow {
           color: var(--vip-text-primary) !important;
+        }
+      }
+      
+      /* 折叠状态下，包含选中子项的父级菜单高亮 */
+      &.ant-menu-submenu-selected > .ant-menu-submenu-title {
+        color: var(--vip-primary-hover) !important;
+        background: var(--vip-primary-light) !important;
+        
+        .ant-menu-submenu-arrow {
+          color: var(--vip-primary-hover) !important;
         }
       }
     }
@@ -2307,9 +2389,14 @@ html.dark {
 .ant-select {
   font-size: 12px !important;
   
-  .ant-select-selection-item,
+  .ant-select-selection-item {
+    font-size: 12px !important;
+    color: var(--vip-text-primary) !important;
+  }
+  
   .ant-select-selection-placeholder {
     font-size: 12px !important;
+    color: var(--vip-text-tertiary) !important;
   }
 }
 

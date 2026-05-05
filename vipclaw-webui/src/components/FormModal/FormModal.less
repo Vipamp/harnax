@@ -6,12 +6,16 @@
 /* ===== 弹窗容器样式 ===== */
 .form-modal {
   border-radius: 12px !important;
-  overflow: hidden !important;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15) !important;
+  height: auto !important;
+  max-height: none !important;
   
   .ant-modal-content {
     border-radius: 12px !important;
-    overflow: hidden !important;
+    /* 注意：不能设置 overflow: hidden，否则会裁剪 textarea 的 resize 手柄 */
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
   
   /* 弹窗头部 */
@@ -76,6 +80,9 @@
     padding: 20px 24px !important;
     background: var(--vip-bg-container) !important;
     border-radius: 0 0 12px 12px !important;
+    height: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
   
   /* 遮罩层 */
@@ -92,6 +99,12 @@
     .ant-form-item {
       display: flex;
       align-items: center;
+      
+      /* 包含文本域的表单项不对齐到 center，以支持拉伸 */
+      &:has(textarea),
+      &:has(.ant-input-textarea) {
+        align-items: flex-start;
+      }
     }
   }
   
@@ -117,7 +130,7 @@
     max-width: 100%;
     
     /* 普通输入框 */
-    .ant-input {
+    input.ant-input {
       font-size: 12px !important;
       height: 32px !important;
       padding: 4px 10px !important;
@@ -197,11 +210,16 @@
         background: var(--vip-bg-container) !important;
         transition: all 0.2s ease !important;
         
-        .ant-select-selection-item,
-        .ant-select-selection-placeholder {
+        .ant-select-selection-item {
           line-height: 30px !important;
           font-size: 12px !important;
           color: var(--vip-text-primary) !important;
+        }
+        
+        .ant-select-selection-placeholder {
+          line-height: 30px !important;
+          font-size: 12px !important;
+          color: var(--vip-text-tertiary) !important;
         }
       }
       
@@ -217,6 +235,28 @@
       
       .ant-select-arrow {
         color: var(--vip-text-secondary) !important;
+      }
+    }
+    
+    /* 选择器下拉选项 */
+    .ant-select-dropdown {
+      .ant-select-item {
+        height: 32px !important;
+        line-height: normal !important;
+        padding: 6px 12px !important;
+        font-size: 12px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        
+        &.ant-select-item-option-active {
+          background-color: var(--vip-fill-quaternary) !important;
+        }
+        
+        &.ant-select-item-option-selected {
+          background-color: var(--vip-fill-quaternary) !important;
+          font-weight: 500 !important;
+        }
       }
     }
     
@@ -254,11 +294,45 @@
     }
     
     /* 文本域 */
-    .ant-input-textarea {
-      .ant-input {
-        height: auto !important;
-        min-height: 80px !important;
+    .ant-input-textarea,
+    .ant-input-textarea-show-count {
+      display: block !important;
+      border: none !important;
+      box-shadow: none !important;
+      background: transparent !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      
+      /* 移除所有内层容器的边框 */
+      > * {
+        border: none !important;
+        box-shadow: none !important;
+      }
+      
+      /* 文本域内部的 textarea 元素 */
+      textarea.ant-input {
+        min-height: 32px !important;
         padding: 8px 12px !important;
+        border-radius: 6px !important;
+        border: 1px solid var(--vip-border) !important;
+        background: var(--vip-bg-container) !important;
+        color: var(--vip-text-primary) !important;
+        resize: vertical !important;
+        overflow: auto !important;
+        
+        &:hover {
+          border-color: var(--vip-primary) !important;
+        }
+        
+        &:focus,
+        &.ant-input-focused {
+          border-color: var(--vip-primary) !important;
+          box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+        }
+        
+        &::placeholder {
+          color: var(--vip-text-tertiary) !important;
+        }
       }
     }
   }
@@ -316,9 +390,22 @@ html.dark .form-modal .ant-form {
       .ant-select-selector {
         background: var(--vip-bg-container) !important;
         
-        .ant-select-selection-item,
-        .ant-select-selection-placeholder {
+        .ant-select-selection-item {
           color: var(--vip-text-primary) !important;
+        }
+        
+        .ant-select-selection-placeholder {
+          color: var(--vip-text-tertiary) !important;
+        }
+      }
+      
+      /* 深色模式下的下拉选项 */
+      &.ant-select-dropdown {
+        .ant-select-item {
+          &.ant-select-item-option-active,
+          &.ant-select-item-option-selected {
+            background-color: var(--vip-fill-quaternary) !important;
+          }
         }
       }
     }

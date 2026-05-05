@@ -107,14 +107,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
     <FormModal
       open={visible}
       onCancel={handleClose}
-      size="sm"
+      size="md"
       titleConfig={{
         mainTitle: intl.formatMessage({ id: 'pages.session.createSession', defaultMessage: 'Create Session' }),
         subtitle: intl.formatMessage({ id: 'pages.session.create.subtitle', defaultMessage: 'Start a new session with agent and description' }),
         icon: <BulbOutlined />,
       }}
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 12 }}>
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 7, style: { textAlign: 'right' } }}
+        wrapperCol={{ span: 17 }}
+        style={{ marginTop: 12 }}
+      >
         <Form.Item
           label={intl.formatMessage({ id: 'pages.session.sessionName', defaultMessage: 'Session Name' })}
           name="title"
@@ -143,10 +149,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
           name="sessionDescription"
         >
           <TextArea
-            rows={3}
+            rows={1}
             placeholder={intl.formatMessage({ id: 'pages.session.descriptionPlaceholder', defaultMessage: 'Please enter session description (optional)' })}
-            showCount
             maxLength={500}
+            style={{ resize: 'vertical', overflow: 'auto', minHeight: '32px' }}
           />
         </Form.Item>
 
@@ -184,7 +190,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
           <div style={{ 
             display: 'flex', 
             justifyContent: 'flex-end', 
-            gap: '12px',
+            gap: '10px',
             marginTop: '12px',
             paddingTop: '10px',
             borderTop: '1px solid var(--vip-border)'
@@ -192,10 +198,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
             <Button 
               onClick={handleClose}
               style={{
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
+                height: '32px',
+                padding: '4px 20px',
                 borderRadius: '6px',
               }}
             >
@@ -206,10 +212,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
               onClick={handleCreateSubmit}
               loading={loading}
               style={{
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
+                height: '32px',
+                padding: '4px 20px',
                 borderRadius: '6px',
               }}
             >

@@ -364,7 +364,7 @@ const UserManagement: React.FC = () => {
           >
             {intl.formatMessage({
               id: 'pages.user.management.add',
-              defaultMessage: 'New User',
+              defaultMessage: 'Create User',
             })}
           </ActionButton>
         }

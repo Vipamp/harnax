@@ -3,7 +3,8 @@ import { Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
-import { PlusOutlined, MinusOutlined } from '@ant-design/icons';
+import { PlusOutlined, MinusOutlined, RocketOutlined } from '@ant-design/icons';
+import { FormModal } from '@/components/FormModal';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 
 const { TextArea } = Input;
@@ -292,7 +293,13 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
       </Steps>
 
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+        style={{ marginTop: 24 }}
+      >
         {currentStep === 0 && (
           <>
             <Form.Item
@@ -481,11 +488,22 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         )}
       </Form>
 
-      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        marginTop: '12px',
+        paddingTop: '10px',
+        borderTop: '1px solid var(--vip-border)'
+      }}>
         <Button 
           disabled={currentStep === 0} 
           onClick={handlePrev}
           style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            height: '32px',
+            padding: '4px 20px',
+            borderRadius: '6px',
             background: 'var(--vip-bg-container)',
             borderColor: 'var(--vip-border)',
             color: 'var(--vip-text-primary)',
@@ -496,6 +514,13 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         <Button 
           type="primary" 
           onClick={handleNext}
+          style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            height: '32px',
+            padding: '4px 20px',
+            borderRadius: '6px',
+          }}
         >
           {currentStep === 2 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
@@ -504,5 +529,4 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   );
 };
 
-export default UpdateForm;
 export default UpdateForm;

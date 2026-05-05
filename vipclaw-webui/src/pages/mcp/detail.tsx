@@ -135,7 +135,7 @@ const McpDetail: React.FC = () => {
       key: 'parameters',
       render: (parameters: ToolParameter[]) => {
         if (!parameters || parameters.length === 0) {
-          return <Text type="secondary">无参数</Text>;
+          return <Text type="secondary">{intl.formatMessage({ id: 'pages.mcp.detail.noParameters', defaultMessage: 'No parameters' })}</Text>;
         }
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -186,7 +186,7 @@ const McpDetail: React.FC = () => {
   if (!mcpInfo && !loading) {
     return (
       <PageContainer>
-        <Empty description="MCP 服务不存在" />
+        <Empty description={intl.formatMessage({ id: 'pages.mcp.detail.mcpNotFound', defaultMessage: 'MCP service not found' })} />
       </PageContainer>
     );
   }
@@ -206,12 +206,12 @@ const McpDetail: React.FC = () => {
                 transition: 'all 0.3s ease'
               }}
             >
-              返回
+              {intl.formatMessage({ id: 'pages.mcp.detail.back', defaultMessage: 'Back' })}
             </Button>
             <div style={{ width: 1, height: 24, background: '#e8e8e8' }} />
             <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
               <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
-              MCP 服务详情
+              {intl.formatMessage({ id: 'pages.mcp.detail.pageTitle', defaultMessage: 'MCP Service Detail' })}
             </Title>
           </div>
         ),
@@ -293,7 +293,7 @@ const McpDetail: React.FC = () => {
                 }}
                 style={{ padding: '24px' }}
               >
-                <Descriptions.Item label="MCP 描述" span={1}>
+                <Descriptions.Item label={intl.formatMessage({ id: 'pages.mcp.detail.description', defaultMessage: 'MCP Description' })} span={1}>
                   <Text style={{ lineHeight: 1.6 }}>{mcpInfo.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label={intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' })} span={1}>
@@ -302,10 +302,10 @@ const McpDetail: React.FC = () => {
                     {mcpInfo.type === 'stdio' ? mcpInfo.command : mcpInfo.url || '-'}
                   </Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />创建人</span>}>
+                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.mcp.detail.creator', defaultMessage: 'Creator' })}</span>}>
                   <Text>{mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />创建时间</span>}>
+                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.mcp.detail.createTime', defaultMessage: 'Create Time' })}</span>}>
                   <Text>{mcpInfo.createTime?.replace('T', ' ') || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
                 </Descriptions.Item>
               </Descriptions>
@@ -316,7 +316,7 @@ const McpDetail: React.FC = () => {
               title={
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <ToolOutlined style={{ color: 'var(--vip-primary)' }} />
-                  工具列表
+                  {intl.formatMessage({ id: 'pages.mcp.detail.toolList', defaultMessage: 'Tool List' })}
                   {tools.length > 0 && (
                     <Tag 
                       color="blue" 
@@ -326,7 +326,7 @@ const McpDetail: React.FC = () => {
                         fontWeight: 500
                       }}
                     >
-                      {tools.length} 个工具
+                      {intl.formatMessage({ id: 'pages.mcp.detail.toolCount', defaultMessage: '{count} tools' }, { count: tools.length })}
                     </Tag>
                   )}
                 </span>

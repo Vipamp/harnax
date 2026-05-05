@@ -266,7 +266,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
       </Steps>
 
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+        style={{ marginTop: 24 }}
+      >
         {/* 第一步：基本信息 */}
         {currentStep === 0 && (
           <>
@@ -447,11 +453,22 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         )}
       </Form>
 
-      <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        marginTop: '12px',
+        paddingTop: '10px',
+        borderTop: '1px solid var(--vip-border)'
+      }}>
         <Button 
           disabled={currentStep === 0} 
           onClick={handlePrev}
           style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            height: '32px',
+            padding: '4px 20px',
+            borderRadius: '6px',
             background: 'var(--vip-bg-container)',
             borderColor: 'var(--vip-border)',
             color: 'var(--vip-text-primary)',
@@ -462,6 +479,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         <Button 
           type="primary" 
           onClick={handleNext}
+          style={{
+            fontSize: '12px',
+            fontWeight: 500,
+            height: '32px',
+            padding: '4px 20px',
+            borderRadius: '6px',
+          }}
         >
           {currentStep === 2 ? intl.formatMessage({ id: 'pages.agent.finish', defaultMessage: 'Finish' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>

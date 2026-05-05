@@ -112,8 +112,6 @@ export const layout: RunTimeLayoutConfig = ({
     menu: {
       // 默认展开所有菜单
       autoOpen: true,
-      // 忽略折叠状态，始终展开所有一级菜单
-      ignoreFlatMenu: true,
     },
     bgLayoutImgList: [
       {

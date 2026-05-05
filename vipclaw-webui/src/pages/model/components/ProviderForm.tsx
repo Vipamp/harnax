@@ -212,22 +212,23 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         </Form.Item>
 
         {/* 按钮区域 */}
-        <Form.Item wrapperCol={{ offset: 6, span: 18 }}>
+        <Form.Item wrapperCol={{ span: 24 }} style={{ marginBottom: 0 }}>
           <div style={{ 
             display: 'flex', 
             justifyContent: 'flex-end', 
-            gap: '12px',
-            marginTop: '24px',
-            paddingTop: '20px',
+            gap: '10px',
+            marginTop: '12px',
+            paddingTop: '10px',
+            paddingLeft: '168px',  // 与表单项保持一致的左侧间距
             borderTop: '1px solid var(--vip-border)'
           }}>
             <Button 
               onClick={handleReset}
               style={{
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
+                height: '32px',
+                padding: '4px 20px',
                 borderRadius: '6px',
               }}
             >
@@ -238,10 +239,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
               onClick={handleSubmit}
               loading={loading}
               style={{
-                fontSize: '13px',
+                fontSize: '12px',
                 fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
+                height: '32px',
+                padding: '4px 20px',
                 borderRadius: '6px',
               }}
             >

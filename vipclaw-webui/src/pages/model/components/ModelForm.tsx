@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { Form, Input, Select, Switch, Row, Col, Typography } from 'antd';
+import { Form, Input, Select, Switch, Row, Col, Typography, Button } from 'antd';
 import { createModel, updateModel } from '@/services/ant-design-pro/model';
 import { message } from 'antd';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
@@ -129,44 +129,40 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           : 'rgba(250, 173, 20, 0.25)',
       }}
     >
-      <Form form={form} layout="vertical">
+      <Form 
+        form={form} 
+        layout="horizontal"
+        labelCol={{ span: 6 }}
+        wrapperCol={{ span: 18 }}
+      >
         <Form.Item name="providerId" hidden>
           <Input type="hidden" />
         </Form.Item>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="name" label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
-              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}>
-              <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="modelName" label={intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' })}
-              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' }) }]}>
-              <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} />
-            </Form.Item>
-          </Col>
-        </Row>
+        
+        <Form.Item name="name" label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}>
+          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
+        </Form.Item>
+        
+        <Form.Item name="modelName" label={intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' }) }]}>
+          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} />
+        </Form.Item>
 
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="modelType" label={intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
-              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' }) }]}>
-              <Select
-                placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
-                options={MODEL_TYPE_OPTIONS.map(opt => ({
-                  label: intl.formatMessage({ id: `pages.model.${opt.value}`, defaultMessage: opt.label }),
-                  value: opt.value,
-                }))}
-                onChange={handleModelTypeChange} />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="price" label={intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price (CNY/M tokens)' })}>
-              <Input type="number" step="0.0001" placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} />
-            </Form.Item>
-          </Col>
-        </Row>
+        <Form.Item name="modelType" label={intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' }) }]}>
+          <Select
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.select', defaultMessage: 'Please select' }) + intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
+            options={MODEL_TYPE_OPTIONS.map(opt => ({
+              label: intl.formatMessage({ id: `pages.model.${opt.value}`, defaultMessage: opt.label }),
+              value: opt.value,
+            }))}
+            onChange={handleModelTypeChange} />
+        </Form.Item>
+        
+        <Form.Item name="price" label={intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price (CNY/M tokens)' })}>
+          <Input type="number" step="0.0001" placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} />
+        </Form.Item>
 
         <Form.Item name="description" label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}>
           <Input.TextArea rows={2} placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })} />
@@ -174,7 +170,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
 
         {modelType === 'chat' && (
           <Form.Item label={intl.formatMessage({ id: 'pages.model.capabilities', defaultMessage: 'Capabilities' })}>
-            <Row gutter={16}>
+            <Row gutter={[8, 8]}>
               <Col span={8}>
                 <Form.Item name="supportInternet" valuePropName="checked" noStyle>
                   <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.internet', defaultMessage: 'Internet' })} />
@@ -191,7 +187,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
                 </Form.Item>
               </Col>
             </Row>
-            <Row gutter={16} style={{ marginTop: '8px' }}>
+            <Row gutter={[8, 8]} style={{ marginTop: '8px' }}>
               <Col span={8}>
                 <Form.Item name="supportMcp" valuePropName="checked" noStyle>
                   <Switch checkedChildren={intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} unCheckedChildren={intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} />
@@ -227,12 +223,12 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             disabled={isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate)} />
         </Form.Item>
 
-        <Form.Item>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--vip-border)' }}>
-            <Button onClick={onCancel} style={{ fontSize: '13px', fontWeight: 500, height: '36px', padding: '6px 24px', borderRadius: '6px' }}>
+        <Form.Item wrapperCol={{ span: 24 }} style={{ marginBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px', paddingTop: '10px', paddingLeft: '168px', borderTop: '1px solid var(--vip-border)' }}>
+            <Button onClick={onCancel} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
               {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
             </Button>
-            <Button type="primary" onClick={handleSubmit} loading={loading} style={{ fontSize: '13px', fontWeight: 500, height: '36px', padding: '6px 24px', borderRadius: '6px' }}>
+            <Button type="primary" onClick={handleSubmit} loading={loading} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
               {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
             </Button>
           </div>

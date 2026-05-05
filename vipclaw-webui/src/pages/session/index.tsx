@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, List, Typography, Empty, Spin, message, Popconfirm } from 'antd';
-import { PlusOutlined, DeleteOutlined, RobotOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
+import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
+import DeleteButton from '@/components/DeleteButton';
+import DetailButton from '@/components/DetailButton';
 // @ts-ignore
 import { useModel, useLocation, useIntl } from '@umijs/max';
 
@@ -183,31 +185,8 @@ const SessionPage: React.FC = () => {
                         {session.title}
                       </Text>
                       <div style={{ display: 'flex', gap: 4 }}>
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<InfoCircleOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleViewDetail(session);
-                          }}
-                        />
-                        <Popconfirm
-                          title={intl.formatMessage({ id: 'pages.session.confirmDelete', defaultMessage: 'Are you sure you want to delete this session?' })}
-                          onConfirm={(e) => {
-                            e?.stopPropagation();
-                            handleDeleteSession(session.id);
-                          }}
-                          onCancel={(e) => e?.stopPropagation()}
-                        >
-                          <Button
-                            type="text"
-                            size="small"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </Popconfirm>
+                        <DetailButton onClick={() => handleViewDetail(session)} />
+                        <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
                       </div>
                     </div>
                   </List.Item>
