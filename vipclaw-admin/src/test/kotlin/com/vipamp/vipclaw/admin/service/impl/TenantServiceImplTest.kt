@@ -2,11 +2,12 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageInfo
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
+
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.entity.TenantEntity
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
@@ -43,6 +44,9 @@ class TenantServiceImplTest {
 
     @Mock
     private lateinit var sysUserMapper: SysUserMapper
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
 
     @InjectMocks
     private lateinit var tenantService: TenantServiceImpl
@@ -121,6 +125,7 @@ class TenantServiceImplTest {
             )
 
             `when`(tenantMapper.selectByName("已存在租户")).thenReturn(testTenant)
+            `when`(messageUtil.getMessage("error.tenant.name_exists")).thenReturn("租户名称已存在")
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -128,6 +133,7 @@ class TenantServiceImplTest {
             }
             assertEquals("租户名称已存在", exception.message)
             verify(tenantMapper).selectByName("已存在租户")
+            verify(messageUtil).getMessage("error.tenant.name_exists")
             verifyNoInteractions(sysUserMapper)
         }
 
@@ -239,98 +245,7 @@ class TenantServiceImplTest {
         }
     }
 
-    @Nested
-    @DisplayName("更新租户测试")
-    inner class UpdateTenantTests {
 
-        @Test
-        @DisplayName("updateTenant - 正常更新租户")
-        fun `updateTenant should update tenant successfully`() {
-            // Given
-            val request = UpdateTenantRequest(
-                name = "更新后的租户名",
-                status = 0
-            )
-
-            `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
-            `when`(tenantMapper.selectByName("更新后的租户名")).thenReturn(null)
-            `when`(tenantMapper.updateById(any())).thenReturn(1)
-
-            // When
-            val result = tenantService.updateTenant(1L, request)
-
-            // Then
-            assertTrue(result)
-            verify(tenantMapper).selectById(1L)
-            verify(tenantMapper).selectByName("更新后的租户名")
-            verify(tenantMapper).updateById(argThat {
-                id == 1L && name == "更新后的租户名" && status == 0
-            })
-        }
-
-        @Test
-        @DisplayName("updateTenant - 租户不存在时抛出异常")
-        fun `updateTenant should throw exception when tenant not found`() {
-            // Given
-            val request = UpdateTenantRequest(name = "新名称")
-
-            `when`(tenantMapper.selectById(999L)).thenReturn(null)
-
-            // When & Then
-            val exception = assertThrows<BizException> {
-                tenantService.updateTenant(999L, request)
-            }
-            assertEquals("租户不存在", exception.message)
-            verify(tenantMapper).selectById(999L)
-            verify(tenantMapper, never()).updateById(any())
-        }
-
-        @Test
-        @DisplayName("updateTenant - 名称重复时抛出异常")
-        fun `updateTenant should throw exception when name already exists`() {
-            // Given
-            val request = UpdateTenantRequest(name = "其他租户")
-            val existingTenant = TenantEntity().apply {
-                id = 2L
-                name = "其他租户"
-                status = 1
-                creator = "admin"
-                active = 1
-            }
-
-            `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
-            `when`(tenantMapper.selectByName("其他租户")).thenReturn(existingTenant)
-
-            // When & Then
-            val exception = assertThrows<BizException> {
-                tenantService.updateTenant(1L, request)
-            }
-            assertEquals("租户名称已存在", exception.message)
-            verify(tenantMapper).selectById(1L)
-            verify(tenantMapper).selectByName("其他租户")
-            verify(tenantMapper, never()).updateById(any())
-        }
-
-        @Test
-        @DisplayName("updateTenant - 部分更新（只更新名称）")
-        fun `updateTenant should partially update name only`() {
-            // Given
-            val request = UpdateTenantRequest(name = "新名称", status = null)
-
-            `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
-            `when`(tenantMapper.selectByName("新名称")).thenReturn(null)
-            `when`(tenantMapper.updateById(any())).thenReturn(1)
-
-            // When
-            val result = tenantService.updateTenant(1L, request)
-
-            // Then
-            assertTrue(result)
-            verify(tenantMapper).updateById(argThat {
-                name == "新名称" && status == 1 // status 保持默认值 1
-            })
-        }
-    }
 
     @Nested
     @DisplayName("切换租户状态测试")

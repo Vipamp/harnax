@@ -7,10 +7,9 @@ import { deleteUser, getUserPage, updateUser as updateUserApi, createUser, toggl
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
 import UserTenantList from './components/UserTenantList';
-import { PlusOutlined, UserOutlined, TeamOutlined } from '@ant-design/icons';
+import { PlusOutlined, UserOutlined, TeamOutlined, DeleteOutlined } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 import EditButton from '@/components/EditButton';
-import DeleteButton from '@/components/DeleteButton';
 import StatusSwitch from '@/components/StatusSwitch';
 import StyledProTable from '@/components/StyledProTable';
 
@@ -299,23 +298,33 @@ const UserManagement: React.FC = () => {
       key: 'option',
      render: (text, record) => (
         <Space size={8}>
-          <StatusSwitch 
-            status={record.status}
-            onChange={(newStatus) => handleToggle(record.id!, newStatus)}
-            disabled={record.isAdmin === 1}
-          />
-          <EditButton 
-            onClick={() => {
-              setCurrentRow(record);
-              setUpdateModalVisible(true);
-            }}
-          />
+          {/* 管理员用户不显示启停开关 */}
+          {record.isAdmin !== 1 && (
+            <StatusSwitch 
+              status={record.status}
+              onChange={(newStatus) => handleToggle(record.id!, newStatus)}
+            />
+          )}
+          {/* 管理员用户不显示编辑按钮 */}
+          {record.isAdmin !== 1 && (
+            <EditButton 
+              onClick={() => {
+                setCurrentRow(record);
+                setUpdateModalVisible(true);
+              }}
+            />
+          )}
           {/* 管理员用户不显示删除按钮 */}
           {record.isAdmin !== 1 && (
-            <DeleteButton 
-              onConfirm={() => handleRemove(record.id!)}
-              confirmTitle={intl.formatMessage({ id: 'pages.user.management.deleteConfirm', defaultMessage: 'Are you sure to delete this user?' })}
-            />
+            <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleRemove(record.id!)}
+              />
+            </Tooltip>
           )}
         </Space>
       ),

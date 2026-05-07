@@ -33,6 +33,7 @@
         SELECT * FROM user_tenant
         WHERE user_id = #{userId}
         AND tenant_id = #{tenantId}
+        AND status = 1
         LIMIT 1
     </select>
 

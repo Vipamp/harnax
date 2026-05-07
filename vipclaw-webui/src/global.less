@@ -725,6 +725,58 @@ html.dark .ant-modal {
   }
 }
 
+/* ===== Modal.confirm 确认弹窗样式 ===== */
+.ant-modal-confirm {
+  .ant-modal-content {
+    border-radius: var(--vip-radius-lg) !important;
+    box-shadow: var(--vip-shadow-lg) !important;
+    border: 1px solid var(--vip-border) !important;
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-modal-confirm-body-wrapper {
+    padding: 24px;
+  }
+  
+  .ant-modal-confirm-title {
+    color: var(--vip-text-primary) !important;
+    font-weight: 600;
+  }
+  
+  .ant-modal-confirm-content {
+    color: var(--vip-text-secondary) !important;
+    margin-top: 8px;
+  }
+  
+  .ant-modal-confirm-btns {
+    margin-top: 24px;
+    
+    .ant-btn {
+      border-radius: var(--vip-radius-sm) !important;
+    }
+  }
+}
+
+/* 深色主题确认弹窗适配 */
+html.dark .ant-modal-confirm {
+  .ant-modal-content {
+    background: var(--vip-bg-container) !important;
+    border-color: var(--vip-border) !important;
+  }
+  
+  .ant-modal-confirm-body-wrapper {
+    background: var(--vip-bg-container) !important;
+  }
+  
+  .ant-modal-confirm-title {
+    color: var(--vip-text-primary) !important;
+  }
+  
+  .ant-modal-confirm-content {
+    color: var(--vip-text-secondary) !important;
+  }
+}
+
 /* ===== 下拉菜单样式优化 ===== */
 .ant-dropdown-menu {
   border-radius: var(--vip-radius-md) !important;

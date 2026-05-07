@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.i18n
 import org.springframework.context.MessageSource
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.stereotype.Component
+import org.springframework.beans.factory.annotation.Qualifier
 
 /**
  * 国际化消息工具类
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class MessageUtil(
+    @Qualifier("errorMessageSource")
     private val messageSource: MessageSource
 ) {
     /**

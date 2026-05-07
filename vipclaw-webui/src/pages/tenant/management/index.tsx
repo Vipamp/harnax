@@ -8,10 +8,9 @@ import {
   deleteTenant,
   getTenantList,
   toggleTenantStatus,
-  updateTenant,
 } from '@/services/tenant';
 import CreateForm from './components/CreateForm';
-import UpdateForm from './components/UpdateForm';
+
 import TenantUserList from './components/TenantUserList';
 import { PlusOutlined, ShopOutlined } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
@@ -27,9 +26,9 @@ const TenantManagement: React.FC = () => {
   const actionRef = useRef<ActionType | null>(null);
 
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
-  const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
+
   const [userModalVisible, setUserModalVisible] = useState<boolean>(false);
-  const [currentRow, setCurrentRow] = useState<any>();
+
   const [currentTenantId, setCurrentTenantId] = useState<number>(0);
   const [tableLoading, setTableLoading] = useState<boolean>(false);
   const [data, setData] = useState<any[]>([]);
@@ -189,38 +188,7 @@ const TenantManagement: React.FC = () => {
     }
   };
 
-  /** 更新租户 */
-  const handleUpdate = async (fields: any) => {
-    const hide = message.loading('正在更新');
-    try {
-      const response = await updateTenant(currentRow.id, fields);
-      hide();
-      if (response.code === 200) {
-        messageApi.success(
-          intl.formatMessage({
-            id: 'pages.tenant.management.updateSuccess',
-            defaultMessage: '更新成功',
-          }),
-        );
-        setUpdateModalVisible(false);
-        setCurrentRow(undefined);
-        loadData();
-      } else {
-        const errorMsg = response.message || intl.formatMessage({
-          id: 'pages.tenant.management.updateFailed',
-          defaultMessage: '更新失败，请重试',
-        });
-        messageApi.error(errorMsg);
-      }
-    } catch (error: any) {
-      hide();
-      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({
-        id: 'pages.tenant.management.updateFailed',
-        defaultMessage: '更新失败，请重试',
-      });
-      messageApi.error(errorMsg);
-    }
-  };
+
 
   const columns: ProColumns<any>[] = [
     {
@@ -305,12 +273,7 @@ const TenantManagement: React.FC = () => {
             status={record.status}
             onChange={() => handleToggleStatus(record.id)}
           />
-          <EditButton 
-            onClick={() => {
-              setCurrentRow(record);
-              setUpdateModalVisible(true);
-            }}
-          />
+
           <ManageUsersButton 
             onClick={() => {
               setCurrentTenantId(record.id);
@@ -440,18 +403,7 @@ const TenantManagement: React.FC = () => {
         onSubmit={handleCreate}
       />
 
-      {/* 更新表单 */}
-      {currentRow && (
-        <UpdateForm
-          onCancel={() => {
-            setUpdateModalVisible(false);
-            setCurrentRow(undefined);
-          }}
-          visible={updateModalVisible}
-          onSubmit={handleUpdate}
-          values={currentRow}
-        />
-      )}
+
 
       {/* 管理用户模态框 */}
       <Modal

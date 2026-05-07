@@ -9,7 +9,10 @@ import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
+import com.vipamp.vipclaw.admin.mapper.TenantMapper
+import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import com.vipamp.vipclaw.admin.service.SysUserService
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.common.page.Page
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
@@ -25,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class SysUserServiceImpl(
     private val sysUserMapper: SysUserMapper,
+    private val userTenantMapper: UserTenantMapper,
+    private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil
 ) : SysUserService {
 
@@ -210,6 +215,35 @@ class SysUserServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleUserStatus(id: Long, status: Int): Boolean {
         log.info("切换用户状态，id: {}, status: {}", id, status)
+        
+        // 如果是禁用操作(status=0)，需要进行检查
+        if (status == 0) {
+            val user = sysUserMapper.selectById(id)
+                ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
+
+            // 不允许禁用系统管理员用户 (isAdmin = 1)
+            if (user.isAdmin == 1) {
+                throw BizException(messageUtil.getMessage("error.user.cannot_disable_admin"))
+            }
+
+            // 检查该用户是否是任何租户的管理员
+            val userTenants = userTenantMapper.selectByUserId(id)
+            val tenantAdminRoles = userTenants.filter { it.role == "admin" }
+            
+            if (tenantAdminRoles.isNotEmpty()) {
+                // 用户是某个(些)租户的管理员,不允许禁用
+                // 查询所有租户名称
+                val tenantNames = tenantAdminRoles.mapNotNull { userTenant ->
+                    val tenant = tenantMapper.selectById(userTenant.tenantId)
+                    tenant?.name
+                }
+                
+                val tenantNamesStr = tenantNames.joinToString("、")
+                log.warn("用户是租户管理员，不允许禁用，userId: {}, tenantNames: {}", id, tenantNamesStr)
+                throw BizException(messageUtil.getMessage("error.user.is_tenant_admin_cannot_disable", *arrayOf(tenantNamesStr)))
+            }
+        }
+        
         return sysUserMapper.updateStatus(id, status) > 0
     }
 
@@ -217,18 +251,63 @@ class SysUserServiceImpl(
     override fun deleteUser(id: Long): Boolean {
         log.info("删除用户，id: {}", id)
         val user = sysUserMapper.selectById(id)
-            ?: throw BizException("用户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 不允许删除管理员用户
+        // 不允许删除系统管理员用户 (isAdmin = 1)
         if (user.isAdmin == 1) {
-            throw BizException("不允许删除管理员用户")
+            throw BizException(messageUtil.getMessage("error.user.cannot_delete_admin"))
         }
 
+        // 检查该用户是否是任何租户的管理员
+        val userTenants = userTenantMapper.selectByUserId(id)
+        val tenantAdminRoles = userTenants.filter { it.role == "admin" }
+        
+        if (tenantAdminRoles.isNotEmpty()) {
+            // 用户是某个(些)租户的管理员,不允许删除
+            // 查询所有租户名称
+            val tenantNames = tenantAdminRoles.mapNotNull { userTenant ->
+                val tenant = tenantMapper.selectById(userTenant.tenantId)
+                tenant?.name
+            }
+            
+            val tenantNamesStr = tenantNames.joinToString("、")
+            log.warn("用户是租户管理员，不允许删除，userId: {}, tenantNames: {}", id, tenantNamesStr)
+            throw BizException(messageUtil.getMessage("error.user.is_tenant_admin", *arrayOf(tenantNamesStr)))
+        }
+
+        // 用户不是任何租户的管理员,从所有租户中移除该用户
+        if (userTenants.isNotEmpty()) {
+            log.info("用户属于{}个租户，将从所有租户中移除，userId: {}", userTenants.size, id)
+            userTenants.forEach { userTenant ->
+                userTenantMapper.deleteByUserIdAndTenantId(id, userTenant.tenantId)
+            }
+            log.info("用户已从所有租户中移除，userId: {}", id)
+        }
+
+        // 物理删除用户
+        log.info("执行物理删除用户，userId: {}", id)
         return sysUserMapper.deleteById(id) > 0
     }
 
     override fun convertToResponse(sysUser: SysUser): SysUserResponse {
-        return SysUserResponse.fromEntity(sysUser)
+        // 查询用户所属的租户数量
+        val tenantCount = userTenantMapper.selectByUserId(sysUser.id).size
+        
+        return SysUserResponse(
+            id = sysUser.id,
+            username = sysUser.username,
+            nickname = sysUser.nickname,
+            email = sysUser.email,
+            phone = sysUser.phone,
+            gender = sysUser.gender,
+            avatar = sysUser.avatar,
+            status = sysUser.status,
+            isAdmin = sysUser.isAdmin,
+            lastLoginTime = sysUser.lastLoginTime,
+            createTime = sysUser.createTime,
+            updateTime = sysUser.updateTime,
+            tenantCount = tenantCount
+        )
     }
 
     override fun getByUsername(username: String): SysUser? {

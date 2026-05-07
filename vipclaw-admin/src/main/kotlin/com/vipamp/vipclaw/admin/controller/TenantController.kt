@@ -4,7 +4,7 @@ import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.request.AddUserToTenantRequest
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
+
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
@@ -103,20 +103,7 @@ class TenantController(
         }
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "更新租户", description = "更新租户信息")
-    fun updateTenant(
-        @Parameter(description = "租户ID") @PathVariable id: Long,
-        @Valid @RequestBody request: UpdateTenantRequest
-    ): ResultVo<Boolean> {
-        return try {
-            val success = tenantService.updateTenant(id, request)
-            ResultVo.success(success)
-        } catch (e: Exception) {
-            log.error("更新租户失败", e)
-            ResultVo.error(e.message ?: "更新租户失败")
-        }
-    }
+
 
     @PutMapping("/{id}/status")
     @Operation(summary = "切换租户状态", description = "启用/禁用租户")
@@ -202,4 +189,24 @@ class TenantController(
             ResultVo.error(e.message ?: "从租户移除用户失败")
         }
     }
+
+    @PutMapping("/{id}/users/{userId}/role")
+    @Operation(summary = "更新用户角色", description = "更新用户在租户中的角色")
+    fun updateUserRole(
+        @Parameter(description = "租户ID") @PathVariable id: Long,
+        @Parameter(description = "用户ID") @PathVariable userId: Long,
+        @RequestBody request: UpdateUserRoleRequest
+    ): ResultVo<Boolean> {
+        return try {
+            val success = tenantService.updateUserRole(id, userId, request.role)
+            ResultVo.success(success)
+        } catch (e: Exception) {
+            log.error("更新用户角色失败", e)
+            ResultVo.error(e.message ?: "更新用户角色失败")
+        }
+    }
+
+    data class UpdateUserRoleRequest(
+        val role: String
+    )
 }

@@ -3,8 +3,11 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
+import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
+import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -34,6 +37,9 @@ class SysUserServiceImplTest {
 
     @Mock
     private lateinit var sysUserMapper: SysUserMapper
+
+    @Mock
+    private lateinit var userTenantMapper: UserTenantMapper
 
     @InjectMocks
     private lateinit var sysUserService: SysUserServiceImpl
@@ -707,8 +713,73 @@ class SysUserServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteUser - 删除管理员应该抛出异常")
-        fun `deleteUser should throw BizException when deleting admin user`() {
+        @DisplayName("deleteUser - 删除租户普通成员应该从租户中移除")
+        fun `deleteUser should remove member from tenant`() {
+            // Given
+            val currentTenantId = 1L
+            TenantContext.setTenantId(currentTenantId)
+            
+            val userTenant = UserTenantEntity().apply {
+                id = 1L
+                userId = 1L
+                tenantId = currentTenantId
+                role = "member"
+                status = 1
+            }
+            
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
+            `when`(userTenantMapper.selectByUserIdAndTenantId(1L, currentTenantId)).thenReturn(userTenant)
+            `when`(userTenantMapper.deleteByUserIdAndTenantId(1L, currentTenantId)).thenReturn(1)
+
+            // When
+            val result = sysUserService.deleteUser(1L)
+
+            // Then
+            assertTrue(result)
+            verify(sysUserMapper).selectById(1L)
+            verify(userTenantMapper).selectByUserIdAndTenantId(1L, currentTenantId)
+            verify(userTenantMapper).deleteByUserIdAndTenantId(1L, currentTenantId)
+            verify(sysUserMapper, never()).deleteById(any())
+            
+            // Clean up
+            TenantContext.clear()
+        }
+
+        @Test
+        @DisplayName("deleteUser - 删除租户管理员应该抛出异常")
+        fun `deleteUser should throw BizException when deleting tenant admin`() {
+            // Given
+            val currentTenantId = 1L
+            TenantContext.setTenantId(currentTenantId)
+            
+            val userTenant = UserTenantEntity().apply {
+                id = 1L
+                userId = 1L
+                tenantId = currentTenantId
+                role = "admin"
+                status = 1
+            }
+            
+            `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
+            `when`(userTenantMapper.selectByUserIdAndTenantId(1L, currentTenantId)).thenReturn(userTenant)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                sysUserService.deleteUser(1L)
+            }
+            assertEquals("该用户是当前租户的管理员，不允许删除", exception.message)
+            verify(sysUserMapper).selectById(1L)
+            verify(userTenantMapper).selectByUserIdAndTenantId(1L, currentTenantId)
+            verify(userTenantMapper, never()).deleteByUserIdAndTenantId(any(), any())
+            verify(sysUserMapper, never()).deleteById(any())
+            
+            // Clean up
+            TenantContext.clear()
+        }
+
+        @Test
+        @DisplayName("deleteUser - 删除全局管理员应该抛出异常")
+        fun `deleteUser should throw BizException when deleting global admin`() {
             // Given
             val adminUser = SysUser().apply {
                 id = 2L
@@ -719,7 +790,7 @@ class SysUserServiceImplTest {
                 phone = "13800138000"
                 gender = 1
                 status = 1
-                isAdmin = 1  // 管理员
+                isAdmin = 1  // 全局管理员
                 active = 1
             }
             `when`(sysUserMapper.selectById(2L)).thenReturn(adminUser)
@@ -728,8 +799,9 @@ class SysUserServiceImplTest {
             val exception = assertThrows<BizException> {
                 sysUserService.deleteUser(2L)
             }
-            assertEquals("不允许删除管理员用户", exception.message)
-            verify(sysUserMapper, never()).deleteById(any<Long>())
+            assertEquals("不允许删除全局管理员用户", exception.message)
+            verify(sysUserMapper).selectById(2L)
+            verify(sysUserMapper, never()).deleteById(any())
         }
     }
 

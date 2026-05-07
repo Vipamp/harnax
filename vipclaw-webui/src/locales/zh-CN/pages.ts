@@ -590,6 +590,8 @@ export default {
   'pages.tenant.userRequired': '请选择用户',
   'pages.tenant.userAddSuccess': '添加用户成功',
   'pages.tenant.userAddFailed': '添加用户失败',
+  'pages.tenant.roleUpdateSuccess': '角色更新成功',
+  'pages.tenant.roleUpdateFailed': '角色更新失败',
   'pages.tenant.confirmRemove': '确认移除',
   'pages.tenant.confirmRemoveUser': '确定要从该租户中移除此用户吗？',
   'pages.tenant.management.createNew': '新建租户',

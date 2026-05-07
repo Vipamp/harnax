@@ -61,15 +61,7 @@ export async function getTenantById(id: number) {
   });
 }
 
-/**
- * 更新租户
- */
-export async function updateTenant(id: number, data: { name?: string; status?: number }) {
-  return request(`/api/tenant/${id}`, {
-    method: 'PUT',
-    data,
-  });
-}
+
 
 /**
  * 切换租户状态
@@ -115,5 +107,15 @@ export async function addUserToTenant(tenantId: number, data: { userId: number; 
 export async function removeUserFromTenant(tenantId: number, userId: number) {
   return request(`/api/tenant/${tenantId}/users/${userId}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * 更新用户在租户中的角色
+ */
+export async function updateUserRole(tenantId: number, userId: number, role: string) {
+  return request(`/api/tenant/${tenantId}/users/${userId}/role`, {
+    method: 'PUT',
+    data: { role },
   });
 }

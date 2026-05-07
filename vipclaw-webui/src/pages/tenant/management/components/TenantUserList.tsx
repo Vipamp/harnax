@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, message, Tag, Space } from 'antd';
-import { PlusOutlined, UsergroupAddOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, message, Tag, Space, Tooltip, Select } from 'antd';
+import { PlusOutlined, UsergroupAddOutlined, DeleteOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { getUserPage } from '@/services/ant-design-pro/user';
-import { getTenantUsers, addUserToTenant, removeUserFromTenant } from '@/services/tenant';
-import DeleteButton from '@/components/DeleteButton';
+import { getTenantUsers, addUserToTenant, removeUserFromTenant, updateUserRole } from '@/services/tenant';
 import { FormModal } from '@/components/FormModal';
 
 export interface TenantUserListProps {
@@ -118,6 +117,21 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
     });
   };
 
+  // 更新用户角色
+  const handleRoleChange = async (userId: number, newRole: string) => {
+    try {
+      const response = await updateUserRole(tenantId, userId, newRole);
+      if (response.code === 200) {
+        message.success(intl.formatMessage({ id: 'pages.tenant.roleUpdateSuccess', defaultMessage: 'Role updated successfully' }));
+        loadTenantUsers();
+      } else {
+        message.error(response.message || intl.formatMessage({ id: 'pages.tenant.roleUpdateFailed', defaultMessage: 'Failed to update role' }));
+      }
+    } catch (error: any) {
+      message.error(error?.message || intl.formatMessage({ id: 'pages.tenant.roleUpdateFailed', defaultMessage: 'Failed to update role' }));
+    }
+  };
+
   const columns = [
     {
       title: intl.formatMessage({ id: 'pages.tenant.user.list.column.username', defaultMessage: 'Username' }),
@@ -133,10 +147,22 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
       title: intl.formatMessage({ id: 'pages.tenant.user.list.column.role', defaultMessage: 'Role' }),
       dataIndex: 'role',
       key: 'role',
-      render: (role: string) => (
-        <Tag color={role === 'admin' ? 'blue' : 'default'}>
-          {role === 'admin' ? intl.formatMessage({ id: 'pages.tenant.role.admin', defaultMessage: 'Admin' }) : intl.formatMessage({ id: 'pages.tenant.role.member', defaultMessage: 'Member' })}
-        </Tag>
+      render: (role: string, record: any) => (
+        <Select
+          value={role}
+          onChange={(value) => handleRoleChange(record.userId, value)}
+          style={{ width: 120 }}
+          options={[
+            { 
+              label: intl.formatMessage({ id: 'pages.tenant.role.admin', defaultMessage: 'Admin' }), 
+              value: 'admin' 
+            },
+            { 
+              label: intl.formatMessage({ id: 'pages.tenant.role.member', defaultMessage: 'Member' }), 
+              value: 'member' 
+            },
+          ]}
+        />
       ),
     },
     {
@@ -158,10 +184,15 @@ const TenantUserList: React.FC<TenantUserListProps> = ({ tenantId, visible }) =>
       title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Action' }),
       key: 'action',
       render: (_: any, record: any) => (
-        <DeleteButton 
-          onConfirm={() => handleRemoveUser(record.userId)}
-          confirmTitle={intl.formatMessage({ id: 'pages.tenant.confirmRemoveUser', defaultMessage: 'Are you sure to remove this user from the tenant?' })}
-        />
+        <Tooltip title={intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Remove' })}>
+          <Button
+            type="link"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleRemoveUser(record.userId)}
+          />
+        </Tooltip>
       ),
     },
   ];

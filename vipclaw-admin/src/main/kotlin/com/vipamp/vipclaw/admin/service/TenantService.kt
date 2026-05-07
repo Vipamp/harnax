@@ -1,7 +1,7 @@
 package com.vipamp.vipclaw.admin.service
 
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
+
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.common.page.Page
@@ -29,10 +29,7 @@ interface TenantService {
      */
     fun getTenantList(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<TenantResponse>
 
-    /**
-     * 更新租户
-     */
-    fun updateTenant(id: Long, request: UpdateTenantRequest): Boolean
+
 
     /**
      * 切换租户状态
@@ -58,4 +55,9 @@ interface TenantService {
      * 从租户移除用户
      */
     fun removeUserFromTenant(tenantId: Long, userId: Long): Boolean
+
+    /**
+     * 更新用户在租户中的角色
+     */
+    fun updateUserRole(tenantId: Long, userId: Long, role: String): Boolean
 }

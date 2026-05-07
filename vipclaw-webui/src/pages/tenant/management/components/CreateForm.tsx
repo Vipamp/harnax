@@ -50,7 +50,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
     <FormModal
       open={visible}
       onCancel={onCancel}
-      size="sm"
+      size="md"
       titleConfig={{
         mainTitle: intl.formatMessage({
           id: 'pages.tenant.management.createNew',

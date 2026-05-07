@@ -581,6 +581,8 @@ export default {
   'pages.tenant.userRequired': 'Please select user',
   'pages.tenant.userAddSuccess': 'User added successfully',
   'pages.tenant.userAddFailed': 'Failed to add user',
+  'pages.tenant.roleUpdateSuccess': 'Role updated successfully',
+  'pages.tenant.roleUpdateFailed': 'Failed to update role',
   'pages.tenant.confirmRemove': 'Confirm Remove',
   'pages.tenant.confirmRemoveUser': 'Are you sure to remove this user from the tenant?',
   'pages.tenant.management.createNew': 'Create Tenant',

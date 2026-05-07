@@ -3,12 +3,13 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.github.pagehelper.PageHelper
 import com.github.pagehelper.PageInfo
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-import com.vipamp.vipclaw.admin.dto.request.UpdateTenantRequest
+
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.admin.entity.TenantEntity
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
@@ -25,7 +26,8 @@ import java.time.LocalDateTime
 class TenantServiceImpl(
     private val tenantMapper: TenantMapper,
     private val userTenantMapper: UserTenantMapper,
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
+    private val messageUtil: MessageUtil
 ) : TenantService {
 
     @Transactional
@@ -33,13 +35,13 @@ class TenantServiceImpl(
         // 检查租户名称是否已存在
         val existingTenant = tenantMapper.selectByName(request.name)
         if (existingTenant != null) {
-            throw BizException("租户名称已存在")
+            throw BizException(messageUtil.getMessage("error.tenant.name_exists"))
         }
 
         // 检查用户是否存在
         val adminUser = sysUserMapper.selectById(request.adminUserId)
         if (adminUser == null) {
-            throw BizException("用户不存在")
+            throw BizException(messageUtil.getMessage("error.user.notfound"))
         }
 
         // 创建租户
@@ -84,33 +86,12 @@ class TenantServiceImpl(
         )
     }
 
-    @Transactional
-    override fun updateTenant(id: Long, request: UpdateTenantRequest): Boolean {
-        val tenant = tenantMapper.selectById(id)
-            ?: throw BizException("租户不存在")
 
-        // 检查名称是否重复
-        request.name?.let { newName ->
-            val existingTenant = tenantMapper.selectByName(newName)
-            if (existingTenant != null && existingTenant.id != id) {
-                throw BizException("租户名称已存在")
-            }
-        }
-
-        val updateEntity = TenantEntity().apply {
-            this.id = id
-            this.name = request.name ?: ""
-            this.status = request.status ?: 1
-            this.updateTime = LocalDateTime.now()
-        }
-
-        return tenantMapper.updateById(updateEntity) > 0
-    }
 
     @Transactional
     override fun toggleStatus(id: Long): Boolean {
         val tenant = tenantMapper.selectById(id)
-            ?: throw BizException("租户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
         val newStatus = if (tenant.status == 1) 0 else 1
         return tenantMapper.updateStatus(id, newStatus) > 0
@@ -119,7 +100,7 @@ class TenantServiceImpl(
     @Transactional
     override fun deleteTenant(id: Long): Boolean {
         val tenant = tenantMapper.selectById(id)
-            ?: throw BizException("租户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
         // TODO: 检查租户下是否有可用资源（agent、session、mcp、skill）
         // 第一期暂不实现
@@ -162,16 +143,16 @@ class TenantServiceImpl(
     override fun addUserToTenant(tenantId: Long, userId: Long, role: String): Boolean {
         // 检查租户是否存在
         tenantMapper.selectById(tenantId)
-            ?: throw BizException("租户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
         // 检查用户是否存在
         sysUserMapper.selectById(userId)
-            ?: throw BizException("用户不存在")
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
         // 检查是否已存在
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
         if (existing != null) {
-            throw BizException("用户已在该租户中")
+            throw BizException(messageUtil.getMessage("error.user.already_in_tenant"))
         }
 
         val userTenant = UserTenantEntity().apply {
@@ -188,9 +169,41 @@ class TenantServiceImpl(
     @Transactional
     override fun removeUserFromTenant(tenantId: Long, userId: Long): Boolean {
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-            ?: throw BizException("用户不在该租户中")
+            ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
+
+        // 检查该用户是否是租户管理员
+        if (existing.role == "admin") {
+            // 查询该租户下的所有管理员
+            val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
+            val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
+            
+            // 如果是唯一的管理员，不允许删除
+            if (adminCount <= 1) {
+                throw BizException(messageUtil.getMessage("error.tenant.cannot_remove_only_admin"))
+            }
+        }
 
         return userTenantMapper.deleteByUserIdAndTenantId(userId, tenantId) > 0
+    }
+
+    @Transactional
+    override fun updateUserRole(tenantId: Long, userId: Long, role: String): Boolean {
+        // 检查用户是否在租户中
+        val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
+            ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
+
+        // 如果要降级为普通成员，检查是否是唯一管理员
+        if (existing.role == "admin" && role != "admin") {
+            val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
+            val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
+            
+            if (adminCount <= 1) {
+                throw BizException(messageUtil.getMessage("error.tenant.cannot_demote_only_admin"))
+            }
+        }
+
+        // 更新角色
+        return userTenantMapper.updateRole(userId, tenantId, role) > 0
     }
 
     private fun toTenantResponse(entity: TenantEntity): TenantResponse {
