@@ -33,5 +33,5 @@ data class UserTenantResponse(
     val status: Int? = null,
 
     @Schema(description = "加入时间", example = "2026-04-28T10:00:00")
-    val joinedAt: LocalDateTime? = null
+    val joinedAt: LocalDateTime? = null,
 )

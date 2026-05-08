@@ -21,13 +21,14 @@ data class ProcessLog(
 ) {
     companion object {
         @JvmStatic
-        fun builder(agentId: Long, agentName: String, sessionId: String) =
-            ProcessLogBuilder(agentId, agentName, sessionId)
+        fun builder(agentId: Long, agentName: String, sessionId: String) = ProcessLogBuilder(agentId, agentName, sessionId)
     }
 }
 
 class ProcessLogBuilder(
-    private val agentId: Long, private val agentName: String, private val sessionId: String
+    private val agentId: Long,
+    private val agentName: String,
+    private val sessionId: String,
 ) {
     private var message: String = ""
     private var type: LogType = LogType.INFO
@@ -60,10 +61,12 @@ class ProcessLogBuilder(
         message = message,
         type = type,
         throwable = throwable,
-        timestamp = timestamp
+        timestamp = timestamp,
     )
 }
 
 enum class LogType {
-    INFO, WARN, ERROR
+    INFO,
+    WARN,
+    ERROR,
 }

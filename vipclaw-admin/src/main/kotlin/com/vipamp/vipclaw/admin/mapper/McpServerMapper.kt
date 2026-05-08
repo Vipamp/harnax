@@ -27,8 +27,8 @@ interface McpServerMapper {
     fun selectMcpServerList(
         @Param("keyword") keyword: String?,
         @Param("status") status: Int?,
-        @Param("types") types: String?,
-        @Param("currentUsername") currentUsername: String
+        @Param("type") type: String?,
+        @Param("currentUsername") currentUsername: String,
     ): List<McpServer>
 
     fun selectByName(@Param("name") name: String): McpServer?

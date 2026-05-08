@@ -1,11 +1,11 @@
 package com.vipamp.vipclaw.admin.service
 
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryResponse
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
 import com.vipamp.vipclaw.admin.entity.SkillRepository
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 技能仓库服务接口

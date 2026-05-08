@@ -10,7 +10,7 @@ class SysJob : Serializable {
         private const val serialVersionUID = 1L
     }
 
-        @Schema(description = "任务ID")
+    @Schema(description = "任务ID")
     var id: Long = 0
 
     @Schema(description = "任务名称")
@@ -41,11 +41,11 @@ class SysJob : Serializable {
     var creator: String = ""
 
     @Schema(description = "是否可用（0-已删除，1-未删除）")
-        var active: Int = 1
+    var active: Int = 1
 
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 }

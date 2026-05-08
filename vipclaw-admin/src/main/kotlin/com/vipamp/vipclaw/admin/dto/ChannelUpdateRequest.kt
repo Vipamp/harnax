@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
@@ -51,5 +50,5 @@ data class ChannelUpdateRequest(
     val description: String? = null,
 
     @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
-    val status: Int? = null
+    val status: Int? = null,
 )

@@ -22,5 +22,5 @@ data class SkillUpdateRequest(
     @Schema(description = "资源信息")
     val resources: String? = null,
     @Schema(description = "状态 (0:禁用 1:正常)")
-    val status: Int? = null
+    val status: Int? = null,
 )

@@ -30,7 +30,7 @@ interface ModelProviderMapper {
         @Param("type") type: String?,
         @Param("status") status: Int?,
         @Param("isPublic") isPublic: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<ModelProvider>
 
     fun countByType(@Param("type") type: String): Int

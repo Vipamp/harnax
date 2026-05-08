@@ -15,7 +15,7 @@ data class ChannelSpec(
     val appId: String? = null,
     val appSecret: String? = null,
     val callbackKey: String,
-    val status: Int = 1
+    val status: Int = 1,
 ) {
     companion object {
         @JvmStatic
@@ -59,6 +59,6 @@ class ChannelSpecBuilder {
         appId = appId,
         appSecret = appSecret,
         callbackKey = callbackKey,
-        status = status
+        status = status,
     )
 }

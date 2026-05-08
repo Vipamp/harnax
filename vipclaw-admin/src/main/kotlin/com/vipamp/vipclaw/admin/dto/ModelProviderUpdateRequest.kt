@@ -1,7 +1,6 @@
 package com.vipamp.vipclaw.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size
 
@@ -25,11 +24,11 @@ data class ModelProviderUpdateRequest(
 
     @field:Pattern(
         regexp = "^(https?:\\/\\/)?([\\w.-]+)+(:\\d+)?(\\/[^\\s]*)?$",
-        message = "API 地址格式不正确"
+        message = "API 地址格式不正确",
     )
     @Schema(description = "API 基础地址", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
     val baseUrl: String? = null,
 
     @Schema(description = "是否公开（0:私有 1:公开）", example = "1")
-    val isPublic: Int? = null
+    val isPublic: Int? = null,
 )

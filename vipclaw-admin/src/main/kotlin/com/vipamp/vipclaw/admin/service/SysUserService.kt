@@ -1,10 +1,10 @@
 package com.vipamp.vipclaw.admin.service
 
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 用户服务接口

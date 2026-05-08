@@ -51,7 +51,7 @@ data class SessionResponse(
     @Schema(description = "创建时间", example = "2026-03-25 12:00:00")
     var createTime: LocalDateTime? = null,
     @Schema(description = "更新时间", example = "2026-03-25 12:00:00")
-    var updateTime: LocalDateTime? = null
+    var updateTime: LocalDateTime? = null,
 ) {
     @Schema(description = "MCP 项")
     data class McpItem(
@@ -62,7 +62,7 @@ data class SessionResponse(
         @Schema(description = "MCP 描述", example = "文件系统服务")
         var mcpDescription: String? = null,
         @Schema(description = "是否允许跳过", example = "true")
-        var enableSkip: String? = null
+        var enableSkip: String? = null,
     )
 
     @Schema(description = "技能项")
@@ -76,6 +76,6 @@ data class SessionResponse(
         @Schema(description = "技能名称", example = "code-review")
         var skillName: String? = null,
         @Schema(description = "技能描述", example = "代码审查技能")
-        var skillDescription: String? = null
+        var skillDescription: String? = null,
     )
 }

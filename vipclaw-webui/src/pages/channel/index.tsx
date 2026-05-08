@@ -128,13 +128,17 @@ const ChannelManagement: React.FC = () => {
   /** 切换启用状态 */
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
-      await toggleChannelStatus(id, newStatus);
-      messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
-      setData((prevData) =>
-        prevData.map((item) =>
-          item.id === id ? { ...item, status: newStatus } : item
-        )
-      );
+      const response = await toggleChannelStatus(id, newStatus);
+      if (response.code === 200) {
+        messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
+        setData((prevData) =>
+          prevData.map((item) =>
+            item.id === id ? { ...item, status: newStatus } : item
+          )
+        );
+      } else {
+        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
@@ -339,10 +343,14 @@ const ChannelManagement: React.FC = () => {
         onCancel={() => setCreateModalVisible(false)}
         onSubmit={async (values) => {
           try {
-            await createChannel(values);
-            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
-            setCreateModalVisible(false);
-            loadData();
+            const response = await createChannel(values);
+            if (response.code === 200) {
+              messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
+              setCreateModalVisible(false);
+              loadData();
+            } else {
+              messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
+            }
           } catch (error) {
             messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
@@ -361,11 +369,15 @@ const ChannelManagement: React.FC = () => {
           }}
           onSubmit={async (values) => {
             try {
-              await updateChannel(currentRow.id!, values);
-              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
-              setUpdateModalVisible(false);
-              setCurrentRow(undefined);
-              loadData();
+              const response = await updateChannel(currentRow.id!, values);
+              if (response.code === 200) {
+                messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+                setUpdateModalVisible(false);
+                setCurrentRow(undefined);
+                loadData();
+              } else {
+                messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
+              }
             } catch (error) {
               messageApi.error(intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
             }

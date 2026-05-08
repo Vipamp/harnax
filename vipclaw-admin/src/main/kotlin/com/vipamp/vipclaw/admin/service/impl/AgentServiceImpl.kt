@@ -7,13 +7,13 @@ import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.mapper.AgentMapper
 import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.admin.service.*
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -33,7 +33,7 @@ class AgentServiceImpl(
     private val skillService: SkillService,
     private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -43,7 +43,7 @@ class AgentServiceImpl(
         name: String?,
         status: Int?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<Agent> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<Agent>(pageNum, pageSize)
@@ -51,97 +51,91 @@ class AgentServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createAgent(request: AgentCreateRequest): Boolean {
-        return try {
-            val agent = Agent()
-            agent.name = request.name!!
-            agent.description = request.description!!
-            agent.systemPrompt = request.systemPrompt!!
-            agent.modelId = request.modelId!!
-            agent.owner = request.owner!!
-            agent.status = request.status ?: 1
+    override fun createAgent(request: AgentCreateRequest): Boolean = try {
+        val agent = Agent()
+        agent.name = request.name!!
+        agent.description = request.description!!
+        agent.systemPrompt = request.systemPrompt!!
+        agent.modelId = request.modelId!!
+        agent.owner = request.owner!!
+        agent.status = request.status ?: 1
 
-            // 设置创建人
-            val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-            agent.creator = currentUsername!!
+        // 设置创建人
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        agent.creator = currentUsername!!
 
-            // 默认不公开
-            if (agent.isPublic == null) {
-                agent.isPublic = 0
+        // 默认不公开
+        if (agent.isPublic == null) {
+            agent.isPublic = 0
+        }
+
+        // 转换 MCP 列表为 JSON 存储
+        // 格式: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
+        if (!request.mcpList.isNullOrEmpty()) {
+            try {
+                agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
+            } catch (e: JsonProcessingException) {
+                throw RuntimeException("MCP 列表 JSON 序列化失败", e)
             }
+        }
 
-            // 转换 MCP 列表为 JSON 存储
-            // 格式: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
-            if (!request.mcpList.isNullOrEmpty()) {
+        // 技能列表直接存储为字符串格式 "1,2,3"
+        if (!request.skillList.isNullOrEmpty()) {
+            agent.skillList = request.skillList
+        }
+
+        agent.createTime = LocalDateTime.now()
+        agent.updateTime = LocalDateTime.now()
+        agentMapper.insert(agent)
+        true
+    } catch (e: Exception) {
+        log.error("创建智能体失败", e)
+        throw RuntimeException("创建智能体失败：${e.message}")
+    }
+
+    override fun getAgent(id: Long): Agent? = agentMapper.selectById(id)
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean = try {
+        val agent = getAgent(id)
+            ?: throw RuntimeException("智能体不存在")
+
+        request.name?.let { agent.name = it }
+        request.description?.let { agent.description = it }
+        request.systemPrompt?.let { agent.systemPrompt = it }
+        request.modelId?.let { agent.modelId = it }
+        request.owner?.let { agent.owner = it }
+        request.isPublic?.let { agent.isPublic = it }
+
+        // 更新 MCP 列表
+        if (request.mcpList != null) {
+            // 允许清空 MCP 列表
+            if (request.mcpList.isEmpty()) {
+                agent.mcpList = ""
+            } else {
+                // 直接存储 JSON 格式：[{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
                 try {
                     agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
                 } catch (e: JsonProcessingException) {
                     throw RuntimeException("MCP 列表 JSON 序列化失败", e)
                 }
             }
-
-            // 技能列表直接存储为字符串格式 "1,2,3"
-            if (!request.skillList.isNullOrEmpty()) {
-                agent.skillList = request.skillList
-            }
-
-            agent.createTime = LocalDateTime.now()
-            agent.updateTime = LocalDateTime.now()
-            agentMapper.insert(agent)
-            true
-        } catch (e: Exception) {
-            log.error("创建智能体失败", e)
-            throw RuntimeException("创建智能体失败：${e.message}")
         }
-    }
+        // 如果 request.mcpList == null，保持原有值不变
 
-    override fun getAgent(id: Long): Agent? {
-        return agentMapper.selectById(id)
-    }
-
-    @Transactional(rollbackFor = [Exception::class])
-    override fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean {
-        return try {
-            val agent = getAgent(id)
-                ?: throw RuntimeException("智能体不存在")
-
-            request.name?.let { agent.name = it }
-            request.description?.let { agent.description = it }
-            request.systemPrompt?.let { agent.systemPrompt = it }
-            request.modelId?.let { agent.modelId = it }
-            request.owner?.let { agent.owner = it }
-            request.isPublic?.let { agent.isPublic = it }
-
-            // 更新 MCP 列表
-            if (request.mcpList != null) {
-                // 允许清空 MCP 列表
-                if (request.mcpList.isEmpty()) {
-                    agent.mcpList = ""
-                } else {
-                    // 直接存储 JSON 格式：[{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
-                    try {
-                        agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
-                    } catch (e: JsonProcessingException) {
-                        throw RuntimeException("MCP 列表 JSON 序列化失败", e)
-                    }
-                }
-            }
-            // 如果 request.mcpList == null，保持原有值不变
-
-            // 更新技能列表
-            if (request.skillList != null) {
-                // skillList 是字符串格式 "1,2,3" 或空字符串 ""
-                agent.skillList = (if (request.skillList.trim().isEmpty()) null else request.skillList).toString()
-            }
-            // 如果 request.skillList == null，保持原有值不变
-
-            agent.updateTime = LocalDateTime.now()
-            agentMapper.updateById(agent)
-            true
-        } catch (e: Exception) {
-            log.error("更新智能体失败", e)
-            throw RuntimeException("更新智能体失败：${e.message}")
+        // 更新技能列表
+        if (request.skillList != null) {
+            // skillList 是字符串格式 "1,2,3" 或空字符串 ""
+            agent.skillList = (if (request.skillList.trim().isEmpty()) null else request.skillList).toString()
         }
+        // 如果 request.skillList == null，保持原有值不变
+
+        agent.updateTime = LocalDateTime.now()
+        agentMapper.updateById(agent)
+        true
+    } catch (e: Exception) {
+        log.error("更新智能体失败", e)
+        throw RuntimeException("更新智能体失败：${e.message}")
     }
 
     override fun toggleAgentStatus(id: Long, status: Int): Boolean {
@@ -150,9 +144,7 @@ class AgentServiceImpl(
         return agentMapper.updateStatus(id, status) > 0
     }
 
-    override fun deleteAgent(id: Long): Boolean {
-        return agentMapper.deleteById(id) > 0
-    }
+    override fun deleteAgent(id: Long): Boolean = agentMapper.deleteById(id) > 0
 
     /**
      * 将 Agent 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
@@ -203,7 +195,7 @@ class AgentServiceImpl(
                 // 先反序列化为 Map 获取 ID 和 enableSkip
                 val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
                     agent.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {}
+                    object : TypeReference<List<Map<String, Any>>>() {},
                 )
 
                 // 从数据库查询完整的 MCP 信息
@@ -244,7 +236,7 @@ class AgentServiceImpl(
                             val item = AgentResponse.SkillItem()
                             item.skillId = it.id
                             item.skillName = it.name
-                            item.skillDescription = it.skillmd
+                            item.skillDescription = it.description
 
                             // 查询技能仓库信息
                             val repository = skillRepositoryService.getSkillRepository(it.repositoryId)

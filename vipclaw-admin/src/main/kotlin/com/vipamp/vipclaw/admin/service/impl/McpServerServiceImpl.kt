@@ -4,6 +4,7 @@ import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
 import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.McpServer
 import com.vipamp.vipclaw.admin.exception.BizException
@@ -13,7 +14,6 @@ import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
 import com.vipamp.vipclaw.agent.adaptor.McpConfigAdaptor
 import com.vipamp.vipclaw.agent.adaptor.mcp.McpHelper
-import com.vipamp.vipclaw.common.page.Page
 import io.modelcontextprotocol.spec.McpSchema
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -30,7 +30,7 @@ import org.springframework.util.StringUtils.hasText
 class McpServerServiceImpl(
     private val jwtUtil: JwtUtil,
     private val mcpServerMapper: McpServerMapper,
-    private val mcpAdaptor: McpConfigAdaptor
+    private val mcpAdaptor: McpConfigAdaptor,
 ) : McpServerService {
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
@@ -38,35 +38,27 @@ class McpServerServiceImpl(
     override fun page(
         keyword: String?,
         status: Int?,
-        types: String?,
+        type: String?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<McpServer> {
         log.info(
-            "分页查询 MCP 服务列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, types: {}",
+            "分页查询 MCP 服务列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, type: {}",
             pageNum,
             pageSize,
             keyword,
             status,
-            types
+            type,
         )
 
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // 处理 types 参数，将逗号分隔转为 SQL IN 格式
-        val typesSql = if (hasText(types)) {
-            types!!.split(",").joinToString(",") { "'$it'" }
-        } else {
-            null
-        }
         PageHelper.startPage<Agent>(pageNum, pageSize)
-        return Page.fromPageInfo(mcpServerMapper.selectMcpServerList(keyword, status, typesSql, currentUsername))
+        return Page.fromPageInfo(mcpServerMapper.selectMcpServerList(keyword, status, type, currentUsername))
     }
 
-    override fun getMcpServer(id: Long): McpServer? {
-        return this.mcpServerMapper.selectById(id)
-    }
+    override fun getMcpServer(id: Long): McpServer? = this.mcpServerMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createMcpServer(request: McpServerCreateRequest): Boolean {
@@ -189,9 +181,7 @@ class McpServerServiceImpl(
         }
     }
 
-    override fun convertToResponse(mcpServer: McpServer): McpServerResponse {
-        return McpServerResponse.fromEntity(mcpServer)
-    }
+    override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer)
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
         val mcpServer = mcpAdaptor.getConfig(mcpId) ?: throw BizException("MCP 服务不存在")

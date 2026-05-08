@@ -30,7 +30,7 @@ interface SysJobLogMapper {
         @Param("jobName") jobName: String?,
         @Param("status") status: Int?,
         @Param("startTime") startTime: LocalDateTime?,
-        @Param("endTime") endTime: LocalDateTime?
+        @Param("endTime") endTime: LocalDateTime?,
     ): List<SysJobLog>
 
     fun selectByJobId(@Param("jobId") jobId: Long): List<SysJobLog>

@@ -21,7 +21,7 @@ import org.springframework.util.StringUtils
 @Component
 class PlanNoteAdaptorImpl(
     private val planNoteMapper: PlanNoteMapper,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
 ) : PlanNoteAdaptor {
 
     private val log = LoggerFactory.getLogger(PlanNoteAdaptorImpl::class.java)
@@ -39,15 +39,26 @@ class PlanNoteAdaptorImpl(
             val result = planNoteMapper.insert(entity)
 
             if (result > 0) {
-                log.info("PlanNote saved successfully: sessionId={}, planId={}, name={}",
-                    planNote.sessionId, planNote.planId, planNote.name)
+                log.info(
+                    "PlanNote saved successfully: sessionId={}, planId={}, name={}",
+                    planNote.sessionId,
+                    planNote.planId,
+                    planNote.name,
+                )
             } else {
-                log.warn("Failed to save PlanNote: sessionId={}, planId={}",
-                    planNote.sessionId, planNote.planId)
+                log.warn(
+                    "Failed to save PlanNote: sessionId={}, planId={}",
+                    planNote.sessionId,
+                    planNote.planId,
+                )
             }
         } catch (e: Exception) {
-            log.error("Error saving PlanNote: sessionId={}, planId={}",
-                planNote.sessionId, planNote.planId, e)
+            log.error(
+                "Error saving PlanNote: sessionId={}, planId={}",
+                planNote.sessionId,
+                planNote.planId,
+                e,
+            )
         }
     }
 
@@ -67,15 +78,13 @@ class PlanNoteAdaptorImpl(
         }
     }
 
-    override fun getPlanNotes(sessionId: String): List<PlanNote> {
-        return try {
-            val entities = planNoteMapper.selectBySessionId(sessionId)
+    override fun getPlanNotes(sessionId: String): List<PlanNote> = try {
+        val entities = planNoteMapper.selectBySessionId(sessionId)
 
-            entities.map { convertToDomain(it) }
-        } catch (e: Exception) {
-            log.error("Error getting PlanNotes: sessionId=$sessionId", e)
-            emptyList()
-        }
+        entities.map { convertToDomain(it) }
+    } catch (e: Exception) {
+        log.error("Error getting PlanNotes: sessionId=$sessionId", e)
+        emptyList()
     }
 
     override fun deletePlan(sessionId: String) {
@@ -130,7 +139,7 @@ class PlanNoteAdaptorImpl(
             try {
                 subtasks = kotlinObjectMapper.readValue(
                     entity.subtasks,
-                    object : TypeReference<List<PlanSubTask>>() {}
+                    object : TypeReference<List<PlanSubTask>>() {},
                 )
             } catch (e: JsonProcessingException) {
                 log.error("Failed to parse subtasks JSON for planId: ${entity.planId}", e)
@@ -148,7 +157,7 @@ class PlanNoteAdaptorImpl(
             entity.createdAt,
             entity.finishedAt,
             entity.costTimeseconds ?: 0L,
-            if (entity.status != null) TaskState.valueOf(entity.status) else TaskState.TODO
+            if (entity.status != null) TaskState.valueOf(entity.status) else TaskState.TODO,
         )
     }
 }

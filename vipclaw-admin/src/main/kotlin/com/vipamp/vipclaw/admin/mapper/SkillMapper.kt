@@ -28,7 +28,7 @@ interface SkillMapper {
         @Param("name") name: String?,
         @Param("repositoryId") repositoryId: Long?,
         @Param("status") status: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<Skill>
 
     fun selectByNameAndRepo(@Param("name") name: String, @Param("repositoryId") repositoryId: Long): Skill?
@@ -39,6 +39,6 @@ interface SkillMapper {
         @Param("id") id: Long,
         @Param("description") description: String?,
         @Param("skillmd") skillmd: String?,
-        @Param("resources") resources: String?
+        @Param("resources") resources: String?,
     ): Int
 }

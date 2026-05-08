@@ -30,24 +30,22 @@ data class McpServerResponse(
     @Schema(description = "创建时间", example = "2026-03-12 12:00:00")
     val createTime: LocalDateTime? = null,
     @Schema(description = "更新时间", example = "2026-03-12 12:00:00")
-    val updateTime: LocalDateTime? = null
+    val updateTime: LocalDateTime? = null,
 ) {
     companion object {
         @JvmStatic
-        fun fromEntity(entity: McpServer): McpServerResponse {
-            return McpServerResponse(
-                id = entity.id,
-                name = entity.name,
-                description = entity.description,
-                type = entity.type,
-                command = entity.command,
-                url = entity.url,
-                status = entity.status,
-                isPublic = entity.isPublic,
-                creator = entity.creator,
-                createTime = entity.createTime,
-                updateTime = entity.updateTime
-            )
-        }
+        fun fromEntity(entity: McpServer): McpServerResponse = McpServerResponse(
+            id = entity.id,
+            name = entity.name,
+            description = entity.description,
+            type = entity.type,
+            command = entity.command,
+            url = entity.url,
+            status = entity.status,
+            isPublic = entity.isPublic,
+            creator = entity.creator,
+            createTime = entity.createTime,
+            updateTime = entity.updateTime,
+        )
     }
 }

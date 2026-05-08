@@ -153,9 +153,9 @@ class CustomerPlanNoteStorageIntegrationTest {
     fun `test addPlan should correctly calculate costTimeSeconds with different time intervals`() {
         // 测试不同的时间间隔
         val testCases = listOf(
-            Pair(5L, 5L),      // 5秒
-            Pair(60L, 60L),    // 1分钟
-            Pair(3600L, 3600L) // 1小时
+            Pair(5L, 5L), // 5秒
+            Pair(60L, 60L), // 1分钟
+            Pair(3600L, 3600L), // 1小时
         )
 
         for ((seconds, expectedSeconds) in testCases) {
@@ -184,7 +184,7 @@ class CustomerPlanNoteStorageIntegrationTest {
             if (actualSeconds != null) {
                 assertTrue(
                     actualSeconds >= expectedSeconds - 1 && actualSeconds <= expectedSeconds + 1,
-                    "Expected cost time to be around $expectedSeconds seconds, but was $actualSeconds"
+                    "Expected cost time to be around $expectedSeconds seconds, but was $actualSeconds",
                 )
             }
         }

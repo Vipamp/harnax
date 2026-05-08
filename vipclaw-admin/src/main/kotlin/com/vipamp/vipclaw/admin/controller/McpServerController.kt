@@ -2,9 +2,9 @@ package com.vipamp.vipclaw.admin.controller
 
 import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.*
+import com.vipamp.vipclaw.admin.dto.Page
+import com.vipamp.vipclaw.admin.dto.mapRecords
 import com.vipamp.vipclaw.admin.service.McpServerService
-import com.vipamp.vipclaw.common.page.Page
-import com.vipamp.vipclaw.common.page.mapRecords
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "MCP 服务管理", description = "MCP 服务相关接口")
 class McpServerController(
     private val mcpServerService: McpServerService,
-    private val editionUtil: EditionUtil
+    private val editionUtil: EditionUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
@@ -32,18 +32,27 @@ class McpServerController(
     @Operation(summary = "分页获取 MCP 服务列表", description = "分页查询 MCP 服务信息")
     fun pageMcpServer(
         @Parameter(description = "页码", example = "1") @RequestParam(
-            name = "pageNum", defaultValue = "1"
-        ) pageNum: Int?, @Parameter(description = "每页大小", example = "10") @RequestParam(
-            name = "pageSize", defaultValue = "10"
-        ) pageSize: Int?, @Parameter(description = "关键词（名称/描述）") @RequestParam(
-            name = "keyword", required = false
-        ) keyword: String?, @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(
-            name = "status", required = false
-        ) status: Int?, @Parameter(description = "类型筛选（可多选，逗号分隔）") @RequestParam(
-            name = "types", required = false
-        ) types: String?
+            name = "pageNum",
+            defaultValue = "1",
+        ) pageNum: Int?,
+        @Parameter(description = "每页大小", example = "10") @RequestParam(
+            name = "pageSize",
+            defaultValue = "10",
+        ) pageSize: Int?,
+        @Parameter(description = "关键词（名称/描述）") @RequestParam(
+            name = "keyword",
+            required = false,
+        ) keyword: String?,
+        @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(
+            name = "status",
+            required = false,
+        ) status: Int?,
+        @Parameter(description = "类型筛选（stdio/sse/streamablehttp）") @RequestParam(
+            name = "type",
+            required = false,
+        ) type: String?,
     ): ResultVo<Page<McpServerResponse>> = try {
-        val page = mcpServerService.page(keyword, status, types, pageNum ?: 1, pageSize ?: 10)
+        val page = mcpServerService.page(keyword, status, type, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { mcpServerService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("获取 MCP 服务列表失败", e)
@@ -53,7 +62,7 @@ class McpServerController(
     @GetMapping("/{id}")
     @Operation(summary = "获取 MCP 服务详情", description = "根据 ID 获取 MCP 服务信息")
     fun getMcpServer(
-        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long
+        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<McpServerResponse?> = try {
         val mcpServer = mcpServerService.getMcpServer(id)
         ResultVo.success(mcpServer?.let { mcpServerService.convertToResponse(it) })
@@ -65,7 +74,7 @@ class McpServerController(
     @PostMapping
     @Operation(summary = "创建 MCP 服务", description = "新增 MCP 服务")
     fun createMcpServer(
-        @Valid @RequestBody request: McpServerCreateRequest
+        @Valid @RequestBody request: McpServerCreateRequest,
     ): ResultVo<Void> {
         return try {
             // 企业版和公网版不支持 stdio 模式
@@ -86,7 +95,7 @@ class McpServerController(
     @Operation(summary = "更新 MCP 服务", description = "根据 ID 更新 MCP 服务信息")
     fun updateMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
-        @Valid @RequestBody request: McpServerUpdateRequest
+        @Valid @RequestBody request: McpServerUpdateRequest,
     ): ResultVo<Void> = try {
         if (mcpServerService.updateMcpServer(id, request)) ResultVo.success() else ResultVo.error("更新 MCP 服务失败")
     } catch (e: Exception) {
@@ -98,7 +107,7 @@ class McpServerController(
     @Operation(summary = "切换 MCP 服务启用状态", description = "启用或禁用 MCP 服务")
     fun toggleMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") status: Int
+        @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
         if (mcpServerService.toggleMcpServerStatus(id, status)) ResultVo.success() else ResultVo.error("切换状态失败")
     } catch (e: Exception) {
@@ -109,7 +118,7 @@ class McpServerController(
     @DeleteMapping("/{id}")
     @Operation(summary = "删除 MCP 服务", description = "根据 ID 逻辑删除 MCP 服务")
     fun deleteMcpServer(
-        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long
+        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
         if (mcpServerService.deleteMcpServer(id)) ResultVo.success() else ResultVo.error("删除 MCP 服务失败")
     } catch (e: Exception) {
@@ -120,7 +129,7 @@ class McpServerController(
     @PostMapping("/{id}/connectivity-test")
     @Operation(summary = "MCP 服务连通性测试", description = "测试 MCP 服务是否可正常连接")
     fun connectivityTest(
-        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long
+        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Boolean> = try {
         val result = mcpServerService.connectivityTest(id)
         ResultVo.success(result)
@@ -132,7 +141,7 @@ class McpServerController(
     @GetMapping("/{id}/list_tools")
     @Operation(summary = "获取 MCP 工具列表", description = "获取 MCP 服务提供的工具列表")
     fun listTools(
-        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long
+        @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<List<McpToolResponse>> = try {
         val tools = mcpServerService.listTools(id)
         val toolResponses = tools.map { tool ->
@@ -148,9 +157,9 @@ class McpServerController(
                         description = when (value) {
                             is Map<*, *> -> (value["description"] as? String) ?: ""
                             else -> ""
-                        }
+                        },
                     )
-                } ?: emptyList()
+                } ?: emptyList(),
             )
         }
         ResultVo.success(toolResponses)
@@ -171,7 +180,7 @@ class McpServerController(
             name = "read_file"
             parameters = listOf(
                 createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
-                createParameter("encoding", "string", "文件编码，默认为 utf-8")
+                createParameter("encoding", "string", "文件编码，默认为 utf-8"),
             )
         }
         tools.add(readFile)
@@ -182,7 +191,7 @@ class McpServerController(
             parameters = listOf(
                 createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
                 createParameter("content", "string", "要写入的文件内容"),
-                createParameter("encoding", "string", "文件编码，默认为 utf-8")
+                createParameter("encoding", "string", "文件编码，默认为 utf-8"),
             )
         }
         tools.add(writeFile)
@@ -191,7 +200,7 @@ class McpServerController(
         val listDirectory = McpToolResponse().apply {
             name = "list_directory"
             parameters = listOf(
-                createParameter("directory_path", "string", "目录路径，例如: /path/to/directory")
+                createParameter("directory_path", "string", "目录路径，例如: /path/to/directory"),
             )
         }
         tools.add(listDirectory)
@@ -202,7 +211,7 @@ class McpServerController(
             parameters = listOf(
                 createParameter("directory_path", "string", "搜索的目录路径"),
                 createParameter("pattern", "string", "搜索模式，支持通配符，例如: *.txt"),
-                createParameter("recursive", "boolean", "是否递归搜索子目录，默认为 false")
+                createParameter("recursive", "boolean", "是否递归搜索子目录，默认为 false"),
             )
         }
         tools.add(searchFiles)
@@ -213,7 +222,7 @@ class McpServerController(
             parameters = listOf(
                 createParameter("command", "string", "要执行的命令，例如: ls -la"),
                 createParameter("working_directory", "string", "工作目录，默认为当前目录"),
-                createParameter("timeout", "integer", "命令执行超时时间（秒），默认为 30")
+                createParameter("timeout", "integer", "命令执行超时时间（秒），默认为 30"),
             )
         }
         tools.add(executeCommand)
@@ -224,11 +233,9 @@ class McpServerController(
     /**
      * 创建参数对象
      */
-    private fun createParameter(name: String, type: String, description: String): McpToolResponse.McpToolParameter {
-        return McpToolResponse.McpToolParameter().apply {
-            this.name = name
-            this.type = type
-            this.description = description
-        }
+    private fun createParameter(name: String, type: String, description: String): McpToolResponse.McpToolParameter = McpToolResponse.McpToolParameter().apply {
+        this.name = name
+        this.type = type
+        this.description = description
     }
 }

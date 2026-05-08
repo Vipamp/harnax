@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SessionChatUpdateRequest
 import com.vipamp.vipclaw.admin.dto.SessionCreateRequest
 import com.vipamp.vipclaw.admin.dto.SessionResponse
@@ -14,7 +15,6 @@ import com.vipamp.vipclaw.admin.service.*
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
 import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -35,7 +35,7 @@ class SessionServiceImpl(
     private val skillService: SkillService,
     private val modelService: ModelService,
     private val jwtUtil: JwtUtil,
-    private val sessionMapper: SessionMapper
+    private val sessionMapper: SessionMapper,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
@@ -45,23 +45,21 @@ class SessionServiceImpl(
         keyword: String?,
         status: Int?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<Session> {
         log.info(
             "分页查询会话列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}",
             pageNum,
             pageSize,
             keyword,
-            status
+            status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<SysJob>(pageNum, pageSize)
         return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername))
     }
 
-    override fun getSession(id: Long): Session? {
-        return this.sessionMapper.selectById(id)
-    }
+    override fun getSession(id: Long): Session? = this.sessionMapper.selectById(id)
 
     override fun convertToResponse(session: Session): SessionResponse {
         val response = SessionResponse()
@@ -100,7 +98,7 @@ class SessionServiceImpl(
             try {
                 val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
                     session.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {}
+                    object : TypeReference<List<Map<String, Any>>>() {},
                 )
 
                 val mcpItems = mutableListOf<SessionResponse.McpItem>()
@@ -164,48 +162,46 @@ class SessionServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createSession(request: SessionCreateRequest): Boolean {
-        return try {
-            // 检查会话名称是否重复
-            val count = sessionMapper.countByTitle(request.title)
-            if (count > 0) {
-                throw BizException("会话名称已存在，请使用其他名称")
-            }
-
-            // 根据智能体ID获取智能体信息
-            val agent = agentService.getAgent(request.agentId)
-                ?: throw BizException("智能体不存在")
-
-            val session = Session()
-            session.title = request.title
-            session.sessionDescription = request.sessionDescription
-            session.sessionId = UUID.randomUUID().toString()
-            session.agentId = request.agentId
-
-            // 从智能体复制信息
-            session.name = agent.name
-            session.description = agent.description
-            session.systemPrompt = agent.systemPrompt
-            session.modelId = agent.modelId
-            session.mcpList = agent.mcpList
-            session.skillList = agent.skillList
-            session.owner = agent.owner
-            session.status = 1
-
-            // 设置创建人
-            val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-            session.creator = currentUsername
-
-            // 默认不公开
-            session.isPublic = 0
-
-            val success = this.sessionMapper.insert(session) > 0
-            log.info("会话创建{}，id: {}", if (success) "成功" else "失败", session.id)
-            success
-        } catch (e: Exception) {
-            log.error("创建会话失败", e)
-            throw RuntimeException("创建会话失败：${e.message}")
+    override fun createSession(request: SessionCreateRequest): Boolean = try {
+        // 检查会话名称是否重复
+        val count = sessionMapper.countByTitle(request.title)
+        if (count > 0) {
+            throw BizException("会话名称已存在，请使用其他名称")
         }
+
+        // 根据智能体ID获取智能体信息
+        val agent = agentService.getAgent(request.agentId)
+            ?: throw BizException("智能体不存在")
+
+        val session = Session()
+        session.title = request.title
+        session.sessionDescription = request.sessionDescription
+        session.sessionId = UUID.randomUUID().toString()
+        session.agentId = request.agentId
+
+        // 从智能体复制信息
+        session.name = agent.name
+        session.description = agent.description
+        session.systemPrompt = agent.systemPrompt
+        session.modelId = agent.modelId
+        session.mcpList = agent.mcpList
+        session.skillList = agent.skillList
+        session.owner = agent.owner
+        session.status = 1
+
+        // 设置创建人
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        session.creator = currentUsername
+
+        // 默认不公开
+        session.isPublic = 0
+
+        val success = this.sessionMapper.insert(session) > 0
+        log.info("会话创建{}，id: {}", if (success) "成功" else "失败", session.id)
+        success
+    } catch (e: Exception) {
+        log.error("创建会话失败", e)
+        throw RuntimeException("创建会话失败：${e.message}")
     }
 
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
@@ -227,7 +223,7 @@ class SessionServiceImpl(
             sessionId = session.sessionId,
             enableThink = session.enableThink == 1,
             enableSearch = session.enableSearch == 1,
-            enablePlan = session.enablePlan == 1
+            enablePlan = session.enablePlan == 1,
         )
     }
 

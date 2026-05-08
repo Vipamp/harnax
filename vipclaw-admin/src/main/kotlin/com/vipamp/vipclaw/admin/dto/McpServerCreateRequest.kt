@@ -20,14 +20,14 @@ data class McpServerCreateRequest(
     @Schema(
         description = "MCP 类型（stdio/sse/streamablehttp）",
         example = "stdio",
-        requiredMode = Schema.RequiredMode.REQUIRED
+        requiredMode = Schema.RequiredMode.REQUIRED,
     )
     @NotBlank(message = "MCP 类型不能为空")
     val type: String = "stdio",
 
     @Schema(
         description = "执行命令（仅 stdio 类型生效）",
-        example = "npx -y @modelcontextprotocol/server-filesystem /tmp"
+        example = "npx -y @modelcontextprotocol/server-filesystem /tmp",
     )
     val command: String? = null,
 
@@ -35,5 +35,5 @@ data class McpServerCreateRequest(
     val url: String? = null,
 
     @Schema(description = "状态（0:禁用，1:启用）", example = "1")
-    val status: Int? = null
+    val status: Int? = null,
 )

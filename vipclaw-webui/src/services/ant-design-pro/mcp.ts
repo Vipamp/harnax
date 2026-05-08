@@ -9,6 +9,7 @@ export async function getMcpServerPage(
     size?: number;
     keyword?: string;
     status?: number;
+    type?: string;
   },
   options?: { [key: string]: any },
 ) {

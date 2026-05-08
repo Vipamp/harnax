@@ -16,7 +16,7 @@ sealed class PlatformResponse {
         val statusCode: Int,
         val body: String,
         val platformCode: String? = null,
-        val platformMessage: String? = null
+        val platformMessage: String? = null,
     ) : PlatformResponse()
 
     /**
@@ -32,6 +32,6 @@ sealed class PlatformResponse {
         val body: String,
         val platformCode: String? = null,
         val platformMessage: String? = null,
-        val exception: Throwable? = null
+        val exception: Throwable? = null,
     ) : PlatformResponse()
 }

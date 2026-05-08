@@ -24,7 +24,7 @@ data class ModelProviderResponse(
 
     @field:Pattern(
         regexp = "^(https?:\\/\\/)?([\\w.-]+)(:\\d+)?(\\/[^\\s]*)?$|^$",
-        message = "API 地址格式不正确"
+        message = "API 地址格式不正确",
     )
     @Schema(description = "API 基础地址（可为空）", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
     val baseUrl: String? = null,
@@ -38,24 +38,22 @@ data class ModelProviderResponse(
     @Schema(description = "创建时间", example = "2026-03-13 12:00:00")
     var createTime: LocalDateTime = LocalDateTime.now(),
     @Schema(description = "更新时间", example = "2026-03-13 12:00:00")
-    var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now(),
 ) {
     companion object {
-        fun fromEntity(provider: ModelProvider): ModelProviderResponse {
-            return ModelProviderResponse(
-                id = provider.id,
-                type = provider.type,
-                name = provider.name,
-                apiKey = maskApiKey(provider.apiKey),
-                baseUrl = provider.baseUrl,
-                status = provider.status,
-                isPublic = provider.isPublic,
-                creator = provider.creator,
-                createTime = provider.createTime,
-                updateTime = provider.updateTime
-            )
-        }
-        
+        fun fromEntity(provider: ModelProvider): ModelProviderResponse = ModelProviderResponse(
+            id = provider.id,
+            type = provider.type,
+            name = provider.name,
+            apiKey = maskApiKey(provider.apiKey),
+            baseUrl = provider.baseUrl,
+            status = provider.status,
+            isPublic = provider.isPublic,
+            creator = provider.creator,
+            createTime = provider.createTime,
+            updateTime = provider.updateTime,
+        )
+
         /**
          * API Key 脱敏处理
          * 规则：前 2 位 + **** + 后 4 位

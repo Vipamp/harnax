@@ -11,66 +11,66 @@ data class ChannelMessage(
      * 消息 ID
      */
     val messageId: String? = null,
-    
+
     /**
      * 会话 ID（用户 ID 或群组 ID）
      */
     val sessionId: String,
-    
+
     /**
      * 消息类型
      */
     val messageType: MessageType = MessageType.TEXT,
-    
+
     /**
      * 消息角色
      */
     val role: MessageRole = MessageRole.USER,
-    
+
     /**
      * 消息内容
      */
     val content: String,
-    
+
     /**
      * 平台类型
      */
     val channelType: ChannelType,
-    
+
     /**
      * 发送者名称
      */
     val senderName: String? = null,
-    
+
     /**
      * 发送者 ID
      */
     val senderId: String? = null,
-    
+
     /**
      * 是否是群聊消息
      */
     val isGroupMessage: Boolean = false,
-    
+
     /**
      * 群组 ID（如果是群聊）
      */
     val groupId: String? = null,
-    
+
     /**
      * @ 用户列表
      */
     val atUserIds: List<String> = emptyList(),
-    
+
     /**
      * 原始消息内容（平台特定格式）
      */
     val rawContent: Any? = null,
-    
+
     /**
      * 时间戳
      */
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 ) {
     companion object {
         @JvmStatic
@@ -120,7 +120,7 @@ class ChannelMessageBuilder {
         groupId = groupId,
         atUserIds = atUserIds,
         rawContent = rawContent,
-        timestamp = timestamp
+        timestamp = timestamp,
     )
 }
 
@@ -128,19 +128,19 @@ class ChannelMessageBuilder {
  * 消息类型
  */
 enum class MessageType {
-    TEXT,       // 文本消息
-    MARKDOWN,   // Markdown 格式消息
-    IMAGE,      // 图片消息
-    FILE,       // 文件消息
-    CARD,       // 卡片消息（交互式卡片）
-    EVENT       // 事件消息
+    TEXT, // 文本消息
+    MARKDOWN, // Markdown 格式消息
+    IMAGE, // 图片消息
+    FILE, // 文件消息
+    CARD, // 卡片消息（交互式卡片）
+    EVENT, // 事件消息
 }
 
 /**
  * 消息角色
  */
 enum class MessageRole {
-    USER,       // 用户消息
-    ASSISTANT,  // AI 回复
-    SYSTEM      // 系统消息
+    USER, // 用户消息
+    ASSISTANT, // AI 回复
+    SYSTEM, // 系统消息
 }

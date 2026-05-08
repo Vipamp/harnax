@@ -2,7 +2,8 @@ package com.vipamp.vipclaw.agent.provider.tool
 
 import com.vipamp.vipclaw.agent.adaptor.ToolCallInfo
 import com.vipamp.vipclaw.agent.adaptor.ToolCallLogAdaptor
-import com.vipamp.vipclaw.common.log.logger
+import com.vipamp.vipclaw.agent.adaptor.mcp.McpHelper
+import org.slf4j.LoggerFactory
 
 /**
  * @Author: heqingsong
@@ -16,6 +17,7 @@ abstract class ToolBox {
     private lateinit var toolCallLogAdaptor: ToolCallLogAdaptor
     private val needConfirmedTools: MutableSet<String> = mutableSetOf()
     private lateinit var name: String
+    private val log = LoggerFactory.getLogger(McpHelper::class.java)
 
     /**
      * 获取工具名称（子类必须实现）
@@ -25,7 +27,7 @@ abstract class ToolBox {
     fun init(
         toolCallLogAdaptor: ToolCallLogAdaptor,
         sessionMetaContext: SessionMetaContext,
-        userIdentifier: UserIdentifier
+        userIdentifier: UserIdentifier,
     ) {
         this.toolCallLogAdaptor = toolCallLogAdaptor
         this.userIdentifier = userIdentifier
@@ -41,7 +43,7 @@ abstract class ToolBox {
     @Suppress("UNCHECKED_CAST")
     protected fun <T> execute(
         vararg args: Pair<String, Any?>,
-        action: () -> T
+        action: () -> T,
     ): T {
         val methodName = Throwable().stackTrace[1].methodName
         return executeInternal(methodName, args.toMap(), action)
@@ -56,7 +58,7 @@ abstract class ToolBox {
     private fun <T> executeInternal(
         methodName: String,
         args: Map<String, Any?>,
-        action: () -> T
+        action: () -> T,
     ): T {
         val startTime = System.currentTimeMillis()
 
@@ -84,7 +86,7 @@ abstract class ToolBox {
         args: Map<String, Any?>,
         result: String,
         startTime: Long,
-        endTime: Long
+        endTime: Long,
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
@@ -98,13 +100,13 @@ abstract class ToolBox {
             success = true,
             startTime = startTime,
             endTime = endTime,
-            duration = duration
+            duration = duration,
         )
 
         try {
             toolCallLogAdaptor.emit(toolCallInfo)
         } catch (e: Exception) {
-            logger().error("Failed to log tool call: toolName=$toolName", e)
+            log.error("Failed to log tool call: toolName=$toolName", e)
         }
     }
 
@@ -116,7 +118,7 @@ abstract class ToolBox {
         args: Map<String, Any?>,
         error: Throwable,
         startTime: Long,
-        endTime: Long
+        endTime: Long,
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
@@ -130,13 +132,13 @@ abstract class ToolBox {
             success = false,
             startTime = startTime,
             endTime = endTime,
-            duration = duration
+            duration = duration,
         )
 
         try {
             toolCallLogAdaptor.emit(toolCallInfo)
         } catch (logEx: Exception) {
-            logger().error("Failed to log tool call error: toolName=$toolName", logEx)
+            log.error("Failed to log tool call error: toolName=$toolName", logEx)
         }
     }
 }

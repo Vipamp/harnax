@@ -4,7 +4,6 @@ import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.LoginRequest
 import com.vipamp.vipclaw.admin.dto.LoginResponse
 import com.vipamp.vipclaw.admin.dto.LoginResponse.UserInfo
-import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.i18n.MessageUtil
@@ -40,7 +39,7 @@ class AuthServiceImpl(
     private val userTenantService: UserTenantService,
     private val editionUtil: EditionUtil,
     private val tenantMapper: TenantMapper,
-    private val messageUtil: MessageUtil
+    private val messageUtil: MessageUtil,
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -77,25 +76,25 @@ class AuthServiceImpl(
 
         // 4. 检查用户是否属于任何租户
         var userTenants = userTenantService.getUserTenants(user.id)
-        
+
         // 个人版：如果用户没有租户，自动关联到默认租户（id=1）
         if (userTenants.isEmpty() && editionUtil.isPersonal()) {
             log.info("[个人版] 用户 {} 没有租户，自动关联到默认租户", user.username)
-            
+
             // 检查默认租户是否存在
             val defaultTenant = tenantMapper.selectById(1)
             if (defaultTenant != null) {
                 // 自动将用户添加到默认租户
                 userTenantService.addUserToTenant(1, user.id, "member", "system")
                 log.info("[个人版] 已将用户 {} 自动添加到默认租户", user.username)
-                
+
                 // 重新获取租户列表
                 userTenants = userTenantService.getUserTenants(user.id)
             } else {
                 log.warn("[个人版] 默认租户不存在，无法自动关联")
             }
         }
-        
+
         if (userTenants.isEmpty() && user.isAdmin != 1) {
             throw BizException(messageUtil.getMessage("error.user.no_tenant"))
         }

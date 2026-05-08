@@ -60,7 +60,7 @@ interface SysUserMapper {
     fun selectUserList(
         @Param("keyword") keyword: String?,
         @Param("status") status: Int?,
-        @Param("tenantId") tenantId: Long?
+        @Param("tenantId") tenantId: Long?,
     ): List<SysUser>
 
     /**
@@ -96,7 +96,7 @@ interface SysUserMapper {
      */
     fun updateStatus(
         @Param("id") id: Long,
-        @Param("status") status: Int
+        @Param("status") status: Int,
     ): Int
 
     /**
@@ -108,6 +108,6 @@ interface SysUserMapper {
      */
     fun updateLastLoginTime(
         @Param("id") id: Long,
-        @Param("lastLoginTime") lastLoginTime: LocalDateTime
+        @Param("lastLoginTime") lastLoginTime: LocalDateTime,
     ): Int
 }

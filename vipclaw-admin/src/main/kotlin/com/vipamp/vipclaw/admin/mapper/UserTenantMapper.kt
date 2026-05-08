@@ -28,7 +28,7 @@ interface UserTenantMapper {
      */
     fun selectByUserIdAndTenantId(
         @Param("userId") userId: Long,
-        @Param("tenantId") tenantId: Long
+        @Param("tenantId") tenantId: Long,
     ): UserTenantEntity?
 
     /**
@@ -41,7 +41,7 @@ interface UserTenantMapper {
      */
     fun deleteByUserIdAndTenantId(
         @Param("userId") userId: Long,
-        @Param("tenantId") tenantId: Long
+        @Param("tenantId") tenantId: Long,
     ): Int
 
     /**
@@ -55,6 +55,6 @@ interface UserTenantMapper {
     fun updateRole(
         @Param("userId") userId: Long,
         @Param("tenantId") tenantId: Long,
-        @Param("role") role: String
+        @Param("role") role: String,
     ): Int
 }

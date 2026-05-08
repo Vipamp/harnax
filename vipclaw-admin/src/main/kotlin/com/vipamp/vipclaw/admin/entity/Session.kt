@@ -6,7 +6,9 @@ import java.time.LocalDateTime
 
 @Schema(description = "会话实体类")
 class Session : Serializable {
-    companion object { private const val serialVersionUID = 1L }
+    companion object {
+        private const val serialVersionUID = 1L
+    }
 
     @Schema(description = "ID")
     var id: Long = 0
@@ -45,7 +47,7 @@ class Session : Serializable {
     var enablePlan: Int = 0
 
     @Schema(description = "MCP 服务列表（JSON 格式）")
-    var mcpList: String= "[]"
+    var mcpList: String = "[]"
 
     @Schema(description = "技能列表（JSON 格式）")
     var skillList: String = "[]"

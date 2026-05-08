@@ -25,16 +25,14 @@ object ModelHelper {
      * @return ChatModel 实例
      * @throws ModelErrorCode.MODEL_CREATE_FAILED 当模型创建失败时抛出
      */
-    fun createChatModel(chatModelConfig: ChatModelConfig, chatSpec: ChatSpec): ChatModelBase {
-        return try {
-            when (chatModelConfig) {
-                is DashScopeChatModelConfig -> buildDashScopeChatModel(chatModelConfig, chatSpec)
-                is OpenAIChatModelConfig -> buildOpenAIChatModel(chatModelConfig, chatSpec)
-                is OllamaChatModelConfig -> buildOllamaChatModel(chatModelConfig, chatSpec)
-            }
-        } catch (e: Exception) {
-            throw ModelErrorCode.MODEL_CREATE_FAILED.format(e, chatModelConfig.modelName)
+    fun createChatModel(chatModelConfig: ChatModelConfig, chatSpec: ChatSpec): ChatModelBase = try {
+        when (chatModelConfig) {
+            is DashScopeChatModelConfig -> buildDashScopeChatModel(chatModelConfig, chatSpec)
+            is OpenAIChatModelConfig -> buildOpenAIChatModel(chatModelConfig, chatSpec)
+            is OllamaChatModelConfig -> buildOllamaChatModel(chatModelConfig, chatSpec)
         }
+    } catch (e: Exception) {
+        throw ModelErrorCode.MODEL_CREATE_FAILED.format(e, chatModelConfig.modelName)
     }
 
     /**
@@ -45,7 +43,7 @@ object ModelHelper {
      */
     private fun buildDashScopeChatModel(
         config: DashScopeChatModelConfig,
-        chatSpec: ChatSpec
+        chatSpec: ChatSpec,
     ): ChatModelBase {
         val builder = DashScopeChatModel.builder()
             .apiKey(config.apiKey)
@@ -67,7 +65,7 @@ object ModelHelper {
      */
     private fun buildOpenAIChatModel(
         config: OpenAIChatModelConfig,
-        chatSpec: ChatSpec
+        chatSpec: ChatSpec,
     ): ChatModelBase {
         val builder = OpenAIChatModel.builder()
             .apiKey(config.apiKey)
@@ -89,7 +87,7 @@ object ModelHelper {
      */
     private fun buildOllamaChatModel(
         config: OllamaChatModelConfig,
-        chatSpec: ChatSpec
+        chatSpec: ChatSpec,
     ): ChatModelBase {
         val options = config.options ?: OllamaOptions.builder().build()
         if (chatSpec.enableThinking != null) {

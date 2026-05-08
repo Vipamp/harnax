@@ -1,14 +1,12 @@
 package com.vipamp.vipclaw.ascopagent
 
 import com.vipamp.vipclaw.admin.dto.ResultVo
+import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.agent.adaptor.PlanNote
 import com.vipamp.vipclaw.agent.chat.ChatEvent
 import com.vipamp.vipclaw.agent.chat.MessageLog
-import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.ascopagent.dto.ChatRequest
 import com.vipamp.vipclaw.ascopagent.dto.ConfirmRequest
-import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
-import com.vipamp.vipclaw.ascopagent.dto.SessionConfigUpdateRequest
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
@@ -27,7 +25,7 @@ import reactor.core.publisher.Flux
 @RequestMapping("/ai")
 class ChatController(
     private val chatService: ChatService,
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
 ) {
 
     /**
@@ -38,7 +36,7 @@ class ChatController(
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未授权或 Token 无效")
         }
-        
+
         val token = authHeader.substring(7)
         if (!jwtUtil.validateToken(token)) {
             throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token 无效或已过期")
@@ -65,9 +63,9 @@ class ChatController(
         validateJwtToken(httpServletRequest)
         try {
             chatService.clearSession(sessionId)
-            return ResultVo.success("OK");
+            return ResultVo.success("OK")
         } catch (e: Exception) {
-            return ResultVo.error(e.toString());
+            return ResultVo.error(e.toString())
         }
     }
 
@@ -78,7 +76,7 @@ class ChatController(
         try {
             return ResultVo.success(chatService.loadSessionMessages(sessionId))
         } catch (e: Exception) {
-            return ResultVo.error(e.toString());
+            return ResultVo.error(e.toString())
         }
     }
 
@@ -89,7 +87,7 @@ class ChatController(
         try {
             return ResultVo.success(chatService.loadSessionHistoryPlan(sessionId))
         } catch (e: Exception) {
-            return ResultVo.error(e.toString());
+            return ResultVo.error(e.toString())
         }
     }
 
@@ -100,7 +98,7 @@ class ChatController(
         return try {
             ResultVo.success(chatService.loadSessionCurrentPlanNote(sessionId))
         } catch (e: Exception) {
-            ResultVo.error(e.toString());
+            ResultVo.error(e.toString())
         }
     }
 }

@@ -1,18 +1,16 @@
 package com.vipamp.vipclaw.admin.controller
 
 import com.vipamp.vipclaw.admin.config.RequiresEdition
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.request.AddUserToTenantRequest
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.service.TenantService
-import com.vipamp.vipclaw.admin.util.UserContextUtil
 import com.vipamp.vipclaw.admin.util.JwtUtil
-import com.vipamp.vipclaw.common.page.Page
-import com.vipamp.vipclaw.common.page.mapRecords
+import com.vipamp.vipclaw.admin.util.UserContextUtil
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -34,7 +32,7 @@ import org.springframework.web.bind.annotation.*
 class TenantController(
     private val tenantService: TenantService,
     private val jwtUtil: JwtUtil,
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(TenantController::class.java)
@@ -42,19 +40,19 @@ class TenantController(
     @PostMapping
     @Operation(summary = "创建租户", description = "全局管理员创建新租户")
     fun createTenant(
-        @Valid @RequestBody request: CreateTenantRequest
+        @Valid @RequestBody request: CreateTenantRequest,
     ): ResultVo<TenantResponse> {
         return try {
             log.info("[TenantController] 开始创建租户，请求参数: {}", request)
-            
+
             // 获取当前登录用户名
             val username = UserContextUtil.getCurrentUsername(jwtUtil)
             log.info("[TenantController] 当前登录用户: {}", username)
-            
+
             // 查询用户信息
             val currentUser = sysUserMapper.selectByUsername(username)
                 ?: return ResultVo.error("用户不存在")
-            
+
             if (currentUser.isAdmin != 1) {
                 log.error("[TenantController] 用户不是全局管理员，userId: {}, isAdmin: {}", currentUser.id, currentUser.isAdmin)
                 return ResultVo.error("仅全局管理员可以创建租户")
@@ -71,19 +69,17 @@ class TenantController(
     @GetMapping("/{id}")
     @Operation(summary = "获取租户详情", description = "根据ID获取租户信息")
     fun getTenant(
-        @Parameter(description = "租户ID") @PathVariable id: Long
-    ): ResultVo<TenantResponse> {
-        return try {
-            val tenant = tenantService.getTenantById(id)
-            if (tenant != null) {
-                ResultVo.success(tenant)
-            } else {
-                ResultVo.error("租户不存在")
-            }
-        } catch (e: Exception) {
-            log.error("获取租户详情失败", e)
-            ResultVo.error(e.message ?: "获取租户详情失败")
+        @Parameter(description = "租户ID") @PathVariable id: Long,
+    ): ResultVo<TenantResponse> = try {
+        val tenant = tenantService.getTenantById(id)
+        if (tenant != null) {
+            ResultVo.success(tenant)
+        } else {
+            ResultVo.error("租户不存在")
         }
+    } catch (e: Exception) {
+        log.error("获取租户详情失败", e)
+        ResultVo.error(e.message ?: "获取租户详情失败")
     }
 
     @GetMapping
@@ -92,42 +88,36 @@ class TenantController(
         @Parameter(description = "页码") @RequestParam(defaultValue = "1") pageNum: Int,
         @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") pageSize: Int,
         @Parameter(description = "租户名称") @RequestParam(required = false) name: String?,
-        @Parameter(description = "状态") @RequestParam(required = false) status: Int?
-    ): ResultVo<Page<TenantResponse>> {
-        return try {
-            val page = tenantService.getTenantList(name, status, pageNum, pageSize)
-            ResultVo.success(page)
-        } catch (e: Exception) {
-            log.error("查询租户列表失败", e)
-            ResultVo.error(e.message ?: "查询租户列表失败")
-        }
+        @Parameter(description = "状态") @RequestParam(required = false) status: Int?,
+    ): ResultVo<Page<TenantResponse>> = try {
+        val page = tenantService.getTenantList(name, status, pageNum, pageSize)
+        ResultVo.success(page)
+    } catch (e: Exception) {
+        log.error("查询租户列表失败", e)
+        ResultVo.error(e.message ?: "查询租户列表失败")
     }
-
-
 
     @PutMapping("/{id}/status")
     @Operation(summary = "切换租户状态", description = "启用/禁用租户")
     fun toggleStatus(
-        @Parameter(description = "租户ID") @PathVariable id: Long
-    ): ResultVo<Boolean> {
-        return try {
-            val success = tenantService.toggleStatus(id)
-            ResultVo.success(success)
-        } catch (e: Exception) {
-            log.error("切换租户状态失败", e)
-            ResultVo.error(e.message ?: "切换租户状态失败")
-        }
+        @Parameter(description = "租户ID") @PathVariable id: Long,
+    ): ResultVo<Boolean> = try {
+        val success = tenantService.toggleStatus(id)
+        ResultVo.success(success)
+    } catch (e: Exception) {
+        log.error("切换租户状态失败", e)
+        ResultVo.error(e.message ?: "切换租户状态失败")
     }
 
     @DeleteMapping("/{id}")
     @Operation(summary = "删除租户", description = "逻辑删除租户")
     fun deleteTenant(
-        @Parameter(description = "租户ID") @PathVariable id: Long
+        @Parameter(description = "租户ID") @PathVariable id: Long,
     ): ResultVo<Boolean> {
         return try {
             // 获取当前登录用户名
             val username = UserContextUtil.getCurrentUsername(jwtUtil)
-            
+
             // 查询用户信息
             val currentUser = sysUserMapper.selectByUsername(username)
                 ?: return ResultVo.error("用户不存在")
@@ -149,45 +139,39 @@ class TenantController(
     fun getTenantUsers(
         @Parameter(description = "租户ID") @PathVariable id: Long,
         @Parameter(description = "页码") @RequestParam(defaultValue = "1") pageNum: Int,
-        @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") pageSize: Int
-    ): ResultVo<Page<UserTenantResponse>> {
-        return try {
-            val page = tenantService.getTenantUsers(id, pageNum, pageSize)
-            ResultVo.success(page)
-        } catch (e: Exception) {
-            log.error("查询租户下用户失败", e)
-            ResultVo.error(e.message ?: "查询租户下用户失败")
-        }
+        @Parameter(description = "每页大小") @RequestParam(defaultValue = "10") pageSize: Int,
+    ): ResultVo<Page<UserTenantResponse>> = try {
+        val page = tenantService.getTenantUsers(id, pageNum, pageSize)
+        ResultVo.success(page)
+    } catch (e: Exception) {
+        log.error("查询租户下用户失败", e)
+        ResultVo.error(e.message ?: "查询租户下用户失败")
     }
 
     @PostMapping("/{id}/users")
     @Operation(summary = "添加用户到租户", description = "将用户添加到指定租户")
     fun addUserToTenant(
         @Parameter(description = "租户ID") @PathVariable id: Long,
-        @Valid @RequestBody request: AddUserToTenantRequest
-    ): ResultVo<Boolean> {
-        return try {
-            val success = tenantService.addUserToTenant(id, request.userId, request.role)
-            ResultVo.success(success)
-        } catch (e: Exception) {
-            log.error("添加用户到租户失败", e)
-            ResultVo.error(e.message ?: "添加用户到租户失败")
-        }
+        @Valid @RequestBody request: AddUserToTenantRequest,
+    ): ResultVo<Boolean> = try {
+        val success = tenantService.addUserToTenant(id, request.userId, request.role)
+        ResultVo.success(success)
+    } catch (e: Exception) {
+        log.error("添加用户到租户失败", e)
+        ResultVo.error(e.message ?: "添加用户到租户失败")
     }
 
     @DeleteMapping("/{id}/users/{userId}")
     @Operation(summary = "从租户移除用户", description = "从指定租户中移除用户")
     fun removeUserFromTenant(
         @Parameter(description = "租户ID") @PathVariable id: Long,
-        @Parameter(description = "用户ID") @PathVariable userId: Long
-    ): ResultVo<Boolean> {
-        return try {
-            val success = tenantService.removeUserFromTenant(id, userId)
-            ResultVo.success(success)
-        } catch (e: Exception) {
-            log.error("从租户移除用户失败", e)
-            ResultVo.error(e.message ?: "从租户移除用户失败")
-        }
+        @Parameter(description = "用户ID") @PathVariable userId: Long,
+    ): ResultVo<Boolean> = try {
+        val success = tenantService.removeUserFromTenant(id, userId)
+        ResultVo.success(success)
+    } catch (e: Exception) {
+        log.error("从租户移除用户失败", e)
+        ResultVo.error(e.message ?: "从租户移除用户失败")
     }
 
     @PutMapping("/{id}/users/{userId}/role")
@@ -195,18 +179,16 @@ class TenantController(
     fun updateUserRole(
         @Parameter(description = "租户ID") @PathVariable id: Long,
         @Parameter(description = "用户ID") @PathVariable userId: Long,
-        @RequestBody request: UpdateUserRoleRequest
-    ): ResultVo<Boolean> {
-        return try {
-            val success = tenantService.updateUserRole(id, userId, request.role)
-            ResultVo.success(success)
-        } catch (e: Exception) {
-            log.error("更新用户角色失败", e)
-            ResultVo.error(e.message ?: "更新用户角色失败")
-        }
+        @RequestBody request: UpdateUserRoleRequest,
+    ): ResultVo<Boolean> = try {
+        val success = tenantService.updateUserRole(id, userId, request.role)
+        ResultVo.success(success)
+    } catch (e: Exception) {
+        log.error("更新用户角色失败", e)
+        ResultVo.error(e.message ?: "更新用户角色失败")
     }
 
     data class UpdateUserRoleRequest(
-        val role: String
+        val role: String,
     )
 }

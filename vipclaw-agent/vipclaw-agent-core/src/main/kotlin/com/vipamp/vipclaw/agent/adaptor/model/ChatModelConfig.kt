@@ -30,7 +30,7 @@ data class DashScopeChatModelConfig(
     val enableSearch: Boolean = false,
     val httpTransport: HttpTransport? = null,
     val options: GenerateOptions? = null,
-    val encrypt: Boolean = false
+    val encrypt: Boolean = false,
 ) : ChatModelConfig
 
 /**
@@ -44,7 +44,7 @@ data class OpenAIChatModelConfig(
     val stream: Boolean = true,
     val endpointPath: String? = null,
     val httpTransport: HttpTransport? = null,
-    val options: GenerateOptions? = null
+    val options: GenerateOptions? = null,
 ) : ChatModelConfig
 
 /**
@@ -55,5 +55,5 @@ data class OllamaChatModelConfig(
     override val modelName: String,
     val baseUrl: String = "http://localhost:11434",
     val httpTransport: HttpTransport? = null,
-    val options: OllamaOptions? = null
+    val options: OllamaOptions? = null,
 ) : ChatModelConfig

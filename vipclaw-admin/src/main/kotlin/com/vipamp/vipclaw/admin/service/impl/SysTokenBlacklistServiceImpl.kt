@@ -16,7 +16,7 @@ import java.time.LocalDateTime
  */
 @Service
 class SysTokenBlacklistServiceImpl(
-    private val tokenBlacklistMapper: SysTokenBlacklistMapper
+    private val tokenBlacklistMapper: SysTokenBlacklistMapper,
 ) : SysTokenBlacklistService {
 
     private val log = LoggerFactory.getLogger(SysTokenBlacklistServiceImpl::class.java)
@@ -27,7 +27,7 @@ class SysTokenBlacklistServiceImpl(
         username: String,
         userId: Long,
         expireTime: LocalDateTime,
-        reason: String
+        reason: String,
     ) {
         try {
             // 计算 Token 的 SHA256 哈希值（避免存储完整 Token）
@@ -38,7 +38,7 @@ class SysTokenBlacklistServiceImpl(
 
             // 构建黑名单记录
             val blacklist = SysTokenBlacklist.builder()
-                .token(token)  // 存储完整 Token（可选，用于审计）
+                .token(token) // 存储完整 Token（可选，用于审计）
                 .tokenHash(tokenHash)
                 .username(username)
                 .userId(userId)
@@ -96,27 +96,25 @@ class SysTokenBlacklistServiceImpl(
     /**
      * 获取客户端 IP 地址
      */
-    private fun getClientIp(): String {
-        return try {
-            val attributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
-            if (attributes != null) {
-                val request = attributes.request
+    private fun getClientIp(): String = try {
+        val attributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
+        if (attributes != null) {
+            val request = attributes.request
 
-                // 尝试从 X-Forwarded-For 获取
-                var ip = request.getHeader("X-Forwarded-For")
-                if (ip.isNullOrEmpty() || "unknown".equals(ip, ignoreCase = true)) {
-                    ip = request.getHeader("X-Real-IP")
-                }
-                if (ip.isNullOrEmpty() || "unknown".equals(ip, ignoreCase = true)) {
-                    ip = request.remoteAddr
-                }
-                ip
-            } else {
-                "unknown"
+            // 尝试从 X-Forwarded-For 获取
+            var ip = request.getHeader("X-Forwarded-For")
+            if (ip.isNullOrEmpty() || "unknown".equals(ip, ignoreCase = true)) {
+                ip = request.getHeader("X-Real-IP")
             }
-        } catch (e: Exception) {
-            log.warn("获取客户端 IP 失败：${e.message}")
+            if (ip.isNullOrEmpty() || "unknown".equals(ip, ignoreCase = true)) {
+                ip = request.remoteAddr
+            }
+            ip
+        } else {
             "unknown"
         }
+    } catch (e: Exception) {
+        log.warn("获取客户端 IP 失败：${e.message}")
+        "unknown"
     }
 }

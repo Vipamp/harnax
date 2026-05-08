@@ -26,7 +26,7 @@ interface PlanNoteMapper {
     // ==================== 自定义查询方法 ====================
     fun selectBySessionIdAndPlanId(
         @Param("sessionId") sessionId: String,
-        @Param("planId") planId: String
+        @Param("planId") planId: String,
     ): PlanNoteEntity?
 
     fun selectBySessionId(@Param("sessionId") sessionId: String): List<PlanNoteEntity>

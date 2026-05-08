@@ -94,13 +94,22 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         isPublic: formValues.isPublic ? 1 : 0,
       };
       if (values) {
-        await updateModel(values.id, data);
-        message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+        const response = await updateModel(values.id, data);
+        if (response.code === 200) {
+          message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+          onSuccess();
+        } else {
+          message.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed' }));
+        }
       } else {
-        await createModel(data);
-        message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
+        const response = await createModel(data);
+        if (response.code === 200) {
+          message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
+          onSuccess();
+        } else {
+          message.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed' }));
+        }
       }
-      onSuccess();
     } catch (error) {
       message.error(values ? intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed' }) : intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed' }));
     } finally {

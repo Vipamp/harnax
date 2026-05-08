@@ -20,7 +20,7 @@ import java.time.ZoneId
  */
 @Component
 class TokenStatAdaptorImpl(
-    private val tokenStatsMapper: TokenStatsMapper
+    private val tokenStatsMapper: TokenStatsMapper,
 ) : TokenStatAdaptor {
 
     private val log = LoggerFactory.getLogger(TokenStatAdaptorImpl::class.java)
@@ -34,15 +34,28 @@ class TokenStatAdaptorImpl(
             val result = tokenStatsMapper.insert(tokenStats)
 
             if (result > 0) {
-                log.info("Token stat saved successfully: agentId={}, modelId={}, sessionId={}, totalToken={}",
-                    tokenStat.agentId, tokenStat.modelId, tokenStat.sessionId, tokenStat.totalToken)
+                log.info(
+                    "Token stat saved successfully: agentId={}, modelId={}, sessionId={}, totalToken={}",
+                    tokenStat.agentId,
+                    tokenStat.modelId,
+                    tokenStat.sessionId,
+                    tokenStat.totalToken,
+                )
             } else {
-                log.warn("Failed to save token stat: agentId={}, modelId={}",
-                    tokenStat.agentId, tokenStat.modelId)
+                log.warn(
+                    "Failed to save token stat: agentId={}, modelId={}",
+                    tokenStat.agentId,
+                    tokenStat.modelId,
+                )
             }
         } catch (e: Exception) {
-            log.error("Error saving token stat: agentId={}, modelId={}, sessionId={}",
-                tokenStat.agentId, tokenStat.modelId, tokenStat.sessionId, e)
+            log.error(
+                "Error saving token stat: agentId={}, modelId={}, sessionId={}",
+                tokenStat.agentId,
+                tokenStat.modelId,
+                tokenStat.sessionId,
+                e,
+            )
             throw e
         }
     }

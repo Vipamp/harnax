@@ -10,5 +10,5 @@ import jakarta.validation.constraints.NotNull
 data class SwitchTenantRequest(
     @Schema(description = "租户ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     @field:NotNull(message = "租户ID不能为空")
-    val tenantId: Long
+    val tenantId: Long,
 )

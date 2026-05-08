@@ -58,7 +58,7 @@ data class AgentResponse(
     var updateTime: LocalDateTime? = null,
 
     @Schema(description = "关联会话数量", example = "5")
-    var sessionCount: Int? = null
+    var sessionCount: Int? = null,
 ) {
 
     companion object {
@@ -74,7 +74,7 @@ data class AgentResponse(
                 isPublic = agent.isPublic,
                 creator = agent.creator,
                 createTime = agent.createTime,
-                updateTime = agent.updateTime
+                updateTime = agent.updateTime,
             )
 
             return response
@@ -93,12 +93,12 @@ data class AgentResponse(
         var mcpDescription: String? = null,
 
         @Schema(description = "是否允许跳过", example = "true")
-        var enableSkip: String? = null
+        var enableSkip: String? = null,
     )
 
     data class McpConfigInternal(
         var id: Long? = null,
-        var enableSkip: String? = null
+        var enableSkip: String? = null,
     )
 
     @Schema(description = "技能项")
@@ -116,7 +116,7 @@ data class AgentResponse(
         var skillName: String? = null,
 
         @Schema(description = "技能描述", example = "代码审查技能")
-        var skillDescription: String? = null
+        var skillDescription: String? = null,
     )
 
     @Schema(description = "会话项")
@@ -131,6 +131,6 @@ data class AgentResponse(
         var sessionDescription: String? = null,
 
         @Schema(description = "会话 UUID", example = "session-123")
-        var sessionId: String? = null
+        var sessionId: String? = null,
     )
 }

@@ -28,7 +28,7 @@ interface SessionMapper {
     fun selectSessionList(
         @Param("keyword") keyword: String?,
         @Param("status") status: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<Session>
 
     fun countByTitle(@Param("title") title: String): Int

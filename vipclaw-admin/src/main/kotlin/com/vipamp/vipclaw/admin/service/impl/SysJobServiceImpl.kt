@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysJob
@@ -8,7 +9,6 @@ import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.service.SysJobService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import jakarta.annotation.PostConstruct
 import org.quartz.*
 import org.slf4j.LoggerFactory
@@ -28,7 +28,7 @@ import java.time.LocalDateTime
 class SysJobServiceImpl(
     private val schedulerFactoryBean: SchedulerFactoryBean,
     private val jwtUtil: JwtUtil,
-    private val sysJobMapper: com.vipamp.vipclaw.admin.mapper.SysJobMapper
+    private val sysJobMapper: com.vipamp.vipclaw.admin.mapper.SysJobMapper,
 ) : SysJobService {
 
     private val log = LoggerFactory.getLogger(SysJobServiceImpl::class.java)
@@ -36,31 +36,27 @@ class SysJobServiceImpl(
     /**
      * 获取 Scheduler 实例
      */
-    private fun getScheduler(): Scheduler {
-        return schedulerFactoryBean.scheduler
-    }
+    private fun getScheduler(): Scheduler = schedulerFactoryBean.scheduler
 
     override fun page(
         keyword: String?,
         jobStatus: Int?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<SysJob> {
         log.info(
             "分页查询定时任务列表，pageNum: {}, pageSize: {}, keyword: {}, jobStatus: {}",
             pageNum,
             pageSize,
             keyword,
-            jobStatus
+            jobStatus,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<SysJob>(pageNum, pageSize)
         return Page.fromPageInfo(sysJobMapper.selectJobList(keyword, jobStatus, currentUsername))
     }
 
-    override fun getSysJob(id: Long): SysJob? {
-        return sysJobMapper.selectById(id)
-    }
+    override fun getSysJob(id: Long): SysJob? = sysJobMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createJob(request: SysJobCreateRequest): Boolean {
@@ -69,7 +65,7 @@ class SysJobServiceImpl(
         // 检查任务名称和组名是否已存在
         val existJob = sysJobMapper.selectByNameAndGroup(
             request.jobName,
-            if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT"
+            if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT",
         )
         if (existJob != null) {
             throw BizException("该任务名称和组名已存在")
@@ -111,7 +107,7 @@ class SysJobServiceImpl(
         ) {
             val existJob = sysJobMapper.selectByNameAndGroup(
                 request.jobName!!,
-                (if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT")!!
+                (if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT")!!,
             )!!
             if (existJob.id != id) {
                 throw BizException("该任务名称和组名已存在")
@@ -263,9 +259,7 @@ class SysJobServiceImpl(
         log.info("共加载 {} 个定时任务", runningJobs.size)
     }
 
-    override fun getRunningJobs(): List<SysJob> {
-        return sysJobMapper.selectRunningJobs()
-    }
+    override fun getRunningJobs(): List<SysJob> = sysJobMapper.selectRunningJobs()
 
     /**
      * 保存定时任务

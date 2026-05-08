@@ -15,5 +15,5 @@ data class CreateTenantRequest(
 
     @Schema(description = "租户管理员用户ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     @field:NotNull(message = "租户管理员用户ID不能为空")
-    val adminUserId: Long
+    val adminUserId: Long,
 )

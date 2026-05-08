@@ -39,7 +39,7 @@ export async function createModelProvider(data: API.ModelProviderCreateRequest) 
  * 更新模型服务商
  */
 export async function updateModelProvider(id: number, data: API.ModelProviderUpdateRequest) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/update/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/api/model-providers/update/${id}`, {
     method: 'PUT',
     data,
   });
@@ -49,7 +49,7 @@ export async function updateModelProvider(id: number, data: API.ModelProviderUpd
  * 切换模型服务商状态
  */
 export async function toggleModelProvider(id: number, status: number) {
-  return request<API.Result<API.ModelProviderItem>>(`/admin/model-providers/toggle/${id}`, {
+  return request<API.Result<API.ModelProviderItem>>(`/api/model-providers/toggle/${id}`, {
     method: 'PUT',
     params: { status },
   });
@@ -59,7 +59,7 @@ export async function toggleModelProvider(id: number, status: number) {
  * 删除模型服务商
  */
 export async function deleteModelProvider(id: number) {
-  return request<API.Result<void>>(`/admin/model-providers/${id}`, {
+  return request<API.Result<void>>(`/api/model-providers/${id}`, {
     method: 'DELETE',
   });
 }
@@ -68,7 +68,7 @@ export async function deleteModelProvider(id: number) {
  * 连接测试
  */
 export async function connectivityTest(id: number) {
-  return request<API.Result<boolean>>(`/admin/model-providers/${id}/test`, {
+  return request<API.Result<boolean>>(`/api/model-providers/${id}/test`, {
     method: 'POST',
   });
 }

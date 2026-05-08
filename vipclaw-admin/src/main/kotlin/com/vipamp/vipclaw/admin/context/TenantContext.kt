@@ -17,9 +17,7 @@ object TenantContext {
     /**
      * 获取租户 ID
      */
-    fun getTenantId(): Long? {
-        return CONTEXT.get()
-    }
+    fun getTenantId(): Long? = CONTEXT.get()
 
     /**
      * 清理租户上下文

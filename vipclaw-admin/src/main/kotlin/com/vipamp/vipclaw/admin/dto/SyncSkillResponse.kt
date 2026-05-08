@@ -14,5 +14,5 @@ data class SyncSkillResponse(
     @Schema(description = "skill.md 内容")
     var skillmd: String? = null,
     @Schema(description = "资源信息")
-    var resources: Map<String, String> = mapOf()
+    var resources: Map<String, String> = mapOf(),
 )

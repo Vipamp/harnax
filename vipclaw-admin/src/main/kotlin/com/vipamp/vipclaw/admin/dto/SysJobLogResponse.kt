@@ -33,7 +33,7 @@ data class SysJobLogResponse(
     @Schema(description = "执行耗时（毫秒）", example = "5000")
     var duration: Long? = null,
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
-    val createTime: LocalDateTime? = null
+    val createTime: LocalDateTime? = null,
 ) {
     companion object {
         @JvmStatic
@@ -51,7 +51,7 @@ data class SysJobLogResponse(
                 startTime = entity.startTime,
                 endTime = entity.endTime,
                 duration = Duration.between(entity.startTime, entity.endTime).toMillis(),
-                createTime = entity.createTime
+                createTime = entity.createTime,
             )
         }
     }

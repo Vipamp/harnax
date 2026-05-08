@@ -10,14 +10,14 @@ sealed class RichMessage
  * 纯文本消息
  */
 data class TextRichMessage(
-    val content: String
+    val content: String,
 ) : RichMessage()
 
 /**
  * Markdown 格式消息
  */
 data class MarkdownRichMessage(
-    val content: String
+    val content: String,
 ) : RichMessage()
 
 /**
@@ -27,7 +27,7 @@ data class MarkdownRichMessage(
  */
 data class ImageRichMessage(
     val imageUrl: String,
-    val mediaId: String? = null
+    val mediaId: String? = null,
 ) : RichMessage()
 
 /**
@@ -39,7 +39,7 @@ data class ImageRichMessage(
 data class FileRichMessage(
     val fileUrl: String,
     val fileName: String,
-    val mediaId: String? = null
+    val mediaId: String? = null,
 ) : RichMessage()
 
 /**
@@ -51,7 +51,7 @@ data class FileRichMessage(
 data class CardRichMessage(
     val title: String,
     val elements: List<CardElement> = emptyList(),
-    val actions: List<CardAction> = emptyList()
+    val actions: List<CardAction> = emptyList(),
 ) : RichMessage()
 
 /**
@@ -63,21 +63,21 @@ sealed class CardElement
  * 文本元素
  */
 data class TextCardElement(
-    val content: String
+    val content: String,
 ) : CardElement()
 
 /**
  * 图片元素
  */
 data class ImageCardElement(
-    val imageUrl: String
+    val imageUrl: String,
 ) : CardElement()
 
 /**
  * Markdown 元素
  */
 data class MarkdownCardElement(
-    val content: String
+    val content: String,
 ) : CardElement()
 
 /**
@@ -89,7 +89,7 @@ object DividerCardElement : CardElement()
  * 备注元素（小字说明）
  */
 data class NoteCardElement(
-    val text: String
+    val text: String,
 ) : CardElement()
 
 /**
@@ -102,7 +102,7 @@ sealed class CardAction
  */
 data class UrlCardAction(
     val label: String,
-    val url: String
+    val url: String,
 ) : CardAction()
 
 /**
@@ -110,12 +110,12 @@ data class UrlCardAction(
  */
 data class CallbackCardAction(
     val label: String,
-    val value: String
+    val value: String,
 ) : CardAction()
 
 /**
  * 复合富消息（包含多个消息）
  */
 data class CompositeRichMessage(
-    val messages: List<RichMessage>
+    val messages: List<RichMessage>,
 ) : RichMessage()

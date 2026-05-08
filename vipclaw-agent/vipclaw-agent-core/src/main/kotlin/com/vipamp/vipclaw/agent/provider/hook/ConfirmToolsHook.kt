@@ -33,7 +33,5 @@ class ConfirmToolsHook : Hook {
         return Mono.just(event)
     }
 
-    override fun priority(): Int {
-        return 0
-    }
+    override fun priority(): Int = 0
 }

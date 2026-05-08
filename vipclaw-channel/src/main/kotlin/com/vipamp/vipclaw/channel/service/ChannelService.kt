@@ -9,8 +9,8 @@ import com.vipamp.vipclaw.channel.adaptor.feishu.FeishuAdaptor
 import com.vipamp.vipclaw.channel.adaptor.wecom.WeComAdaptor
 import com.vipamp.vipclaw.channel.client.PlatformHttpClient
 import com.vipamp.vipclaw.channel.error.ChannelNotFoundException
-import com.vipamp.vipclaw.channel.error.ChannelSignatureException
 import com.vipamp.vipclaw.channel.error.ChannelSendException
+import com.vipamp.vipclaw.channel.error.ChannelSignatureException
 import com.vipamp.vipclaw.channel.message.*
 import com.vipamp.vipclaw.channel.session.AgentMessage
 import com.vipamp.vipclaw.channel.session.ChannelSessionManager
@@ -32,7 +32,7 @@ class ChannelService(
     private val adaptorFactory: ChannelAdaptorFactory = ChannelAdaptorFactory,
     private val sessionManager: ChannelSessionManager,
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
-    private val channelResolver: suspend (Long) -> ChannelSpec?
+    private val channelResolver: suspend (Long) -> ChannelSpec?,
 ) {
 
     private val logger = LoggerFactory.getLogger(ChannelService::class.java)
@@ -59,7 +59,7 @@ class ChannelService(
         if (!adaptor.verifySignature(request, channel)) {
             throw ChannelSignatureException(
                 channelType = channel.type,
-                detail = "Signature verification failed"
+                detail = "Signature verification failed",
             )
         }
 
@@ -89,12 +89,10 @@ class ChannelService(
     suspend fun sendTextMessage(
         channelId: Long,
         sessionId: String,
-        content: String
-    ): SendResult {
-        return executeSend(channelId) { adaptor, channel ->
-            adaptor.sendMessage(channel, sessionId, content)
-            SendResult.Success()
-        }
+        content: String,
+    ): SendResult = executeSend(channelId) { adaptor, channel ->
+        adaptor.sendMessage(channel, sessionId, content)
+        SendResult.Success()
     }
 
     /**
@@ -108,13 +106,11 @@ class ChannelService(
     suspend fun sendMarkdownMessage(
         channelId: Long,
         sessionId: String,
-        content: String
-    ): SendResult {
-        return executeSend(channelId) { adaptor, channel ->
-            val richMessage = MarkdownRichMessage(content)
-            sendRichMessageToAdaptor(adaptor, channel, sessionId, richMessage)
-            SendResult.Success()
-        }
+        content: String,
+    ): SendResult = executeSend(channelId) { adaptor, channel ->
+        val richMessage = MarkdownRichMessage(content)
+        sendRichMessageToAdaptor(adaptor, channel, sessionId, richMessage)
+        SendResult.Success()
     }
 
     /**
@@ -128,12 +124,10 @@ class ChannelService(
     suspend fun sendRichMessage(
         channelId: Long,
         sessionId: String,
-        richMessage: RichMessage
-    ): SendResult {
-        return executeSend(channelId) { adaptor, channel ->
-            sendRichMessageToAdaptor(adaptor, channel, sessionId, richMessage)
-            SendResult.Success()
-        }
+        richMessage: RichMessage,
+    ): SendResult = executeSend(channelId) { adaptor, channel ->
+        sendRichMessageToAdaptor(adaptor, channel, sessionId, richMessage)
+        SendResult.Success()
     }
 
     /**
@@ -147,10 +141,8 @@ class ChannelService(
     suspend fun getHistory(
         channelId: Long,
         sessionId: String,
-        limit: Int = 20
-    ): List<ChannelMessage> {
-        return sessionManager.getHistory(channelId, sessionId, limit)
-    }
+        limit: Int = 20,
+    ): List<ChannelMessage> = sessionManager.getHistory(channelId, sessionId, limit)
 
     /**
      * 清除会话历史
@@ -175,7 +167,7 @@ class ChannelService(
     suspend fun processAndReply(
         channelId: Long,
         request: HttpServletRequest,
-        agentProcessor: suspend (List<AgentMessage>, String) -> String
+        agentProcessor: suspend (List<AgentMessage>, String) -> String,
     ): SendResult {
         // 1. 解析传入消息
         val message = try {
@@ -215,9 +207,7 @@ class ChannelService(
     /**
      * 获取支持的 Channel 类型列表
      */
-    fun getSupportedTypes(): List<ChannelType> {
-        return adaptorFactory.getSupportedTypes()
-    }
+    fun getSupportedTypes(): List<ChannelType> = adaptorFactory.getSupportedTypes()
 
     // ==================== 私有辅助方法 ====================
 
@@ -226,7 +216,7 @@ class ChannelService(
      */
     private suspend fun executeSend(
         channelId: Long,
-        block: suspend (ChannelAdaptor, ChannelSpec) -> SendResult
+        block: suspend (ChannelAdaptor, ChannelSpec) -> SendResult,
     ): SendResult {
         val channel = channelResolver(channelId)
             ?: return SendResult.Failure("CHANNEL_NOT_FOUND", "Channel $channelId not found")
@@ -241,14 +231,14 @@ class ChannelService(
             SendResult.Failure(
                 errorCode = e.platformErrorCode ?: "SEND_ERROR",
                 errorMessage = e.message,
-                cause = e
+                cause = e,
             )
         } catch (e: Exception) {
             logger.error("Unexpected error sending message to channel $channelId: ${e.message}", e)
             SendResult.Failure(
                 errorCode = "UNKNOWN_ERROR",
                 errorMessage = "Unexpected error: ${e.message}",
-                cause = e
+                cause = e,
             )
         }
     }
@@ -260,7 +250,7 @@ class ChannelService(
         adaptor: ChannelAdaptor,
         channel: ChannelSpec,
         sessionId: String,
-        richMessage: RichMessage
+        richMessage: RichMessage,
     ) {
         when (adaptor) {
             is WeComAdaptor -> adaptor.sendRichMessage(channel, sessionId, richMessage)
@@ -269,7 +259,7 @@ class ChannelService(
             else -> throw ChannelSendException(
                 channelType = channel.type,
                 platformErrorCode = null,
-                message = "Rich message not supported for ${channel.type}"
+                message = "Rich message not supported for ${channel.type}",
             )
         }
     }
@@ -278,15 +268,13 @@ class ChannelService(
      * 同步解析 Channel（用于非 suspend 上下文）
      * 注意：这是一个临时方案，理想情况下应该使用异步解析
      */
-    private fun channelResolverSync(channelId: Long): ChannelSpec? {
-        return try {
-            runBlocking {
-                channelResolver(channelId)
-            }
-        } catch (e: Exception) {
-            logger.error("Failed to resolve channel $channelId: ${e.message}", e)
-            null
+    private fun channelResolverSync(channelId: Long): ChannelSpec? = try {
+        runBlocking {
+            channelResolver(channelId)
         }
+    } catch (e: Exception) {
+        logger.error("Failed to resolve channel $channelId: ${e.message}", e)
+        null
     }
 }
 
@@ -295,5 +283,5 @@ class ChannelService(
  * 用于在 parseIncomingMessage 中识别 URL 验证请求
  */
 class UrlVerificationException(
-    val verificationResponse: Any
+    val verificationResponse: Any,
 ) : RuntimeException("URL verification request")

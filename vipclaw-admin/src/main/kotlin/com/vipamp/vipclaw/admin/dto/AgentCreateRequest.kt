@@ -36,7 +36,7 @@ data class AgentCreateRequest(
     val owner: String? = null,
 
     @Schema(description = "状态 (0:禁用 1:正常)", example = "1")
-    val status: Int? = null
+    val status: Int? = null,
 ) {
     /**
      * MCP 配置
@@ -47,7 +47,7 @@ data class AgentCreateRequest(
         val id: Long? = null,
 
         @Schema(description = "是否允许跳过", example = "true")
-        val enableSkip: String? = null
+        val enableSkip: String? = null,
     )
 
     /**
@@ -65,6 +65,6 @@ data class AgentCreateRequest(
         val skillId: Long? = null,
 
         @Schema(description = "技能名称", example = "code-review")
-        val skillName: String? = null
+        val skillName: String? = null,
     )
 }

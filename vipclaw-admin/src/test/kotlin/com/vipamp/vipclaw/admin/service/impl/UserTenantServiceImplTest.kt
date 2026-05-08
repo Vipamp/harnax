@@ -17,7 +17,6 @@ import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
-import org.mockito.kotlin.argThat
 import java.time.LocalDateTime
 
 /**
@@ -149,7 +148,7 @@ class UserTenantServiceImplTest {
                     role = "member"
                     status = 1
                     joinedAt = LocalDateTime.now()
-                }
+                },
             )
 
             `when`(userTenantMapper.selectByUserId(1L)).thenReturn(userTenants)

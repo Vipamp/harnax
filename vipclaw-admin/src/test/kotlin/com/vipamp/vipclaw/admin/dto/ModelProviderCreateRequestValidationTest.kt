@@ -39,7 +39,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = null
+                baseUrl = null,
             )
 
             // When
@@ -55,7 +55,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = ""
+                baseUrl = "",
             )
 
             // When
@@ -71,7 +71,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = "http://example.com/api"
+                baseUrl = "http://example.com/api",
             )
 
             // When
@@ -87,7 +87,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+                baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
 
             // When
@@ -103,7 +103,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "local_provider",
                 name = "本地服务",
-                baseUrl = "http://localhost:8080/api"
+                baseUrl = "http://localhost:8080/api",
             )
 
             // When
@@ -119,7 +119,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "simple_provider",
                 name = "简单服务",
-                baseUrl = "example.com"
+                baseUrl = "example.com",
             )
 
             // When
@@ -135,7 +135,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = "not-a-valid-url!!!@@@"
+                baseUrl = "not-a-valid-url!!!@@@",
             )
 
             // When
@@ -154,7 +154,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                baseUrl = "https://example.com/path with spaces"
+                baseUrl = "https://example.com/path with spaces",
             )
 
             // When
@@ -174,7 +174,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "",
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -186,9 +186,9 @@ class ModelProviderCreateRequestValidationTest {
             assertNotNull(typeViolation, "应该包含 type 的验证错误")
             // 空字符串会同时触发 @NotBlank 和 @Size 验证，消息可能是其中之一
             assertTrue(
-                typeViolation.message == "供应商类型不能为空" || 
-                typeViolation.message == "供应商类型长度必须在 1-50 个字符之间",
-                "验证错误消息应该是 type 相关的验证失败"
+                typeViolation.message == "供应商类型不能为空" ||
+                    typeViolation.message == "供应商类型长度必须在 1-50 个字符之间",
+                "验证错误消息应该是 type 相关的验证失败",
             )
         }
 
@@ -209,7 +209,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "DashScope",
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -224,7 +224,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dash-scope",
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -239,7 +239,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dashscope_v2",
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -254,7 +254,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "a".repeat(51),
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -276,7 +276,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
-                name = ""
+                name = "",
             )
 
             // When
@@ -291,7 +291,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
-                name = "阿里云百炼平台"
+                name = "阿里云百炼平台",
             )
 
             // When
@@ -306,7 +306,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
-                name = "a".repeat(101)
+                name = "a".repeat(101),
             )
 
             // When
@@ -329,7 +329,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                apiKey = null
+                apiKey = null,
             )
 
             // When
@@ -345,7 +345,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                apiKey = "sk-" + "x".repeat(497) // 总长度 500
+                apiKey = "sk-" + "x".repeat(497), // 总长度 500
             )
 
             // When
@@ -361,7 +361,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                apiKey = "sk-" + "x".repeat(498) // 总长度 501
+                apiKey = "sk-" + "x".repeat(498), // 总长度 501
             )
 
             // When
@@ -381,7 +381,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
-                name = "阿里云百炼"
+                name = "阿里云百炼",
             )
 
             // When
@@ -398,7 +398,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                isPublic = 0
+                isPublic = 0,
             )
 
             // When
@@ -414,7 +414,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "dashscope",
                 name = "阿里云百炼",
-                isPublic = 1
+                isPublic = 1,
             )
 
             // When
@@ -434,7 +434,7 @@ class ModelProviderCreateRequestValidationTest {
             // Given
             val request = ModelProviderCreateRequest(
                 type = "test",
-                name = "测试"
+                name = "测试",
             )
 
             // When
@@ -452,7 +452,7 @@ class ModelProviderCreateRequestValidationTest {
                 name = "阿里云百炼",
                 apiKey = "sk-test-key-12345",
                 baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                isPublic = 1
+                isPublic = 1,
             )
 
             // When
@@ -468,7 +468,7 @@ class ModelProviderCreateRequestValidationTest {
             val request = ModelProviderCreateRequest(
                 type = "",
                 name = "",
-                baseUrl = "invalid-url!!!"
+                baseUrl = "invalid-url!!!",
             )
 
             // When

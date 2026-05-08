@@ -59,10 +59,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
 
   const loadMcpServers = async () => {
     try {
-      const res = await getMcpServerList({ pageNum: 1, pageSize: 100 });
-      // 只保留启用的 MCP
-      const enabledMcps = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setMcpServers(enabledMcps);
+      const res = await getMcpServerList({ pageNum: 1, pageSize: 100, status: 1 });
+      setMcpServers(res.data?.records || []);
     } catch (error) {
       console.error('加载 MCP 服务器列表失败', error);
     }
@@ -70,10 +68,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
 
   const loadRepositories = async () => {
     try {
-      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100 });
-      // 只保留启用的仓库
-      const enabledRepos = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setRepositories(enabledRepos);
+      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100, status: 1 });
+      setRepositories(res.data?.records || []);
     } catch (error) {
       console.error('加载技能仓库列表失败', error);
     }
@@ -94,10 +90,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
 
   const loadSkills = async (repositoryId: number) => {
     try {
-      const res = await getSkillListByRepository(repositoryId, { pageNum: 1, pageSize: 100 });
-      // 只保留启用的技能
-      const enabledSkills = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setSkills(enabledSkills);
+      const res = await getSkillListByRepository(repositoryId, { pageNum: 1, pageSize: 100, status: 1 });
+      setSkills(res.data?.records || []);
     } catch (error) {
       console.error('加载技能列表失败', error);
       setSkills([]);
@@ -271,7 +265,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         layout="horizontal"
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
-        style={{ marginTop: 24 }}
+        style={{ marginTop: 24, fontSize: '14px' }}
       >
         {/* 第一步：基本信息 */}
         {currentStep === 0 && (
@@ -280,14 +274,21 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               label={intl.formatMessage({ id: 'pages.agent.name', defaultMessage: 'Agent Name' })}
               name="name"
               rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.nameRequired', defaultMessage: 'Please enter agent name' }) }]}>
-              <Input placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })} />
+              <Input 
+                placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })}
+                style={{ fontSize: '14px' }}
+              />
             </Form.Item>
 
             <Form.Item
               label={intl.formatMessage({ id: 'pages.agent.description', defaultMessage: 'Description' })}
               name="description"
               rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.descriptionRequired', defaultMessage: 'Please enter description' }) }]}>
-              <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })} />
+              <TextArea 
+                rows={3} 
+                placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
+                style={{ fontSize: '13px' }}
+              />
             </Form.Item>
 
             <Form.Item
@@ -297,7 +298,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               <TextArea 
                 rows={8} 
                 placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt, supports Markdown syntax' })}
-                style={{ fontFamily: 'monospace' }}
+                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </Form.Item>
 
@@ -308,6 +309,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               <Select
                 placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })}
                 allowClear
+                style={{ fontSize: '14px' }}
                 options={models.map(model => ({
                   label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`,
                   value: model.id,
@@ -322,6 +324,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               <Input 
                 placeholder={intl.formatMessage({ id: 'pages.agent.ownerPlaceholder', defaultMessage: 'Auto-filled with current user' })}
                 disabled
+                style={{ fontSize: '14px' }}
               />
             </Form.Item>
 
@@ -335,7 +338,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
                 unCheckedChildren={intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
               />
-              <div style={{ marginTop: 4, color: '#999', fontSize: 12 }}>
+              <div style={{ marginTop: 4, color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
                 {intl.formatMessage({ id: 'pages.agent.publicHint', defaultMessage: 'Other users can view this agent after making it public' })}
               </div>
             </Form.Item>
@@ -357,7 +360,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             {mcpConfigs.map((config, index) => (
               <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
                   {mcpConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -371,7 +374,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                   )}
                 </div>
                 <Select
-                  placeholder="选择 MCP 服务（可跳过）"
+                  placeholder={intl.formatMessage({ id: 'pages.agent.mcpPlaceholder', defaultMessage: 'Select MCP service (optional, can be skipped)' })}
                   value={config.mcpId}
                   onChange={(value) => handleMcpConfigChange(index, 'mcpId', value)}
                   style={{ width: '100%' }}
@@ -382,7 +385,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                   }))}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}</span>
+                  <span style={{ color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}</span>
                   <Switch
                     size="small"
                     checked={config.enableSkip}
@@ -409,7 +412,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             {skillConfigs.map((config, index) => (
               <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}</span>
                   {skillConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -424,7 +427,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                 </div>
                 <div style={{ display: 'flex', gap: 16, width: '100%' }}>
                   <Select
-                    placeholder="选择技能仓库"
+                    placeholder={intl.formatMessage({ id: 'pages.agent.repositoryPlaceholder', defaultMessage: 'Select skill repository' })}
                     value={config.repositoryId}
                     onChange={(value) => handleSkillConfigChange(index, 'repositoryId', value)}
                     style={{ flex: 1 }}
@@ -435,15 +438,36 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
                     }))}
                   />
                   <Select
-                    placeholder="选择技能"
+                    placeholder={intl.formatMessage({ id: 'pages.agent.skillPlaceholder', defaultMessage: 'Select skill' })}
                     value={config.skillId}
                     onChange={(value) => handleSkillConfigChange(index, 'skillId', value)}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, fontSize: '14px' }}
                     disabled={!config.repositoryId}
                     allowClear
+                    optionRender={(option) => {
+                      const skill = option.data as API.SkillItem;
+                      return (
+                        <div style={{ padding: '4px 0' }}>
+                          <div style={{ fontWeight: 500, fontSize: '14px', color: 'var(--vip-text-primary)' }}>
+                            {skill.name}
+                          </div>
+                          {skill.repositoryName && (
+                            <div style={{ fontSize: '12px', color: 'var(--vip-text-tertiary)', marginTop: '2px' }}>
+                              仓库: {skill.repositoryName}
+                            </div>
+                          )}
+                          {skill.description && (
+                            <div style={{ fontSize: '12px', color: 'var(--vip-text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {skill.description}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
                     options={skills.map(skill => ({
                       label: skill.name,
                       value: skill.id,
+                      ...skill,
                     }))}
                   />
                 </div>

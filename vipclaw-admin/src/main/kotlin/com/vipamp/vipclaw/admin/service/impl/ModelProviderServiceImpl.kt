@@ -4,6 +4,7 @@ import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.ModelProvider
 import com.vipamp.vipclaw.admin.exception.BizException
@@ -12,7 +13,6 @@ import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper
 import com.vipamp.vipclaw.admin.service.ModelProviderService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -27,7 +27,7 @@ import java.time.LocalDateTime
 class ModelProviderServiceImpl(
     private val modelMapper: ModelMapper,
     private val jwtUtil: JwtUtil,
-    private val modelProviderMapper: ModelProviderMapper
+    private val modelProviderMapper: ModelProviderMapper,
 ) : ModelProviderService {
 
     private val log = LoggerFactory.getLogger(ModelProviderServiceImpl::class.java)
@@ -39,9 +39,7 @@ class ModelProviderServiceImpl(
         return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, status, isPublic, currentUsername))
     }
 
-    override fun getModelProvider(id: Long): ModelProvider? {
-        return this.modelProviderMapper.selectById(id)
-    }
+    override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
 
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
         // 检查供应商名称是否已存在
@@ -52,8 +50,8 @@ class ModelProviderServiceImpl(
         val modelProvider = ModelProvider()
         modelProvider.type = request.type
         modelProvider.name = request.name
-        modelProvider.apiKey = request.apiKey  // 允许为 null
-        modelProvider.baseUrl = request.baseUrl  // 允许为 null
+        modelProvider.apiKey = request.apiKey // 允许为 null
+        modelProvider.baseUrl = request.baseUrl // 允许为 null
         modelProvider.isPublic = request.isPublic ?: 1
         modelProvider.status = 1 // 默认启用
         modelProvider.active = 1 // 默认正常
@@ -112,9 +110,7 @@ class ModelProviderServiceImpl(
         return this.modelProviderMapper.updateStatus(id, status) > 0
     }
 
-    override fun toggleModelProvider(id: Long, status: Int): Boolean {
-        return updateStatus(id, status)
-    }
+    override fun toggleModelProvider(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModelProvider(id: Long): Boolean {
         // 检查是否有启用的模型

@@ -1,8 +1,7 @@
 package com.vipamp.vipclaw.admin.service
 
-import com.vipamp.vipclaw.common.page.Page
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.SysJobLog
-import jakarta.annotation.Nullable
 import java.time.LocalDateTime
 
 /**

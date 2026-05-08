@@ -782,10 +782,14 @@ const AgentManagement: React.FC = () => {
         onCancel={() => setCreateModalVisible(false)}
         onSubmit={async (values) => {
           try {
-            await createAgent(values);
-            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
-            setCreateModalVisible(false);
-            loadData();
+            const response = await createAgent(values);
+            if (response.code === 200) {
+              messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
+              setCreateModalVisible(false);
+              loadData();
+            } else {
+              messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
+            }
           } catch (error) {
             messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
@@ -803,11 +807,15 @@ const AgentManagement: React.FC = () => {
           }}
           onSubmit={async (values) => {
             try {
-              await updateAgent(currentRow.id!, values);
-              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
-              setUpdateModalVisible(false);
-              setCurrentRow(undefined);
-              loadData();
+              const response = await updateAgent(currentRow.id!, values);
+              if (response.code === 200) {
+                messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+                setUpdateModalVisible(false);
+                setCurrentRow(undefined);
+                loadData();
+              } else {
+                messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
+              }
             } catch (error) {
               messageApi.error(intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
             }

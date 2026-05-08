@@ -7,9 +7,11 @@ import java.time.LocalDateTime
 
 @Schema(description = "Token 消耗统计实体类")
 class TokenStats : Serializable {
-    companion object { private const val serialVersionUID = 1L }
+    companion object {
+        private const val serialVersionUID = 1L
+    }
 
-        @Schema(description = "ID")
+    @Schema(description = "ID")
     var id: Long = 0
 
     @Schema(description = "智能体 ID")

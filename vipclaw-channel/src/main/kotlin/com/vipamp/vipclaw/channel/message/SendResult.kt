@@ -11,7 +11,7 @@ sealed class SendResult {
      */
     data class Success(
         val messageId: String? = null,
-        val timestamp: Long = System.currentTimeMillis()
+        val timestamp: Long = System.currentTimeMillis(),
     ) : SendResult()
 
     /**
@@ -23,6 +23,6 @@ sealed class SendResult {
     data class Failure(
         val errorCode: String,
         val errorMessage: String,
-        val cause: Throwable? = null
+        val cause: Throwable? = null,
     ) : SendResult()
 }

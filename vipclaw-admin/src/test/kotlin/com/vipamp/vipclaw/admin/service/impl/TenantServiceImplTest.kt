@@ -1,8 +1,6 @@
 package com.vipamp.vipclaw.admin.service.impl
 
-import com.github.pagehelper.PageInfo
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.entity.TenantEntity
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
@@ -89,7 +87,7 @@ class TenantServiceImplTest {
             // Given
             val request = CreateTenantRequest(
                 name = "新租户",
-                adminUserId = 1L
+                adminUserId = 1L,
             )
             val creator = "admin"
 
@@ -121,7 +119,7 @@ class TenantServiceImplTest {
             // Given
             val request = CreateTenantRequest(
                 name = "已存在租户",
-                adminUserId = 1L
+                adminUserId = 1L,
             )
 
             `when`(tenantMapper.selectByName("已存在租户")).thenReturn(testTenant)
@@ -143,7 +141,7 @@ class TenantServiceImplTest {
             // Given
             val request = CreateTenantRequest(
                 name = "新租户",
-                adminUserId = 999L
+                adminUserId = 999L,
             )
 
             `when`(tenantMapper.selectByName("新租户")).thenReturn(null)
@@ -244,8 +242,6 @@ class TenantServiceImplTest {
             verify(tenantMapper).selectList("测试", null)
         }
     }
-
-
 
     @Nested
     @DisplayName("切换租户状态测试")
@@ -412,9 +408,11 @@ class TenantServiceImplTest {
             verify(tenantMapper).selectById(1L)
             verify(sysUserMapper).selectById(2L)
             verify(userTenantMapper).selectByUserIdAndTenantId(2L, 1L)
-            verify(userTenantMapper).insert(argThat {
-                userId == 2L && tenantId == 1L && role == "member"
-            })
+            verify(userTenantMapper).insert(
+                argThat {
+                    userId == 2L && tenantId == 1L && role == "member"
+                },
+            )
         }
 
         @Test

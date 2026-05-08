@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter
  */
 @Service
 class TokenStatsServiceImpl(
-    private val tokenStatsMapper: TokenStatsMapper
+    private val tokenStatsMapper: TokenStatsMapper,
 ) : TokenStatsService {
 
     private val log = LoggerFactory.getLogger(TokenStatsServiceImpl::class.java)
@@ -32,7 +32,7 @@ class TokenStatsServiceImpl(
             tokenStats.agentId,
             tokenStats.sessionId,
             tokenStats.chatModelId,
-            tokenStats.totalToken
+            tokenStats.totalToken,
         )
 
         val success = this.tokenStatsMapper.insert(tokenStats) > 0
@@ -73,13 +73,13 @@ class TokenStatsServiceImpl(
     override fun getTimeSeriesData(
         startTime: String,
         endTime: String,
-        granularity: String
+        granularity: String,
     ): TokenStatsAggregationResponse {
         log.info(
             "获取 Token 时序统计数据, startTime: {}, endTime: {}, granularity: {}",
             startTime,
             endTime,
-            granularity
+            granularity,
         )
 
         val response = TokenStatsAggregationResponse()
@@ -106,7 +106,7 @@ class TokenStatsServiceImpl(
     override fun getModelTimeSeriesData(
         startTime: String,
         endTime: String,
-        granularity: String
+        granularity: String,
     ): TokenStatsAggregationResponse {
         log.info("获取模型时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "model")
@@ -115,7 +115,7 @@ class TokenStatsServiceImpl(
     override fun getAgentTimeSeriesData(
         startTime: String,
         endTime: String,
-        granularity: String
+        granularity: String,
     ): TokenStatsAggregationResponse {
         log.info("获取智能体时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "agent")
@@ -124,7 +124,7 @@ class TokenStatsServiceImpl(
     override fun getSessionTimeSeriesData(
         startTime: String,
         endTime: String,
-        granularity: String
+        granularity: String,
     ): TokenStatsAggregationResponse {
         log.info("获取会话时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "session")
@@ -137,7 +137,7 @@ class TokenStatsServiceImpl(
         startTime: String,
         endTime: String,
         granularity: String,
-        dimensionType: String
+        dimensionType: String,
     ): TokenStatsAggregationResponse {
         val response = TokenStatsAggregationResponse()
 
@@ -169,7 +169,11 @@ class TokenStatsServiceImpl(
 
         // 补全所有时间点(按维度分组补全)
         val filledTimeSeriesData = fillDimensionTimePoints(
-            timeSeriesData, startTime, endTime, actualGranularity, dimensionType
+            timeSeriesData,
+            startTime,
+            endTime,
+            actualGranularity,
+            dimensionType,
         )
 
         response.timeSeriesData = filledTimeSeriesData.map {
@@ -187,7 +191,7 @@ class TokenStatsServiceImpl(
         queryData: MutableList<MutableMap<String?, Any?>?>?,
         startTimeStr: String,
         endTimeStr: String,
-        granularity: String
+        granularity: String,
     ): List<Map<String, Any>> {
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         val startTime = LocalDateTime.parse(startTimeStr, formatter)
@@ -221,17 +225,17 @@ class TokenStatsServiceImpl(
             val (timeKey, displayTime) = when (granularity) {
                 "hour" -> Pair(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
-                    currentTime.format(formatter)
+                    currentTime.format(formatter),
                 ).also { currentTime = currentTime.plusHours(1) }
 
                 "month" -> Pair(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
-                    currentTime.format(formatter)
+                    currentTime.format(formatter),
                 ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
 
                 else -> Pair(
                     currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
-                    currentTime.format(formatter)
+                    currentTime.format(formatter),
                 ).also { currentTime = currentTime.plusDays(1) }
             }
 
@@ -244,7 +248,7 @@ class TokenStatsServiceImpl(
                     "totalInputToken" to 0L,
                     "totalOutputToken" to 0L,
                     "grandTotalToken" to 0L,
-                    "totalFee" to BigDecimal.ZERO
+                    "totalFee" to BigDecimal.ZERO,
                 )
                 result.add(emptyData)
             } else {
@@ -266,7 +270,7 @@ class TokenStatsServiceImpl(
         startTimeStr: String,
         endTimeStr: String,
         granularity: String,
-        dimensionType: String
+        dimensionType: String,
     ): List<Map<String, Any>> {
         val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         val startTime = LocalDateTime.parse(startTimeStr, formatter)
@@ -320,17 +324,17 @@ class TokenStatsServiceImpl(
                 val (timeKey, displayTime) = when (granularity) {
                     "hour" -> Pair(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:00:00")),
-                        currentTime.format(formatter)
+                        currentTime.format(formatter),
                     ).also { currentTime = currentTime.plusHours(1) }
 
                     "month" -> Pair(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM")),
-                        currentTime.format(formatter)
+                        currentTime.format(formatter),
                     ).also { currentTime = currentTime.plusMonths(1).withDayOfMonth(1) }
 
                     else -> Pair(
                         currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 00:00:00")),
-                        currentTime.format(formatter)
+                        currentTime.format(formatter),
                     ).also { currentTime = currentTime.plusDays(1) }
                 }
 
@@ -343,7 +347,7 @@ class TokenStatsServiceImpl(
                         "totalInputToken" to 0L,
                         "totalOutputToken" to 0L,
                         "grandTotalToken" to 0L,
-                        "totalFee" to BigDecimal.ZERO
+                        "totalFee" to BigDecimal.ZERO,
                     )
 
                     // 保留维度字段

@@ -2,7 +2,6 @@ package com.vipamp.vipclaw.admin.service
 
 import java.time.LocalDateTime
 
-
 /**
  * Token 黑名单服务接口
  */

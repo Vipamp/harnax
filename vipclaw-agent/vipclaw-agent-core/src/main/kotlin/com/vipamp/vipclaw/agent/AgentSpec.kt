@@ -27,7 +27,7 @@ data class AgentSpec(
     val useAutoContextMemory: Boolean,
     val autoContextConfig: AutoContextConfig?,
     val skills: List<SkillSpec>,
-    val planSpec: PlanSpec
+    val planSpec: PlanSpec,
 ) {
 
     companion object {
@@ -92,7 +92,7 @@ class AgentSpecBuilder {
             useAutoContextMemory = useAutoContextMemory,
             autoContextConfig = autoContextConfig,
             skills = skills,
-            planSpec = planSpec
+            planSpec = planSpec,
         )
     }
 }
@@ -106,12 +106,11 @@ data class McpSpec(
 data class SkillSpec(
     val skillId: Long,
     val skillName: String,
-    val skipIfMissing: Boolean = true
+    val skipIfMissing: Boolean = true,
 )
 
 data class PlanSpec(
     val enablePlan: Boolean,
     val maxSubTask: Int? = null,
-    val needUserConfirmed: Boolean? = null
+    val needUserConfirmed: Boolean? = null,
 )
-

@@ -13,7 +13,7 @@ import io.agentscope.core.model.ChatUsage
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
     include = JsonTypeInfo.As.PROPERTY,
-    property = "eventType"
+    property = "eventType",
 )
 @JsonSubTypes(
     JsonSubTypes.Type(value = StreamThinkingChatEvent::class, name = "ThinkingEvent"),
@@ -21,7 +21,7 @@ import io.agentscope.core.model.ChatUsage
     JsonSubTypes.Type(value = ToolConfirmChatEvent::class, name = "ToolConfirmEvent"),
     JsonSubTypes.Type(value = CallToolChatEvent::class, name = "CallToolEvent"),
     JsonSubTypes.Type(value = ToolResultChatEvent::class, name = "ToolResultEvent"),
-    JsonSubTypes.Type(value = EndEventChatEvent::class, name = "EndEvent")
+    JsonSubTypes.Type(value = EndEventChatEvent::class, name = "EndEvent"),
 )
 interface ChatEvent {
     val eventType: EventType
@@ -33,7 +33,7 @@ data class TokenUsage(
     val outputTokens: Int,
     val totalTokens: Int,
     val costTime: Double,
-    val timestamp: Long
+    val timestamp: Long,
 ) {
     companion object {
         fun fromChatUsage(chatUsage: ChatUsage?): TokenUsage? {
@@ -45,7 +45,7 @@ data class TokenUsage(
                 chatUsage.outputTokens,
                 chatUsage.totalTokens,
                 chatUsage.time,
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
             )
         }
     }
@@ -54,7 +54,7 @@ data class TokenUsage(
 data class StreamThinkingChatEvent(
     val message: String,
     val isLast: Boolean,
-    override val tokenUsage: TokenUsage?
+    override val tokenUsage: TokenUsage?,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ThinkingEvent
 }
@@ -62,14 +62,14 @@ data class StreamThinkingChatEvent(
 data class StreamTextChatEvent(
     val message: String,
     val isLast: Boolean,
-    override val tokenUsage: TokenUsage?
+    override val tokenUsage: TokenUsage?,
 ) : ChatEvent {
     override val eventType: EventType = EventType.TextEvent
 }
 
 data class ToolConfirmChatEvent(
     val pendingCallTools: List<PendingCallTool>,
-    override val tokenUsage: TokenUsage?
+    override val tokenUsage: TokenUsage?,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ToolConfirmEvent
 }
@@ -78,14 +78,14 @@ data class PendingCallTool(
     val toolId: String,
     val toolName: String,
     val arguments: Map<String, Any>,
-    val isDangerous: Boolean
+    val isDangerous: Boolean,
 )
 
 data class CallToolChatEvent(
     val toolId: String,
     val toolName: String,
     val arguments: Map<String, Any>,
-    override val tokenUsage: TokenUsage?
+    override val tokenUsage: TokenUsage?,
 ) : ChatEvent {
     override val eventType: EventType = EventType.CallToolEvent
 }
@@ -95,7 +95,7 @@ data class ToolResultChatEvent(
     val toolName: String,
     val message: String,
     val success: Boolean = true,
-    override val tokenUsage: TokenUsage?
+    override val tokenUsage: TokenUsage?,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ToolResultEvent
 }
@@ -105,7 +105,7 @@ data class ToolResultChatEvent(
  * 前端可以通过此事件判断 AI 输出是否完成
  */
 data class EndEventChatEvent(
-    override val tokenUsage: TokenUsage? = null
+    override val tokenUsage: TokenUsage? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.EndEvent
 }
@@ -116,5 +116,5 @@ enum class EventType {
     ToolResultEvent,
     TextEvent,
     ToolConfirmEvent,
-    EndEvent
+    EndEvent,
 }

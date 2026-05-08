@@ -23,7 +23,7 @@ data class PlanNote(
     var createdAt: String,
     var finishedAt: String?,
     var costTimeSeconds: Long,
-    val status: TaskState
+    val status: TaskState,
 )
 
 data class PlanSubTask(
@@ -34,9 +34,12 @@ data class PlanSubTask(
     var state: TaskState = TaskState.TODO,
     var createdAt: String,
     var finishedAt: String?,
-    var costTimeSeconds: Long
+    var costTimeSeconds: Long,
 )
 
 enum class TaskState {
-    TODO, IN_PROGRESS, DONE, ABANDONED
+    TODO,
+    IN_PROGRESS,
+    DONE,
+    ABANDONED,
 }

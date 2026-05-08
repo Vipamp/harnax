@@ -1,9 +1,9 @@
 package com.vipamp.vipclaw.admin.service.impl
 
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.SysJobLog
 import com.vipamp.vipclaw.admin.mapper.SysJobLogMapper
 import com.vipamp.vipclaw.admin.service.SysJobLogService
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
@@ -17,7 +17,7 @@ import kotlin.math.min
  */
 @Service
 class SysJobLogServiceImpl(
-    private val sysJobLogMapper: SysJobLogMapper
+    private val sysJobLogMapper: SysJobLogMapper,
 ) : SysJobLogService {
 
     private val log = LoggerFactory.getLogger(SysJobLogServiceImpl::class.java)
@@ -36,11 +36,15 @@ class SysJobLogServiceImpl(
         startTime: LocalDateTime?,
         endTime: LocalDateTime?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<SysJobLog> {
         log.info(
             "分页查询定时任务日志列表，pageNum: {}, pageSize: {}, jobId: {}, jobName: {}, status: {}",
-            pageNum, pageSize, jobId, jobName, status
+            pageNum,
+            pageSize,
+            jobId,
+            jobName,
+            status,
         )
 
         // 使用 MyBatis 原生查询
@@ -50,7 +54,7 @@ class SysJobLogServiceImpl(
         val page = Page<SysJobLog>(pageNum.toLong(), pageSize.toLong())
         val fromIndex = (pageNum - 1) * pageSize
         val toIndex = min(fromIndex + pageSize, allLogs.size)
-        
+
         page.records = if (fromIndex < allLogs.size) {
             allLogs.subList(fromIndex, toIndex)
         } else {

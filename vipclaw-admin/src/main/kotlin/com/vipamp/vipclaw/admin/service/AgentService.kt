@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 智能体服务接口

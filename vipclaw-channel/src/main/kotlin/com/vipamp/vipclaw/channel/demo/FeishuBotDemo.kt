@@ -14,13 +14,13 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * 飞书机器人验证演示
- * 
+ *
  * 功能：
  * 1. 输入 appId 和 appSecret 验证配置
  * 2. 获取飞书 tenant_access_token
  * 3. 测试发送消息到飞书 webhook
  * 4. 验证签名机制
- * 
+ *
  * 使用方法：
  * 直接运行 main 方法，按提示输入 appId、appSecret 和 webhook URL
  */
@@ -35,8 +35,9 @@ object FeishuBotDemo {
         println("=".repeat(70))
         println("飞书机器人验证演示")
         println("=".repeat(70))
-        
-        println("""
+
+        println(
+            """
             
             【使用说明】
             1. 登录飞书开放平台: https://open.feishu.cn
@@ -45,18 +46,19 @@ object FeishuBotDemo {
             4. 在应用中启用机器人，并获取 Webhook URL
             5. 运行此演示进行验证测试
             
-        """.trimIndent())
+            """.trimIndent(),
+        )
 
         // ========== 1. 获取用户输入 ==========
         println("\n【步骤 1】请输入飞书应用配置")
         println("-".repeat(70))
-        
+
         print("请输入 App ID (例如: cli_xxxxxxxxxxxxx): ")
         val appId = scanner.nextLine().trim()
-        
+
         print("请输入 App Secret: ")
         val appSecret = scanner.nextLine().trim()
-        
+
         print("请输入 Webhook URL (可选，直接回车跳过): ")
         val webhookUrl = scanner.nextLine().trim().ifBlank { null }
 
@@ -68,7 +70,7 @@ object FeishuBotDemo {
         // ========== 2. 创建 Channel 配置 ==========
         println("\n【步骤 2】创建飞书 Channel 配置")
         println("-".repeat(70))
-        
+
         val channel = ChannelSpec.builder()
             .id(1L)
             .name("飞书验证演示")
@@ -89,13 +91,13 @@ object FeishuBotDemo {
         // ========== 3. 验证签名机制 ==========
         println("\n【步骤 3】飞书签名验证示例")
         println("-".repeat(70))
-        
+
         demonstrateSignatureVerification(appSecret)
 
         // ========== 4. 获取 Tenant Access Token ==========
         println("\n【步骤 4】获取 tenant_access_token")
         println("-".repeat(70))
-        
+
         val tokenResult = getTenantAccessToken(appId, appSecret)
         if (tokenResult != null) {
             println("✅ Token 获取成功!")
@@ -113,7 +115,7 @@ object FeishuBotDemo {
         if (webhookUrl != null) {
             println("\n【步骤 5】测试发送消息到飞书")
             println("-".repeat(70))
-            
+
             testSendMessage(webhookUrl)
         } else {
             println("\n【步骤 5】跳过消息发送测试")
@@ -128,15 +130,16 @@ object FeishuBotDemo {
         // ========== 6. 富消息示例 ==========
         println("\n【步骤 6】飞书富消息示例")
         println("-".repeat(70))
-        
+
         demonstrateRichMessages()
 
         // ========== 完成 ==========
         println("\n" + "=".repeat(70))
         println("飞书机器人验证演示完成！")
         println("=".repeat(70))
-        
-        println("""
+
+        println(
+            """
             
             【后续步骤】
             1. 在飞书开放平台配置事件订阅 URL
@@ -152,29 +155,32 @@ object FeishuBotDemo {
             - 事件订阅: 
               https://open.feishu.cn/document/server-docs/event-subscription-guide/event-subscription-configure-
             
-        """.trimIndent())
+            """.trimIndent(),
+        )
     }
 
     /**
      * 演示飞书签名验证机制
      */
     private fun demonstrateSignatureVerification(appSecret: String) {
-        println("""
+        println(
+            """
             飞书使用 HMAC-SHA256 进行签名验证：
             
             签名内容 = timestamp + nonce + appSecret + body
             签名算法 = HmacSHA256(appSecret, 签名内容)
             
-        """.trimIndent())
+            """.trimIndent(),
+        )
 
         // 模拟签名计算
         val timestamp = System.currentTimeMillis().toString()
         val nonce = "demo-nonce-12345"
         val body = """{"event":{"message_id":"demo"}}"""
-        
+
         val contentToSign = timestamp + nonce + appSecret + body
         val signature = hmacSha256(appSecret, contentToSign)
-        
+
         println("示例签名计算:")
         println("  - Timestamp: $timestamp")
         println("  - Nonce: $nonce")
@@ -186,47 +192,48 @@ object FeishuBotDemo {
     /**
      * 获取飞书 tenant_access_token
      */
-    private fun getTenantAccessToken(appId: String, appSecret: String): String? {
-        return try {
-            val requestBody = mapOf(
-                "app_id" to appId,
-                "app_secret" to appSecret
-            )
+    private fun getTenantAccessToken(appId: String, appSecret: String): String? = try {
+        val requestBody = mapOf(
+            "app_id" to appId,
+            "app_secret" to appSecret,
+        )
 
-            println("正在请求 token...")
-            println("  URL: https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal")
-            
-            // 注意：这里使用同步方式调用，实际应使用 suspend 函数
-            // 为了演示目的，我们打印请求信息
-            println("\n📤 请求体:")
-            println("  ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(requestBody)}")
-            
-            // 实际调用（需要运行在协程中）
-            // val response = httpClient.postJson(
-            //     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-            //     requestBody
-            // )
-            
-            println("\n💡 提示: 实际 token 获取需要在 Web 服务环境中进行")
-            println("   您可以使用 curl 测试:")
-            println("""
+        println("正在请求 token...")
+        println("  URL: https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal")
+
+        // 注意：这里使用同步方式调用，实际应使用 suspend 函数
+        // 为了演示目的，我们打印请求信息
+        println("\n📤 请求体:")
+        println("  ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(requestBody)}")
+
+        // 实际调用（需要运行在协程中）
+        // val response = httpClient.postJson(
+        //     "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        //     requestBody
+        // )
+
+        println("\n💡 提示: 实际 token 获取需要在 Web 服务环境中进行")
+        println("   您可以使用 curl 测试:")
+        println(
+            """
                curl -X POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal \\
                  -H "Content-Type: application/json" \\
                  -d '{"app_id":"$appId","app_secret":"${maskSecret(appSecret)}"}'
-            """.trimIndent())
-            
-            null // 演示环境不实际调用
-        } catch (e: Exception) {
-            println("❌ 获取 token 失败: ${e.message}")
-            null
-        }
+            """.trimIndent(),
+        )
+
+        null // 演示环境不实际调用
+    } catch (e: Exception) {
+        println("❌ 获取 token 失败: ${e.message}")
+        null
     }
 
     /**
      * 测试发送消息到飞书 webhook
      */
     private fun testSendMessage(webhookUrl: String) {
-        println("""
+        println(
+            """
             飞书 Webhook 消息格式:
             POST https://open.feishu.cn/open-apis/bot/v2/hook/{hook_id}
             
@@ -236,23 +243,26 @@ object FeishuBotDemo {
             - image: 图片消息
             - interactive: 交互式卡片消息
             
-        """.trimIndent())
+            """.trimIndent(),
+        )
 
         // 示例 1: 发送文本消息
         println("\n【示例 1】发送文本消息")
         val textMessage = mapOf(
             "msg_type" to "text",
-            "content" to mapOf("text" to "🤖 这是来自 VIPClaw Channel 的测试消息！")
+            "content" to mapOf("text" to "🤖 这是来自 VIPClaw Channel 的测试消息！"),
         )
-        
+
         println("📤 请求体:")
         println("  ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(textMessage)}")
         println("\n📝 curl 命令:")
-        println("""
+        println(
+            """
            curl -X POST '$webhookUrl' \\
              -H "Content-Type: application/json" \\
              -d '${objectMapper.writeValueAsString(textMessage)}'
-        """.trimIndent())
+            """.trimIndent(),
+        )
 
         // 示例 2: 发送富文本消息
         println("\n\n【示例 2】发送富文本消息 (Post)")
@@ -266,14 +276,14 @@ object FeishuBotDemo {
                             listOf(mapOf("tag" to "text", "text" to "这是一条测试通知")),
                             listOf(
                                 mapOf("tag" to "a", "text" to "查看详情", "href" to "https://example.com"),
-                                mapOf("tag" to "at", "user_id" to "ou_xxxxx")
-                            )
-                        )
-                    )
-                )
-            )
+                                mapOf("tag" to "at", "user_id" to "ou_xxxxx"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
         )
-        
+
         println("📤 请求体:")
         println("  ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(postMessage)}")
 
@@ -283,12 +293,12 @@ object FeishuBotDemo {
             "msg_type" to "interactive",
             "card" to mapOf(
                 "header" to mapOf(
-                    "title" to mapOf("tag" to "plain_text", "content" to "🎉 VIPClaw 卡片消息")
+                    "title" to mapOf("tag" to "plain_text", "content" to "🎉 VIPClaw 卡片消息"),
                 ),
                 "elements" to listOf(
                     mapOf(
                         "tag" to "markdown",
-                        "content" to "**这是一条交互式卡片消息**\n支持 Markdown 格式"
+                        "content" to "**这是一条交互式卡片消息**\n支持 Markdown 格式",
                     ),
                     mapOf("tag" to "hr"),
                     mapOf(
@@ -298,14 +308,14 @@ object FeishuBotDemo {
                                 "tag" to "button",
                                 "text" to mapOf("tag" to "plain_text", "content" to "查看详情"),
                                 "url" to "https://example.com",
-                                "type" to "primary"
-                            )
-                        )
-                    )
-                )
-            )
+                                "type" to "primary",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
         )
-        
+
         println("📤 请求体:")
         println("  ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(cardMessage)}")
     }
@@ -324,14 +334,16 @@ object FeishuBotDemo {
 
         // 示例 2: Markdown 消息（飞书使用 post 类型）
         println("\n【2】Markdown 消息")
-        val markdownMessage = MarkdownRichMessage("""
+        val markdownMessage = MarkdownRichMessage(
+            """
             # 标题
             **加粗文本** 和 *斜体文本*
             - 列表项 1
             - 列表项 2
             [链接](https://example.com)
-        """.trimIndent())
-        
+            """.trimIndent(),
+        )
+
         val markdownJson = com.vipamp.vipclaw.channel.adaptor.feishu.FeishuMessageBuilder.buildFromRichMessage(markdownMessage)
         println("  JSON: ${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(markdownJson)}")
 
@@ -355,7 +367,7 @@ object FeishuBotDemo {
     private fun maskSecret(
         secret: String,
         showStart: Int = 4,
-        showEnd: Int = 0
+        showEnd: Int = 0,
     ): String {
         if (secret.length <= showStart + showEnd) {
             return "*".repeat(secret.length)

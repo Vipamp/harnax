@@ -31,6 +31,7 @@
         <spring-boot.version>3.5.8</spring-boot.version>
         <agent-scope.version>1.0.10</agent-scope.version>
         <hikaricp.version>5.0.1</hikaricp.version>
+        <spotless.version>2.44.5</spotless.version>
     </properties>
 
     <dependencyManagement>
@@ -85,5 +86,40 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        
+        <plugins>
+            <!-- Spotless Code Formatter -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <kotlin>
+                        <includes>
+                            <include>src/main/kotlin/**/*.kt</include>
+                            <include>src/test/kotlin/**/*.kt</include>
+                        </includes>
+                        <ktlint>
+                            <version>1.4.1</version>
+                            <editorConfigOverride>
+                                <indent_size>4</indent_size>
+                                <continuation_indent_size>4</continuation_indent_size>
+                                <ktlint_standard_no-wildcard-imports>disabled</ktlint_standard_no-wildcard-imports>
+                                <ktlint_standard_filename>disabled</ktlint_standard_filename>
+                            </editorConfigOverride>
+                        </ktlint>
+                    </kotlin>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 </project>

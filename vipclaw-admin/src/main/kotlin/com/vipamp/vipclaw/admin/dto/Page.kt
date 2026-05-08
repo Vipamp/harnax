@@ -1,4 +1,4 @@
-package com.vipamp.vipclaw.common.page
+package com.vipamp.vipclaw.admin.dto
 
 import com.github.pagehelper.PageInfo
 
@@ -13,7 +13,7 @@ data class Page<T>(
     var pageNum: Long = 1,
     var pageSize: Long = 10,
     var total: Long = 0,
-    var records: List<T> = emptyList()
+    var records: List<T> = emptyList(),
 ) {
     /**
      * 总页数
@@ -43,7 +43,7 @@ data class Page<T>(
                 pageNum = pageInfo.pageNum.toLong(),
                 pageSize = pageInfo.pageSize.toLong(),
                 total = pageInfo.total,
-                records = pageInfo.list
+                records = pageInfo.list,
             )
         }
     }
@@ -56,11 +56,9 @@ data class Page<T>(
  * @param transform 实体到响应对象的转换函数
  * @return 转换后的分页对象
  */
-fun <T, R> Page<T>.mapRecords(transform: (T) -> R): Page<R> {
-    return Page<R>(
-        pageNum = this.pageNum,
-        pageSize = this.pageSize,
-        total = this.total,
-        records = this.records.map(transform)
-    )
-}
+fun <T, R> Page<T>.mapRecords(transform: (T) -> R): Page<R> = Page<R>(
+    pageNum = this.pageNum,
+    pageSize = this.pageSize,
+    total = this.total,
+    records = this.records.map(transform),
+)

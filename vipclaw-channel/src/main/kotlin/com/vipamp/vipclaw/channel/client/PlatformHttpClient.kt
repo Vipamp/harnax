@@ -25,7 +25,7 @@ class PlatformHttpClient(
     private val retryMultiplier: Double = 2.0,
     private val maxDelayMs: Long = 10000,
     private val connectTimeoutMs: Long = 5000,
-    private val readTimeoutMs: Long = 10000
+    private val readTimeoutMs: Long = 10000,
 ) {
     private val logger = LoggerFactory.getLogger(PlatformHttpClient::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
@@ -45,7 +45,7 @@ class PlatformHttpClient(
     suspend fun postJson(
         url: String,
         body: Any,
-        headers: Map<String, String> = emptyMap()
+        headers: Map<String, String> = emptyMap(),
     ): PlatformResponse {
         val jsonBody = objectMapper.writeValueAsString(body)
         logger.debug("POST to $url with body: ${jsonBody.take(200)}")
@@ -73,12 +73,12 @@ class PlatformHttpClient(
                 if (statusCode in 200..299) {
                     PlatformResponse.Success(
                         statusCode = statusCode,
-                        body = responseBody
+                        body = responseBody,
                     )
                 } else {
                     PlatformResponse.Error(
                         statusCode = statusCode,
-                        body = responseBody
+                        body = responseBody,
                     )
                 }
             } catch (e: Exception) {
@@ -98,7 +98,7 @@ class PlatformHttpClient(
     suspend fun postWithSign(
         baseUrl: String,
         body: Any,
-        appSecret: String
+        appSecret: String,
     ): PlatformResponse {
         val timestamp = System.currentTimeMillis()
         val sign = generateSign(timestamp, appSecret)
@@ -117,7 +117,7 @@ class PlatformHttpClient(
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
         val secretKey = javax.crypto.spec.SecretKeySpec(
             appSecret.toByteArray(Charsets.UTF_8),
-            "HmacSHA256"
+            "HmacSHA256",
         )
         mac.init(secretKey)
         val hash = mac.doFinal(stringToSign.toByteArray(Charsets.UTF_8))
@@ -130,7 +130,7 @@ class PlatformHttpClient(
      */
     private suspend fun executeWithRetry(
         url: String,
-        block: suspend (Int) -> PlatformResponse
+        block: suspend (Int) -> PlatformResponse,
     ): PlatformResponse {
         var lastError: PlatformResponse.Error? = null
 
@@ -160,7 +160,7 @@ class PlatformHttpClient(
                 lastError = PlatformResponse.Error(
                     statusCode = 0,
                     body = "",
-                    exception = e
+                    exception = e,
                 )
 
                 if (attempt < maxRetries) {
@@ -174,7 +174,7 @@ class PlatformHttpClient(
         return lastError ?: PlatformResponse.Error(
             statusCode = 0,
             body = "",
-            platformMessage = "All retries exhausted"
+            platformMessage = "All retries exhausted",
         )
     }
 
@@ -182,11 +182,15 @@ class PlatformHttpClient(
      * 判断错误是否可重试
      */
     private fun isRetryableError(statusCode: Int): Boolean {
-        return statusCode == 429 || // 频率限制
-                statusCode == 500 || // 服务器内部错误
-                statusCode == 502 || // 网关错误
-                statusCode == 503 || // 服务不可用
-                statusCode == 504    // 网关超时
+        return statusCode == 429 ||
+            // 频率限制
+            statusCode == 500 ||
+            // 服务器内部错误
+            statusCode == 502 ||
+            // 网关错误
+            statusCode == 503 ||
+            // 服务不可用
+            statusCode == 504 // 网关超时
     }
 
     /**

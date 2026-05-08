@@ -41,31 +41,29 @@ class CaptchaServiceImpl : CaptchaService {
         private const val CHAR_SET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
     }
 
-    override fun generateCaptcha(): CaptchaResponse {
-        return try {
-            // 1. 生成随机验证码
-            val code = generateRandomCode()
+    override fun generateCaptcha(): CaptchaResponse = try {
+        // 1. 生成随机验证码
+        val code = generateRandomCode()
 
-            // 2. 生成验证码图片
-            val image = createCaptchaImage(code)
+        // 2. 生成验证码图片
+        val image = createCaptchaImage(code)
 
-            // 3. 转换为 Base64
-            val base64Image = convertToBase64(image)
+        // 3. 转换为 Base64
+        val base64Image = convertToBase64(image)
 
-            // 4. 生成唯一 key
-            val captchaKey = generateCaptchaKey()
+        // 4. 生成唯一 key
+        val captchaKey = generateCaptchaKey()
 
-            // 5. 存储验证码信息
-            captchaStore[captchaKey] = CaptchaInfo(code, System.currentTimeMillis())
+        // 5. 存储验证码信息
+        captchaStore[captchaKey] = CaptchaInfo(code, System.currentTimeMillis())
 
-            log.info("生成验证码,captchaKey: {}", captchaKey)
+        log.info("生成验证码,captchaKey: {}", captchaKey)
 
-            // 6. 返回响应
-            CaptchaResponse(base64Image, captchaKey, EXPIRE_TIME)
-        } catch (e: Exception) {
-            log.error("生成验证码失败", e)
-            throw BizException("生成验证码失败:${e.message}")
-        }
+        // 6. 返回响应
+        CaptchaResponse(base64Image, captchaKey, EXPIRE_TIME)
+    } catch (e: Exception) {
+        log.error("生成验证码失败", e)
+        throw BizException("生成验证码失败:${e.message}")
     }
 
     override fun validateCaptcha(captchaKey: String, code: String): Boolean {
@@ -159,7 +157,7 @@ class CaptchaServiceImpl : CaptchaService {
             g.drawString(
                 code[i].toString(),
                 (i * charWidth + 10).toFloat(),
-                (fontSize + random.nextInt(5) + 5).toFloat()
+                (fontSize + random.nextInt(5) + 5).toFloat(),
             )
         }
     }
@@ -199,15 +197,13 @@ class CaptchaServiceImpl : CaptchaService {
     /**
      * 生成验证码 key
      */
-    private fun generateCaptchaKey(): String {
-        return UUID.randomUUID().toString().replace("-", "")
-    }
+    private fun generateCaptchaKey(): String = UUID.randomUUID().toString().replace("-", "")
 
     /**
      * 验证码信息内部类
      */
     private data class CaptchaInfo(
         val code: String,
-        val createTime: Long
+        val createTime: Long,
     )
 }

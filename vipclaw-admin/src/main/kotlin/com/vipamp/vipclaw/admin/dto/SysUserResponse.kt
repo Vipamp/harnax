@@ -6,7 +6,7 @@ import java.time.LocalDateTime
 
 /**
  * 用户响应对象
- * 
+ *
  * 根据数据库表结构定义:
  * - NOT NULL 字段: id, username, nickname, email, phone, status, isAdmin, createTime, updateTime (非空)
  * - NULLABLE 字段: gender, avatar, lastLoginTime (可空)
@@ -51,25 +51,23 @@ data class SysUserResponse(
     val updateTime: LocalDateTime,
 
     @Schema(description = "所属租户数量", example = "2")
-    val tenantCount: Int = 0
+    val tenantCount: Int = 0,
 ) {
     companion object {
         @JvmStatic
-        fun fromEntity(entity: SysUser): SysUserResponse {
-            return SysUserResponse(
-                id = entity.id,
-                username = entity.username,
-                nickname = entity.nickname,
-                email = entity.email,
-                phone = entity.phone,
-                gender = entity.gender,
-                avatar = entity.avatar,
-                status = entity.status,
-                isAdmin = entity.isAdmin,
-                lastLoginTime = entity.lastLoginTime,
-                createTime = entity.createTime,
-                updateTime = entity.updateTime
-            )
-        }
+        fun fromEntity(entity: SysUser): SysUserResponse = SysUserResponse(
+            id = entity.id,
+            username = entity.username,
+            nickname = entity.nickname,
+            email = entity.email,
+            phone = entity.phone,
+            gender = entity.gender,
+            avatar = entity.avatar,
+            status = entity.status,
+            isAdmin = entity.isAdmin,
+            lastLoginTime = entity.lastLoginTime,
+            createTime = entity.createTime,
+            updateTime = entity.updateTime,
+        )
     }
 }

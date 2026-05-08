@@ -1,23 +1,23 @@
 package com.vipamp.vipclaw.admin.i18n
 
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.context.MessageSource
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.stereotype.Component
-import org.springframework.beans.factory.annotation.Qualifier
 
 /**
  * 国际化消息工具类
- * 
+ *
  * 封装 MessageSource 的调用，提供便捷的消息获取方法
  */
 @Component
 class MessageUtil(
     @Qualifier("errorMessageSource")
-    private val messageSource: MessageSource
+    private val messageSource: MessageSource,
 ) {
     /**
      * 获取国际化消息
-     * 
+     *
      * @param code 消息代码
      * @param args 消息参数
      * @return 国际化消息文本
@@ -34,7 +34,7 @@ class MessageUtil(
 
     /**
      * 获取国际化消息（带默认值）
-     * 
+     *
      * @param code 消息代码
      * @param defaultMessage 默认消息
      * @param args 消息参数

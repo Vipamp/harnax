@@ -30,7 +30,7 @@ interface ChannelMapper {
     fun selectChannelList(
         @Param("keyword") keyword: String?,
         @Param("type") type: String?,
-        @Param("status") status: Int?
+        @Param("status") status: Int?,
     ): List<Channel>
 
     fun selectByCallbackKey(@Param("callbackKey") callbackKey: String): Channel?

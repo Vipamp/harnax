@@ -27,14 +27,12 @@ class UserContextUtil {
          *
          * @return 当前 HttpServletRequest
          */
-        fun getCurrentRequest(): HttpServletRequest? {
-            return try {
-                val attributes = RequestContextHolder.getRequestAttributes() as ServletRequestAttributes?
-                attributes?.request
-            } catch (e: Exception) {
-                LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前请求失败：{}", e.message)
-                null
-            }
+        fun getCurrentRequest(): HttpServletRequest? = try {
+            val attributes = RequestContextHolder.getRequestAttributes() as ServletRequestAttributes?
+            attributes?.request
+        } catch (e: Exception) {
+            LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前请求失败：{}", e.message)
+            null
         }
 
         /**
@@ -59,18 +57,16 @@ class UserContextUtil {
          * @param jwtUtil JWT 工具类
          * @return 用户名，未登录返回 null
          */
-        fun getCurrentUsername(jwtUtil: JwtUtil): String {
-            return try {
-                val token = getToken()
-                if (token != null && jwtUtil.validateToken(token)) {
-                    jwtUtil.getUsernameFromToken(token)
-                } else {
-                    throw RuntimeException("未登录")
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
+        fun getCurrentUsername(jwtUtil: JwtUtil): String = try {
+            val token = getToken()
+            if (token != null && jwtUtil.validateToken(token)) {
+                jwtUtil.getUsernameFromToken(token)
+            } else {
                 throw RuntimeException("未登录")
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            throw RuntimeException("未登录")
         }
 
         /**
@@ -79,19 +75,17 @@ class UserContextUtil {
          * @param jwtUtil JWT 工具类
          * @return 用户 ID，未登录返回 null
          */
-        fun getCurrentUserId(jwtUtil: JwtUtil): Long? {
-            return try {
-                val token = getToken()
-                val valid = jwtUtil.validateToken(token!!)
-                if (token != null && valid) {
-                    jwtUtil.getUserIdFromToken(token)
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
-                LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前用户ID失败：{}", e.message)
+        fun getCurrentUserId(jwtUtil: JwtUtil): Long? = try {
+            val token = getToken()
+            val valid = jwtUtil.validateToken(token!!)
+            if (token != null && valid) {
+                jwtUtil.getUserIdFromToken(token)
+            } else {
                 null
             }
+        } catch (e: Exception) {
+            LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前用户ID失败：{}", e.message)
+            null
         }
     }
 }

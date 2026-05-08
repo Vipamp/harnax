@@ -64,11 +64,11 @@ class EditionUtilTest {
         // 模拟个人版
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         assertFalse(editionUtil.isFeatureEnabled("user-management"))
-        
+
         // 模拟企业版
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         assertTrue(editionUtil.isFeatureEnabled("user-management"))
-        
+
         // 模拟公有云版
         whenever(editionUtil.getCurrentEdition()).thenReturn("public")
         assertTrue(editionUtil.isFeatureEnabled("user-management"))
@@ -80,11 +80,11 @@ class EditionUtilTest {
         // 模拟个人版
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         assertFalse(editionUtil.isFeatureEnabled("phone-login"))
-        
+
         // 模拟企业版
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         assertTrue(editionUtil.isFeatureEnabled("phone-login"))
-        
+
         // 模拟公有云版
         whenever(editionUtil.getCurrentEdition()).thenReturn("public")
         assertTrue(editionUtil.isFeatureEnabled("phone-login"))
@@ -96,11 +96,11 @@ class EditionUtilTest {
         // 模拟个人版
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         assertFalse(editionUtil.isFeatureEnabled("multi-tenant"))
-        
+
         // 模拟企业版
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         assertFalse(editionUtil.isFeatureEnabled("multi-tenant"))
-        
+
         // 模拟公有云版
         whenever(editionUtil.getCurrentEdition()).thenReturn("public")
         assertTrue(editionUtil.isFeatureEnabled("multi-tenant"))
@@ -112,11 +112,11 @@ class EditionUtilTest {
         // 模拟个人版
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         assertFalse(editionUtil.isFeatureEnabled("billing"))
-        
+
         // 模拟企业版
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         assertFalse(editionUtil.isFeatureEnabled("billing"))
-        
+
         // 模拟公有云版
         whenever(editionUtil.getCurrentEdition()).thenReturn("public")
         assertTrue(editionUtil.isFeatureEnabled("billing"))
@@ -136,11 +136,11 @@ class EditionUtilTest {
         // 模拟个人版
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         assertEquals("personal", editionUtil.getCurrentEdition())
-        
+
         // 模拟企业版
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         assertEquals("enterprise", editionUtil.getCurrentEdition())
-        
+
         // 模拟公有云版
         whenever(editionUtil.getCurrentEdition()).thenReturn("public")
         assertEquals("public", editionUtil.getCurrentEdition())

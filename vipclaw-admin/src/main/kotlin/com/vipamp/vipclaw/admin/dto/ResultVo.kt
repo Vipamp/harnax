@@ -18,7 +18,7 @@ data class ResultVo<T>(
     val data: T? = null,
 
     @Schema(description = "时间戳", example = "1704067200000")
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 ) : Serializable {
 
     companion object {

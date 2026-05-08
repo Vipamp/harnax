@@ -10,7 +10,7 @@ import java.util.Locale
 
 /**
  * 国际化配置类
- * 
+ *
  * 配置 MessageSource 和 LocaleResolver
  */
 @Configuration
@@ -18,7 +18,7 @@ class I18nConfig {
 
     /**
      * 配置消息源
-     * 
+     *
      * 从 i18n/messages*.properties 加载消息资源
      */
     @Bean
@@ -33,7 +33,7 @@ class I18nConfig {
 
     /**
      * 配置错误消息源
-     * 
+     *
      * 从 i18n/messages_error*.properties 加载错误消息资源
      */
     @Bean
@@ -48,7 +48,7 @@ class I18nConfig {
 
     /**
      * 配置语言解析器
-     * 
+     *
      * 从 Accept-Language 请求头解析用户语言偏好
      * 默认使用英文
      */
@@ -56,11 +56,13 @@ class I18nConfig {
     fun localeResolver(): LocaleResolver {
         val resolver = AcceptHeaderLocaleResolver()
         resolver.setDefaultLocale(Locale.ENGLISH)
-        resolver.setSupportedLocales(listOf(
-            Locale.ENGLISH,
-            Locale.SIMPLIFIED_CHINESE,
-            Locale("zh", "CN")
-        ))
+        resolver.setSupportedLocales(
+            listOf(
+                Locale.ENGLISH,
+                Locale.SIMPLIFIED_CHINESE,
+                Locale("zh", "CN"),
+            ),
+        )
         return resolver
     }
 }

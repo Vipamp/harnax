@@ -317,7 +317,7 @@ const McpManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(12);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
-  const [types, setTypes] = useState<string[]>([]);
+  const [type, setType] = useState<string | undefined>(undefined);
   const [messageApi, contextHolder] = message.useMessage();
   const [testModalVisible, setTestModalVisible] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -360,7 +360,7 @@ const McpManagement: React.FC = () => {
         size: size,
         keyword: keyword || undefined,
         status: status,
-        types: types.length > 0 ? types.join(',') : undefined,
+        type: type,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -373,7 +373,7 @@ const McpManagement: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [pageNum, pageSize, status, types]);
+  }, [pageNum, pageSize, status, type]);
 
   /** 搜索 */
   const handleSearch = () => {
@@ -410,14 +410,18 @@ const McpManagement: React.FC = () => {
   /** 切换启用状态 */
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
-      await toggleMcpServerStatus(id, newStatus);
-      messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
-      // 只更新当前卡片状态，不重新加载整个列表
-      setData((prevData) =>
-        prevData.map((item) =>
-          item.id === id ? { ...item, status: newStatus } : item
-        )
-      );
+      const response = await toggleMcpServerStatus(id, newStatus);
+      if (response.code === 200) {
+        messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
+        // 只更新当前卡片状态，不重新加载整个列表
+        setData((prevData) =>
+          prevData.map((item) =>
+            item.id === id ? { ...item, status: newStatus } : item
+          )
+        );
+      } else {
+        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
@@ -492,7 +496,7 @@ const McpManagement: React.FC = () => {
       {/* 搜索和工具栏 */}
       <SearchFilterBar
         onSearch={handleSearch}
-        onReset={() => { setKeyword(''); setStatus(undefined); setTypes([]); setPageNum(1); loadData(1); }}
+        onReset={() => { setKeyword(''); setStatus(undefined); setType(undefined); setPageNum(1); loadData(1); }}
         searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
         extra={
@@ -523,9 +527,9 @@ const McpManagement: React.FC = () => {
           ]}
         />
         <FilterSelect
-          value={types[0] || undefined}
+          value={type}
           onChange={(val) => {
-            setTypes(val ? [val] : []);
+            setType(val);
             setPageNum(1);
           }}
           placeholder={intl.formatMessage({ id: 'pages.mcp.typeFilter', defaultMessage: 'Type Filter' })}

@@ -1,7 +1,7 @@
 package com.vipamp.vipclaw.admin.interceptor
 
-import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.context.TenantContext
+import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import com.vipamp.vipclaw.admin.security.SecurityUtils
@@ -17,13 +17,13 @@ import org.springframework.web.servlet.HandlerInterceptor
 @Component
 class TenantInterceptor(
     private val userTenantMapper: UserTenantMapper,
-    private val messageUtil: MessageUtil
+    private val messageUtil: MessageUtil,
 ) : HandlerInterceptor {
 
     override fun preHandle(
         request: HttpServletRequest,
         response: HttpServletResponse,
-        handler: Any
+        handler: Any,
     ): Boolean {
         val tenantIdHeader = request.getHeader("X-Tenant-ID")
 
@@ -63,7 +63,7 @@ class TenantInterceptor(
         request: HttpServletRequest,
         response: HttpServletResponse,
         handler: Any,
-        ex: Exception?
+        ex: Exception?,
     ) {
         // 清理 ThreadLocal 防止内存泄漏
         TenantContext.clear()

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class McpConfigAdaptorImpl(
-    private val mcpServerMapper: McpServerMapper
+    private val mcpServerMapper: McpServerMapper,
 ) : McpConfigAdaptor {
 
     private val log = LoggerFactory.getLogger(McpConfigAdaptorImpl::class.java)
@@ -38,30 +38,28 @@ class McpConfigAdaptorImpl(
     /**
      * 根据 MCP 类型构建 McpConfig
      */
-    private fun buildMcpConfig(mcpServer: McpServer): McpConfig? {
-        return when (val type = mcpServer.type.lowercase()) {
-            "stdio" -> StdioMcpConfig(
-                mcpServer.name,
-                mcpServer.command,
-                emptyList(),
-                emptyMap()
-            )
-            "sse" -> SseHttpMcpConfig(
-                mcpServer.name,
-                mcpServer.url,
-                emptyMap(),
-                emptyMap()
-            )
-            "streamablehttp" -> StreamableHttpMcpConfig(
-                mcpServer.name,
-                mcpServer.url,
-                emptyMap(),
-                emptyMap()
-            )
-            else -> {
-                log.warn("Unsupported MCP type: $type")
-                null
-            }
+    private fun buildMcpConfig(mcpServer: McpServer): McpConfig? = when (val type = mcpServer.type.lowercase()) {
+        "stdio" -> StdioMcpConfig(
+            mcpServer.name,
+            mcpServer.command,
+            emptyList(),
+            emptyMap(),
+        )
+        "sse" -> SseHttpMcpConfig(
+            mcpServer.name,
+            mcpServer.url,
+            emptyMap(),
+            emptyMap(),
+        )
+        "streamablehttp" -> StreamableHttpMcpConfig(
+            mcpServer.name,
+            mcpServer.url,
+            emptyMap(),
+            emptyMap(),
+        )
+        else -> {
+            log.warn("Unsupported MCP type: $type")
+            null
         }
     }
 }

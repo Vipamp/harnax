@@ -8,6 +8,7 @@ import org.springframework.context.MessageSource
 import org.springframework.web.servlet.LocaleResolver
 import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver
 import java.util.Locale
+import kotlin.test.assertIs
 
 @SpringBootTest
 class I18nConfigTest {

@@ -4,6 +4,7 @@ import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Model
 import com.vipamp.vipclaw.admin.entity.SysJob
 import com.vipamp.vipclaw.admin.exception.BizException
@@ -12,9 +13,7 @@ import com.vipamp.vipclaw.admin.mapper.ModelProviderMapper
 import com.vipamp.vipclaw.admin.service.ModelService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
-import org.springframework.beans.BeanUtils
 import org.springframework.stereotype.Service
 import org.springframework.util.StringUtils.hasText
 import java.time.LocalDateTime
@@ -29,7 +28,7 @@ import java.time.LocalDateTime
 class ModelServiceImpl(
     private val modelProviderMapper: ModelProviderMapper,
     private val jwtUtil: JwtUtil,
-    private val modelMapper: ModelMapper
+    private val modelMapper: ModelMapper,
 ) : ModelService {
 
     private val log = LoggerFactory.getLogger(ModelServiceImpl::class.java)
@@ -43,7 +42,7 @@ class ModelServiceImpl(
         minPrice: Double?,
         maxPrice: Double?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<Model> {
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
@@ -65,14 +64,12 @@ class ModelServiceImpl(
                 tagsList,
                 minPrice,
                 maxPrice,
-                currentUsername
-            )
+                currentUsername,
+            ),
         )
     }
 
-    override fun getModel(id: Long): Model? {
-        return this.modelMapper.selectById(id)
-    }
+    override fun getModel(id: Long): Model? = this.modelMapper.selectById(id)
 
     override fun createModel(request: ModelCreateRequest): Boolean {
         // 检查供应商是否存在
@@ -90,7 +87,18 @@ class ModelServiceImpl(
         }
 
         val model = Model()
-        BeanUtils.copyProperties(request, model)
+        model.name = request.name
+        model.modelName = request.modelName
+        model.providerId = request.providerId
+        model.description = request.description
+        model.modelType = request.modelType
+        model.supportInternet = request.supportInternet ?: 0
+        model.supportReasoning = request.supportReasoning ?: 0
+        model.supportTool = request.supportTool ?: 0
+        model.supportMcp = request.supportMcp ?: 0
+        model.supportVision = request.supportVision ?: 0
+        model.price = request.price ?: 0.0
+        model.isPublic = request.isPublic ?: 1
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
@@ -156,9 +164,7 @@ class ModelServiceImpl(
         return this.modelMapper.updateStatus(id, status) > 0
     }
 
-    override fun toggleModel(id: Long, status: Int): Boolean {
-        return updateStatus(id, status)
-    }
+    override fun toggleModel(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModel(id: Long): Boolean {
         log.info("删除模型，id: {}", id)

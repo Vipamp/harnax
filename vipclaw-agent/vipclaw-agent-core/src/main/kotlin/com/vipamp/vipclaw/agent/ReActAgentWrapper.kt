@@ -25,12 +25,12 @@ class ReActAgentWrapper(
     val dangerousTools: Set<String>,
     val sessionManager: SessionManager? = null,
     val tokenStatBuilder: TokenStatBuilder,
-    val tokenStatAdaptor: TokenStatAdaptor
+    val tokenStatAdaptor: TokenStatAdaptor,
 ) {
     fun callStream(
         prompt: String,
         imageUrls: List<String> = listOf(),
-        options: StreamOptions = StreamOptions.builder().build()
+        options: StreamOptions = StreamOptions.builder().build(),
     ): Flux<ChatEvent> {
         val list: MutableList<ContentBlock> = mutableListOf()
         prompt.let { list.add(textBlock(it)) }
@@ -45,7 +45,7 @@ class ReActAgentWrapper(
 
     private fun callStream(
         options: StreamOptions,
-        vararg msg: Msg = arrayOf()
+        vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> = reActAgent.stream(msg.toList(), options)
         .doOnNext { sessionManager?.saveSession() }
         .flatMap { ChatEventConverter.convert(it, dangerousTools) }
@@ -67,7 +67,7 @@ class ReActAgentWrapper(
                 Base64Source.builder()
                     .data(base64Data)
                     .mediaType(mimeType)
-                    .build()
+                    .build(),
             ).build()
         } else {
             // 文件路径
@@ -75,7 +75,7 @@ class ReActAgentWrapper(
                 Base64Source.builder()
                     .data(Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get(url))))
                     .mediaType("image/png")
-                    .build()
+                    .build(),
             ).build()
         }
     }
@@ -86,7 +86,7 @@ class ReActAgentWrapper(
                 tokenStatBuilder.inputToken(it.tokenUsage!!.inputTokens)
                     .outputToken(it.tokenUsage!!.outputTokens)
                     .totalToken(it.tokenUsage!!.totalTokens)
-                    .build()
+                    .build(),
             )
         }
     }

@@ -1,9 +1,9 @@
 package com.vipamp.vipclaw.agent.adaptor.mcp
 
-import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.tool.mcp.McpClientBuilder
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.modelcontextprotocol.spec.McpSchema
+import org.slf4j.LoggerFactory
 
 /**
  * MCP 客户端辅助工具类
@@ -15,18 +15,20 @@ import io.modelcontextprotocol.spec.McpSchema
  */
 object McpHelper {
 
+    private val log = LoggerFactory.getLogger(McpHelper::class.java)
+
     fun listTools(mcpConfig: McpConfig): List<McpSchema.Tool> {
         val mcpClient = createMcpClient(mcpConfig, false)
         try {
             mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
         } catch (t: Throwable) {
-            logger().error("Failed to initialize McpClient `${mcpConfig.name}`", t)
+            log.error("Failed to initialize McpClient `${mcpConfig.name}`", t)
             throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpConfig.name)
         }
         try {
             return mcpClient.listTools()?.block() ?: emptyList()
         } catch (t: Throwable) {
-            logger().error("Failed to list tools from McpClient `${mcpConfig.name}`", t)
+            log.error("Failed to list tools from McpClient `${mcpConfig.name}`", t)
             throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpConfig.name)
         }
     }
@@ -41,7 +43,7 @@ object McpHelper {
      */
     fun createMcpClient(
         mcpConfig: McpConfig,
-        isAsync: Boolean
+        isAsync: Boolean,
     ): McpClientWrapper {
         val builder = when (mcpConfig) {
             is StdioMcpConfig -> buildStdioMcpClient(mcpConfig)
@@ -61,9 +63,8 @@ object McpHelper {
      * @param mcpConfig STDIO 类型的 MCP 配置
      * @return McpClientBuilder 实例
      */
-    fun buildStdioMcpClient(mcpConfig: StdioMcpConfig): McpClientBuilder =
-        McpClientBuilder.create(mcpConfig.name)
-            .stdioTransport(mcpConfig.command, mcpConfig.args, mcpConfig.env)
+    fun buildStdioMcpClient(mcpConfig: StdioMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
+        .stdioTransport(mcpConfig.command, mcpConfig.args, mcpConfig.env)
 
     /**
      * 构建 SSE HTTP 类型的 MCP 客户端 Builder
@@ -71,10 +72,9 @@ object McpHelper {
      * @param mcpConfig SSE HTTP 类型的 MCP 配置
      * @return McpClientBuilder 实例
      */
-    fun buildSseMcpClient(mcpConfig: SseHttpMcpConfig): McpClientBuilder =
-        McpClientBuilder.create(mcpConfig.name)
-            .sseTransport(mcpConfig.url)
-            .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
+    fun buildSseMcpClient(mcpConfig: SseHttpMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
+        .sseTransport(mcpConfig.url)
+        .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
 
     /**
      * 构建 Streamable HTTP 类型的 MCP 客户端 Builder
@@ -82,10 +82,9 @@ object McpHelper {
      * @param mcpConfig Streamable HTTP 类型的 MCP 配置
      * @return McpClientBuilder 实例
      */
-    fun buildStreamableMcpClient(mcpConfig: StreamableHttpMcpConfig): McpClientBuilder =
-        McpClientBuilder.create(mcpConfig.name)
-            .streamableHttpTransport(mcpConfig.url)
-            .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
+    fun buildStreamableMcpClient(mcpConfig: StreamableHttpMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
+        .streamableHttpTransport(mcpConfig.url)
+        .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
 
     /**
      * 扩展函数：应用 HTTP 传输配置
@@ -96,10 +95,9 @@ object McpHelper {
      */
     fun McpClientBuilder.applyHttpTransport(
         headers: Map<String, String>,
-        queryParam: Map<String, String>
-    ): McpClientBuilder =
-        apply {
-            if (headers.isNotEmpty()) headers(headers)
-            if (queryParam.isNotEmpty()) queryParams(queryParam)
-        }
+        queryParam: Map<String, String>,
+    ): McpClientBuilder = apply {
+        if (headers.isNotEmpty()) headers(headers)
+        if (queryParam.isNotEmpty()) queryParams(queryParam)
+    }
 }

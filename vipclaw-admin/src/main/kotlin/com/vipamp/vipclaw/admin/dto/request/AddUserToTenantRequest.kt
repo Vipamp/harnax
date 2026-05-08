@@ -15,5 +15,5 @@ data class AddUserToTenantRequest(
 
     @Schema(description = "角色（admin/member）", example = "member")
     @field:NotBlank(message = "角色不能为空")
-    val role: String = "member"
+    val role: String = "member",
 )

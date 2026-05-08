@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class SkillAdaptorImpl(
-    private val skillMapper: SkillMapper
+    private val skillMapper: SkillMapper,
 ) : SkillAdaptor {
 
     private val log = LoggerFactory.getLogger(SkillAdaptorImpl::class.java)
@@ -38,15 +38,13 @@ class SkillAdaptorImpl(
     /**
      * 构建 AgentSkill
      */
-    private fun buildAgentSkill(skill: Skill): AgentSkill? {
-        return try {
-            AgentSkill.builder()
-                .name(skill.name)
-                .description(skill.description)
-                .build()
-        } catch (e: Exception) {
-            log.error("Failed to build AgentSkill for skill: ${skill.id}", e)
-            null
-        }
+    private fun buildAgentSkill(skill: Skill): AgentSkill? = try {
+        AgentSkill.builder()
+            .name(skill.name)
+            .description(skill.description)
+            .build()
+    } catch (e: Exception) {
+        log.error("Failed to build AgentSkill for skill: ${skill.id}", e)
+        null
     }
 }

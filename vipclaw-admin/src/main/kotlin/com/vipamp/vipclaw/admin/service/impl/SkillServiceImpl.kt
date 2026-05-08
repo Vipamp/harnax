@@ -2,6 +2,7 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
 import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
@@ -14,7 +15,6 @@ import com.vipamp.vipclaw.admin.service.SkillService
 import com.vipamp.vipclaw.admin.util.GitSkillLoader.loadSkillsFromGit
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -31,7 +31,7 @@ class SkillServiceImpl(
     private val jwtUtil: JwtUtil,
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
-    @Value($$"${local.tmp-dir}") private val localTmpDir: String
+    @Value($$"${local.tmp-dir}") private val localTmpDir: String,
 ) : SkillService {
 
     private val log = LoggerFactory.getLogger(SkillServiceImpl::class.java)
@@ -42,7 +42,7 @@ class SkillServiceImpl(
         repositoryId: Long?,
         status: Int?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<Skill> {
         log.info(
             "分页查询技能列表，pageNum: {}, pageSize: {}, name: {}, repositoryId: {}, status: {}",
@@ -50,7 +50,7 @@ class SkillServiceImpl(
             pageSize,
             name,
             repositoryId,
-            status
+            status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<SysJob>(pageNum, pageSize)
@@ -82,7 +82,7 @@ class SkillServiceImpl(
         skill.skillmd = request.skillmd!!
         skill.resources = request.resources!!
         skill.status = request.status ?: 1 // 默认启用
-        skill.active = 1  // 默认生效
+        skill.active = 1 // 默认生效
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
@@ -145,9 +145,7 @@ class SkillServiceImpl(
         return skillMapper.deleteById(id) > 0
     }
 
-    override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? {
-        return skillMapper.selectByNameAndRepo(name, repositoryId)
-    }
+    override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? = skillMapper.selectByNameAndRepo(name, repositoryId)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int {
@@ -179,8 +177,8 @@ class SkillServiceImpl(
                             skill.description = it.description
                             skill.skillmd = it.skillContent
                             skill.resources = objectMapper.writeValueAsString(it.resources)
-                            skill.status = 1        // 默认启用
-                            skill.active = 1        // 默认生效
+                            skill.status = 1 // 默认启用
+                            skill.active = 1 // 默认生效
                             skill
                         }
                         .forEach { this.skillMapper.insert(it) }

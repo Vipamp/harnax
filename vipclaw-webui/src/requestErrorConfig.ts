@@ -77,11 +77,13 @@ export const errorConfig: RequestConfig = {
   const { success, isSuccess, code, data, errorCode, errorMessage, message: msg, showType } =
       res as unknown as ResponseStructure;
     
-    // 支持三种格式：success 字段、isSuccess 字段或 code 字段
-    const isSuccessValue = success === true || isSuccess === true || code === 200;
-    // 优先使用 errorMessage，其次使用 message 字段（后端 ResultVo 使用 message 字段）
-    const errorMsg = errorMessage || msg;
-    const errorCodeValue = errorCode || code;
+    // 后端 ResultVo 结构：code=200 表示成功，其他表示失败
+    // 优先使用 code 字段判断（后端标准格式）
+    const isSuccessValue = code === 200 || success === true || isSuccess === true;
+    
+    // 优先使用 message 字段（后端 ResultVo 使用 message），其次使用 errorMessage
+    const errorMsg = msg || errorMessage;
+    const errorCodeValue = code || errorCode;
     
     if (!isSuccessValue) {
     const error: any = new Error(errorMsg || '请求失败');

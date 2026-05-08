@@ -17,8 +17,8 @@ data class MysqlSessionConfig(
     val password: String,
     val databaseName: String,
     val tableName: String,
-    val createIfNotExist: Boolean = true
-) : SessionConfig{
+    val createIfNotExist: Boolean = true,
+) : SessionConfig {
 
     fun toDataSource(): DataSource {
         val hikariConfig = HikariDataSource().apply {
@@ -26,19 +26,19 @@ data class MysqlSessionConfig(
             username = this@MysqlSessionConfig.username
             password = this@MysqlSessionConfig.password
             driverClassName = "com.mysql.cj.jdbc.Driver"
-            
+
             // 连接池配置
             maximumPoolSize = 10
             minimumIdle = 5
             connectionTimeout = 30000
             idleTimeout = 600000
             maxLifetime = 1800000
-            
+
             // 添加数据库名称到 JDBC URL
             if (!jdbcUrl.contains("/")) {
                 jdbcUrl = "$jdbcUrl/$databaseName"
             }
-            
+
             // MySQL 特定配置
             addDataSourceProperty("useSSL", "false")
             addDataSourceProperty("serverTimezone", "UTC")
@@ -50,5 +50,5 @@ data class MysqlSessionConfig(
 }
 
 data class JsonSessionConfig(
-    val path: String = "~/tmp"
-): SessionConfig
+    val path: String = "~/tmp",
+) : SessionConfig

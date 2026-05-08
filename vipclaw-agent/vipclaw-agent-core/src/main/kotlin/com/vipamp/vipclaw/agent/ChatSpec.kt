@@ -29,6 +29,6 @@ class ChatSpecBuilder {
     fun build() = ChatSpec(
         enableThinking = enableThinking,
         enableSearch = enableSearch,
-        enablePlan = enablePlan
+        enablePlan = enablePlan,
     )
 }

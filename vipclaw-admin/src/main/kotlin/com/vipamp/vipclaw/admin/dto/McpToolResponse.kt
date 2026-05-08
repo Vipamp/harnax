@@ -14,7 +14,7 @@ data class McpToolResponse(
     var name: String = "",
 
     @Schema(description = "参数列表")
-    var parameters: List<McpToolParameter> = emptyList()
+    var parameters: List<McpToolParameter> = emptyList(),
 ) {
     /**
      * MCP 工具参数

@@ -1,10 +1,9 @@
 package com.vipamp.vipclaw.admin.service
 
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 租户服务接口
@@ -28,8 +27,6 @@ interface TenantService {
      * 分页查询租户列表
      */
     fun getTenantList(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<TenantResponse>
-
-
 
     /**
      * 切换租户状态

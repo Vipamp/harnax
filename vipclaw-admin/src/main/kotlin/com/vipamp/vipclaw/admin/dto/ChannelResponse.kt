@@ -61,43 +61,39 @@ data class ChannelResponse(
     val createTime: LocalDateTime? = null,
 
     @Schema(description = "更新时间")
-    val updateTime: LocalDateTime? = null
+    val updateTime: LocalDateTime? = null,
 ) {
     companion object {
         /**
          * 获取类型显示名称
          */
-        fun getTypeDisplayName(type: String?): String {
-            return when (type) {
-                "wecom" -> "企业微信"
-                "feishu" -> "飞书"
-                "dingtalk" -> "钉钉"
-                "http" -> "HTTP接口"
-                else -> type ?: ""
-            }
+        fun getTypeDisplayName(type: String?): String = when (type) {
+            "wecom" -> "企业微信"
+            "feishu" -> "飞书"
+            "dingtalk" -> "钉钉"
+            "http" -> "HTTP接口"
+            else -> type ?: ""
         }
 
         /**
          * 从实体对象转换
          */
-        fun fromEntity(channel: Channel): ChannelResponse {
-            return ChannelResponse(
-                id = channel.id,
-                name = channel.name,
-                type = channel.type,
-                typeDisplayName = getTypeDisplayName(channel.type),
-                agentId = channel.agentId,
-                webhookUrl = channel.webhookUrl,
-                token = channel.token,
-                encodingAesKey = channel.encodingAesKey,
-                appId = channel.appId,
-                appSecret = channel.appSecret,
-                callbackKey = channel.callbackKey,
-                description = channel.description,
-                status = channel.status,
-                createTime = channel.createTime,
-                updateTime = channel.updateTime
-            )
-        }
+        fun fromEntity(channel: Channel): ChannelResponse = ChannelResponse(
+            id = channel.id,
+            name = channel.name,
+            type = channel.type,
+            typeDisplayName = getTypeDisplayName(channel.type),
+            agentId = channel.agentId,
+            webhookUrl = channel.webhookUrl,
+            token = channel.token,
+            encodingAesKey = channel.encodingAesKey,
+            appId = channel.appId,
+            appSecret = channel.appSecret,
+            callbackKey = channel.callbackKey,
+            description = channel.description,
+            status = channel.status,
+            createTime = channel.createTime,
+            updateTime = channel.updateTime,
+        )
     }
 }

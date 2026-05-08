@@ -206,7 +206,7 @@ class SysUserMapperTest {
         @DisplayName("selectUserList - 查询所有用户列表")
         fun `selectUserList should return all users`() {
             // When
-            val users = sysUserMapper.selectUserList(null, null)
+            val users = sysUserMapper.selectUserList(null, null, 0)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -217,7 +217,7 @@ class SysUserMapperTest {
         @DisplayName("selectUserList - 按用户名模糊查询")
         fun `selectUserList should filter by username`() {
             // When
-            val users = sysUserMapper.selectUserList("testuser", null)
+            val users = sysUserMapper.selectUserList("testuser", null, 0)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -230,7 +230,7 @@ class SysUserMapperTest {
         @DisplayName("selectUserList - 按状态查询")
         fun `selectUserList should filter by status`() {
             // When
-            val users = sysUserMapper.selectUserList(null, 0)
+            val users = sysUserMapper.selectUserList(null, 0, 0)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -243,16 +243,16 @@ class SysUserMapperTest {
         @DisplayName("selectUserList - 按关键字查询")
         fun `selectUserList should filter by keyword`() {
             // When
-            val users = sysUserMapper.selectUserList("testuser", null)
+            val users = sysUserMapper.selectUserList("testuser", null, 0)
 
             // Then
             assertTrue(users.isNotEmpty())
             users.forEach {
                 assertTrue(
                     it.username.contains("testuser") ||
-                    it.nickname.contains("testuser") ||
-                    it.email.contains("testuser") ||
-                    it.phone.contains("testuser")
+                        it.nickname.contains("testuser") ||
+                        it.email.contains("testuser") ||
+                        it.phone.contains("testuser"),
                 )
             }
         }

@@ -1,9 +1,9 @@
 package com.vipamp.vipclaw.admin.service
 
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SysJobCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysJob
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 定时任务服务接口

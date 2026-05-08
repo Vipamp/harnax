@@ -281,9 +281,13 @@ const JobManagement: React.FC = () => {
   /** 启动任务 */
   const handleStart = async (jobId: number) => {
     try {
-      await startJob(jobId);
-      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
-      loadData();
+      const response = await startJob(jobId);
+      if (response.code === 200) {
+        messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
+        loadData();
+      } else {
+        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
@@ -292,9 +296,13 @@ const JobManagement: React.FC = () => {
   /** 暂停任务 */
   const handlePause = async (jobId: number) => {
     try {
-      await pauseJob(jobId);
-      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
-      loadData();
+      const response = await pauseJob(jobId);
+      if (response.code === 200) {
+        messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
+        loadData();
+      } else {
+        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
@@ -303,8 +311,12 @@ const JobManagement: React.FC = () => {
   /** 立即执行 */
   const handleRunOnce = async (jobId: number) => {
     try {
-      await runJobOnce(jobId);
-      messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
+      const response = await runJobOnce(jobId);
+      if (response.code === 200) {
+        messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
+      } else {
+        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     }
@@ -562,10 +574,14 @@ const JobManagement: React.FC = () => {
         onCancel={() => setCreateModalVisible(false)}
         onSubmit={async (values: API.SysJobCreateRequest) => {
           try {
-            await createJob(values);
-            messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
-            setCreateModalVisible(false);
-            loadData();
+            const response = await createJob(values);
+            if (response.code === 200) {
+              messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
+              setCreateModalVisible(false);
+              loadData();
+            } else {
+              messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
+            }
           } catch (error) {
             messageApi.error(intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
           }
@@ -578,11 +594,15 @@ const JobManagement: React.FC = () => {
         <JobForm
           onSubmit={async (values) => {
             try {
-              await updateJob(currentRow.id || 0, values as API.SysJobUpdateRequest);
-              messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
-              setUpdateModalVisible(false);
-              setCurrentRow(undefined);
-              loadData();
+              const response = await updateJob(currentRow.id || 0, values as API.SysJobUpdateRequest);
+              if (response.code === 200) {
+                messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+                setUpdateModalVisible(false);
+                setCurrentRow(undefined);
+                loadData();
+              } else {
+                messageApi.error(response.message || '更新失败，请重试');
+              }
             } catch (error) {
               messageApi.error('更新失败，请重试');
             }

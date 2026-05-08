@@ -34,7 +34,7 @@ interface ModelMapper {
         @Param("tags") tags: List<String>?,
         @Param("minPrice") minPrice: Double?,
         @Param("maxPrice") maxPrice: Double?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<Model>
 
     fun countByProviderIdAndName(@Param("providerId") providerId: Long, @Param("name") name: String): Int

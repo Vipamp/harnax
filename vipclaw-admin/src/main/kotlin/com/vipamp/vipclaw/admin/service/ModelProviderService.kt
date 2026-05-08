@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.ModelProvider
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 模型服务商服务接口

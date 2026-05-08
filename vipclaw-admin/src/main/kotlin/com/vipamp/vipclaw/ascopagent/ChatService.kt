@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.ascopagent
 
-import com.vipamp.vipclaw.admin.entity.Session
 import com.vipamp.vipclaw.admin.mapper.SessionMapper
 import com.vipamp.vipclaw.agent.*
 import com.vipamp.vipclaw.agent.adaptor.PlanNote
@@ -12,11 +11,11 @@ import com.vipamp.vipclaw.ascopagent.dto.ChatRequest
 import com.vipamp.vipclaw.ascopagent.dto.ConfirmRequest
 import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
 import com.vipamp.vipclaw.ascopagent.dto.SessionConfigUpdateRequest
-import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 
@@ -29,8 +28,10 @@ import reactor.core.publisher.Flux
 @Service
 class ChatService(
     private val launcher: AscopeAgentLauncher,
-    private val sessionMapper: SessionMapper
+    private val sessionMapper: SessionMapper,
 ) {
+
+    private val log = LoggerFactory.getLogger(ChatService::class.java)
 
     fun chat(request: ChatRequest): Flux<ChatEvent> {
         try {
@@ -44,7 +45,7 @@ class ChatService(
             return createAgent(request.sessionId, chatSpec, userIdentifier)
                 .callStream(request.message, request.imageUrl)
         } catch (e: Exception) {
-            logger().error("Error creating agent or streaming text: ${e.message}")
+            log.error("Error creating agent or streaming text: ${e.message}")
             return Flux.error { e }
         }
     }
@@ -66,8 +67,8 @@ class ChatService(
                     ToolResultBlock.of(
                         tool.toolId,
                         tool.toolName,
-                        TextBlock.builder().text(cancelMessage).build()
-                    )
+                        TextBlock.builder().text(cancelMessage).build(),
+                    ),
                 )
             }
             val cancelResult =
@@ -85,7 +86,7 @@ class ChatService(
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
 
-        logger().info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
+        log.info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
 
         // 构建 AgentSpec
         val agentSpec = AgentSpec.builder()
@@ -102,10 +103,10 @@ class ChatService(
             sessionId = sessionId,
             stateless = false,
             chatSpec,
-            userIdentifier
+            userIdentifier,
         )
 
-        logger().info("Agent for session $sessionId created and cached successfully")
+        log.info("Agent for session $sessionId created and cached successfully")
 
         return agent
     }
@@ -114,15 +115,12 @@ class ChatService(
         launcher.clearSession(sessionId)
     }
 
-    fun loadSessionMessages(sessionId: String): List<MessageLog> =
-        launcher.loadSessionMessages(sessionId)
-            .flatMap { MessageLogConverter.convert(it) }
+    fun loadSessionMessages(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)
+        .flatMap { MessageLogConverter.convert(it) }
 
-    fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> =
-        launcher.loadSessionHistoryPlan(sessionId)
+    fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = launcher.loadSessionHistoryPlan(sessionId)
 
-    fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? =
-        launcher.loadSessionCurrentPlanNote(sessionId)
+    fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? = launcher.loadSessionCurrentPlanNote(sessionId)
 
     /**
      * 获取会话的聊天配置
@@ -135,7 +133,7 @@ class ChatService(
             sessionId = sessionId,
             enableThink = session.enableThink == 1,
             enableSearch = session.enableSearch == 1,
-            enablePlan = session.enablePlan == 1
+            enablePlan = session.enablePlan == 1,
         )
     }
 
@@ -151,6 +149,6 @@ class ChatService(
         session.enablePlan = if (request.enablePlan) 1 else 0
 
         sessionMapper.updateById(session)
-        logger().info("Session config updated for sessionId: $sessionId")
+        log.info("Session config updated for sessionId: $sessionId")
     }
 }

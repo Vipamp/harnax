@@ -21,5 +21,5 @@ data class SessionConfigResponse(
     val enableSearch: Boolean = false,
 
     @Schema(description = "是否启用计划")
-    val enablePlan: Boolean = false
+    val enablePlan: Boolean = false,
 )

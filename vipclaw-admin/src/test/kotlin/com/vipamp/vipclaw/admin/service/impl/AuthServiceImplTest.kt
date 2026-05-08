@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mindrot.jbcrypt.BCrypt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
@@ -22,8 +23,6 @@ import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
-import org.mindrot.jbcrypt.BCrypt
-import java.time.LocalDateTime
 
 /**
  * AuthServiceImpl 单元测试
@@ -62,7 +61,7 @@ class AuthServiceImplTest {
         testUser = SysUser().apply {
             id = 1L
             username = "testuser"
-            password = BCrypt.hashpw("password123", BCrypt.gensalt())  // BCrypt 加密后的密码
+            password = BCrypt.hashpw("password123", BCrypt.gensalt()) // BCrypt 加密后的密码
             nickname = "测试用户"
             email = "test@example.com"
             phone = "13800138000"
@@ -75,9 +74,9 @@ class AuthServiceImplTest {
         // 准备登录请求
         loginRequest = LoginRequest(
             username = "testuser",
-            password = "password123",  // 明文密码（实际项目中前端会先 SHA-256 加密）
+            password = "password123", // 明文密码（实际项目中前端会先 SHA-256 加密）
             captcha = "ABCD",
-            captchaKey = "captcha-key-123"
+            captchaKey = "captcha-key-123",
         )
     }
 
@@ -92,7 +91,7 @@ class AuthServiceImplTest {
             `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
             `when`(jwtUtil.generateToken(anyLong(), anyString())).thenReturn("mock-jwt-token")
-            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)  // 1小时
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L) // 1小时
             `when`(sysUserMapper.updateLastLoginTime(anyLong(), any())).thenReturn(1)
 
             // When

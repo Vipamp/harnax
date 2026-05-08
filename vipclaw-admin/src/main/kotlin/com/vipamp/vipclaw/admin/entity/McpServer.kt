@@ -20,7 +20,7 @@ class McpServer : Serializable {
     /**
      * MCP ID
      */
-        @Schema(description = "MCP ID")
+    @Schema(description = "MCP ID")
     var id: Long = 0
 
     /**
@@ -75,17 +75,17 @@ class McpServer : Serializable {
      * 是否可用（0:被删除，1:可用）
      */
     @Schema(description = "是否可用（0:被删除，1:可用）")
-        var active: Int = 1
+    var active: Int = 1
 
     /**
      * 创建时间
      */
     @Schema(description = "创建时间")
-        var createTime: LocalDateTime = LocalDateTime.now()
+    var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
      * 更新时间
      */
     @Schema(description = "更新时间")
-        var updateTime: LocalDateTime = LocalDateTime.now()
+    var updateTime: LocalDateTime = LocalDateTime.now()
 }

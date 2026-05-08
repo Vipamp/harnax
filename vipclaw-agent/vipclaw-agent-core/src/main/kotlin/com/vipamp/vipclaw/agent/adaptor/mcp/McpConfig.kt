@@ -20,7 +20,7 @@ data class StdioMcpConfig(
     override val name: String,
     val command: String,
     val args: List<String> = emptyList(),
-    val env: Map<String, String> = mapOf()
+    val env: Map<String, String> = mapOf(),
 ) : McpConfig
 
 /**
@@ -42,5 +42,5 @@ data class StreamableHttpMcpConfig(
     override val name: String,
     val url: String,
     val headers: Map<String, String> = mapOf(),
-    val queryParam: Map<String, String> = mapOf()
+    val queryParam: Map<String, String> = mapOf(),
 ) : McpConfig

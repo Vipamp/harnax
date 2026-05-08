@@ -23,7 +23,7 @@ data class McpServerUpdateRequest(
 
     @Schema(
         description = "执行命令（仅 stdio 类型生效）",
-        example = "npx -y @modelcontextprotocol/server-filesystem /tmp"
+        example = "npx -y @modelcontextprotocol/server-filesystem /tmp",
     )
     val command: String = "",
 
@@ -34,5 +34,5 @@ data class McpServerUpdateRequest(
     val status: Int = 0,
 
     @Schema(description = "是否公开（0:否，1:是）", example = "1")
-    val isPublic: Int = 0
+    val isPublic: Int = 0,
 )

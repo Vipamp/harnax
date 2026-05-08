@@ -14,14 +14,12 @@ import kotlin.io.path.Path
  */
 object SessionLoader {
 
-    fun load(sessionConfig: SessionConfig?): Session {
-        return if (sessionConfig == null) {
-            InMemorySession()
-        } else {
-            when (sessionConfig) {
-                is JsonSessionConfig -> JsonSession(Path(sessionConfig.path))
-                is MysqlSessionConfig -> MysqlSession(sessionConfig.toDataSource(), sessionConfig.createIfNotExist)
-            }
+    fun load(sessionConfig: SessionConfig?): Session = if (sessionConfig == null) {
+        InMemorySession()
+    } else {
+        when (sessionConfig) {
+            is JsonSessionConfig -> JsonSession(Path(sessionConfig.path))
+            is MysqlSessionConfig -> MysqlSession(sessionConfig.toDataSource(), sessionConfig.createIfNotExist)
         }
     }
 }

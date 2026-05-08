@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component
 @Component
 class ChatModelConfigAdaptorImpl(
     private val modelMapper: ModelMapper,
-    private val modelProviderMapper: ModelProviderMapper
+    private val modelProviderMapper: ModelProviderMapper,
 ) : ChatModelConfigAdaptor {
 
     private val log = LoggerFactory.getLogger(ChatModelConfigAdaptorImpl::class.java)
@@ -64,7 +64,7 @@ class ChatModelConfigAdaptorImpl(
                 enableSearch = false,
                 httpTransport = null,
                 options = null,
-                encrypt = false
+                encrypt = false,
             )
 
             "openai" -> OpenAIChatModelConfig(
@@ -74,14 +74,14 @@ class ChatModelConfigAdaptorImpl(
                 true,
                 null,
                 null,
-                null
+                null,
             )
 
             "ollama" -> OllamaChatModelConfig(
                 model.modelName,
                 provider.baseUrl ?: "http://localhost:11434",
                 null,
-                null
+                null,
             )
 
             else -> {

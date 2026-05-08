@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/auth")
 class TokenController(
     private val jwtUtil: JwtUtil,
-    private val userTenantService: UserTenantService
+    private val userTenantService: UserTenantService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -51,16 +51,18 @@ class TokenController(
                 currentUser.id,
                 currentUser.username,
                 tenantId,
-                currentUser.isAdmin
+                currentUser.isAdmin,
             )
 
             log.info("Token刷新成功，userId: {}, tenantId: {}", currentUser.id, tenantId)
 
-            ResultVo.success(mapOf(
-                "accessToken" to newToken,
-                "tenantId" to tenantId,
-                "expiresIn" to jwtUtil.getExpirationTime() / 1000
-            ))
+            ResultVo.success(
+                mapOf(
+                    "accessToken" to newToken,
+                    "tenantId" to tenantId,
+                    "expiresIn" to jwtUtil.getExpirationTime() / 1000,
+                ),
+            )
         } catch (e: Exception) {
             log.error("Token刷新失败", e)
             ResultVo.error(e.message ?: "Token刷新失败")
@@ -70,16 +72,16 @@ class TokenController(
     /**
      * 从当前请求中获取Token
      */
-    private fun getCurrentToken(): String? {
-        return try {
-            val request = org.springframework.web.context.request.RequestContextHolder
-                .getRequestAttributes() as? org.springframework.web.context.request.ServletRequestAttributes
-            val bearerToken = request?.request?.getHeader("Authorization")
-            if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
-                bearerToken.substring(7)
-            } else null
-        } catch (e: Exception) {
+    private fun getCurrentToken(): String? = try {
+        val request = org.springframework.web.context.request.RequestContextHolder
+            .getRequestAttributes() as? org.springframework.web.context.request.ServletRequestAttributes
+        val bearerToken = request?.request?.getHeader("Authorization")
+        if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
+            bearerToken.substring(7)
+        } else {
             null
         }
+    } catch (e: Exception) {
+        null
     }
 }

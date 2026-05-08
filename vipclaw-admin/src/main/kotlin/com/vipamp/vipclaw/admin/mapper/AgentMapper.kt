@@ -42,6 +42,6 @@ interface AgentMapper {
     fun selectAgentList(
         @Param("name") name: String?,
         @Param("status") status: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<Agent>
 }

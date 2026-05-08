@@ -12,7 +12,7 @@ import java.security.MessageDigest
  */
 @Component
 class AdminUserInitializer(
-    private val sysUserService: SysUserService
+    private val sysUserService: SysUserService,
 ) : CommandLineRunner {
 
     private val log = LoggerFactory.getLogger(AdminUserInitializer::class.java)
@@ -41,11 +41,11 @@ class AdminUserInitializer(
 
             val request = SysUserCreateRequest(
                 username = "admin",
-                password = sha256Password,  // 传入 SHA-256 加密后的密码，后端会再进行 BCrypt 加密
+                password = sha256Password, // 传入 SHA-256 加密后的密码，后端会再进行 BCrypt 加密
                 nickname = "系统管理员",
                 email = "admin@vipclaw.com",
                 phone = "13800138000",
-                gender = 1
+                gender = 1,
             )
 
             sysUserService.createUser(request)
@@ -53,7 +53,6 @@ class AdminUserInitializer(
             log.info("   用户名: admin")
             log.info("   密码: $plainPassword")
             log.info("   请登录后立即修改密码！")
-
         } catch (e: Exception) {
             log.error("❌ Admin 用户初始化失败: ${e.message}", e)
         }

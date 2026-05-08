@@ -82,8 +82,8 @@ object ChatEventConverter {
                                     tool.id,
                                     tool.name,
                                     convertInput(tool.input) as kotlin.collections.Map<String, Any>,
-                                    dangerousTools.contains(tool.name)
-                                )
+                                    dangerousTools.contains(tool.name),
+                                ),
                             )
                         }
                         events.add(ToolConfirmChatEvent(pending, tokenUsage))
@@ -94,8 +94,8 @@ object ChatEventConverter {
                                     tool.id,
                                     tool.name,
                                     convertInput(tool.input) as kotlin.collections.Map<String, Any>,
-                                    tokenUsage
-                                )
+                                    tokenUsage,
+                                ),
                             )
                         }
                     }
@@ -110,8 +110,8 @@ object ChatEventConverter {
                             result.name,
                             MsgExtractHelper.extractToolOutput(result),
                             true,
-                            tokenUsage
-                        )
+                            tokenUsage,
+                        ),
                     )
                 }
             }

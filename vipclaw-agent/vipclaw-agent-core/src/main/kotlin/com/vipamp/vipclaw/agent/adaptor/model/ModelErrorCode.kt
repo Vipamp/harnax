@@ -12,7 +12,7 @@ import com.vipamp.vipclaw.common.error.VipClawException
  */
 enum class ModelErrorCode(
     val code: String,
-    val defaultMessage: String
+    val defaultMessage: String,
 ) {
     /**
      * 模型创建失败
@@ -27,14 +27,13 @@ enum class ModelErrorCode(
     /**
      * 不支持的模型类型
      */
-    UNSUPPORTED_MODEL_TYPE("7003", "不支持的模型类型: {}");
+    UNSUPPORTED_MODEL_TYPE("7003", "不支持的模型类型: {}"),
+    ;
 
     /**
      * 创建异常（不带格式化参数）
      */
-    fun format(): VipClawException {
-        return VipClawException(this.code, this.defaultMessage)
-    }
+    fun format(): VipClawException = VipClawException(this.code, this.defaultMessage)
 
     /**
      * 创建异常（带格式化参数）
@@ -56,9 +55,7 @@ enum class ModelErrorCode(
     /**
      * 创建异常（带原始异常）
      */
-    fun format(cause: Throwable): VipClawException {
-        return VipClawException(this.code, this.defaultMessage, cause)
-    }
+    fun format(cause: Throwable): VipClawException = VipClawException(this.code, this.defaultMessage, cause)
 
     /**
      * 创建异常（带格式化参数和原始异常）

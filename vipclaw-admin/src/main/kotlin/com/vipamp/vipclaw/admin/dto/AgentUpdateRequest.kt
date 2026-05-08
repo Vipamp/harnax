@@ -40,5 +40,5 @@ data class AgentUpdateRequest(
     val status: Int? = null,
 
     @Schema(description = "是否公开 (0:否 1:是)", example = "1")
-    val isPublic: Int? = null
+    val isPublic: Int? = null,
 )

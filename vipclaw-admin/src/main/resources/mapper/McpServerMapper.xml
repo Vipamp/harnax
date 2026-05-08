@@ -77,11 +77,8 @@
         <if test='status != null'>
             AND status = #{status}
         </if>
-        <if test='types != null and types != ""'>
-            AND type IN
-            <foreach item='type' index='index' collection='types.split(",")' open='(' separator=',' close=')'>
-                #{type}
-            </foreach>
+        <if test='type != null and type != ""'>
+            AND type = #{type}
         </if>
         ORDER BY status DESC, update_time DESC
     </select>

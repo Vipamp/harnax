@@ -21,7 +21,7 @@ import java.time.ZoneId
  */
 @Component
 class ProcessLogAdaptorImpl(
-    private val processLogMapper: ProcessLogMapper
+    private val processLogMapper: ProcessLogMapper,
 ) : ProcessLogAdaptor {
 
     private val log = LoggerFactory.getLogger(ProcessLogAdaptorImpl::class.java)
@@ -37,19 +37,25 @@ class ProcessLogAdaptorImpl(
             if (result > 0) {
                 log.debug(
                     "Process log saved successfully: agentId={}, agentName={}, sessionId={}, type={}",
-                    processLog.agentId, processLog.agentName,
-                    processLog.sessionId, processLog.type
+                    processLog.agentId,
+                    processLog.agentName,
+                    processLog.sessionId,
+                    processLog.type,
                 )
             } else {
                 log.warn(
                     "Failed to save process log: agentId={}, agentName={}",
-                    processLog.agentId, processLog.agentName
+                    processLog.agentId,
+                    processLog.agentName,
                 )
             }
         } catch (e: Exception) {
             log.error(
                 "Error saving process log: agentId={}, agentName={}, sessionId={}",
-                processLog.agentId, processLog.agentName, processLog.sessionId, e
+                processLog.agentId,
+                processLog.agentName,
+                processLog.sessionId,
+                e,
             )
             // 不抛出异常，避免影响主流程
         }

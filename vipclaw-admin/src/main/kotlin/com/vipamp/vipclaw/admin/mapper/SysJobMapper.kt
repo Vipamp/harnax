@@ -27,7 +27,7 @@ interface SysJobMapper {
     fun selectJobList(
         @Param("keyword") keyword: String?,
         @Param("jobStatus") jobStatus: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<SysJob>
 
     /**
@@ -39,7 +39,7 @@ interface SysJobMapper {
      */
     fun selectByNameAndGroup(
         @Param("jobName") jobName: String,
-        @Param("jobGroup") jobGroup: String
+        @Param("jobGroup") jobGroup: String,
     ): SysJob?
 
     /**

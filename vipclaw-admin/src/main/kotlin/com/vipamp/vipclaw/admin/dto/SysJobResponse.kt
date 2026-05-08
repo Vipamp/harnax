@@ -32,7 +32,7 @@ data class SysJobResponse(
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,
     @Schema(description = "更新时间", example = "2026-03-16 12:00:00")
-    val updateTime: LocalDateTime? = null
+    val updateTime: LocalDateTime? = null,
 ) {
     companion object {
         @JvmStatic
@@ -50,7 +50,7 @@ data class SysJobResponse(
                 isPublic = entity.isPublic,
                 creator = entity.creator,
                 createTime = entity.createTime,
-                updateTime = entity.updateTime
+                updateTime = entity.updateTime,
             )
         }
     }

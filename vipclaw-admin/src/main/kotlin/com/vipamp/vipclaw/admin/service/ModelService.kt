@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Model
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * 模型服务接口
@@ -37,7 +37,7 @@ interface ModelService {
         minPrice: Double?,
         maxPrice: Double?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<Model>
 
     /**

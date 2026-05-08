@@ -94,12 +94,13 @@ export async function deleteAgent(id: number, options?: { [key: string]: any }) 
 }
 
 /**
- * 获取 MCP 服务器列表（用于下拉选择）
+ * 获取 MCP 服务器列表(用于下拉选择)
  */
 export async function getMcpServerList(
   params?: {
     pageNum?: number;
     pageSize?: number;
+    status?: number;
   },
   options?: { [key: string]: any },
 ) {
@@ -115,12 +116,13 @@ export async function getMcpServerList(
 }
 
 /**
- * 获取技能仓库列表（用于下拉选择）
+ * 获取技能仓库列表(用于下拉选择)
  */
 export async function getSkillRepositoryList(
   params?: {
     pageNum?: number;
     pageSize?: number;
+    status?: number;
   },
   options?: { [key: string]: any },
 ) {
@@ -143,6 +145,7 @@ export async function getSkillListByRepository(
   params?: {
     pageNum?: number;
     pageSize?: number;
+    status?: number;
   },
   options?: { [key: string]: any },
 ) {

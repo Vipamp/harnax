@@ -24,5 +24,5 @@ data class TenantResponse(
     val createTime: LocalDateTime? = null,
 
     @Schema(description = "更新时间", example = "2026-04-28T10:00:00")
-    val updateTime: LocalDateTime? = null
+    val updateTime: LocalDateTime? = null,
 )

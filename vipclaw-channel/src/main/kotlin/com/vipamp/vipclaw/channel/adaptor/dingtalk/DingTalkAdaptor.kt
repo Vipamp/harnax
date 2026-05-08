@@ -1,6 +1,5 @@
 package com.vipamp.vipclaw.channel.adaptor.dingtalk
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.vipamp.vipclaw.channel.ChannelSpec
@@ -22,39 +21,39 @@ import javax.crypto.spec.SecretKeySpec
  * 处理钉钉机器人的回调消息
  */
 class DingTalkAdaptor(
-    private val httpClient: PlatformHttpClient = PlatformHttpClient()
+    private val httpClient: PlatformHttpClient = PlatformHttpClient(),
 ) : ChannelAdaptor {
-    
+
     private val logger = LoggerFactory.getLogger(DingTalkAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
-    
+
     override fun getType(): ChannelType = ChannelType.DINGTALK
-    
+
     override fun verifySignature(request: HttpServletRequest, channel: ChannelSpec): Boolean {
         val timestamp = request.getHeader("timestamp") ?: return false
         val sign = request.getHeader("sign") ?: return false
-        
+
         // 钉钉签名验证
         val appSecret = channel.appSecret ?: return false
         val stringToSign = timestamp + "\n" + appSecret
         val computedSign = hmacSha256(appSecret, stringToSign)
-        
+
         return sign == computedSign
     }
-    
+
     override fun parseMessage(request: HttpServletRequest): ChannelMessage {
         val wrappedRequest = if (request is ContentCachingRequestWrapper) {
             request
         } else {
             ContentCachingRequestWrapper(request)
         }
-        
+
         val body = wrappedRequest.inputStream.readBytes().toString(StandardCharsets.UTF_8)
         logger.debug("Received DingTalk callback: {}", body)
-        
+
         return try {
             val dingTalkMessage = objectMapper.readValue(body, DingTalkMessage::class.java)
-            
+
             ChannelMessage.builder()
                 .messageId(dingTalkMessage.msgId)
                 .sessionId(dingTalkMessage.conversationId ?: dingTalkMessage.senderId ?: "")
@@ -64,8 +63,10 @@ class DingTalkAdaptor(
                 .channelType(ChannelType.DINGTALK)
                 .senderId(dingTalkMessage.senderId)
                 .senderName(dingTalkMessage.senderNick)
-                .isGroupMessage(!dingTalkMessage.conversationId.isNullOrBlank() && 
-                    dingTalkMessage.conversationType == "2")
+                .isGroupMessage(
+                    !dingTalkMessage.conversationId.isNullOrBlank() &&
+                        dingTalkMessage.conversationType == "2",
+                )
                 .groupId(dingTalkMessage.conversationId)
                 .atUserIds(dingTalkMessage.atUsers?.mapNotNull { it.staffId } ?: emptyList())
                 .rawContent(dingTalkMessage)
@@ -80,24 +81,24 @@ class DingTalkAdaptor(
                 .build()
         }
     }
-    
+
     override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any {
         // 钉钉响应格式
         return mapOf(
             "msgtype" to "text",
             "text" to mapOf(
-                "content" to reply
-            )
+                "content" to reply,
+            ),
         )
     }
-    
+
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         val webhookUrl = channel.webhookUrl
         if (webhookUrl.isNullOrBlank()) {
             throw ChannelSendException(
                 channelType = ChannelType.DINGTALK,
                 platformErrorCode = null,
-                message = "DingTalk webhook URL is not configured"
+                message = "DingTalk webhook URL is not configured",
             )
         }
 
@@ -123,7 +124,7 @@ class DingTalkAdaptor(
             throw ChannelSendException(
                 channelType = ChannelType.DINGTALK,
                 platformErrorCode = null,
-                message = "DingTalk webhook URL is not configured"
+                message = "DingTalk webhook URL is not configured",
             )
         }
 
@@ -157,7 +158,7 @@ class DingTalkAdaptor(
                         throw ChannelSendException(
                             channelType = ChannelType.DINGTALK,
                             platformErrorCode = errcode.toString(),
-                            message = "DingTalk send failed: $errmsg"
+                            message = "DingTalk send failed: $errmsg",
                         )
                     }
                 } catch (e: ChannelSendException) {
@@ -167,7 +168,7 @@ class DingTalkAdaptor(
                         channelType = ChannelType.DINGTALK,
                         platformErrorCode = null,
                         message = "Failed to parse DingTalk response: ${e.message}",
-                        cause = e
+                        cause = e,
                     )
                 }
             }
@@ -176,12 +177,12 @@ class DingTalkAdaptor(
                     channelType = ChannelType.DINGTALK,
                     platformErrorCode = response.platformCode,
                     message = "DingTalk HTTP error: ${response.statusCode} - ${response.platformMessage ?: response.body}",
-                    cause = response.exception
+                    cause = response.exception,
                 )
             }
         }
     }
-    
+
     private fun hmacSha256(key: String, data: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         val secretKey = SecretKeySpec(key.toByteArray(StandardCharsets.UTF_8), "HmacSHA256")
@@ -189,15 +190,13 @@ class DingTalkAdaptor(
         val digest = mac.doFinal(data.toByteArray(StandardCharsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
     }
-    
-    private fun mapMessageType(msgType: String?): MessageType {
-        return when (msgType?.lowercase()) {
-            "text" -> MessageType.TEXT
-            "picture" -> MessageType.IMAGE
-            "file" -> MessageType.FILE
-            "event" -> MessageType.EVENT
-            else -> MessageType.TEXT
-        }
+
+    private fun mapMessageType(msgType: String?): MessageType = when (msgType?.lowercase()) {
+        "text" -> MessageType.TEXT
+        "picture" -> MessageType.IMAGE
+        "file" -> MessageType.FILE
+        "event" -> MessageType.EVENT
+        else -> MessageType.TEXT
     }
 }
 
@@ -209,13 +208,13 @@ data class DingTalkMessage(
     val msgType: String? = null,
     val content: DingTalkContent? = null,
     val conversationId: String? = null,
-    val conversationType: String? = null,  // 1: 单聊, 2: 群聊
+    val conversationType: String? = null, // 1: 单聊, 2: 群聊
     val senderId: String? = null,
     val senderNick: String? = null,
     val senderCorpId: String? = null,
     val senderDing: String? = null,
     val atUsers: List<DingTalkAtUser>? = null,
-    val createAt: Long? = null
+    val createAt: Long? = null,
 )
 
 /**
@@ -223,7 +222,7 @@ data class DingTalkMessage(
  */
 data class DingTalkContent(
     val content: String? = null,
-    val text: String? = null
+    val text: String? = null,
 )
 
 /**
@@ -231,5 +230,5 @@ data class DingTalkContent(
  */
 data class DingTalkAtUser(
     val staffId: String? = null,
-    val dingTalkId: String? = null
+    val dingTalkId: String? = null,
 )

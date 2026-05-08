@@ -1,13 +1,13 @@
 package com.vipamp.vipclaw.channel.adaptor.http
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.vipamp.vipclaw.channel.ChannelSpec
 import com.vipamp.vipclaw.channel.ChannelType
 import com.vipamp.vipclaw.channel.adaptor.ChannelAdaptor
 import com.vipamp.vipclaw.channel.message.ChannelMessage
-import com.vipamp.vipclaw.channel.message.MessageType
 import com.vipamp.vipclaw.channel.message.MessageRole
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import com.vipamp.vipclaw.channel.message.MessageType
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.web.util.ContentCachingRequestWrapper
@@ -18,45 +18,45 @@ import java.nio.charset.StandardCharsets
  * 提供通用的 HTTP RESTful API 接口进行 AI 交互
  */
 class HttpAdaptor : ChannelAdaptor {
-    
+
     private val logger = LoggerFactory.getLogger(HttpAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
-    
+
     override fun getType(): ChannelType = ChannelType.HTTP
-    
+
     override fun verifySignature(request: HttpServletRequest, channel: ChannelSpec): Boolean {
         // HTTP 接口通过 Token 验证
         val authHeader = request.getHeader("Authorization")
         val token = channel.token
-        
+
         if (token.isNullOrBlank()) {
             // 如果没有配置 token，则跳过验证
             return true
         }
-        
+
         // 支持 Bearer Token 格式
         val providedToken = if (authHeader?.startsWith("Bearer ", ignoreCase = true) == true) {
             authHeader.substring(7)
         } else {
             request.getHeader("X-Channel-Token") ?: request.getParameter("token")
         }
-        
+
         return token == providedToken
     }
-    
+
     override fun parseMessage(request: HttpServletRequest): ChannelMessage {
         val wrappedRequest = if (request is ContentCachingRequestWrapper) {
             request
         } else {
             ContentCachingRequestWrapper(request)
         }
-        
+
         val body = wrappedRequest.inputStream.readBytes().toString(StandardCharsets.UTF_8)
         logger.debug("Received HTTP callback: {}", body)
-        
+
         return try {
             val httpRequest = objectMapper.readValue(body, HttpChannelRequest::class.java)
-            
+
             ChannelMessage.builder()
                 .messageId(httpRequest.messageId)
                 .sessionId(httpRequest.sessionId ?: "default")
@@ -78,19 +78,17 @@ class HttpAdaptor : ChannelAdaptor {
                 .build()
         }
     }
-    
-    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any {
-        return HttpChannelResponse(
-            code = 0,
-            message = "success",
-            data = ResponseData(
-                content = reply,
-                sessionId = originalMessage.sessionId,
-                timestamp = System.currentTimeMillis()
-            )
-        )
-    }
-    
+
+    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any = HttpChannelResponse(
+        code = 0,
+        message = "success",
+        data = ResponseData(
+            content = reply,
+            sessionId = originalMessage.sessionId,
+            timestamp = System.currentTimeMillis(),
+        ),
+    )
+
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         // HTTP 通道通常不需要主动推送消息
         // 如果配置了 webhook_url，可以在这里实现推送逻辑
@@ -100,15 +98,13 @@ class HttpAdaptor : ChannelAdaptor {
             // TODO: 实现 webhook 推送
         }
     }
-    
-    private fun mapMessageType(msgType: String?): MessageType {
-        return when (msgType?.lowercase()) {
-            "text" -> MessageType.TEXT
-            "image" -> MessageType.IMAGE
-            "file" -> MessageType.FILE
-            "event" -> MessageType.EVENT
-            else -> MessageType.TEXT
-        }
+
+    private fun mapMessageType(msgType: String?): MessageType = when (msgType?.lowercase()) {
+        "text" -> MessageType.TEXT
+        "image" -> MessageType.IMAGE
+        "file" -> MessageType.FILE
+        "event" -> MessageType.EVENT
+        else -> MessageType.TEXT
     }
 }
 
@@ -122,7 +118,7 @@ data class HttpChannelRequest(
     val userName: String? = null,
     val messageType: String? = null,
     val content: String? = null,
-    val timestamp: Long? = null
+    val timestamp: Long? = null,
 )
 
 /**
@@ -131,11 +127,11 @@ data class HttpChannelRequest(
 data class HttpChannelResponse(
     val code: Int,
     val message: String,
-    val data: ResponseData?
+    val data: ResponseData?,
 )
 
 data class ResponseData(
     val content: String,
     val sessionId: String,
-    val timestamp: Long
+    val timestamp: Long,
 )

@@ -21,5 +21,5 @@ data class SysJobCreateRequest(
     val concurrent: Int = 1,
     @Schema(description = "任务描述")
     @Size(max = 500, message = "任务描述长度不能超过 500")
-    val description: String = ""
+    val description: String = "",
 )

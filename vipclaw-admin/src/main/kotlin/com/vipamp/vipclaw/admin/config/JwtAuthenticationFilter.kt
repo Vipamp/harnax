@@ -21,7 +21,7 @@ import java.io.IOException
 @Component
 class JwtAuthenticationFilter(
     private val jwtUtil: JwtUtil,
-    private val tokenBlacklistService: SysTokenBlacklistService
+    private val tokenBlacklistService: SysTokenBlacklistService,
 ) : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
@@ -30,7 +30,7 @@ class JwtAuthenticationFilter(
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
-        filterChain: FilterChain
+        filterChain: FilterChain,
     ) {
         val requestURI = request.requestURI
         try {
@@ -45,14 +45,14 @@ class JwtAuthenticationFilter(
                     // 抛出异常，由 SecurityConfig 的 authenticationEntryPoint 统一处理
                     throw org.springframework.security.authentication.AuthenticationServiceException("Token 已失效，请重新登录")
                 }
-                
+
                 if (jwtUtil.validateToken(token)) {
                     val userId = jwtUtil.getUserIdFromToken(token)
                     val username = jwtUtil.getUsernameFromToken(token)
                     val authentication = UsernamePasswordAuthenticationToken(
                         username,
                         null,
-                        ArrayList()
+                        ArrayList(),
                     )
                     authentication.details = WebAuthenticationDetailsSource().buildDetails(request)
                     SecurityContextHolder.getContext().authentication = authentication

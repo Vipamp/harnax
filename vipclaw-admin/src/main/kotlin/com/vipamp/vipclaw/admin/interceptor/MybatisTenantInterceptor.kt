@@ -17,13 +17,13 @@ import java.util.Properties
 /**
  * MyBatis 租户拦截器
  * 自动在 SQL 中添加 tenant_id 过滤条件，实现数据隔离
- * 
+ *
  * 功能：
  * 1. SELECT 查询自动添加 WHERE tenant_id = ?
  * 2. INSERT 操作自动设置 tenant_id 字段
  * 3. UPDATE/DELETE 操作添加 WHERE tenant_id = ? 条件
  * 4. 全局管理员（is_admin=1）跳过租户过滤
- * 
+ *
  * @author vipamp
  * @since 2026-04-28
  */
@@ -31,8 +31,8 @@ import java.util.Properties
     value = [
         Signature(type = Executor::class, method = "query", args = [MappedStatement::class, Any::class, RowBounds::class, ResultHandler::class]),
         Signature(type = Executor::class, method = "query", args = [MappedStatement::class, Any::class, RowBounds::class, ResultHandler::class, CacheKey::class, BoundSql::class]),
-        Signature(type = Executor::class, method = "update", args = [MappedStatement::class, Any::class])
-    ]
+        Signature(type = Executor::class, method = "update", args = [MappedStatement::class, Any::class]),
+    ],
 )
 @Component
 class MybatisTenantInterceptor : Interceptor {
@@ -42,13 +42,13 @@ class MybatisTenantInterceptor : Interceptor {
     companion object {
         // 需要进行租户过滤的表名前缀（空表示所有表）
         private val TENANT_TABLE_PREFIXES = emptyList<String>()
-        
+
         // 不需要租户过滤的表名（如 tenant、user_tenant 等系统表）
         private val EXCLUDED_TABLES = setOf(
             "tenant",
             "user_tenant",
-            "sys_user",  // 用户表暂时不过滤，后续可调整
-            "sys_token_blacklist"
+            "sys_user", // 用户表暂时不过滤，后续可调整
+            "sys_token_blacklist",
         )
 
         // 需要设置 tenant_id 的字段名
@@ -58,7 +58,7 @@ class MybatisTenantInterceptor : Interceptor {
     override fun intercept(invocation: Invocation): Any? {
         val args = invocation.args
         val mappedStatement = args[0] as MappedStatement
-        
+
         // 检查是否需要应用租户过滤
         if (!shouldApplyTenantFilter(mappedStatement)) {
             return invocation.proceed()
@@ -66,7 +66,7 @@ class MybatisTenantInterceptor : Interceptor {
 
         // 获取当前租户ID
         val tenantId = TenantContext.getTenantId()
-        
+
         // 如果没有租户上下文，跳过过滤
         if (tenantId == null) {
             log.debug("[MyBatis租户拦截器] 无租户上下文，跳过过滤")
@@ -106,7 +106,7 @@ class MybatisTenantInterceptor : Interceptor {
     private fun shouldApplyTenantFilter(mappedStatement: MappedStatement): Boolean {
         // 获取全局管理员标识
         val currentUser = SecurityUtils.getCurrentUser()
-        
+
         // 全局管理员跳过租户过滤
         if (currentUser != null && currentUser.isAdmin == 1) {
             log.debug("[MyBatis租户拦截器] 全局管理员，跳过租户过滤")
@@ -116,7 +116,7 @@ class MybatisTenantInterceptor : Interceptor {
         // 获取SQL对应的表名（从mappedStatement的id推断）
         val statementId = mappedStatement.id
         val tableName = extractTableName(statementId)
-        
+
         // 检查是否在排除列表中
         if (EXCLUDED_TABLES.contains(tableName)) {
             log.debug("[MyBatis租户拦截器] 表 {} 在排除列表中，跳过过滤", tableName)
@@ -143,18 +143,18 @@ class MybatisTenantInterceptor : Interceptor {
         // 提取最后一个.后面的部分，如 AgentMapper.selectById
         val lastDotIndex = statementId.lastIndexOf('.')
         if (lastDotIndex == -1) return ""
-        
+
         val mapperMethod = statementId.substring(lastDotIndex + 1)
-        
+
         // 提取 Mapper 类名，如 AgentMapper
         val mapperClassEnd = mapperMethod.indexOf('.')
         if (mapperClassEnd == -1) return ""
-        
+
         val mapperClassName = mapperMethod.substring(0, mapperClassEnd)
-        
+
         // 移除 Mapper 后缀，得到实体名 Agent
         val entityName = mapperClassName.replace("Mapper", "")
-        
+
         // 转换为下划线命名: agent -> agent, sysUser -> sys_user
         return camelToUnderline(entityName)
     }
@@ -164,10 +164,10 @@ class MybatisTenantInterceptor : Interceptor {
      */
     private fun camelToUnderline(name: String): String {
         if (name.isBlank()) return name
-        
+
         val result = StringBuilder()
         result.append(name[0].lowercaseChar())
-        
+
         for (i in 1 until name.length) {
             val c = name[i]
             if (c.isUpperCase()) {
@@ -177,13 +177,11 @@ class MybatisTenantInterceptor : Interceptor {
                 result.append(c)
             }
         }
-        
+
         return result.toString()
     }
 
-    override fun plugin(target: Any): Any {
-        return Plugin.wrap(target, this)
-    }
+    override fun plugin(target: Any): Any = Plugin.wrap(target, this)
 
     override fun setProperties(properties: Properties?) {
         // 可以通过配置文件设置拦截器属性

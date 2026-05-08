@@ -23,7 +23,7 @@ class UserTenantServiceImpl(
     private val userTenantMapper: UserTenantMapper,
     private val tenantMapper: TenantMapper,
     private val sysUserMapper: SysUserMapper,
-    private val messageUtil: MessageUtil
+    private val messageUtil: MessageUtil,
 ) : UserTenantService {
 
     private val log = LoggerFactory.getLogger(UserTenantServiceImpl::class.java)
@@ -40,15 +40,13 @@ class UserTenantServiceImpl(
                     status = it.status,
                     creator = it.creator,
                     createTime = it.createTime,
-                    updateTime = it.updateTime
+                    updateTime = it.updateTime,
                 )
             }
         }
     }
 
-    override fun getUserTenantInfo(userId: Long, tenantId: Long): UserTenantEntity? {
-        return userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
-    }
+    override fun getUserTenantInfo(userId: Long, tenantId: Long): UserTenantEntity? = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
 
     override fun isUserInTenant(userId: Long, tenantId: Long): Boolean {
         val userTenant = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
@@ -80,7 +78,7 @@ class UserTenantServiceImpl(
                 "nickname" to (user?.nickname ?: ""),
                 "role" to ut.role,
                 "status" to ut.status,
-                "joinedAt" to ut.joinedAt
+                "joinedAt" to ut.joinedAt,
             )
         }
 
@@ -88,7 +86,7 @@ class UserTenantServiceImpl(
             "records" to records,
             "total" to pageInfo.total,
             "pageNum" to pageInfo.pageNum,
-            "pageSize" to pageInfo.pageSize
+            "pageSize" to pageInfo.pageSize,
         )
     }
 

@@ -50,5 +50,5 @@ data class ChannelCreateRequest(
     val description: String? = null,
 
     @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
-    val status: Int? = null
+    val status: Int? = null,
 )

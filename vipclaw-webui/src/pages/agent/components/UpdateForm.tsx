@@ -99,9 +99,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
   const loadMcpServers = async () => {
     try {
-      const res = await getMcpServerList({ pageNum: 1, pageSize: 100 });
-      const enabledMcps = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setMcpServers(enabledMcps);
+      const res = await getMcpServerList({ pageNum: 1, pageSize: 100, status: 1 });
+      setMcpServers(res.data?.records || []);
     } catch (error) {
       console.error('加载 MCP 服务器列表失败', error);
     }
@@ -109,9 +108,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
   const loadRepositories = async () => {
     try {
-      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100 });
-      const enabledRepos = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setRepositories(enabledRepos);
+      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100, status: 1 });
+      setRepositories(res.data?.records || []);
     } catch (error) {
       console.error('加载技能仓库列表失败', error);
     }
@@ -119,9 +117,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
   const loadSkills = async (repositoryId: number) => {
     try {
-      const res = await getSkillListByRepository(repositoryId, { pageNum: 1, pageSize: 100 });
-      const enabledSkills = (res.data?.records || []).filter((item: any) => item.status === 1);
-      setSkills(enabledSkills);
+      const res = await getSkillListByRepository(repositoryId, { pageNum: 1, pageSize: 100, status: 1 });
+      setSkills(res.data?.records || []);
     } catch (error) {
       console.error('加载技能列表失败', error);
       setSkills([]);
@@ -298,7 +295,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         layout="horizontal"
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
-        style={{ marginTop: 24 }}
+        style={{ marginTop: 24, fontSize: '14px' }}
       >
         {currentStep === 0 && (
           <>
@@ -306,14 +303,21 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               label={intl.formatMessage({ id: 'pages.agent.name', defaultMessage: 'Agent Name' })}
               name="name"
               rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.nameRequired', defaultMessage: 'Please enter agent name' }) }]}>
-              <Input placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })} />
+              <Input 
+                placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })}
+                style={{ fontSize: '14px' }}
+              />
             </Form.Item>
 
             <Form.Item
               label={intl.formatMessage({ id: 'pages.agent.description', defaultMessage: 'Description' })}
               name="description"
               rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.descriptionRequired', defaultMessage: 'Please enter description' }) }]}>
-              <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })} />
+              <TextArea 
+                rows={3} 
+                placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
+                style={{ fontSize: '13px' }}
+              />
             </Form.Item>
 
             <Form.Item
@@ -323,7 +327,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <TextArea 
                 rows={8} 
                 placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt, supports Markdown syntax' })}
-                style={{ fontFamily: 'monospace' }}
+                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </Form.Item>
 
@@ -334,6 +338,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Select
                 placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })}
                 allowClear
+                style={{ fontSize: '14px' }}
                 options={models.map(model => ({
                   label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`,
                   value: model.id,
@@ -348,6 +353,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Input 
                 placeholder={intl.formatMessage({ id: 'pages.agent.ownerPlaceholder', defaultMessage: 'Auto-filled with current user' })}
                 disabled
+                style={{ fontSize: '14px' }}
               />
             </Form.Item>
 
@@ -385,7 +391,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             {mcpConfigs.map((config, index) => (
               <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.mcp', defaultMessage: 'MCP' })} #{index + 1}</span>
                   {mcpConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -410,7 +416,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                   }))}
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}</span>
+                  <span style={{ color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}</span>
                   <Switch
                     size="small"
                     checked={config.enableSkip}
@@ -436,7 +442,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             {skillConfigs.map((config, index) => (
               <Space key={index} style={{ width: '100%', marginBottom: 16, padding: 16, border: '1px solid var(--vip-border)', borderRadius: '8px', background: 'var(--vip-bg-layout)' }} direction="vertical">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>{intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}</span>
                   {skillConfigs.length > 1 && (
                     <Button 
                       type="link" 
@@ -472,13 +478,34 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                         handleSkillConfigChange(index, 'skillId', value, config.repositoryId);
                       }
                     }}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, fontSize: '14px' }}
                     disabled={!config.repositoryId}
                     allowClear
                     labelInValue
+                    optionRender={(option) => {
+                      const skill = option.data as API.SkillItem;
+                      return (
+                        <div style={{ padding: '4px 0' }}>
+                          <div style={{ fontWeight: 500, fontSize: '14px', color: 'var(--vip-text-primary)' }}>
+                            {skill.name}
+                          </div>
+                          {skill.repositoryName && (
+                            <div style={{ fontSize: '12px', color: 'var(--vip-text-tertiary)', marginTop: '2px' }}>
+                              仓库: {skill.repositoryName}
+                            </div>
+                          )}
+                          {skill.description && (
+                            <div style={{ fontSize: '12px', color: 'var(--vip-text-secondary)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {skill.description}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
                     options={skills.map(skill => ({
                       label: skill.name,
                       value: skill.id,
+                      ...skill,
                     }))}
                   />
                 </div>

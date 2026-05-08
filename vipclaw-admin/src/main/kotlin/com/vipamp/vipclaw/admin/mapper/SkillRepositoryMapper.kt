@@ -27,7 +27,7 @@ interface SkillRepositoryMapper {
     fun selectRepositoryList(
         @Param("name") name: String?,
         @Param("status") status: Int?,
-        @Param("currentUsername") currentUsername: String
+        @Param("currentUsername") currentUsername: String,
     ): List<SkillRepository>
 
     fun selectActiveRepositories(): List<SkillRepository>

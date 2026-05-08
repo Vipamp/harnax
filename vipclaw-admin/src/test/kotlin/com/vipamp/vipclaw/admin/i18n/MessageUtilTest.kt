@@ -8,10 +8,12 @@ import org.springframework.test.context.TestPropertySource
 import java.util.Locale
 
 @SpringBootTest
-@TestPropertySource(properties = [
-    "spring.messages.basename=i18n/messages,i18n/messages_error",
-    "spring.messages.encoding=UTF-8"
-])
+@TestPropertySource(
+    properties = [
+        "spring.messages.basename=i18n/messages,i18n/messages_error",
+        "spring.messages.encoding=UTF-8",
+    ],
+)
 class MessageUtilTest {
 
     @Autowired

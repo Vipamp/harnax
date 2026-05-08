@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
 import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.McpServer
-import com.vipamp.vipclaw.common.page.Page
 import io.modelcontextprotocol.spec.McpSchema
 
 /**
@@ -20,12 +20,12 @@ interface McpServerService {
      *
      * @param keyword  模糊查询字段（名称/描述）
      * @param status   状态筛选字段
-     * @param types    类型筛选字段（逗号分隔，如：stdio,sse）
+     * @param type     类型筛选字段（如：stdio/sse/streamablehttp）
      * @param pageNum  当前页码
      * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun page(keyword: String?, status: Int?, types: String?, pageNum: Int, pageSize: Int): Page<McpServer>
+    fun page(keyword: String?, status: Int?, type: String?, pageNum: Int, pageSize: Int): Page<McpServer>
 
     /**
      * 获取单个 MCP 服务详情

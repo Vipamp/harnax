@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SysUserCreateRequest
 import com.vipamp.vipclaw.admin.dto.SysUserResponse
 import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
@@ -12,8 +13,6 @@ import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import com.vipamp.vipclaw.admin.service.SysUserService
-import com.vipamp.vipclaw.admin.context.TenantContext
-import com.vipamp.vipclaw.common.page.Page
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -30,7 +29,7 @@ class SysUserServiceImpl(
     private val sysUserMapper: SysUserMapper,
     private val userTenantMapper: UserTenantMapper,
     private val tenantMapper: TenantMapper,
-    private val messageUtil: MessageUtil
+    private val messageUtil: MessageUtil,
 ) : SysUserService {
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
@@ -40,7 +39,7 @@ class SysUserServiceImpl(
         status: Int?,
         tenantId: Long?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<SysUser> {
         log.info(
             "分页查询用户列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, tenantId: {}",
@@ -48,15 +47,13 @@ class SysUserServiceImpl(
             pageSize,
             keyword,
             status,
-            tenantId
+            tenantId,
         )
         PageHelper.startPage<Agent>(pageNum, pageSize)
         return Page.fromPageInfo(sysUserMapper.selectUserList(keyword, status, tenantId))
     }
 
-    override fun getSysUser(id: Long): SysUser? {
-        return sysUserMapper.selectById(id)
-    }
+    override fun getSysUser(id: Long): SysUser? = sysUserMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createUser(request: SysUserCreateRequest, isPersonal: Boolean): Boolean {
@@ -120,7 +117,7 @@ class SysUserServiceImpl(
         user.gender = request.gender ?: 2
         user.status = 1 // 默认启用
         user.isAdmin = 0 // 默认非管理员
-        user.active = 1  // 默认生效
+        user.active = 1 // 默认生效
         user.avatar = request.avatar
 
         val success = this.sysUserMapper.insert(user) > 0
@@ -215,7 +212,7 @@ class SysUserServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleUserStatus(id: Long, status: Int): Boolean {
         log.info("切换用户状态，id: {}, status: {}", id, status)
-        
+
         // 如果是禁用操作(status=0)，需要进行检查
         if (status == 0) {
             val user = sysUserMapper.selectById(id)
@@ -229,7 +226,7 @@ class SysUserServiceImpl(
             // 检查该用户是否是任何租户的管理员
             val userTenants = userTenantMapper.selectByUserId(id)
             val tenantAdminRoles = userTenants.filter { it.role == "admin" }
-            
+
             if (tenantAdminRoles.isNotEmpty()) {
                 // 用户是某个(些)租户的管理员,不允许禁用
                 // 查询所有租户名称
@@ -237,13 +234,13 @@ class SysUserServiceImpl(
                     val tenant = tenantMapper.selectById(userTenant.tenantId)
                     tenant?.name
                 }
-                
+
                 val tenantNamesStr = tenantNames.joinToString("、")
                 log.warn("用户是租户管理员，不允许禁用，userId: {}, tenantNames: {}", id, tenantNamesStr)
                 throw BizException(messageUtil.getMessage("error.user.is_tenant_admin_cannot_disable", *arrayOf(tenantNamesStr)))
             }
         }
-        
+
         return sysUserMapper.updateStatus(id, status) > 0
     }
 
@@ -261,7 +258,7 @@ class SysUserServiceImpl(
         // 检查该用户是否是任何租户的管理员
         val userTenants = userTenantMapper.selectByUserId(id)
         val tenantAdminRoles = userTenants.filter { it.role == "admin" }
-        
+
         if (tenantAdminRoles.isNotEmpty()) {
             // 用户是某个(些)租户的管理员,不允许删除
             // 查询所有租户名称
@@ -269,7 +266,7 @@ class SysUserServiceImpl(
                 val tenant = tenantMapper.selectById(userTenant.tenantId)
                 tenant?.name
             }
-            
+
             val tenantNamesStr = tenantNames.joinToString("、")
             log.warn("用户是租户管理员，不允许删除，userId: {}, tenantNames: {}", id, tenantNamesStr)
             throw BizException(messageUtil.getMessage("error.user.is_tenant_admin", *arrayOf(tenantNamesStr)))
@@ -292,7 +289,7 @@ class SysUserServiceImpl(
     override fun convertToResponse(sysUser: SysUser): SysUserResponse {
         // 查询用户所属的租户数量
         val tenantCount = userTenantMapper.selectByUserId(sysUser.id).size
-        
+
         return SysUserResponse(
             id = sysUser.id,
             username = sysUser.username,
@@ -306,23 +303,15 @@ class SysUserServiceImpl(
             lastLoginTime = sysUser.lastLoginTime,
             createTime = sysUser.createTime,
             updateTime = sysUser.updateTime,
-            tenantCount = tenantCount
+            tenantCount = tenantCount,
         )
     }
 
-    override fun getByUsername(username: String): SysUser? {
-        return sysUserMapper.selectByUsername(username)
-    }
+    override fun getByUsername(username: String): SysUser? = sysUserMapper.selectByUsername(username)
 
-    override fun existsByUsername(username: String): Boolean {
-        return sysUserMapper.selectByUsername(username) != null
-    }
+    override fun existsByUsername(username: String): Boolean = sysUserMapper.selectByUsername(username) != null
 
-    override fun existsByPhone(phone: String): Boolean {
-        return sysUserMapper.selectByPhone(phone) != null
-    }
+    override fun existsByPhone(phone: String): Boolean = sysUserMapper.selectByPhone(phone) != null
 
-    override fun existsByEmail(email: String): Boolean {
-        return sysUserMapper.selectByEmail(email) != null
-    }
+    override fun existsByEmail(email: String): Boolean = sysUserMapper.selectByEmail(email) != null
 }

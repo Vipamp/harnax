@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Channel
-import com.vipamp.vipclaw.common.page.Page
 
 /**
  * Channel 服务接口

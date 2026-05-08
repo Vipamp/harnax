@@ -10,7 +10,7 @@ interface ToolCallContext
 
 data class SessionMetaContext(
     val agentId: Long,
-    val sessionId: String
+    val sessionId: String,
 ) : ToolCallContext
 
 data class UserIdentifier(

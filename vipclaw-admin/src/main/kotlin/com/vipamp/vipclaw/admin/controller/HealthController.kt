@@ -23,13 +23,9 @@ class HealthController(private val editionUtil: EditionUtil) {
 
     @GetMapping("/health")
     @Schema(description = "健康检查")
-    fun health(): ResultVo<String?> {
-        return success("OK")
-    }
+    fun health(): ResultVo<String?> = success("OK")
 
     @GetMapping("/info")
     @Schema(description = "获取版本信息")
-    fun version(): ResultVo<SystemInfo> {
-        return success(SystemInfo.from(editionUtil))
-    }
+    fun version(): ResultVo<SystemInfo> = success(SystemInfo.from(editionUtil))
 }

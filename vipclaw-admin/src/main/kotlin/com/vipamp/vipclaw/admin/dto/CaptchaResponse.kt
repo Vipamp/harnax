@@ -14,5 +14,5 @@ data class CaptchaResponse(
     val captchaKey: String? = null,
 
     @Schema(description = "过期时间（秒）", example = "300")
-    val expiresIn: Long? = null
+    val expiresIn: Long? = null,
 )

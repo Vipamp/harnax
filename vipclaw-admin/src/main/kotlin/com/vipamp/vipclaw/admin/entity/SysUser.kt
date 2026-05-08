@@ -54,5 +54,4 @@ class SysUser : Serializable {
 
     @Schema(description = "更新时间")
     var updateTime: LocalDateTime = LocalDateTime.now()
-
 }

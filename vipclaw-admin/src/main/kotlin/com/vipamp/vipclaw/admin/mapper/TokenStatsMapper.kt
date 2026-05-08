@@ -27,7 +27,7 @@ interface TokenStatsMapper {
      */
     fun aggregateByModel(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -39,7 +39,7 @@ interface TokenStatsMapper {
      */
     fun aggregateBySession(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -51,7 +51,7 @@ interface TokenStatsMapper {
      */
     fun aggregateByAgent(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -63,7 +63,7 @@ interface TokenStatsMapper {
      */
     fun getOverallStats(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableMap<String?, Any?>?
 
     /**
@@ -75,7 +75,7 @@ interface TokenStatsMapper {
      */
     fun getTimeSeriesByHour(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -87,7 +87,7 @@ interface TokenStatsMapper {
      */
     fun getTimeSeriesByDay(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -99,7 +99,7 @@ interface TokenStatsMapper {
      */
     fun getTimeSeriesByWeek(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -111,7 +111,7 @@ interface TokenStatsMapper {
      */
     fun getTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -119,7 +119,7 @@ interface TokenStatsMapper {
      */
     fun getModelTimeSeriesByHour(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -127,7 +127,7 @@ interface TokenStatsMapper {
      */
     fun getModelTimeSeriesByDay(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -135,7 +135,7 @@ interface TokenStatsMapper {
      */
     fun getModelTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -143,7 +143,7 @@ interface TokenStatsMapper {
      */
     fun getAgentTimeSeriesByHour(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -151,7 +151,7 @@ interface TokenStatsMapper {
      */
     fun getAgentTimeSeriesByDay(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -159,7 +159,7 @@ interface TokenStatsMapper {
      */
     fun getAgentTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -167,7 +167,7 @@ interface TokenStatsMapper {
      */
     fun getSessionTimeSeriesByHour(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -175,7 +175,7 @@ interface TokenStatsMapper {
      */
     fun getSessionTimeSeriesByDay(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
@@ -183,6 +183,6 @@ interface TokenStatsMapper {
      */
     fun getSessionTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
-        @Param("endTime") endTime: String?
+        @Param("endTime") endTime: String?,
     ): MutableList<MutableMap<String?, Any?>?>?
 }

@@ -12,7 +12,7 @@ import com.vipamp.vipclaw.common.error.VipClawException
  */
 enum class McpErrorCode(
     val code: String,
-    val defaultMessage: String
+    val defaultMessage: String,
 ) {
     /**
      * MCP 客户端创建失败
@@ -27,14 +27,13 @@ enum class McpErrorCode(
     /**
      * MCP 客户端不存在
      */
-    MCP_CLIENT_NOT_FOUND("6003", "MCP 客户端 [{}] 不存在");
+    MCP_CLIENT_NOT_FOUND("6003", "MCP 客户端 [{}] 不存在"),
+    ;
 
     /**
      * 创建异常（不带格式化参数）
      */
-    fun format(): VipClawException {
-        return VipClawException(this.code, this.defaultMessage)
-    }
+    fun format(): VipClawException = VipClawException(this.code, this.defaultMessage)
 
     /**
      * 创建异常（带格式化参数）
@@ -56,9 +55,7 @@ enum class McpErrorCode(
     /**
      * 创建异常（带原始异常）
      */
-    fun format(cause: Throwable): VipClawException {
-        return VipClawException(this.code, this.defaultMessage, cause)
-    }
+    fun format(cause: Throwable): VipClawException = VipClawException(this.code, this.defaultMessage, cause)
 
     /**
      * 创建异常（带格式化参数和原始异常）

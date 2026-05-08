@@ -20,5 +20,5 @@ data class LoginRequest(
     val captchaKey: String? = null,
 
     @Schema(description = "自动登录", example = "true")
-    val autoLogin: Boolean? = null
+    val autoLogin: Boolean? = null,
 )

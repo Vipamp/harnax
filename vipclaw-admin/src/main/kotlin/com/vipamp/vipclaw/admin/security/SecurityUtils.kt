@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component
  */
 @Component
 class SecurityUtils(
-    private val sysUserMapper: SysUserMapper
+    private val sysUserMapper: SysUserMapper,
 ) {
     companion object {
         private var instance: SecurityUtils? = null

@@ -8,14 +8,14 @@ import com.vipamp.vipclaw.channel.ChannelType
  */
 sealed class ChannelException(
     override val message: String,
-    cause: Throwable? = null
+    cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 
 /**
  * Channel 未找到异常
  */
 class ChannelNotFoundException(
-    val channelId: Long
+    val channelId: Long,
 ) : ChannelException("Channel $channelId not found")
 
 /**
@@ -26,7 +26,7 @@ class ChannelSendException(
     val channelType: ChannelType,
     val platformErrorCode: String?,
     override val message: String,
-    cause: Throwable? = null
+    cause: Throwable? = null,
 ) : ChannelException(message, cause)
 
 /**
@@ -34,7 +34,7 @@ class ChannelSendException(
  */
 class ChannelSignatureException(
     val channelType: ChannelType,
-    val detail: String
+    val detail: String,
 ) : ChannelException("Signature verification failed for ${channelType.displayName}: $detail")
 
 /**
@@ -42,7 +42,7 @@ class ChannelSignatureException(
  */
 class ChannelConfigException(
     val channelId: Long,
-    val missingFields: List<String>
+    val missingFields: List<String>,
 ) : ChannelException("Channel $channelId missing required config: ${missingFields.joinToString()}")
 
 /**
@@ -50,7 +50,7 @@ class ChannelConfigException(
  */
 class ChannelTimeoutException(
     val channelType: ChannelType,
-    val timeoutMs: Long
+    val timeoutMs: Long,
 ) : ChannelException("Request timed out for ${channelType.displayName} after ${timeoutMs}ms")
 
 /**
@@ -58,5 +58,5 @@ class ChannelTimeoutException(
  */
 class ChannelRateLimitException(
     val channelType: ChannelType,
-    val retryAfterMs: Long?
+    val retryAfterMs: Long?,
 ) : ChannelException("Rate limited for ${channelType.displayName}, retry after ${retryAfterMs ?: "unknown"}ms")

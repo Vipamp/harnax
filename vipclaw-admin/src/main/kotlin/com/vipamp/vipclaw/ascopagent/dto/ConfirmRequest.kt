@@ -24,7 +24,7 @@ data class ConfirmRequest(
     val enableThink: Boolean = false,
 
     @Schema(description = "是否启用搜索")
-    val enableSearch: Boolean = false
+    val enableSearch: Boolean = false,
 ) {
     /**
      * 工具信息
@@ -35,6 +35,6 @@ data class ConfirmRequest(
         val toolId: String? = null,
 
         @Schema(description = "工具名称")
-        val toolName: String? = null
+        val toolName: String? = null,
     )
 }

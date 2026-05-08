@@ -46,32 +46,30 @@ data class ModelResponse(
     @Schema(description = "创建时间", example = "2026-03-13 12:00:00")
     var createTime: LocalDateTime? = null,
     @Schema(description = "更新时间", example = "2026-03-13 12:00:00")
-    var updateTime: LocalDateTime? = null
+    var updateTime: LocalDateTime? = null,
 ) {
     companion object {
-        fun fromEntity(model: Model): ModelResponse {
-            return ModelResponse(
-                id = model.id,
-                name = model.name,
-                modelName = model.modelName,
-                providerId = model.providerId,
-                description = model.description,
-                modelType = model.modelType,
-                tags = calculateTags(model),
-                supportInternet = model.supportInternet,
-                supportReasoning = model.supportReasoning,
-                supportTool = model.supportTool,
-                supportMcp = model.supportMcp,
-                supportVision = model.supportVision,
-                price = model.price,
-                status = model.status,
-                isPublic = model.isPublic,
-                creator = model.creator,
-                createTime = model.createTime,
-                updateTime = model.updateTime
-            )
-        }
-        
+        fun fromEntity(model: Model): ModelResponse = ModelResponse(
+            id = model.id,
+            name = model.name,
+            modelName = model.modelName,
+            providerId = model.providerId,
+            description = model.description,
+            modelType = model.modelType,
+            tags = calculateTags(model),
+            supportInternet = model.supportInternet,
+            supportReasoning = model.supportReasoning,
+            supportTool = model.supportTool,
+            supportMcp = model.supportMcp,
+            supportVision = model.supportVision,
+            price = model.price,
+            status = model.status,
+            isPublic = model.isPublic,
+            creator = model.creator,
+            createTime = model.createTime,
+            updateTime = model.updateTime,
+        )
+
         /**
          * 根据能力字段自动计算标签列表
          */

@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter
 @Tag(name = "Token 消耗统计", description = "Token 消耗统计相关接口")
 @RequiresEdition("enterprise", "public")
 class TokenStatsController(
-    private val tokenStatsService: TokenStatsService
+    private val tokenStatsService: TokenStatsService,
 ) {
 
     private val log = LoggerFactory.getLogger(TokenStatsController::class.java)
@@ -41,22 +41,20 @@ class TokenStatsController(
         @Parameter(description = "结束时间")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-        endTime: LocalDateTime?
-    ): ResultVo<TokenStatsAggregationResponse> {
-        return try {
-            // 默认查询最近 7 天
-            val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
-            val actualEndTime = endTime ?: LocalDateTime.now()
+        endTime: LocalDateTime?,
+    ): ResultVo<TokenStatsAggregationResponse> = try {
+        // 默认查询最近 7 天
+        val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
+        val actualEndTime = endTime ?: LocalDateTime.now()
 
-            val startTimeStr = actualStartTime.format(dateFormatter)
-            val endTimeStr = actualEndTime.format(dateFormatter)
+        val startTimeStr = actualStartTime.format(dateFormatter)
+        val endTimeStr = actualEndTime.format(dateFormatter)
 
-            val response = tokenStatsService.getAggregationStats(startTimeStr, endTimeStr)
-            ResultVo.success(response)
-        } catch (e: Exception) {
-            log.error("获取 Token 聚合统计失败", e)
-            ResultVo.error("获取统计数据失败：${e.message}")
-        }
+        val response = tokenStatsService.getAggregationStats(startTimeStr, endTimeStr)
+        ResultVo.success(response)
+    } catch (e: Exception) {
+        log.error("获取 Token 聚合统计失败", e)
+        ResultVo.error("获取统计数据失败：${e.message}")
     }
 
     @GetMapping("/time-series")
@@ -72,22 +70,20 @@ class TokenStatsController(
         endTime: LocalDateTime?,
         @Parameter(description = "时间粒度: hour/day/week/month")
         @RequestParam(name = "granularity", defaultValue = "day")
-        granularity: String
-    ): ResultVo<TokenStatsAggregationResponse> {
-        return try {
-            // 默认查询最近 7 天
-            val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
-            val actualEndTime = endTime ?: LocalDateTime.now()
+        granularity: String,
+    ): ResultVo<TokenStatsAggregationResponse> = try {
+        // 默认查询最近 7 天
+        val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
+        val actualEndTime = endTime ?: LocalDateTime.now()
 
-            val startTimeStr = actualStartTime.format(dateFormatter)
-            val endTimeStr = actualEndTime.format(dateFormatter)
+        val startTimeStr = actualStartTime.format(dateFormatter)
+        val endTimeStr = actualEndTime.format(dateFormatter)
 
-            val response = tokenStatsService.getTimeSeriesData(startTimeStr, endTimeStr, granularity)
-            ResultVo.success(response)
-        } catch (e: Exception) {
-            log.error("获取 Token 时序数据失败", e)
-            ResultVo.error("获取时序数据失败：${e.message}")
-        }
+        val response = tokenStatsService.getTimeSeriesData(startTimeStr, endTimeStr, granularity)
+        ResultVo.success(response)
+    } catch (e: Exception) {
+        log.error("获取 Token 时序数据失败", e)
+        ResultVo.error("获取时序数据失败：${e.message}")
     }
 
     @GetMapping("/time-series/model")
@@ -103,21 +99,19 @@ class TokenStatsController(
         endTime: LocalDateTime?,
         @Parameter(description = "时间粒度: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
-        granularity: String
-    ): ResultVo<TokenStatsAggregationResponse> {
-        return try {
-            val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
-            val actualEndTime = endTime ?: LocalDateTime.now()
+        granularity: String,
+    ): ResultVo<TokenStatsAggregationResponse> = try {
+        val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
+        val actualEndTime = endTime ?: LocalDateTime.now()
 
-            val startTimeStr = actualStartTime.format(dateFormatter)
-            val endTimeStr = actualEndTime.format(dateFormatter)
+        val startTimeStr = actualStartTime.format(dateFormatter)
+        val endTimeStr = actualEndTime.format(dateFormatter)
 
-            val response = tokenStatsService.getModelTimeSeriesData(startTimeStr, endTimeStr, granularity)
-            ResultVo.success(response)
-        } catch (e: Exception) {
-            log.error("获取模型时序数据失败", e)
-            ResultVo.error("获取模型时序数据失败：${e.message}")
-        }
+        val response = tokenStatsService.getModelTimeSeriesData(startTimeStr, endTimeStr, granularity)
+        ResultVo.success(response)
+    } catch (e: Exception) {
+        log.error("获取模型时序数据失败", e)
+        ResultVo.error("获取模型时序数据失败：${e.message}")
     }
 
     @GetMapping("/time-series/agent")
@@ -133,21 +127,19 @@ class TokenStatsController(
         endTime: LocalDateTime?,
         @Parameter(description = "时间粒度: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
-        granularity: String
-    ): ResultVo<TokenStatsAggregationResponse> {
-        return try {
-            val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
-            val actualEndTime = endTime ?: LocalDateTime.now()
+        granularity: String,
+    ): ResultVo<TokenStatsAggregationResponse> = try {
+        val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
+        val actualEndTime = endTime ?: LocalDateTime.now()
 
-            val startTimeStr = actualStartTime.format(dateFormatter)
-            val endTimeStr = actualEndTime.format(dateFormatter)
+        val startTimeStr = actualStartTime.format(dateFormatter)
+        val endTimeStr = actualEndTime.format(dateFormatter)
 
-            val response = tokenStatsService.getAgentTimeSeriesData(startTimeStr, endTimeStr, granularity)
-            ResultVo.success(response)
-        } catch (e: Exception) {
-            log.error("获取智能体时序数据失败", e)
-            ResultVo.error("获取智能体时序数据失败：${e.message}")
-        }
+        val response = tokenStatsService.getAgentTimeSeriesData(startTimeStr, endTimeStr, granularity)
+        ResultVo.success(response)
+    } catch (e: Exception) {
+        log.error("获取智能体时序数据失败", e)
+        ResultVo.error("获取智能体时序数据失败：${e.message}")
     }
 
     @GetMapping("/time-series/session")
@@ -163,20 +155,18 @@ class TokenStatsController(
         endTime: LocalDateTime?,
         @Parameter(description = "时间粒度: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
-        granularity: String
-    ): ResultVo<TokenStatsAggregationResponse> {
-        return try {
-            val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
-            val actualEndTime = endTime ?: LocalDateTime.now()
+        granularity: String,
+    ): ResultVo<TokenStatsAggregationResponse> = try {
+        val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
+        val actualEndTime = endTime ?: LocalDateTime.now()
 
-            val startTimeStr = actualStartTime.format(dateFormatter)
-            val endTimeStr = actualEndTime.format(dateFormatter)
+        val startTimeStr = actualStartTime.format(dateFormatter)
+        val endTimeStr = actualEndTime.format(dateFormatter)
 
-            val response = tokenStatsService.getSessionTimeSeriesData(startTimeStr, endTimeStr, granularity)
-            ResultVo.success(response)
-        } catch (e: Exception) {
-            log.error("获取会话时序数据失败", e)
-            ResultVo.error("获取会话时序数据失败：${e.message}")
-        }
+        val response = tokenStatsService.getSessionTimeSeriesData(startTimeStr, endTimeStr, granularity)
+        ResultVo.success(response)
+    } catch (e: Exception) {
+        log.error("获取会话时序数据失败", e)
+        ResultVo.error("获取会话时序数据失败：${e.message}")
     }
 }

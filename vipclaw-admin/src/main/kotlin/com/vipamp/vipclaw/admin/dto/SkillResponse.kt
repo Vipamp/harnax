@@ -37,7 +37,7 @@ data class SkillResponse(
     @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,
     @Schema(description = "更新时间", example = "2026-03-16 12:00:00")
-    val updateTime: LocalDateTime? = null
+    val updateTime: LocalDateTime? = null,
 ) {
     companion object {
         /**
@@ -46,7 +46,7 @@ data class SkillResponse(
         @JvmStatic
         fun fromEntity(
             skill: Skill?,
-            repository: SkillRepository? = null
+            repository: SkillRepository? = null,
         ): SkillResponse {
             if (skill == null) {
                 return SkillResponse()
@@ -65,7 +65,7 @@ data class SkillResponse(
                 isPublic = skill.isPublic,
                 creator = skill.creator,
                 createTime = skill.createTime,
-                updateTime = skill.updateTime
+                updateTime = skill.updateTime,
             )
         }
     }

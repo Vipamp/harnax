@@ -15,9 +15,9 @@ data class SkillRepositoryCreateRequest(
     val url: String = "",
     @Schema(description = "分支名称")
     @Size(max = 100, message = "分支名称长度不能超过 100")
-    val branch: String = "" ,
+    val branch: String = "",
     @Schema(description = "仓库描述")
     val description: String = "",
     @Schema(description = "状态 (0:禁用 1:正常)")
-    val status: Int = 1
+    val status: Int = 1,
 )

@@ -13,7 +13,6 @@ import com.vipamp.vipclaw.agent.provider.tool.SessionMetaContext
 import com.vipamp.vipclaw.agent.provider.tool.UserIdentifier
 import com.vipamp.vipclaw.agent.session.SessionConfig
 import com.vipamp.vipclaw.agent.session.SessionLoader
-import com.vipamp.vipclaw.common.log.logger
 import io.agentscope.core.memory.InMemoryMemory
 import io.agentscope.core.memory.Memory
 import io.agentscope.core.memory.autocontext.AutoContextMemory
@@ -24,6 +23,7 @@ import io.agentscope.core.session.SessionManager
 import io.agentscope.core.state.PlanNotebookState
 import io.agentscope.core.state.SimpleSessionKey
 import io.agentscope.core.tool.ToolExecutionContext
+import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.*
@@ -43,8 +43,9 @@ class AscopeAgentLauncher(
     val processLogAdaptor: ProcessLogAdaptor,
     val toolCallLogAdaptor: ToolCallLogAdaptor,
     val planNoteAdaptor: PlanNoteAdaptor,
-    val localRootTmpDir: Path
+    val localRootTmpDir: Path,
 ) {
+    private val log = LoggerFactory.getLogger(AscopeAgentLauncher::class.java)
     val needConfirmedTools: MutableSet<String> = mutableSetOf()
 
     fun createSingleAgent(
@@ -53,9 +54,7 @@ class AscopeAgentLauncher(
         stateless: Boolean = false,
         chatSpec: ChatSpec = ChatSpec.builder().build(),
         userIdentifier: UserIdentifier,
-    ): ReActAgentWrapper {
-        return createAgentBase(agentSpec, sessionId, stateless, listOf(), chatSpec, userIdentifier)
-    }
+    ): ReActAgentWrapper = createAgentBase(agentSpec, sessionId, stateless, listOf(), chatSpec, userIdentifier)
 
     private fun createAgentBase(
         agentSpec: AgentSpec,
@@ -87,10 +86,10 @@ class AscopeAgentLauncher(
             if (mcpConfig != null) {
                 agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync))
             } else if (!it.skipIfMissing) {
-                logger().error("Mcp config with id `${it.mcpId}` not found.")
+                log.error("Mcp config with id `${it.mcpId}` not found.")
                 throw IllegalArgumentException("Mcp config with id `${it.mcpId}` not found.")
             } else {
-                logger().warn("Mcp config with id `${it.mcpId}` not found.")
+                log.warn("Mcp config with id `${it.mcpId}` not found.")
             }
         }
 
@@ -99,7 +98,7 @@ class AscopeAgentLauncher(
             toolBox.init(
                 toolCallLogAdaptor,
                 SessionMetaContext(agentSpec.id, sessionId),
-                userIdentifier
+                userIdentifier,
             )
             agentBuilder.addTool(toolBox)
             needConfirmedTools.addAll(toolBox.needConfirmedTools())
@@ -121,10 +120,10 @@ class AscopeAgentLauncher(
                 agentBuilder.addSkill(skill)
             } else {
                 if (!it.skipIfMissing) {
-                    logger().error("Skill with id `${it.skillId}` not found.")
+                    log.error("Skill with id `${it.skillId}` not found.")
                     throw IllegalArgumentException("Skill with id `${it.skillId}` not found.")
                 } else {
-                    logger().warn("Skill with id `${it.skillId}` not found.")
+                    log.warn("Skill with id `${it.skillId}` not found.")
                 }
             }
         }
@@ -141,8 +140,11 @@ class AscopeAgentLauncher(
         // short memory
         var memory: Memory? = null
         if (!stateless) {
-            memory = if (agentSpec.useAutoContextMemory && agentSpec.autoContextConfig != null)
-                AutoContextMemory(agentSpec.autoContextConfig, chatModel) else InMemoryMemory()
+            memory = if (agentSpec.useAutoContextMemory && agentSpec.autoContextConfig != null) {
+                AutoContextMemory(agentSpec.autoContextConfig, chatModel)
+            } else {
+                InMemoryMemory()
+            }
             agentBuilder.memory(memory)
         }
 
@@ -170,13 +172,14 @@ class AscopeAgentLauncher(
             sessionManager.addComponent(memory)
             planNotebook?.let { sessionManager.addComponent(it) }
             sessionManager.loadIfExists()
-            logger().info("Loaded ${agent.name} with session $sessionId successfully.")
+            log.info("Loaded ${agent.name} with session $sessionId successfully.")
         }
         return ReActAgentWrapper(
-            agent, needConfirmedTools,
+            agent,
+            needConfirmedTools,
             sessionManager,
             TokenStatBuilder().agentId(agentSpec.id).sessionId(sessionId).modelId(agentSpec.chatModelId),
-            tokenStatAdaptor
+            tokenStatAdaptor,
         )
     }
 
@@ -185,13 +188,9 @@ class AscopeAgentLauncher(
         planNoteAdaptor.deletePlan(sessionId)
     }
 
-    fun loadSessionMessages(sessionId: String): List<Msg> {
-        return session.getList(SimpleSessionKey.of(sessionId), "memory_messages", Msg::class.java)
-    }
+    fun loadSessionMessages(sessionId: String): List<Msg> = session.getList(SimpleSessionKey.of(sessionId), "memory_messages", Msg::class.java)
 
-    fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> {
-        return planNoteAdaptor.getPlanNotes(sessionId)
-    }
+    fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = planNoteAdaptor.getPlanNotes(sessionId)
 
     fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? {
         val planNote = session.get(SimpleSessionKey.of(sessionId), "planNotebook_state", PlanNotebookState::class.java)
@@ -211,19 +210,17 @@ class AscopeAgentLauncher(
             processLogAdaptor: ProcessLogAdaptor,
             toolCallLogAdaptor: ToolCallLogAdaptor,
             planNoteAdaptor: PlanNoteAdaptor,
-            localRootTmpDir: Path = Files.createTempDirectory("agent-tmp-dir")
-        ): AscopeAgentLauncher {
-            return AscopeAgentLauncher(
-                chatModelConfigAdaptor,
-                mcpConfigAdaptor,
-                SessionLoader.load(sessionConfig),
-                skillAdaptor,
-                tokenStatAdaptor,
-                processLogAdaptor,
-                toolCallLogAdaptor,
-                planNoteAdaptor,
-                localRootTmpDir
-            )
-        }
+            localRootTmpDir: Path = Files.createTempDirectory("agent-tmp-dir"),
+        ): AscopeAgentLauncher = AscopeAgentLauncher(
+            chatModelConfigAdaptor,
+            mcpConfigAdaptor,
+            SessionLoader.load(sessionConfig),
+            skillAdaptor,
+            tokenStatAdaptor,
+            processLogAdaptor,
+            toolCallLogAdaptor,
+            planNoteAdaptor,
+            localRootTmpDir,
+        )
     }
 }

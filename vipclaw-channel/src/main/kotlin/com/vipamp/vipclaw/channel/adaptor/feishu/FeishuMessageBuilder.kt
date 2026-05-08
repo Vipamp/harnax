@@ -11,12 +11,10 @@ object FeishuMessageBuilder {
     /**
      * 构建纯文本消息
      */
-    fun buildText(content: String): Map<String, Any> {
-        return mapOf(
-            "msg_type" to "text",
-            "content" to mapOf("text" to content)
-        )
-    }
+    fun buildText(content: String): Map<String, Any> = mapOf(
+        "msg_type" to "text",
+        "content" to mapOf("text" to content),
+    )
 
     /**
      * 构建富文本消息（飞书使用 post 类型模拟 Markdown）
@@ -36,10 +34,10 @@ object FeishuMessageBuilder {
                 "post" to mapOf(
                     "zh_cn" to mapOf(
                         "title" to title,
-                        "content" to contentElements
-                    )
-                )
-            )
+                        "content" to contentElements,
+                    ),
+                ),
+            ),
         )
     }
 
@@ -47,23 +45,19 @@ object FeishuMessageBuilder {
      * 构建图片消息
      * 注意：需要预先上传图片获取 image_key
      */
-    fun buildImage(imageKey: String): Map<String, Any> {
-        return mapOf(
-            "msg_type" to "image",
-            "content" to mapOf("image_key" to imageKey)
-        )
-    }
+    fun buildImage(imageKey: String): Map<String, Any> = mapOf(
+        "msg_type" to "image",
+        "content" to mapOf("image_key" to imageKey),
+    )
 
     /**
      * 构建文件消息
      * 注意：需要预先上传文件获取 file_key
      */
-    fun buildFile(fileKey: String): Map<String, Any> {
-        return mapOf(
-            "msg_type" to "file",
-            "content" to mapOf("file_key" to fileKey)
-        )
-    }
+    fun buildFile(fileKey: String): Map<String, Any> = mapOf(
+        "msg_type" to "file",
+        "content" to mapOf("file_key" to fileKey),
+    )
 
     /**
      * 构建交互式卡片消息
@@ -71,7 +65,7 @@ object FeishuMessageBuilder {
     fun buildInteractiveCard(
         title: String,
         elements: List<CardElement>,
-        actions: List<CardAction>
+        actions: List<CardAction>,
     ): Map<String, Any> {
         val cardElements = mutableListOf<Map<String, Any>>()
 
@@ -79,8 +73,8 @@ object FeishuMessageBuilder {
         cardElements.add(
             mapOf(
                 "tag" to "markdown",
-                "content" to "**$title**"
-            )
+                "content" to "**$title**",
+            ),
         )
 
         // 添加内容元素
@@ -88,22 +82,22 @@ object FeishuMessageBuilder {
             when (element) {
                 is TextCardElement -> {
                     cardElements.add(
-                        mapOf("tag" to "markdown", "content" to element.content)
+                        mapOf("tag" to "markdown", "content" to element.content),
                     )
                 }
                 is MarkdownCardElement -> {
                     cardElements.add(
-                        mapOf("tag" to "markdown", "content" to element.content)
+                        mapOf("tag" to "markdown", "content" to element.content),
                     )
                 }
                 is ImageCardElement -> {
                     cardElements.add(
-                        mapOf("tag" to "img", "img_key" to element.imageUrl)
+                        mapOf("tag" to "img", "img_key" to element.imageUrl),
                     )
                 }
                 is DividerCardElement -> {
                     cardElements.add(
-                        mapOf("tag" to "hr")
+                        mapOf("tag" to "hr"),
                     )
                 }
                 is NoteCardElement -> {
@@ -111,9 +105,9 @@ object FeishuMessageBuilder {
                         mapOf(
                             "tag" to "note",
                             "elements" to listOf(
-                                mapOf("tag" to "text", "text" to element.text)
-                            )
-                        )
+                                mapOf("tag" to "text", "text" to element.text),
+                            ),
+                        ),
                     )
                 }
             }
@@ -130,9 +124,9 @@ object FeishuMessageBuilder {
                                 "tag" to "button",
                                 "text" to mapOf("tag" to "plain_text", "content" to action.label),
                                 "url" to action.url,
-                                "type" to "primary"
-                            )
-                        )
+                                "type" to "primary",
+                            ),
+                        ),
                     )
                     is CallbackCardAction -> mapOf(
                         "tag" to "action",
@@ -140,9 +134,9 @@ object FeishuMessageBuilder {
                             mapOf(
                                 "tag" to "button",
                                 "text" to mapOf("tag" to "plain_text", "content" to action.label),
-                                "value" to mapOf("action" to action.value)
-                            )
-                        )
+                                "value" to mapOf("action" to action.value),
+                            ),
+                        ),
                     )
                 }
             }
@@ -153,43 +147,41 @@ object FeishuMessageBuilder {
             "msg_type" to "interactive",
             "card" to mapOf(
                 "header" to mapOf(
-                    "title" to mapOf("tag" to "plain_text", "content" to title)
+                    "title" to mapOf("tag" to "plain_text", "content" to title),
                 ),
-                "elements" to cardElements
-            )
+                "elements" to cardElements,
+            ),
         )
     }
 
     /**
      * 从 RichMessage 自动构建消息
      */
-    fun buildFromRichMessage(richMessage: RichMessage): Map<String, Any> {
-        return when (richMessage) {
-            is TextRichMessage -> buildText(richMessage.content)
-            is MarkdownRichMessage -> buildPost("消息", richMessage.content)
-            is ImageRichMessage -> {
-                if (richMessage.mediaId.isNullOrBlank()) {
-                    throw IllegalArgumentException("Feishu image message requires imageKey (in mediaId field)")
-                }
-                buildImage(richMessage.mediaId!!)
+    fun buildFromRichMessage(richMessage: RichMessage): Map<String, Any> = when (richMessage) {
+        is TextRichMessage -> buildText(richMessage.content)
+        is MarkdownRichMessage -> buildPost("消息", richMessage.content)
+        is ImageRichMessage -> {
+            if (richMessage.mediaId.isNullOrBlank()) {
+                throw IllegalArgumentException("Feishu image message requires imageKey (in mediaId field)")
             }
-            is FileRichMessage -> {
-                if (richMessage.mediaId.isNullOrBlank()) {
-                    throw IllegalArgumentException("Feishu file message requires fileKey (in mediaId field)")
-                }
-                buildFile(richMessage.mediaId!!)
+            buildImage(richMessage.mediaId!!)
+        }
+        is FileRichMessage -> {
+            if (richMessage.mediaId.isNullOrBlank()) {
+                throw IllegalArgumentException("Feishu file message requires fileKey (in mediaId field)")
             }
-            is CardRichMessage -> buildInteractiveCard(
-                richMessage.title,
-                richMessage.elements,
-                richMessage.actions
-            )
-            is CompositeRichMessage -> {
-                if (richMessage.messages.isEmpty()) {
-                    buildText("")
-                } else {
-                    buildFromRichMessage(richMessage.messages.first())
-                }
+            buildFile(richMessage.mediaId!!)
+        }
+        is CardRichMessage -> buildInteractiveCard(
+            richMessage.title,
+            richMessage.elements,
+            richMessage.actions,
+        )
+        is CompositeRichMessage -> {
+            if (richMessage.messages.isEmpty()) {
+                buildText("")
+            } else {
+                buildFromRichMessage(richMessage.messages.first())
             }
         }
     }

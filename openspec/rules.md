@@ -347,7 +347,236 @@ axios.interceptors.request.use((config) => {
 - 代码审查 100% 通过国际化检查项
 - 无硬编码文本（除特殊场景如品牌名称）
 
-### 2.5 搜索筛选框统一规范
+### 2.5 API 响应结果判断规范
+
+#### 强制要求
+- **所有 API 调用必须显式检查响应体中的业务状态码（`response.code`）**
+- **仅当 `code === 200` 时视为成功，否则必须展示后端返回的具体错误信息**
+- **禁止忽略业务码直接视为成功**
+- **禁止在 API 调用后不检查响应直接执行成功逻辑**
+
+#### 标准实现模式
+
+**✅ 正确示例：**
+```typescript
+// 模式1：显式判断 response.code
+const response = await createModel(data);
+if (response.code === 200) {
+  message.success('创建成功');
+  onSuccess();
+} else {
+  // 显示后端返回的具体错误信息
+  message.error(response.message || '创建失败');
+}
+
+// 模式2：使用 try-catch 配合 errorThrower
+try {
+  const response = await updateModel(id, data);
+  if (response.code === 200) {
+    message.success('更新成功');
+    onSuccess();
+  } else {
+    message.error(response.message || '更新失败');
+  }
+} catch (error: any) {
+  // errorThrower 抛出的 BizError
+  const errorMsg = error?.message || error?.info?.errorMessage || '更新失败';
+  message.error(errorMsg);
+}
+```
+
+**❌ 错误示例：**
+```typescript
+// 错误1：不检查 response.code，直接显示成功
+await createModel(data);
+message.success('创建成功');  // ❌ 即使后端返回 code=400 也会显示成功
+
+// 错误2：只检查是否有 response，不检查 code
+const response = await createModel(data);
+if (response) {
+  message.success('创建成功');  // ❌ 没有判断业务状态码
+}
+
+// 错误3：使用 success 字段判断（后端 ResultVo 没有 success 字段）
+if (response.success) {  // ❌ 后端返回的是 code 字段
+  message.success('创建成功');
+}
+```
+
+#### 后端响应格式
+
+后端统一使用 `ResultVo<T>` 格式返回：
+```kotlin
+data class ResultVo<T>(
+    val code: Int = 200,          // 200=成功, 400=业务错误, 500=系统错误
+    val message: String = "success",
+    val data: T? = null,
+    val timestamp: Long = System.currentTimeMillis()
+)
+```
+
+**成功响应示例：**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": { "id": 1, "name": "测试" },
+  "timestamp": 1704067200000
+}
+```
+
+**失败响应示例：**
+```json
+{
+  "code": 400,
+  "message": "模型名称已存在",
+  "data": null,
+  "timestamp": 1704067200000
+}
+```
+
+#### 全局错误处理机制
+
+前端已配置全局错误处理器（`requestErrorConfig.ts`）：
+
+1. **errorThrower**：自动检查 `code === 200`，非200时抛出 `BizError`
+2. **errorHandler**：统一处理 `BizError` 和网络错误，显示错误提示
+3. **响应拦截器**：不干预错误处理，让 errorThrower 统一处理
+
+```typescript
+// requestErrorConfig.ts 中的 errorThrower
+errorThrower: (res) => {
+  const { code, message: msg } = res as unknown as ResponseStructure;
+  
+  // 仅当 code === 200 时视为成功
+  const isSuccessValue = code === 200;
+  
+  if (!isSuccessValue) {
+    const error: any = new Error(msg || '请求失败');
+    error.name = 'BizError';
+    error.info = { 
+      errorCode: code, 
+      errorMessage: msg,
+      showType: ErrorShowType.ERROR_MESSAGE 
+    };
+    throw error;
+  }
+}
+```
+
+#### 特殊情况处理
+
+**1. 列表查询接口**
+```typescript
+// 列表查询通常不需要显示成功消息，但需要处理错误
+const response = await modelPage(params);
+if (response.code === 200 && response.data) {
+  setModels(response.data.records || []);
+}
+// 错误会由 errorThrower 自动处理
+```
+
+**2. 删除操作**
+```typescript
+const response = await deleteModel(id);
+if (response.code === 200) {
+  message.success('删除成功');
+  loadData();  // 重新加载列表
+} else {
+  message.error(response.message || '删除失败');
+}
+```
+
+**3. 状态切换**
+```typescript
+const response = await toggleModel(id, newStatus);
+if (response.code === 200) {
+  message.success('状态切换成功');
+  // 乐观更新 UI
+  setModels(prev => prev.map(m => m.id === id ? { ...m, status: newStatus } : m));
+} else {
+  message.error(response.message || '状态切换失败');
+}
+```
+
+**4. 连接测试**
+```typescript
+const response = await connectivityTest(id);
+if (response.code === 200 && response.data === true) {
+  message.success('连接测试成功');
+} else {
+  message.error(response.message || '连接测试失败');
+}
+```
+
+#### 代码审查检查项
+
+在 Code Review 时，必须检查以下项：
+
+- [ ] 所有 API 调用都检查了 `response.code === 200`
+- [ ] 失败时显示了后端返回的具体错误信息（`response.message`）
+- [ ] 没有直接调用 `message.success()` 而不判断响应码
+- [ ] try-catch 块中正确处理了 `BizError`
+- [ ] 错误提示用户友好，不暴露技术细节
+
+#### 常见错误及修复
+
+**错误场景1：表单提交**
+```typescript
+// ❌ 错误：不检查响应
+const handleSubmit = async () => {
+  await createModel(data);
+  message.success('创建成功');
+  onSuccess();
+};
+
+// ✅ 正确：检查响应码
+const handleSubmit = async () => {
+  const response = await createModel(data);
+  if (response.code === 200) {
+    message.success('创建成功');
+    onSuccess();
+  } else {
+    message.error(response.message || '创建失败');
+  }
+};
+```
+
+**错误场景2：批量操作**
+```typescript
+// ❌ 错误：不检查每个操作的响应
+for (const id of selectedIds) {
+  await deleteModel(id);
+}
+message.success('批量删除成功');
+
+// ✅ 正确：检查每个操作
+let successCount = 0;
+let failedMessages: string[] = [];
+for (const id of selectedIds) {
+  const response = await deleteModel(id);
+  if (response.code === 200) {
+    successCount++;
+  } else {
+    failedMessages.push(response.message || `删除ID ${id} 失败`);
+  }
+}
+if (failedMessages.length === 0) {
+  message.success('批量删除成功');
+} else {
+  message.error(`成功 ${successCount} 个，失败 ${failedMessages.length} 个`);
+}
+```
+
+#### 验收标准
+
+- 所有 API 调用 100% 检查 `response.code`
+- 失败时显示后端返回的具体错误信息
+- 不出现“后端返回错误但前端显示成功”的情况
+- Code Review 100% 通过 API 响应判断检查项
+- 用户看到的错误提示友好且准确
+
+### 2.6 搜索筛选框统一规范
 
 #### 组件架构
 

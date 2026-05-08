@@ -21,7 +21,7 @@ class ProcessLogHook : Hook {
         adaptor: ProcessLogAdaptor,
         agentId: Long,
         agentName: String,
-        sessionId: String
+        sessionId: String,
     ) {
         this.adaptor = adaptor
         this.builder = ProcessLogBuilder(agentId, agentName, sessionId)
@@ -35,7 +35,7 @@ class ProcessLogHook : Hook {
         } else if (event is ActingChunkEvent) {
             val chunk = event.chunk
             val output: String = if (chunk.output.isEmpty()) "" else chunk.output[0].toString()
-            adaptor.emitLog(builder.info("[Processing] Tool progress:'${output}'."))
+            adaptor.emitLog(builder.info("[Processing] Tool progress:'$output'."))
         } else if (event is PostActingEvent) {
             val toolResult = event.toolResult
             val output: String = extractOutput(toolResult)
@@ -43,9 +43,9 @@ class ProcessLogHook : Hook {
                 val toolResult = event.toolResult
                 val output: String = extractOutput(toolResult)
                 if (output.contains(other = "fake")) {
-                    adaptor.emitLog(builder.info("[Processing] Faktool result detected:'${output}."))
+                    adaptor.emitLog(builder.info("[Processing] Faktool result detected:'$output."))
                 } else {
-                    adaptor.emitLog(builder.info("[Processing] Call tool: ${event.toolUse.name} result is '${output}"))
+                    adaptor.emitLog(builder.info("[Processing] Call tool: ${event.toolUse.name} result is '$output"))
                 }
             }
         } else if (event is PostCallEvent) {
@@ -69,7 +69,6 @@ class ProcessLogHook : Hook {
             if (block is TextBlock) {
                 if (sb.isNotEmpty()) sb.append("\n")
                 sb.append(block.text)
-
             }
         }
 
@@ -77,5 +76,4 @@ class ProcessLogHook : Hook {
     }
 
     override fun priority(): Int = 500
-
 }

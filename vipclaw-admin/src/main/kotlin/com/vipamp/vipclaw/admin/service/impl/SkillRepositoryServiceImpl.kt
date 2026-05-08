@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryResponse
 import com.vipamp.vipclaw.admin.dto.SkillRepositoryUpdateRequest
@@ -13,7 +14,6 @@ import com.vipamp.vipclaw.admin.service.SkillRepositoryService
 import com.vipamp.vipclaw.admin.util.GitSkillLoader.loadSkillsFromGit
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import com.vipamp.vipclaw.admin.util.UserContextUtil
-import com.vipamp.vipclaw.common.page.Page
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -40,27 +40,23 @@ class SkillRepositoryServiceImpl(
         name: String?,
         status: Int?,
         pageNum: Int,
-        pageSize: Int
+        pageSize: Int,
     ): Page<SkillRepository> {
         log.info(
             "分页查询技能仓库列表，pageNum: {}, pageSize: {}, name: {}, status: {}",
             pageNum,
             pageSize,
             name,
-            status
+            status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<SysJob>(pageNum, pageSize)
         return Page.fromPageInfo(skillRepositoryMapper.selectRepositoryList(name, status, currentUsername))
     }
 
-    override fun getActiveRepositories(): List<SkillRepository> {
-        return skillRepositoryMapper.selectActiveRepositories()
-    }
+    override fun getActiveRepositories(): List<SkillRepository> = skillRepositoryMapper.selectActiveRepositories()
 
-    override fun getSkillRepository(id: Long): SkillRepository? {
-        return skillRepositoryMapper.selectById(id)
-    }
+    override fun getSkillRepository(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean {
@@ -78,7 +74,7 @@ class SkillRepositoryServiceImpl(
         repository.branch = request.branch
         repository.description = request.description
         repository.status = request.status ?: 1 // 默认启用
-        repository.active = 1  // 默认生效
+        repository.active = 1 // 默认生效
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
@@ -131,9 +127,7 @@ class SkillRepositoryServiceImpl(
         return skillRepositoryMapper.deleteById(id) > 0
     }
 
-    override fun getByName(name: String): SkillRepository? {
-        return skillRepositoryMapper.selectByName(name)
-    }
+    override fun getByName(name: String): SkillRepository? = skillRepositoryMapper.selectByName(name)
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {
         log.info("获取远程技能列表，repositoryId: {}", repositoryId)
@@ -144,19 +138,17 @@ class SkillRepositoryServiceImpl(
             repository.url,
             repository.branch,
             tmpDir,
-            repository.name
+            repository.name,
         ).stream().map {
             SyncSkillResponse(
                 name = it.name,
                 description = it.description,
                 skillmd = it.skillContent,
-                resources = it.resources
+                resources = it.resources,
             )
         }.collect(Collectors.toList())
         return allSkills
     }
 
-    override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse {
-        return SkillRepositoryResponse.fromEntity(skillRepository)
-    }
+    override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse = SkillRepositoryResponse.fromEntity(skillRepository)
 }

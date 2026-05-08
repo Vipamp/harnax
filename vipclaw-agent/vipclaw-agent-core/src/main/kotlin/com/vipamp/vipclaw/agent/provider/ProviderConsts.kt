@@ -13,9 +13,9 @@ import com.vipamp.vipclaw.agent.provider.tool.TimeToolBox
 
 val HOOK_SET = setOf(
     ProcessLogHook(),
-    ConfirmToolsHook()
+    ConfirmToolsHook(),
 )
 
 val TOOL_SET = setOf(
-    TimeToolBox()
+    TimeToolBox(),
 )

@@ -25,16 +25,14 @@ class LauncherConfig {
         @Value($$"${session.username}") username: String,
         @Value($$"${session.password}") password: String,
         @Value($$"${session.database-name}") databaseName: String,
-    ): MysqlSessionConfig {
-        return MysqlSessionConfig(
-            jdbcUrl = jdbcUrl,
-            username = username,
-            password = password,
-            databaseName = databaseName,
-            tableName = "session_record",
-            createIfNotExist = true
-        )
-    }
+    ): MysqlSessionConfig = MysqlSessionConfig(
+        jdbcUrl = jdbcUrl,
+        username = username,
+        password = password,
+        databaseName = databaseName,
+        tableName = "session_record",
+        createIfNotExist = true,
+    )
 
     @Bean
     fun createLauncher(
@@ -46,7 +44,7 @@ class LauncherConfig {
         @Autowired processLogAdaptor: ProcessLogAdaptor,
         @Autowired(required = false) toolCallLogAdaptor: ToolCallLogAdaptor,
         @Autowired planNoteAdaptor: PlanNoteAdaptor,
-        @Value($$"${local.tmp-dir}") tmpDir: String
+        @Value($$"${local.tmp-dir}") tmpDir: String,
     ): AscopeAgentLauncher {
         System.setProperty("local.tmp-dir", tmpDir)
         return AscopeAgentLauncher.initLauncher(
@@ -58,7 +56,7 @@ class LauncherConfig {
             processLogAdaptor,
             toolCallLogAdaptor,
             planNoteAdaptor,
-            Path(tmpDir)
+            Path(tmpDir),
         )
     }
 }

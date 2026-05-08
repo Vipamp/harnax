@@ -17,7 +17,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @Configuration
 @EnableWebSecurity
 class SecurityConfig(
-    private val jwtAuthenticationFilter: JwtAuthenticationFilter
+    private val jwtAuthenticationFilter: JwtAuthenticationFilter,
 ) {
 
     @Bean
@@ -36,7 +36,7 @@ class SecurityConfig(
                         "/swagger-ui/*.*",
                         "/v3/api-docs",
                         "/v3/api-docs/**",
-                        "/webjars/**"
+                        "/webjars/**",
                     )
                     .permitAll()
                     .anyRequest()
@@ -48,7 +48,7 @@ class SecurityConfig(
                 exceptions.authenticationEntryPoint { _, response, authException ->
                     response.contentType = "application/json;charset=UTF-8"
                     response.writer.write(
-                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "认证失败"}"}"""
+                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "认证失败"}"}""",
                     )
                 }
             }
@@ -71,12 +71,12 @@ class SecurityConfig(
             "Accept",
             "Origin",
             "Access-Control-Request-Method",
-            "Access-Control-Request-Headers"
+            "Access-Control-Request-Headers",
         )
         configuration.exposedHeaders = listOf(
             "Access-Control-Allow-Origin",
             "Access-Control-Allow-Credentials",
-            "Authorization"
+            "Authorization",
         )
         configuration.allowCredentials = true
         configuration.maxAge = 3600L

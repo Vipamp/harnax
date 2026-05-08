@@ -2,8 +2,8 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
 import com.github.pagehelper.PageInfo
+import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.request.CreateTenantRequest
-
 import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 import com.vipamp.vipclaw.admin.entity.TenantEntity
@@ -14,7 +14,6 @@ import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import com.vipamp.vipclaw.admin.service.TenantService
-import com.vipamp.vipclaw.common.page.Page
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -27,7 +26,7 @@ class TenantServiceImpl(
     private val tenantMapper: TenantMapper,
     private val userTenantMapper: UserTenantMapper,
     private val sysUserMapper: SysUserMapper,
-    private val messageUtil: MessageUtil
+    private val messageUtil: MessageUtil,
 ) : TenantService {
 
     @Transactional
@@ -82,11 +81,9 @@ class TenantServiceImpl(
             records = pageInfo.list.map { toTenantResponse(it) },
             total = pageInfo.total,
             pageNum = pageInfo.pageNum.toLong(),
-            pageSize = pageInfo.pageSize.toLong()
+            pageSize = pageInfo.pageSize.toLong(),
         )
     }
-
-
 
     @Transactional
     override fun toggleStatus(id: Long): Boolean {
@@ -127,7 +124,7 @@ class TenantServiceImpl(
                 tenantId = ut.tenantId,
                 role = ut.role,
                 status = ut.status,
-                joinedAt = ut.joinedAt
+                joinedAt = ut.joinedAt,
             )
         }
 
@@ -135,7 +132,7 @@ class TenantServiceImpl(
             records = responses,
             total = pageInfo.total,
             pageNum = pageInfo.pageNum.toLong(),
-            pageSize = pageInfo.pageSize.toLong()
+            pageSize = pageInfo.pageSize.toLong(),
         )
     }
 
@@ -176,7 +173,7 @@ class TenantServiceImpl(
             // 查询该租户下的所有管理员
             val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
             val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
-            
+
             // 如果是唯一的管理员，不允许删除
             if (adminCount <= 1) {
                 throw BizException(messageUtil.getMessage("error.tenant.cannot_remove_only_admin"))
@@ -196,7 +193,7 @@ class TenantServiceImpl(
         if (existing.role == "admin" && role != "admin") {
             val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
             val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
-            
+
             if (adminCount <= 1) {
                 throw BizException(messageUtil.getMessage("error.tenant.cannot_demote_only_admin"))
             }
@@ -206,14 +203,12 @@ class TenantServiceImpl(
         return userTenantMapper.updateRole(userId, tenantId, role) > 0
     }
 
-    private fun toTenantResponse(entity: TenantEntity): TenantResponse {
-        return TenantResponse(
-            id = entity.id,
-            name = entity.name,
-            status = entity.status,
-            creator = entity.creator,
-            createTime = entity.createTime,
-            updateTime = entity.updateTime
-        )
-    }
+    private fun toTenantResponse(entity: TenantEntity): TenantResponse = TenantResponse(
+        id = entity.id,
+        name = entity.name,
+        status = entity.status,
+        creator = entity.creator,
+        createTime = entity.createTime,
+        updateTime = entity.updateTime,
+    )
 }

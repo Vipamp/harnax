@@ -13,7 +13,7 @@ class TokenStat(
     val inputToken: Int,
     val outputToken: Int,
     val totalToken: Int,
-    val timestamp: Long
+    val timestamp: Long,
 ) {
     companion object {
         @JvmStatic
@@ -45,6 +45,6 @@ class TokenStatBuilder {
         inputToken = inputToken,
         outputToken = outputToken,
         totalToken = totalToken,
-        timestamp = timestamp
+        timestamp = timestamp,
     )
 }

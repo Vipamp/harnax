@@ -14,23 +14,21 @@ import org.springframework.context.annotation.Configuration
 class OpenApiConfig {
 
     @Bean
-    fun customOpenAPI(): OpenAPI {
-        return OpenAPI()
-            .info(
-                Info()
-                    .title("VIPClaw Admin API")
-                    .version("1.0.0")
-                    .description("VIPClaw 后端管理系统 API 文档")
-                    .contact(
-                        Contact()
-                            .name("VIPClaw Team")
-                            .email("support@example.com")
-                    )
-                    .license(
-                        License()
-                            .name("Apache 2.0")
-                            .url("https://www.apache.org/licenses/LICENSE-2.0")
-                    )
-            )
-    }
+    fun customOpenAPI(): OpenAPI = OpenAPI()
+        .info(
+            Info()
+                .title("VIPClaw Admin API")
+                .version("1.0.0")
+                .description("VIPClaw 后端管理系统 API 文档")
+                .contact(
+                    Contact()
+                        .name("VIPClaw Team")
+                        .email("support@example.com"),
+                )
+                .license(
+                    License()
+                        .name("Apache 2.0")
+                        .url("https://www.apache.org/licenses/LICENSE-2.0"),
+                ),
+        )
 }

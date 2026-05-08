@@ -22,7 +22,7 @@ import java.time.ZoneId
 @Component
 class ToolCallLogAdaptorImpl(
     private val toolCallLogMapper: ToolCallLogMapper,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
 ) : ToolCallLogAdaptor {
 
     private val log = LoggerFactory.getLogger(ToolCallLogAdaptorImpl::class.java)
@@ -38,19 +38,25 @@ class ToolCallLogAdaptorImpl(
             if (result > 0) {
                 log.debug(
                     "Tool call log saved successfully: agentId={}, sessionId={}, toolName={}, duration={}ms",
-                    toolCallInfo.agentId, toolCallInfo.sessionId,
-                    toolCallInfo.toolName, toolCallInfo.duration
+                    toolCallInfo.agentId,
+                    toolCallInfo.sessionId,
+                    toolCallInfo.toolName,
+                    toolCallInfo.duration,
                 )
             } else {
                 log.warn(
                     "Failed to save tool call log: agentId={}, toolName={}",
-                    toolCallInfo.agentId, toolCallInfo.toolName
+                    toolCallInfo.agentId,
+                    toolCallInfo.toolName,
                 )
             }
         } catch (e: Exception) {
             log.error(
                 "Error saving tool call log: agentId={}, sessionId={}, toolName={}",
-                toolCallInfo.agentId, toolCallInfo.sessionId, toolCallInfo.toolName, e
+                toolCallInfo.agentId,
+                toolCallInfo.sessionId,
+                toolCallInfo.toolName,
+                e,
             )
             // 不抛出异常，避免影响主流程
         }
@@ -71,7 +77,8 @@ class ToolCallLogAdaptorImpl(
         } catch (e: JsonProcessingException) {
             log.warn(
                 "Failed to serialize tool call args to JSON: toolName={}",
-                toolCallInfo.toolName, e
+                toolCallInfo.toolName,
+                e,
             )
             entity.args = "{}"
         }

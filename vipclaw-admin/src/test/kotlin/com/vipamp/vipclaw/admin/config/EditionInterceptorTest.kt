@@ -176,7 +176,7 @@ class EditionInterceptorTest {
         whenever(editionUtil.getCurrentEdition()).thenReturn("enterprise")
         val mockMethod = mock<Method>()
         val handlerWithClassAnnotation = mock<HandlerMethod>()
-        
+
         // 方法级别没有注解
         whenever(handlerWithClassAnnotation.getMethodAnnotation(RequiresEdition::class.java))
             .thenReturn(null)
@@ -199,7 +199,7 @@ class EditionInterceptorTest {
         whenever(editionUtil.getCurrentEdition()).thenReturn("personal")
         val mockMethod = mock<Method>()
         val handlerWithBothAnnotations = mock<HandlerMethod>()
-        
+
         // 方法级别有注解(优先)
         whenever(handlerWithBothAnnotations.getMethodAnnotation(RequiresEdition::class.java))
             .thenReturn(RequiresEdition("personal"))

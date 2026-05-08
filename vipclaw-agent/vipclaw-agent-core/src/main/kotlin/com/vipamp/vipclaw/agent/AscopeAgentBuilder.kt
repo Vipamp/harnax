@@ -106,7 +106,6 @@ class AscopeAgentBuilder {
         return this
     }
 
-
     fun addSkill(agentSkill: AgentSkill): AscopeAgentBuilder {
         if (this.skillBox == null) {
             this.skillBox = SkillBox(this.toolkit)

@@ -90,14 +90,12 @@ class JwtUtil {
      * @param token JWT Token
      * @return true/false
      */
-    fun validateToken(token: String): Boolean {
-        return try {
-            val expiration = getExpirationDateFromToken(token)
-            !expiration.before(Date())
-        } catch (e: Exception) {
-            log.error("验证 Token 失败：{}", e.message)
-            false
-        }
+    fun validateToken(token: String): Boolean = try {
+        val expiration = getExpirationDateFromToken(token)
+        !expiration.before(Date())
+    } catch (e: Exception) {
+        log.error("验证 Token 失败：{}", e.message)
+        false
     }
 
     /**
@@ -117,13 +115,11 @@ class JwtUtil {
      * @param token JWT Token
      * @return Claims
      */
-    private fun getClaimsFromToken(token: String): Claims {
-        return Jwts.parser()
-            .verifyWith(getSigningKey())
-            .build()
-            .parseSignedClaims(token)
-            .payload
-    }
+    private fun getClaimsFromToken(token: String): Claims = Jwts.parser()
+        .verifyWith(getSigningKey())
+        .build()
+        .parseSignedClaims(token)
+        .payload
 
     /**
      * 从 Token 中获取租户 ID
@@ -131,13 +127,11 @@ class JwtUtil {
      * @param token JWT Token
      * @return 租户 ID
      */
-    fun getTenantIdFromToken(token: String): Long? {
-        return try {
-            val claims = getClaimsFromToken(token)
-            claims["tenantId", Long::class.java]
-        } catch (e: Exception) {
-            null
-        }
+    fun getTenantIdFromToken(token: String): Long? = try {
+        val claims = getClaimsFromToken(token)
+        claims["tenantId", Long::class.java]
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -145,7 +139,5 @@ class JwtUtil {
      *
      * @return 过期时间
      */
-    fun getExpirationTime(): Long {
-        return expiration
-    }
+    fun getExpirationTime(): Long = expiration
 }

@@ -12,7 +12,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 @Configuration
 class TenantWebMvcConfig(
     private val tenantInterceptor: TenantInterceptor,
-    private val editionInterceptor: EditionInterceptor
+    private val editionInterceptor: EditionInterceptor,
 ) : WebMvcConfigurer {
 
     override fun addInterceptors(registry: InterceptorRegistry) {
@@ -22,9 +22,9 @@ class TenantWebMvcConfig(
             .excludePathPatterns(
                 "/api/auth/login",
                 "/api/auth/captcha",
-                "/api/auth/logout"
+                "/api/auth/logout",
             )
-        
+
         // 注册版本控制拦截器
         registry.addInterceptor(editionInterceptor)
             .addPathPatterns("/api/**")

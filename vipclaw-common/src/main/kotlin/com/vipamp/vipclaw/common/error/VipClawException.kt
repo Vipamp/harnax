@@ -10,7 +10,7 @@ package com.vipamp.vipclaw.common.error
 class VipClawException(
     val code: String,
     override val message: String,
-    cause: Throwable? = null
+    cause: Throwable? = null,
 ) : RuntimeException(message, cause) {
 
     companion object {
@@ -47,9 +47,7 @@ class VipClawException(
          * @param errorMsg 错误消息
          * @return VipClawException 实例
          */
-        fun of(errorCode: String, errorMsg: String): VipClawException {
-            return VipClawException(errorCode, errorMsg)
-        }
+        fun of(errorCode: String, errorMsg: String): VipClawException = VipClawException(errorCode, errorMsg)
 
         /**
          * 创建异常（带原始异常）
@@ -59,8 +57,6 @@ class VipClawException(
          * @param cause 原始异常
          * @return VipClawException 实例
          */
-        fun of(errorCode: String, errorMsg: String, cause: Throwable): VipClawException {
-            return VipClawException(errorCode, errorMsg, cause)
-        }
+        fun of(errorCode: String, errorMsg: String, cause: Throwable): VipClawException = VipClawException(errorCode, errorMsg, cause)
     }
 }

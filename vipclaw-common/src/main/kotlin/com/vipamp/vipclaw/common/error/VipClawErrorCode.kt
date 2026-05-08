@@ -6,7 +6,7 @@ package com.vipamp.vipclaw.common.error
  */
 enum class VipClawErrorCode(
     val code: String,
-    val defaultMessage: String
+    val defaultMessage: String,
 ) {
     // ==================== 通用错误 (1000-1999) ====================
     SUCCESS("1000", "操作成功"),
@@ -41,14 +41,13 @@ enum class VipClawErrorCode(
     // ==================== 数据库错误 (5000-5999) ====================
     DB_ERROR("5001", "数据库操作失败"),
     DB_DUPLICATE_KEY("5002", "唯一键冲突"),
-    DB_CONSTRAINT_VIOLATION("5003", "约束违反");
+    DB_CONSTRAINT_VIOLATION("5003", "约束违反"),
+    ;
 
     /**
      * 创建异常（不带格式化参数）
      */
-    fun format(): VipClawException {
-        return VipClawException(this.code, this.defaultMessage)
-    }
+    fun format(): VipClawException = VipClawException(this.code, this.defaultMessage)
 
     /**
      * 创建异常（带格式化参数）
@@ -70,9 +69,7 @@ enum class VipClawErrorCode(
     /**
      * 创建异常（带原始异常）
      */
-    fun format(cause: Throwable): VipClawException {
-        return VipClawException(this.code, this.defaultMessage, cause)
-    }
+    fun format(cause: Throwable): VipClawException = VipClawException(this.code, this.defaultMessage, cause)
 
     /**
      * 创建异常（带格式化参数和原始异常）
