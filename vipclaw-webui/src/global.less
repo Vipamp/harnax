@@ -1819,10 +1819,24 @@ html.dark {
 
 /* ===== Skill 详情页面滚动控制 ===== */
 .skill-detail-page {
+  /* 设置基础字体大小 */
+  font-size: 12px !important;
+  
   /* 禁用 Ant Design Pro 的 PageContainer 滚动 */
   .ant-pro-page-container-children-content {
     overflow: hidden !important;
     height: 100% !important;
+    font-size: 12px !important;
+  }
+  
+  /* 强制所有子元素继承字体大小（排除 markdown-body 及其内部元素） */
+  *:not(.markdown-body) {
+    font-size: inherit;
+  }
+  
+  /* 但排除按钮、输入框等表单元素 */
+  button, input, select, textarea {
+    font-size: initial;
   }
   
   /* 禁用 Tab 内容区域的滚动 */
@@ -1844,6 +1858,60 @@ html.dark {
   .ant-tabs-tabpane-active {
     height: 100% !important;
     overflow: hidden !important;
+  }
+
+  /* SKILL.md Tab 和 Resources Tab 的 Markdown 样式统一调整 */
+  .markdown-body {
+    font-size: 12px !important;
+    line-height: 1.8 !important;
+  
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 24px !important;
+      margin-bottom: 16px !important;
+      font-weight: 600 !important;
+      line-height: 1.25 !important;
+      color: var(--vip-text-primary) !important;
+    }
+    
+    h1 {
+      font-size: 1.5em !important;
+      padding-bottom: 0.3em !important;
+      border-bottom: 2px solid var(--vip-border) !important;
+    }
+    
+    h2 {
+      font-size: 1.3em !important;
+      padding-bottom: 0.3em !important;
+      border-bottom: 1px solid var(--vip-border) !important;
+    }
+    
+    h3 {
+      font-size: 1.15em !important;
+    }
+    
+    h4 {
+      font-size: 1.05em !important;
+    }
+    
+    p {
+      font-size: 12px !important;
+      margin-bottom: 16px !important;
+      line-height: 1.8 !important;
+    }
+
+    li {
+      font-size: 12px !important;
+      line-height: 1.6 !important;
+    }
+    
+    code {
+      background: var(--vip-bg-elevated) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
+      font-size: 0.85em !important;
+      font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, monospace !important;
+      white-space: nowrap !important;
+    }
   }
 }
 
@@ -1933,7 +2001,7 @@ html.dark .custom-file-tree {
     padding: 32px !important;
     background: #ffffff !important;
     line-height: 1.8 !important;
-    font-size: 15px !important;
+    font-size: 12px !important;
     
     h1, h2, h3, h4, h5, h6 {
       margin-top: 24px !important;
@@ -1944,28 +2012,43 @@ html.dark .custom-file-tree {
     }
     
     h1 {
-      font-size: 2em !important;
+      font-size: 1.5em !important;
       padding-bottom: 0.3em !important;
       border-bottom: 2px solid var(--vip-border) !important;
     }
     
     h2 {
-      font-size: 1.5em !important;
+      font-size: 1.3em !important;
       padding-bottom: 0.3em !important;
       border-bottom: 1px solid var(--vip-border) !important;
     }
     
+    h3 {
+      font-size: 1.15em !important;
+    }
+    
+    h4 {
+      font-size: 1.05em !important;
+    }
+    
     p {
+      font-size: 12px !important;
       margin-bottom: 16px !important;
       line-height: 1.8 !important;
+    }
+    
+    li {
+      font-size: 12px !important;
+      line-height: 1.6 !important;
     }
     
     code {
       background: var(--vip-bg-elevated) !important;
       padding: 2px 6px !important;
       border-radius: 4px !important;
-      font-size: 0.9em !important;
+      font-size: 0.85em !important;
       font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, monospace !important;
+      white-space: nowrap !important;
     }
     
     pre {

@@ -1408,6 +1408,7 @@ import { UserOutlined } from '@ant-design/icons';
 |------|---------|------|---------|------|
 | **EditButton** | `src/components/EditButton/index.tsx` | 编辑操作 | `var(--vip-primary)` | EditOutlined |
 | **DeleteButton** | `src/components/DeleteButton/index.tsx` | 删除操作（内置Popconfirm） | `var(--vip-danger)` | DeleteOutlined |
+| **BackButton** | `src/components/BackButton/index.tsx` | 返回上一页 | 默认 | ArrowLeftOutlined |
 
 #### 业务特定按钮
 
@@ -1443,6 +1444,14 @@ import { UserOutlined } from '@ant-design/icons';
 - 支持自定义确认标题（`confirmTitle`）
 - 危险操作红色主题
 
+#### BackButton 特性
+- 用于详情页、表单页等需要返回的场景
+- 默认显示"返回"文案（支持国际化）
+- 统一样式：`type="text"`、`borderRadius: '8px'`、`padding: '8px 12px'`、`fontSize: '14px'`
+- 固定字体大小为14px，不受父元素字体影响
+- 支持自定义文字（`text`属性）
+- 支持自定义样式（`style`属性）
+
 #### SyncButton 特性
 - 支持 loading 状态
 - loading 时图标旋转动画
@@ -1471,6 +1480,9 @@ import { UserOutlined } from '@ant-design/icons';
   onChange={(newStatus) => handleToggle(record.id, newStatus)}
   disabled={record.isAdmin === 1} // 管理员禁用
 />
+
+// 返回按钮（详情页）
+<BackButton onClick={() => history.goBack()} />
 ```
 
 #### 组合使用
@@ -1548,6 +1560,13 @@ return canOperate ? (
 | ✅ MCP管理 | `mcp/index.tsx` | TestButton + EditButton + DeleteButton |
 | ✅ Skill仓库 | `skill/components/RepositoryList.tsx` | SyncButton + EditButton + DeleteButton |
 
+所有详情页的返回按钮已统一使用 BackButton 组件：
+
+| 页面 | 文件 | 返回按钮 |
+|------|------|---------|
+| ✅ MCP详情 | `mcp/detail.tsx` | BackButton |
+| ✅ Skill详情 | `skill/detail.tsx` | BackButton |
+
 ### 5.6 表格列规范
 
 #### 状态列处理
@@ -1592,6 +1611,7 @@ return canOperate ? (
 - ❌ 禁止使用旧的 CardActions 或 TableActions 组件
 - ❌ 禁止在操作栏外单独显示状态列（已统一移至操作栏）
 - ❌ 禁止使用"禁用"术语，统一使用"停用"
+- ❌ 禁止直接使用 `Button + ArrowLeftOutlined` 作为返回按钮，必须使用 `BackButton` 组件
 
 ### 5.9 开发流程
 

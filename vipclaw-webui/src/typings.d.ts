@@ -259,6 +259,8 @@ message?: string;
     name: string;
     repositoryId: number;
     repositoryName?: string;
+    repositoryUrl?: string;
+    repositoryBranch?: string;
     description?: string;
     skillmd?: string;
     resources?: string;

@@ -2,7 +2,6 @@ import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import { Card, Descriptions, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
 import { 
-  ArrowLeftOutlined, 
   ToolOutlined, 
   ApiOutlined,
   ClockCircleOutlined,
@@ -14,6 +13,7 @@ import React, { useEffect, useState } from 'react';
 // @ts-ignore
 import { useModel, useLocation, history } from '@umijs/max';
 import { getMcpServerById, getMcpTools } from '@/services/ant-design-pro/mcp';
+import BackButton from '@/components/BackButton';
 
 const { Text, Title } = Typography;
 
@@ -196,23 +196,12 @@ const McpDetail: React.FC = () => {
       header={{
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={handleBack}
-              style={{ 
-                borderRadius: '8px',
-                padding: '8px 12px',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.mcp.detail.back', defaultMessage: 'Back' })}
-            </Button>
+            <BackButton onClick={handleBack} />
             <div style={{ width: 1, height: 24, background: '#e8e8e8' }} />
-            <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
+            <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--vip-text-primary)', margin: 0 }}>
               <ApiOutlined style={{ marginRight: 10, color: '#4f6ef7' }} />
               {intl.formatMessage({ id: 'pages.mcp.detail.pageTitle', defaultMessage: 'MCP Service Detail' })}
-            </Title>
+            </span>
           </div>
         ),
         breadcrumb: {
@@ -258,7 +247,7 @@ const McpDetail: React.FC = () => {
                       <ApiOutlined style={{ fontSize: 22, color: '#fff' }} />
                     </div>
                     <div>
-                      <Text strong style={{ fontSize: 20, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
+                      <Text strong style={{ fontSize: 18, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
                         {mcpInfo.name}
                       </Text>
                       <div style={{ display: 'flex', gap: 8 }}>

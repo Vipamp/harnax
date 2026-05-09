@@ -2,7 +2,6 @@ import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import { Card, Descriptions, Tag, Typography, Spin, Empty, Button, Tabs, Tree, Breadcrumb } from 'antd';
 import { 
-  ArrowLeftOutlined, 
   ThunderboltOutlined, 
   FileOutlined, 
   FolderOutlined, 
@@ -20,6 +19,7 @@ import remarkGfm from 'remark-gfm';
 import { getSkillById } from '@/services/ant-design-pro/skill';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import BackButton from '@/components/BackButton';
 
 const { Text, Title } = Typography;
 const { DirectoryTree } = Tree;
@@ -105,7 +105,7 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
           components={{
             code: ({ node, inline, className, children, ...props }: any) => {
               if (inline) {
-                return <code className={className} {...props}>{children}</code>;
+                return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
               }
               return <CodeBlock className={className}>{children}</CodeBlock>;            }
           }}
@@ -314,7 +314,7 @@ const SkillDetail: React.FC = () => {
                   components={{
                     code: ({ node, inline, className, children, ...props }: any) => {
                       if (inline) {
-                        return <code className={className} {...props}>{children}</code>;
+                        return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
                       }
                       return <CodeBlock className={className}>{children}</CodeBlock>;                    }
                   }}
@@ -546,23 +546,12 @@ const SkillDetail: React.FC = () => {
       header={{
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={handleBack}
-              style={{ 
-                borderRadius: '8px',
-                padding: '8px 12px',
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.back', defaultMessage: 'Back' })}
-            </Button>
+            <BackButton onClick={handleBack} />
             <div style={{ width: 1, height: 24, background: 'var(--vip-border)' }} />
-            <Title level={3} style={{ margin: 0, fontWeight: 600 }}>
+            <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--vip-text-primary)', margin: 0 }}>
               <ThunderboltOutlined style={{ marginRight: 10, color: '#531dab' }} />
               {intl.formatMessage({ id: 'pages.skill.detail.title', defaultMessage: 'Skill Detail' })}
-            </Title>
+            </span>
           </div>
         ),
         breadcrumb: {
@@ -608,7 +597,7 @@ const SkillDetail: React.FC = () => {
                       <ThunderboltOutlined style={{ fontSize: 24, color: '#fff' }} />
                     </div>
                     <div>
-                      <Text strong style={{ fontSize: 20, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
+                      <Text strong style={{ fontSize: 18, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
                         {skillInfo.name}
                       </Text>
                       <div style={{ display: 'flex', gap: 8 }}>

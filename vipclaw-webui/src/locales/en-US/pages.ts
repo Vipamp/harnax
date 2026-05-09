@@ -38,6 +38,7 @@ export default {
   'pages.common.none': 'None',
   'pages.common.items': 'items',
   'pages.common.expand': 'Expand',
+  'pages.common.back': 'Back',
   
   // Common Messages
   'pages.message.deleteConfirm': 'Are you sure to delete?',

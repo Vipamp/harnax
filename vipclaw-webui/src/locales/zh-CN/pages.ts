@@ -38,6 +38,7 @@ export default {
   'pages.common.none': '无',
   'pages.common.items': '个',
   'pages.common.expand': '展开',
+  'pages.common.back': '返回',
   
   // 通用消息
   'pages.message.deleteConfirm': '确认删除吗？',
