@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.dto.ModelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelResponse
 import com.vipamp.vipclaw.admin.dto.ModelUpdateRequest
@@ -99,6 +100,9 @@ class ModelServiceImpl(
         model.supportVision = request.supportVision ?: 0
         model.price = request.price ?: 0.0
         model.isPublic = request.isPublic ?: 1
+
+        // 设置租户ID
+        model.tenantId = TenantContext.getTenantId() ?: 1
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)

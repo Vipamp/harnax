@@ -7,6 +7,7 @@
         <id column="id" property="id"/>
         <result column="type" property="type"/>
         <result column="name" property="name"/>
+        <result column="description" property="description"/>
         <result column="api_key" property="apiKey"/>
         <result column="base_url" property="baseUrl"/>
         <result column="status" property="status"/>
@@ -73,6 +74,9 @@
         SELECT * FROM model_provider
         WHERE active = 1
         AND (is_public = 1 OR creator = #{currentUsername})
+        <if test="name != null and name != ''">
+            AND (name LIKE CONCAT('%', #{name}, '%') OR description LIKE CONCAT('%', #{name}, '%'))
+        </if>
         <if test="type != null and type != ''">
             AND type = #{type}
         </if>

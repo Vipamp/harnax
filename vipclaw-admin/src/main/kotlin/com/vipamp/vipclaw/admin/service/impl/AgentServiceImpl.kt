@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.dto.AgentCreateRequest
 import com.vipamp.vipclaw.admin.dto.AgentResponse
 import com.vipamp.vipclaw.admin.dto.AgentUpdateRequest
@@ -59,6 +60,9 @@ class AgentServiceImpl(
         agent.modelId = request.modelId!!
         agent.owner = request.owner!!
         agent.status = request.status ?: 1
+
+        // 设置租户ID
+        agent.tenantId = TenantContext.getTenantId() ?: 1
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)

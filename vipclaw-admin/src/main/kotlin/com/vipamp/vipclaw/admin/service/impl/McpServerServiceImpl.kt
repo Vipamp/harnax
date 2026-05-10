@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.dto.McpServerCreateRequest
 import com.vipamp.vipclaw.admin.dto.McpServerResponse
 import com.vipamp.vipclaw.admin.dto.McpServerUpdateRequest
@@ -81,6 +82,9 @@ class McpServerServiceImpl(
         mcpServer.url = request.url ?: ""
         mcpServer.status = request.status ?: 1
         mcpServer.active = 1
+
+        // 设置租户ID
+        mcpServer.tenantId = TenantContext.getTenantId() ?: 1
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)

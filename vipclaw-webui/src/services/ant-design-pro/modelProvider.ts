@@ -7,6 +7,7 @@ export async function modelProviderPage(params: {
   pageNum?: number;
   pageSize?: number;
   name?: string;
+  type?: string;
   status?: number;
   isPublic?: number;
 }) {
@@ -70,5 +71,14 @@ export async function deleteModelProvider(id: number) {
 export async function connectivityTest(id: number) {
   return request<API.Result<boolean>>(`/api/model-providers/${id}/test`, {
     method: 'POST',
+  });
+}
+
+/**
+ * 获取模型统计信息
+ */
+export async function getModelProviderStats(id: number) {
+  return request<API.Result<API.ModelStatsInfo>>(`/api/model-providers/${id}/stats`, {
+    method: 'GET',
   });
 }

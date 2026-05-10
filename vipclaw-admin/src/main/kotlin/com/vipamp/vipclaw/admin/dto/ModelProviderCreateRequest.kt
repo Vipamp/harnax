@@ -19,6 +19,10 @@ data class ModelProviderCreateRequest(
     @Schema(description = "供应商名称", example = "阿里云百炼", requiredMode = Schema.RequiredMode.REQUIRED)
     val name: String,
 
+    @field:Size(max = 500, message = "描述长度不能超过 500 个字符")
+    @Schema(description = "服务商描述", example = "阿里云提供的大语言模型 API 服务")
+    val description: String? = null,
+
     @field:Size(max = 500, message = "API 密钥长度不能超过 500 个字符")
     @Schema(description = "API 密钥（敏感信息）", example = "sk-xxxxxxxxxxxxxxxx")
     val apiKey: String? = null,

@@ -4,6 +4,7 @@ import com.vipamp.vipclaw.admin.config.RequiresEdition
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.dto.ModelStatsInfo
 import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.ResultVo
 import com.vipamp.vipclaw.admin.dto.mapRecords
@@ -36,6 +37,7 @@ class ModelProviderController(
     @Operation(summary = "分页查询模型服务商", description = "分页查询模型服务商列表")
     fun pageModelProvider(
         @Parameter(description = "服务商名称") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "服务商类型") @RequestParam(name = "type", required = false) type: String?,
         @Parameter(description = "状态") @RequestParam(name = "status", required = false) status: Int?,
         @Parameter(description = "是否公开") @RequestParam(name = "isPublic", required = false) isPublic: Int?,
         @Parameter(description = "当前页码") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
@@ -43,6 +45,7 @@ class ModelProviderController(
     ): ResultVo<Page<ModelProviderResponse>> = try {
         val page = modelProviderService.page(
             name,
+            type,
             status,
             isPublic,
             pageNum ?: 1,
@@ -125,5 +128,17 @@ class ModelProviderController(
     ): ResultVo<Boolean> {
         val result = modelProviderService.connectivityTest(id)
         return ResultVo.success(result)
+    }
+
+    /**
+     * 获取模型统计信息
+     */
+    @GetMapping("/{id}/stats")
+    @Operation(summary = "获取模型统计信息", description = "获取指定服务商下的模型统计信息")
+    fun getModelStats(
+        @Parameter(description = "服务商 ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<ModelStatsInfo> {
+        val stats = modelProviderService.getModelStats(id)
+        return ResultVo.success(stats)
     }
 }

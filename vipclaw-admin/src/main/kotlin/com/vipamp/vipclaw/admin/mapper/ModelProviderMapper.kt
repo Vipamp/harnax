@@ -27,6 +27,7 @@ interface ModelProviderMapper {
 
     // ==================== 自定义查询方法 ====================
     fun selectModelProviderList(
+        @Param("name") name: String?,
         @Param("type") type: String?,
         @Param("status") status: Int?,
         @Param("isPublic") isPublic: Int?,

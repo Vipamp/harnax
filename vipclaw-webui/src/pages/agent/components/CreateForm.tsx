@@ -498,7 +498,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             color: 'var(--vip-text-primary)',
           }}
         >
-          {intl.formatMessage({ id: 'pages.common.previousStep', defaultMessage: 'Previous Step' })}
+          {intl.formatMessage({ id: 'pages.common.previous', defaultMessage: 'Previous' })}
         </Button>
         <Button 
           type="primary" 

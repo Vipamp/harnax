@@ -399,6 +399,7 @@ message?: string;
   export type ModelProviderItem = {
     id?: number;
     name: string;
+    description?: string;
     displayName?: string;
     apiKey?: string;
     baseUrl?: string;
@@ -407,6 +408,15 @@ message?: string;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 模型统计信息
+   */
+  export type ModelStatsInfo = {
+    totalModels: number;
+    enabledModels: number;
+    disabledModels: number;
   };
 
   /**

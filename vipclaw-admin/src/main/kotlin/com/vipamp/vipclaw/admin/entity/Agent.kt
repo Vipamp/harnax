@@ -24,6 +24,12 @@ class Agent : Serializable {
     var id: Long = 0
 
     /**
+     * 所属租户ID
+     */
+    @Schema(description = "所属租户ID")
+    var tenantId: Long = 1
+
+    /**
      * 智能体名称
      */
     @Schema(description = "智能体名称")

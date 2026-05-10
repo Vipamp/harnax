@@ -3,6 +3,7 @@ package com.vipamp.vipclaw.admin.service
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.dto.ModelStatsInfo
 import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.ModelProvider
 
@@ -18,13 +19,14 @@ interface ModelProviderService {
      * 分页查询模型服务商
      *
      * @param name     服务商名称
+     * @param type     服务商类型
      * @param status   状态
      * @param isPublic 是否公开
      * @param pageNum  当前页码
      * @param pageSize 每页大小
      * @return 分页结果
      */
-    fun page(name: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider>
+    fun page(name: String?, type: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider>
 
     /**
      * 获取模型服务商详情
@@ -92,4 +94,12 @@ interface ModelProviderService {
      * @return 模型服务商响应
      */
     fun convertToResponse(modelProvider: ModelProvider): ModelProviderResponse
+
+    /**
+     * 获取服务商的模型统计信息
+     *
+     * @param providerId 服务商ID
+     * @return 模型统计信息
+     */
+    fun getModelStats(providerId: Long): ModelStatsInfo
 }

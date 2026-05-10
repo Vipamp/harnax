@@ -17,6 +17,8 @@ data class ModelProviderResponse(
     var type: String = "",
     @Schema(description = "名称", example = "阿里云 DashScope")
     var name: String = "",
+    @Schema(description = "描述", example = "阿里云提供的大语言模型 API 服务")
+    var description: String? = null,
 
     @field:Size(max = 500, message = "API 密钥长度不能超过 500 个字符")
     @Schema(description = "API 密钥（敏感信息）", example = "sk-xxxxxxxxxxxxxxxx")
@@ -45,6 +47,7 @@ data class ModelProviderResponse(
             id = provider.id,
             type = provider.type,
             name = provider.name,
+            description = provider.description,
             apiKey = maskApiKey(provider.apiKey),
             baseUrl = provider.baseUrl,
             status = provider.status,

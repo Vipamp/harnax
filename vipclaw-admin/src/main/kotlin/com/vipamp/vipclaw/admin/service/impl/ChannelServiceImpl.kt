@@ -1,6 +1,7 @@
 package com.vipamp.vipclaw.admin.service.impl
 
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.dto.ChannelCreateRequest
 import com.vipamp.vipclaw.admin.dto.ChannelResponse
 import com.vipamp.vipclaw.admin.dto.ChannelUpdateRequest
@@ -60,6 +61,9 @@ class ChannelServiceImpl(
         channel.appSecret = request.appSecret!!
         channel.description = request.description!!
         channel.status = request.status ?: 1
+
+        // 设置租户ID
+        channel.tenantId = TenantContext.getTenantId() ?: 1
 
         // 生成唯一的回调标识
         val callbackKey = generateCallbackKey(request.type)

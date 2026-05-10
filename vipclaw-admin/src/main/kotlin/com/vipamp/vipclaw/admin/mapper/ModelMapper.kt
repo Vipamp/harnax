@@ -42,4 +42,8 @@ interface ModelMapper {
     fun countByProviderIdAndModelName(@Param("providerId") providerId: Long, @Param("modelName") modelName: String): Int
 
     fun countActiveModelsByProviderId(@Param("providerId") providerId: Long): Int
+
+    fun countModelsByProviderId(@Param("providerId") providerId: Long): Int
+
+    fun countDisabledModelsByProviderId(@Param("providerId") providerId: Long): Int
 }

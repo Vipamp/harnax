@@ -25,6 +25,7 @@ import TestButton from '@/components/TestButton';
 import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
 import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
+import EntityCard from '@/components/EntityCard';
 
 // MCP 卡片组件
 const McpCard: React.FC<{
@@ -38,238 +39,102 @@ const McpCard: React.FC<{
   onDelete: (id: number) => void;
   onTest: (id: number, name: string) => void;
   hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-  // 响应式参数
-  screenSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
-}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission, screenSize = 'lg' }) => {
+}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission }) => {
   const intl = useIntl();
-  const [isHovered, setIsHovered] = useState(false);
   const endpoint = item.type === 'stdio' ? item.command : item.url;
-
-  // 响应式配置
-  const responsiveConfig = {
-    xs: { 
-      padding: '14px', 
-      iconSize: 40, 
-      titleSize: 'clamp(13px, 3vw, 14px)', 
-      descSize: 'clamp(11px, 2.5vw, 12px)', 
-      tagSize: 'clamp(10px, 2vw, 11px)', 
-      infoSize: 'clamp(10px, 2vw, 11px)',
-      codeSize: 'clamp(10px, 2.2vw, 11px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-    sm: { 
-      padding: '16px', 
-      iconSize: 44, 
-      titleSize: 'clamp(13px, 2.5vw, 14px)', 
-      descSize: 'clamp(11px, 2vw, 12px)', 
-      tagSize: 'clamp(10px, 1.8vw, 11px)', 
-      infoSize: 'clamp(10px, 1.8vw, 11px)',
-      codeSize: 'clamp(10px, 2vw, 11px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-    md: { 
-      padding: '18px', 
-      iconSize: 48, 
-      titleSize: 'clamp(14px, 2vw, 15px)', 
-      descSize: 'clamp(11px, 1.8vw, 12px)', 
-      tagSize: 'clamp(10px, 1.6vw, 11px)', 
-      infoSize: 'clamp(11px, 1.6vw, 12px)',
-      codeSize: 'clamp(11px, 1.8vw, 12px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-    lg: { 
-      padding: '20px', 
-      iconSize: 52, 
-      titleSize: 'clamp(14px, 1.8vw, 15px)', 
-      descSize: 'clamp(11px, 1.6vw, 12px)', 
-      tagSize: 'clamp(10px, 1.4vw, 11px)', 
-      infoSize: 'clamp(11px, 1.4vw, 12px)',
-      codeSize: 'clamp(11px, 1.6vw, 12px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-    xl: { 
-      padding: '20px', 
-      iconSize: 52, 
-      titleSize: 'clamp(14px, 1.5vw, 15px)', 
-      descSize: 'clamp(11px, 1.3vw, 12px)', 
-      tagSize: 'clamp(10px, 1.2vw, 11px)', 
-      infoSize: 'clamp(11px, 1.2vw, 12px)',
-      codeSize: 'clamp(11px, 1.3vw, 12px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-    xxl: { 
-      padding: '22px', 
-      iconSize: 56, 
-      titleSize: 'clamp(15px, 1.2vw, 16px)', 
-      descSize: 'clamp(12px, 1vw, 13px)', 
-      tagSize: 'clamp(11px, 0.9vw, 12px)', 
-      infoSize: 'clamp(11px, 0.9vw, 12px)',
-      codeSize: 'clamp(11px, 1vw, 12px)',
-      minHeight: 'calc(100% * 1.4)',
-    },
-  };
-
-  const responsiveCfg = responsiveConfig[screenSize];
 
   // 点击卡片跳转到详情页
   const handleCardClick = () => {
     history.push(`/context/mcp/detail/${item.id}`);
   };
 
-  return (
-    <Card
-      style={{
-        borderRadius: '16px',
-        border: 'none',
-        boxShadow: isHovered 
-          ? `0 12px 32px ${config.color}20` 
-          : '0 4px 20px rgba(0,0,0,0.06)',
-        overflow: 'hidden',
-        position: 'relative',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered ? 'translateY(-6px)' : 'translateY(0)',
-        animation: `vipSlideUp 0.5s ease-out ${index * 80}ms both`,
-        cursor: 'pointer',
-        width: '100%',
-        height: '260px',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-      styles={{ body: { padding: 0, flex: 1, display: 'flex', flexDirection: 'column' } }}
-      onClick={handleCardClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {/* 顶部类型标识条 - 带动画 */}
-      <div
-        style={{
-          height: '4px',
-          background: config.bg,
-          backgroundSize: '200% 100%',
-          animation: isHovered ? 'gradientShift 2s linear infinite' : 'none',
-        }}
-      />
+  // 渲染描述区域（包含 Type 和 Endpoint 的 Key-Value 显示）
+  const renderDescription = () => {
+    const hasDescription = item.description && item.description.trim() !== '';
 
-      <div style={{ padding: responsiveCfg.padding, flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* 头部：图标 + 名称 + 类型标签 */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
-          <div
-            style={{
-              width: responsiveCfg.iconSize,
-              height: responsiveCfg.iconSize,
-              borderRadius: '14px',
-              background: isHovered 
-                ? config.bg 
-                : `${config.color}15`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: responsiveCfg.iconSize * 0.46,
-              color: isHovered ? '#fff' : config.color,
-              flexShrink: 0,
-              transition: 'all 0.3s ease',
-              boxShadow: isHovered ? `0 8px 20px ${config.color}40` : 'none',
-            }}
-          >
-            {config.icon}
+    return (
+      <div>
+        {/* 自定义描述（如果有） */}
+        {hasDescription && (
+          <div style={{ marginBottom: '12px', lineHeight: 1.6 }}>
+            {item.description}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <Text strong style={{ fontSize: responsiveCfg.titleSize, color: 'var(--vip-text-primary)' }}>
-                {item.name}
-              </Text>
-            </div>
+        )}
+
+        {/* Type 和 Endpoint 信息 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {/* Type */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500, flexShrink: 0 }}>
+              {intl.formatMessage({ id: 'pages.mcp.type', defaultMessage: 'Type' })}:
+            </Text>
             <Tag
               style={{
-                background: isHovered ? config.bg : `${config.color}12`,
-                color: isHovered ? '#fff' : config.color,
-                border: 'none',
+                background: `${config.color}12`,
+                color: config.color,
+                border: `1px solid ${config.color}25`,
                 borderRadius: '6px',
-                fontSize: responsiveCfg.tagSize,
+                fontSize: '11px',
                 fontWeight: 600,
                 padding: '2px 10px',
-                transition: 'all 0.3s ease',
+                margin: 0,
               }}
             >
               {config.label}
             </Tag>
           </div>
-          {/* 状态开关 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={(e) => e.stopPropagation()}>
-            {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-              <Switch
-                checked={item.status === 1}
-                onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-                style={{
-                  backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
-                }}
-              />
-            )}
+
+          {/* Endpoint */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500, flexShrink: 0 }}>
+              {intl.formatMessage({ id: 'pages.mcp.endpoint', defaultMessage: 'Endpoint' })}:
+            </Text>
+            <Text
+              code
+              style={{
+                fontSize: '11px',
+                color: 'var(--vip-text-secondary)',
+                background: 'var(--vip-bg-layout)',
+                border: '1px solid var(--vip-border)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                wordBreak: 'break-all',
+                lineHeight: 1.5,
+              }}
+            >
+              {endpoint || '-'}
+            </Text>
           </div>
         </div>
-
-        {/* 描述 */}
-        <Paragraph
-          ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 16px', color: 'var(--vip-text-secondary)', fontSize: responsiveCfg.descSize, minHeight: '40px', lineHeight: 1.6, flex: '0 0 auto' }}
-        >
-          {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
-        </Paragraph>
-
-        {/* 命令/地址 */}
-        <div
-          style={{
-            background: 'var(--vip-bg-layout)',
-            borderRadius: '10px',
-            padding: '12px 14px',
-            marginBottom: 16,
-            border: '1px solid var(--vip-border)',
-            transition: 'all 0.3s ease',
-            flex: '0 0 auto',
-          }}
-        >
-          <Text
-            code
-            style={{
-              fontSize: responsiveCfg.codeSize,
-              color: 'var(--vip-text-secondary)',
-              display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-            }}
-          >
-            {endpoint || '-'}
-          </Text>
-        </div>
-
-        {/* 是否公开、创建时间、创建人和操作按钮 */}
-        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid var(--vip-border)', paddingTop: '12px' }}>
-          {item.isPublic === 1 && (
-            <Tag color="blue">{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
-          )}
-          <Text type="secondary" style={{ fontSize: responsiveCfg.infoSize }}>
-            {item.createTime?.replace('T', ' ')}
-          </Text>
-          {item.creator && (
-            <Text type="secondary" style={{ fontSize: responsiveCfg.infoSize }}>{item.creator}</Text>
-          )}
-          <div style={{ flex: 1 }} />
-          {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-            <Space size={8}>
-              <TestButton onClick={() => onTest(item.id!, item.name)} />
-              <EditButton onClick={() => onEdit(item)} />
-              <DeleteButton onConfirm={() => onDelete(item.id!)} />
-            </Space>
-          )}
-        </div>
       </div>
-    </Card>
+    );
+  };
+
+  return (
+    <EntityCard
+      entity={item}
+      index={index}
+      icon={config.icon}
+      name={item.name}
+      tagLabel={config.label}
+      tagColor={config.color}
+      tagBgHover={config.color}
+      description={renderDescription()}
+      status={item.status}
+      isPublic={item.isPublic}
+      creator={item.creator}
+      createTime={item.createTime}
+      actions={{
+        showTest: true,
+        showEdit: hasOperationPermission(isAdmin, currentUser, item.creator),
+        showDelete: hasOperationPermission(isAdmin, currentUser, item.creator),
+        onTest: () => onTest(item.id!, item.name),
+        onEdit: () => onEdit(item),
+        onDelete: () => onDelete(item.id!),
+      }}
+      onToggle={(id, status) => onToggleStatus(id, status)}
+      onClick={handleCardClick}
+    />
   );
 };
 import {
@@ -573,7 +438,6 @@ const McpManagement: React.FC = () => {
               onDelete={handleRemove}
               onTest={handleConnectivityTest}
               hasOperationPermission={hasOperationPermission}
-              screenSize={screenSize}
             />
           );
         }}

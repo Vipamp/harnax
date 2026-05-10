@@ -45,6 +45,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         form.setFieldsValue({
           type: values.type,
           name: values.name,
+          description: values.description,
           apiKey: '', // API Key 不回显
           baseUrl: values.baseUrl,
           isPublic: values.isPublic === 1,
@@ -67,6 +68,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         const response = await updateModelProvider(values.id, {
           type: formValues.type,
           name: formValues.name,
+          description: formValues.description,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
@@ -83,6 +85,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         const response = await createModelProvider({
           type: formValues.type,
           name: formValues.name,
+          description: formValues.description,
           apiKey: formValues.apiKey || undefined,
           baseUrl: formValues.baseUrl,
           isPublic: formValues.isPublic ? 1 : 0,
@@ -109,6 +112,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
       form.setFieldsValue({
         type: values.type,
         name: values.name,
+        description: values.description,
         apiKey: '',
         baseUrl: values.baseUrl,
         isPublic: values.isPublic === 1,
@@ -169,6 +173,18 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}
         >
           <Input placeholder={intl.formatMessage({ id: 'pages.model.provider.name.placeholder', defaultMessage: 'Please enter provider name' })} />
+        </Form.Item>
+
+        <Form.Item
+          name="description"
+          label={intl.formatMessage({ id: 'pages.model.description', defaultMessage: 'Description' })}
+        >
+          <Input.TextArea 
+            placeholder={intl.formatMessage({ id: 'pages.model.provider.description.placeholder', defaultMessage: 'Please enter provider description' })}
+            rows={3}
+            maxLength={500}
+            showCount
+          />
         </Form.Item>
 
         <Form.Item

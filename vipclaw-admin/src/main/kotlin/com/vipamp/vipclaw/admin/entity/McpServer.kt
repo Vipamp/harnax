@@ -24,6 +24,12 @@ class McpServer : Serializable {
     var id: Long = 0
 
     /**
+     * 所属租户ID
+     */
+    @Schema(description = "所属租户ID")
+    var tenantId: Long = 1
+
+    /**
      * MCP 名称
      */
     @Schema(description = "MCP 名称")

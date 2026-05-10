@@ -2377,3 +2377,267 @@ const cardWidth = 100 / cardsPerRow; // 百分比
 - [ ] 测试不同屏幕宽度下的显示效果
 - [ ] 验证卡片不会重叠
 - [ ] 验证宽高比始终 >= minAspectRatio
+
+### 6.10 统一实体卡片组件规范（EntityCard）
+
+#### 核心原则
+
+所有实体卡片（模型服务商、MCP服务、智能体、技能等）必须使用统一的 `EntityCard` 公共组件，确保：
+
+1. **视觉一致性**：所有卡片样式、布局、动画完全统一
+2. **响应式设计**：自动适配各种屏幕尺寸
+3. **信息层次清晰**：头部、描述、统计、底部操作分区明确
+4. **国际化支持**：所有文案支持多语言
+5. **权限控制**：自动处理操作权限判断
+
+#### 组件位置
+
+```
+src/components/EntityCard/index.tsx
+```
+
+#### 卡片布局结构
+
+```
+┌─────────────────────────────────┐
+│ 顶部渐变标识条（带动画）          │
+├─────────────────────────────────┤
+│ [图标] 实体名称            [开关]│
+│       [类型标签]                 │
+├─────────────────────────────────┤
+│ 描述信息（最多2行）              │
+│ 或显示“暂无描述”                  │
+├─────────────────────────────────┤
+│ [统计1] [统计2] [统计3] ...     │
+├─────────────────────────────────┤
+│ [公开] 创建人 时间  [操作按钮]  │
+└─────────────────────────────────┘
+```
+
+#### 使用方式
+
+```tsx
+import EntityCard from '@/components/EntityCard';
+import { RobotOutlined } from '@ant-design/icons';
+
+<EntityCard
+  entity={item}
+  index={index}
+  icon={<RobotOutlined />}
+  name={item.name}
+  tagLabel={item.type}
+  tagColor="#722ed1"
+  description={item.description}
+  status={item.status}
+  isPublic={item.isPublic}
+  creator={item.creator}
+  createTime={item.createTime}
+  stats={[
+    { label: '总数', value: 10, color: '#722ed1' },
+    { label: '启用', value: 8, color: '#52c41a' },
+    { label: '停用', value: 2, color: '#ff4d4f' },
+  ]}
+  actions={{
+    showTest: true,
+    showEdit: true,
+    showDelete: true,
+    onTest: () => handleTest(item.id),
+    onEdit: () => handleEdit(item),
+    onDelete: () => handleDelete(item.id),
+  }}
+  onToggle={(id, status) => handleToggle(id, status)}
+  onClick={() => handleClick(item)}
+/>
+```
+
+#### 参数说明
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| entity | T | ✅ | 实体数据对象 |
+| index | number | ✅ | 卡片索引（用于动画延迟） |
+| icon | ReactNode | ✅ | 图标（必须携带） |
+| name | string | ✅ | 实体名称（作为卡片标题） |
+| tagLabel | string | ✅ | 类型标签文本 |
+| tagColor | string | ✅ | 类型标签颜色 |
+| tagBgHover | string | ❌ | hover 时标签背景色（默认同 tagColor） |
+| description | string | ❌ | 描述信息（无则显示“暂无描述”） |
+| status | number | ✅ | 状态（0:停用, 1:启用） |
+| isPublic | number | ❌ | 是否公开（0:私有, 1:公开） |
+| creator | string | ❌ | 创建人 |
+| createTime | string | ❌ | 创建时间 |
+| stats | StatItem[] | ❌ | 统计指标列表 |
+| actions | ActionConfig | ✅ | 操作按钮配置 |
+| onToggle | Function | ✅ | 状态切换回调 |
+| onClick | Function | ❌ | 卡片点击回调 |
+
+#### StatItem 统计指标结构
+
+```typescript
+interface StatItem {
+  label: string;        // 指标标签
+  value: number | string; // 指标值
+  color?: string;       // 指标颜色（默认同 tagColor）
+}
+```
+
+#### ActionConfig 操作按钮配置
+
+```typescript
+interface ActionConfig {
+  showTest?: boolean;   // 显示连接测试按钮
+  showEdit?: boolean;   // 显示编辑按钮
+  showDelete?: boolean; // 显示删除按钮
+  onTest?: () => void;  // 测试回调
+  onEdit?: () => void;  // 编辑回调
+  onDelete?: () => void;// 删除回调
+}
+```
+
+#### 样式规格标准
+
+**重要提示**：以下图标容器和类型标签的样式已统一在 EntityCard 公共组件中，无需在各业务页面手动实现。
+
+**卡片容器**：
+```typescript
+{
+  borderRadius: '20px',
+  border: '1px solid var(--vip-border)',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+  height: '280px',
+  background: 'var(--vip-bg-container)',
+  transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+}
+```
+
+**悬停效果**：
+```typescript
+{
+  transform: 'translateY(-8px) scale(1.02)',
+  boxShadow: `0 20px 40px ${tagColor}25, 0 0 0 1px ${tagColor}30`,
+}
+```
+
+**顶部标识条**：
+- 高度：5px
+- 渐变：`linear-gradient(135deg, ${tagColor} 0%, ${tagColor}aa 50%, ${tagColor}66 100%)`
+- 悬停动画：光泽扫过效果
+
+**图标容器**：
+```typescript
+{
+  borderRadius: '16px',
+  // 默认状态：浅色填充 + 外边框
+  background: `linear-gradient(135deg, ${tagColor}10 0%, ${tagColor}08 100%)`,
+  border: `1px solid ${tagColor}20`,  // 20% 透明度外边框
+  color: tagColor,                     // 图标颜色为实体主题色
+  boxShadow: `0 4px 12px ${tagColor}15`,
+  // 悬停状态：深色填充 + 无边框
+  hover: {
+    background: `linear-gradient(135deg, ${tagColor} 0%, ${tagColor}cc 100%)`,
+    border: `1px solid ${tagColor}00`,  // 悬停时边框透明
+    color: '#fff',                       // 图标变为白色
+    boxShadow: `0 12px 24px ${tagColor}40`,
+  }
+}
+```
+
+**图标容器样式要点**：
+- **外边框**：始终保留 1px 边框，默认 20% 透明度，悬停时 0% 透明度（视觉上消失）
+- **填充色**：默认浅色渐变（10%-8% 透明度），悬停深色渐变（100%-80% 透明度）
+- **图标颜色**：默认使用实体主题色，悬停变为白色
+- **阴影效果**：默认浅色阴影（15% 透明度），悬停深色阴影（40% 透明度）
+- **过渡动画**：`all 0.4s cubic-bezier(0.4, 0, 0.2, 1)`
+
+**类型标签**：
+```typescript
+{
+  borderRadius: '8px',
+  // 默认状态：浅色填充 + 外边框
+  background: `linear-gradient(135deg, ${tagColor}12 0%, ${tagColor}08 100%)`,
+  border: `1px solid ${tagColor}25`,  // 25% 透明度外边框
+  color: tagColor,                     // 文字颜色为实体主题色
+  boxShadow: 'none',
+  fontWeight: 600,
+  padding: '3px 12px',
+  // 悬停状态：深色填充 + 无边框
+  hover: {
+    background: `linear-gradient(135deg, ${tagColor} 0%, ${tagColor}dd 100%)`,
+    border: `1px solid ${tagColor}00`,  // 悬停时边框透明
+    color: '#fff',                       // 文字变为白色
+    boxShadow: `0 4px 12px ${tagColor}30`,
+  }
+}
+```
+
+**类型标签样式要点**：
+- **外边框**：始终保留 1px 边框，默认 25% 透明度，悬停时 0% 透明度（视觉上消失）
+- **填充色**：默认浅色渐变（12%-8% 透明度），悬停深色渐变（100%-87% 透明度）
+- **文字颜色**：默认使用实体主题色，悬停变为白色
+- **阴影效果**：默认无阴影，悬停添加阴影（30% 透明度）
+- **字体粗体**：600
+- **过渡动画**：`all 0.3s ease`
+
+**描述区域**：
+- 最大行数：2 行（WebkitLineClamp）
+- 字体大小：12px
+- 有描述：`var(--vip-text-secondary)`
+- 无描述：`var(--vip-text-tertiary)`（更淡的颜色）
+
+**统计指标框**：
+- 圆角：10px
+- 内边距：8px 6px
+- 网格间距：8px
+- 标签字体：`var(--vip-text-tertiary)`
+- 数值字体：800 粗体
+
+**底部信息栏**：
+- 上边距：14px
+- 分割线：`1px solid var(--vip-border)`
+- 公开标签：绿色（公开）/ 默认（私有）
+- 创建人/时间：11px，次要文本颜色
+
+**操作按钮**：
+- 连接测试：`var(--vip-warning)` 色
+- 编辑：`var(--vip-primary)` 色
+- 删除：DeleteButton 组件
+
+#### 响应式配置
+
+| 屏幕尺寸 | 内边距 | 图标大小 | 标题大小 | 统计数值大小 | 统计标签大小 |
+|---------|--------|---------|---------|------------|------------|
+| xs (<576px) | 14px | 40px | 13-14px | 18-20px | 9-10px |
+| sm (<768px) | 16px | 44px | 13-14px | 20-22px | 10-11px |
+| md (<992px) | 18px | 48px | 14-15px | 22-24px | 10-11px |
+| lg (<1200px) | 20px | 52px | 14-15px | 22-24px | 11-12px |
+| xl (<1600px) | 20px | 52px | 14-15px | 22-24px | 11-12px |
+| xxl (≥1600px) | 22px | 56px | 15-16px | 24-26px | 11-12px |
+
+#### 开发检查清单
+
+新增或修改实体卡片时，请确保：
+
+- [ ] 使用 EntityCard 组件，不手动编写卡片样式
+- [ ] 所有卡片都携带 icon
+- [ ] 实体名称作为卡片名称显示
+- [ ] Tag 标签样式统一（圆角 8px，渐变色背景）
+- [ ] 启停开关在右上角
+- [ ] 描述信息在卡片中间显示
+- [ ] 无描述时显示“暂无描述”（国际化）
+- [ ] 统计指标样式统一（圆角 10px，padding 8px 6px）
+- [ ] 分割线下方左侧：公开标签、创建人、创建时间（按此顺序）
+- [ ] 分割线下方右侧：操作按钮（测试、编辑、删除）
+- [ ] 测试深色模式下的显示效果
+- [ ] 验证响应式布局正常
+- [ ] 验证悬停动画效果
+
+#### 禁止行为
+
+- ❌ 禁止直接使用 Ant Design Card 组件编写实体卡片
+- ❌ 禁止手动定义卡片布局结构和样式
+- ❌ 禁止在不同页面使用不同的卡片样式规格
+- ❌ 禁止省略 icon 字段
+- ❌ 禁止将启停开关放在其他位置
+- ❌ 禁止不显示“暂无描述”占位文本
+- ❌ 禁止使用旧的统计展示方式（Ant Design Statistic 组件）
+- ❌ 禁止操作按钮不使用统一的 ActionConfig 配置

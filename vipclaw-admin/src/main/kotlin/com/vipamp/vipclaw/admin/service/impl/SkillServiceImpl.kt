@@ -2,6 +2,7 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
+import com.vipamp.vipclaw.admin.context.TenantContext
 import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.dto.SkillCreateRequest
 import com.vipamp.vipclaw.admin.dto.SkillResponse
@@ -83,6 +84,9 @@ class SkillServiceImpl(
         skill.resources = request.resources!!
         skill.status = request.status ?: 1 // 默认启用
         skill.active = 1 // 默认生效
+
+        // 设置租户ID
+        skill.tenantId = TenantContext.getTenantId() ?: 1
 
         // 设置创建人
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)

@@ -536,7 +536,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             color: 'var(--vip-text-primary)',
           }}
         >
-          {intl.formatMessage({ id: 'pages.common.previousStep', defaultMessage: 'Previous Step' })}
+          {intl.formatMessage({ id: 'pages.common.previous', defaultMessage: 'Previous' })}
         </Button>
         <Button 
           type="primary" 

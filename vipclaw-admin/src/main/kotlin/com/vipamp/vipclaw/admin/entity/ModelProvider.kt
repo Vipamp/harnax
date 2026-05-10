@@ -36,6 +36,12 @@ class ModelProvider : Serializable {
     var name: String = ""
 
     /**
+     * 描述
+     */
+    @Schema(description = "描述")
+    var description: String? = null
+
+    /**
      * API 密钥
      */
     @Schema(description = "API 密钥")

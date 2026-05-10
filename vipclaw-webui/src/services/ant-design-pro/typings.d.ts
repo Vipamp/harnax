@@ -118,6 +118,7 @@ declare namespace API {
     id: number;
     type: string;
     name: string;
+    description?: string;
     apiKey?: string;
     baseUrl?: string;
     status: number;
@@ -128,6 +129,7 @@ declare namespace API {
   type ModelProviderCreateRequest = {
     type: string;
     name: string;
+    description?: string;
     apiKey?: string;
     baseUrl?: string;
     isPublic?: number;
@@ -137,9 +139,17 @@ declare namespace API {
     id?: number;
     type?: string;
     name?: string;
+    description?: string;
     apiKey?: string;
     baseUrl?: string;
     isPublic?: number;
+  };
+
+  // 模型统计信息
+  type ModelStatsInfo = {
+    totalModels: number;
+    enabledModels: number;
+    disabledModels: number;
   };
 
   // 模型相关类型

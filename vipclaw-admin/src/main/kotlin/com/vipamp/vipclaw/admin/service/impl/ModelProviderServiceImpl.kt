@@ -4,6 +4,7 @@ import com.github.pagehelper.PageHelper
 import com.vipamp.vipclaw.admin.dto.ModelProviderCreateRequest
 import com.vipamp.vipclaw.admin.dto.ModelProviderResponse
 import com.vipamp.vipclaw.admin.dto.ModelProviderUpdateRequest
+import com.vipamp.vipclaw.admin.dto.ModelStatsInfo
 import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
 import com.vipamp.vipclaw.admin.entity.ModelProvider
@@ -32,11 +33,11 @@ class ModelProviderServiceImpl(
 
     private val log = LoggerFactory.getLogger(ModelProviderServiceImpl::class.java)
 
-    override fun page(name: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider> {
+    override fun page(name: String?, type: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider> {
         // 获取当前用户
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<Agent>(pageNum, pageSize)
-        return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, status, isPublic, currentUsername))
+        return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentUsername))
     }
 
     override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
@@ -50,6 +51,7 @@ class ModelProviderServiceImpl(
         val modelProvider = ModelProvider()
         modelProvider.type = request.type
         modelProvider.name = request.name
+        modelProvider.description = request.description
         modelProvider.apiKey = request.apiKey // 允许为 null
         modelProvider.baseUrl = request.baseUrl // 允许为 null
         modelProvider.isPublic = request.isPublic ?: 1
@@ -80,6 +82,11 @@ class ModelProviderServiceImpl(
         // 如果修改了类型，直接更新（类型不校验唯一性）
         if (!request.type.isNullOrBlank() && request.type != modelProvider.type) {
             modelProvider.type = request.type
+        }
+
+        // 更新描述字段
+        if (request.description != null) {
+            modelProvider.description = request.description
         }
 
         // 更新其他字段（只更新非 null 字段）
@@ -121,6 +128,13 @@ class ModelProviderServiceImpl(
     }
 
     override fun convertToResponse(it: ModelProvider): ModelProviderResponse = ModelProviderResponse.fromEntity(it)
+
+    override fun getModelStats(providerId: Long): ModelStatsInfo {
+        val totalModels = modelMapper.countModelsByProviderId(providerId)
+        val enabledModels = modelMapper.countActiveModelsByProviderId(providerId)
+        val disabledModels = modelMapper.countDisabledModelsByProviderId(providerId)
+        return ModelStatsInfo(totalModels, enabledModels, disabledModels)
+    }
 
     override fun connectivityTest(id: Long): Boolean {
         val modelProvider = this.modelProviderMapper.selectById(id)
