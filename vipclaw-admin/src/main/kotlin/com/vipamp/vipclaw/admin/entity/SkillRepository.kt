@@ -13,6 +13,9 @@ class SkillRepository : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
+    @Schema(description = "所属租户ID")
+    var tenantId: Long = 1
+
     @Schema(description = "仓库名称")
     var name: String = ""
 

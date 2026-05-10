@@ -2459,7 +2459,7 @@ import { RobotOutlined } from '@ant-design/icons';
 | icon | ReactNode | ✅ | 图标（必须携带） |
 | name | string | ✅ | 实体名称（作为卡片标题） |
 | tagLabel | string | ✅ | 类型标签文本 |
-| tagColor | string | ✅ | 类型标签颜色 |
+| tagColor | string | ✅ | 类型标签颜色 **（必须使用十六进制值，如 '#4f6ef7'，不能使用 CSS 变量）** |
 | tagBgHover | string | ❌ | hover 时标签背景色（默认同 tagColor） |
 | description | string | ❌ | 描述信息（无则显示“暂无描述”） |
 | status | number | ✅ | 状态（0:停用, 1:启用） |
@@ -2496,6 +2496,40 @@ interface ActionConfig {
 
 #### 样式规格标准
 
+**重要提示：颜色配置规范**
+
+⚠️ **tagColor 参数必须使用十六进制颜色值，不能使用 CSS 变量！**
+
+**正确示例**：
+```typescript
+<EntityCard
+  tagColor="#4f6ef7"  // ✅ 十六进制颜色值
+  // ...
+/>
+```
+
+**错误示例**：
+```typescript
+<EntityCard
+  tagColor="var(--vip-primary)"  // ❌ CSS 变量会导致样式失效
+  // ...
+/>
+```
+
+**原因**：
+- EntityCard 组件内部需要通过模板字符串拼接透明度后缀（如 `${tagColor}15`）
+- CSS 变量无法与透明度后缀拼接，会导致生成的 CSS 无效
+- 拼接后的效果：
+  - ✅ `#4f6ef715` → 有效的十六进制颜色（带 15% 透明度）
+  - ❌ `var(--vip-primary)15` → 无效的 CSS 语法
+
+**受影响的样式**：
+- 顶部标识条渐变色
+- 图标容器填充色和边框
+- 类型标签填充色和边框
+- 统计指标颜色
+- 悬停效果的所有颜色
+
 **重要提示**：以下图标容器和类型标签的样式已统一在 EntityCard 公共组件中，无需在各业务页面手动实现。
 
 **卡片容器**：
@@ -2528,10 +2562,10 @@ interface ActionConfig {
 {
   borderRadius: '16px',
   // 默认状态：浅色填充 + 外边框
-  background: `linear-gradient(135deg, ${tagColor}10 0%, ${tagColor}08 100%)`,
-  border: `1px solid ${tagColor}20`,  // 20% 透明度外边框
+  background: `linear-gradient(135deg, ${tagColor}15 0%, ${tagColor}10 100%)`,
+  border: `1px solid ${tagColor}30`,  // 30% 透明度外边框
   color: tagColor,                     // 图标颜色为实体主题色
-  boxShadow: `0 4px 12px ${tagColor}15`,
+  boxShadow: `0 4px 12px ${tagColor}20`,
   // 悬停状态：深色填充 + 无边框
   hover: {
     background: `linear-gradient(135deg, ${tagColor} 0%, ${tagColor}cc 100%)`,
@@ -2543,10 +2577,10 @@ interface ActionConfig {
 ```
 
 **图标容器样式要点**：
-- **外边框**：始终保留 1px 边框，默认 20% 透明度，悬停时 0% 透明度（视觉上消失）
-- **填充色**：默认浅色渐变（10%-8% 透明度），悬停深色渐变（100%-80% 透明度）
+- **外边框**：始终保留 1px 边框，默认 30% 透明度，悬停时 0% 透明度（视觉上消失）
+- **填充色**：默认浅色渐变（15%-10% 透明度），悬停深色渐变（100%-80% 透明度）
 - **图标颜色**：默认使用实体主题色，悬停变为白色
-- **阴影效果**：默认浅色阴影（15% 透明度），悬停深色阴影（40% 透明度）
+- **阴影效果**：默认浅色阴影（20% 透明度），悬停深色阴影（40% 透明度）
 - **过渡动画**：`all 0.4s cubic-bezier(0.4, 0, 0.2, 1)`
 
 **类型标签**：
@@ -2554,8 +2588,8 @@ interface ActionConfig {
 {
   borderRadius: '8px',
   // 默认状态：浅色填充 + 外边框
-  background: `linear-gradient(135deg, ${tagColor}12 0%, ${tagColor}08 100%)`,
-  border: `1px solid ${tagColor}25`,  // 25% 透明度外边框
+  background: `linear-gradient(135deg, ${tagColor}18 0%, ${tagColor}12 100%)`,
+  border: `1px solid ${tagColor}35`,  // 35% 透明度外边框
   color: tagColor,                     // 文字颜色为实体主题色
   boxShadow: 'none',
   fontWeight: 600,
@@ -2571,8 +2605,8 @@ interface ActionConfig {
 ```
 
 **类型标签样式要点**：
-- **外边框**：始终保留 1px 边框，默认 25% 透明度，悬停时 0% 透明度（视觉上消失）
-- **填充色**：默认浅色渐变（12%-8% 透明度），悬停深色渐变（100%-87% 透明度）
+- **外边框**：始终保留 1px 边框，默认 35% 透明度，悬停时 0% 透明度（视觉上消失）
+- **填充色**：默认浅色渐变（18%-12% 透明度），悬停深色渐变（100%-87% 透明度）
 - **文字颜色**：默认使用实体主题色，悬停变为白色
 - **阴影效果**：默认无阴影，悬停添加阴影（30% 透明度）
 - **字体粗体**：600
@@ -2627,6 +2661,8 @@ interface ActionConfig {
 - [ ] 统计指标样式统一（圆角 10px，padding 8px 6px）
 - [ ] 分割线下方左侧：公开标签、创建人、创建时间（按此顺序）
 - [ ] 分割线下方右侧：操作按钮（测试、编辑、删除）
+- [ ] **tagColor 使用十六进制颜色值（如 '#4f6ef7'），不使用 CSS 变量**
+- [ ] **顶部标识条、图标容器、类型标签的填充色正常显示**
 - [ ] 测试深色模式下的显示效果
 - [ ] 验证响应式布局正常
 - [ ] 验证悬停动画效果
@@ -2641,3 +2677,5 @@ interface ActionConfig {
 - ❌ 禁止不显示“暂无描述”占位文本
 - ❌ 禁止使用旧的统计展示方式（Ant Design Statistic 组件）
 - ❌ 禁止操作按钮不使用统一的 ActionConfig 配置
+- ❌ **禁止 tagColor 使用 CSS 变量（如 'var(--vip-primary)'），必须使用十六进制颜色值**
+- ❌ **禁止顶部标识条、图标容器、类型标签缺少填充色**

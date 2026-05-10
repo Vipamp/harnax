@@ -30,6 +30,12 @@ export interface ActionConfig {
 
 /**
  * 实体卡片属性
+ * 
+ * @important 颜色配置规范：
+ * - tagColor 必须使用十六进制颜色值（如 '#4f6ef7'）
+ * - 不能使用 CSS 变量（如 'var(--vip-primary)'）
+ * - 原因：组件内部需要通过模板字符串拼接透明度（如 '#4f6ef715'）
+ * - CSS 变量无法与透明度后缀拼接，会导致样式失效
  */
 export interface EntityCardProps<T = any> {
   /** 实体数据 */
@@ -197,7 +203,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
               borderRadius: '16px',
               background: isHovered 
                 ? `linear-gradient(135deg, ${tagColor} 0%, ${tagColor}cc 100%)`
-                : `linear-gradient(135deg, ${tagColor}10 0%, ${tagColor}08 100%)`,
+                : `linear-gradient(135deg, ${tagColor}15 0%, ${tagColor}10 100%)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -205,8 +211,8 @@ const EntityCard: React.FC<EntityCardProps> = ({
               color: isHovered ? '#fff' : tagColor,
               flexShrink: 0,
               transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              boxShadow: isHovered ? `0 12px 24px ${tagColor}40` : `0 4px 12px ${tagColor}15`,
-              border: `1px solid ${tagColor}${isHovered ? '00' : '20'}`,
+              boxShadow: isHovered ? `0 12px 24px ${tagColor}40` : `0 4px 12px ${tagColor}20`,
+              border: `1px solid ${tagColor}${isHovered ? '00' : '30'}`,
             }}
           >
             {icon}
@@ -229,9 +235,9 @@ const EntityCard: React.FC<EntityCardProps> = ({
               style={{
                 background: isHovered 
                   ? `linear-gradient(135deg, ${hoverBg} 0%, ${hoverBg}dd 100%)` 
-                  : `linear-gradient(135deg, ${tagColor}12 0%, ${tagColor}08 100%)`,
+                  : `linear-gradient(135deg, ${tagColor}18 0%, ${tagColor}12 100%)`,
                 color: isHovered ? '#fff' : tagColor,
-                border: `1px solid ${tagColor}${isHovered ? '00' : '25'}`,
+                border: `1px solid ${tagColor}${isHovered ? '00' : '35'}`,
                 borderRadius: '8px',
                 fontSize: config.statLabelSize,
                 fontWeight: 600,
@@ -258,60 +264,74 @@ const EntityCard: React.FC<EntityCardProps> = ({
           </div>
         </div>
 
-        {/* 描述信息 */}
+        {/* 描述信息区域 - 固定高度 */}
         <div 
           style={{
             marginBottom: '14px',
-            minHeight: '36px',
-            display: 'flex',
-            alignItems: 'flex-start',
+            // 有指标时：40px，无指标时：60px
+            height: stats && stats.length > 0 ? '40px' : '60px',
+            overflow: 'hidden',
           }}
         >
-          {/* 判断 description 类型 */}
-          {typeof description === 'string' ? (
-            <Text 
-              type="secondary"
-              style={{ 
-                fontSize: '12px',
-                color: description && description.trim() !== '' 
-                  ? 'var(--vip-text-secondary)' 
-                  : 'var(--vip-text-tertiary)',
-                lineHeight: 1.5,
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                wordBreak: 'break-word',
-              }}
-            >
-              {description && description.trim() !== '' 
-                ? description 
-                : intl.formatMessage({ 
-                    id: 'pages.common.noDescription', 
-                    defaultMessage: '暂无描述' 
-                  })
-              }
-            </Text>
-          ) : (
-            <div style={{ width: '100%' }}>
-              {description || (
-                <Text 
-                  type="secondary"
-                  style={{ 
-                    fontSize: '12px',
-                    color: 'var(--vip-text-tertiary)',
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {intl.formatMessage({ 
-                    id: 'pages.common.noDescription', 
-                    defaultMessage: '暂无描述' 
-                  })}
-                </Text>
-              )}
-            </div>
-          )}
+          <Tooltip 
+            title={typeof description === 'string' && description && description.trim() !== '' ? description : undefined}
+            placement="topLeft"
+          >
+            {/* 判断 description 类型 */}
+            {typeof description === 'string' ? (
+              <Text 
+                type="secondary"
+                style={{ 
+                  fontSize: '12px',
+                  color: description && description.trim() !== '' 
+                    ? 'var(--vip-text-secondary)' 
+                    : 'var(--vip-text-tertiary)',
+                  lineHeight: 1.5,
+                  display: '-webkit-box',
+                  WebkitLineClamp: stats && stats.length > 0 ? 2 : 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  wordBreak: 'break-word',
+                  cursor: description && description.trim() !== '' ? 'pointer' : 'default',
+                }}
+              >
+                {description && description.trim() !== '' 
+                  ? description 
+                  : intl.formatMessage({ 
+                      id: 'pages.common.noDescription', 
+                      defaultMessage: '暂无描述' 
+                    })
+                }
+              </Text>
+            ) : (
+              <div 
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: stats && stats.length > 0 ? 2 : 3,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
+                {description || (
+                  <Text 
+                    type="secondary"
+                    style={{ 
+                      fontSize: '12px',
+                      color: 'var(--vip-text-tertiary)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {intl.formatMessage({ 
+                      id: 'pages.common.noDescription', 
+                      defaultMessage: '暂无描述' 
+                    })}
+                  </Text>
+                )}
+              </div>
+            )}
+          </Tooltip>
         </div>
 
         {/* 统计指标 */}
@@ -325,40 +345,52 @@ const EntityCard: React.FC<EntityCardProps> = ({
             }}
           >
             {stats.map((stat, idx) => (
-              <div
+              <Tooltip 
                 key={idx}
-                style={{
-                  background: `linear-gradient(135deg, ${stat.color || tagColor}06 0%, ${stat.color || tagColor}03 100%)`,
-                  borderRadius: '10px',
-                  padding: '8px 6px',
-                  textAlign: 'center',
-                  border: `1px solid ${stat.color || tagColor}15`,
-                  transition: 'all 0.3s ease',
-                  transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                }}
+                title={`${stat.label}: ${stat.value}`}
+                placement="top"
               >
-                <div 
-                  style={{ 
-                    fontSize: config.statLabelSize, 
-                    color: 'var(--vip-text-tertiary)',
-                    marginBottom: '4px',
-                    fontWeight: 500,
+                <div
+                  style={{
+                    background: `linear-gradient(135deg, ${stat.color || tagColor}06 0%, ${stat.color || tagColor}03 100%)`,
+                    borderRadius: '10px',
+                    padding: '8px 6px',
+                    textAlign: 'center',
+                    border: `1px solid ${stat.color || tagColor}15`,
+                    transition: 'all 0.3s ease',
+                    transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
+                    cursor: 'pointer',
                   }}
                 >
-                  {stat.label}
+                  <div 
+                    style={{ 
+                      fontSize: config.statLabelSize, 
+                      color: 'var(--vip-text-tertiary)',
+                      marginBottom: '4px',
+                      fontWeight: 500,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {stat.label}
+                  </div>
+                  <div 
+                    style={{ 
+                      fontSize: config.statValueSize, 
+                      fontWeight: 800, 
+                      color: stat.color || 'var(--vip-text-primary)',
+                      lineHeight: 1,
+                      letterSpacing: '-0.02em',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {stat.value}
+                  </div>
                 </div>
-                <div 
-                  style={{ 
-                    fontSize: config.statValueSize, 
-                    fontWeight: 800, 
-                    color: stat.color || 'var(--vip-text-primary)',
-                    lineHeight: 1,
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {stat.value}
-                </div>
-              </div>
+              </Tooltip>
             ))}
           </div>
         )}

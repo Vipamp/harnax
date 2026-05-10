@@ -317,7 +317,7 @@
         border: 1px solid var(--vip-border) !important;
         background: var(--vip-bg-container) !important;
         color: var(--vip-text-primary) !important;
-        resize: vertical !important;
+        /* 注意：使用 autoSize 时不要强制设置 resize，会冲突 */
         overflow: auto !important;
         
         &:hover {

@@ -38,7 +38,7 @@ class JwtAuthenticationFilter(
             if (token == null) {
                 log.info("[JWT Filter] 请求未携带 Token: {}", requestURI)
             } else {
-                log.info("[JWT Filter] 开始验证 Token, URI: {}", requestURI)
+                log.info("[JWT Filter] 开始验证 Token, URI: {}, token 前缀: {}", requestURI, token.take(20))
                 val res = tokenBlacklistService.isBlacklisted(token)
                 if (res) {
                     log.warn("[JWT Filter] Token 已在黑名单中，拒绝访问: {}", requestURI)
@@ -58,7 +58,7 @@ class JwtAuthenticationFilter(
                     SecurityContextHolder.getContext().authentication = authentication
                     log.info("[JWT Filter] JWT 认证成功，userId: {}, username: {}, URI: {}", userId, username, requestURI)
                 } else {
-                    log.warn("[JWT Filter] Token 无效或已过期，URI: {}", requestURI)
+                    log.warn("[JWT Filter] Token 无效或已过期，URI: {}, token 前缀: {}", requestURI, token.take(20))
                 }
             }
         } catch (e: Exception) {

@@ -181,9 +181,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         >
           <Input.TextArea 
             placeholder={intl.formatMessage({ id: 'pages.model.provider.description.placeholder', defaultMessage: 'Please enter provider description' })}
-            rows={3}
+            autoSize={{ minRows: 1, maxRows: 6 }}
             maxLength={500}
-            showCount
           />
         </Form.Item>
 

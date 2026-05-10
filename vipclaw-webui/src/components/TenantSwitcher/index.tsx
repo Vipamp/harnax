@@ -54,43 +54,32 @@ const TenantSwitcher: React.FC = () => {
 
   // 切换租户
   const handleTenantChange = async (tenantId: number) => {
-    setLoading(true);
     try {
-      const response = await request('/api/auth/switch-tenant', {
-        method: 'POST',
-        data: { tenantId },
-      });
-
-      if (response.code === 200 && response.data) {
-        // 更新localStorage中的token
-        const tokenInfoStr = localStorage.getItem('tokenInfo');
-        if (tokenInfoStr) {
-          const tokenInfo = JSON.parse(tokenInfoStr);
-          tokenInfo.accessToken = response.data.accessToken;
+      // 更新localStorage中的当前租户ID
+      const tokenInfoStr = localStorage.getItem('tokenInfo');
+      if (tokenInfoStr) {
+        const tokenInfo = JSON.parse(tokenInfoStr);
+        if (tokenInfo.currentUser) {
           tokenInfo.currentUser.currentTenantId = tenantId;
           localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
         }
-        
-        // 持久化当前租户ID
-        localStorage.setItem('currentTenantId', String(tenantId));
-
-        setCurrentTenantId(tenantId);
-        message.success(
-          intl.formatMessage({
-            id: 'pages.tenant.switch.success',
-            defaultMessage: '租户切换成功',
-          })
-        );
-
-        // 刷新页面以更新数据
-        window.location.reload();
-      } else {
-        message.error(response.message || '租户切换失败');
       }
+      
+      // 持久化当前租户ID
+      localStorage.setItem('currentTenantId', String(tenantId));
+
+      setCurrentTenantId(tenantId);
+      message.success(
+        intl.formatMessage({
+          id: 'pages.tenant.switch.success',
+          defaultMessage: '租户切换成功',
+        })
+      );
+
+      // 刷新页面以更新数据
+      window.location.reload();
     } catch (error: any) {
       message.error(error?.message || '租户切换失败');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -99,11 +88,8 @@ const TenantSwitcher: React.FC = () => {
     return null;
   }
 
-  // 个人版隐藏租户切换组件
-  const edition = process.env.REACT_APP_EDITION;
-  if (edition === 'personal') {
-    return null;
-  }
+  // 所有版本都隐藏租户切换组件（多租户由系统自动管理，不需要用户手动切换）
+  return null;
 
   const currentTenant = tenants.find((t) => t.id === currentTenantId);
 

@@ -43,9 +43,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model_provider (
-        type, name, api_key, base_url, status, is_public, creator, active, create_time, update_time
+        type, name, description, api_key, base_url, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{type}, #{name}, #{apiKey}, #{baseUrl}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
+        #{type}, #{name}, #{description}, #{apiKey}, #{baseUrl}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
     </insert>
@@ -55,8 +55,10 @@
         UPDATE model_provider SET
         type = #{type},
         name = #{name},
+        description = #{description},
         api_key = #{apiKey},
         base_url = #{baseUrl},
+        status = #{status},
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},

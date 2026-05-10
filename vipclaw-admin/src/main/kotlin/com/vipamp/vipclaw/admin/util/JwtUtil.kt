@@ -135,6 +135,19 @@ class JwtUtil {
     }
 
     /**
+     * 从 Token 中获取 isAdmin 标识
+     *
+     * @param token JWT Token
+     * @return isAdmin (1=管理员, 0=普通用户)
+     */
+    fun getIsAdminFromToken(token: String): Int? = try {
+        val claims = getClaimsFromToken(token)
+        claims["isAdmin", Int::class.java]
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * 获取过期时间（毫秒）
      *
      * @return 过期时间

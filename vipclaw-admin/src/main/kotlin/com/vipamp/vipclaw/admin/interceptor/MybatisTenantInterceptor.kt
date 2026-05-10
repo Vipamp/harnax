@@ -1,7 +1,7 @@
 package com.vipamp.vipclaw.admin.interceptor
 
+import com.vipamp.vipclaw.admin.annotation.SkipTenantFilter
 import com.vipamp.vipclaw.admin.context.TenantContext
-import com.vipamp.vipclaw.admin.security.SecurityUtils
 import org.apache.ibatis.cache.CacheKey
 import org.apache.ibatis.executor.Executor
 import org.apache.ibatis.mapping.BoundSql
@@ -48,6 +48,8 @@ class MybatisTenantInterceptor : Interceptor {
             "user_tenant",
             "sys_user", // 用户表暂时不过滤，后续可调整
             "sys_token_blacklist",
+            "plan_note", // 计划笔记表暂时不过滤，后续可调整
+            "tool_call_log", // 工具调用日志表暂时不过滤，后续可调整
         )
 
         // 需要设置 tenant_id 的字段名
@@ -187,10 +189,19 @@ class MybatisTenantInterceptor : Interceptor {
         val whereIndex = findWhereKeywordIndex(sql)
 
         return if (whereIndex != -1) {
-            // 已有 WHERE 子句，添加 AND 条件
+            // 已有 WHERE 子句，在 WHERE 后添加 tenant_id 条件
             val beforeWhere = sql.substring(0, whereIndex + 5) // "WHERE".length = 5
-            val afterWhere = sql.substring(whereIndex + 5)
-            "$beforeWhere tenant_id = $tenantId AND $afterWhere"
+            val afterWhere = sql.substring(whereIndex + 5).trim()
+
+            // 检查 afterWhere 是否以 AND 开头（MyBatis 动态 SQL 常见情况）
+            val trimmedAfterWhere = afterWhere.uppercase()
+            if (trimmedAfterWhere.startsWith("AND ") || trimmedAfterWhere.startsWith("AND\t") || trimmedAfterWhere.startsWith("AND\n")) {
+                // 如果已经有 AND，直接在 WHERE 后插入 tenant_id 条件
+                "$beforeWhere tenant_id = $tenantId $afterWhere"
+            } else {
+                // 如果没有 AND，需要添加
+                "$beforeWhere tenant_id = $tenantId AND $afterWhere"
+            }
         } else {
             // 没有 WHERE 子句，需要添加
             when {
@@ -317,12 +328,9 @@ class MybatisTenantInterceptor : Interceptor {
      * 判断是否应该应用租户过滤
      */
     private fun shouldApplyTenantFilter(mappedStatement: MappedStatement): Boolean {
-        // 获取全局管理员标识
-        val currentUser = SecurityUtils.getCurrentUser()
-
-        // 全局管理员跳过租户过滤
-        if (currentUser != null && currentUser.isAdmin == 1) {
-            log.debug("[MyBatis租户拦截器] 全局管理员，跳过租户过滤")
+        // 检查方法是否有 @SkipTenantFilter 注解
+        if (hasSkipTenantFilterAnnotation(mappedStatement)) {
+            log.debug("[MyBatis租户拦截器] 方法标记了 @SkipTenantFilter，跳过租户过滤")
             return false
         }
 
@@ -338,6 +346,33 @@ class MybatisTenantInterceptor : Interceptor {
 
         // 默认对所有表应用过滤
         return true
+    }
+
+    /**
+     * 检查 Mapper 方法是否标记了 @SkipTenantFilter 注解
+     */
+    private fun hasSkipTenantFilterAnnotation(mappedStatement: MappedStatement): Boolean {
+        return try {
+            val statementId = mappedStatement.id
+            // statementId 格式: com.vipamp.vipclaw.admin.mapper.XxxMapper.methodName
+            val lastDotIndex = statementId.lastIndexOf('.')
+            if (lastDotIndex == -1) return false
+
+            val className = statementId.substring(0, lastDotIndex)
+            val methodName = statementId.substring(lastDotIndex + 1)
+
+            // 通过反射获取方法
+            val clazz = Class.forName(className)
+            val methods = clazz.declaredMethods.filter { it.name == methodName }
+
+            // 检查方法是否有 @SkipTenantFilter 注解
+            methods.any { method ->
+                method.isAnnotationPresent(SkipTenantFilter::class.java)
+            }
+        } catch (e: Exception) {
+            log.warn("[MyBatis租户拦截器] 检查 @SkipTenantFilter 注解失败: {}", e.message)
+            false
+        }
     }
 
     /**

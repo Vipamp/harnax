@@ -24,6 +24,12 @@ class ModelProvider : Serializable {
     var id: Long = 1
 
     /**
+     * 所属租户ID
+     */
+    @Schema(description = "所属租户ID")
+    var tenantId: Long = 1
+
+    /**
      * 服务商类型(dashscope/openai/ollama)
      */
     @Schema(description = "服务商类型(dashscope/openai/ollama)")

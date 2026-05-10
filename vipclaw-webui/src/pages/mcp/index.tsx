@@ -48,7 +48,7 @@ const McpCard: React.FC<{
     history.push(`/context/mcp/detail/${item.id}`);
   };
 
-  // 渲染描述区域（包含 Type 和 Endpoint 的 Key-Value 显示）
+  // 渲染描述区域（只显示 Endpoint）
   const renderDescription = () => {
     const hasDescription = item.description && item.description.trim() !== '';
 
@@ -61,50 +61,26 @@ const McpCard: React.FC<{
           </div>
         )}
 
-        {/* Type 和 Endpoint 信息 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {/* Type */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500, flexShrink: 0 }}>
-              {intl.formatMessage({ id: 'pages.mcp.type', defaultMessage: 'Type' })}:
-            </Text>
-            <Tag
-              style={{
-                background: `${config.color}12`,
-                color: config.color,
-                border: `1px solid ${config.color}25`,
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 600,
-                padding: '2px 10px',
-                margin: 0,
-              }}
-            >
-              {config.label}
-            </Tag>
-          </div>
-
-          {/* Endpoint */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-            <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500, flexShrink: 0 }}>
-              {intl.formatMessage({ id: 'pages.mcp.endpoint', defaultMessage: 'Endpoint' })}:
-            </Text>
-            <Text
-              code
-              style={{
-                fontSize: '11px',
-                color: 'var(--vip-text-secondary)',
-                background: 'var(--vip-bg-layout)',
-                border: '1px solid var(--vip-border)',
-                borderRadius: '6px',
-                padding: '4px 8px',
-                wordBreak: 'break-all',
-                lineHeight: 1.5,
-              }}
-            >
-              {endpoint || '-'}
-            </Text>
-          </div>
+        {/* Endpoint 信息 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Text type="secondary" style={{ fontSize: '12px', fontWeight: 500, flexShrink: 0, lineHeight: 1.5 }}>
+            {intl.formatMessage({ id: 'pages.mcp.endpoint', defaultMessage: 'Endpoint' })}:
+          </Text>
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'var(--vip-text-secondary)',
+              background: 'var(--vip-bg-layout)',
+              border: '1px solid var(--vip-border)',
+              borderRadius: '6px',
+              padding: '4px 8px',
+              wordBreak: 'break-all',
+              lineHeight: 1.5,
+              fontFamily: 'monospace',
+            }}
+          >
+            {endpoint || '-'}
+          </span>
         </div>
       </div>
     );
@@ -165,9 +141,9 @@ const MCP_TYPE_CONFIG: Record<
   string,
   { color: string; label: string; icon: React.ReactNode; bg: string }
 > = {
-  stdio: { color: 'var(--vip-primary)', label: 'STDIO', icon: <CodeOutlined />, bg: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)' },
-  sse: { color: 'var(--vip-success)', label: 'SSE', icon: <ApiOutlined />, bg: 'linear-gradient(135deg, var(--vip-success) 0%, var(--vip-success-hover) 100%)' },
-  streamablehttp: { color: 'var(--vip-warning)', label: 'Streamable HTTP', icon: <LinkOutlined />, bg: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-hover) 100%)' },
+  stdio: { color: '#4f6ef7', label: 'STDIO', icon: <CodeOutlined />, bg: 'linear-gradient(135deg, #4f6ef7 0%, #6b8aff 100%)' },
+  sse: { color: '#52c41a', label: 'SSE', icon: <ApiOutlined />, bg: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
+  streamablehttp: { color: '#faad14', label: 'Streamable HTTP', icon: <LinkOutlined />, bg: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)' },
 };
 
 const McpManagement: React.FC = () => {

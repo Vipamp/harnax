@@ -67,7 +67,7 @@ const ProviderCard: React.FC<ProviderCardProps> = ({
     const colors: Record<string, string> = {
       dashscope: '#ff6a00',
       openai: '#10a37f',
-      ollama: '#000000',
+      ollama: '#4f6ef7',  // 蓝色
     };
     return colors[type] || '#4f6ef7';
   };

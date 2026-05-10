@@ -2,6 +2,7 @@ package com.vipamp.vipclaw.admin.security
 
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
+import jakarta.annotation.PostConstruct
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 
@@ -27,7 +28,8 @@ class SecurityUtils(
         }
     }
 
-    fun setInstance() {
+    @PostConstruct
+    fun init() {
         instance = this
     }
 }
