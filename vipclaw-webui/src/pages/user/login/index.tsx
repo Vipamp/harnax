@@ -349,6 +349,9 @@ const Login: React.FC = () => {
             phone: userInfo.phone,
             gender: userInfo.gender,
             isAdmin: userInfo.isAdmin,
+            // 保存租户信息
+            tenants: msg.data.tenants || [],
+            currentTenantId: msg.data.currentTenantId || null,
           };
           
           flushSync(() => {
@@ -367,6 +370,19 @@ const Login: React.FC = () => {
             tokenType: msg.data.tokenType || 'Bearer',
             expiresIn: msg.data.expiresIn,
             expiresAt: msg.data.expiresAt,
+            // 保存用户信息和租户信息，供请求拦截器使用
+            currentUser: msg.data.userInfo ? {
+              userId: msg.data.userInfo.userId,
+              username: msg.data.userInfo.username,
+              nickname: msg.data.userInfo.nickname,
+              avatar: msg.data.userInfo.avatar,
+              email: msg.data.userInfo.email,
+              phone: msg.data.userInfo.phone,
+              gender: msg.data.userInfo.gender,
+              isAdmin: msg.data.userInfo.isAdmin,
+              tenants: msg.data.tenants || [],
+              currentTenantId: msg.data.currentTenantId || null,
+            } : null,
           };
           localStorage.setItem('tokenInfo', JSON.stringify(tokenInfo));
         }
