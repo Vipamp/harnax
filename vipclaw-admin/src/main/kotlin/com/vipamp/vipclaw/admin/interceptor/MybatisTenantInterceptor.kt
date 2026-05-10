@@ -115,7 +115,19 @@ class MybatisTenantInterceptor : Interceptor {
         val newSql = addTenantIdWhereCondition(originalSql, tenantId)
 
         if (newSql != originalSql) {
-            updateBoundSql(invocation, mappedStatement, newSql, boundSql)
+            // 不修改 MappedStatement，而是直接替换 invocation 中的 BoundSql
+            val newBoundSql = BoundSql(
+                mappedStatement.configuration,
+                newSql,
+                boundSql.parameterMappings,
+                boundSql.parameterObject,
+            )
+
+            // 替换 invocation 中的 BoundSql（如果是通过args传递的）
+            if (args.size > 5) {
+                args[5] = newBoundSql
+            }
+
             log.debug("[MyBatis租户拦截器] SELECT SQL改写: {}", newSql)
         }
     }
@@ -149,7 +161,9 @@ class MybatisTenantInterceptor : Interceptor {
         val newSql = addTenantIdWhereCondition(originalSql, tenantId)
 
         if (newSql != originalSql) {
-            updateBoundSql(invocation, mappedStatement, newSql, boundSql)
+            // 不修改 MappedStatement，直接修改 BoundSql 的 sql 字段
+            val metaObject = SystemMetaObject.forObject(boundSql)
+            metaObject.setValue("sql", newSql)
             log.debug("[MyBatis租户拦截器] UPDATE/DELETE SQL改写: {}", newSql)
         }
     }
@@ -193,15 +207,9 @@ class MybatisTenantInterceptor : Interceptor {
             val beforeWhere = sql.substring(0, whereIndex + 5) // "WHERE".length = 5
             val afterWhere = sql.substring(whereIndex + 5).trim()
 
-            // 检查 afterWhere 是否以 AND 开头（MyBatis 动态 SQL 常见情况）
-            val trimmedAfterWhere = afterWhere.uppercase()
-            if (trimmedAfterWhere.startsWith("AND ") || trimmedAfterWhere.startsWith("AND\t") || trimmedAfterWhere.startsWith("AND\n")) {
-                // 如果已经有 AND，直接在 WHERE 后插入 tenant_id 条件
-                "$beforeWhere tenant_id = $tenantId $afterWhere"
-            } else {
-                // 如果没有 AND，需要添加
-                "$beforeWhere tenant_id = $tenantId AND $afterWhere"
-            }
+            // 直接在 WHERE 后插入 tenant_id = ? 条件，保留原有的 AND 连接符
+            // 这样不会破坏 MyBatis 的参数映射
+            "$beforeWhere tenant_id = $tenantId AND $afterWhere"
         } else {
             // 没有 WHERE 子句，需要添加
             when {
