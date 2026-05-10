@@ -57,13 +57,17 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO session (
-        session_id, title, session_description, agent_id, model_id,
-        enable_think, enable_search, enable_plan,
-        system_prompt, status, is_public, creator, active, create_time, update_time
+            session_id, title, session_description, agent_id,
+            name, description, system_prompt, model_id,
+            enable_think, enable_search, enable_plan,
+            mcp_list, skill_list, owner,
+            status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{sessionId}, #{title}, #{sessionDescription}, #{agentId}, #{modelId},
-        #{enableThink}, #{enableSearch}, #{enablePlan},
-        #{systemPrompt}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+            #{sessionId}, #{title}, #{sessionDescription}, #{agentId},
+            #{name}, #{description}, #{systemPrompt}, #{modelId},
+            #{enableThink}, #{enableSearch}, #{enablePlan},
+            #{mcpList}, #{skillList}, #{owner},
+            #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 

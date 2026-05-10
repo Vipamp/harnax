@@ -253,7 +253,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
             }}>
               <ClockCircleOutlined style={{ fontSize: '16px', color: '#fff' }} />
             </div>
-            <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--vip-text-primary)', lineHeight: '1.2' }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--vip-text-primary)', lineHeight: '1.2' }}>
               {intl.formatMessage({ id: 'pages.job.previewExecution', defaultMessage: '预览执行时间' })}
             </div>
           </div>
@@ -262,7 +262,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
         onCancel={() => setPreviewModalVisible(false)}
         footer={[
           <Button key="close" onClick={() => setPreviewModalVisible(false)}
-            style={{ fontSize: '13px', fontWeight: 500, height: '36px', padding: '6px 24px', borderRadius: '6px' }}>
+            style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
             {intl.formatMessage({ id: 'pages.common.close', defaultMessage: 'Close' })}
           </Button>,
         ]}
@@ -278,7 +278,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
                 border: `1px solid ${index === 0 ? 'rgba(82, 196, 26, 0.3)' : 'rgba(79, 110, 247, 0.2)'}`,
                 borderRadius: '8px',
               }}>
-                <ClockCircleOutlined style={{ marginRight: 12, fontSize: '16px', color: index === 0 ? 'var(--vip-success)' : 'var(--vip-primary)' }} />
+                <ClockCircleOutlined style={{ marginRight: 12, fontSize: '14px', color: index === 0 ? 'var(--vip-success)' : 'var(--vip-primary)' }} />
                 <div>
                   <Tag color={index === 0 ? 'green' : 'blue'} style={{ marginRight: 8 }}>
                     {index === 0
@@ -286,7 +286,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
                       : intl.formatMessage({ id: 'pages.job.executionTimes', defaultMessage: '第 {count} 次' }, { count: index + 1 })
                     }
                   </Tag>
-                  <Text strong style={{ fontSize: '15px' }}>{time}</Text>
+                  <Text strong style={{ fontSize: '13px' }}>{time}</Text>
                 </div>
               </div>
             ))}
@@ -379,12 +379,7 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
           <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.job.description.placeholder', defaultMessage: '请输入任务描述（可选）' })} />
         </Form.Item>
 
-        <Form.Item label={intl.formatMessage({ id: 'pages.job.isPublic', defaultMessage: '是否公开' })}
-          extra={
-            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, !isUpdate) && isUpdate
-              ? intl.formatMessage({ id: 'pages.job.isPublic.disabled', defaultMessage: '您没有权限修改此设置（已公开的实体不能改为非公开）' })
-              : intl.formatMessage({ id: 'pages.job.isPublic.extra', defaultMessage: '公开后其他用户也可以查看此定时任务' })
-          }>
+        <Form.Item label={intl.formatMessage({ id: 'pages.job.isPublic', defaultMessage: '是否公开' })}>
           <Switch checked={isPublic} onChange={setIsPublic}
             checkedChildren={intl.formatMessage({ id: 'pages.job.isPublic.public', defaultMessage: '公开' })}
             unCheckedChildren={intl.formatMessage({ id: 'pages.job.isPublic.private', defaultMessage: '私有' })}

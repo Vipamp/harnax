@@ -172,7 +172,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.model.provider.name.placeholder', defaultMessage: 'Please enter provider name' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.model.provider.name.placeholder', defaultMessage: 'Please enter provider name' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item
@@ -183,6 +186,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
             placeholder={intl.formatMessage({ id: 'pages.model.provider.description.placeholder', defaultMessage: 'Please enter provider description' })}
             autoSize={{ minRows: 1, maxRows: 6 }}
             maxLength={500}
+            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -191,7 +195,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.model.apiKey', defaultMessage: 'API Key' })}
           extra={values ? intl.formatMessage({ id: 'pages.model.apiKeyHint', defaultMessage: 'Leave blank to keep unchanged' }) : ''}
         >
-          <Input.Password placeholder={intl.formatMessage({ id: 'pages.model.apiKey.placeholder', defaultMessage: 'Please enter API Key' })} />
+          <Input.Password 
+            placeholder={intl.formatMessage({ id: 'pages.model.apiKey.placeholder', defaultMessage: 'Please enter API Key' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item
@@ -205,7 +212,10 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
             }
           ]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.model.apiUrl.placeholder', defaultMessage: 'e.g.: https://dashscope.aliyuncs.com/compatible-mode/v1' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.model.apiUrl.placeholder', defaultMessage: 'e.g.: https://dashscope.aliyuncs.com/compatible-mode/v1' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item
@@ -213,11 +223,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}
           valuePropName="checked"
           initialValue={false}
-          extra={
-            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
-              ? intl.formatMessage({ id: 'pages.model.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
-              : intl.formatMessage({ id: 'pages.model.providerPublicHint', defaultMessage: 'Other users can view this provider after making it public' })
-          }
         >
           <Switch
             checkedChildren={intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}

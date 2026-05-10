@@ -53,10 +53,12 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         form.resetFields();
         form.setFieldsValue({
           providerId: providerId,
+          modelType: 'chat',
+          price: 0,
           status: 1,
           isPublic: false,
         });
-        setModelType(undefined);
+        setModelType('chat');
       }
     }
   }, [visible, values, providerId, form]);
@@ -174,7 +176,11 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         </Form.Item>
 
         <Form.Item name="description" label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}>
-          <Input.TextArea rows={2} placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })} />
+          <Input.TextArea 
+            rows={2} 
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         {modelType === 'chat' && (
@@ -220,12 +226,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         </Form.Item>
 
         <Form.Item name="isPublic" label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}
-          valuePropName="checked" initialValue={false}
-          extra={
-            isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
-              ? intl.formatMessage({ id: 'pages.model.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
-              : intl.formatMessage({ id: 'pages.model.publicHint', defaultMessage: 'Other users can view this model after making it public' })
-          }>
+          valuePropName="checked" initialValue={false}>
           <Switch
             checkedChildren={intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}
             unCheckedChildren={intl.formatMessage({ id: 'pages.model.private', defaultMessage: 'Private' })}

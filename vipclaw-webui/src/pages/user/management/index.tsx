@@ -32,20 +32,32 @@ const UserManagement: React.FC = () => {
   const [tenantModalVisible, setTenantModalVisible] = useState<boolean>(false);
   const [selectedUserId, setSelectedUserId] = useState<number>(0);
   const [currentUserTenants, setCurrentUserTenants] = useState<number>(0);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    keyword: '',
+    status: undefined as number | undefined,
+    tenantId: undefined as number | undefined,
+  });
 
   const intl = useIntl();
   const [messageApi, contextHolder] = message.useMessage();
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { keyword: kw, status: st, tenantId: tid } = filtersRef.current;
+    
     setTableLoading(true);
     try {
       const res = await getUserPage({
         pageNum: page,
         pageSize: size,
-        keyword: keyword || undefined,
-        status: status,
-        tenantId: tenantId,
+        keyword: kw || undefined,
+        status: st,
+        tenantId: tid,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -60,13 +72,61 @@ const UserManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadDataWithFilters(pageNum, pageSize);
   }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    filtersRef.current.keyword = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatus(value);
+    filtersRef.current.status = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 租户筛选改变 */
+  const handleTenantIdChange = (value: number | undefined) => {
+    setTenantId(value);
+    filtersRef.current.tenantId = value;
+    setPageNum(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setKeyword('');
+    setStatus(undefined);
+    setTenantId(undefined);
+    filtersRef.current = {
+      keyword: '',
+      status: undefined,
+      tenantId: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 切换用户状态 */
@@ -85,7 +145,7 @@ const UserManagement: React.FC = () => {
             defaultMessage: '更新成功',
           }),
         );
-        loadData();
+        loadDataWithFilters();
       } else {
         const errorMsg = response.message || intl.formatMessage({
           id: 'pages.user.management.updateFailed',
@@ -138,7 +198,7 @@ const UserManagement: React.FC = () => {
                 defaultMessage: '删除成功',
               }),
             );
-            loadData();
+            loadDataWithFilters();
           } else {
             const errorMsg = response.message || intl.formatMessage({
               id: 'pages.user.management.deleteFailed',
@@ -349,14 +409,9 @@ const UserManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => {
-          setKeyword('');
-          setStatus(undefined);
-          setTenantId(undefined);
-          setPageNum(1);
-          loadData(1);
-        }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({
           id: 'pages.common.search',
           defaultMessage: 'Search',
@@ -380,8 +435,7 @@ const UserManagement: React.FC = () => {
       >
         <SearchInput
           value={keyword}
-          onChange={setKeyword}
-          onSearch={handleSearch}
+          onChange={handleKeywordChange}
           placeholder={intl.formatMessage({
             id: 'pages.user.management.search.placeholder',
             defaultMessage: '搜索用户名或邮箱',
@@ -390,7 +444,7 @@ const UserManagement: React.FC = () => {
         />
         <FilterSelect
           value={status}
-          onChange={setStatus}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({
             id: 'pages.user.management.status.filter.placeholder',
             defaultMessage: '状态筛选',
@@ -454,7 +508,7 @@ const UserManagement: React.FC = () => {
                 defaultMessage: 'Created successfully',
               }));
               setCreateModalVisible(false);
-              loadData();
+              loadDataWithFilters();
             } else {
               messageApi.error(res.message || intl.formatMessage({
                 id: 'pages.user.management.createFailed',
@@ -483,7 +537,7 @@ const UserManagement: React.FC = () => {
               }));
               setUpdateModalVisible(false);
               setCurrentRow(undefined);
-              loadData();
+              loadDataWithFilters();
             } catch (error) {
               messageApi.error(intl.formatMessage({
                 id: 'pages.user.management.updateFailed',

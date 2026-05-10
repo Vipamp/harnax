@@ -2748,3 +2748,44 @@ html.dark {
     margin-bottom: 18px !important;
   }
 }
+
+/* ===== Tooltip 全局样式 ===== */
+.ant-tooltip {
+  /* 默认主题（浅色模式） */
+  .ant-tooltip-inner {
+    background: rgba(255, 255, 255, 0.95) !important;  // ✅ 浅色背景
+    color: var(--vip-text-primary) !important;  // ✅ 使用主题文字颜色
+    border-radius: 8px !important;
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+    word-break: break-word !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    border: 1px solid var(--vip-border) !important;  // ✅ 添加边框
+  }
+  
+  .ant-tooltip-arrow {
+    &::before {
+      background: rgba(255, 255, 255, 0.95) !important;  // ✅ 浅色箭头
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    }
+  }
+}
+
+/* 暗黑模式下的 Tooltip */
+html.dark .ant-tooltip {
+  .ant-tooltip-inner {
+    background: rgba(40, 40, 55, 0.95) !important;  // ✅ 深色背景
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+  }
+  
+  .ant-tooltip-arrow {
+    &::before {
+      background: rgba(40, 40, 55, 0.95) !important;  // ✅ 深色箭头
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+    }
+  }
+}

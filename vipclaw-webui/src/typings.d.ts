@@ -398,10 +398,12 @@ message?: string;
    */
   export type ModelProviderItem = {
     id?: number;
+    type?: string;
     name: string;
     description?: string;
     displayName?: string;
     apiKey?: string;
+    apiUrl?: string;
     baseUrl?: string;
     status?: number;
     isPublic?: number;

@@ -19,7 +19,7 @@ import {
   Badge,
   List,
 } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from '@umijs/max';
 import {
   createAgent,
@@ -43,8 +43,10 @@ import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/comp
 import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
 import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
+import CardPagination from '@/components/CardPagination';
+import EntityCard, { TagItem } from '@/components/EntityCard';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 // 智能体卡片组件
 const AgentCard: React.FC<{
@@ -60,486 +62,242 @@ const AgentCard: React.FC<{
   screenSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
 }> = ({ item, index, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission, screenSize = 'lg' }) => {
   const intl = useIntl();
-  const [isHovered, setIsHovered] = useState(false);
   const mcpCount = item.mcpList?.length || 0;
   const skillCount = item.skillList?.length || 0;
   const sessionCount = item.sessionCount || 0;
 
-  // 响应式配置
-  const responsiveConfig = {
-    xs: { 
-      padding: '12px', 
-      iconSize: 36, 
-      titleSize: 'clamp(12px, 2.5vw, 13px)', 
-      descSize: 'clamp(9px, 2vw, 10px)', 
-      tagSize: 'clamp(8px, 1.8vw, 9px)', 
-      statIconSize: 20, 
-      statLabelSize: 'clamp(8px, 1.8vw, 9px)', 
-      statNumSize: 'clamp(10px, 2vw, 11px)', 
-      minHeight: 200,
-      infoSize: 'clamp(8px, 1.8vw, 9px)' 
+  // 构建 tags：模型名称和价格
+  const tags: TagItem[] = [];
+  if (item.modelName) {
+    tags.push({
+      label: item.modelName,
+      color: 'blue',
+      icon: <ApiOutlined />,
+    });
+  }
+  if (item.modelPrice !== undefined && item.modelPrice !== null) {
+    tags.push({
+      label: `¥${item.modelPrice}/M`,
+      color: 'cyan',
+    });
+  }
+
+  // 构建 stats：MCP、Skill、Session 统计（带 Popover 列表）
+  const stats = [
+    {
+      label: 'MCPs',
+      value: mcpCount,
+      color: '#4f6ef7',
+      popoverContent: (
+        <div style={{ maxWidth: 320 }}>
+          {mcpCount === 0 ? (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.mcp.noConfig', defaultMessage: 'No MCP configuration' })}</Text>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={item.mcpList || []}
+              renderItem={(mcp) => (
+                <List.Item 
+                  style={{ 
+                    padding: '8px 12px',
+                    background: 'var(--vip-bg-container)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => window.open(`/context/mcp/detail/${mcp.mcpId}`, '_blank')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-primary-light)';
+                    e.currentTarget.style.paddingLeft = '16px';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-bg-container)';
+                    e.currentTarget.style.paddingLeft = '12px';
+                  }}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: 'var(--vip-primary)',
+                        flexShrink: 0,
+                      }} />
+                      <Text strong style={{ fontSize: '12px', color: 'var(--vip-text-primary)' }}>
+                        {mcp.mcpName || `MCP #${mcp.mcpId}`}
+                      </Text>
+                    </div>
+                    {mcp.mcpDescription && (
+                      <div style={{ paddingLeft: 12 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
+                          {mcp.mcpDescription}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+      ),
     },
-    sm: { 
-      padding: '14px', 
-      iconSize: 40, 
-      titleSize: 'clamp(12px, 2.2vw, 13px)', 
-      descSize: 'clamp(10px, 2vw, 11px)', 
-      tagSize: 'clamp(9px, 1.8vw, 10px)', 
-      statIconSize: 22, 
-      statLabelSize: 'clamp(9px, 1.8vw, 10px)', 
-      statNumSize: 'clamp(11px, 2vw, 12px)', 
-      minHeight: 210,
-      infoSize: 'clamp(9px, 1.8vw, 10px)' 
+    {
+      label: 'Skills',
+      value: skillCount,
+      color: '#52c41a',
+      popoverContent: (
+        <div style={{ maxWidth: 320 }}>
+          {skillCount === 0 ? (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.skill.noConfig', defaultMessage: 'No skill configuration' })}</Text>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={item.skillList || []}
+              renderItem={(skill) => (
+                <List.Item 
+                  style={{ 
+                    padding: '8px 12px',
+                    background: 'var(--vip-bg-container)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => window.open(`/context/skill/detail/${skill.skillId}`, '_blank')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-primary-light)';
+                    e.currentTarget.style.paddingLeft = '16px';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-bg-container)';
+                    e.currentTarget.style.paddingLeft = '12px';
+                  }}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: 'var(--vip-success)',
+                        flexShrink: 0,
+                      }} />
+                      <Text strong style={{ fontSize: '12px', color: 'var(--vip-text-primary)' }}>
+                        {skill.skillName || `Skill #${skill.skillId}`}
+                      </Text>
+                    </div>
+                    {skill.repositoryName && (
+                      <div style={{ paddingLeft: 12, marginBottom: 2 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
+                          仓库: {skill.repositoryName}
+                        </Text>
+                      </div>
+                    )}
+                    {skill.skillDescription && (
+                      <div style={{ paddingLeft: 12 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
+                          {skill.skillDescription}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+      ),
     },
-    md: { 
-      padding: '14px', 
-      iconSize: 42, 
-      titleSize: 'clamp(13px, 2vw, 14px)', 
-      descSize: 'clamp(10px, 1.8vw, 11px)', 
-      tagSize: 'clamp(9px, 1.6vw, 10px)', 
-      statIconSize: 24, 
-      statLabelSize: 'clamp(9px, 1.6vw, 10px)', 
-      statNumSize: 'clamp(11px, 1.8vw, 12px)', 
-      minHeight: 220,
-      infoSize: 'clamp(9px, 1.6vw, 10px)' 
+    {
+      label: 'Sessions',
+      value: sessionCount,
+      color: '#5c7cff',
+      popoverContent: (
+        <div style={{ maxWidth: 350 }}>
+          {!item.sessionList || item.sessionList.length === 0 ? (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.session.noSession', defaultMessage: 'No sessions' })}</Text>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={item.sessionList}
+              renderItem={(session) => (
+                <List.Item
+                  style={{ 
+                    padding: '8px 12px',
+                    background: 'var(--vip-bg-container)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onClick={() => window.open(`/agent/session?id=${session.id}`, '_blank')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-primary-light)';
+                    e.currentTarget.style.paddingLeft = '16px';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-bg-container)';
+                    e.currentTarget.style.paddingLeft = '12px';
+                  }}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: 'var(--vip-info)',
+                        flexShrink: 0,
+                      }} />
+                      <Text strong style={{ fontSize: '12px', color: 'var(--vip-text-primary)' }}>
+                        {session.title || `会话 #${session.id}`}
+                      </Text>
+                    </div>
+                    {session.sessionDescription && (
+                      <div style={{ paddingLeft: 12 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
+                          {session.sessionDescription}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+      ),
+      popoverMaxWidth: 350,
     },
-    lg: { 
-      padding: '16px', 
-      iconSize: 44, 
-      titleSize: 'clamp(13px, 1.8vw, 14px)', 
-      descSize: 'clamp(10px, 1.6vw, 11px)', 
-      tagSize: 'clamp(9px, 1.4vw, 10px)', 
-      statIconSize: 24, 
-      statLabelSize: 'clamp(9px, 1.4vw, 10px)', 
-      statNumSize: 'clamp(11px, 1.6vw, 12px)', 
-      minHeight: 230,
-      infoSize: 'clamp(10px, 1.4vw, 11px)' 
-    },
-    xl: { 
-      padding: '16px', 
-      iconSize: 44, 
-      titleSize: 'clamp(13px, 1.5vw, 14px)', 
-      descSize: 'clamp(10px, 1.3vw, 11px)', 
-      tagSize: 'clamp(9px, 1.2vw, 10px)', 
-      statIconSize: 24, 
-      statLabelSize: 'clamp(9px, 1.2vw, 10px)', 
-      statNumSize: 'clamp(11px, 1.3vw, 12px)', 
-      minHeight: 230,
-      infoSize: 'clamp(10px, 1.2vw, 11px)' 
-    },
-    xxl: { 
-      padding: '18px', 
-      iconSize: 48, 
-      titleSize: 'clamp(14px, 1.2vw, 15px)', 
-      descSize: 'clamp(11px, 1vw, 12px)', 
-      tagSize: 'clamp(10px, 0.9vw, 11px)', 
-      statIconSize: 26, 
-      statLabelSize: 'clamp(10px, 0.9vw, 11px)', 
-      statNumSize: 'clamp(12px, 1vw, 13px)', 
-      minHeight: 240,
-      infoSize: 'clamp(10px, 0.9vw, 11px)' 
-    },
-  };
-  const config = responsiveConfig[screenSize];
+  ];
 
   return (
-    <Card
-      style={{
-        borderRadius: '12px',
-        border: 'none',
-        boxShadow: isHovered 
-          ? '0 12px 32px rgba(114, 46, 209, 0.15)' 
-          : '0 4px 20px rgba(0,0,0,0.06)',
-        overflow: 'hidden',
-        position: 'relative',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: isHovered ? 'translateY(-6px)' : 'translateY(0)',
-        animation: `vipSlideUp 0.5s ease-out ${index * 80}ms both`,
-        minHeight: config.minHeight,
-        display: 'flex',
-        flexDirection: 'column',
+    <EntityCard
+      entity={item}
+      index={index}
+      icon={<RobotOutlined />}
+      name={item.name}
+      tagLabel="" // 智能体不显示 type 标签
+      tagColor="#4f6ef7"
+      tags={tags}
+      description={item.description}
+      status={item.status ?? 1}
+      isPublic={item.isPublic}
+      creator={item.creator}
+      createTime={item.createTime?.replace('T', ' ')}
+      stats={stats}
+      actions={{
+        showTest: false,
+        showEdit: hasOperationPermission(isAdmin, currentUser, item.creator),
+        showDelete: hasOperationPermission(isAdmin, currentUser, item.creator),
+        onEdit: () => onEdit(item),
+        onDelete: () => onDelete(item.id!),
       }}
-      styles={{ body: { padding: 0, height: '100%', display: 'flex', flexDirection: 'column' } }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {/* 顶部类型标识条 - 带渐变动画 */}
-      <div
-        style={{
-          height: '4px',
-          background: `linear-gradient(90deg, var(--vip-primary) 0%, var(--vip-primary-hover) 50%, var(--vip-primary) 100%)`,
-          backgroundSize: '200% 100%',
-          animation: isHovered ? 'gradientShift 2s linear infinite' : 'none',
-        }}
-      />
-
-      <div style={{ padding: config.padding, flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* 头部：图标 + 名称 + 状态 + 标签 */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-          <div
-            style={{
-              width: config.iconSize,
-              height: config.iconSize,
-              borderRadius: '12px',
-              background: isHovered 
-                ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)' 
-                : 'var(--vip-primary-light)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: config.iconSize * 0.45,
-              color: isHovered ? '#fff' : 'var(--vip-primary)',
-              flexShrink: 0,
-              transition: 'all 0.3s ease',
-              boxShadow: isHovered ? '0 8px 20px rgba(114, 46, 209, 0.3)' : 'none',
-            }}
-          >
-            <RobotOutlined />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
-              <Text strong style={{ fontSize: config.titleSize, color: 'var(--vip-text-primary)' }}>
-                {item.name}
-              </Text>
-            </div>
-            {/* 对话模型标签 */}
-            {item.modelName && (
-              <div style={{ display: 'flex', gap: 4, marginBottom: 4, flexWrap: 'wrap' }}>
-                <Tag color="blue" icon={<ApiOutlined />} style={{ fontSize: config.tagSize }}>
-                  {item.modelName}
-                </Tag>
-                {item.modelPrice !== undefined && item.modelPrice !== null && (
-                  <Tag color="cyan" style={{ fontSize: config.tagSize }}>
-                    ¥{item.modelPrice}/M
-                  </Tag>
-                )}
-              </div>
-            )}
-          </div>
-          {/* 状态开关 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-              <Switch
-                checked={item.status === 1}
-                onChange={(checked) => onToggleStatus(item.id!, checked ? 1 : 0)}
-                checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
-                unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-                style={{
-                  backgroundColor: item.status === 1 ? '#4f6ef7' : '#d9d9d9',
-                }}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* 描述 */}
-        <Paragraph
-          ellipsis={{ rows: 2 }}
-          style={{ margin: '0 0 12px', color: 'var(--vip-text-secondary)', fontSize: config.descSize, minHeight: 32, lineHeight: 1.5 }}
-        >
-          {item.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}
-        </Paragraph>
-
-        {/* MCP、Skill 和 Session 统计 */}
-        <div style={{ 
-          display: 'flex', 
-          gap: 10, 
-          marginBottom: 12,
-          padding: '8px 10px',
-          background: 'var(--vip-bg-layout)',
-          borderRadius: '8px',
-        }}>
-          {/* MCP 统计 */}
-          <Popover
-            content={
-              <div style={{ maxWidth: 320 }}>
-                {mcpCount === 0 ? (
-                  <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.mcp.noConfig', defaultMessage: 'No MCP configuration' })}</Text>
-                  </div>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={item.mcpList || []}
-                    renderItem={(mcp, index) => (
-                        <List.Item 
-                          style={{ 
-                            padding: '8px 12px',
-                            background: 'var(--vip-bg-container)',
-                            transition: 'all 0.2s ease',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => {
-                            // 在新窗口打开 MCP 详情页
-                            window.open(`/context/mcp/detail/${mcp.mcpId}`, '_blank');
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-primary-light)';
-                            e.currentTarget.style.paddingLeft = '16px';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-bg-container)';
-                            e.currentTarget.style.paddingLeft = '12px';
-                          }}
-                        >
-                          <div style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <div style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                background: 'var(--vip-primary)',
-                                flexShrink: 0,
-                              }} />
-                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
-                                {mcp.mcpName || `MCP #${mcp.mcpId}`}
-                              </Text>
-                            </div>
-                            {mcp.mcpDescription && (
-                              <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
-                                  {mcp.mcpDescription}
-                                </Text>
-                              </div>
-                            )}
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                )}
-              </div>
-            }
-            title={null}
-            trigger="hover"
-            placement="bottom"
-            overlayStyle={{ maxWidth: 320 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <div style={{
-                width: config.statIconSize, height: config.statIconSize,
-                borderRadius: '6px',
-                background: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-hover) 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <ApiOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
-              </div>
-              <div>
-                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>MCPs</Text>
-                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-primary)' }}>{mcpCount}</Text>
-              </div>
-            </div>
-          </Popover>
-
-          <div style={{ width: 1, background: 'var(--vip-border)' }} />
-
-          {/* Skill 统计 */}
-          <Popover
-            content={
-              <div style={{ maxWidth: 320 }}>
-                {skillCount === 0 ? (
-                  <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.skill.noConfig', defaultMessage: 'No skill configuration' })}</Text>
-                  </div>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={item.skillList || []}
-                    renderItem={(skill, index) => (
-                        <List.Item 
-                          style={{ 
-                            padding: '8px 12px',
-                            background: 'var(--vip-bg-container)',
-                            transition: 'all 0.2s ease',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => {
-                            // 在新窗口打开 Skill 详情页
-                            window.open(`/context/skill/detail/${skill.skillId}`, '_blank');
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-primary-light)';
-                            e.currentTarget.style.paddingLeft = '16px';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-bg-container)';
-                            e.currentTarget.style.paddingLeft = '12px';
-                          }}
-                        >
-                          <div style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <div style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                background: 'var(--vip-success)',
-                                flexShrink: 0,
-                              }} />
-                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
-                                {skill.skillName || `Skill #${skill.skillId}`}
-                              </Text>
-                            </div>
-                            {skill.repositoryName && (
-                              <div style={{ paddingLeft: 12, marginBottom: 2 }}>
-                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-tertiary)' }}>
-                                  仓库: {skill.repositoryName}
-                                </Text>
-                              </div>
-                            )}
-                            {skill.skillDescription && (
-                              <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
-                                  {skill.skillDescription}
-                                </Text>
-                              </div>
-                            )}
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                )}
-              </div>
-            }
-            title={null}
-            trigger="hover"
-            placement="bottom"
-            overlayStyle={{ maxWidth: 320 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <div style={{
-                width: config.statIconSize, height: config.statIconSize,
-                borderRadius: '6px',
-                background: 'linear-gradient(135deg, var(--vip-success) 0%, var(--vip-success-hover) 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <ToolOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
-              </div>
-              <div>
-                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>Skills</Text>
-                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-success)' }}>{skillCount}</Text>
-              </div>
-            </div>
-          </Popover>
-
-          <div style={{ width: 1, background: 'var(--vip-border)' }} />
-
-          {/* Session 统计 */}
-          <Popover
-            content={
-              <div style={{ maxWidth: 350 }}>
-                {!item.sessionList || item.sessionList.length === 0 ? (
-                  <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                    <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.session.noSession', defaultMessage: 'No sessions' })}</Text>
-                  </div>
-                ) : (
-                  <List
-                    size="small"
-                    dataSource={item.sessionList}
-                    renderItem={(session, index) => (
-                        <List.Item
-                          style={{ 
-                            padding: '8px 12px',
-                            background: 'var(--vip-bg-container)',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                          }}
-                          onClick={() => {
-                            // 在新窗口打开会话页面
-                            window.open(`/agent/session?id=${session.id}`, '_blank');
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-primary-light)';
-                            e.currentTarget.style.paddingLeft = '16px';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'var(--vip-bg-container)';
-                            e.currentTarget.style.paddingLeft = '12px';
-                          }}
-                        >
-                          <div style={{ width: '100%' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                              <div style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                background: 'var(--vip-info)',
-                                flexShrink: 0,
-                              }} />
-                              <Text strong style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-primary)' }}>
-                                {session.title || `会话 #${session.id}`}
-                              </Text>
-                            </div>
-                            {session.sessionDescription && (
-                              <div style={{ paddingLeft: 12 }}>
-                                <Text style={{ fontSize: config.tagSize, color: 'var(--vip-text-secondary)' }}>
-                                  {session.sessionDescription}
-                                </Text>
-                              </div>
-                            )}
-                          </div>
-                        </List.Item>
-                      )}
-                    />
-                )}
-              </div>
-            }
-            title={null}
-            trigger="hover"
-            placement="bottom"
-            overlayStyle={{ maxWidth: 350 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <div style={{
-                width: config.statIconSize, height: config.statIconSize,
-                borderRadius: '6px',
-                background: 'linear-gradient(135deg, #5c7cff 0%, #94aaff 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <MessageOutlined style={{ fontSize: config.statIconSize * 0.5, color: '#fff' }} />
-              </div>
-              <div>
-                <Text style={{ fontSize: config.statLabelSize, color: 'var(--vip-text-tertiary)', display: 'block' }}>Sessions</Text>
-                <Text strong style={{ fontSize: config.statNumSize, color: 'var(--vip-info)' }}>{sessionCount}</Text>
-              </div>
-            </div>
-          </Popover>
-        </div>
-
-        {/* 底部信息栏 */}
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 6, 
-          borderTop: '1px solid var(--vip-border)', 
-          paddingTop: '10px',
-          marginTop: 'auto',
-        }}>
-          {item.isPublic === 1 ? (
-            <Tag color="blue" style={{ margin: 0, fontSize: config.infoSize }}>
-              {intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}
-            </Tag>
-          ) : (
-            <Tag style={{ margin: 0, fontSize: config.infoSize, color: 'var(--vip-text-tertiary)' }}>
-              {intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
-            </Tag>
-          )}
-          <Text type="secondary" style={{ fontSize: config.infoSize }}>
-            {item.createTime?.replace('T', ' ')}
-          </Text>
-          {item.creator && (
-            <Text type="secondary" style={{ fontSize: config.infoSize, color: 'var(--vip-text-tertiary)' }}>
-              {item.creator}
-            </Text>
-          )}
-          <div style={{ flex: 1 }} />
-          {hasOperationPermission(isAdmin, currentUser, item.creator) && (
-            <Space size={8}>
-              <EditButton onClick={() => onEdit(item)} />
-              <DeleteButton onConfirm={() => onDelete(item.id!)} />
-            </Space>
-          )}
-        </div>
-      </div>
-    </Card>
+      onToggle={onToggleStatus}
+    />
   );
 };
 
@@ -552,9 +310,19 @@ const AgentManagement: React.FC = () => {
   const [data, setData] = useState<API.AgentItem[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [pageNum, setPageNum] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(12);
+  const [pageSize, setPageSize] = useState<number>(8); // 默认第一个选项：4 * 2 = 8
+  const [cardsPerRow, setCardsPerRow] = useState<number>(4);
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    keyword: '',
+    status: undefined as number | undefined,
+  });
   const [screenSize, setScreenSize] = useState<'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl'>('lg');
 
   // 获取当前用户信息
@@ -585,15 +353,17 @@ const AgentManagement: React.FC = () => {
     return () => window.removeEventListener('resize', updateScreenSize);
   }, []);
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { keyword: kw, status: st } = filtersRef.current;
+    
     setLoading(true);
     try {
       const res = await getAgentPage({
         pageNum: page,
         pageSize: size,
-        name: keyword || undefined,
-        status: status,
+        name: kw || undefined,
+        status: st,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -605,13 +375,51 @@ const AgentManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [pageNum, pageSize, status]);
+    loadDataWithFilters(pageNum, pageSize);
+  }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    filtersRef.current.keyword = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatus(value);
+    filtersRef.current.status = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setKeyword('');
+    setStatus(undefined);
+    filtersRef.current = {
+      keyword: '',
+      status: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 删除智能体 */
@@ -627,7 +435,7 @@ const AgentManagement: React.FC = () => {
           const response = await deleteAgent(id);
           if (response.code === 200) {
             messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadData();
+            loadDataWithFilters()
           } else {
             const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
@@ -674,8 +482,9 @@ const AgentManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => { setKeyword(''); setStatus(undefined); setPageNum(1); loadData(1); }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
         extra={
@@ -690,14 +499,13 @@ const AgentManagement: React.FC = () => {
       >
         <SearchInput
           value={keyword}
-          onChange={setKeyword}
-          onSearch={handleSearch}
+          onChange={handleKeywordChange}
           placeholder={intl.formatMessage({ id: 'pages.placeholder.search', defaultMessage: 'Please enter to search' }) + intl.formatMessage({ id: 'menu.agent.management', defaultMessage: 'Agent Management' })}
           width="auto"
         />
         <FilterSelect
           value={status}
-          onChange={setStatus}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({ id: 'pages.placeholder.statusFilter', defaultMessage: 'Status filter' })}
           width="auto"
           options={[
@@ -714,6 +522,7 @@ const AgentManagement: React.FC = () => {
         minAspectRatio={1.4}
         gutter={[16, 16]}
         loading={loading}
+        onCardsPerRowChange={setCardsPerRow}
         emptyText={
           <div style={{ 
             display: 'flex', 
@@ -775,6 +584,19 @@ const AgentManagement: React.FC = () => {
           />
         )}
       />
+      
+      {/* 分页组件 */}
+      <CardPagination
+        current={pageNum}
+        pageSize={pageSize}
+        total={total}
+        cardsPerRow={cardsPerRow}
+        onChange={(page, size) => {
+          setPageNum(page);
+          setPageSize(size);
+          loadDataWithFilters(page, size);
+        }}
+      />
 
       {/* 新建智能体弹窗 */}
       <CreateForm
@@ -786,7 +608,7 @@ const AgentManagement: React.FC = () => {
             if (response.code === 200) {
               messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
-              loadData();
+              loadDataWithFilters()
             } else {
               messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
             }
@@ -812,7 +634,7 @@ const AgentManagement: React.FC = () => {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
-                loadData();
+                loadDataWithFilters()
               } else {
                 messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
               }

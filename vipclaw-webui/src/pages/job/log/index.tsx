@@ -33,21 +33,34 @@ const JobLog: React.FC = () => {
   );
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    jobName: searchParams.get('jobName') || '',
+    jobId: searchParams.get('jobId') ? Number(searchParams.get('jobId')) : undefined as number | undefined,
+    status: undefined as number | undefined,
+    dateRange: null as [dayjs.Dayjs | null, dayjs.Dayjs | null] | null,
+  });
 
   const [messageApi, contextHolder] = message.useMessage();
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { jobName: jn, jobId: jid, status: st, dateRange: dr } = filtersRef.current;
+    
     setTableLoading(true);
     try {
       const res = await getJobLogPage({
         pageNum: page,
         pageSize: size,
-        jobId: jobId,
-        jobName: jobName || undefined,
-        status: status,
-        startTime: dateRange?.[0]?.format('YYYY-MM-DD HH:mm:ss'),
-        endTime: dateRange?.[1]?.format('YYYY-MM-DD HH:mm:ss'),
+        jobId: jid,
+        jobName: jn || undefined,
+        status: st,
+        startTime: dr?.[0]?.format('YYYY-MM-DD HH:mm:ss'),
+        endTime: dr?.[1]?.format('YYYY-MM-DD HH:mm:ss'),
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -59,13 +72,63 @@ const JobLog: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadDataWithFilters(pageNum, pageSize);
   }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleJobNameChange = (value: string) => {
+    setJobName(value);
+    filtersRef.current.jobName = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatus(value);
+    filtersRef.current.status = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 日期范围改变 */
+  const handleDateRangeChange = (dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null, dateStrings: [string, string]) => {
+    setDateRange(dates);
+    filtersRef.current.dateRange = dates;
+    setPageNum(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setJobName('');
+    setJobId(undefined);
+    setStatus(undefined);
+    setDateRange(null);
+    filtersRef.current = {
+      jobName: '',
+      jobId: undefined,
+      status: undefined,
+      dateRange: null,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   const columns: ProColumns<API.JobLogItem>[] = [
@@ -171,30 +234,21 @@ const JobLog: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => {
-          setJobName('');
-          setJobId(undefined);
-          setStatus(undefined);
-          setDateRange(null);
-          setPageNum(1);
-          loadData(1);
-        }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-        showSearchButton={true}
-        showResetButton={true}
       >
         <SearchInput
           value={jobName}
-          onChange={setJobName}
-          onSearch={handleSearch}
+          onChange={handleJobNameChange}
           placeholder={intl.formatMessage({ id: 'pages.job.log.search.placeholder', defaultMessage: 'Search task name' })}
           width="auto"
         />
         <FilterSelect
           value={status}
-          onChange={setStatus}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({ id: 'pages.job.log.filter.status', defaultMessage: 'Execution status' })}
           width="auto"
           options={[
@@ -204,7 +258,7 @@ const JobLog: React.FC = () => {
         />
         <FilterDatePicker
           value={dateRange}
-          onChange={setDateRange}
+          onChange={handleDateRangeChange}
           placeholder={[intl.formatMessage({ id: 'pages.job.log.filter.startTime', defaultMessage: 'Start time' }), intl.formatMessage({ id: 'pages.job.log.filter.endTime', defaultMessage: 'End time' })]}
           showTime
           width="auto"

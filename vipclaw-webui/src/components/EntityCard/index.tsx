@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { Card, Switch, Tag, Typography, Tooltip } from 'antd';
+import { Card, Switch, Tag, Typography, Tooltip, Popover, List } from 'antd';
 import { DeleteOutlined, EditOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import DeleteButton from '@/components/DeleteButton';
 
 const { Text } = Typography;
+
+/**
+ * 标签项
+ */
+export interface TagItem {
+  label: string;
+  color?: string;
+  icon?: React.ReactNode;
+}
 
 /**
  * 统计指标项
@@ -14,6 +23,10 @@ export interface StatItem {
   label: string;
   value: number | string;
   color?: string;
+  /** Popover 内容（hover 时显示的列表，可选） */
+  popoverContent?: React.ReactNode;
+  /** Popover 最大宽度（默认 320px） */
+  popoverMaxWidth?: number;
 }
 
 /**
@@ -52,6 +65,8 @@ export interface EntityCardProps<T = any> {
   tagColor: string;
   /** 类型标签背景色（hover 时） */
   tagBgHover?: string;
+  /** 额外标签列表（显示在 type 标签右边，可选） */
+  tags?: TagItem[];
   /** 描述信息（字符串或自定义 ReactNode） */
   description?: string | React.ReactNode;
   /** 状态（0:禁用, 1:启用） */
@@ -92,6 +107,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
   tagLabel,
   tagColor,
   tagBgHover,
+  tags,
   description,
   status,
   isPublic,
@@ -158,7 +174,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
         animation: `vipSlideUp 0.6s ease-out ${index * 60}ms both`,
         cursor: onClick ? 'pointer' : 'default',
         width: '100%',
-        height: '280px',
+        minHeight: '280px',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--vip-bg-container)',
@@ -231,23 +247,45 @@ const EntityCard: React.FC<EntityCardProps> = ({
                 {name}
               </Text>
             </div>
-            <Tag
-              style={{
-                background: isHovered 
-                  ? `linear-gradient(135deg, ${hoverBg} 0%, ${hoverBg}dd 100%)` 
-                  : `linear-gradient(135deg, ${tagColor}18 0%, ${tagColor}12 100%)`,
-                color: isHovered ? '#fff' : tagColor,
-                border: `1px solid ${tagColor}${isHovered ? '00' : '35'}`,
-                borderRadius: '8px',
-                fontSize: config.statLabelSize,
-                fontWeight: 600,
-                padding: '3px 12px',
-                transition: 'all 0.3s ease',
-                boxShadow: isHovered ? `0 4px 12px ${tagColor}30` : 'none',
-              }}
-            >
-              {tagLabel}
-            </Tag>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {/* Type 标签 */}
+              {tagLabel && (
+                <Tag
+                  style={{
+                    background: isHovered 
+                      ? `linear-gradient(135deg, ${hoverBg} 0%, ${hoverBg}dd 100%)` 
+                      : `linear-gradient(135deg, ${tagColor}18 0%, ${tagColor}12 100%)`,
+                    color: isHovered ? '#fff' : tagColor,
+                    border: `1px solid ${tagColor}${isHovered ? '00' : '35'}`,
+                    borderRadius: '8px',
+                    fontSize: config.statLabelSize,
+                    fontWeight: 600,
+                    padding: '3px 12px',
+                    transition: 'all 0.3s ease',
+                    boxShadow: isHovered ? `0 4px 12px ${tagColor}30` : 'none',
+                  }}
+                >
+                  {tagLabel}
+                </Tag>
+              )}
+              {/* 额外标签 */}
+              {tags && tags.map((tag, idx) => (
+                <Tag
+                  key={idx}
+                  color={tag.color}
+                  icon={tag.icon}
+                  style={{
+                    borderRadius: '8px',
+                    fontSize: config.statLabelSize,
+                    fontWeight: 500,
+                    padding: '3px 10px',
+                    margin: 0,
+                  }}
+                >
+                  {tag.label}
+                </Tag>
+              ))}
+            </div>
           </div>
           {/* 状态开关 - 右上角 */}
           <div onClick={(e) => e.stopPropagation()}>
@@ -271,42 +309,58 @@ const EntityCard: React.FC<EntityCardProps> = ({
             // 有指标时：40px，无指标时：60px
             height: stats && stats.length > 0 ? '40px' : '60px',
             overflow: 'hidden',
+            width: '100%',
+            position: 'relative',
           }}
         >
           <Tooltip 
             title={typeof description === 'string' && description && description.trim() !== '' ? description : undefined}
             placement="topLeft"
+            mouseEnterDelay={0.3}
+            overlayStyle={{ 
+              maxWidth: '400px',
+              fontSize: '12px',
+              lineHeight: 1.6,
+            }}
           >
             {/* 判断 description 类型 */}
             {typeof description === 'string' ? (
-              <Text 
-                type="secondary"
-                style={{ 
-                  fontSize: '12px',
-                  color: description && description.trim() !== '' 
-                    ? 'var(--vip-text-secondary)' 
-                    : 'var(--vip-text-tertiary)',
-                  lineHeight: 1.5,
+              <div
+                style={{
+                  width: '100%',
+                  overflow: 'hidden',
                   display: '-webkit-box',
                   WebkitLineClamp: stats && stats.length > 0 ? 2 : 3,
                   WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  wordBreak: 'break-word',
-                  cursor: description && description.trim() !== '' ? 'pointer' : 'default',
                 }}
               >
-                {description && description.trim() !== '' 
-                  ? description 
-                  : intl.formatMessage({ 
-                      id: 'pages.common.noDescription', 
-                      defaultMessage: '暂无描述' 
-                    })
-                }
-              </Text>
+                <Text 
+                  type="secondary"
+                  style={{ 
+                    fontSize: '12px',
+                    color: description && description.trim() !== '' 
+                      ? 'var(--vip-text-secondary)' 
+                      : 'var(--vip-text-tertiary)',
+                    lineHeight: 1.5,
+                    wordBreak: 'break-word',
+                    cursor: description && description.trim() !== '' ? 'pointer' : 'default',
+                    display: 'inline',
+                  }}
+                >
+                  {description && description.trim() !== '' 
+                    ? description 
+                    : intl.formatMessage({ 
+                        id: 'pages.common.noDescription', 
+                        defaultMessage: '暂无描述' 
+                      })
+                  }
+                </Text>
+              </div>
             ) : (
               <div 
                 style={{
+                  width: '100%',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   display: '-webkit-box',
@@ -344,12 +398,8 @@ const EntityCard: React.FC<EntityCardProps> = ({
               marginBottom: '12px',
             }}
           >
-            {stats.map((stat, idx) => (
-              <Tooltip 
-                key={idx}
-                title={`${stat.label}: ${stat.value}`}
-                placement="top"
-              >
+            {stats.map((stat, idx) => {
+              const statContent = (
                 <div
                   style={{
                     background: `linear-gradient(135deg, ${stat.color || tagColor}06 0%, ${stat.color || tagColor}03 100%)`,
@@ -359,7 +409,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
                     border: `1px solid ${stat.color || tagColor}15`,
                     transition: 'all 0.3s ease',
                     transform: isHovered ? 'translateY(-2px)' : 'translateY(0)',
-                    cursor: 'pointer',
+                    cursor: stat.popoverContent ? 'pointer' : 'default',
                   }}
                 >
                   <div 
@@ -390,14 +440,41 @@ const EntityCard: React.FC<EntityCardProps> = ({
                     {stat.value}
                   </div>
                 </div>
-              </Tooltip>
-            ))}
+              );
+
+              // 如果有 popoverContent，使用 Popover 包裹
+              if (stat.popoverContent) {
+                return (
+                  <Popover
+                    key={idx}
+                    content={stat.popoverContent}
+                    title={null}
+                    trigger="hover"
+                    placement="bottom"
+                    overlayStyle={{ maxWidth: stat.popoverMaxWidth || 320 }}
+                  >
+                    {statContent}
+                  </Popover>
+                );
+              }
+
+              // 否则使用 Tooltip
+              return (
+                <Tooltip 
+                  key={idx}
+                  title={`${stat.label}: ${stat.value}`}
+                  placement="top"
+                >
+                  {statContent}
+                </Tooltip>
+              );
+            })}
           </div>
         )}
 
         {/* 底部自定义区域（可选，在分割线之前） */}
         {renderExtraBottom && (
-          <div style={{ marginBottom: '12px', flex: '0 0 auto' }}>
+          <div style={{ marginBottom: '8px', flex: '0 0 auto' }}>
             {renderExtraBottom}
           </div>
         )}
@@ -408,7 +485,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
           alignItems: 'center', 
           justifyContent: 'space-between',
           gap: '10px',
-          paddingTop: '14px',
+          paddingTop: '10px',
           borderTop: '1px solid var(--vip-border)',
           marginTop: 'auto',
           position: 'relative',

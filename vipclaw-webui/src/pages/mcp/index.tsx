@@ -16,7 +16,7 @@ import {
   Typography,
   Pagination,
 } from 'antd';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from '@umijs/max';
 // @ts-ignore
 import { useModel, history } from '@umijs/max';
@@ -25,6 +25,7 @@ import TestButton from '@/components/TestButton';
 import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
 import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
+import CardPagination from '@/components/CardPagination';
 import EntityCard from '@/components/EntityCard';
 
 // MCP 卡片组件
@@ -155,10 +156,21 @@ const McpManagement: React.FC = () => {
   const [data, setData] = useState<API.McpServerItem[]>([]);
   const [total, setTotal] = useState<number>(0);
   const [pageNum, setPageNum] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(12);
+  const [pageSize, setPageSize] = useState<number>(8); // 默认第一个选项：4 * 2 = 8
   const [keyword, setKeyword] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [type, setType] = useState<string | undefined>(undefined);
+  const [cardsPerRow, setCardsPerRow] = useState<number>(4);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    keyword: '',
+    status: undefined as number | undefined,
+    type: undefined as string | undefined,
+  });
   const [messageApi, contextHolder] = message.useMessage();
   const [testModalVisible, setTestModalVisible] = useState<boolean>(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -192,16 +204,18 @@ const McpManagement: React.FC = () => {
     return () => window.removeEventListener('resize', updateScreenSize);
   }, []);
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { keyword: kw, status: st, type: tp } = filtersRef.current;
+    
     setLoading(true);
     try {
       const res = await getMcpServerPage({
         current: page,
         size: size,
-        keyword: keyword || undefined,
-        status: status,
-        type: type,
+        keyword: kw || undefined,
+        status: st,
+        type: tp,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -213,13 +227,61 @@ const McpManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [pageNum, pageSize, status, type]);
+    loadDataWithFilters(pageNum, pageSize);
+  }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    filtersRef.current.keyword = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatus(value);
+    filtersRef.current.status = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 类型筛选改变 */
+  const handleTypeChange = (value: string | undefined) => {
+    setType(value);
+    filtersRef.current.type = value;
+    setPageNum(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setKeyword('');
+    setStatus(undefined);
+    setType(undefined);
+    filtersRef.current = {
+      keyword: '',
+      status: undefined,
+      type: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 删除 MCP */
@@ -235,7 +297,7 @@ const McpManagement: React.FC = () => {
           const response = await deleteMcpServer(id);
           if (response.code === 200) {
             messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadData();
+            loadDataWithFilters();
           } else {
             const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
@@ -336,8 +398,9 @@ const McpManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => { setKeyword(''); setStatus(undefined); setType(undefined); setPageNum(1); loadData(1); }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
         extra={
@@ -352,14 +415,13 @@ const McpManagement: React.FC = () => {
       >
         <SearchInput
           value={keyword}
-          onChange={setKeyword}
-          onSearch={handleSearch}
+          onChange={handleKeywordChange}
           placeholder={intl.formatMessage({ id: 'pages.mcp.searchPlaceholder', defaultMessage: 'Search MCP name or description' })}
           width="auto"
         />
         <FilterSelect
           value={status}
-          onChange={setStatus}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({ id: 'pages.mcp.statusFilter', defaultMessage: 'Status Filter' })}
           width="auto"
           options={[
@@ -369,10 +431,7 @@ const McpManagement: React.FC = () => {
         />
         <FilterSelect
           value={type}
-          onChange={(val) => {
-            setType(val);
-            setPageNum(1);
-          }}
+          onChange={handleTypeChange}
           placeholder={intl.formatMessage({ id: 'pages.mcp.typeFilter', defaultMessage: 'Type Filter' })}
           width="auto"
           options={[
@@ -390,6 +449,7 @@ const McpManagement: React.FC = () => {
         minAspectRatio={1.4}
         gutter={[20, 20]}
         loading={loading}
+        onCardsPerRowChange={setCardsPerRow}
         emptyText={
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -418,6 +478,19 @@ const McpManagement: React.FC = () => {
           );
         }}
       />
+      
+      {/* 分页组件 */}
+      <CardPagination
+        current={pageNum}
+        pageSize={pageSize}
+        total={total}
+        cardsPerRow={cardsPerRow}
+        onChange={(page, size) => {
+          setPageNum(page);
+          setPageSize(size);
+          loadDataWithFilters(page, size);
+        }}
+      />
 
       {/* 新建 MCP 弹窗 */}
       <CreateForm
@@ -429,7 +502,7 @@ const McpManagement: React.FC = () => {
             if (response.code === 200) {
               messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
-              loadData();
+              loadDataWithFilters();
             } else {
               // 显示后端返回的错误信息
               const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' });
@@ -463,7 +536,7 @@ const McpManagement: React.FC = () => {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
-                loadData();
+                loadDataWithFilters();
               } else {
                 // 显示后端返回的错误信息
                 const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' });

@@ -37,19 +37,30 @@ const TenantManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [name, setName] = useState<string>('');
   const [status, setStatus] = useState<number | undefined>(undefined);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    name: '',
+    status: undefined as number | undefined,
+  });
 
   const intl = useIntl();
   const [messageApi, contextHolder] = message.useMessage();
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { name: nm, status: st } = filtersRef.current;
+    
     setTableLoading(true);
     try {
       const res = await getTenantList({
         pageNum: page,
         pageSize: size,
-        name: name || undefined,
-        status: status,
+        name: nm || undefined,
+        status: st,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -64,13 +75,51 @@ const TenantManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadDataWithFilters(pageNum, pageSize);
   }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleNameChange = (value: string) => {
+    setName(value);
+    filtersRef.current.name = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatus(value);
+    filtersRef.current.status = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setName('');
+    setStatus(undefined);
+    filtersRef.current = {
+      name: '',
+      status: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 删除租户 */
@@ -105,7 +154,7 @@ const TenantManagement: React.FC = () => {
                 defaultMessage: '删除成功',
               }),
             );
-            loadData();
+            loadDataWithFilters();
           } else {
             const errorMsg = response.message || intl.formatMessage({
               id: 'pages.tenant.management.deleteFailed',
@@ -138,7 +187,7 @@ const TenantManagement: React.FC = () => {
             defaultMessage: '状态切换成功',
           }),
         );
-        loadData();
+        loadDataWithFilters();
       } else {
         const errorMsg = response.message || intl.formatMessage({
           id: 'pages.tenant.management.toggleFailed',
@@ -170,7 +219,7 @@ const TenantManagement: React.FC = () => {
           }),
         );
         setCreateModalVisible(false);
-        loadData();
+        loadDataWithFilters();
       } else {
         const errorMsg = response.message || intl.formatMessage({
           id: 'pages.tenant.management.createFailed',
@@ -306,13 +355,9 @@ const TenantManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => {
-          setName('');
-          setStatus(undefined);
-          setPageNum(1);
-          loadData(1);
-        }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({
           id: 'pages.common.search',
           defaultMessage: 'Search',
@@ -336,8 +381,7 @@ const TenantManagement: React.FC = () => {
       >
         <SearchInput
           value={name}
-          onChange={setName}
-          onSearch={handleSearch}
+          onChange={handleNameChange}
           placeholder={intl.formatMessage({
             id: 'pages.tenant.management.search.placeholder',
             defaultMessage: 'Search tenant name',
@@ -346,7 +390,7 @@ const TenantManagement: React.FC = () => {
         />
         <FilterSelect
           value={status}
-          onChange={setStatus}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({
             id: 'pages.tenant.management.status.filter.placeholder',
             defaultMessage: 'Filter by status',

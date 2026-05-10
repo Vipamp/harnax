@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import {
@@ -52,6 +52,16 @@ const ChannelManagement: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<number | undefined>(undefined);
   const [agents, setAgents] = useState<API.AgentItem[]>([]);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    keyword: '',
+    typeFilter: undefined as string | undefined,
+    statusFilter: undefined as number | undefined,
+  });
 
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
@@ -68,16 +78,18 @@ const ChannelManagement: React.FC = () => {
     }
   };
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { keyword: kw, typeFilter: tf, statusFilter: sf } = filtersRef.current;
+    
     setLoading(true);
     try {
       const res = await getChannelPage({
         pageNum: page,
         pageSize: size,
-        keyword: keyword || undefined,
-        type: typeFilter,
-        status: statusFilter,
+        keyword: kw || undefined,
+        type: tf,
+        status: sf,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -89,14 +101,62 @@ const ChannelManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadDataWithFilters(pageNum, pageSize);
     loadAgents();
-  }, [pageNum, pageSize, typeFilter, statusFilter]);
+  }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    filtersRef.current.keyword = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 类型筛选改变 */
+  const handleTypeChange = (value: string | undefined) => {
+    setTypeFilter(value);
+    filtersRef.current.typeFilter = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 状态筛选改变 */
+  const handleStatusChange = (value: number | undefined) => {
+    setStatusFilter(value);
+    filtersRef.current.statusFilter = value;
+    setPageNum(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setKeyword('');
+    setTypeFilter(undefined);
+    setStatusFilter(undefined);
+    filtersRef.current = {
+      keyword: '',
+      typeFilter: undefined,
+      statusFilter: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 删除 Channel */
@@ -112,7 +172,7 @@ const ChannelManagement: React.FC = () => {
           const response = await deleteChannel(id);
           if (response.code === 200) {
             messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadData();
+            loadDataWithFilters()
           } else {
             const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
@@ -269,8 +329,9 @@ const ChannelManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => { setKeyword(''); setTypeFilter(undefined); setStatusFilter(undefined); setPageNum(1); loadData(1); }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({ id: 'pages.channel.button.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.channel.button.reset', defaultMessage: 'Reset' })}
         extra={
@@ -285,21 +346,20 @@ const ChannelManagement: React.FC = () => {
       >
         <SearchInput
           value={keyword}
-          onChange={setKeyword}
-          onSearch={handleSearch}
+          onChange={handleKeywordChange}
           placeholder={intl.formatMessage({ id: 'pages.channel.search.placeholder.name', defaultMessage: 'Search channel name' })}
           width="auto"
         />
         <FilterSelect
           value={typeFilter}
-          onChange={setTypeFilter}
+          onChange={handleTypeChange}
           placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.type', defaultMessage: 'Filter by type' })}
           width="auto"
           options={CHANNEL_TYPES}
         />
         <FilterSelect
           value={statusFilter}
-          onChange={setStatusFilter}
+          onChange={handleStatusChange}
           placeholder={intl.formatMessage({ id: 'pages.channel.filter.placeholder.status', defaultMessage: 'Filter by status' })}
           width="auto"
           options={[
@@ -347,7 +407,7 @@ const ChannelManagement: React.FC = () => {
             if (response.code === 200) {
               messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
-              loadData();
+              loadDataWithFilters()
             } else {
               messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
             }
@@ -374,7 +434,7 @@ const ChannelManagement: React.FC = () => {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
-                loadData();
+                loadDataWithFilters()
               } else {
                 messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
               }

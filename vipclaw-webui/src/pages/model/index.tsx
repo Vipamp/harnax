@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIntl } from '@umijs/max';
-import { Button, message, Spin, Empty } from 'antd';
-import { PlusOutlined, ApiOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Button, message, Spin, Empty, Input } from 'antd';
+import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import ProviderCard from './components/ProviderCard';
 import ProviderForm from './components/ProviderForm';
@@ -9,7 +9,9 @@ import ModelListTable from './components/ModelListTable';
 import ModelForm from './components/ModelForm';
 import { modelProviderPage, toggleModelProvider, deleteModelProvider, connectivityTest } from '@/services/ant-design-pro/modelProvider';
 import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
+import CardPagination from '@/components/CardPagination';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
+import BackButton from '@/components/BackButton';
 
 // 标签选项
 const TAG_OPTIONS = [
@@ -42,6 +44,22 @@ const ModelManagement: React.FC = () => {
   const [providerKeyword, setProviderKeyword] = useState<string>('');
   const [providerType, setProviderType] = useState<string | undefined>(undefined);
   const [providerStatus, setProviderStatus] = useState<number | undefined>(undefined);
+  
+  // 服务商分页状态
+  const [providerPageNum, setProviderPageNum] = useState<number>(1);
+  const [providerPageSize, setProviderPageSize] = useState<number>(8); // 默认第一个选项：4 * 2 = 8
+  const [providerTotal, setProviderTotal] = useState<number>(0);
+  const [providerCardsPerRow, setProviderCardsPerRow] = useState<number>(4);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    providerKeyword: '',
+    providerType: undefined as string | undefined,
+    providerStatus: undefined as number | undefined,
+  });
   
   // 模型筛选状态
   const [filters, setFilters] = useState({
@@ -85,27 +103,15 @@ const ModelManagement: React.FC = () => {
     setProviderKeyword('');
     setProviderType(undefined);
     setProviderStatus(undefined);
+    // 更新 ref 中的值
+    filtersRef.current = {
+      providerKeyword: '',
+      providerType: undefined,
+      providerStatus: undefined,
+    };
     // 重置后立即加载数据
-    setTimeout(() => loadProviders(), 0);
-  };
-
-  // 服务商搜索
-  const handleProviderSearch = () => {
-    loadProviders();
-  };
-
-  // 服务商状态筛选改变
-  const handleProviderStatusChange = (value: number | undefined) => {
-    setProviderStatus(value);
-    // 状态改变时自动触发搜索
-    setTimeout(() => loadProviders(), 0);
-  };
-
-  // 服务商类型筛选改变
-  const handleProviderTypeChange = (value: string | undefined) => {
-    setProviderType(value);
-    // 类型改变时自动触发搜索
-    setTimeout(() => loadProviders(), 0);
+    setProviderPageNum(1);
+    loadProvidersWithFilters(1);
   };
 
   // 重置筛选
@@ -120,19 +126,68 @@ const ModelManagement: React.FC = () => {
     });
   };
 
-  // 加载服务商列表
-  const loadProviders = async () => {
+  // 服务商关键词变化（带防抖）
+  const handleProviderKeywordChange = (value: string) => {
+    setProviderKeyword(value);
+    // 更新 ref 中的值
+    filtersRef.current.providerKeyword = value;
+    
+    // 清除之前的定时器
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    // 设置新的定时器，500ms 后执行搜索
+    searchTimerRef.current = setTimeout(() => {
+      setProviderPageNum(1);
+      loadProvidersWithFilters(1);
+    }, 500);
+  };
+
+  // 服务商状态筛选改变
+  const handleProviderStatusChange = (value: number | undefined) => {
+    setProviderStatus(value);
+    // 更新 ref 中的值
+    filtersRef.current.providerStatus = value;
+    // 状态改变时自动触发搜索
+    setProviderPageNum(1);
+    loadProvidersWithFilters(1);
+  };
+
+  // 服务商类型筛选改变
+  const handleProviderTypeChange = (value: string | undefined) => {
+    setProviderType(value);
+    // 更新 ref 中的值
+    filtersRef.current.providerType = value;
+    // 类型改变时自动触发搜索
+    setProviderPageNum(1);
+    loadProvidersWithFilters(1);
+  };
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
+  // 加载服务商列表（使用 ref 中的最新筛选参数，避免闭包问题）
+  const loadProvidersWithFilters = async (page = providerPageNum, size = providerPageSize) => {
+    const { providerKeyword: keyword, providerType: type, providerStatus: status } = filtersRef.current;
+    
     setProviderLoading(true);
     try {
       const response = await modelProviderPage({ 
-        pageNum: 1, 
-        pageSize: 100,
-        name: providerKeyword || undefined,
-        type: providerType || undefined,
-        status: providerStatus,
+        pageNum: page, 
+        pageSize: size,
+        name: keyword || undefined,
+        type: type || undefined,
+        status: status,
       });
       if (response.data) {
         setProviders(response.data.records || []);
+        setProviderTotal(response.data.total || 0);
       }
     } catch (error) {
       message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
@@ -141,8 +196,9 @@ const ModelManagement: React.FC = () => {
     }
   };
 
+  // 初始化加载
   useEffect(() => {
-    loadProviders();
+    loadProvidersWithFilters();
   }, []);
 
   // 选择服务商 - 进入模型列表视图
@@ -198,7 +254,7 @@ const ModelManagement: React.FC = () => {
         if (selectedProvider?.id === id) {
           handleBackToProviders();
         }
-        loadProviders();
+        loadProvidersWithFilters();
       } else {
         const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
         message.error(errorMsg);
@@ -245,7 +301,7 @@ const ModelManagement: React.FC = () => {
   // 服务商表单提交成功
   const handleProviderFormSuccess = () => {
     handleProviderFormClose();
-    loadProviders();
+    loadProvidersWithFilters();
   };
 
   // 打开创建模型表单
@@ -279,7 +335,15 @@ const ModelManagement: React.FC = () => {
   return (
     <PageContainer
       header={{
-        title: (
+        title: viewMode === 'models' && selectedProvider ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <BackButton onClick={handleBackToProviders} />
+            <div style={{ width: 1, height: 24, background: 'var(--vip-border)' }} />
+            <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--vip-text-primary)', margin: 0 }}>
+              {selectedProvider.name}
+            </span>
+          </div>
+        ) : (
           <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
             <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
@@ -317,8 +381,9 @@ const ModelManagement: React.FC = () => {
           <>
             {/* 搜索筛选栏 */}
             <SearchFilterBar
-              onSearch={handleProviderSearch}
+              onSearch={() => {}}
               onReset={handleResetProviderFilters}
+              showSearchButton={false}
               searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
               resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
               extra={
@@ -333,8 +398,7 @@ const ModelManagement: React.FC = () => {
             >
               <SearchInput
                 value={providerKeyword}
-                onChange={setProviderKeyword}
-                onSearch={handleProviderSearch}
+                onChange={handleProviderKeywordChange}
                 placeholder={intl.formatMessage({ id: 'pages.model.searchPlaceholder', defaultMessage: 'Search provider name or description' })}
                 width="auto"
               />
@@ -368,6 +432,7 @@ const ModelManagement: React.FC = () => {
               minAspectRatio={1.4}
               gutter={[16, 16]}
               loading={providerLoading}
+              onCardsPerRowChange={setProviderCardsPerRow}
               emptyText={
                 <div style={{ 
                   display: 'flex', 
@@ -421,33 +486,36 @@ const ModelManagement: React.FC = () => {
                 />
               )}
             />
+            
+            {/* 分页组件 */}
+            <CardPagination
+              current={providerPageNum}
+              pageSize={providerPageSize}
+              total={providerTotal}
+              cardsPerRow={providerCardsPerRow}
+              onChange={(page, size) => {
+                setProviderPageNum(page);
+                setProviderPageSize(size);
+                loadProvidersWithFilters(page, size);
+              }}
+            />
           </>
         ) : (
           // 模型列表视图
           <>
-            {/* 返回按钮和筛选栏 */}
+            {/* 搜索筛选栏 */}
             <SearchFilterBar
               onSearch={() => {}}
               onReset={handleResetFilters}
               showSearchButton={false}
               extra={
-                <>
-                  <Button 
-                    icon={<ArrowLeftOutlined />} 
-                    onClick={handleBackToProviders}
-                    style={{ borderRadius: '8px', height: '36px' }}
-                  >
-                    {intl.formatMessage({ id: 'pages.model.backToProviders', defaultMessage: 'Back to Providers' })}
-                  </Button>
-                  <Button 
-                    type="primary" 
-                    icon={<PlusOutlined />} 
-                    onClick={handleCreateModel}
-                    style={{ borderRadius: '8px', height: '36px' }}
-                  >
-                    {intl.formatMessage({ id: 'pages.common.add', defaultMessage: 'Add' })}
-                  </Button>
-                </>
+                <ActionButton
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={handleCreateModel}
+                >
+                  {intl.formatMessage({ id: 'pages.model.createModel', defaultMessage: 'Create Model' })}
+                </ActionButton>
               }
             >
               {/* 关键词搜索 */}
@@ -490,41 +558,37 @@ const ModelManagement: React.FC = () => {
                   { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
                 ]}
               />
+              
+              {/* 价格范围 - 最低价 */}
+              <Input
+                type="number"
+                placeholder={intl.formatMessage({ id: 'pages.model.minPrice', defaultMessage: 'Min Price' })}
+                value={filters.minPrice}
+                onChange={(e) => setFilters({ ...filters, minPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
+                style={{
+                  width: 120,
+                  borderRadius: '6px',
+                  height: '28px',
+                  fontSize: '12px',
+                }}
+                suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
+              />
+              
+              {/* 价格范围 - 最高价 */}
+              <Input
+                type="number"
+                placeholder={intl.formatMessage({ id: 'pages.model.maxPrice', defaultMessage: 'Max Price' })}
+                value={filters.maxPrice}
+                onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
+                style={{
+                  width: 120,
+                  borderRadius: '6px',
+                  height: '28px',
+                  fontSize: '12px',
+                }}
+                suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
+              />
             </SearchFilterBar>
-
-            {/* 服务商信息头部 */}
-            {selectedProvider && (
-              <div style={{ 
-                marginBottom: 16, 
-                padding: '16px 20px',
-                background: 'var(--vip-bg-container)',
-                borderRadius: '12px',
-                border: '1px solid var(--vip-border)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '10px',
-                    background: 'var(--vip-primary-light)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 20,
-                  }}>
-                    <ApiOutlined style={{ color: 'var(--vip-primary)' }} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--vip-text-primary)', marginBottom: 4 }}>
-                      {selectedProvider.name}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--vip-text-tertiary)' }}>
-                      {selectedProvider.type} · {selectedProvider.createTime?.replace('T', ' ').substring(0, 16)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* 模型列表 */}
             {selectedProvider ? (

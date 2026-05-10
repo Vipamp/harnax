@@ -152,7 +152,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
             rows={1}
             placeholder={intl.formatMessage({ id: 'pages.session.descriptionPlaceholder', defaultMessage: 'Please enter session description (optional)' })}
             maxLength={500}
-            style={{ resize: 'vertical', overflow: 'auto', minHeight: '32px' }}
+            style={{ 
+              resize: 'vertical', 
+              overflow: 'auto', 
+              minHeight: '32px',
+              fontSize: '13px',
+            }}
           />
         </Form.Item>
 

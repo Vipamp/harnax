@@ -46,6 +46,15 @@ const JobManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
   const [jobStatus, setJobStatus] = useState<number | undefined>(undefined);
+  
+  // 防抖定时器引用
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 使用 ref 保存最新的筛选参数，避免闭包问题
+  const filtersRef = useRef({
+    keyword: '',
+    jobStatus: undefined as number | undefined,
+  });
 
   const intl = useIntl();
   const [messageApi, contextHolder] = message.useMessage();
@@ -220,15 +229,17 @@ const JobManagement: React.FC = () => {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
   };
 
-  /** 加载数据 */
-  const loadData = async (page = pageNum, size = pageSize) => {
+  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
+  const loadDataWithFilters = async (page = 1, size = pageSize) => {
+    const { keyword: kw, jobStatus: js } = filtersRef.current;
+    
     setTableLoading(true);
     try {
       const res = await getJobPage({
         pageNum: page,
         pageSize: size,
-        keyword: keyword || undefined,
-        jobStatus: jobStatus,
+        keyword: kw || undefined,
+        jobStatus: js,
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
@@ -240,13 +251,51 @@ const JobManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadDataWithFilters(pageNum, pageSize);
   }, [pageNum, pageSize]);
+  
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
+  }, []);
 
-  /** 搜索 */
-  const handleSearch = () => {
+  /** 关键词变化（带防抖） */
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    filtersRef.current.keyword = value;
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+    
+    searchTimerRef.current = setTimeout(() => {
+      setPageNum(1);
+      loadDataWithFilters(1);
+    }, 500);
+  };
+  
+  /** 状态筛选改变 */
+  const handleJobStatusChange = (value: number | undefined) => {
+    setJobStatus(value);
+    filtersRef.current.jobStatus = value;
     setPageNum(1);
-    loadData(1);
+    loadDataWithFilters(1);
+  };
+  
+  /** 重置筛选 */
+  const handleReset = () => {
+    setKeyword('');
+    setJobStatus(undefined);
+    filtersRef.current = {
+      keyword: '',
+      jobStatus: undefined,
+    };
+    setPageNum(1);
+    loadDataWithFilters(1);
   };
 
   /** 删除节点 */
@@ -264,7 +313,7 @@ const JobManagement: React.FC = () => {
           hide();
           if (response.code === 200) {
             messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadData();
+            loadDataWithFilters();
           } else {
             const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
             messageApi.error(errorMsg);
@@ -284,7 +333,7 @@ const JobManagement: React.FC = () => {
       const response = await startJob(jobId);
       if (response.code === 200) {
         messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
-        loadData();
+        loadDataWithFilters();
       } else {
         messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
@@ -299,7 +348,7 @@ const JobManagement: React.FC = () => {
       const response = await pauseJob(jobId);
       if (response.code === 200) {
         messageApi.success(intl.formatMessage({ id: 'pages.message.operationSuccess', defaultMessage: 'Operation successful' }));
-        loadData();
+        loadDataWithFilters();
       } else {
         messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
@@ -506,13 +555,9 @@ const JobManagement: React.FC = () => {
 
       {/* 搜索和工具栏 */}
       <SearchFilterBar
-        onSearch={handleSearch}
-        onReset={() => {
-          setKeyword('');
-          setJobStatus(undefined);
-          setPageNum(1);
-          loadData(1);
-        }}
+        onSearch={() => {}}
+        onReset={handleReset}
+        showSearchButton={false}
         searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
         resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
         extra={
@@ -527,14 +572,13 @@ const JobManagement: React.FC = () => {
       >
         <SearchInput
           value={keyword}
-          onChange={setKeyword}
-          onSearch={handleSearch}
+          onChange={handleKeywordChange}
           placeholder={intl.formatMessage({ id: 'pages.job.search.placeholder', defaultMessage: 'Search task name' })}
           width="auto"
         />
         <FilterSelect
           value={jobStatus}
-          onChange={setJobStatus}
+          onChange={handleJobStatusChange}
           placeholder={intl.formatMessage({ id: 'pages.job.filter.status', defaultMessage: 'Status filter' })}
           width="auto"
           options={[
@@ -578,7 +622,7 @@ const JobManagement: React.FC = () => {
             if (response.code === 200) {
               messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
-              loadData();
+              loadDataWithFilters();
             } else {
               messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' }));
             }
@@ -599,7 +643,7 @@ const JobManagement: React.FC = () => {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
-                loadData();
+                loadDataWithFilters();
               } else {
                 messageApi.error(response.message || '更新失败，请重试');
               }

@@ -57,45 +57,45 @@ class MybatisTenantInterceptor : Interceptor {
     }
 
     override fun intercept(invocation: Invocation): Any? {
-        val args = invocation.args
-        val mappedStatement = args[0] as MappedStatement
-
-        // 检查是否需要应用租户过滤
-        if (!shouldApplyTenantFilter(mappedStatement)) {
-            return invocation.proceed()
-        }
-
-        // 获取当前租户ID
-        val tenantId = TenantContext.getTenantId()
-
-        // 如果没有租户上下文，跳过过滤
-        if (tenantId == null) {
-            log.debug("[MyBatis租户拦截器] 无租户上下文，跳过过滤")
-            return invocation.proceed()
-        }
-
-        try {
-            when (mappedStatement.sqlCommandType) {
-                SqlCommandType.SELECT -> {
-                    log.debug("[MyBatis租户拦截器] 处理SELECT查询，添加tenant_id过滤: tenantId={}", tenantId)
-                    processSelect(invocation, mappedStatement, tenantId)
-                }
-                SqlCommandType.INSERT -> {
-                    log.debug("[MyBatis租户拦截器] 处理INSERT操作，设置tenant_id: tenantId={}", tenantId)
-                    processInsert(invocation, mappedStatement, tenantId)
-                }
-                SqlCommandType.UPDATE, SqlCommandType.DELETE -> {
-                    log.debug("[MyBatis租户拦截器] 处理UPDATE/DELETE操作，添加tenant_id条件: tenantId={}", tenantId)
-                    processUpdateOrDelete(invocation, mappedStatement, tenantId)
-                }
-                else -> {
-                    // 其他SQL类型不处理
-                }
-            }
-        } catch (e: Exception) {
-            log.error("[MyBatis租户拦截器] 处理租户过滤失败", e)
-            // 如果处理失败，继续执行原SQL（避免阻塞业务）
-        }
+//        val args = invocation.args
+//        val mappedStatement = args[0] as MappedStatement
+//
+//        // 检查是否需要应用租户过滤
+//        if (!shouldApplyTenantFilter(mappedStatement)) {
+//            return invocation.proceed()
+//        }
+//
+//        // 获取当前租户ID
+//        val tenantId = TenantContext.getTenantId()
+//
+//        // 如果没有租户上下文，跳过过滤
+//        if (tenantId == null) {
+//            log.debug("[MyBatis租户拦截器] 无租户上下文，跳过过滤")
+//            return invocation.proceed()
+//        }
+//
+//        try {
+//            when (mappedStatement.sqlCommandType) {
+//                SqlCommandType.SELECT -> {
+//                    log.debug("[MyBatis租户拦截器] 处理SELECT查询，添加tenant_id过滤: tenantId={}", tenantId)
+//                    processSelect(invocation, mappedStatement, tenantId)
+//                }
+//                SqlCommandType.INSERT -> {
+//                    log.debug("[MyBatis租户拦截器] 处理INSERT操作，设置tenant_id: tenantId={}", tenantId)
+//                    processInsert(invocation, mappedStatement, tenantId)
+//                }
+//                SqlCommandType.UPDATE, SqlCommandType.DELETE -> {
+//                    log.debug("[MyBatis租户拦截器] 处理UPDATE/DELETE操作，添加tenant_id条件: tenantId={}", tenantId)
+//                    processUpdateOrDelete(invocation, mappedStatement, tenantId)
+//                }
+//                else -> {
+//                    // 其他SQL类型不处理
+//                }
+//            }
+//        } catch (e: Exception) {
+//            log.error("[MyBatis租户拦截器] 处理租户过滤失败", e)
+//            // 如果处理失败，继续执行原SQL（避免阻塞业务）
+//        }
 
         return invocation.proceed()
     }

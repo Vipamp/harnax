@@ -751,6 +751,269 @@ import { PlusOutlined } from '@ant-design/icons';
 />
 ```
 
+#### 自动查询交互规范（重要）
+
+##### 核心原则
+- ✅ **删除“搜索”按钮**：所有管理页面的筛选框必须隐藏搜索按钮（`showSearchButton={false}`）
+- ✅ **输入框防抖自动查询**：输入框数据变更时，等待500ms后自动触发查询（防抖）
+- ✅ **下拉框立即自动查询**：下拉框数据变更时立即触发查询（无延迟）
+- ✅ **全量参数查询**：每次查询必须携带当前所有筛选条件的完整参数
+
+##### 强制要求
+- ✅ **必须使用防抖定时器**：输入框必须实现500ms防抖，避免每输入一个字符就触发查询
+- ✅ **必须使用 Ref 保存筛选参数**：避免 React 闭包陷阱，确保查询时使用最新的筛选参数
+- ✅ **必须清理定时器**：组件卸载时必须清除定时器，避免内存泄漏
+- ✅ **禁止只传递变更的参数**：每次查询都要传递所有筛选参数（keyword、status、type等）
+
+##### 标准实现模式
+
+**1. 状态和 Ref 定义**
+```typescript
+import React, { useState, useEffect, useRef } from 'react';
+
+const [keyword, setKeyword] = useState<string>('');
+const [status, setStatus] = useState<number | undefined>(undefined);
+const [type, setType] = useState<string | undefined>(undefined);
+
+// 防抖定时器引用
+const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+// 使用 ref 保存最新的筛选参数，避免闭包问题
+const filtersRef = useRef({
+  keyword: '',
+  status: undefined as number | undefined,
+  type: undefined as string | undefined,
+});
+```
+
+**2. 查询函数（使用 Ref 中的参数）**
+```typescript
+// 加载数据（使用 ref 中的最新筛选参数，避免闭包问题）
+const loadDataWithFilters = async (page = 1, size = pageSize) => {
+  const { keyword: kw, status: st, type: tp } = filtersRef.current;
+  
+  setLoading(true);
+  try {
+    const response = await apiPage({
+      pageNum: page,
+      pageSize: size,
+      keyword: kw || undefined,
+      status: st,
+      type: tp || undefined,
+    });
+    setData(response.data?.records || []);
+    setTotal(response.data?.total || 0);
+  } catch (error) {
+    message.error('加载失败');
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+**3. 输入框变更处理（带防抖）**
+```typescript
+const handleKeywordChange = (value: string) => {
+  setKeyword(value);
+  // 同步更新 ref 中的值
+  filtersRef.current.keyword = value;
+  
+  // 清除之前的定时器
+  if (searchTimerRef.current) {
+    clearTimeout(searchTimerRef.current);
+  }
+  
+  // 设置新的定时器，500ms 后执行搜索
+  searchTimerRef.current = setTimeout(() => {
+    setPageNum(1);
+    loadDataWithFilters(1);
+  }, 500);
+};
+```
+
+**4. 下拉框变更处理（立即查询）**
+```typescript
+const handleStatusChange = (value: number | undefined) => {
+  setStatus(value);
+  // 同步更新 ref 中的值
+  filtersRef.current.status = value;
+  // 立即触发查询
+  setPageNum(1);
+  loadDataWithFilters(1);
+};
+
+const handleTypeChange = (value: string | undefined) => {
+  setType(value);
+  // 同步更新 ref 中的值
+  filtersRef.current.type = value;
+  // 立即触发查询
+  setPageNum(1);
+  loadDataWithFilters(1);
+};
+```
+
+**5. 重置处理**
+```typescript
+const handleReset = () => {
+  setKeyword('');
+  setStatus(undefined);
+  setType(undefined);
+  // 同步更新 ref 中的值
+  filtersRef.current = {
+    keyword: '',
+    status: undefined,
+    type: undefined,
+  };
+  // 重置后立即加载数据
+  setPageNum(1);
+  loadDataWithFilters(1);
+};
+```
+
+**6. 组件卸载清理**
+```typescript
+// 组件卸载时清理定时器
+useEffect(() => {
+  return () => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+  };
+}, []);
+```
+
+**7. SearchFilterBar 配置**
+```tsx
+<SearchFilterBar
+  onSearch={() => {}}  // 空函数，不再使用
+  onReset={handleReset}
+  showSearchButton={false}  // 隐藏搜索按钮
+  searchText="Search"
+  resetText="Reset"
+  extra={
+    <ActionButton type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+      创建
+    </ActionButton>
+  }
+>
+  <SearchInput
+    value={keyword}
+    onChange={handleKeywordChange}  // 使用防抖处理函数
+    placeholder="搜索..."
+    width="auto"
+  />
+  <FilterSelect
+    value={status}
+    onChange={handleStatusChange}  // 使用立即查询函数
+    placeholder="状态筛选"
+    width="auto"
+    options={[
+      { label: '启用', value: 1 },
+      { label: '禁用', value: 0 },
+    ]}
+  />
+  <FilterSelect
+    value={type}
+    onChange={handleTypeChange}  // 使用立即查询函数
+    placeholder="类型筛选"
+    width="auto"
+    options={[
+      { label: '类型A', value: 'typeA' },
+      { label: '类型B', value: 'typeB' },
+    ]}
+  />
+</SearchFilterBar>
+```
+
+##### 数据流说明
+
+```
+用户输入 → setKeyword(value) → filtersRef.current.keyword = value
+  ↓
+清除旧定时器 → 设置新定时器(500ms)
+  ↓
+500ms 后执行 → loadDataWithFilters()
+  ↓
+从 filtersRef.current 读取 → { keyword, status, type }
+  ↓
+调用 API → 携带所有完整参数
+```
+
+##### 常见错误及修复
+
+**错误场景1：只传递变更的参数**
+```typescript
+// ❌ 错误：只传递了 keyword，丢失了 status 和 type
+const handleKeywordChange = (value: string) => {
+  setKeyword(value);
+  loadData({ keyword: value });  // ❌ 其他参数丢失
+};
+
+// ✅ 正确：从 ref 中读取所有参数
+const handleKeywordChange = (value: string) => {
+  setKeyword(value);
+  filtersRef.current.keyword = value;
+  setTimeout(() => loadDataWithFilters(), 500);  // ✅ 读取所有参数
+};
+```
+
+**错误场景2：没有使用 Ref，导致闭包问题**
+```typescript
+// ❌ 错误：直接读取 state，可能读到旧值
+const loadData = async () => {
+  const response = await apiPage({
+    keyword,  // ❌ 可能是旧值（闭包陷阱）
+    status,
+  });
+};
+
+// ✅ 正确：使用 ref 读取最新值
+const loadDataWithFilters = async () => {
+  const { keyword, status } = filtersRef.current;  // ✅ 始终是最新值
+  const response = await apiPage({ keyword, status });
+};
+```
+
+**错误场景3：没有清除定时器**
+```typescript
+// ❌ 错误：没有清除旧定时器
+const handleKeywordChange = (value: string) => {
+  setKeyword(value);
+  setTimeout(() => loadData(), 500);  // ❌ 会累积多个定时器
+};
+
+// ✅ 正确：先清除再设置
+const handleKeywordChange = (value: string) => {
+  setKeyword(value);
+  if (searchTimerRef.current) {
+    clearTimeout(searchTimerRef.current);  // ✅ 清除旧定时器
+  }
+  searchTimerRef.current = setTimeout(() => loadData(), 500);
+};
+```
+
+##### 验收标准
+
+- [ ] 所有管理页面的筛选框隐藏了搜索按钮（`showSearchButton={false}`）
+- [ ] 输入框实现了500ms防抖自动查询
+- [ ] 下拉框实现了变更立即查询
+- [ ] 使用了 Ref 保存筛选参数，避免闭包问题
+- [ ] 每次查询都携带所有筛选条件的完整参数
+- [ ] 组件卸载时清理了定时器
+- [ ] 重置功能正常工作，清空所有筛选条件
+
+##### 适用页面
+
+以下所有管理页面必须遵循此规范：
+- ✅ 模型管理页面（Model Management）
+- ✅ 用户管理页面（User Management）
+- ✅ 租户管理页面（Tenant Management）
+- ✅ 任务管理页面（Job Management）
+- ✅ 任务日志页面（Job Log）
+- ✅ MCP管理页面（MCP Management）
+- ✅ Channel管理页面（Channel Management）
+- ✅ 智能体管理页面（Agent Management）
+
 #### 迁移指南
 
 ##### 旧代码模式（禁止）
@@ -2461,6 +2724,7 @@ import { RobotOutlined } from '@ant-design/icons';
 | tagLabel | string | ✅ | 类型标签文本 |
 | tagColor | string | ✅ | 类型标签颜色 **（必须使用十六进制值，如 '#4f6ef7'，不能使用 CSS 变量）** |
 | tagBgHover | string | ❌ | hover 时标签背景色（默认同 tagColor） |
+| tags | TagItem[] | ❌ | 额外标签列表（显示在 type 标签右边，可选） |
 | description | string | ❌ | 描述信息（无则显示“暂无描述”） |
 | status | number | ✅ | 状态（0:停用, 1:启用） |
 | isPublic | number | ❌ | 是否公开（0:私有, 1:公开） |
@@ -2471,14 +2735,56 @@ import { RobotOutlined } from '@ant-design/icons';
 | onToggle | Function | ✅ | 状态切换回调 |
 | onClick | Function | ❌ | 卡片点击回调 |
 
+#### TagItem 标签结构
+
+```typescript
+interface TagItem {
+  label: string;         // 标签文本
+  color?: string;        // 标签颜色（支持 Ant Design 预设颜色或十六进制）
+  icon?: React.ReactNode; // 标签图标（可选）
+}
+```
+
 #### StatItem 统计指标结构
 
 ```typescript
 interface StatItem {
-  label: string;        // 指标标签
+  label: string;         // 指标标签
   value: number | string; // 指标值
-  color?: string;       // 指标颜色（默认同 tagColor）
+  color?: string;        // 指标颜色（默认同 tagColor）
+  popoverContent?: React.ReactNode; // Popover 内容（hover 时显示的列表，可选）
+  popoverMaxWidth?: number;         // Popover 最大宽度（默认 320px）
 }
+```
+
+**Popover 功能说明**：
+- 当 `popoverContent` 存在时，统计指标 hover 会显示 Popover 列表
+- Popover 默认位置在统计指标下方（`placement="bottom"`）
+- 默认最大宽度为 320px，可通过 `popoverMaxWidth` 自定义
+- Popover 内部可放置 List 组件，支持点击跳转等功能
+
+**智能体卡片示例**：
+```typescript
+const stats = [
+  {
+    label: 'MCPs',
+    value: mcpCount,
+    color: '#4f6ef7',
+    popoverContent: (
+      <List
+        size="small"
+        dataSource={item.mcpList || []}
+        renderItem={(mcp) => (
+          <List.Item 
+            onClick={() => window.open(`/context/mcp/detail/${mcp.mcpId}`, '_blank')}
+          >
+            {mcp.mcpName}
+          </List.Item>
+        )}
+      />
+    ),
+  },
+];
 ```
 
 #### ActionConfig 操作按钮配置
@@ -2679,3 +2985,88 @@ interface ActionConfig {
 - ❌ 禁止操作按钮不使用统一的 ActionConfig 配置
 - ❌ **禁止 tagColor 使用 CSS 变量（如 'var(--vip-primary)'），必须使用十六进制颜色值**
 - ❌ **禁止顶部标识条、图标容器、类型标签缺少填充色**
+
+### 智能体卡片特殊说明
+
+智能体卡片使用 EntityCard 时，有以下特殊配置：
+
+1. **不显示 Type 标签**：设置 `tagLabel=""` 空字符串
+2. **使用 tags 属性**：模型名称和价格作为额外标签显示
+3. **使用 stats 属性**：MCP、Skill、Session 统计使用 stats，并通过 popoverContent 保留 Popover 列表功能
+
+#### 智能体卡片示例
+
+```typescript
+import EntityCard, { TagItem } from '@/components/EntityCard';
+import { RobotOutlined, ApiOutlined } from '@ant-design/icons';
+
+// 构建 tags
+const tags: TagItem[] = [];
+if (item.modelName) {
+  tags.push({
+    label: item.modelName,
+    color: 'blue',
+    icon: <ApiOutlined />,
+  });
+}
+if (item.modelPrice !== undefined && item.modelPrice !== null) {
+  tags.push({
+    label: `¥${item.modelPrice}/M`,
+    color: 'cyan',
+  });
+}
+
+// 构建 stats（MCP/Skill/Session 带 Popover 列表）
+const stats = [
+  {
+    label: 'MCPs',
+    value: mcpCount,
+    color: '#4f6ef7',
+    popoverContent: (
+      <List
+        size="small"
+        dataSource={item.mcpList || []}
+        renderItem={(mcp) => (
+          <List.Item 
+            onClick={() => window.open(`/context/mcp/detail/${mcp.mcpId}`, '_blank')}
+          >
+            {mcp.mcpName}
+          </List.Item>
+        )}
+      />
+    ),
+  },
+  // Skills 和 Sessions 类似...
+];
+
+<EntityCard
+  entity={item}
+  index={index}
+  icon={<RobotOutlined />}
+  name={item.name}
+  tagLabel=""  // 智能体不显示 type 标签
+  tagColor="#4f6ef7"
+  tags={tags}  // 模型名称和价格作为 tags
+  description={item.description}
+  status={item.status ?? 1}
+  isPublic={item.isPublic}
+  creator={item.creator}
+  createTime={item.createTime?.replace('T', ' ')}
+  stats={stats}  // MCP/Skill/Session 统计（带 Popover）
+  actions={{
+    showTest: false,
+    showEdit: hasPermission,
+    showDelete: hasPermission,
+    onEdit: () => onEdit(item),
+    onDelete: () => onDelete(item.id!),
+  }}
+  onToggle={onToggleStatus}
+/>
+```
+
+#### 智能体标签规范
+
+- **模型名称标签**：蓝色（blue），带 ApiOutlined 图标
+- **价格标签**：青色（cyan），格式 `¥{price}/M`
+- **标签位置**：显示在原本 type 标签的位置（如果 tagLabel 为空，则直接显示 tags）
+- **标签样式**：使用 Ant Design Tag 组件的预设颜色

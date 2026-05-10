@@ -38,6 +38,8 @@ export interface ResponsiveCardGridProps<T = any> {
   loading?: boolean;
   /** 空状态显示 */
   emptyText?: React.ReactNode;
+  /** 每行卡片数量变化回调（用于分页组件计算） */
+  onCardsPerRowChange?: (cardsPerRow: number) => void;
 }
 
 const ResponsiveCardGrid: React.FC<ResponsiveCardGridProps> = ({
@@ -49,6 +51,7 @@ const ResponsiveCardGrid: React.FC<ResponsiveCardGridProps> = ({
   containerStyle,
   loading = false,
   emptyText = '暂无数据',
+  onCardsPerRowChange,
 }) => {
   const [cardsPerRow, setCardsPerRow] = useState<number>(4);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,7 +74,13 @@ const ResponsiveCardGrid: React.FC<ResponsiveCardGridProps> = ({
         );
         
         // 至少显示 1 张卡片
-        setCardsPerRow(Math.max(1, cardsCount));
+        const newCardsPerRow = Math.max(1, cardsCount);
+        setCardsPerRow(newCardsPerRow);
+        
+        // 通知父组件每行卡片数量变化
+        if (onCardsPerRowChange) {
+          onCardsPerRowChange(newCardsPerRow);
+        }
       }
     };
 
@@ -91,7 +100,7 @@ const ResponsiveCardGrid: React.FC<ResponsiveCardGridProps> = ({
       window.removeEventListener('resize', calculateCardsPerRow);
       resizeObserver.disconnect();
     };
-  }, [cardHeight, minAspectRatio, gutter]);
+  }, [cardHeight, minAspectRatio, gutter, onCardsPerRowChange]);
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>加载中...</div>;
