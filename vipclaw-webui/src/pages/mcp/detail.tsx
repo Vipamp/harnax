@@ -1,19 +1,17 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Descriptions, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
+import { Card, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
 import { 
   ToolOutlined, 
   ApiOutlined,
-  ClockCircleOutlined,
-  UserOutlined,
-  LinkOutlined,
-  CodeOutlined
+  LinkOutlined
 } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
 // @ts-ignore
 import { useModel, useLocation, history } from '@umijs/max';
 import { getMcpServerById, getMcpTools } from '@/services/ant-design-pro/mcp';
 import BackButton from '@/components/BackButton';
+import DetailPageHeader from '@/components/DetailPageHeader';
 
 const { Text, Title } = Typography;
 
@@ -215,90 +213,37 @@ const McpDetail: React.FC = () => {
       <Spin spinning={loading}>
         {mcpInfo && (
           <>
-            {/* MCP 基本信息 */}
-            <Card
-              style={{
-                marginBottom: 24,
-                borderRadius: '16px',
-                border: '1px solid var(--vip-border)',
-                boxShadow: 'var(--vip-card-shadow)',
-                overflow: 'hidden'
-              }}
-              styles={{ body: { padding: 0 } }}
-            >
-              {/* 顶部标题栏 */}
-              <div style={{ 
-                padding: '20px 24px', 
-                background: 'var(--vip-bg-layout)',
-                borderBottom: '1px solid var(--vip-border)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '12px',
-                      background: 'var(--vip-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 4px 12px var(--vip-shadow)'
-                    }}>
-                      <ApiOutlined style={{ fontSize: 22, color: '#fff' }} />
-                    </div>
-                    <div>
-                      <Text strong style={{ fontSize: 18, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
-                        {mcpInfo.name}
-                      </Text>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <Tag 
-                          color={MCP_TYPE_CONFIG[mcpInfo.type]?.color || '#999'}
-                          style={{ borderRadius: '6px', fontWeight: 500 }}
-                        >
-                          {MCP_TYPE_CONFIG[mcpInfo.type]?.label || mcpInfo.type}
-                        </Tag>
-                        {mcpInfo.isPublic === 1 && (
-                          <Tag color="blue" style={{ borderRadius: '6px', fontWeight: 500 }}>公开</Tag>
-                        )}
-                        <Tag 
-                          color={mcpInfo.status === 1 ? 'success' : 'default'} 
-                          style={{ borderRadius: '6px', fontWeight: 500 }}
-                        >
-                          {mcpInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-                        </Tag>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 详细信息 - 参考技能详情页设计 */}
-              <Descriptions 
-                column={1} 
-                size="small"
-                styles={{ 
-                  label: { color: 'var(--vip-text-secondary)', fontWeight: 500 },
-                  content: { color: 'var(--vip-text-primary)' }
-                }}
-                style={{ padding: '24px' }}
-              >
-                <Descriptions.Item label={intl.formatMessage({ id: 'pages.mcp.detail.description', defaultMessage: 'MCP Description' })} span={1}>
-                  <Text style={{ lineHeight: 1.6 }}>{mcpInfo.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' })} span={1}>
-                  <Text>
-                    <CodeOutlined style={{ marginRight: 6, color: 'var(--vip-primary)' }} />
-                    {mcpInfo.type === 'stdio' ? mcpInfo.command : mcpInfo.url || '-'}
-                  </Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.mcp.detail.creator', defaultMessage: 'Creator' })}</span>}>
-                  <Text>{mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.mcp.detail.createTime', defaultMessage: 'Create Time' })}</span>}>
-                  <Text>{mcpInfo.createTime?.replace('T', ' ') || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
+            {/* MCP 基本信息 - 使用公共组件 */}
+            <DetailPageHeader
+              icon={<ApiOutlined style={{ fontSize: 18, color: '#fff' }} />}
+              iconGradient={MCP_TYPE_CONFIG[mcpInfo.type]?.gradient || 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)'}
+              iconShadowColor={MCP_TYPE_CONFIG[mcpInfo.type]?.color ? `${MCP_TYPE_CONFIG[mcpInfo.type].color}33` : 'rgba(79, 110, 247, 0.2)'}
+              name={mcpInfo.name}
+              tags={[
+                {
+                  color: MCP_TYPE_CONFIG[mcpInfo.type]?.color || '#999',
+                  label: MCP_TYPE_CONFIG[mcpInfo.type]?.label || mcpInfo.type
+                },
+                ...(mcpInfo.isPublic === 1 ? [{ color: 'blue', label: intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' }) }] : []),
+                {
+                  color: mcpInfo.status === 1 ? 'success' : 'default',
+                  label: mcpInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })
+                }
+              ]}
+              infoItems={[
+                ...(mcpInfo.description ? [{
+                  label: intl.formatMessage({ id: 'pages.mcp.detail.description', defaultMessage: 'Description' }),
+                  value: mcpInfo.description
+                }] : []),
+                {
+                  label: intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' }),
+                  value: mcpInfo.type === 'stdio' ? (mcpInfo.command || '-') : (mcpInfo.url || '-')
+                }
+              ]}
+              creator={mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}
+              createTime={mcpInfo.createTime}
+              intl={intl}
+            />
 
             {/* 工具列表 */}
             <Card

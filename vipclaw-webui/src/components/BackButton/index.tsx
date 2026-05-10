@@ -53,6 +53,7 @@ const BackButton: React.FC<BackButtonProps> = ({
         padding: '8px 12px',
         transition: 'all 0.3s ease',
         fontSize: '14px',
+        fontWeight: 'normal',
         ...style,
       }}
     >

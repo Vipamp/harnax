@@ -165,6 +165,7 @@ export default {
   'pages.skill.detail.expandAll': '展开全部',
   'pages.skill.detail.fileStructure': '文件结构',
   'pages.skill.detail.noResources': '暂无资源文件',
+  'pages.skill.detail.noSkillmd': '暂无SKILL.md内容',
   'pages.skill.detail.noContent': '暂无文件内容',
   'pages.skill.detail.selectFile': '选择文件查看内容',
   'pages.skill.detail.selectFileHint': '请从左侧选择文件查看内容',

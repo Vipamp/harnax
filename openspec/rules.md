@@ -880,7 +880,396 @@ import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/comp
 4. 使用 `SearchInput`、`FilterSelect`、`ActionButton` 替换原生组件
 5. 测试功能和样式是否正常
 
-### 2.7 弹窗（FormModal）样式规范
+### 2.8 详情页头部公共组件规范
+
+#### 组件架构
+
+所有详情页（Skill、MCP等）的头部信息展示必须使用统一的 `DetailPageHeader` 公共组件，确保样式和交互体验的一致性。
+
+**组件位置**: `src/components/DetailPageHeader/index.tsx`
+
+**核心特性**:
+- 统一的卡片样式和布局
+- 支持自定义图标和渐变色
+- 可选的仓库链接显示
+- 动态标签列表
+- 信息项灵活配置（通过 infoItems）
+- 创建人和时间信息
+- 完整的国际化支持
+- 响应式布局（左右分布）
+
+#### Props 接口
+
+```typescript
+interface DetailPageHeaderProps {
+  icon: React.ReactNode;                              // 图标组件
+  iconGradient: string;                               // 图标背景渐变色
+  iconShadowColor?: string;                           // 图标阴影颜色
+  name: string;                                       // 名称
+  repositoryUrl?: string;                             // 仓库URL（可选）
+  repositoryName?: string;                            // 仓库名称（可选）
+  repositoryBranch?: string;                          // 仓库分支（可选）
+  tags: Array<{                                       // 标签列表
+    color: string;
+    label: string;
+  }>;
+  infoItems?: Array<{                                 // 信息项列表（键值对形式）
+    label: string;                                    // 标签（已国际化）
+    value: string;                                    // 值
+    icon?: React.ReactNode;                           // 可选图标
+  }>;
+  creator?: string;                                   // 创建人
+  updateTime?: string;                                // 更新时间
+  createTime?: string;                                // 创建时间
+  marginBottom?: number;                              // 下边距，默认16
+  intl: any;                                          // 国际化函数
+}
+```
+
+#### 强制要求
+
+- ✅ **必须使用 DetailPageHeader 组件**：所有详情页头部必须使用此公共组件
+- ✅ **禁止手动编写布局**：不得使用 Card + Descriptions 等手动编写头部布局
+- ✅ **infoItems 必须国际化**：所有 infoItems 的 label 必须使用 `intl.formatMessage()`
+- ✅ **保持样式一致**：所有详情页头部必须保持相同的视觉规格
+- ✅ **图标使用渐变色**：必须使用 CSS 渐变色作为图标背景
+
+#### 样式规格标准
+
+##### 卡片容器
+```typescript
+{
+  marginBottom: 16,                   // 下边距
+  borderRadius: '12px',               // 圆角
+  border: '1px solid var(--vip-border)',
+  boxShadow: 'var(--vip-shadow-sm)',
+  overflow: 'hidden'
+}
+```
+
+##### 顶部标题栏
+```typescript
+{
+  padding: '12px 16px',               // 内边距
+  background: 'var(--vip-primary-light)',
+  borderBottom: '1px solid var(--vip-border)'
+}
+```
+
+##### 图标容器
+```typescript
+{
+  width: 36,                          // 宽度
+  height: 36,                         // 高度
+  borderRadius: '8px',                // 圆角
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  boxShadow: `0 2px 8px ${iconShadowColor}`
+}
+```
+
+##### 图标内部
+```typescript
+{
+  fontSize: 18,                       // 图标大小
+  color: '#fff'                       // 图标颜色（白色）
+}
+```
+
+##### 名称文字
+```typescript
+{
+  fontSize: 15,                       // 字号
+  fontWeight: 'strong',               // 字重
+  color: 'var(--vip-text-primary)'
+}
+```
+
+##### 仓库链接
+```typescript
+{
+  fontSize: 11,                       // 字号
+  fontWeight: 500,                    // 字重
+  color: 'var(--vip-primary)',
+  textDecoration: 'none'
+}
+```
+
+##### 标签规格
+```typescript
+{
+  borderRadius: '4px',                // 圆角
+  fontWeight: 500,                    // 字重
+  margin: 0,                          // 外边距
+  fontSize: 11                        // 字号
+}
+```
+
+##### 信息项区域
+```typescript
+{
+  padding: '8px 16px',                // 内边距
+  borderBottom: '1px solid var(--vip-border)'
+}
+```
+
+##### 信息项内容
+```typescript
+{
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6                              // 项间距
+}
+```
+
+##### 单个信息项
+```typescript
+{
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 6                              // 标签和内容间距
+}
+```
+
+##### 信息项标签
+```typescript
+{
+  fontSize: 12,                       // 字号
+  color: 'var(--vip-text-secondary)',
+  lineHeight: '1.5'
+}
+```
+
+##### 信息项标签前缀
+```typescript
+{
+  color: 'var(--vip-text-tertiary)',  // 标签颜色
+  marginRight: 4                      // 右边距
+}
+```
+
+##### 创建人和时间
+```typescript
+{
+  fontSize: 11,                       // 字号
+  color: 'var(--vip-text-tertiary)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4                              // 图标和文字间距
+}
+```
+
+#### 使用标准
+
+##### Skill 详情页示例
+```tsx
+import DetailPageHeader from '@/components/DetailPageHeader';
+import { ThunderboltOutlined, LinkOutlined } from '@ant-design/icons';
+
+<DetailPageHeader
+  icon={<ThunderboltOutlined style={{ fontSize: 18, color: '#fff' }} />}
+  iconGradient="linear-gradient(135deg, #722ed1 0%, #531dab 100%)"
+  iconShadowColor="rgba(114, 46, 209, 0.2)"
+  name={skillInfo.name}
+  repositoryUrl={skillInfo.repositoryUrl}
+  repositoryName={skillInfo.repositoryName}
+  repositoryBranch={skillInfo.repositoryBranch}
+  tags={[
+    ...(skillInfo.isPublic === 1 ? [{ 
+      color: 'purple', 
+      label: intl.formatMessage({ id: 'pages.skill.detail.public', defaultMessage: 'Public' }) 
+    }] : []),
+    {
+      color: skillInfo.status === 1 ? 'success' : 'default',
+      label: skillInfo.status === 1 
+        ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) 
+        : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })
+    }
+  ]}
+  infoItems={skillInfo.description ? [{
+    label: intl.formatMessage({ id: 'pages.skill.detail.description', defaultMessage: 'Description' }),
+    value: skillInfo.description
+  }] : undefined}
+  creator={skillInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}
+  updateTime={skillInfo.updateTime}
+  intl={intl}
+/>
+```
+
+##### MCP 详情页示例
+```tsx
+import DetailPageHeader from '@/components/DetailPageHeader';
+import { ApiOutlined, CodeOutlined } from '@ant-design/icons';
+
+<DetailPageHeader
+  icon={<ApiOutlined style={{ fontSize: 18, color: '#fff' }} />}
+  iconGradient={MCP_TYPE_CONFIG[mcpInfo.type]?.gradient || 'linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)'}
+  iconShadowColor={MCP_TYPE_CONFIG[mcpInfo.type]?.color ? `${MCP_TYPE_CONFIG[mcpInfo.type].color}33` : 'rgba(79, 110, 247, 0.2)'}
+  name={mcpInfo.name}
+  tags={[
+    {
+      color: MCP_TYPE_CONFIG[mcpInfo.type]?.color || '#999',
+      label: MCP_TYPE_CONFIG[mcpInfo.type]?.label || mcpInfo.type
+    },
+    ...(mcpInfo.isPublic === 1 ? [{ 
+      color: 'blue', 
+      label: intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' }) 
+    }] : []),
+    {
+      color: mcpInfo.status === 1 ? 'success' : 'default',
+      label: mcpInfo.status === 1 
+        ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) 
+        : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })
+    }
+  ]}
+  infoItems={[
+    ...(mcpInfo.description ? [{
+      label: intl.formatMessage({ id: 'pages.mcp.detail.description', defaultMessage: 'Description' }),
+      value: mcpInfo.description
+    }] : []),
+    {
+      label: intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' }),
+      value: mcpInfo.type === 'stdio' ? (mcpInfo.command || '-') : (mcpInfo.url || '-')
+    }
+  ]}
+  creator={mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}
+  createTime={mcpInfo.createTime}
+  intl={intl}
+/>
+```
+
+#### 布局结构
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ [⚡36px] moark-tts 🔗 repo    [公开] [启用]   👤 未知 🕐 14:54 │
+│                                                                 │
+│ 描述：Text-to-Speech (TTS) and voice-feature skill...          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**布局说明**：
+1. **左侧区域**：图标 + 名称 + 仓库链接 + 标签
+2. **右侧区域**：创建人 + 时间
+3. **底部区域**：infoItems（可选，多行显示）
+
+#### infoItems 配置规则
+
+1. **动态配置**：根据实际需要传入信息项数组
+2. **条件显示**：使用数组展开运算符 `...` 实现条件显示
+   ```typescript
+   infoItems={[
+     ...(hasDescription ? [{ label: '描述', value: description }] : []),
+     { label: '连接方式', value: connectionMethod }
+   ]}
+   ```
+3. **国际化**：所有 label 必须使用 `intl.formatMessage()`
+4. **可选图标**：支持通过 `icon` 属性添加图标（如 `<CodeOutlined />`）
+5. **自动换行**：infoItems 支持多行，每项独立一行
+
+#### 深色模式适配
+
+所有颜色必须使用 CSS 变量，确保深色模式下正常显示：
+
+```less
+// ✅ 正确：使用 CSS 变量
+color: var(--vip-text-primary);
+background: var(--vip-primary-light);
+border: 1px solid var(--vip-border);
+
+// ❌ 错误：硬编码颜色
+color: #000;
+background: #fff;
+border: 1px solid #d9d9d9;
+```
+
+#### 开发检查清单
+
+创建或修改详情页头部时，请确保：
+
+- [ ] 使用 `DetailPageHeader` 组件而非手动编写 Card 和 Descriptions
+- [ ] 图标使用渐变色背景
+- [ ] 所有标签通过 `tags` 属性传入
+- [ ] 信息项通过 `infoItems` 属性传入
+- [ ] 所有 label 使用 `intl.formatMessage()` 国际化
+- [ ] 仓库链接仅在 `repositoryUrl` 存在时显示
+- [ ] 测试浅色和深色模式下的显示效果
+- [ ] 验证信息项顺序是否符合业务需求
+
+#### 已应用页面
+
+| 页面 | 文件 | 图标 | 渐变色 | infoItems |
+|------|------|------|--------|----------|
+| ✅ Skill详情 | `skill/detail.tsx` | ThunderboltOutlined | #722ed1 → #531dab | 描述 |
+| ✅ MCP详情 | `mcp/detail.tsx` | ApiOutlined | 根据类型动态 | 描述、连接方式 |
+
+#### 禁止行为
+
+- ❌ 禁止直接使用 Card + Descriptions 组件组合
+- ❌ 禁止手动编写头部布局和样式
+- ❌ 禁止在 infoItems 中使用硬编码的 label 文本
+- ❌ 禁止在不同的详情页使用不同的头部样式规格
+- ❌ 禁止在信息项中混用多种样式规范
+- ❌ 禁止使用 Descriptions 组件的 label 和 content 样式
+
+#### 开发流程
+
+##### 新增详情页
+1. 导入 `DetailPageHeader` 组件
+2. 配置图标、渐变色、阴影颜色
+3. 传入 `name`、`tags`、`creator`、时间等基本信息
+4. 配置 `infoItems` 数组（需要显示的信息项）
+5. 配置仓库链接（如有）
+6. 测试浅色和深色模式
+
+##### 迁移旧详情页
+1. 识别现有的 Card + Descriptions 代码
+2. 替换为 `DetailPageHeader` 组件
+3. 将 Descriptions.Item 转换为 infoItems 数组
+4. 移除所有手动设置的样式
+5. 确保所有 label 已国际化
+6. 测试功能和样式
+
+#### 国际化 Key 规范
+
+详情页头部使用的国际化 Key 应遵循以下规范：
+
+```typescript
+// Skill 详情页
+'pages.skill.detail.description': '描述'
+'pages.skill.detail.public': '公开'
+
+// MCP 详情页
+'pages.mcp.detail.description': '描述'
+'pages.mcp.detail.connectionMethod': '连接方式'
+
+// 通用
+'pages.common.enabled': '启用'
+'pages.common.disabled': '停用'
+'pages.common.unknown': '未知'
+'pages.common.public': '公开'
+```
+
+#### 主题色规范
+
+不同模块使用不同的主题渐变色：
+
+| 模块 | 渐变色 | 说明 |
+|------|--------|------|
+| Skill | `linear-gradient(135deg, #722ed1 0%, #531dab 100%)` | 紫色系 |
+| MCP-STDIO | `linear-gradient(135deg, #4f6ef7 0%, #667eea 100%)` | 蓝色系 |
+| MCP-SSE | `linear-gradient(135deg, #52c41a 0%, #73d13d 100%)` | 绿色系 |
+| MCP-HTTP | `linear-gradient(135deg, #fa8c16 0%, #ffc53d 100%)` | 橙色系 |
+
+#### 验收标准
+
+- 所有详情页头部 100% 使用 `DetailPageHeader` 组件
+- 信息项通过 `infoItems` 灵活配置
+- 所有文案完成国际化
+- 浅色和深色模式显示正常
+- 布局紧凑，信息密度合理
+- 代码审查 100% 通过组件使用检查项
 
 #### 组件架构
 

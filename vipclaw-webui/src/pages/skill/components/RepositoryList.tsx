@@ -139,16 +139,10 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   </a>
                 </div>
               )}
-              {/* 是否公开、创建时间、创建人和操作按钮 */}
+              {/* 是否公开和操作按钮 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, borderTop: '1px solid var(--vip-border-secondary)', paddingTop: 8 }}>
                 {repository.isPublic === 1 && (
                   <Tag color="blue" style={{ fontSize: '11px' }}>{intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}</Tag>
-                )}
-                <Text type="secondary" style={{ fontSize: '11px' }}>
-                  {repository.createTime?.replace('T', ' ')}
-                </Text>
-                {repository.creator && (
-                  <Text type="secondary" style={{ fontSize: '11px' }}>{repository.creator}</Text>
                 )}
                 {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>

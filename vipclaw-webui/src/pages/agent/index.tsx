@@ -522,7 +522,7 @@ const AgentCard: React.FC<{
               {intl.formatMessage({ id: 'pages.common.private', defaultMessage: 'Private' })}
             </Tag>
           )}
-          <Text type="secondary" style={{ fontSize: config.infoSize + 1 }}>
+          <Text type="secondary" style={{ fontSize: config.infoSize }}>
             {item.createTime?.replace('T', ' ')}
           </Text>
           {item.creator && (
@@ -660,7 +660,7 @@ const AgentManagement: React.FC = () => {
     <PageContainer
       header={{
         title: (
-          <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
             <RobotOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.agent.management',

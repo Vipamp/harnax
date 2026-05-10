@@ -165,6 +165,7 @@ export default {
   'pages.skill.detail.expandAll': 'Expand All',
   'pages.skill.detail.fileStructure': 'File Structure',
   'pages.skill.detail.noResources': 'No resource files',
+  'pages.skill.detail.noSkillmd': 'No SKILL.md content',
   'pages.skill.detail.noContent': 'No file content',
   'pages.skill.detail.selectFile': 'Select file to view content',
   'pages.skill.detail.selectFileHint': 'Please select a file from the left to view content',

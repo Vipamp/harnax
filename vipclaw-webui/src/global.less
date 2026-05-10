@@ -1845,6 +1845,10 @@ html.dark {
     height: 100% !important;
   }
   
+  .ant-tabs-tab {
+    font-size: 13px !important;
+  }
+
   .ant-tabs-tabpane {
     height: 100% !important;
     overflow: hidden !important;
@@ -1864,53 +1868,86 @@ html.dark {
   .markdown-body {
     font-size: 12px !important;
     line-height: 1.8 !important;
-  
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 24px !important;
-      margin-bottom: 16px !important;
-      font-weight: 600 !important;
-      line-height: 1.25 !important;
-      color: var(--vip-text-primary) !important;
-    }
-    
+    color: var(--vip-text-primary) !important;
+
     h1 {
-      font-size: 1.5em !important;
-      padding-bottom: 0.3em !important;
-      border-bottom: 2px solid var(--vip-border) !important;
-    }
-    
-    h2 {
-      font-size: 1.3em !important;
+      font-size: 1.4em !important;
+      font-weight: 600 !important;
+      margin: 20px 0 12px !important;
       padding-bottom: 0.3em !important;
       border-bottom: 1px solid var(--vip-border) !important;
     }
-    
+
+    h2 {
+      font-size: 1.2em !important;
+      font-weight: 600 !important;
+      margin: 18px 0 10px !important;
+      padding-bottom: 0.2em !important;
+      border-bottom: 1px solid var(--vip-border) !important;
+    }
+
     h3 {
-      font-size: 1.15em !important;
+      font-size: 1.1em !important;
+      font-weight: 600 !important;
+      margin: 16px 0 8px !important;
     }
-    
+
     h4 {
-      font-size: 1.05em !important;
+      font-size: 1.0em !important;
+      font-weight: 600 !important;
+      margin: 14px 0 6px !important;
     }
-    
+
+    h5, h6 {
+      font-size: 0.95em !important;
+      font-weight: 600 !important;
+      margin: 12px 0 6px !important;
+    }
+
     p {
       font-size: 12px !important;
-      margin-bottom: 16px !important;
       line-height: 1.8 !important;
+      margin: 8px 0 !important;
     }
 
     li {
       font-size: 12px !important;
       line-height: 1.6 !important;
     }
-    
+
     code {
-      background: var(--vip-bg-elevated) !important;
-      padding: 2px 6px !important;
-      border-radius: 4px !important;
       font-size: 0.85em !important;
       font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, monospace !important;
+      background: rgba(79, 110, 247, 0.08) !important;
+      color: var(--vip-primary) !important;
+      padding: 2px 6px !important;
+      border-radius: 4px !important;
       white-space: nowrap !important;
+      word-break: keep-all !important;
+      border: 1px solid rgba(79, 110, 247, 0.15) !important;
+    }
+
+    pre {
+      code {
+        white-space: pre !important;
+        word-break: normal !important;
+        font-size: 12px !important;
+        background: none !important;
+        color: inherit !important;
+        border: none !important;
+        padding: 0 !important;
+      }
+    }
+  }
+}
+
+/* 深色主题 skill-detail-page Markdown 适配 */
+html.dark .skill-detail-page {
+  .markdown-body {
+    code {
+      background: rgba(92, 124, 255, 0.15) !important;
+      color: var(--vip-primary-hover) !important;
+      border-color: rgba(92, 124, 255, 0.25) !important;
     }
   }
 }
@@ -1940,15 +1977,19 @@ html.dark {
       transition: all 0.2s ease !important;
       
       &:hover {
-        background: #f0f0f5 !important;
+        background: var(--vip-primary-lighter) !important;
       }
       
       &.ant-tree-node-selected {
-        background: #f0e6ff !important;
+        background: #eef1fe !important;  // 强制使用浅蓝色背景
         
         .ant-tree-node-content-wrapper {
-          color: #722ed1 !important;
-          font-weight: 500 !important;
+          color: #1a1a2e !important;  // 强制使用深色文字
+          font-weight: 600 !important;
+        }
+        
+        .ant-tree-iconEle {
+          color: var(--vip-primary) !important;
         }
       }
     }
@@ -1957,6 +1998,7 @@ html.dark {
       padding: 4px 8px !important;
       border-radius: 4px !important;
       transition: all 0.2s ease !important;
+      color: var(--vip-text-primary) !important;
       
       &:hover {
         background: transparent !important;
@@ -1967,12 +2009,20 @@ html.dark {
       width: 20px !important;
       height: 20px !important;
       line-height: 20px !important;
+      color: var(--vip-text-secondary) !important;
     }
     
     .ant-tree-switcher {
       width: 20px !important;
       height: 20px !important;
       line-height: 20px !important;
+      color: var(--vip-text-secondary) !important;
+    }
+    
+    .ant-tree-node-content-wrapper {
+      .ant-tree-iconEle {
+        color: var(--vip-text-secondary) !important;
+      }
     }
   }
 }
@@ -1981,16 +2031,34 @@ html.dark {
 html.dark .custom-file-tree {
   .ant-tree-treenode {
     &:hover {
-      background: var(--vip-bg-elevated) !important;
+      background: var(--vip-primary-lighter) !important;
     }
     
     &.ant-tree-node-selected {
       background: var(--vip-primary-light) !important;
+      border: 1px solid var(--vip-primary) !important;
       
       .ant-tree-node-content-wrapper {
+        color: var(--vip-text-primary) !important;
+        font-weight: 600 !important;
+      }
+      
+      .ant-tree-iconEle {
         color: var(--vip-primary-hover) !important;
       }
     }
+    
+    .ant-tree-node-content-wrapper {
+      color: var(--vip-text-primary) !important;
+      
+      .ant-tree-iconEle {
+        color: var(--vip-text-secondary) !important;
+      }
+    }
+  }
+  
+  .ant-tree-switcher {
+    color: var(--vip-text-secondary) !important;
   }
 }
 
@@ -2002,65 +2070,78 @@ html.dark .custom-file-tree {
     background: #ffffff !important;
     line-height: 1.8 !important;
     font-size: 12px !important;
-    
-    h1, h2, h3, h4, h5, h6 {
-      margin-top: 24px !important;
-      margin-bottom: 16px !important;
-      font-weight: 600 !important;
-      line-height: 1.25 !important;
-      color: var(--vip-text-primary) !important;
-    }
-    
+    color: var(--vip-text-primary) !important;
+
     h1 {
-      font-size: 1.5em !important;
-      padding-bottom: 0.3em !important;
-      border-bottom: 2px solid var(--vip-border) !important;
-    }
-    
-    h2 {
-      font-size: 1.3em !important;
+      font-size: 1.4em !important;
+      font-weight: 600 !important;
+      margin: 20px 0 12px !important;
       padding-bottom: 0.3em !important;
       border-bottom: 1px solid var(--vip-border) !important;
     }
-    
+
+    h2 {
+      font-size: 1.2em !important;
+      font-weight: 600 !important;
+      margin: 18px 0 10px !important;
+      padding-bottom: 0.2em !important;
+      border-bottom: 1px solid var(--vip-border) !important;
+    }
+
     h3 {
-      font-size: 1.15em !important;
+      font-size: 1.1em !important;
+      font-weight: 600 !important;
+      margin: 16px 0 8px !important;
     }
-    
+
     h4 {
-      font-size: 1.05em !important;
+      font-size: 1.0em !important;
+      font-weight: 600 !important;
+      margin: 14px 0 6px !important;
     }
-    
+
+    h5, h6 {
+      font-size: 0.95em !important;
+      font-weight: 600 !important;
+      margin: 12px 0 6px !important;
+    }
+
     p {
       font-size: 12px !important;
-      margin-bottom: 16px !important;
       line-height: 1.8 !important;
+      margin: 8px 0 !important;
     }
-    
+
     li {
       font-size: 12px !important;
       line-height: 1.6 !important;
     }
-    
+
     code {
-      background: var(--vip-bg-elevated) !important;
-      padding: 2px 6px !important;
-      border-radius: 4px !important;
       font-size: 0.85em !important;
       font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Monaco, monospace !important;
+      background: var(--vip-bg-elevated) !important;
+      padding: 1px 5px !important;
+      border-radius: 3px !important;
       white-space: nowrap !important;
+      word-break: keep-all !important;
     }
-    
+
     pre {
       margin: 16px 0 !important;
       overflow: auto !important;
-      
+
       code {
+        white-space: pre !important;
+        word-break: normal !important;
+        font-size: 12px !important;
         background: transparent !important;
         padding: 0 !important;
+        border: none !important;
+        color: inherit !important;
       }
     }
-    
+
     blockquote {
       border-left: 4px solid var(--vip-primary) !important;
       padding: 8px 16px !important;
@@ -2068,48 +2149,48 @@ html.dark .custom-file-tree {
       background: var(--vip-bg-elevated) !important;
       color: var(--vip-text-secondary) !important;
     }
-    
+
     table {
       border-collapse: collapse !important;
       width: 100% !important;
       margin: 16px 0 !important;
-      
+
       th, td {
         border: 1px solid var(--vip-border) !important;
         padding: 8px 12px !important;
         text-align: left !important;
       }
-      
+
       th {
         background: var(--vip-bg-elevated) !important;
         font-weight: 600 !important;
         color: var(--vip-text-primary) !important;
       }
-      
+
       tr:nth-child(even) {
         background: var(--vip-bg-elevated) !important;
       }
     }
-    
+
     ul, ol {
       padding-left: 24px !important;
       margin: 16px 0 !important;
-      
+
       li {
         margin: 4px 0 !important;
         line-height: 1.6 !important;
       }
     }
-    
+
     a {
       color: var(--vip-primary) !important;
       text-decoration: none !important;
-      
+
       &:hover {
         text-decoration: underline !important;
       }
     }
-    
+
     img {
       max-width: 100% !important;
       border-radius: 8px !important;
@@ -2136,8 +2217,9 @@ html.dark .file-content-wrapper {
     }
     
     code {
-      background: var(--vip-bg-elevated) !important;
-      color: var(--vip-text-primary) !important;
+      background: rgba(92, 124, 255, 0.15) !important;
+      color: var(--vip-primary-hover) !important;
+      border-color: rgba(92, 124, 255, 0.25) !important;
     }
     
     blockquote {
@@ -2303,13 +2385,13 @@ html.dark {
 /* ===== 文件树高亮样式 ===== */
 .custom-file-tree {
   .ant-tree-treenode-selected {
-    background-color: var(--vip-primary-light) !important;
+    background-color: #eef1fe !important;  // 强制使用浅蓝色背景
     border-radius: 6px !important;
   
     .ant-tree-node-content-wrapper {
       background-color: transparent !important;
-      color: var(--vip-primary) !important;
-      font-weight: 500 !important;
+      color: #1a1a2e !important;  // 强制使用深色文字
+      font-weight: 600 !important;
     }
     
     .ant-tree-iconEle {

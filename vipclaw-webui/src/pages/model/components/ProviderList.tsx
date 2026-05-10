@@ -84,16 +84,10 @@ const ProviderList: React.FC<ProviderListProps> = ({
             />
           </div>
 
-          {/* 是否公开、创建时间、创建人和操作按钮 */}
+          {/* 是否公开和操作按钮 */}
           <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {provider.isPublic === 1 && (
               <Tag color="blue" style={{ marginLeft: 0 }}>{intl.formatMessage({ id: 'pages.model.public', defaultMessage: 'Public' })}</Tag>
-            )}
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {provider.createTime?.replace('T', ' ')}
-            </Text>
-            {provider.creator && (
-              <Text type="secondary" style={{ fontSize: '11px' }}>{provider.creator}</Text>
             )}
             <div style={{ flex: 1 }} />
             <Space size={8}>

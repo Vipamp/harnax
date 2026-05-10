@@ -1,15 +1,12 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Descriptions, Tag, Typography, Spin, Empty, Button, Tabs, Tree, Breadcrumb } from 'antd';
+import { Card, Descriptions, Tag, Typography, Spin, Empty, Tabs, Tree, Breadcrumb } from 'antd';
 import { 
   ThunderboltOutlined, 
   FileOutlined, 
   FolderOutlined, 
   LinkOutlined,
-  ClockCircleOutlined,
-  UserOutlined,
-  FileMarkdownOutlined,
-  FolderOpenOutlined
+  FileMarkdownOutlined
 } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
 // @ts-ignore
@@ -20,6 +17,7 @@ import { getSkillById } from '@/services/ant-design-pro/skill';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import BackButton from '@/components/BackButton';
+import DetailPageHeader from '@/components/DetailPageHeader';
 
 const { Text, Title } = Typography;
 const { DirectoryTree } = Tree;
@@ -63,8 +61,9 @@ const getLanguageFromExtension = (filename: string): string => {
 
 // Markdown 代码块组件（带语法高亮）
 const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = ({ className, children }) => {
+  // 提取语言类型，支持多种格式：language-xxx 或 hljs language-xxx
   const match = /language-(\w+)/.exec(className || '');
-  const language = match ? match[1] : 'text';
+  const language = match ? match[1].toLowerCase() : 'text';
   const code = String(children).replace(/\n$/, '');
   
   return (
@@ -79,6 +78,11 @@ const CodeBlock: React.FC<{ className?: string; children?: React.ReactNode }> = 
         padding: '16px',
       }}
       wrapLongLines={true}
+      codeTagProps={{
+        style: {
+          background: 'none',
+        }
+      }}
     >
       {code}
     </SyntaxHighlighter>
@@ -103,11 +107,17 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}
           components={{
-            code: ({ node, inline, className, children, ...props }: any) => {
-              if (inline) {
-                return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
+            code: ({ className, children, ...props }: any) => {
+              // 检查是否有语言标记（有 language-xxx 类名的都是代码块）
+              const match = /language-(\w+)/.exec(className || '');
+              console.log('FileContentRenderer code className:', className, 'match:', match);
+              // 如果有语言标记，说明是多行代码块，需要语法高亮
+              if (match) {
+                return <CodeBlock className={className}>{children}</CodeBlock>;
               }
-              return <CodeBlock className={className}>{children}</CodeBlock>;            }
+              // 否则是行内代码，使用简单样式（不使用黑色背景）
+              return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
+            }
           }}
         >
           {content}
@@ -300,31 +310,39 @@ const SkillDetail: React.FC = () => {
               } 
             }}
           >
-            {skillInfo?.skillmd ? (
-              <div 
-                className="markdown-body"
-                style={{
-                  padding: '24px',
-                  height: '100%',
-                  overflow: 'auto'
-                }}
-              >
+            <div 
+              className="markdown-body" 
+              style={{ 
+                padding: '24px',
+                height: '100%',
+                overflow: 'auto'
+              }}
+            >
+              {skillInfo?.skillmd ? (
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
-                    code: ({ node, inline, className, children, ...props }: any) => {
-                      if (inline) {
-                        return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
+                    code: ({ className, children, ...props }: any) => {
+                      // 检查是否有语言标记（有 language-xxx 类名的都是代码块）
+                      const match = /language-(\w+)/.exec(className || '');
+                      // 如果有语言标记，说明是多行代码块，需要语法高亮
+                      if (match) {
+                        return <CodeBlock className={className}>{children}</CodeBlock>;
                       }
-                      return <CodeBlock className={className}>{children}</CodeBlock>;                    }
+                      // 否则是行内代码，使用简单样式（不使用黑色背景）
+                      return <code className={className} {...props} style={{padding: '2px 6px', whiteSpace: 'nowrap'}}>{children}</code>;
+                    }
                   }}
                 >
                   {skillInfo.skillmd}
                 </ReactMarkdown>
-              </div>
-            ) : (
-              <Empty description={intl.formatMessage({ id: 'pages.skill.detail.noContent', defaultMessage: 'No SKILL.md content' })} />
-            )}
+              ) : (
+                <Empty 
+                  description={intl.formatMessage({ id: 'pages.skill.detail.noSkillmd', defaultMessage: 'No SKILL.md content' })} 
+                  image={Empty.PRESENTED_IMAGE_SIMPLE} 
+                />
+              )}
+            </div>
           </Card>
         </div>
       ),
@@ -347,36 +365,6 @@ const SkillDetail: React.FC = () => {
           overflow: 'hidden',
           border: '1px solid var(--vip-border)'
         }}>
-          {/* 顶部工具栏 */}
-          <div className="resources-toolbar" style={{
-            padding: '12px 16px',
-            background: 'var(--vip-bg-container)',
-            borderBottom: '1px solid var(--vip-border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: 'var(--vip-shadow-sm)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FolderOpenOutlined style={{ color: '#722ed1', fontSize: '16px' }} />
-              <Text strong style={{ color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.skill.detail.resources', defaultMessage: 'Resources' })}</Text>
-              <Tag color="purple" style={{ marginLeft: '8px', borderRadius: '4px' }}>
-                {intl.formatMessage({ id: 'pages.skill.detail.fileCount', defaultMessage: '{count} files' }, { count: Object.keys(fileContents).length })}
-              </Tag>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Button 
-                size="small" 
-                icon={<FolderOutlined />} 
-                style={{ 
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {intl.formatMessage({ id: 'pages.skill.detail.expandAll', defaultMessage: 'Expand All' })}
-              </Button>
-            </div>
-          </div>
-
           {/* 主内容区域 */}
           <div style={{ 
             flex: 1, 
@@ -484,44 +472,39 @@ const SkillDetail: React.FC = () => {
                 position: 'relative'
               }}>
                 {selectedFile && fileContents[selectedFile] ? (
-                  <div className="file-content-wrapper" style={{
+                  <FileContentRenderer 
+                    filename={selectedFile} 
+                    content={fileContents[selectedFile]} 
+                  />
+                ) : selectedFile ? (
+                  <div style={{ 
+                    padding: '40px 20px', 
+                    textAlign: 'center',
+                    color: 'var(--vip-text-tertiary)',
                     height: '100%',
-                    overflow: 'auto'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
                   }}>
-                    <FileContentRenderer
-                      filename={selectedFile}
-                      content={fileContents[selectedFile]}
+                    <Empty 
+                      description={intl.formatMessage({ id: 'pages.skill.detail.noContent', defaultMessage: 'No file content' })} 
+                      image={Empty.PRESENTED_IMAGE_SIMPLE} 
                     />
                   </div>
                 ) : (
                   <div style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
+                    padding: '40px 20px', 
+                    textAlign: 'center',
+                    color: 'var(--vip-text-tertiary)',
                     height: '100%',
-                    background: 'var(--vip-bg-layout)',
-                    color: 'var(--vip-text-tertiary)'
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
                   }}>
-                    <div style={{
-                      width: '80px',
-                      height: '80px',
-                      borderRadius: '50%',
-                      background: 'var(--vip-primary-light)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: '16px',
-                      boxShadow: 'var(--vip-shadow-md)'
-                    }}>
-                      <FileOutlined style={{ fontSize: '32px', color: '#722ed1' }} />
-                    </div>
-                    <Text style={{ fontSize: '16px', marginBottom: '8px', color: 'var(--vip-text-secondary)' }}>
-                      {intl.formatMessage({ id: 'pages.skill.detail.selectFile', defaultMessage: 'Select file to view content' })}
-                    </Text>
-                    <Text style={{ fontSize: '13px', color: 'var(--vip-text-tertiary)' }}>
-                      {intl.formatMessage({ id: 'pages.skill.detail.selectFileHint', defaultMessage: 'Select a file from the left file tree to view its content' })}
-                    </Text>
+                    <Empty 
+                      description={intl.formatMessage({ id: 'pages.skill.detail.selectFileHint', defaultMessage: 'Please select a file from the left to view content' })} 
+                      image={Empty.PRESENTED_IMAGE_SIMPLE} 
+                    />
                   </div>
                 )}
               </div>
@@ -565,108 +548,30 @@ const SkillDetail: React.FC = () => {
       <Spin spinning={loading}>
         {skillInfo && (
           <>
-            {/* 基本信息 */}
-            <Card
-              style={{
-                marginBottom: 24,
-                borderRadius: '16px',
-                border: '1px solid var(--vip-border)',
-                boxShadow: 'var(--vip-shadow-sm)',
-                overflow: 'hidden'
-              }}
-              styles={{ body: { padding: 0 } }}
-            >
-              {/* 顶部标题栏 */}
-              <div style={{ 
-                padding: '20px 24px', 
-                background: 'var(--vip-primary-light)',
-                borderBottom: '1px solid var(--vip-border)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '12px',
-                      background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 4px 12px rgba(114, 46, 209, 0.25)'
-                    }}>
-                      <ThunderboltOutlined style={{ fontSize: 24, color: '#fff' }} />
-                    </div>
-                    <div>
-                      <Text strong style={{ fontSize: 18, color: 'var(--vip-text-primary)', display: 'block', marginBottom: 4 }}>
-                        {skillInfo.name}
-                      </Text>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        {skillInfo.isPublic === 1 && (
-                          <Tag color="purple" style={{ borderRadius: '6px', fontWeight: 500 }}>{intl.formatMessage({ id: 'pages.skill.detail.public', defaultMessage: 'Public' })}</Tag>
-                        )}
-                        <Tag 
-                          color={skillInfo.status === 1 ? 'success' : 'default'} 
-                          style={{ borderRadius: '6px', fontWeight: 500 }}
-                        >
-                          {skillInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
-                        </Tag>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 详细信息 */}
-              <Descriptions 
-                column={2} 
-                size="small"
-                styles={{ 
-                  label: { color: 'var(--vip-text-tertiary)', fontWeight: 500 },
-                  content: { color: 'var(--vip-text-primary)' }
-                }}
-                style={{ padding: '24px' }}
-              >
-                <Descriptions.Item label={intl.formatMessage({ id: 'pages.skill.detail.repositoryUrl', defaultMessage: 'Repository URL' })} span={2}>
-                  {skillInfo.repositoryUrl ? (
-                    <a
-                      href={skillInfo.repositoryBranch 
-                        ? `${skillInfo.repositoryUrl}/tree/${skillInfo.repositoryBranch}`
-                        : skillInfo.repositoryUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ 
-                        color: 'var(--vip-primary)',
-                        textDecoration: 'none',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        fontWeight: 500,
-                        transition: 'all 0.3s ease'
-                      }}
-                    >
-                      <LinkOutlined />
-                      {skillInfo.repositoryName || skillInfo.repositoryUrl}
-                      {skillInfo.repositoryBranch && (
-                        <Tag color="blue" style={{ marginLeft: 8, borderRadius: '4px' }}>
-                          {skillInfo.repositoryBranch}
-                        </Tag>
-                      )}
-                    </a>
-                  ) : (
-                    <Text type="secondary">{intl.formatMessage({ id: 'pages.skill.detail.noRepositoryUrl', defaultMessage: 'No repository URL' })}</Text>
-                  )}
-                </Descriptions.Item>
-                <Descriptions.Item label={intl.formatMessage({ id: 'pages.skill.detail.description', defaultMessage: 'Description' })} span={2}>
-                  <Text style={{ lineHeight: 1.6 }}>{skillInfo.description || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' })}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={<span><UserOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.skill.detail.creator', defaultMessage: 'Creator' })}</span>} span={2}>
-                  <Text>{skillInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label={<span><ClockCircleOutlined style={{ marginRight: 4 }} />{intl.formatMessage({ id: 'pages.skill.detail.lastSyncTime', defaultMessage: 'Last Sync Time' })}</span>} span={2}>
-                  <Text>{skillInfo.updateTime?.replace('T', ' ') || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}</Text>
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
+            {/* 基本信息 - 使用公共组件 */}
+            <DetailPageHeader
+              icon={<ThunderboltOutlined style={{ fontSize: 18, color: '#fff' }} />}
+              iconGradient="linear-gradient(135deg, #722ed1 0%, #531dab 100%)"
+              iconShadowColor="rgba(114, 46, 209, 0.2)"
+              name={skillInfo.name}
+              repositoryUrl={skillInfo.repositoryUrl}
+              repositoryName={skillInfo.repositoryName}
+              repositoryBranch={skillInfo.repositoryBranch}
+              tags={[
+                ...(skillInfo.isPublic === 1 ? [{ color: 'purple', label: intl.formatMessage({ id: 'pages.skill.detail.public', defaultMessage: 'Public' }) }] : []),
+                {
+                  color: skillInfo.status === 1 ? 'success' : 'default',
+                  label: skillInfo.status === 1 ? intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })
+                }
+              ]}
+              infoItems={skillInfo.description ? [{
+                label: intl.formatMessage({ id: 'pages.skill.detail.description', defaultMessage: 'Description' }),
+                value: skillInfo.description
+              }] : undefined}
+              creator={skillInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}
+              updateTime={skillInfo.updateTime}
+              intl={intl}
+            />
 
             {/* Tab 页 */}
             <Card
