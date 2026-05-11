@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
-import { PlusOutlined, RobotOutlined } from '@ant-design/icons';
+import { PlusOutlined, BulbOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
@@ -120,7 +120,7 @@ const SessionPage: React.FC = () => {
       header={{
         title: (
           <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <RobotOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            <BulbOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.agent.session',
               defaultMessage: 'Session',
@@ -228,7 +228,7 @@ const SessionPage: React.FC = () => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 14, color: '#fff', flexShrink: 0,
                 }}>
-                  <RobotOutlined />
+                  <BulbOutlined />
                 </div>
                 <Title level={5} style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
                   {selectedSession.title}
@@ -255,7 +255,7 @@ const SessionPage: React.FC = () => {
                 boxShadow: '0 6px 20px rgba(99,102,241,0.2)',
                 marginBottom: 8,
               }}>
-                <RobotOutlined />
+                <BulbOutlined />
               </div>
               <Text style={{ fontSize: 15, fontWeight: 600, color: 'var(--vip-text-primary)' }}>{intl.formatMessage({ id: 'pages.session.selectSession', defaultMessage: 'Select a session to start conversation' })}</Text>
               <Text style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>{intl.formatMessage({ id: 'pages.session.createNew', defaultMessage: 'or click "Create" on the left to create a new session' })}</Text>

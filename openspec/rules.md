@@ -1571,6 +1571,9 @@ border: 1px solid #d9d9d9;
 - ✅ **标题必须包含图标和副标题**：提供清晰的视觉层次和功能说明
 - ✅ **表单控件统一高度**：所有输入框、下拉框高度统一为 32px
 - ✅ **按钮区域统一样式**：底部按钮区域使用统一间距和样式
+- ✅ **Icon 渐变背景统一**：所有弹窗（新增和编辑）的 icon 必须使用蓝色到淡蓝色的渐变背景，禁止使用警告色或其他颜色
+- ✅ **Icon 与页面主题一致**：弹窗的 icon 应该与该页面标题或主题使用的 icon 保持一致，不要统一使用 `PlusOutlined` 或 `EditOutlined`
+- ✅ **不要自定义 iconGradient**：除非有特殊需求，否则不要设置 `iconGradient` 和 `iconShadowColor`，使用默认值即可
 
 #### 样式规格标准
 
@@ -1613,12 +1616,38 @@ border: 1px solid #d9d9d9;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);  // 图标阴影
   
+  // ✅ 统一使用蓝色到淡蓝色的渐变背景（新增和编辑弹窗一致）
+  background: linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%);
+  box-shadow: 0 4px 12px rgba(79, 110, 247, 0.25);
+  
   .anticon {
     font-size: 16px;               // 图标大小
-    color: #fff;                   // 图标颜色（白色）
+    color: #1a1a2e;                // 浅色模式下图标颜色（深色）
+  }
+}
+
+// 深色模式下的图标样式
+html.dark .form-modal .form-modal-icon {
+  .anticon {
+    color: #fff;                   // 深色模式下图标颜色（白色）
   }
 }
 ```
+
+**图标选择规范**：
+- ✅ **与页面主题保持一致**：弹窗的 icon 应该与该页面标题或主题使用的 icon 保持一致
+  - MCP 页面：使用 `ApiOutlined`、`CodeOutlined`、`LinkOutlined` 等
+  - Agent 页面：使用 `RocketOutlined`
+  - Skill 页面：使用 `FolderOutlined`
+  - Model 页面：使用 `AppstoreOutlined`
+  - Provider 页面：使用 `ApartmentOutlined`
+  - Channel 页面：使用 `LinkOutlined`
+  - Job 页面：使用 `FieldTimeOutlined`
+  - User 页面：使用 `UserOutlined`
+  - Tenant 页面：使用 `ShopOutlined`
+  - Session 页面：使用 `BulbOutlined`
+- ✅ **渐变背景**：所有弹窗的 icon 统一使用蓝色到淡蓝色的渐变，不使用警告色或其他颜色
+- ❌ **不要使用**：不要统一使用 `PlusOutlined` 或 `EditOutlined`，应该根据页面主题选择对应的 icon
 
 ##### 标题文字
 ```less
@@ -1729,10 +1758,11 @@ border: 1px solid #d9d9d9;
 ##### 基础示例
 ```tsx
 import { FormModal } from '@/components/FormModal';
-import { UserOutlined } from '@ant-design/icons';
+import { ApiOutlined, RocketOutlined, FolderOutlined } from '@ant-design/icons';
 import { ProForm, ProFormText } from '@ant-design/pro-components';
 
-const CreateForm: React.FC<CreateFormProps> = (props) => {
+// MCP 页面新增弹窗示例
+const CreateMcpForm: React.FC<CreateMcpFormProps> = (props) => {
   const { onCancel, onSubmit, visible } = props;
   
   return (
@@ -1740,9 +1770,10 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
       open={visible}
       onCancel={onCancel}
       titleConfig={{
-        mainTitle: '新建用户',
-        subtitle: '填写用户基本信息，创建系统账号',
-        icon: <UserOutlined />,
+        mainTitle: '新建 MCP 服务',
+        subtitle: '配置 MCP 服务连接和参数',
+        icon: <ApiOutlined />,  // ✅ 使用与 MCP 页面主题一致的 icon
+        // iconGradient 和 iconShadowColor 使用默认值即可（蓝色渐变）
       }}
     >
       <ProForm
@@ -1750,38 +1781,53 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
         layout="horizontal"
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
-        submitter={{
-          render: (_, dom) => (
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'flex-end', 
-              gap: '10px',
-              marginTop: '12px',
-              paddingTop: '10px',
-              borderTop: '1px solid var(--vip-border)'
-            }}>
-              {dom.map((item) => 
-                React.cloneElement(item, {
-                  style: {
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    height: '32px',
-                    padding: '4px 20px',
-                    borderRadius: '6px',
-                  }
-                })
-              )}
-            </div>
-          ),
-        }}
       >
         <ProFormText
-          name="username"
-          label="用户名"
-          placeholder="请输入用户名"
-          rules={[{ required: true, message: '请输入用户名' }]}
+          name="name"
+          label="MCP 名称"
+          placeholder="请输入 MCP 名称"
+          rules={[{ required: true, message: '请输入 MCP 名称' }]}
         />
       </ProForm>
+    </FormModal>
+  );
+};
+
+// Agent 页面编辑弹窗示例
+const UpdateAgentForm: React.FC<UpdateAgentFormProps> = (props) => {
+  const { onCancel, onSubmit, visible } = props;
+  
+  return (
+    <FormModal
+      open={visible}
+      onCancel={onCancel}
+      titleConfig={{
+        mainTitle: '编辑智能体',
+        subtitle: '修改智能体配置，保存后即时生效',
+        icon: <RocketOutlined />,  // ✅ 使用与 Agent 页面主题一致的 icon
+        // ✅ 不要设置 iconGradient，使用默认的蓝色渐变
+      }}
+    >
+      {/* 表单内容 */}
+    </FormModal>
+  );
+};
+
+// Skill 页面弹窗示例
+const SkillForm: React.FC<SkillFormProps> = (props) => {
+  const { onCancel, onSubmit, visible } = props;
+  
+  return (
+    <FormModal
+      open={visible}
+      onCancel={onCancel}
+      titleConfig={{
+        mainTitle: '编辑技能仓库',
+        subtitle: '修改仓库配置，保存后即时生效',
+        icon: <FolderOutlined />,  // ✅ 使用与 Skill 页面主题一致的 icon
+      }}
+    >
+      {/* 表单内容 */}
     </FormModal>
   );
 };
@@ -2033,7 +2079,94 @@ import { UserOutlined } from '@ant-design/icons';
 4. 移除所有手动设置的样式
 5. 测试功能和样式
 
-### 6.8 组件文档
+### 6.8 弹窗描述字段（TextArea）开发规范
+
+#### 6.8.1 核心原则
+
+所有弹窗表单中的描述字段（description）必须使用 `Input.TextArea` 组件，并支持手动拖拽调整高度，拖拽后下方表单项自动下移。
+
+#### 6.8.2 标准写法
+
+```tsx
+import { Input } from 'antd';
+
+<Form.Item
+  name="description"
+  label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
+>
+  <Input.TextArea
+    rows={1}
+    placeholder={intl.formatMessage({ id: 'pages.xxx.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
+    maxLength={500}
+    style={{
+      resize: 'vertical',
+      overflow: 'auto',
+      minHeight: '32px',
+      fontSize: '12px'
+    }}
+  />
+</Form.Item>
+```
+
+#### 6.8.3 关键配置说明
+
+| 属性 | 值 | 说明 |
+|------|-----|------|
+| `rows` | `{1}` | 默认显示 1 行高度（32px） |
+| `resize` | `'vertical'` | 启用垂直方向手动拖拽 |
+| `overflow` | `'auto'` | 确保 resize 手柄正常显示 |
+| `minHeight` | `'32px'` | 最小高度与单行输入框一致 |
+| `maxLength` | `{500}` | 字符数限制（根据业务需求调整） |
+| `fontSize` | `'12px'` | 统一字体大小 |
+
+#### 6.8.4 禁止使用的配置
+
+- ❌ **禁止使用 `autoSize`**：`autoSize` 会与 `resize: 'vertical'` 冲突，导致手动拖拽失效
+- ❌ **禁止使用 `showCount`**：`showCount` 会导致外层容器变为 `inline-block`，破坏 flex 布局流，影响下方表单项自动下移
+- ❌ **禁止设置固定 `height`**：会阻止 textarea 高度自适应
+
+#### 6.8.5 FormModal 样式支持
+
+FormModal 组件的样式文件（`FormModal.less`）已自动处理以下事项：
+
+1. **表单项对齐**：包含 textarea 的表单项自动设置为 `align-items: flex-start`（而非 `center`）
+2. **容器溢出**：`.ant-input-textarea` 容器设置 `overflow: visible`，防止裁剪 resize 手柄
+3. **弹窗高度**：弹窗容器设置 `height: auto` 和 `overflow: visible`，支持内容自适应撑开
+4. **过渡动画**：避免使用 `transition: all`，防止干扰布局实时响应
+
+#### 6.8.6 参考实现
+
+以下页面的描述字段实现可作为参考：
+
+- **会话设置**：`src/pages/session/components/SettingsModal.tsx`（第147-162行）
+- **MCP创建**：`src/pages/mcp/components/CreateForm.tsx`（第90-98行）
+- **MCP编辑**：`src/pages/mcp/components/UpdateForm.tsx`（第117-127行）
+- **模型供应商**：`src/pages/model/components/ProviderForm.tsx`（第181-196行）
+
+#### 6.8.7 验收检查项
+
+- [ ] TextArea 默认显示 1 行高度
+- [ ] 右下角显示拖拽手柄（双向箭头图标）
+- [ ] 可以手动拖拽调整高度
+- [ ] 拖拽后下方所有表单项自动下移
+- [ ] 拖拽后弹窗高度自动撑开
+- [ ] 字符数限制正常工作
+- [ ] 浅色和深色模式下样式正常
+- [ ] 未使用 `autoSize` 属性
+- [ ] 未使用 `showCount` 属性
+
+#### 6.8.8 常见问题
+
+**Q: 为什么不能使用 `autoSize`？**
+A: `autoSize` 会自动计算并设置 textarea 的高度，这与手动 `resize` 冲突。当用户拖拽调整高度后，`autoSize` 会覆盖用户设置的高度，导致拖拽失效。
+
+**Q: 为什么不能使用 `showCount`？**
+A: `showCount` 会在 textarea 外层包裹一个 `display: inline-block` 的容器，这会破坏 flex 布局流，导致拖拽后下方表单项无法自动下移。
+
+**Q: 如何限制最大行数？**
+A: 不使用 `autoSize` 的 `maxRows`，而是通过设置合适的 `maxLength` 限制字符数来间接控制内容长度。用户可以根据需要自由拖拽高度。
+
+### 6.9 组件文档
 
 详细使用说明和 API 文档请参考：
 - 组件实现：`src/components/FormModal/FormModal.tsx`

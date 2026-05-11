@@ -1,7 +1,7 @@
 import { Form, Input, Select, message, Typography, Tooltip, Button } from 'antd';
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { LinkOutlined, CopyOutlined, PlusOutlined } from '@ant-design/icons';
+import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
@@ -136,7 +136,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
           id: 'pages.channel.modal.title.create.subtitle',
           defaultMessage: 'Configure channel connection settings',
         }),
-        icon: <PlusOutlined />,
+        icon: <LinkOutlined />,
       }}
     >
       <Form 

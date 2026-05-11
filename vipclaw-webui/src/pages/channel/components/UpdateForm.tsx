@@ -149,9 +149,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           id: 'pages.channel.modal.title.update.subtitle',
           defaultMessage: 'Modify channel configuration, changes take effect immediately',
         }),
-        icon: <EditOutlined />,
-        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
+        icon: <LinkOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Form 

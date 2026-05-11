@@ -1,6 +1,6 @@
 import React from 'react';
 import { Switch } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
+import { UserOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { isPersonal } from '@/utils/edition';
@@ -76,9 +76,9 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
           id: 'pages.user.management.edit.subtitle',
           defaultMessage: '修改用户信息，保存后即时生效',
         }),
-        icon: <EditOutlined />,
-        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: 'rgba(var(--vip-warning-rgb), 0.25)',
+        icon: <UserOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(var(--vip-primary-rgb), 0.25)',
       }}
     >
       <ProForm<API.UserItem>

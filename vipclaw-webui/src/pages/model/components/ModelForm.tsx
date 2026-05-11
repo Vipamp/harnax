@@ -132,12 +132,8 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           ? intl.formatMessage({ id: 'pages.model.create.subtitle', defaultMessage: 'Add new model to provider, configure name and capabilities' })
           : intl.formatMessage({ id: 'pages.model.edit.subtitle', defaultMessage: 'Modify model configuration, changes take effect immediately' }),
         icon: <AppstoreOutlined />,
-        iconGradient: isCreate
-          ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)'
-          : 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: isCreate
-          ? 'rgba(79, 110, 247, 0.25)'
-          : 'rgba(250, 173, 20, 0.25)',
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Form 

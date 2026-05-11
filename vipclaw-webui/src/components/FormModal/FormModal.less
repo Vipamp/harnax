@@ -53,7 +53,7 @@
     
     .anticon {
       font-size: 16px;
-      color: #fff;
+      color: #1a1a2e;
     }
   }
   
@@ -317,7 +317,7 @@
         border: 1px solid var(--vip-border) !important;
         background: var(--vip-bg-container) !important;
         color: var(--vip-text-primary) !important;
-        /* 注意：使用 autoSize 时不要强制设置 resize，会冲突 */
+        /* 支持 autoSize 和手动 resize 共存 */
         overflow: auto !important;
         
         &:hover {
@@ -366,6 +366,10 @@
 html.dark .form-modal {
   .form-modal-icon {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    
+    .anticon {
+      color: #fff;
+    }
   }
 }
 

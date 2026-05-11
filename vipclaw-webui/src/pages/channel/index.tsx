@@ -18,7 +18,7 @@ import {
 } from '@/services/ant-design-pro/channel';
 import {
   PlusOutlined,
-  ApiOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
@@ -319,7 +319,7 @@ const ChannelManagement: React.FC = () => {
       header={{
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            <LinkOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({ id: 'pages.channel.title', defaultMessage: 'Channel Management' })}
           </span>
         ),

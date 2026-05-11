@@ -3,7 +3,7 @@ import { Form, Input, Select, Switch, message, Button } from 'antd';
 import { createSkillRepository, updateSkillRepository } from '@/services/ant-design-pro/skillRepository';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { useIntl } from '@umijs/max';
-import { FolderOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import StatusSwitch from '@/components/StatusSwitch';
 
@@ -104,13 +104,9 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         subtitle: isCreate
           ? intl.formatMessage({ id: 'pages.skill.repository.create.subtitle', defaultMessage: 'Configure skill repository connection and parameters' })
           : intl.formatMessage({ id: 'pages.skill.repository.edit.subtitle', defaultMessage: 'Modify repository configuration, changes take effect immediately' }),
-        icon: <FolderOutlined />,
-        iconGradient: isCreate
-          ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)'
-          : 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: isCreate
-          ? 'rgba(79, 110, 247, 0.25)'
-          : 'rgba(250, 173, 20, 0.25)',
+        icon: <ThunderboltOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Form 

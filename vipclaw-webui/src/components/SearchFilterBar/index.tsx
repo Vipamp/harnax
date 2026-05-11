@@ -334,6 +334,7 @@ export const FilterDatePicker: React.FC<FilterDatePickerProps> = ({
       onChange={onChange}
       placeholder={placeholder}
       format={format || (showTime ? 'YYYY-MM-DD HH:mm:ss' : 'YYYY-MM-DD')}
+      className="filter-date-picker"
       style={{
         width,
         height: '28px',

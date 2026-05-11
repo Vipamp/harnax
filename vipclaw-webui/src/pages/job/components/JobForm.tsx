@@ -233,12 +233,8 @@ const JobForm: React.FC<JobFormProps> = ({ visible, onCancel, onSubmit, values }
           ? intl.formatMessage({ id: 'pages.job.edit.subtitle', defaultMessage: '修改任务配置，保存后即时生效' })
           : intl.formatMessage({ id: 'pages.job.create.subtitle', defaultMessage: '配置定时任务的基本信息和执行规则' }),
         icon: <FieldTimeOutlined />,
-        iconGradient: isUpdate
-          ? 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)'
-          : 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
-        iconShadowColor: isUpdate
-          ? 'rgba(250, 173, 20, 0.25)'
-          : 'rgba(24, 144, 255, 0.25)',
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       {/* 预览执行时间弹窗（内嵌的，保持原生 Modal） */}

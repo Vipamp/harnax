@@ -30,7 +30,7 @@ import {
 } from '@/services/ant-design-pro/agent';
 import {
   PlusOutlined,
-  RobotOutlined,
+  RocketOutlined,
   SearchOutlined,
   ApiOutlined,
   ToolOutlined,
@@ -278,7 +278,7 @@ const AgentCard: React.FC<{
     <EntityCard
       entity={item}
       index={index}
-      icon={<RobotOutlined />}
+      icon={<RocketOutlined />}
       name={item.name}
       tagLabel="" // 智能体不显示 type 标签
       tagColor="#4f6ef7"
@@ -469,7 +469,7 @@ const AgentManagement: React.FC = () => {
       header={{
         title: (
           <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <RobotOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            <RocketOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.agent.management',
               defaultMessage: 'Agent Management',
@@ -544,7 +544,7 @@ const AgentManagement: React.FC = () => {
               justifyContent: 'center',
               marginBottom: 24,
             }}>
-              <RobotOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
+              <RocketOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
             </div>
             <Text style={{ fontSize: '18px', fontWeight: 600, color: 'var(--vip-text-primary)', marginBottom: 8 }}>
               {intl.formatMessage({ id: 'pages.agent.noAgent', defaultMessage: 'No agents' })}

@@ -280,8 +280,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         mainTitle: intl.formatMessage({ id: 'pages.agent.edit', defaultMessage: 'Edit Agent' }),
         subtitle: intl.formatMessage({ id: 'pages.agent.edit.subtitle', defaultMessage: 'Modify agent configuration, MCP services and skills' }),
         icon: <RocketOutlined />,
-        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Steps current={currentStep} style={{ marginBottom: 24 }}>

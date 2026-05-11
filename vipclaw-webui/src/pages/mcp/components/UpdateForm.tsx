@@ -5,7 +5,7 @@ import {
   ProFormText,
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { ThunderboltOutlined, EditOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
@@ -90,9 +90,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       titleConfig={{
         mainTitle: intl.formatMessage({ id: 'pages.mcp.edit', defaultMessage: 'Edit MCP Service' }),
         subtitle: intl.formatMessage({ id: 'pages.mcp.edit.subtitle', defaultMessage: 'Modify MCP service configuration, changes take effect immediately' }),
-        icon: <EditOutlined />,
-        iconGradient: 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: 'rgba(250, 173, 20, 0.25)',
+        icon: <ApiOutlined />,
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Form

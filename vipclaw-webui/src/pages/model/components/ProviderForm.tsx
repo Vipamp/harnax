@@ -138,12 +138,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           ? intl.formatMessage({ id: 'pages.model.provider.create.subtitle', defaultMessage: 'Configure model provider connection and API settings' })
           : intl.formatMessage({ id: 'pages.model.provider.edit.subtitle', defaultMessage: 'Modify provider configuration, changes take effect immediately' }),
         icon: <ApartmentOutlined />,
-        iconGradient: isCreate
-          ? 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)'
-          : 'linear-gradient(135deg, var(--vip-warning) 0%, var(--vip-warning-light) 100%)',
-        iconShadowColor: isCreate
-          ? 'rgba(79, 110, 247, 0.25)'
-          : 'rgba(250, 173, 20, 0.25)',
+        iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
+        iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
       <Form 
@@ -183,10 +179,15 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
           label={intl.formatMessage({ id: 'pages.model.description', defaultMessage: 'Description' })}
         >
           <Input.TextArea 
+            rows={1}
             placeholder={intl.formatMessage({ id: 'pages.model.provider.description.placeholder', defaultMessage: 'Please enter provider description' })}
-            autoSize={{ minRows: 1, maxRows: 6 }}
             maxLength={500}
-            style={{ fontSize: '12px' }}
+            style={{ 
+              resize: 'vertical',
+              overflow: 'auto',
+              minHeight: '32px',
+              fontSize: '12px'
+            }}
           />
         </Form.Item>
 

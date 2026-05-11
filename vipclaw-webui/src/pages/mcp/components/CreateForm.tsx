@@ -5,7 +5,7 @@ import {
   ProFormText,
 } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { ThunderboltOutlined, PlusOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
@@ -63,7 +63,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
       titleConfig={{
         mainTitle: intl.formatMessage({ id: 'pages.mcp.create', defaultMessage: 'Create MCP Service' }),
         subtitle: intl.formatMessage({ id: 'pages.mcp.create.subtitle', defaultMessage: 'Configure MCP service connection and parameters' }),
-        icon: <PlusOutlined />,
+        icon: <ApiOutlined />,
       }}
     >
       <Form

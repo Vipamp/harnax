@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useIntl } from '@umijs/max';
 import { Button, message, Spin, Empty, Input } from 'antd';
-import { PlusOutlined, ApiOutlined } from '@ant-design/icons';
+import { PlusOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import ProviderCard from './components/ProviderCard';
 import ProviderForm from './components/ProviderForm';
@@ -345,7 +345,7 @@ const ModelManagement: React.FC = () => {
           </div>
         ) : (
           <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <ApiOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            <AppstoreOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({
               id: 'menu.context.model',
               defaultMessage: 'Model Management',
@@ -454,7 +454,7 @@ const ModelManagement: React.FC = () => {
                     justifyContent: 'center',
                     marginBottom: 24,
                   }}>
-                    <ApiOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
+                    <AppstoreOutlined style={{ fontSize: 48, color: 'var(--vip-primary)' }} />
                   </div>
                   <Empty description={intl.formatMessage({ id: 'pages.model.noProviders', defaultMessage: 'No providers' })} />
                   <Button
@@ -508,6 +508,7 @@ const ModelManagement: React.FC = () => {
               onSearch={() => {}}
               onReset={handleResetFilters}
               showSearchButton={false}
+              resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
               extra={
                 <ActionButton
                   type="primary"
