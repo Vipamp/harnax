@@ -4,27 +4,27 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Size
 
 /**
- * 智能体更新请求 DTO
+ * Agent update request DTO
  *
  * @author vipamp
  * @since 2026-03-18
  */
-@Schema(description = "智能体更新请求对象")
+@Schema(description = "Agent update request object")
 data class AgentUpdateRequest(
     @Schema(description = "ID", example = "1")
     var id: Long? = null,
 
-    @Schema(description = "智能体名称", example = "assistant")
-    @Size(min = 1, max = 100, message = "智能体名称长度必须在 1-100 之间")
+    @Schema(description = "Agent name", example = "assistant")
+    @Size(min = 1, max = 100, message = "Agent name长度必须在 1-100 之间")
     val name: String? = null,
 
-    @Schema(description = "智能体描述")
+    @Schema(description = "Agent description")
     val description: String? = null,
 
-    @Schema(description = "系统提示词（支持 Markdown）")
+    @Schema(description = "System prompt (Markdown supported)")
     val systemPrompt: String? = null,
 
-    @Schema(description = "对话模型 ID", example = "1")
+    @Schema(description = "Chat model ID", example = "1")
     val modelId: Long? = null,
 
     @Schema(description = "MCP 服务列表")

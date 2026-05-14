@@ -15,14 +15,14 @@ import org.springframework.web.bind.annotation.*
 import java.time.LocalDateTime
 
 /**
- * 定时任务管理控制器
+ * Scheduled job management controller
  *
  * @author vipamp
  * @since 2026-03-16
  */
 @RestController
 @RequestMapping("/api/jobs")
-@Tag(name = "定时任务管理", description = "定时任务相关接口")
+@Tag(name = "Scheduled Job Management", description = "Scheduled job related APIs")
 class SysJobController(
     private val sysJobService: SysJobService,
     private val sysJobLogService: SysJobLogService,
@@ -31,21 +31,21 @@ class SysJobController(
     private val log = LoggerFactory.getLogger(SysJobController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取定时任务列表", description = "分页查询定时任务信息")
+    @Operation(summary = "Get scheduled job list with pagination", description = "Paginated query for scheduled job information")
     fun pageSysJob(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "模糊查询字段（任务名称）") @RequestParam(
+        @Parameter(description = "Fuzzy search field (job name)") @RequestParam(
             name = "keyword",
             required = false,
         ) keyword: String?,
-        @Parameter(description = "状态筛选字段（0-暂停，1-运行）") @RequestParam(
+        @Parameter(description = "Status filter (0-paused, 1-running)") @RequestParam(
             name = "jobStatus",
             required = false,
         ) jobStatus: Int?,
@@ -53,111 +53,111 @@ class SysJobController(
         val page = sysJobService.page(keyword, jobStatus, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { SysJobResponse.fromEntity(it) })
     } catch (e: Exception) {
-        log.error("获取定时任务列表失败", e)
-        ResultVo.error(e.message ?: "获取定时任务列表失败")
+        log.error("Failed to get scheduled job list", e)
+        ResultVo.error(e.message ?: "Failed to get scheduled job list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取定时任务详情", description = "根据任务 ID 获取任务信息")
+    @Operation(summary = "Get scheduled job details", description = "Get job information by job ID")
     fun getSysJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SysJobResponse?> = try {
         val job = sysJobService.getSysJob(id)
         ResultVo.success(SysJobResponse.fromEntity(job))
     } catch (e: Exception) {
-        log.error("获取定时任务详情失败", e)
-        ResultVo.error(e.message ?: "获取定时任务详情失败")
+        log.error("Failed to get scheduled job details", e)
+        ResultVo.error(e.message ?: "Failed to get scheduled job details")
     }
 
     @PostMapping
-    @Operation(summary = "创建定时任务", description = "新增定时任务信息")
+    @Operation(summary = "Create scheduled job", description = "Add new scheduled job information")
     fun createJob(
         @Valid @RequestBody request: SysJobCreateRequest,
     ): ResultVo<Void> = try {
-        if (sysJobService.createJob(request)) ResultVo.success() else ResultVo.error("创建定时任务失败")
+        if (sysJobService.createJob(request)) ResultVo.success() else ResultVo.error("Failed to create scheduled job")
     } catch (e: Exception) {
-        log.error("创建定时任务失败", e)
-        ResultVo.error(e.message ?: "创建定时任务失败")
+        log.error("Failed to create scheduled job", e)
+        ResultVo.error(e.message ?: "Failed to create scheduled job")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新定时任务", description = "根据任务 ID 更新任务信息")
+    @Operation(summary = "Update scheduled job", description = "Update job information by job ID")
     fun updateSysJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SysJobUpdateRequest,
     ): ResultVo<Void> = try {
-        if (sysJobService.updateJob(id, request)) ResultVo.success() else ResultVo.error("更新定时任务失败")
+        if (sysJobService.updateJob(id, request)) ResultVo.success() else ResultVo.error("Failed to update scheduled job")
     } catch (e: Exception) {
-        log.error("更新定时任务失败", e)
-        ResultVo.error(e.message ?: "更新定时任务失败")
+        log.error("Failed to update scheduled job", e)
+        ResultVo.error(e.message ?: "Failed to update scheduled job")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除定时任务", description = "根据任务 ID 删除任务")
+    @Operation(summary = "Delete scheduled job", description = "Delete job by job ID")
     fun deleteSysJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sysJobService.deleteJob(id)) ResultVo.success() else ResultVo.error("删除定时任务失败")
+        if (sysJobService.deleteJob(id)) ResultVo.success() else ResultVo.error("Failed to delete scheduled job")
     } catch (e: Exception) {
-        log.error("删除定时任务失败", e)
-        ResultVo.error(e.message ?: "删除定时任务失败")
+        log.error("Failed to delete scheduled job", e)
+        ResultVo.error(e.message ?: "Failed to delete scheduled job")
     }
 
     @PostMapping("/start/{id}")
-    @Operation(summary = "启动定时任务", description = "启动指定的定时任务")
+    @Operation(summary = "Start scheduled job", description = "Start specified scheduled job")
     fun startJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sysJobService.startJob(id)) ResultVo.success() else ResultVo.error("启动定时任务失败")
+        if (sysJobService.startJob(id)) ResultVo.success() else ResultVo.error("Failed to start scheduled job")
     } catch (e: Exception) {
-        log.error("启动定时任务失败", e)
-        ResultVo.error(e.message ?: "启动定时任务失败")
+        log.error("Failed to start scheduled job", e)
+        ResultVo.error(e.message ?: "Failed to start scheduled job")
     }
 
     @PostMapping("/pause/{id}")
-    @Operation(summary = "暂停定时任务", description = "暂停指定的定时任务")
+    @Operation(summary = "Pause scheduled job", description = "Pause specified scheduled job")
     fun pauseJob(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sysJobService.pauseJob(id)) ResultVo.success() else ResultVo.error("暂停定时任务失败")
+        if (sysJobService.pauseJob(id)) ResultVo.success() else ResultVo.error("Failed to pause scheduled job")
     } catch (e: Exception) {
-        log.error("暂停定时任务失败", e)
-        ResultVo.error(e.message ?: "暂停定时任务失败")
+        log.error("Failed to pause scheduled job", e)
+        ResultVo.error(e.message ?: "Failed to pause scheduled job")
     }
 
     @PostMapping("/run/{id}")
-    @Operation(summary = "立即执行定时任务", description = "立即执行一次指定的定时任务")
+    @Operation(summary = "Run scheduled job immediately", description = "Execute specified scheduled job immediately once")
     fun runJobOnce(
-        @Parameter(description = "任务 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Job ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sysJobService.runJobOnce(id)) ResultVo.success() else ResultVo.error("执行定时任务失败")
+        if (sysJobService.runJobOnce(id)) ResultVo.success() else ResultVo.error("Failed to execute scheduled job")
     } catch (e: Exception) {
-        log.error("立即执行定时任务失败", e)
-        ResultVo.error(e.message ?: "执行定时任务失败")
+        log.error("Failed to run scheduled job immediately", e)
+        ResultVo.error(e.message ?: "Failed to execute scheduled job")
     }
 
     @GetMapping("/logs")
-    @Operation(summary = "分页获取定时任务日志列表", description = "分页查询定时任务执行日志")
+    @Operation(summary = "Get scheduled job log list with pagination", description = "Paginated query for scheduled job execution logs")
     fun pageSysJobLog(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "任务 ID") @RequestParam(name = "jobId", required = false) jobId: Long?,
-        @Parameter(description = "任务名称") @RequestParam(name = "jobName", required = false) jobName: String?,
-        @Parameter(description = "执行状态（0-失败，1-成功）") @RequestParam(
+        @Parameter(description = "Job ID") @RequestParam(name = "jobId", required = false) jobId: Long?,
+        @Parameter(description = "Job name") @RequestParam(name = "jobName", required = false) jobName: String?,
+        @Parameter(description = "Execution status (0-failed, 1-success)") @RequestParam(
             name = "status",
             required = false,
         ) status: Int?,
-        @Parameter(description = "开始时间") @RequestParam(
+        @Parameter(description = "Start time") @RequestParam(
             name = "startTime",
             required = false,
         ) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") startTime: LocalDateTime?,
-        @Parameter(description = "结束时间") @RequestParam(
+        @Parameter(description = "End time") @RequestParam(
             name = "endTime",
             required = false,
         ) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") endTime: LocalDateTime?,
@@ -173,7 +173,7 @@ class SysJobController(
         )
         ResultVo.success(page.mapRecords { SysJobLogResponse.fromEntity(it) })
     } catch (e: Exception) {
-        log.error("获取定时任务日志列表失败", e)
-        ResultVo.error(e.message ?: "获取定时任务日志列表失败")
+        log.error("Failed to get scheduled job log list", e)
+        ResultVo.error(e.message ?: "Failed to get scheduled job log list")
     }
 }

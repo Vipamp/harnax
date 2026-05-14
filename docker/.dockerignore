@@ -1,28 +1,22 @@
+# Git
+.git
+.gitignore
+
 # Maven
 target/
+*.iml
 pom.xml.tag
 pom.xml.releaseBackup
-pom.xml.versionsBackup
-pom.xml.next
-release.properties
-dependency-reduced-pom.xml
-buildNumber.properties
-.mvn/timing.properties
 
 # Node
 node_modules/
 dist/
-build/
 .npm
 .eslintcache
 
 # IDE
 .idea/
 .vscode/
-.qoder/
-openspec/
-docs/
-*.iml
 *.ipr
 *.iws
 
@@ -34,11 +28,16 @@ Thumbs.db
 *.log
 logs/
 
-# Docker MySQL data
-docker/data/
-docker/init/
-
 # Environment
 .env
 .env.local
 .env.*.local
+
+# Documentation
+*.md
+docs/
+openspec/
+
+# Docker
+docker/dist/
+docker/sql/

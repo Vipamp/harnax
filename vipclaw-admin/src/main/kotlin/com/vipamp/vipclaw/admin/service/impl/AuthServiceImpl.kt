@@ -24,10 +24,10 @@ import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
 
 /**
- * 认证服务实现类
+ * Authentication service implementation
  *
- * TODO: 实际项目中需要集成 JWT、Redis 等实现真正的认证和令牌管理
- * 这里提供简化的实现用于演示
+ * TODO: In actual project, need to integrate JWT, Redis, etc. for real authentication and token management
+ * This provides a simplified implementation for demonstration
  */
 @Service
 class AuthServiceImpl(
@@ -45,18 +45,18 @@ class AuthServiceImpl(
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
 
     override fun login(request: LoginRequest): LoginResponse {
-        log.info("用户登录，username: {}", request.username)
+        log.info("User login, username: {}", request.username)
 
-        // 1. 验证用户名和密码
+        // 1. Validate username and password
         val user: SysUser = sysUserService.getByUsername(request.username) ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 前端使用 SHA-256 加密密码，数据库中存储的是 BCrypt(SHA-256(明文密码))
-        // 使用 BCrypt 验证前端传来的 SHA-256 密码
+        // Frontend uses SHA-256 to encrypt password, database stores BCrypt(SHA-256(plain password))
+        // Use BCrypt to verify the SHA-256 password from frontend
         if (!BCrypt.checkpw(request.password, user.password)) {
             throw BizException(messageUtil.getMessage("error.user.invalid_credentials"))
         }
 
-        // 2. 校验验证码
+        // 2. Validate captcha
         val captcha = request.captcha
         val captchaKey = request.captchaKey
         if (captcha == null || captcha.trim { it <= ' ' }.isEmpty()) {
@@ -69,29 +69,29 @@ class AuthServiceImpl(
             throw BizException(messageUtil.getMessage("error.captcha.invalid"))
         }
 
-        // 3. 检查用户状态
+        // 3. Check user status
         if (user.status == 0) {
             throw BizException(messageUtil.getMessage("error.user.disabled"))
         }
 
-        // 4. 检查用户是否属于任何租户
+        // 4. Check if user belongs to any tenant
         var userTenants = userTenantService.getUserTenants(user.id)
 
-        // 个人版：如果用户没有租户，自动关联到默认租户（id=1）
+        // Personal edition: If user has no tenant, automatically associate with default tenant (id=1)
         if (userTenants.isEmpty() && editionUtil.isPersonal()) {
-            log.info("[个人版] 用户 {} 没有租户，自动关联到默认租户", user.username)
+            log.info("[Personal Edition] User {} has no tenant, automatically associating with default tenant", user.username)
 
-            // 检查默认租户是否存在
+            // Check if default tenant exists
             val defaultTenant = tenantMapper.selectById(1)
             if (defaultTenant != null) {
-                // 自动将用户添加到默认租户
+                // Automatically add user to default tenant
                 userTenantService.addUserToTenant(1, user.id, "member", "system")
-                log.info("[个人版] 已将用户 {} 自动添加到默认租户", user.username)
+                log.info("[Personal Edition] User {} has been automatically added to default tenant", user.username)
 
-                // 重新获取租户列表
+                // Re-fetch tenant list
                 userTenants = userTenantService.getUserTenants(user.id)
             } else {
-                log.warn("[个人版] 默认租户不存在，无法自动关联")
+                log.warn("[Personal Edition] Default tenant does not exist, cannot auto-associate")
             }
         }
 
@@ -99,15 +99,15 @@ class AuthServiceImpl(
             throw BizException(messageUtil.getMessage("error.user.no_tenant"))
         }
 
-        // 5. 生成 JWT Token（使用第一个租户ID）
+        // 5. Generate JWT Token (using first tenant ID)
         val defaultTenantId = if (userTenants.isNotEmpty()) userTenants[0].id else null
         val accessToken: String = jwtUtil.generateToken(user.id, user.username, defaultTenantId, user.isAdmin)
 
-        // 5. 计算过期时间戳
+        // 5. Calculate expiration timestamp
         val expiresAt: Long = System.currentTimeMillis() + jwtUtil.getExpirationTime()
 
-        // 6. 构建响应
-        log.info("用户信息 - id: {}, username: {}, isAdmin: {}", user.id, user.username, user.isAdmin)
+        // 6. Build response
+        log.info("User info - id: {}, username: {}, isAdmin: {}", user.id, user.username, user.isAdmin)
         val userInfo = UserInfo.builder()
             .userId(user.id)
             .username(user.username)
@@ -122,52 +122,52 @@ class AuthServiceImpl(
         val response = LoginResponse.builder()
             .accessToken(accessToken)
             .tokenType("Bearer")
-            .expiresIn(jwtUtil.getExpirationTime() / 1000) // 转换为秒
+            .expiresIn(jwtUtil.getExpirationTime() / 1000) // Convert to seconds
             .expiresAt(expiresAt)
             .userInfo(userInfo)
             .tenants(userTenants)
             .currentTenantId(defaultTenantId)
             .build()
 
-        // 7. 更新用户最近一次登录时间
+        // 7. Update user's last login time
         try {
             val now = LocalDateTime.now()
             sysUserMapper.updateLastLoginTime(user.id, now)
-            log.info("更新用户登录时间成功，userId: {}, loginTime: {}", user.id, now)
+            log.info("User login time updated successfully, userId: {}, loginTime: {}", user.id, now)
         } catch (e: Exception) {
-            log.error("更新用户登录时间失败，userId: {}, error: {}", user.id, e.message)
+            log.error("Failed to update user login time, userId: {}, error: {}", user.id, e.message)
         }
 
-        log.info("用户登录成功，userId: {}, username: {}", user.id, user.username)
+        log.info("User login successful, userId: {}, username: {}", user.id, user.username)
         return response
     }
 
     override fun logout() {
-        // 获取当前请求（需要从 RequestContextHolder 中获取）
+        // Get current request (need to get from RequestContextHolder)
         val token = getCurrentToken()
         if (token != null) {
             try {
-                // 解析 Token 获取用户信息
+                // Parse Token to get user info
                 val userId: Long = jwtUtil.getUserIdFromToken(token)
                 val username: String = jwtUtil.getUsernameFromToken(token)
 
-                // 计算过期时间
+                // Calculate expiration time
                 val expireTime = LocalDateTime.now().plusNanos(jwtUtil.getExpirationTime() * 1000000)
 
-                // 将 Token 加入 MySQL 黑名单
+                // Add Token to MySQL blacklist
                 tokenBlacklistService.addToBlacklist(token, username, userId, expireTime, "logout")
-                log.info("用户退出登录，userId: {}, username: {}", userId, username)
+                log.info("User logged out, userId: {}, username: {}", userId, username)
             } catch (e: Exception) {
-                // Token 无效或已过期，直接记录退出
-                log.warn("退出登录时 Token 无效或已过期：{}", e.message)
+                // Token is invalid or expired, log out directly
+                log.warn("Token is invalid or expired during logout: {}", e.message)
             }
         } else {
-            log.info("用户退出登录（未携带 Token）")
+            log.info("User logged out (no Token provided)")
         }
     }
 
     /**
-     * 从当前请求中获取 Token
+     * Get Token from current request
      */
     private fun getCurrentToken(): String? {
         try {
@@ -177,7 +177,7 @@ class AuthServiceImpl(
                 return bearerToken.substring(7)
             }
         } catch (e: Exception) {
-            log.error("获取当前 Token 失败：{}", e.message)
+            log.error("Failed to get current Token: {}", e.message)
         }
         return null
     }

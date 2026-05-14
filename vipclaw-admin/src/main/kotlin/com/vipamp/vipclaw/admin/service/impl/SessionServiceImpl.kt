@@ -22,7 +22,7 @@ import java.time.LocalDateTime
 import java.util.*
 
 /**
- * 会话服务实现类
+ * Session service implementation
  *
  * @author vipamp
  * @since 2026-03-25
@@ -48,7 +48,7 @@ class SessionServiceImpl(
         pageSize: Int,
     ): Page<Session> {
         log.info(
-            "分页查询会话列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}",
+            "Paginated query for session list, pageNum: {}, pageSize: {}, keyword: {}, status: {}",
             pageNum,
             pageSize,
             keyword,
@@ -73,7 +73,7 @@ class SessionServiceImpl(
         response.systemPrompt = session.systemPrompt
         response.modelId = session.modelId
 
-        // 查询模型名称
+        // Query model name
         session.modelId.let { modelId ->
             val model = modelService.getModel(modelId)
             model?.let {
@@ -93,7 +93,7 @@ class SessionServiceImpl(
         response.createTime = session.createTime
         response.updateTime = session.updateTime
 
-        // 解析 MCP 列表 (JSON 格式)
+        // Parse MCP list (JSON format)
         if (session.mcpList.isNotEmpty()) {
             try {
                 val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
@@ -118,12 +118,12 @@ class SessionServiceImpl(
                 }
                 response.mcpList = mcpItems
             } catch (e: Exception) {
-                log.warn("解析 MCP 列表失败", e)
+                log.warn("Failed to parse MCP list", e)
                 response.mcpList = mutableListOf()
             }
         }
 
-        // 解析技能列表（逗号分隔的字符串）
+        // Parse skill list (comma-separated string)
         if (session.skillList.isNotEmpty()) {
             try {
                 val skillIds = session.skillList.split(",")
@@ -147,13 +147,13 @@ class SessionServiceImpl(
                             skillItems.add(item)
                         }
                     } catch (e: NumberFormatException) {
-                        log.warn("无效的技能 ID: {}", skillIdStr)
+                        log.warn("Invalid skill ID: {}", skillIdStr)
                     }
                 }
 
                 response.skillList = skillItems
             } catch (e: Exception) {
-                log.warn("解析技能列表失败", e)
+                log.warn("Failed to parse skill list", e)
                 response.skillList = mutableListOf()
             }
         }
@@ -163,15 +163,15 @@ class SessionServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSession(request: SessionCreateRequest): Boolean = try {
-        // 检查会话名称是否重复
+        // Check if session name already exists
         val count = sessionMapper.countByTitle(request.title)
         if (count > 0) {
-            throw BizException("会话名称已存在，请使用其他名称")
+            throw BizException("Session name already exists, please use another name")
         }
 
-        // 根据智能体ID获取智能体信息
+        // Get agent information by agent ID
         val agent = agentService.getAgent(request.agentId)
-            ?: throw BizException("智能体不存在")
+            ?: throw BizException("Agent not found")
 
         val session = Session()
         session.title = request.title
@@ -179,7 +179,7 @@ class SessionServiceImpl(
         session.sessionId = UUID.randomUUID().toString()
         session.agentId = request.agentId
 
-        // 从智能体复制信息
+        // Copy information from agent
         session.name = agent.name
         session.description = agent.description
         session.systemPrompt = agent.systemPrompt
@@ -189,19 +189,19 @@ class SessionServiceImpl(
         session.owner = agent.owner
         session.status = 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         session.creator = currentUsername
 
-        // 默认不公开
+        // Default not public
         session.isPublic = 0
 
         val success = this.sessionMapper.insert(session) > 0
-        log.info("会话创建{}，id: {}", if (success) "成功" else "失败", session.id)
+        log.info("Session creation {}, id: {}", if (success) "successful" else "failed", session.id)
         success
     } catch (e: Exception) {
-        log.error("创建会话失败", e)
-        throw RuntimeException("创建会话失败：${e.message}")
+        log.error("Failed to create session", e)
+        throw RuntimeException("Failed to create session: ${e.message}")
     }
 
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
@@ -213,11 +213,11 @@ class SessionServiceImpl(
     }
 
     override fun getSessionChatConfig(sessionId: String): SessionConfigResponse {
-        log.info("获取会话配置，sessionId: {}", sessionId)
+        log.info("Getting session configuration, sessionId: {}", sessionId)
 
-        // 根据 sessionId 查询会话（状态为启用）
+        // Query session by sessionId (status enabled)
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-            ?: throw BizException("会话不存在或已禁用")
+            ?: throw BizException("Session not found or disabled")
 
         return SessionConfigResponse(
             sessionId = session.sessionId,
@@ -229,45 +229,45 @@ class SessionServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateSessionChatConfig(sessionId: String, request: SessionChatUpdateRequest) {
-        log.info("更新会话配置，sessionId: {}", sessionId)
+        log.info("Updating session configuration, sessionId: {}", sessionId)
 
-        // 根据 sessionId 查询会话（状态为启用）
+        // Query session by sessionId (status enabled)
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-            ?: throw BizException("会话不存在或已禁用")
+            ?: throw BizException("Session not found or disabled")
 
-        // 更新配置字段（只更新非 null 的字段）
+        // Update configuration fields (only update non-null fields)
         request.enableThink?.let { session.enableThink = if (it) 1 else 0 }
         request.enableSearch?.let { session.enableSearch = if (it) 1 else 0 }
         request.enablePlan?.let { session.enablePlan = if (it) 1 else 0 }
 
-        // 更新时间戳
+        // Update timestamp
         session.updateTime = LocalDateTime.now()
 
-        // 执行更新
+        // Execute update
         val result = sessionMapper.updateById(session)
         if (result <= 0) {
-            throw BizException("更新会话配置失败")
+            throw BizException("Failed to update session configuration")
         }
 
-        log.info("会话配置更新成功，sessionId: {}", sessionId)
+        log.info("Session configuration updated successfully, sessionId: {}", sessionId)
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleSessionStatus(id: Long, status: Int): Boolean {
-        log.info("切换会话状态，id: {}, status: {}", id, status)
+        log.info("Toggling session status, id: {}, status: {}", id, status)
 
         val session = sessionMapper.selectById(id)
-            ?: throw BizException("会话不存在")
+            ?: throw BizException("Session not found")
 
         return sessionMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteSession(id: Long): Boolean {
-        log.info("删除会话，id: {}", id)
+        log.info("Deleting session, id: {}", id)
 
         val session = this.sessionMapper.selectById(id)
-            ?: throw BizException("会话不存在")
+            ?: throw BizException("Session not found")
 
         return this.sessionMapper.deleteById(id) > 0
     }

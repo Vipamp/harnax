@@ -5,25 +5,25 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 
 /**
- * 智能体创建请求 DTO
+ * Agent creation request DTO
  *
  * @author vipamp
  * @since 2026-03-18
  */
-@Schema(description = "智能体创建请求对象")
+@Schema(description = "Agent creation request object")
 data class AgentCreateRequest(
-    @Schema(description = "智能体名称", example = "assistant", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "智能体名称不能为空")
-    @Size(min = 1, max = 100, message = "智能体名称长度必须在 1-100 之间")
+    @Schema(description = "Agent name", example = "assistant", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotBlank(message = "Agent name不能为空")
+    @Size(min = 1, max = 100, message = "Agent name长度必须在 1-100 之间")
     val name: String? = null,
 
-    @Schema(description = "智能体描述")
+    @Schema(description = "Agent description")
     val description: String? = null,
 
-    @Schema(description = "系统提示词（支持 Markdown）")
+    @Schema(description = "System prompt (Markdown supported)")
     val systemPrompt: String? = null,
 
-    @Schema(description = "对话模型 ID", example = "1")
+    @Schema(description = "Chat model ID", example = "1")
     val modelId: Long? = null,
 
     @Schema(description = "MCP 服务列表")

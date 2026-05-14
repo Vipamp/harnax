@@ -5,15 +5,15 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 
 /**
- * 添加用户到租户请求 DTO
+ * Add user to tenant request DTO
  */
-@Schema(description = "添加用户到租户请求对象")
+@Schema(description = "Add user to tenant request object")
 data class AddUserToTenantRequest(
-    @Schema(description = "用户ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotNull(message = "用户ID不能为空")
+    @Schema(description = "User ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotNull(message = "User ID cannot be empty")
     val userId: Long,
 
-    @Schema(description = "角色（admin/member）", example = "member")
-    @field:NotBlank(message = "角色不能为空")
+    @Schema(description = "Role (admin/member)", example = "member")
+    @field:NotBlank(message = "Role cannot be empty")
     val role: String = "member",
 )

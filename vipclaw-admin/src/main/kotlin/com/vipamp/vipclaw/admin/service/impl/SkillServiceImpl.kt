@@ -22,7 +22,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * 技能服务实现类
+ * Skill service implementation
  *
  * @author vipamp
  * @since 2026-03-16
@@ -46,7 +46,7 @@ class SkillServiceImpl(
         pageSize: Int,
     ): Page<Skill> {
         log.info(
-            "分页查询技能列表，pageNum: {}, pageSize: {}, name: {}, repositoryId: {}, status: {}",
+            "Paginated query for skill list, pageNum: {}, pageSize: {}, name: {}, repositoryId: {}, status: {}",
             pageNum,
             pageSize,
             name,
@@ -59,21 +59,21 @@ class SkillServiceImpl(
     }
 
     override fun getSkill(id: Long): Skill {
-        log.info("查询技能详情，id: {}", id)
+        log.info("Querying skill details, id: {}", id)
 
         val skill = skillMapper.selectById(id)
-            ?: throw BizException("技能不存在")
+            ?: throw BizException("Skill not found")
         return skill
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSkill(request: SkillCreateRequest): Boolean {
-        log.info("创建技能，name: {}", request.name)
+        log.info("Creating skill, name: {}", request.name)
 
-        // 检查技能名称是否存在（需要同时校验 active 字段）
+        // Check if skill name already exists (need to validate active field)
         val existSkill = getByNameAndRepo(request.repositoryId!!, request.name!!)
         if (existSkill != null) {
-            throw BizException("技能名称已存在")
+            throw BizException("Skill name already exists")
         }
 
         val skill = Skill()
@@ -82,69 +82,69 @@ class SkillServiceImpl(
         skill.description = request.description!!
         skill.skillmd = request.skillmd!!
         skill.resources = request.resources!!
-        skill.status = request.status ?: 1 // 默认启用
-        skill.active = 1 // 默认生效
+        skill.status = request.status ?: 1 // Default enabled
+        skill.active = 1 // Default active
 
-        // 设置租户ID
+        // Set tenant ID
         skill.tenantId = TenantContext.getTenantId() ?: 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         skill.creator = currentUsername!!
 
-        // 默认不公开
+        // Default not public
         if (skill.isPublic == null) {
             skill.isPublic = 0
         }
 
         val success = this.skillMapper.insert(skill) > 0
-        log.info("技能创建{}，skillId: {}", if (success) "成功" else "失败", skill.id)
+        log.info("Skill creation {}, skillId: {}", if (success) "successful" else "failed", skill.id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateSkill(id: Long, request: SkillUpdateRequest): Boolean {
-        log.info("更新技能，id: {}", id)
+        log.info("Updating skill, id: {}", id)
 
         val skill = skillMapper.selectById(id)
-            ?: throw BizException("技能不存在")
+            ?: throw BizException("Skill not found")
 
-        // 如果请求中包含技能名称且与当前技能名称不同，检查新技能名称是否已被使用
+        // If request contains skill name and it's different from current name, check if new name is already in use
         if (request.name != null && request.name != skill.name) {
             val existSkill = skillMapper.selectByNameAndRepo(request.name, skill.repositoryId)
             if (existSkill != null) {
-                throw BizException("技能名称已存在")
+                throw BizException("Skill name already exists")
             }
             skill.name = request.name
         }
 
-        // 选择性更新字段
+        // Selectively update fields
         request.repositoryId?.let { skill.repositoryId = it }
         request.description?.let { skill.description = it }
         request.skillmd?.let { skill.skillmd = it }
         request.resources?.let { skill.resources = it }
 
         val success = this.skillMapper.updateById(skill) > 0
-        log.info("技能更新{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("Skill update {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleSkillStatus(id: Long, status: Int): Boolean {
-        log.info("切换技能状态，id: {}, status: {}", id, status)
+        log.info("Toggling skill status, id: {}, status: {}", id, status)
 
         val skill = skillMapper.selectById(id)
-            ?: throw BizException("技能不存在")
+            ?: throw BizException("Skill not found")
 
         return skillMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteSkill(id: Long): Boolean {
-        log.info("删除技能，id: {}", id)
+        log.info("Deleting skill, id: {}", id)
 
         val skill = skillMapper.selectById(id)
-            ?: throw BizException("技能不存在")
+            ?: throw BizException("Skill not found")
 
         return skillMapper.deleteById(id) > 0
     }
@@ -153,7 +153,7 @@ class SkillServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int {
-        log.info("批量保存技能,repositoryId: {}, count: {}", repositoryId, skills.size)
+        log.info("Batch saving skills, repositoryId: {}, count: {}", repositoryId, skills.size)
 
         if (skills.isEmpty()) {
             return 0
@@ -162,16 +162,16 @@ class SkillServiceImpl(
         var savedCount = 0
         for (skillName in skills) {
             try {
-                // 检查技能名称是否存在
+                // Check if skill name already exists
                 val existSkill = getByNameAndRepo(repositoryId, skillName)
                 val skillRepository =
-                    skillRepositoryService.getSkillRepository(repositoryId) ?: throw BizException("技能仓库不存在")
+                    skillRepositoryService.getSkillRepository(repositoryId) ?: throw BizException("Skill repository not found")
                 if (existSkill != null) {
-                    // 如果技能已存在,保持现状,不更新
-                    log.info("技能已存在,跳过:{}", skillName)
+                    // If skill already exists, keep as is, do not update
+                    log.info("Skill already exists, skipping: {}", skillName)
                     savedCount++
                 } else {
-                    log.info("技能不存在,执行创建:{}", skillName)
+                    log.info("Skill does not exist, creating: {}", skillName)
                     loadSkillsFromGit(skillRepository.url, skillRepository.branch, localTmpDir, skillRepository.name)
                         .filter { it.name == skillName }
                         .map {
@@ -181,20 +181,20 @@ class SkillServiceImpl(
                             skill.description = it.description
                             skill.skillmd = it.skillContent
                             skill.resources = objectMapper.writeValueAsString(it.resources)
-                            skill.status = 1 // 默认启用
-                            skill.active = 1 // 默认生效
+                            skill.status = 1 // Default enabled
+                            skill.active = 1 // Default active
                             skill
                         }
                         .forEach { this.skillMapper.insert(it) }
                     savedCount++
                 }
             } catch (e: Exception) {
-                log.error("保存技能失败:{}", skillName, e)
-                // 继续处理下一个技能,不中断整个流程
+                log.error("Failed to save skill: {}", skillName, e)
+                // Continue processing next skill, do not interrupt the entire process
             }
         }
 
-        log.info("批量保存技能完成,成功保存:{} 个", savedCount)
+        log.info("Batch saving skills completed, successfully saved: {} skills", savedCount)
         return savedCount
     }
 

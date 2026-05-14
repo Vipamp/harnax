@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.util.StringUtils.hasText
 
 /**
- * MCP 服务实现类
+ * MCP server service implementation
  *
  * @author vipamp
  * @since 2026-03-12
@@ -44,7 +44,7 @@ class McpServerServiceImpl(
         pageSize: Int,
     ): Page<McpServer> {
         log.info(
-            "分页查询 MCP 服务列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, type: {}",
+            "Paginated query for MCP server list, pageNum: {}, pageSize: {}, keyword: {}, status: {}, type: {}",
             pageNum,
             pageSize,
             keyword,
@@ -52,7 +52,7 @@ class McpServerServiceImpl(
             type,
         )
 
-        // 获取当前用户
+        // Get current user
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
         PageHelper.startPage<Agent>(pageNum, pageSize)
@@ -63,15 +63,15 @@ class McpServerServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createMcpServer(request: McpServerCreateRequest): Boolean {
-        log.info("创建 MCP 服务，name: {}", request.name)
+        log.info("Creating MCP server, name: {}", request.name)
 
-        // 校验名称唯一性
+        // Validate name uniqueness
         val existing = mcpServerMapper.selectByName(request.name!!)
         if (existing != null) {
-            throw BizException("MCP 名称已存在")
+            throw BizException("MCP name already exists")
         }
 
-        // 校验 type 与字段的联动逻辑
+        // Validate type and field linkage logic
         validateTypeAndFields(request.type, request.command, request.url)
 
         val mcpServer = McpServer()
@@ -83,35 +83,35 @@ class McpServerServiceImpl(
         mcpServer.status = request.status ?: 1
         mcpServer.active = 1
 
-        // 设置租户ID
+        // Set tenant ID
         mcpServer.tenantId = TenantContext.getTenantId() ?: 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         mcpServer.creator = currentUsername
 
         val success = this.mcpServerMapper.insert(mcpServer) > 0
-        log.info("MCP 服务创建{}，id: {}", if (success) "成功" else "失败", mcpServer.id)
+        log.info("MCP server creation {}, id: {}", if (success) "successful" else "failed", mcpServer.id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateMcpServer(id: Long, request: McpServerUpdateRequest): Boolean {
-        log.info("更新 MCP 服务，id: {}", id)
+        log.info("Updating MCP server, id: {}", id)
 
         val mcpServer = mcpServerMapper.selectById(id)
-            ?: throw BizException("MCP 服务不存在")
+            ?: throw BizException("MCP server not found")
 
-        // 如果修改了名称，需校验唯一性
+        // If name is modified, validate uniqueness
         if (request.name != mcpServer.name) {
             val existing = mcpServerMapper.selectByName(request.name)
             if (existing != null) {
-                throw BizException("MCP 名称已存在")
+                throw BizException("MCP name already exists")
             }
             mcpServer.name = request.name
         }
 
-        // 选择性更新字段
+        // Selectively update fields
         request.description.let { mcpServer.description = it }
         if (hasText(request.type)) {
             mcpServer.type = request.type
@@ -120,67 +120,67 @@ class McpServerServiceImpl(
         request.url.let { mcpServer.url = it }
         request.isPublic.let { mcpServer.isPublic = it }
 
-        // 校验更新后 type 与字段的联动逻辑
+        // Validate type and field linkage logic after update
         validateTypeAndFields(mcpServer.type, mcpServer.command, mcpServer.url)
 
         val success = this.mcpServerMapper.updateById(mcpServer) > 0
-        log.info("MCP 服务更新{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("MCP server update {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleMcpServerStatus(id: Long, status: Int): Boolean {
-        log.info("切换 MCP 服务状态，id: {}, status: {}", id, status)
+        log.info("Toggling MCP server status, id: {}, status: {}", id, status)
 
         val mcpServer = mcpServerMapper.selectById(id)
-            ?: throw BizException("MCP 服务不存在")
+            ?: throw BizException("MCP server not found")
 
         val success = mcpServerMapper.updateStatus(id, status) > 0
-        log.info("MCP 服务状态切换{}，id: {}, status: {}", if (success) "成功" else "失败", id, status)
+        log.info("MCP server status toggle {}, id: {}, status: {}", if (success) "successful" else "failed", id, status)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteMcpServer(id: Long): Boolean {
-        log.info("删除 MCP 服务，id: {}", id)
+        log.info("Deleting MCP server, id: {}", id)
 
         val mcpServer = mcpServerMapper.selectById(id)
-            ?: throw BizException("MCP 服务不存在")
+            ?: throw BizException("MCP server not found")
 
         val success = mcpServerMapper.deleteById(id) > 0
-        log.info("MCP 服务删除{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("MCP server deletion {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     override fun connectivityTest(id: Long): Boolean {
-        log.info("MCP 服务连通性测试，id: {}", id)
+        log.info("MCP server connectivity test, id: {}", id)
         listTools(id)
         return true
     }
 
     /**
-     * 校验 type 与 command/url 字段的联动逻辑
+     * Validate type and command/url field linkage logic
      *
-     * @param type MCP 类型
-     * @param command 执行命令
-     * @param url 服务地址
+     * @param type MCP type
+     * @param command Execution command
+     * @param url Server URL
      */
     private fun validateTypeAndFields(type: String?, command: String?, url: String?) {
         when (type) {
             "stdio" -> {
                 if (!hasText(command)) {
-                    throw BizException("stdio 类型的 MCP 服务，command 不能为空")
+                    throw BizException("MCP server of stdio type, command cannot be empty")
                 }
             }
 
             "sse", "streamablehttp" -> {
                 if (!hasText(url)) {
-                    throw BizException("$type 类型的 MCP 服务，url 不能为空")
+                    throw BizException("MCP server of $type type, url cannot be empty")
                 }
             }
 
             else -> {
-                throw BizException("不支持的 MCP 类型：$type，仅支持 stdio/sse/streamablehttp")
+                throw BizException("Unsupported MCP type: $type, only supports stdio/sse/streamablehttp")
             }
         }
     }
@@ -188,7 +188,7 @@ class McpServerServiceImpl(
     override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer)
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
-        val mcpServer = mcpAdaptor.getConfig(mcpId) ?: throw BizException("MCP 服务不存在")
+        val mcpServer = mcpAdaptor.getConfig(mcpId) ?: throw BizException("MCP server not found")
         return McpHelper.listTools(mcpServer)
     }
 }

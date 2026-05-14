@@ -3,16 +3,16 @@ package com.vipamp.vipclaw.admin.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 同步技能响应对象
+ * Sync skill response object
  */
-@Schema(description = "同步技能响应对象")
+@Schema(description = "Sync skill response object")
 data class SyncSkillResponse(
-    @Schema(description = "技能名称", example = "Java 编程助手")
+    @Schema(description = "Skill name", example = "Java Programming Assistant")
     var name: String? = null,
-    @Schema(description = "技能描述", example = "提供 Java 编程相关的技能帮助")
+    @Schema(description = "Skill description", example = "Provides skill assistance related to Java programming")
     var description: String? = null,
-    @Schema(description = "skill.md 内容")
+    @Schema(description = "skill.md content")
     var skillmd: String? = null,
-    @Schema(description = "资源信息")
+    @Schema(description = "Resource information")
     var resources: Map<String, String> = mapOf(),
 )

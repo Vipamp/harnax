@@ -5,15 +5,15 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
 /**
- * 模型响应对象
+ * Model response object
  */
-@Schema(description = "模型响应对象")
+@Schema(description = "Model response object")
 data class ModelResponse(
     @Schema(description = "ID", example = "1")
     var id: Long? = null,
     @Schema(description = "名称", example = "GPT-4")
     var name: String? = null,
-    @Schema(description = "模型名称", example = "gpt-4")
+    @Schema(description = "Model name", example = "gpt-4")
     var modelName: String? = null,
     @Schema(description = "模型供应商ID", example = "1")
     var providerId: Long? = null,
@@ -21,7 +21,7 @@ data class ModelResponse(
     var providerName: String? = null,
     @Schema(description = "描述")
     var description: String? = null,
-    @Schema(description = "模型类型（chat/embedding）", example = "chat")
+    @Schema(description = "Model type（chat/embedding）", example = "chat")
     var modelType: String? = null,
     @Schema(description = "能力标签", example = "[\"reasoning\", \"tool\"]")
     var tags: List<String>? = null,
@@ -43,9 +43,9 @@ data class ModelResponse(
     var isPublic: Int? = null,
     @Schema(description = "创建人", example = "admin")
     var creator: String? = null,
-    @Schema(description = "创建时间", example = "2026-03-13 12:00:00")
+    @Schema(description = "Creation time", example = "2026-03-13 12:00:00")
     var createTime: LocalDateTime? = null,
-    @Schema(description = "更新时间", example = "2026-03-13 12:00:00")
+    @Schema(description = "Update time", example = "2026-03-13 12:00:00")
     var updateTime: LocalDateTime? = null,
 ) {
     companion object {

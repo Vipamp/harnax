@@ -17,15 +17,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * 用户管理控制器
- * 仅企业版和公有云版可用
+ * User management controller
+ * Available only for enterprise and public editions
  *
  * @author vipamp
  * @since 2026-03-06
  */
 @RestController
 @RequestMapping("/api/users")
-@Tag(name = "用户管理", description = "用户相关接口")
+@Tag(name = "User Management", description = "User related APIs")
 @RequiresEdition("enterprise", "public")
 class SysUserController(
     private val sysUserService: SysUserService,
@@ -35,19 +35,19 @@ class SysUserController(
     private val log = LoggerFactory.getLogger(SysUserController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取用户列表", description = "分页查询用户信息")
+    @Operation(summary = "Get user list with pagination", description = "Paginated query for user information")
     fun pageSysUser(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "模糊查询字段") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
-        @Parameter(description = "租户ID过滤") @RequestParam(name = "tenantId", required = false) tenantId: Long?,
+        @Parameter(description = "Keyword for fuzzy search") @RequestParam(name = "keyword", required = false) keyword: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Tenant ID filter") @RequestParam(name = "tenantId", required = false) tenantId: Long?,
     ): ResultVo<Page<SysUserResponse>> = try {
         val page = sysUserService.page(
             keyword,
@@ -58,103 +58,103 @@ class SysUserController(
         )
         ResultVo.success(page.mapRecords { sysUserService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取用户列表失败", e)
-        ResultVo.error(e.message ?: "获取用户列表失败")
+        log.error("Failed to get user list", e)
+        ResultVo.error(e.message ?: "Failed to get user list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取用户详情", description = "根据用户 ID 获取用户信息")
+    @Operation(summary = "Get user details", description = "Get user information by user ID")
     fun getSysUser(
-        @Parameter(description = "用户 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SysUserResponse?> = try {
         val user = sysUserService.getSysUser(id)
         ResultVo.success(user?.let { sysUserService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取用户详情失败", e)
-        ResultVo.error(e.message ?: "获取用户详情失败")
+        log.error("Failed to get user details", e)
+        ResultVo.error(e.message ?: "Failed to get user details")
     }
 
     @PostMapping
-    @Operation(summary = "创建用户", description = "新增用户信息")
+    @Operation(summary = "Create user", description = "Add new user information")
     fun createUser(
         @Valid @RequestBody request: SysUserCreateRequest,
     ): ResultVo<Void> = try {
-        // 传递版本信息，个人版不强制要求 email 和 phone
-        if (sysUserService.createUser(request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("创建用户失败")
+        // Pass edition information, personal edition does not require email and phone
+        if (sysUserService.createUser(request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("Failed to create user")
     } catch (e: Exception) {
-        log.error("创建用户失败", e)
-        ResultVo.error(e.message ?: "创建用户失败")
+        log.error("Failed to create user", e)
+        ResultVo.error(e.message ?: "Failed to create user")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新用户", description = "根据用户 ID 更新用户信息")
+    @Operation(summary = "Update user", description = "Update user information by user ID")
     fun updateSysUser(
-        @Parameter(description = "用户 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SysUserUpdateRequest,
     ): ResultVo<Void> = try {
-        // 传递版本信息，个人版不进行必填校验
-        if (sysUserService.updateUser(id, request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("更新用户失败")
+        // Pass edition information, personal edition does not perform required field validation
+        if (sysUserService.updateUser(id, request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("Failed to update user")
     } catch (e: Exception) {
-        log.error("更新用户失败", e)
-        ResultVo.error(e.message ?: "更新用户失败")
+        log.error("Failed to update user", e)
+        ResultVo.error(e.message ?: "Failed to update user")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换用户状态", description = "根据用户 ID 切换用户状态")
+    @Operation(summary = "Toggle user status", description = "Toggle user status by user ID")
     fun toggleSysUser(
-        @Parameter(description = "用户 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "用户状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "User status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
-        if (sysUserService.toggleUserStatus(id, status)) ResultVo.success() else ResultVo.error("更新用户失败")
+        if (sysUserService.toggleUserStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle user status")
     } catch (e: Exception) {
-        log.error("更新用户失败", e)
-        ResultVo.error(e.message ?: "更新用户失败")
+        log.error("Failed to update user", e)
+        ResultVo.error(e.message ?: "Failed to update user")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除用户", description = "根据用户 ID 删除用户")
+    @Operation(summary = "Delete user", description = "Delete user by user ID")
     fun deleteSysUser(
-        @Parameter(description = "用户 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sysUserService.deleteUser(id)) ResultVo.success() else ResultVo.error("删除用户失败")
+        if (sysUserService.deleteUser(id)) ResultVo.success() else ResultVo.error("Failed to delete user")
     } catch (e: Exception) {
-        log.error("删除用户失败", e)
-        ResultVo.error(e.message ?: "删除用户失败")
+        log.error("Failed to delete user", e)
+        ResultVo.error(e.message ?: "Failed to delete user")
     }
 
     @GetMapping("/check/username")
-    @Operation(summary = "检查用户名是否存在", description = "检查用户名是否已被注册")
+    @Operation(summary = "Check username", description = "Check if username is already registered")
     fun checkUsername(
-        @Parameter(description = "用户名") @RequestParam(name = "username") username: String,
+        @Parameter(description = "Username") @RequestParam(name = "username") username: String,
     ): ResultVo<Boolean> = try {
         val exists = sysUserService.existsByUsername(username)
         ResultVo.success(exists)
     } catch (e: Exception) {
-        log.error("检查用户名失败", e)
-        ResultVo.error(e.message ?: "检查用户名失败")
+        log.error("Failed to check username", e)
+        ResultVo.error(e.message ?: "Failed to check username")
     }
 
     @GetMapping("/check/phone")
-    @Operation(summary = "检查手机号是否存在", description = "检查手机号是否已被注册")
+    @Operation(summary = "Check phone", description = "Check if phone is already registered")
     fun checkPhone(
-        @Parameter(description = "手机号") @RequestParam(name = "phone") phone: String,
+        @Parameter(description = "Phone number") @RequestParam(name = "phone") phone: String,
     ): ResultVo<Boolean> = try {
         val exists = sysUserService.existsByPhone(phone)
         ResultVo.success(exists)
     } catch (e: Exception) {
-        log.error("检查手机号失败", e)
-        ResultVo.error(e.message ?: "检查手机号失败")
+        log.error("Failed to check phone", e)
+        ResultVo.error(e.message ?: "Failed to check phone")
     }
 
     @GetMapping("/check/email")
-    @Operation(summary = "检查邮箱是否存在", description = "检查邮箱是否已被注册")
+    @Operation(summary = "Check email", description = "Check if email is already registered")
     fun checkEmail(
-        @Parameter(description = "邮箱") @RequestParam(name = "email") email: String,
+        @Parameter(description = "Email") @RequestParam(name = "email") email: String,
     ): ResultVo<Boolean> = try {
         val exists = sysUserService.existsByEmail(email)
         ResultVo.success(exists)
     } catch (e: Exception) {
-        log.error("检查邮箱失败", e)
-        ResultVo.error(e.message ?: "检查邮箱失败")
+        log.error("Failed to check email", e)
+        ResultVo.error(e.message ?: "Failed to check email")
     }
 }

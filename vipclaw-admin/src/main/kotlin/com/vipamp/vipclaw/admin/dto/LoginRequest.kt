@@ -3,22 +3,22 @@ package com.vipamp.vipclaw.admin.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 登录请求 DTO
+ * Login request DTO
  */
-@Schema(description = "登录请求对象")
+@Schema(description = "Login request object")
 data class LoginRequest(
-    @Schema(description = "用户名", example = "admin", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Username", example = "admin", requiredMode = Schema.RequiredMode.REQUIRED)
     val username: String = "",
 
-    @Schema(description = "密码", example = "admin123", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Password", example = "admin123", requiredMode = Schema.RequiredMode.REQUIRED)
     val password: String? = null,
 
-    @Schema(description = "验证码", example = "1234")
+    @Schema(description = "Captcha", example = "1234")
     val captcha: String? = null,
 
-    @Schema(description = "验证码 key，获取验证码时返回", example = "uuid-xxx-xxx")
+    @Schema(description = "Captcha key, returned when getting captcha", example = "uuid-xxx-xxx")
     val captchaKey: String? = null,
 
-    @Schema(description = "自动登录", example = "true")
+    @Schema(description = "Auto login", example = "true")
     val autoLogin: Boolean? = null,
 )

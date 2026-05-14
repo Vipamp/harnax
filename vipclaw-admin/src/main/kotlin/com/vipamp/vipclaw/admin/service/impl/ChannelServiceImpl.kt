@@ -19,7 +19,7 @@ import java.time.LocalDateTime
 import java.util.*
 
 /**
- * Channel 服务实现类
+ * Channel service implementation
  *
  * @author vipamp
  * @since 2026-04-08
@@ -62,10 +62,10 @@ class ChannelServiceImpl(
         channel.description = request.description!!
         channel.status = request.status ?: 1
 
-        // 设置租户ID
+        // Set tenant ID
         channel.tenantId = TenantContext.getTenantId() ?: 1
 
-        // 生成唯一的回调标识
+        // Generate unique callback key
         val callbackKey = generateCallbackKey(request.type)
         channel.callbackKey = callbackKey
 
@@ -74,14 +74,14 @@ class ChannelServiceImpl(
         channelMapper.insert(channel)
         true
     } catch (e: Exception) {
-        log.error("创建 Channel 失败", e)
-        throw RuntimeException("创建 Channel 失败：${e.message}")
+        log.error("Failed to create Channel", e)
+        throw RuntimeException("Failed to create Channel: ${e.message}")
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateChannel(id: Long, request: ChannelUpdateRequest): Boolean = try {
         val channel = channelMapper.selectById(id)
-            ?: throw RuntimeException("Channel 不存在")
+            ?: throw RuntimeException("Channel not found")
 
         request.name?.let { channel.name = it }
         request.type?.let { channel.type = it }
@@ -97,13 +97,13 @@ class ChannelServiceImpl(
         channelMapper.updateById(channel)
         true
     } catch (e: Exception) {
-        log.error("更新 Channel 失败", e)
-        throw RuntimeException("更新 Channel 失败：${e.message}")
+        log.error("Failed to update Channel", e)
+        throw RuntimeException("Failed to update Channel: ${e.message}")
     }
 
     override fun toggleChannelStatus(id: Long, status: Int): Boolean {
         val channel = channelMapper.selectById(id)
-            ?: throw RuntimeException("Channel 不存在")
+            ?: throw RuntimeException("Channel not found")
         return channelMapper.updateStatus(id, status) > 0
     }
 
@@ -114,7 +114,7 @@ class ChannelServiceImpl(
     override fun convertToResponse(channel: Channel): ChannelResponse {
         val response = ChannelResponse.fromEntity(channel)
 
-        // 查询智能体名称
+        // Query agent name
         channel.agentId.let { agentId ->
             val agent = agentService.getAgent(agentId)
             agent?.let {
@@ -122,7 +122,7 @@ class ChannelServiceImpl(
             }
         }
 
-        // 生成回调 URL
+        // Generate callback URL
         channel.callbackKey.let { callbackKey ->
             response.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
         }
@@ -131,7 +131,7 @@ class ChannelServiceImpl(
     }
 
     /**
-     * 生成唯一的回调标识
+     * Generate unique callback key
      */
     private fun generateCallbackKey(type: String?): String {
         val prefix = type?.lowercase() ?: "ch"

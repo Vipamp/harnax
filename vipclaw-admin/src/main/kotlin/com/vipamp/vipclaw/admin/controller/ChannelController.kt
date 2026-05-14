@@ -15,14 +15,14 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.*
 
 /**
- * Channel 管理控制器
+ * Channel management controller
  *
  * @author vipamp
  * @since 2026-04-08
  */
 @RestController
 @RequestMapping("/api/channels")
-@Tag(name = "Channel 管理", description = "Channel 通道相关接口")
+@Tag(name = "Channel Management", description = "Channel related APIs")
 class ChannelController(
     private val channelService: ChannelService,
 ) {
@@ -30,90 +30,90 @@ class ChannelController(
     private val log = LoggerFactory.getLogger(ChannelController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取 Channel 列表", description = "分页查询 Channel 信息")
+    @Operation(summary = "Get channel list with pagination", description = "Paginated query for channel information")
     fun pageChannel(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "搜索关键字") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "类型筛选") @RequestParam(name = "type", required = false) type: String?,
-        @Parameter(description = "状态筛选") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Search keyword") @RequestParam(name = "keyword", required = false) keyword: String?,
+        @Parameter(description = "Type filter") @RequestParam(name = "type", required = false) type: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<ChannelResponse>> = try {
         val page = channelService.page(keyword, type, status, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { channelService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取 Channel 列表失败", e)
-        ResultVo.error(e.message ?: "获取 Channel 列表失败")
+        log.error("Failed to get channel list", e)
+        ResultVo.error(e.message ?: "Failed to get channel list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取 Channel 详情", description = "根据 Channel ID 获取 Channel 信息")
+    @Operation(summary = "Get channel details", description = "Get channel information by channel ID")
     fun getChannel(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<ChannelResponse?> = try {
         val channel = channelService.getChannel(id)
         ResultVo.success(channel?.let { channelService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取 Channel 详情失败", e)
-        ResultVo.error(e.message ?: "获取 Channel 详情失败")
+        log.error("Failed to get channel details", e)
+        ResultVo.error(e.message ?: "Failed to get channel details")
     }
 
     @PostMapping
-    @Operation(summary = "创建 Channel", description = "新增 Channel 信息")
+    @Operation(summary = "Create channel", description = "Add new channel information")
     fun createChannel(
         @Validated @RequestBody request: ChannelCreateRequest,
     ): ResultVo<Void> = try {
-        if (channelService.createChannel(request)) ResultVo.success() else ResultVo.error("创建 Channel 失败")
+        if (channelService.createChannel(request)) ResultVo.success() else ResultVo.error("Failed to create channel")
     } catch (e: Exception) {
-        log.error("创建 Channel 失败", e)
-        ResultVo.error(e.message ?: "创建 Channel 失败")
+        log.error("Failed to create channel", e)
+        ResultVo.error(e.message ?: "Failed to create channel")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新 Channel", description = "根据 Channel ID 更新 Channel 信息")
+    @Operation(summary = "Update channel", description = "Update channel information by channel ID")
     fun updateChannel(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long,
         @Validated @RequestBody request: ChannelUpdateRequest,
     ): ResultVo<Void> = try {
-        if (channelService.updateChannel(id, request)) ResultVo.success() else ResultVo.error("更新 Channel 失败")
+        if (channelService.updateChannel(id, request)) ResultVo.success() else ResultVo.error("Failed to update channel")
     } catch (e: Exception) {
-        log.error("更新 Channel 失败", e)
-        ResultVo.error(e.message ?: "更新 Channel 失败")
+        log.error("Failed to update channel", e)
+        ResultVo.error(e.message ?: "Failed to update channel")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换 Channel 状态", description = "根据 Channel ID 切换 Channel 状态")
+    @Operation(summary = "Toggle channel status", description = "Toggle channel status by channel ID")
     fun toggleChannel(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
         if (channelService.toggleChannelStatus(id, status)) {
             ResultVo.success()
         } else {
-            ResultVo.error("更新 Channel 失败")
+            ResultVo.error("Failed to update channel")
         }
     } catch (e: Exception) {
-        log.error("更新 Channel 失败", e)
-        ResultVo.error(e.message ?: "更新 Channel 失败")
+        log.error("Failed to update channel", e)
+        ResultVo.error(e.message ?: "Failed to update channel")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除 Channel", description = "根据 Channel ID 删除 Channel")
+    @Operation(summary = "Delete channel", description = "Delete channel by channel ID")
     fun deleteChannel(
         @Parameter(description = "Channel ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
         if (channelService.deleteChannel(id)) {
             ResultVo.success()
         } else {
-            ResultVo.error("删除 Channel 失败")
+            ResultVo.error("Failed to delete channel")
         }
     } catch (e: Exception) {
-        log.error("删除 Channel 失败", e)
-        ResultVo.error(e.message ?: "删除 Channel 失败")
+        log.error("Failed to delete channel", e)
+        ResultVo.error(e.message ?: "Failed to delete channel")
     }
 }

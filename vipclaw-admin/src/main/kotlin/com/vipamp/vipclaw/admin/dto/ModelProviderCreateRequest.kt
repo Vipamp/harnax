@@ -29,7 +29,7 @@ data class ModelProviderCreateRequest(
 
     @field:Pattern(
         regexp = "^(https?:\\/\\/)?([\\w.-]+)(:\\d+)?(\\/[^\\s]*)?$|^$",
-        message = "API 地址格式不正确",
+        message = "API URL格式不正确",
     )
     @Schema(description = "API 基础地址（可为空）", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
     val baseUrl: String? = null,

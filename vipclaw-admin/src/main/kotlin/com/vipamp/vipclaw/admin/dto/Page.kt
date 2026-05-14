@@ -3,8 +3,8 @@ package com.vipamp.vipclaw.admin.dto
 import com.github.pagehelper.PageInfo
 
 /**
- * 自定义分页类
- * 基于 PageHelper 的 PageInfo
+ * Custom pagination class
+ * Based on PageHelper's PageInfo
  *
  * @author vipamp
  * @since 2026-04-19
@@ -16,26 +16,26 @@ data class Page<T>(
     var records: List<T> = emptyList(),
 ) {
     /**
-     * 总页数
+     * Total pages
      */
     var pages: Long = 0
         get() = if (pageSize > 0) (total + pageSize - 1) / pageSize else 0
 
     /**
-     * 是否有上一页
+     * Whether has previous page
      */
     val hasPrevious: Boolean
         get() = pageNum > 1
 
     /**
-     * 是否有下一页
+     * Whether has next page
      */
     val hasNext: Boolean
         get() = pageNum < pages
 
     companion object {
         /**
-         * 从 PageInfo 转换为 Page
+         * Convert from PageInfo to Page
          */
         fun <T> fromPageInfo(list: List<T>): Page<T> {
             val pageInfo = PageInfo(list)
@@ -50,11 +50,11 @@ data class Page<T>(
 }
 
 /**
- * 分页对象转换扩展函数
- * 将 Page<Entity> 转换为 Page<Response>
+ * Pagination object transformation extension function
+ * Converts Page<Entity> to Page<Response>
  *
- * @param transform 实体到响应对象的转换函数
- * @return 转换后的分页对象
+ * @param transform Entity to response object transformation function
+ * @return Transformed pagination object
  */
 fun <T, R> Page<T>.mapRecords(transform: (T) -> R): Page<R> = Page<R>(
     pageNum = this.pageNum,

@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 /**
- * 租户服务实现类
+ * Tenant service implementation
  */
 @Service
 class TenantServiceImpl(
@@ -31,19 +31,19 @@ class TenantServiceImpl(
 
     @Transactional
     override fun createTenant(request: CreateTenantRequest, creator: String): TenantResponse {
-        // 检查租户名称是否已存在
+        // Check if tenant name already exists
         val existingTenant = tenantMapper.selectByName(request.name)
         if (existingTenant != null) {
             throw BizException(messageUtil.getMessage("error.tenant.name_exists"))
         }
 
-        // 检查用户是否存在
+        // Check if user exists
         val adminUser = sysUserMapper.selectById(request.adminUserId)
         if (adminUser == null) {
             throw BizException(messageUtil.getMessage("error.user.notfound"))
         }
 
-        // 创建租户
+        // Create tenant
         val tenant = TenantEntity().apply {
             this.name = request.name
             this.status = 1
@@ -54,7 +54,7 @@ class TenantServiceImpl(
         }
         tenantMapper.insert(tenant)
 
-        // 绑定管理员
+        // Bind admin
         val userTenant = UserTenantEntity().apply {
             this.userId = request.adminUserId
             this.tenantId = tenant.id
@@ -99,13 +99,13 @@ class TenantServiceImpl(
         val tenant = tenantMapper.selectById(id)
             ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
-        // TODO: 检查租户下是否有可用资源（agent、session、mcp、skill）
-        // 第一期暂不实现
+        // TODO: Check if tenant has available resources (agent, session, mcp, skill)
+        // Not implemented in phase 1
 
-        // 删除租户关联
+        // Delete tenant associations
         userTenantMapper.deleteByTenantId(id)
 
-        // 逻辑删除租户
+        // Logical delete tenant
         return tenantMapper.deleteById(id) > 0
     }
 
@@ -138,15 +138,15 @@ class TenantServiceImpl(
 
     @Transactional
     override fun addUserToTenant(tenantId: Long, userId: Long, role: String): Boolean {
-        // 检查租户是否存在
+        // Check if tenant exists
         tenantMapper.selectById(tenantId)
             ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
-        // 检查用户是否存在
+        // Check if user exists
         sysUserMapper.selectById(userId)
             ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 检查是否已存在
+        // Check if already exists
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
         if (existing != null) {
             throw BizException(messageUtil.getMessage("error.user.already_in_tenant"))
@@ -168,13 +168,13 @@ class TenantServiceImpl(
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
             ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
 
-        // 检查该用户是否是租户管理员
+        // Check if this user is a tenant admin
         if (existing.role == "admin") {
-            // 查询该租户下的所有管理员
+            // Query all admins under this tenant
             val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
             val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
 
-            // 如果是唯一的管理员，不允许删除
+            // If it's the only admin, do not allow deletion
             if (adminCount <= 1) {
                 throw BizException(messageUtil.getMessage("error.tenant.cannot_remove_only_admin"))
             }
@@ -185,11 +185,11 @@ class TenantServiceImpl(
 
     @Transactional
     override fun updateUserRole(tenantId: Long, userId: Long, role: String): Boolean {
-        // 检查用户是否在租户中
+        // Check if user is in tenant
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
             ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
 
-        // 如果要降级为普通成员，检查是否是唯一管理员
+        // If downgrading to regular member, check if it's the only admin
         if (existing.role == "admin" && role != "admin") {
             val allUserTenants = userTenantMapper.selectByTenantId(tenantId)
             val adminCount = allUserTenants.count { it.role == "admin" && it.status == 1 }
@@ -199,7 +199,7 @@ class TenantServiceImpl(
             }
         }
 
-        // 更新角色
+        // Update role
         return userTenantMapper.updateRole(userId, tenantId, role) > 0
     }
 

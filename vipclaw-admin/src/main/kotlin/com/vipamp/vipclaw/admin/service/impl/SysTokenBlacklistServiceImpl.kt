@@ -12,7 +12,7 @@ import java.security.MessageDigest
 import java.time.LocalDateTime
 
 /**
- * Token 黑名单服务实现类
+ * Token blacklist service implementation
  */
 @Service
 class SysTokenBlacklistServiceImpl(
@@ -30,15 +30,15 @@ class SysTokenBlacklistServiceImpl(
         reason: String,
     ) {
         try {
-            // 计算 Token 的 SHA256 哈希值（避免存储完整 Token）
+            // Calculate SHA256 hash of Token (avoid storing complete Token)
             val tokenHash = hashToken(token)
 
-            // 获取客户端 IP
+            // Get client IP
             val clientIp = getClientIp()
 
-            // 构建黑名单记录
+            // Build blacklist record
             val blacklist = SysTokenBlacklist.builder()
-                .token(token) // 存储完整 Token（可选，用于审计）
+                .token(token) // Store complete Token (optional, for auditing)
                 .tokenHash(tokenHash)
                 .username(username)
                 .userId(userId)
@@ -48,60 +48,60 @@ class SysTokenBlacklistServiceImpl(
                 .createIp(clientIp)
                 .build()
 
-            // 保存到数据库
+            // Save to database
             tokenBlacklistMapper.insert(blacklist)
 
-            log.info("Token 已加入黑名单，userId: {}, username: {}, reason: {}", userId, username, reason)
+            log.info("Token added to blacklist, userId: {}, username: {}, reason: {}", userId, username, reason)
         } catch (e: Exception) {
-            log.error("添加 Token 到黑名单失败：${e.message}", e)
-            // 不抛出异常，避免影响退出流程
+            log.error("Failed to add Token to blacklist: ${e.message}", e)
+            // Do not throw exception to avoid affecting logout process
         }
     }
 
     override fun isBlacklisted(token: String): Boolean {
         return try {
-            // 计算 Token 的 SHA256 哈希值
+            // Calculate SHA256 hash of Token
             val tokenHash = hashToken(token)
 
-            // 查询是否在黑名单中且未过期
+            // Query if in blacklist and not expired
             val blacklist = tokenBlacklistMapper.selectByTokenHash(tokenHash)
 
             if (blacklist != null) {
-                log.debug("Token 在黑名单中，userId: {}", blacklist.userId)
+                log.debug("Token is in blacklist, userId: {}", blacklist.userId)
                 return true
             }
 
             false
         } catch (e: Exception) {
-            log.error("检查 Token 黑名单失败：${e.message}")
-            // 如果查询失败，默认不在黑名单（允许访问）
+            log.error("Failed to check Token blacklist: ${e.message}")
+            // If query fails, default to not in blacklist (allow access)
             false
         }
     }
 
     /**
-     * 计算 Token 的 SHA256 哈希值
+     * Calculate SHA256 hash of Token
      *
      * @param token JWT Token
-     * @return 哈希值（小写十六进制）
+     * @return Hash value (lowercase hexadecimal)
      */
     private fun hashToken(token: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
         val hash = digest.digest(token.toByteArray(Charsets.UTF_8))
 
-        // 转换为小写十六进制
+        // Convert to lowercase hexadecimal
         return hash.joinToString("") { "%02x".format(it) }
     }
 
     /**
-     * 获取客户端 IP 地址
+     * Get client IP address
      */
     private fun getClientIp(): String = try {
         val attributes = RequestContextHolder.getRequestAttributes() as? ServletRequestAttributes
         if (attributes != null) {
             val request = attributes.request
 
-            // 尝试从 X-Forwarded-For 获取
+            // Try to get from X-Forwarded-For
             var ip = request.getHeader("X-Forwarded-For")
             if (ip.isNullOrEmpty() || "unknown".equals(ip, ignoreCase = true)) {
                 ip = request.getHeader("X-Real-IP")
@@ -114,7 +114,7 @@ class SysTokenBlacklistServiceImpl(
             "unknown"
         }
     } catch (e: Exception) {
-        log.warn("获取客户端 IP 失败：${e.message}")
+        log.warn("Failed to get client IP: ${e.message}")
         "unknown"
     }
 }

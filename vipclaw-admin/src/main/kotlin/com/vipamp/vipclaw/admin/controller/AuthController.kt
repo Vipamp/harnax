@@ -19,9 +19,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * 认证控制器
+ * Authentication controller
  */
-@Tag(name = "认证管理", description = "用户登录、登出、验证码等接口")
+@Tag(name = "Authentication", description = "User login, logout, captcha and other APIs")
 @RestController
 @RequestMapping("/api/auth")
 class AuthController(
@@ -34,45 +34,45 @@ class AuthController(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 用户登录
+     * User login
      */
     @PostMapping("/login")
-    @Operation(summary = "用户登录", description = "用户名密码登录")
+    @Operation(summary = "User login", description = "Username and password login")
     fun login(@Valid @RequestBody request: @Valid LoginRequest): ResultVo<LoginResponse> = ResultVo.success(authService.login(request))
 
     /**
-     * 退出登录
+     * Logout
      */
     @PostMapping("/logout")
-    @Operation(summary = "退出登录", description = "用户退出登录")
+    @Operation(summary = "Logout", description = "User logout")
     fun logout(): ResultVo<Void> {
         authService.logout()
         return ResultVo.success()
     }
 
     /**
-     * 获取验证码
+     * Get captcha
      */
     @GetMapping("/captcha")
-    @Operation(summary = "获取验证码", description = "获取图形验证码图片")
+    @Operation(summary = "Get captcha", description = "Get graphical captcha image")
     fun getCaptcha(): ResultVo<CaptchaResponse> {
         try {
             return ResultVo.success(captchaService.generateCaptcha())
         } catch (e: Exception) {
-            log.error("获取验证码失败", e)
-            return ResultVo.error(e.message ?: "获取验证码失败")
+            log.error("Failed to get captcha", e)
+            return ResultVo.error(e.message ?: "Failed to get captcha")
         }
     }
 
     /**
-     * 获取当前版本支持的登录方式
+     * Get login methods supported by current edition
      */
     @GetMapping("/login-methods")
-    @Operation(summary = "获取登录方式", description = "根据当前版本获取支持的登录方式")
+    @Operation(summary = "Get login methods", description = "Get supported login methods by current edition")
     fun getLoginMethods(): ResultVo<Map<String, Any>> {
-        val methods = mutableListOf("username") // 所有版本都支持用户名登录
+        val methods = mutableListOf("username") // All editions support username login
 
-        // 企业版和公网版支持手机号和邮箱登录
+        // Enterprise and public editions support phone and email login
         if (editionUtil.isEnterprise() || editionUtil.isPublic()) {
             methods.add("phone")
             methods.add("email")
@@ -86,42 +86,42 @@ class AuthController(
     }
 
     /**
-     * 获取用户所属租户列表
+     * Get tenant list for current user
      */
     @GetMapping("/tenants")
-    @Operation(summary = "获取租户列表", description = "获取当前用户所属的所有租户")
+    @Operation(summary = "Get tenant list", description = "Get all tenants for current user")
     fun getUserTenants(): ResultVo<List<TenantResponse>> {
         return try {
             val currentUser = SecurityUtils.getCurrentUser()
-                ?: return ResultVo.error("用户未登录")
+                ?: return ResultVo.error("User not logged in")
 
             val tenants = userTenantService.getUserTenants(currentUser.id)
             ResultVo.success(tenants)
         } catch (e: Exception) {
-            log.error("获取租户列表失败", e)
-            ResultVo.error(e.message ?: "获取租户列表失败")
+            log.error("Failed to get tenant list", e)
+            ResultVo.error(e.message ?: "Failed to get tenant list")
         }
     }
 
     /**
-     * 切换租户
+     * Switch tenant
      */
     @PostMapping("/switch-tenant")
-    @Operation(summary = "切换租户", description = "切换到指定租户，返回新的Token")
+    @Operation(summary = "Switch tenant", description = "Switch to specified tenant and return new token")
     fun switchTenant(
         @Valid @RequestBody request: SwitchTenantRequest,
     ): ResultVo<Map<String, Any>> {
         return try {
             val currentUser = SecurityUtils.getCurrentUser()
-                ?: return ResultVo.error("用户未登录")
+                ?: return ResultVo.error("User not logged in")
 
-            // 验证用户是否属于该租户
+            // Verify if user belongs to this tenant
             val isInTenant = userTenantService.isUserInTenant(currentUser.id, request.tenantId)
             if (!isInTenant && currentUser.isAdmin != 1) {
-                return ResultVo.error("无权访问该租户")
+                return ResultVo.error("No access to this tenant")
             }
 
-            // 生成新Token
+            // Generate new token
             val newToken = jwtUtil.generateToken(
                 currentUser.id,
                 currentUser.username,
@@ -136,8 +136,8 @@ class AuthController(
                 ),
             )
         } catch (e: Exception) {
-            log.error("切换租户失败", e)
-            ResultVo.error(e.message ?: "切换租户失败")
+            log.error("Failed to switch tenant", e)
+            ResultVo.error(e.message ?: "Failed to switch tenant")
         }
     }
 }

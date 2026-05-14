@@ -3,16 +3,16 @@ package com.vipamp.vipclaw.admin.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 验证码响应 DTO
+ * Captcha response DTO
  */
-@Schema(description = "验证码响应对象")
+@Schema(description = "Captcha response object")
 data class CaptchaResponse(
-    @Schema(description = "验证码图片的 Base64 编码", example = "data:image/png;base64,iVBORw0KG...")
+    @Schema(description = "Base64 encoded captcha image", example = "data:image/png;base64,iVBORw0KG...")
     val imageBase64: String? = null,
 
-    @Schema(description = "验证码的 key，用于提交时验证", example = "uuid-xxx-xxx-xxx")
+    @Schema(description = "Captcha key for verification submission", example = "uuid-xxx-xxx-xxx")
     val captchaKey: String? = null,
 
-    @Schema(description = "过期时间（秒）", example = "300")
+    @Schema(description = "Expiration time in seconds", example = "300")
     val expiresIn: Long? = null,
 )

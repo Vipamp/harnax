@@ -57,10 +57,10 @@ data class ChannelResponse(
     @Schema(description = "是否启用（0:禁用，1:启用）")
     val status: Int? = null,
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     val createTime: LocalDateTime? = null,
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     val updateTime: LocalDateTime? = null,
 ) {
     companion object {

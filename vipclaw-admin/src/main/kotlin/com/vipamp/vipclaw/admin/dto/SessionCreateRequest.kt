@@ -6,22 +6,22 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
 /**
- * 会话创建请求对象
+ * Session creation request object
  *
  * @author vipamp
  * @since 2026-03-25
  */
-@Schema(description = "会话创建请求对象")
+@Schema(description = "Session creation request object")
 data class SessionCreateRequest(
-    @Schema(description = "会话名称", example = "我的会话", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "会话名称不能为空")
-    @Size(max = 100, message = "会话名称长度不能超过 100 个字符")
+    @Schema(description = "Session name", example = "My Session", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotBlank(message = "Session name cannot be empty")
+    @Size(max = 100, message = "Session name length cannot exceed 100 characters")
     val title: String = "",
 
-    @Schema(description = "会话描述", example = "这是一个会话描述")
+    @Schema(description = "Session description", example = "This is a session description")
     val sessionDescription: String = "",
 
-    @Schema(description = "关联的智能体ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "智能体ID不能为空")
+    @Schema(description = "Associated agent ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "Agent ID cannot be empty")
     val agentId: Long = 0,
 )

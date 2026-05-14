@@ -21,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 /**
- * 智能体服务实现类
+ * Agent service implementation
  *
  * @author vipamp
  * @since 2026-03-18
@@ -61,29 +61,29 @@ class AgentServiceImpl(
         agent.owner = request.owner!!
         agent.status = request.status ?: 1
 
-        // 设置租户ID
+        // Set tenant ID
         agent.tenantId = TenantContext.getTenantId() ?: 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         agent.creator = currentUsername!!
 
-        // 默认不公开
+        // Default not public
         if (agent.isPublic == null) {
             agent.isPublic = 0
         }
 
-        // 转换 MCP 列表为 JSON 存储
-        // 格式: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
+        // Convert MCP list to JSON storage
+        // Format: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
         if (!request.mcpList.isNullOrEmpty()) {
             try {
                 agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
             } catch (e: JsonProcessingException) {
-                throw RuntimeException("MCP 列表 JSON 序列化失败", e)
+                throw RuntimeException("Failed to serialize MCP list to JSON", e)
             }
         }
 
-        // 技能列表直接存储为字符串格式 "1,2,3"
+        // Skills list stored directly as string format "1,2,3"
         if (!request.skillList.isNullOrEmpty()) {
             agent.skillList = request.skillList
         }
@@ -93,8 +93,8 @@ class AgentServiceImpl(
         agentMapper.insert(agent)
         true
     } catch (e: Exception) {
-        log.error("创建智能体失败", e)
-        throw RuntimeException("创建智能体失败：${e.message}")
+        log.error("Failed to create agent", e)
+        throw RuntimeException("Failed to create agent: ${e.message}")
     }
 
     override fun getAgent(id: Long): Agent? = agentMapper.selectById(id)
@@ -102,7 +102,7 @@ class AgentServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean = try {
         val agent = getAgent(id)
-            ?: throw RuntimeException("智能体不存在")
+            ?: throw RuntimeException("Agent not found")
 
         request.name?.let { agent.name = it }
         request.description?.let { agent.description = it }
@@ -111,47 +111,47 @@ class AgentServiceImpl(
         request.owner?.let { agent.owner = it }
         request.isPublic?.let { agent.isPublic = it }
 
-        // 更新 MCP 列表
+        // Update MCP list
         if (request.mcpList != null) {
-            // 允许清空 MCP 列表
+            // Allow clearing MCP list
             if (request.mcpList.isEmpty()) {
                 agent.mcpList = ""
             } else {
-                // 直接存储 JSON 格式：[{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
+                // Store directly in JSON format: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
                 try {
                     agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
                 } catch (e: JsonProcessingException) {
-                    throw RuntimeException("MCP 列表 JSON 序列化失败", e)
+                    throw RuntimeException("Failed to serialize MCP list to JSON", e)
                 }
             }
         }
-        // 如果 request.mcpList == null，保持原有值不变
+        // If request.mcpList == null, keep original value unchanged
 
-        // 更新技能列表
+        // Update skill list
         if (request.skillList != null) {
-            // skillList 是字符串格式 "1,2,3" 或空字符串 ""
+            // skillList is string format "1,2,3" or empty string ""
             agent.skillList = (if (request.skillList.trim().isEmpty()) null else request.skillList).toString()
         }
-        // 如果 request.skillList == null，保持原有值不变
+        // If request.skillList == null, keep original value unchanged
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
         true
     } catch (e: Exception) {
-        log.error("更新智能体失败", e)
-        throw RuntimeException("更新智能体失败：${e.message}")
+        log.error("Failed to update agent", e)
+        throw RuntimeException("Failed to update agent: ${e.message}")
     }
 
     override fun toggleAgentStatus(id: Long, status: Int): Boolean {
         val agent = agentMapper.selectById(id)
-            ?: throw RuntimeException("智能体不存在")
+            ?: throw RuntimeException("Agent not found")
         return agentMapper.updateStatus(id, status) > 0
     }
 
     override fun deleteAgent(id: Long): Boolean = agentMapper.deleteById(id) > 0
 
     /**
-     * 将 Agent 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
+     * Convert Agent entity to response DTO (with complete skill and MCP information)
      */
     override fun convertToResponse(agent: Agent): AgentResponse {
         val response = AgentResponse()
@@ -161,7 +161,7 @@ class AgentServiceImpl(
         response.systemPrompt = agent.systemPrompt
         response.modelId = agent.modelId
 
-        // 查询模型名称和价格
+        // Query model name and price
         agent.modelId.let { modelId ->
             val model = modelService.getModel(modelId)
             model?.let {
@@ -177,10 +177,10 @@ class AgentServiceImpl(
         response.createTime = agent.createTime
         response.updateTime = agent.updateTime
 
-        // 查询关联会话列表
+        // Query associated session list
         val sessions = sessionMapper.selectByAgentId(agent.id)
 
-        // 转换为 SessionItem 列表
+        // Convert to SessionItem list
         val sessionItems = sessions.map { session ->
             val item = AgentResponse.SessionItem()
             item.id = session.id
@@ -193,16 +193,16 @@ class AgentServiceImpl(
         response.sessionList = sessionItems
         response.sessionCount = sessionItems.size
 
-        // 解析 MCP 列表 (JSON 格式)
+        // Parse MCP list (JSON format)
         if (agent.mcpList.isNotEmpty()) {
             try {
-                // 先反序列化为 Map 获取 ID 和 enableSkip
+                // First deserialize to Map to get ID and enableSkip
                 val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
                     agent.mcpList,
                     object : TypeReference<List<Map<String, Any>>>() {},
                 )
 
-                // 从数据库查询完整的 MCP 信息
+                // Query complete MCP information from database
                 val mcpItems = mutableListOf<AgentResponse.McpItem>()
                 for (config in mcpConfigs) {
                     val mcpId = (config["id"] as Number).toLong()
@@ -220,12 +220,12 @@ class AgentServiceImpl(
                 }
                 response.mcpList = mcpItems
             } catch (e: Exception) {
-                log.warn("解析 MCP 列表失败", e)
+                log.warn("Failed to parse MCP list", e)
                 response.mcpList = mutableListOf()
             }
         }
 
-        // 解析技能列表（逗号分隔的字符串）
+        // Parse skill list (comma-separated string)
         if (agent.skillList.isNotEmpty()) {
             try {
                 val skillIds = agent.skillList.split(",")
@@ -234,7 +234,7 @@ class AgentServiceImpl(
                 for (skillIdStr in skillIds) {
                     try {
                         val skillId = skillIdStr.trim().toLong()
-                        // 从数据库查询完整的技能信息
+                        // Query complete skill information from database
                         val skill = skillService.getSkill(skillId)
                         skill?.let { it ->
                             val item = AgentResponse.SkillItem()
@@ -242,7 +242,7 @@ class AgentServiceImpl(
                             item.skillName = it.name
                             item.skillDescription = it.description
 
-                            // 查询技能仓库信息
+                            // Query skill repository information
                             val repository = skillRepositoryService.getSkillRepository(it.repositoryId)
                             repository?.let {
                                 item.repositoryId = it.id
@@ -252,13 +252,13 @@ class AgentServiceImpl(
                             skillItems.add(item)
                         }
                     } catch (e: NumberFormatException) {
-                        log.warn("无效的技能 ID: {}", skillIdStr)
+                        log.warn("Invalid skill ID: {}", skillIdStr)
                     }
                 }
 
                 response.skillList = skillItems
             } catch (e: Exception) {
-                log.warn("解析技能列表失败", e)
+                log.warn("Failed to parse skill list", e)
                 response.skillList = mutableListOf()
             }
         }

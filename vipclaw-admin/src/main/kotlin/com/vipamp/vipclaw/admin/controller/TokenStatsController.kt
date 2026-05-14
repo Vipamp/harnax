@@ -14,15 +14,15 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Token 消耗统计控制器
- * 仅企业版和公有云版可用
+ * Token consumption statistics controller
+ * Available only for enterprise and public editions
  *
  * @author vipamp
  * @since 2026-04-11
  */
 @RestController
 @RequestMapping("/api/token-stats")
-@Tag(name = "Token 消耗统计", description = "Token 消耗统计相关接口")
+@Tag(name = "Token Statistics", description = "Token consumption statistics APIs")
 @RequiresEdition("enterprise", "public")
 class TokenStatsController(
     private val tokenStatsService: TokenStatsService,
@@ -32,18 +32,18 @@ class TokenStatsController(
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     @GetMapping("/aggregation")
-    @Operation(summary = "获取 Token 聚合统计", description = "按模型、会话、智能体分类汇总展示 Token 消耗")
+    @Operation(summary = "Get token aggregation stats", description = "Aggregate token consumption by model, session, and agent")
     fun getAggregationStats(
-        @Parameter(description = "开始时间")
+        @Parameter(description = "Start time")
         @RequestParam(name = "startTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         startTime: LocalDateTime?,
-        @Parameter(description = "结束时间")
+        @Parameter(description = "End time")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
     ): ResultVo<TokenStatsAggregationResponse> = try {
-        // 默认查询最近 7 天
+        // Default query last 7 days
         val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
         val actualEndTime = endTime ?: LocalDateTime.now()
 
@@ -53,26 +53,26 @@ class TokenStatsController(
         val response = tokenStatsService.getAggregationStats(startTimeStr, endTimeStr)
         ResultVo.success(response)
     } catch (e: Exception) {
-        log.error("获取 Token 聚合统计失败", e)
-        ResultVo.error("获取统计数据失败：${e.message}")
+        log.error("Failed to get token aggregation stats", e)
+        ResultVo.error("Failed to get statistics data: ${e.message}")
     }
 
     @GetMapping("/time-series")
-    @Operation(summary = "获取 Token 时序数据", description = "按时间粒度查询 Token 消耗趋势")
+    @Operation(summary = "Get token time series data", description = "Query token consumption trend by time granularity")
     fun getTimeSeriesData(
-        @Parameter(description = "开始时间")
+        @Parameter(description = "Start time")
         @RequestParam(name = "startTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         startTime: LocalDateTime?,
-        @Parameter(description = "结束时间")
+        @Parameter(description = "End time")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "时间粒度: hour/day/week/month")
+        @Parameter(description = "Time granularity: hour/day/week/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
-        // 默认查询最近 7 天
+        // Default query last 7 days
         val actualStartTime = startTime ?: LocalDateTime.now().minusDays(7)
         val actualEndTime = endTime ?: LocalDateTime.now()
 
@@ -82,22 +82,22 @@ class TokenStatsController(
         val response = tokenStatsService.getTimeSeriesData(startTimeStr, endTimeStr, granularity)
         ResultVo.success(response)
     } catch (e: Exception) {
-        log.error("获取 Token 时序数据失败", e)
-        ResultVo.error("获取时序数据失败：${e.message}")
+        log.error("Failed to get token time series data", e)
+        ResultVo.error("Failed to get time series data: ${e.message}")
     }
 
     @GetMapping("/time-series/model")
-    @Operation(summary = "获取模型时序数据", description = "按时间粒度和模型查询 Token 消耗趋势")
+    @Operation(summary = "Get model time series data", description = "Query token consumption trend by time granularity and model")
     fun getModelTimeSeriesData(
-        @Parameter(description = "开始时间")
+        @Parameter(description = "Start time")
         @RequestParam(name = "startTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         startTime: LocalDateTime?,
-        @Parameter(description = "结束时间")
+        @Parameter(description = "End time")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "时间粒度: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
@@ -110,22 +110,22 @@ class TokenStatsController(
         val response = tokenStatsService.getModelTimeSeriesData(startTimeStr, endTimeStr, granularity)
         ResultVo.success(response)
     } catch (e: Exception) {
-        log.error("获取模型时序数据失败", e)
-        ResultVo.error("获取模型时序数据失败：${e.message}")
+        log.error("Failed to get model time series data", e)
+        ResultVo.error("Failed to get model time series data: ${e.message}")
     }
 
     @GetMapping("/time-series/agent")
-    @Operation(summary = "获取智能体时序数据", description = "按时间粒度和智能体查询 Token 消耗趋势")
+    @Operation(summary = "Get agent time series data", description = "Query token consumption trend by time granularity and agent")
     fun getAgentTimeSeriesData(
-        @Parameter(description = "开始时间")
+        @Parameter(description = "Start time")
         @RequestParam(name = "startTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         startTime: LocalDateTime?,
-        @Parameter(description = "结束时间")
+        @Parameter(description = "End time")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "时间粒度: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
@@ -138,22 +138,22 @@ class TokenStatsController(
         val response = tokenStatsService.getAgentTimeSeriesData(startTimeStr, endTimeStr, granularity)
         ResultVo.success(response)
     } catch (e: Exception) {
-        log.error("获取智能体时序数据失败", e)
-        ResultVo.error("获取智能体时序数据失败：${e.message}")
+        log.error("Failed to get agent time series data", e)
+        ResultVo.error("Failed to get agent time series data: ${e.message}")
     }
 
     @GetMapping("/time-series/session")
-    @Operation(summary = "获取会话时序数据", description = "按时间粒度和会话查询 Token 消耗趋势")
+    @Operation(summary = "Get session time series data", description = "Query token consumption trend by time granularity and session")
     fun getSessionTimeSeriesData(
-        @Parameter(description = "开始时间")
+        @Parameter(description = "Start time")
         @RequestParam(name = "startTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         startTime: LocalDateTime?,
-        @Parameter(description = "结束时间")
+        @Parameter(description = "End time")
         @RequestParam(name = "endTime", required = false)
         @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         endTime: LocalDateTime?,
-        @Parameter(description = "时间粒度: hour/day/month")
+        @Parameter(description = "Time granularity: hour/day/month")
         @RequestParam(name = "granularity", defaultValue = "day")
         granularity: String,
     ): ResultVo<TokenStatsAggregationResponse> = try {
@@ -166,7 +166,7 @@ class TokenStatsController(
         val response = tokenStatsService.getSessionTimeSeriesData(startTimeStr, endTimeStr, granularity)
         ResultVo.success(response)
     } catch (e: Exception) {
-        log.error("获取会话时序数据失败", e)
-        ResultVo.error("获取会话时序数据失败：${e.message}")
+        log.error("Failed to get session time series data", e)
+        ResultVo.error("Failed to get session time series data: ${e.message}")
     }
 }

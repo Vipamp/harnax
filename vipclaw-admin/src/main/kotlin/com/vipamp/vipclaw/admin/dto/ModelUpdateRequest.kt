@@ -4,9 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.*
 
 /**
- * 模型更新请求对象
+ * Model update request object
  */
-@Schema(description = "模型更新请求对象")
+@Schema(description = "Model update request object")
 data class ModelUpdateRequest(
     @field:Size(min = 1, max = 100, message = "模型名称长度必须在 1-100 个字符之间")
     @Schema(description = "模型名称", example = "GPT-4")

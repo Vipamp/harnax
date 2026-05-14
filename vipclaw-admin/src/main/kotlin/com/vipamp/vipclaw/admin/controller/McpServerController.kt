@@ -13,14 +13,14 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * MCP 服务管理控制器
+ * MCP server management controller
  *
  * @author vipamp
  * @since 2026-03-12
  */
 @RestController
 @RequestMapping("/api/mcp")
-@Tag(name = "MCP 服务管理", description = "MCP 服务相关接口")
+@Tag(name = "MCP Server Management", description = "MCP server related APIs")
 class McpServerController(
     private val mcpServerService: McpServerService,
     private val editionUtil: EditionUtil,
@@ -29,25 +29,25 @@ class McpServerController(
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取 MCP 服务列表", description = "分页查询 MCP 服务信息")
+    @Operation(summary = "Get MCP server list with pagination", description = "Paginated query for MCP server information")
     fun pageMcpServer(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "关键词（名称/描述）") @RequestParam(
+        @Parameter(description = "Keyword (name/description)") @RequestParam(
             name = "keyword",
             required = false,
         ) keyword: String?,
-        @Parameter(description = "状态筛选（0:禁用 1:启用）") @RequestParam(
+        @Parameter(description = "Status filter (0: disabled 1: enabled)") @RequestParam(
             name = "status",
             required = false,
         ) status: Int?,
-        @Parameter(description = "类型筛选（stdio/sse/streamablehttp）") @RequestParam(
+        @Parameter(description = "Type filter (stdio/sse/streamablehttp)") @RequestParam(
             name = "type",
             required = false,
         ) type: String?,
@@ -55,91 +55,91 @@ class McpServerController(
         val page = mcpServerService.page(keyword, status, type, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { mcpServerService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取 MCP 服务列表失败", e)
-        ResultVo.error(e.message ?: "获取 MCP 服务列表失败")
+        log.error("Failed to get MCP server list", e)
+        ResultVo.error(e.message ?: "Failed to get MCP server list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取 MCP 服务详情", description = "根据 ID 获取 MCP 服务信息")
+    @Operation(summary = "Get MCP server details", description = "Get MCP server information by ID")
     fun getMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<McpServerResponse?> = try {
         val mcpServer = mcpServerService.getMcpServer(id)
         ResultVo.success(mcpServer?.let { mcpServerService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取 MCP 服务详情失败", e)
-        ResultVo.error(e.message ?: "获取 MCP 服务详情失败")
+        log.error("Failed to get MCP server details", e)
+        ResultVo.error(e.message ?: "Failed to get MCP server details")
     }
 
     @PostMapping
-    @Operation(summary = "创建 MCP 服务", description = "新增 MCP 服务")
+    @Operation(summary = "Create MCP server", description = "Add new MCP server")
     fun createMcpServer(
         @Valid @RequestBody request: McpServerCreateRequest,
     ): ResultVo<Void> {
         return try {
-            // 企业版和公网版不支持 stdio 模式
+            // Enterprise and public editions do not support stdio mode
             if ((editionUtil.isEnterprise() || editionUtil.isPublic()) &&
                 request.type == "stdio"
             ) {
-                return ResultVo.error("当前版本不支持 stdio 模式")
+                return ResultVo.error("stdio mode is not supported in current edition")
             }
 
-            if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("创建 MCP 服务失败")
+            if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("Failed to create MCP server")
         } catch (e: Exception) {
-            log.error("创建 MCP 服务失败", e)
-            ResultVo.error(e.message ?: "创建 MCP 服务失败")
+            log.error("Failed to create MCP server", e)
+            ResultVo.error(e.message ?: "Failed to create MCP server")
         }
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新 MCP 服务", description = "根据 ID 更新 MCP 服务信息")
+    @Operation(summary = "Update MCP server", description = "Update MCP server information by ID")
     fun updateMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: McpServerUpdateRequest,
     ): ResultVo<Void> = try {
-        if (mcpServerService.updateMcpServer(id, request)) ResultVo.success() else ResultVo.error("更新 MCP 服务失败")
+        if (mcpServerService.updateMcpServer(id, request)) ResultVo.success() else ResultVo.error("Failed to update MCP server")
     } catch (e: Exception) {
-        log.error("更新 MCP 服务失败", e)
-        ResultVo.error(e.message ?: "更新 MCP 服务失败")
+        log.error("Failed to update MCP server", e)
+        ResultVo.error(e.message ?: "Failed to update MCP server")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换 MCP 服务启用状态", description = "启用或禁用 MCP 服务")
+    @Operation(summary = "Toggle MCP server status", description = "Enable or disable MCP server")
     fun toggleMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Enable status (0: disabled 1: enabled)") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
-        if (mcpServerService.toggleMcpServerStatus(id, status)) ResultVo.success() else ResultVo.error("切换状态失败")
+        if (mcpServerService.toggleMcpServerStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle status")
     } catch (e: Exception) {
-        log.error("切换 MCP 服务状态失败", e)
-        ResultVo.error(e.message ?: "切换状态失败")
+        log.error("Failed to toggle MCP server status", e)
+        ResultVo.error(e.message ?: "Failed to toggle status")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除 MCP 服务", description = "根据 ID 逻辑删除 MCP 服务")
+    @Operation(summary = "Delete MCP server", description = "Logical delete MCP server by ID")
     fun deleteMcpServer(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (mcpServerService.deleteMcpServer(id)) ResultVo.success() else ResultVo.error("删除 MCP 服务失败")
+        if (mcpServerService.deleteMcpServer(id)) ResultVo.success() else ResultVo.error("Failed to delete MCP server")
     } catch (e: Exception) {
-        log.error("删除 MCP 服务失败", e)
-        ResultVo.error(e.message ?: "删除 MCP 服务失败")
+        log.error("Failed to delete MCP server", e)
+        ResultVo.error(e.message ?: "Failed to delete MCP server")
     }
 
     @PostMapping("/{id}/connectivity-test")
-    @Operation(summary = "MCP 服务连通性测试", description = "测试 MCP 服务是否可正常连接")
+    @Operation(summary = "MCP server connectivity test", description = "Test if MCP server connection is normal")
     fun connectivityTest(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Boolean> = try {
         val result = mcpServerService.connectivityTest(id)
         ResultVo.success(result)
     } catch (e: Exception) {
-        log.error("MCP 服务连通性测试失败", e)
-        ResultVo.error(e.message ?: "MCP 服务连通性测试失败")
+        log.error("Failed to test MCP server connectivity", e)
+        ResultVo.error(e.message ?: "Failed to test MCP server connectivity")
     }
 
     @GetMapping("/{id}/list_tools")
-    @Operation(summary = "获取 MCP 工具列表", description = "获取 MCP 服务提供的工具列表")
+    @Operation(summary = "Get MCP tool list", description = "Get tool list provided by MCP server")
     fun listTools(
         @Parameter(description = "MCP ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<List<McpToolResponse>> = try {
@@ -164,65 +164,65 @@ class McpServerController(
         }
         ResultVo.success(toolResponses)
     } catch (e: Exception) {
-        log.error("获取 MCP 工具列表失败, mcpId: {}", id, e)
-        val errorMessage = e.message ?: "获取 MCP 工具列表失败"
+        log.error("Failed to get MCP tool list, mcpId: {}", id, e)
+        val errorMessage = e.message ?: "Failed to get MCP tool list"
         ResultVo.error(errorMessage)
     }
 
     /**
-     * 获取 Mock 工具列表
+     * Get mock tool list
      */
     private fun getMockTools(): List<McpToolResponse> {
         val tools = mutableListOf<McpToolResponse>()
 
-        // 工具 1: 读取文件
+        // Tool 1: Read file
         val readFile = McpToolResponse().apply {
             name = "read_file"
             parameters = listOf(
-                createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
-                createParameter("encoding", "string", "文件编码，默认为 utf-8"),
+                createParameter("file_path", "string", "File path, e.g.: /path/to/file.txt"),
+                createParameter("encoding", "string", "File encoding, default is utf-8"),
             )
         }
         tools.add(readFile)
 
-        // 工具 2: 写入文件
+        // Tool 2: Write file
         val writeFile = McpToolResponse().apply {
             name = "write_file"
             parameters = listOf(
-                createParameter("file_path", "string", "文件路径，例如: /path/to/file.txt"),
-                createParameter("content", "string", "要写入的文件内容"),
-                createParameter("encoding", "string", "文件编码，默认为 utf-8"),
+                createParameter("file_path", "string", "File path, e.g.: /path/to/file.txt"),
+                createParameter("content", "string", "File content to write"),
+                createParameter("encoding", "string", "File encoding, default is utf-8"),
             )
         }
         tools.add(writeFile)
 
-        // 工具 3: 列出目录
+        // Tool 3: List directory
         val listDirectory = McpToolResponse().apply {
             name = "list_directory"
             parameters = listOf(
-                createParameter("directory_path", "string", "目录路径，例如: /path/to/directory"),
+                createParameter("directory_path", "string", "Directory path, e.g.: /path/to/directory"),
             )
         }
         tools.add(listDirectory)
 
-        // 工具 4: 搜索文件
+        // Tool 4: Search files
         val searchFiles = McpToolResponse().apply {
             name = "search_files"
             parameters = listOf(
-                createParameter("directory_path", "string", "搜索的目录路径"),
-                createParameter("pattern", "string", "搜索模式，支持通配符，例如: *.txt"),
-                createParameter("recursive", "boolean", "是否递归搜索子目录，默认为 false"),
+                createParameter("directory_path", "string", "Directory path to search"),
+                createParameter("pattern", "string", "Search pattern, supports wildcards, e.g.: *.txt"),
+                createParameter("recursive", "boolean", "Whether to recursively search subdirectories, default is false"),
             )
         }
         tools.add(searchFiles)
 
-        // 工具 5: 执行命令
+        // Tool 5: Execute command
         val executeCommand = McpToolResponse().apply {
             name = "execute_command"
             parameters = listOf(
-                createParameter("command", "string", "要执行的命令，例如: ls -la"),
-                createParameter("working_directory", "string", "工作目录，默认为当前目录"),
-                createParameter("timeout", "integer", "命令执行超时时间（秒），默认为 30"),
+                createParameter("command", "string", "Command to execute, e.g.: ls -la"),
+                createParameter("working_directory", "string", "Working directory, default is current directory"),
+                createParameter("timeout", "integer", "Command execution timeout in seconds, default is 30"),
             )
         }
         tools.add(executeCommand)
@@ -231,7 +231,7 @@ class McpServerController(
     }
 
     /**
-     * 创建参数对象
+     * Create parameter object
      */
     private fun createParameter(name: String, type: String, description: String): McpToolResponse.McpToolParameter = McpToolResponse.McpToolParameter().apply {
         this.name = name

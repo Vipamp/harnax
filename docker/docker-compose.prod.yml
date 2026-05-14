@@ -1,24 +1,32 @@
-# VIPClaw Docker Compose - 生产环境
-# 包含: 后端 + 前端(使用外部数据库)
+# VIPClaw Docker Compose - Production Environment
+# Includes: Backend + Frontend (uses external database)
 
 version: '3.8'
 
 services:
-  # 后端服务
+  # Backend Service
   backend:
-    image: vipclaw-admin:${EDITION:-personal}
-    container_name: vipclaw-backend-${EDITION:-personal}
+    image: vipclaw-backend:personal
+    container_name: vipclaw-backend
     restart: always
     environment:
-      # Spring Boot 配置
+      # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
-      # 数据库配置(外部数据库)
+      # Database Configuration (external database)
       SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-vipclaw}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
-      # JVM 配置
+      # Session Database Configuration
+      SESSION_JDBC_URL: ${SESSION_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}}
+      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-vipclaw}
+      SESSION_USERNAME: ${SESSION_DB_USERNAME:-${DB_USERNAME:-vipclaw}}
+      SESSION_PASSWORD: ${SESSION_DB_PASSWORD:-${DB_PASSWORD:-}}
+      # Flyway Configuration
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # JVM Configuration
       JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
-      # 日志配置
+      # Log Configuration
       LOG_LEVEL: INFO
     ports:
       - "8080:8080"
@@ -26,7 +34,7 @@ services:
       - /var/log/vipclaw:/app/logs
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -45,21 +53,21 @@ services:
     networks:
       - vipclaw-network
 
-  # 前端服务
+  # Frontend Service
   frontend:
-    image: vipclaw-frontend:${EDITION:-personal}
-    container_name: vipclaw-frontend-${EDITION:-personal}
+    image: vipclaw-frontend:personal
+    container_name: vipclaw-frontend
     restart: always
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./ssl:/etc/nginx/ssl:ro  # SSL 证书
+      - ./ssl:/etc/nginx/ssl:ro  # SSL certificates
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3

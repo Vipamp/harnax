@@ -17,15 +17,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * 技能管理控制器
- * 仅公有云版可用(技能市场功能)
+ * Skill management controller
+ * Available only for public edition (skill marketplace feature)
  *
  * @author vipamp
  * @since 2026-03-16
  */
 @RestController
 @RequestMapping("/api/skills")
-@Tag(name = "技能管理", description = "技能相关接口")
+@Tag(name = "Skill Management", description = "Skill related APIs")
 @RequiresEdition("public")
 class SkillController(
     private val skillService: SkillService,
@@ -35,98 +35,98 @@ class SkillController(
     private val log = LoggerFactory.getLogger(SkillController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取技能列表", description = "分页查询技能信息")
+    @Operation(summary = "Get skill list with pagination", description = "Paginated query for skill information")
     fun pageSkill(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "技能名称") @RequestParam(name = "name", required = false) name: String?,
-        @Parameter(description = "仓库ID") @RequestParam(name = "repositoryId", required = false) repositoryId: Long?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Skill name") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "Repository ID") @RequestParam(name = "repositoryId", required = false) repositoryId: Long?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<SkillResponse>> = try {
         val page = skillService.page(name, repositoryId, status, pageNum ?: 1, pageSize ?: 10)
         val responsePage = page.mapRecords { skillService.convertToResponse(it) }
         ResultVo.success(responsePage)
     } catch (e: Exception) {
-        log.error("获取技能列表失败", e)
-        ResultVo.error(e.message ?: "获取技能列表失败")
+        log.error("Failed to get skill list", e)
+        ResultVo.error(e.message ?: "Failed to get skill list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取技能详情", description = "根据技能 ID 获取技能信息")
+    @Operation(summary = "Get skill details", description = "Get skill information by skill ID")
     fun getSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SkillResponse?> = try {
         val skill = skillService.getSkill(id)
-        // 获取仓库信息
+        // Get repository information
         val repository = skillRepositoryService.getSkillRepository(skill!!.repositoryId)
         ResultVo.success(SkillResponse.fromEntity(skill, repository))
     } catch (e: Exception) {
-        log.error("获取技能详情失败", e)
-        ResultVo.error(e.message ?: "获取技能详情失败")
+        log.error("Failed to get skill details", e)
+        ResultVo.error(e.message ?: "Failed to get skill details")
     }
 
     @PostMapping
-    @Operation(summary = "创建技能", description = "新增技能信息")
+    @Operation(summary = "Create skill", description = "Add new skill information")
     fun createSkill(
         @Valid @RequestBody request: SkillCreateRequest,
     ): ResultVo<Void> = try {
-        if (skillService.createSkill(request)) ResultVo.success() else ResultVo.error("创建技能失败")
+        if (skillService.createSkill(request)) ResultVo.success() else ResultVo.error("Failed to create skill")
     } catch (e: Exception) {
-        log.error("创建技能失败", e)
-        ResultVo.error(e.message ?: "创建技能失败")
+        log.error("Failed to create skill", e)
+        ResultVo.error(e.message ?: "Failed to create skill")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新技能", description = "根据技能 ID 更新技能信息")
+    @Operation(summary = "Update skill", description = "Update skill information by skill ID")
     fun updateSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SkillUpdateRequest,
     ): ResultVo<Void> = try {
-        if (skillService.updateSkill(id, request)) ResultVo.success() else ResultVo.error("更新技能失败")
+        if (skillService.updateSkill(id, request)) ResultVo.success() else ResultVo.error("Failed to update skill")
     } catch (e: Exception) {
-        log.error("更新技能失败", e)
-        ResultVo.error(e.message ?: "更新技能失败")
+        log.error("Failed to update skill", e)
+        ResultVo.error(e.message ?: "Failed to update skill")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换技能状态", description = "根据技能 ID 切换技能状态")
+    @Operation(summary = "Toggle skill status", description = "Toggle skill status by skill ID")
     fun toggleSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "技能状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
-        if (skillService.toggleSkillStatus(id, status)) ResultVo.success() else ResultVo.error("更新技能失败")
+        if (skillService.toggleSkillStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle skill status")
     } catch (e: Exception) {
-        log.error("更新技能失败", e)
-        ResultVo.error(e.message ?: "更新技能失败")
+        log.error("Failed to update skill", e)
+        ResultVo.error(e.message ?: "Failed to update skill")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除技能", description = "根据技能 ID 删除技能")
+    @Operation(summary = "Delete skill", description = "Delete skill by skill ID")
     fun deleteSkill(
-        @Parameter(description = "技能 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (skillService.deleteSkill(id)) ResultVo.success() else ResultVo.error("删除技能失败")
+        if (skillService.deleteSkill(id)) ResultVo.success() else ResultVo.error("Failed to delete skill")
     } catch (e: Exception) {
-        log.error("删除技能失败", e)
-        ResultVo.error(e.message ?: "删除技能失败")
+        log.error("Failed to delete skill", e)
+        ResultVo.error(e.message ?: "Failed to delete skill")
     }
 
     @PostMapping("/batch")
-    @Operation(summary = "批量保存技能", description = "批量保存技能到指定仓库，重名技能会被覆盖")
+    @Operation(summary = "Batch save skills", description = "Batch save skills to specified repository, duplicate skills will be overwritten")
     fun batchSaveSkills(
-        @Parameter(description = "仓库 ID") @RequestParam(name = "repositoryId") repositoryId: Long,
-        @Parameter(description = "技能列表") @RequestBody skills: List<String>,
+        @Parameter(description = "Repository ID") @RequestParam(name = "repositoryId") repositoryId: Long,
+        @Parameter(description = "Skill list") @RequestBody skills: List<String>,
     ): ResultVo<Int> = try {
         val count = skillService.batchSaveSkills(repositoryId, skills)
         ResultVo.success(count)
     } catch (e: Exception) {
-        log.error("批量保存技能失败", e)
-        ResultVo.error(e.message ?: "批量保存技能失败")
+        log.error("Failed to batch save skills", e)
+        ResultVo.error(e.message ?: "Failed to batch save skills")
     }
 }

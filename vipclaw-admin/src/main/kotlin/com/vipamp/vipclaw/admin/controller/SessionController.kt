@@ -17,14 +17,14 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.*
 
 /**
- * 会话管理控制器
+ * Session management controller
  *
  * @author vipamp
  * @since 2026-03-25
  */
 @RestController
 @RequestMapping("/api/sessions")
-@Tag(name = "会话管理", description = "会话相关接口")
+@Tag(name = "Session Management", description = "Session related APIs")
 class SessionController(
     private val sessionService: SessionService,
 ) {
@@ -32,18 +32,18 @@ class SessionController(
     private val log = LoggerFactory.getLogger(SessionController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取会话列表", description = "分页查询会话信息")
+    @Operation(summary = "Get session list with pagination", description = "Paginated query for session information")
     fun pageSession(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "会话名称") @RequestParam(name = "keyword", required = false) keyword: String?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Session name") @RequestParam(name = "keyword", required = false) keyword: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<SessionResponse>> = try {
         val page = sessionService.page(
             keyword,
@@ -53,50 +53,50 @@ class SessionController(
         )
         ResultVo.success(page.mapRecords { sessionService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取会话列表失败", e)
-        ResultVo.error(e.message ?: "获取会话列表失败")
+        log.error("Failed to get session list", e)
+        ResultVo.error(e.message ?: "Failed to get session list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取会话详情", description = "根据会话 ID 获取会话信息")
+    @Operation(summary = "Get session details", description = "Get session information by session ID")
     fun getSession(
-        @Parameter(description = "会话 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Session ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SessionResponse?> = try {
         val session = sessionService.getSession(id)
         ResultVo.success(session?.let { sessionService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取会话详情失败", e)
-        ResultVo.error(e.message ?: "获取会话详情失败")
+        log.error("Failed to get session details", e)
+        ResultVo.error(e.message ?: "Failed to get session details")
     }
 
     @GetMapping("/check-title")
-    @Operation(summary = "检查会话名称是否存在", description = "检查会话名称是否已存在")
+    @Operation(summary = "Check if session name exists", description = "Check if session name already exists")
     fun checkSessionTitle(
-        @Parameter(description = "会话名称") @RequestParam(name = "title") title: String,
+        @Parameter(description = "Session name") @RequestParam(name = "title") title: String,
     ): ResultVo<Boolean> = try {
         val exists = sessionService.existsByTitle(title)
         ResultVo.success(exists)
     } catch (e: Exception) {
-        log.error("检查会话名称失败", e)
-        ResultVo.error(e.message ?: "检查会话名称失败")
+        log.error("Failed to check session name", e)
+        ResultVo.error(e.message ?: "Failed to check session name")
     }
 
     @PostMapping
-    @Operation(summary = "创建会话", description = "新增会话信息")
+    @Operation(summary = "Create session", description = "Add new session information")
     fun createSession(
         @Validated @RequestBody request: SessionCreateRequest,
     ): ResultVo<Void> = try {
-        if (sessionService.createSession(request)) ResultVo.success() else ResultVo.error("创建会话失败")
+        if (sessionService.createSession(request)) ResultVo.success() else ResultVo.error("Failed to create session")
     } catch (e: Exception) {
-        log.error("创建会话失败", e)
-        ResultVo.error(e.message ?: "创建会话失败")
+        log.error("Failed to create session", e)
+        ResultVo.error(e.message ?: "Failed to create session")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "切换会话状态", description = "根据会话 ID 切换会话状态")
+    @Operation(summary = "Update session", description = "Update session information by session ID")
     fun updateSession(
-        @Parameter(description = "会话 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "会话实体") @RequestBody request: SessionCreateRequest,
+        @Parameter(description = "Session ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Session entity") @RequestBody request: SessionCreateRequest,
     ): ResultVo<Void> = try {
         if (sessionService.updateSession(
                 id,
@@ -105,15 +105,15 @@ class SessionController(
         ) {
             ResultVo.success()
         } else {
-            ResultVo.error("更新会话失败")
+            ResultVo.error("Failed to update session")
         }
     } catch (e: Exception) {
-        log.error("更新会话失败", e)
-        ResultVo.error(e.message ?: "更新会话失败")
+        log.error("Failed to update session", e)
+        ResultVo.error(e.message ?: "Failed to update session")
     }
 
     @GetMapping("/{sessionId}/config")
-    @Schema(description = "获取会话的聊天配置")
+    @Schema(description = "Get session chat configuration")
     fun getSessionConfig(
         @PathVariable("sessionId") sessionId: String,
     ): ResultVo<SessionConfigResponse> = try {
@@ -123,7 +123,7 @@ class SessionController(
     }
 
     @PutMapping("/{sessionId}/config")
-    @Schema(description = "更新会话的聊天配置")
+    @Schema(description = "Update session chat configuration")
     fun updateSessionConfig(
         @PathVariable("sessionId") sessionId: String,
         @RequestBody request: SessionChatUpdateRequest,
@@ -135,10 +135,10 @@ class SessionController(
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换会话状态", description = "根据会话 ID 切换会话状态")
+    @Operation(summary = "Toggle session status", description = "Toggle session status by session ID")
     fun toggleSession(
-        @Parameter(description = "会话 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "会话状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Session ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Session status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
         if (sessionService.toggleSessionStatus(
                 id,
@@ -147,21 +147,21 @@ class SessionController(
         ) {
             ResultVo.success()
         } else {
-            ResultVo.error("更新会话失败")
+            ResultVo.error("Failed to update session")
         }
     } catch (e: Exception) {
-        log.error("更新会话失败", e)
-        ResultVo.error(e.message ?: "更新会话失败")
+        log.error("Failed to toggle session status", e)
+        ResultVo.error(e.message ?: "Failed to toggle session status")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除会话", description = "根据会话 ID 删除会话")
+    @Operation(summary = "Delete session", description = "Delete session by session ID")
     fun deleteSession(
-        @Parameter(description = "会话 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Session ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (sessionService.deleteSession(id)) ResultVo.success() else ResultVo.error("删除会话失败")
+        if (sessionService.deleteSession(id)) ResultVo.success() else ResultVo.error("Failed to delete session")
     } catch (e: Exception) {
-        log.error("删除会话失败", e)
-        ResultVo.error(e.message ?: "删除会话失败")
+        log.error("Failed to delete session", e)
+        ResultVo.error(e.message ?: "Failed to delete session")
     }
 }

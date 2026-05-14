@@ -4,21 +4,21 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
 /**
- * 会话响应对象
+ * Session response object
  */
-@Schema(description = "会话响应对象")
+@Schema(description = "Session response object")
 data class SessionResponse(
     @Schema(description = "ID", example = "1")
     var id: Long? = null,
-    @Schema(description = "会话名称", example = "我的会话")
+    @Schema(description = "Session name", example = "我的会话")
     var title: String? = null,
-    @Schema(description = "会话描述", example = "这是一个会话描述")
+    @Schema(description = "Session description", example = "这是一个Session description")
     var sessionDescription: String? = null,
     @Schema(description = "会话ID", example = "session-123")
     var sessionId: String? = null,
-    @Schema(description = "关联的智能体ID", example = "1")
+    @Schema(description = "Associated agent ID", example = "1")
     var agentId: Long? = null,
-    @Schema(description = "智能体名称", example = "assistant")
+    @Schema(description = "Agent name", example = "assistant")
     var name: String? = null,
     @Schema(description = "智能体描述")
     var description: String? = null,
@@ -48,9 +48,9 @@ data class SessionResponse(
     var isPublic: Int? = null,
     @Schema(description = "创建人", example = "admin")
     var creator: String? = null,
-    @Schema(description = "创建时间", example = "2026-03-25 12:00:00")
+    @Schema(description = "Creation time", example = "2026-03-25 12:00:00")
     var createTime: LocalDateTime? = null,
-    @Schema(description = "更新时间", example = "2026-03-25 12:00:00")
+    @Schema(description = "Update time", example = "2026-03-25 12:00:00")
     var updateTime: LocalDateTime? = null,
 ) {
     @Schema(description = "MCP 项")

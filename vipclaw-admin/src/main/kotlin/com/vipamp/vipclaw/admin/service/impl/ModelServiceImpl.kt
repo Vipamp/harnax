@@ -20,7 +20,7 @@ import org.springframework.util.StringUtils.hasText
 import java.time.LocalDateTime
 
 /**
- * 模型服务实现类
+ * Model service implementation
  *
  * @author vipamp
  * @since 2026-03-13
@@ -45,10 +45,10 @@ class ModelServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<Model> {
-        // 获取当前用户
+        // Get current user
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
 
-        // 将 tags 字符串转换为 List
+        // Convert tags string to List
         val tagsList = if (hasText(tags)) {
             tags!!.split(",").map { it.trim() }
         } else {
@@ -73,18 +73,18 @@ class ModelServiceImpl(
     override fun getModel(id: Long): Model? = this.modelMapper.selectById(id)
 
     override fun createModel(request: ModelCreateRequest): Boolean {
-        // 检查供应商是否存在
+        // Check if provider exists
         val provider = modelProviderMapper.selectById(request.providerId)
-            ?: throw BizException("模型供应商不存在")
+            ?: throw BizException("Model provider not found")
 
-        // 检查同一供应商下 name 是否已存在
+        // Check if name already exists under the same provider
         if (modelMapper.countByProviderIdAndName(request.providerId, request.name) > 0) {
-            throw BizException("该模型名称在当前供应商下已存在")
+            throw BizException("Model name already exists under current provider")
         }
 
-        // 检查同一供应商下 model_name 是否已存在
+        // Check if model_name already exists under the same provider
         if (modelMapper.countByProviderIdAndModelName(request.providerId, request.modelName) > 0) {
-            throw BizException("该模型标识在当前供应商下已存在")
+            throw BizException("Model identifier already exists under current provider")
         }
 
         val model = Model()
@@ -101,10 +101,10 @@ class ModelServiceImpl(
         model.price = request.price ?: 0.0
         model.isPublic = request.isPublic ?: 1
 
-        // 设置租户ID
+        // Set tenant ID
         model.tenantId = TenantContext.getTenantId() ?: 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         model.creator = currentUsername
         return this.modelMapper.insert(model) > 0
@@ -112,31 +112,31 @@ class ModelServiceImpl(
 
     override fun updateModel(id: Long, request: ModelUpdateRequest): Boolean {
         val model = modelMapper.selectById(id)
-            ?: throw BizException("模型不存在")
+            ?: throw BizException("Model not found")
 
-        // 如果修改了供应商,检查是否存在
+        // If provider is modified, check if it exists
         if (request.providerId != null && request.providerId != model.providerId) {
             modelProviderMapper.selectById(request.providerId)
-                ?: throw BizException("模型供应商不存在")
+                ?: throw BizException("Model provider not found")
         }
 
-        // 如果修改了 name,检查是否与其他模型冲突
+        // If name is modified, check for conflicts with other models
         if (request.name != null && request.name != model.name) {
             if (modelMapper.countByProviderIdAndName(model.providerId, request.name) > 0) {
-                throw BizException("该模型名称在当前供应商下已存在")
+                throw BizException("Model name already exists under current provider")
             }
             model.name = request.name
         }
 
-        // 如果修改了 modelName,检查是否与其他模型冲突
+        // If modelName is modified, check for conflicts with other models
         if (request.modelName != null && request.modelName != model.modelName) {
             if (modelMapper.countByProviderIdAndModelName(model.providerId, request.modelName) > 0) {
-                throw BizException("该模型标识在当前供应商下已存在")
+                throw BizException("Model identifier already exists under current provider")
             }
             model.modelName = request.modelName
         }
 
-        // 部分更新:只更新非 null 字段
+        // Partial update: only update non-null fields
         request.providerId?.let { model.providerId = it }
         request.description?.let { model.description = it }
         request.modelType?.let { model.modelType = it }
@@ -154,14 +154,14 @@ class ModelServiceImpl(
 
     override fun updateStatus(id: Long, status: Int): Boolean {
         val model = this.modelMapper.selectById(id)
-            ?: throw BizException("模型不存在")
+            ?: throw BizException("Model not found")
 
-        // 如果要启用模型，检查供应商是否启用
+        // If enabling model, check if provider is enabled
         if (status == 1) {
             val provider = modelProviderMapper.selectById(model.providerId)
-                ?: throw BizException("模型供应商不存在")
+                ?: throw BizException("Model provider not found")
             if (provider.status == 0) {
-                throw BizException("供应商已禁用，无法启用模型")
+                throw BizException("Provider is disabled, cannot enable model")
             }
         }
 
@@ -171,19 +171,19 @@ class ModelServiceImpl(
     override fun toggleModel(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModel(id: Long): Boolean {
-        log.info("删除模型，id: {}", id)
+        log.info("Deleting model, id: {}", id)
         val model = modelMapper.selectById(id)
-            ?: throw BizException("模型不存在")
+            ?: throw BizException("Model not found")
 
-        // 逻辑删除：设置 active = 0
+        // Logical delete: set active = 0
         val res = modelMapper.deleteById(id) > 0
-        log.info("模型删除成功，id: {}", id)
+        log.info("Model deleted successfully, id: {}", id)
         return res
     }
 
     override fun convertToResponse(model: Model): ModelResponse {
         val response = ModelResponse.fromEntity(model)
-        // 填充供应商名称
+        // Fill provider name
         model.providerId.let { pid ->
             val provider = modelProviderMapper.selectById(pid)
             provider?.let {

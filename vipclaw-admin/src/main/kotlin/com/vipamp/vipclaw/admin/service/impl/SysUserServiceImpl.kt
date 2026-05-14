@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 /**
- * 用户服务实现类
+ * User service implementation
  *
  * @author vipamp
  * @since 2026-03-05
@@ -42,7 +42,7 @@ class SysUserServiceImpl(
         pageSize: Int,
     ): Page<SysUser> {
         log.info(
-            "分页查询用户列表，pageNum: {}, pageSize: {}, keyword: {}, status: {}, tenantId: {}",
+            "Paginated query for user list, pageNum: {}, pageSize: {}, keyword: {}, status: {}, tenantId: {}",
             pageNum,
             pageSize,
             keyword,
@@ -57,40 +57,40 @@ class SysUserServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createUser(request: SysUserCreateRequest, isPersonal: Boolean): Boolean {
-        log.info("创建用户，username: {}, isPersonal: {}", request.username, isPersonal)
+        log.info("Creating user, username: {}, isPersonal: {}", request.username, isPersonal)
 
-        // 企业版和公网版：email 和 phone 必填且进行格式校验
+        // Enterprise and public editions: email and phone are required and validated
         if (!isPersonal) {
-            // 校验 email 必填
+            // Validate email is required
             if (request.email.isNullOrBlank()) {
-                throw BizException("邮箱不能为空")
+                throw BizException("Email cannot be empty")
             }
 
-            // 校验 phone 必填
+            // Validate phone is required
             if (request.phone.isNullOrBlank()) {
-                throw BizException("手机号不能为空")
+                throw BizException("Phone cannot be empty")
             }
 
-            // 校验 email 格式
+            // Validate email format
             val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
             if (!emailRegex.matches(request.email)) {
-                throw BizException("邮箱格式不正确")
+                throw BizException("Invalid email format")
             }
 
-            // 校验 phone 格式
+            // Validate phone format
             val phoneRegex = Regex("^1[3-9]\\d{9}$")
             if (!phoneRegex.matches(request.phone)) {
-                throw BizException("手机号格式不正确")
+                throw BizException("Invalid phone format")
             }
         }
 
-        // 检查用户名是否存在（需要同时校验 active 字段）
+        // Check if username exists (need to validate active field)
         val existUser = getByUsername(request.username)
         if (existUser != null) {
             throw BizException(messageUtil.getMessage("error.user.username_exists"))
         }
 
-        // 检查手机号是否已存在（如果提供了手机号）
+        // Check if phone already exists (if phone is provided)
         if (!request.phone.isNullOrBlank()) {
             val existPhone = sysUserMapper.selectByPhone(request.phone)
             if (existPhone != null) {
@@ -98,7 +98,7 @@ class SysUserServiceImpl(
             }
         }
 
-        // 检查邮箱是否已存在（如果提供了邮箱）
+        // Check if email already exists (if email is provided)
         if (!request.email.isNullOrBlank()) {
             val existEmail = sysUserMapper.selectByEmail(request.email)
             if (existEmail != null) {
@@ -108,55 +108,55 @@ class SysUserServiceImpl(
 
         val user = SysUser()
         user.username = request.username
-        // 前端已对密码进行 SHA-256 加密，后端再进行 BCrypt 加密
-        // 这样数据库中存储的是 BCrypt(SHA-256(明文密码))
+        // Frontend has encrypted password with SHA-256, backend then encrypts with BCrypt
+        // This way database stores BCrypt(SHA-256(plain password))
         user.password = BCrypt.hashpw(request.password, BCrypt.gensalt())
         user.nickname = request.nickname
         user.email = request.email ?: ""
         user.phone = request.phone ?: ""
         user.gender = request.gender ?: 2
-        user.status = 1 // 默认启用
-        user.isAdmin = 0 // 默认非管理员
-        user.active = 1 // 默认生效
+        user.status = 1 // Default enabled
+        user.isAdmin = 0 // Default non-admin
+        user.active = 1 // Default active
         user.avatar = request.avatar
 
         val success = this.sysUserMapper.insert(user) > 0
-        log.info("用户创建{}，userId: {}", if (success) "成功" else "失败", user.id)
+        log.info("User creation {}, userId: {}", if (success) "successful" else "failed", user.id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean): Boolean {
-        log.info("更新用户，id: {}, isPersonal: {}", id, isPersonal)
+        log.info("Updating user, id: {}, isPersonal: {}", id, isPersonal)
 
         val user = sysUserMapper.selectById(id)
             ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 企业版和公开版：email 和 phone 必填且进行格式校验
+        // Enterprise and public editions: email and phone are required and validated
         if (!isPersonal) {
-            // 校验 email 必填
+            // Validate email is required
             if (request.email.isNullOrBlank()) {
                 throw BizException(messageUtil.getMessage("error.validation.required", "邮箱"))
             }
 
-            // 校验 phone 必填
+            // Validate phone is required
             if (request.phone.isNullOrBlank()) {
                 throw BizException(messageUtil.getMessage("error.validation.required", "手机号"))
             }
 
-            // 校验 email 格式
+            // Validate email format
             val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
             if (!emailRegex.matches(request.email)) {
                 throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
             }
 
-            // 校验 phone 格式
+            // Validate phone format
             val phoneRegex = Regex("^1[3-9]\\d{9}$")
             if (!phoneRegex.matches(request.phone)) {
                 throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
             }
 
-            // 检查 email 是否已被其他用户使用
+            // Check if email is already used by other users
             if (request.email != user.email) {
                 val existEmail = sysUserMapper.selectByEmail(request.email)
                 if (existEmail != null) {
@@ -164,7 +164,7 @@ class SysUserServiceImpl(
                 }
             }
 
-            // 检查 phone 是否已被其他用户使用
+            // Check if phone is already used by other users
             if (request.phone != user.phone) {
                 val existPhone = sysUserMapper.selectByPhone(request.phone)
                 if (existPhone != null) {
@@ -172,7 +172,7 @@ class SysUserServiceImpl(
                 }
             }
         } else {
-            // 个人版：如果修改了 email 或 phone，才进行格式校验和唯一性校验
+            // Personal edition: if email or phone is modified, validate format and uniqueness
             if (!request.email.isNullOrBlank() && request.email != user.email) {
                 val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
                 if (!emailRegex.matches(request.email)) {
@@ -187,16 +187,16 @@ class SysUserServiceImpl(
             if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
                 val phoneRegex = Regex("^1[3-9]\\d{9}$")
                 if (!phoneRegex.matches(request.phone)) {
-                    throw BizException("手机号格式不正确")
+                    throw BizException("Invalid phone format")
                 }
                 val existPhone = sysUserMapper.selectByPhone(request.phone)
                 if (existPhone != null) {
-                    throw BizException("手机号已存在")
+                    throw BizException("Phone already exists")
                 }
             }
         }
 
-        // 选择性更新字段（username 不允许修改）
+        // Selectively update fields (username is not allowed to be modified)
         request.nickname?.let { user.nickname = it }
         request.email?.let { user.email = it }
         request.phone?.let { user.phone = it }
@@ -205,38 +205,38 @@ class SysUserServiceImpl(
         request.avatar?.let { user.avatar = it }
 
         val success = this.sysUserMapper.updateById(user) > 0
-        log.info("用户更新{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("User update {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleUserStatus(id: Long, status: Int): Boolean {
-        log.info("切换用户状态，id: {}, status: {}", id, status)
+        log.info("Toggling user status, id: {}, status: {}", id, status)
 
-        // 如果是禁用操作(status=0)，需要进行检查
+        // If disabling (status=0), need to perform checks
         if (status == 0) {
             val user = sysUserMapper.selectById(id)
                 ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-            // 不允许禁用系统管理员用户 (isAdmin = 1)
+            // Do not allow disabling system admin users (isAdmin = 1)
             if (user.isAdmin == 1) {
                 throw BizException(messageUtil.getMessage("error.user.cannot_disable_admin"))
             }
 
-            // 检查该用户是否是任何租户的管理员
+            // Check if this user is an admin of any tenant
             val userTenants = userTenantMapper.selectByUserId(id)
             val tenantAdminRoles = userTenants.filter { it.role == "admin" }
 
             if (tenantAdminRoles.isNotEmpty()) {
-                // 用户是某个(些)租户的管理员,不允许禁用
-                // 查询所有租户名称
+                // User is an admin of some tenant, not allowed to disable
+                // Query all tenant names
                 val tenantNames = tenantAdminRoles.mapNotNull { userTenant ->
                     val tenant = tenantMapper.selectById(userTenant.tenantId)
                     tenant?.name
                 }
 
                 val tenantNamesStr = tenantNames.joinToString("、")
-                log.warn("用户是租户管理员，不允许禁用，userId: {}, tenantNames: {}", id, tenantNamesStr)
+                log.warn("User is tenant admin, not allowed to disable, userId: {}, tenantNames: {}", id, tenantNamesStr)
                 throw BizException(messageUtil.getMessage("error.user.is_tenant_admin_cannot_disable", *arrayOf(tenantNamesStr)))
             }
         }
@@ -246,48 +246,48 @@ class SysUserServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteUser(id: Long): Boolean {
-        log.info("删除用户，id: {}", id)
+        log.info("Deleting user, id: {}", id)
         val user = sysUserMapper.selectById(id)
             ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 不允许删除系统管理员用户 (isAdmin = 1)
+        // Do not allow deleting system admin users (isAdmin = 1)
         if (user.isAdmin == 1) {
             throw BizException(messageUtil.getMessage("error.user.cannot_delete_admin"))
         }
 
-        // 检查该用户是否是任何租户的管理员
+        // Check if this user is an admin of any tenant
         val userTenants = userTenantMapper.selectByUserId(id)
         val tenantAdminRoles = userTenants.filter { it.role == "admin" }
 
         if (tenantAdminRoles.isNotEmpty()) {
-            // 用户是某个(些)租户的管理员,不允许删除
-            // 查询所有租户名称
+            // User is an admin of some tenant(s), not allowed to delete
+            // Query all tenant names
             val tenantNames = tenantAdminRoles.mapNotNull { userTenant ->
                 val tenant = tenantMapper.selectById(userTenant.tenantId)
                 tenant?.name
             }
 
             val tenantNamesStr = tenantNames.joinToString("、")
-            log.warn("用户是租户管理员，不允许删除，userId: {}, tenantNames: {}", id, tenantNamesStr)
+            log.warn("User is tenant admin, not allowed to delete, userId: {}, tenantNames: {}", id, tenantNamesStr)
             throw BizException(messageUtil.getMessage("error.user.is_tenant_admin", *arrayOf(tenantNamesStr)))
         }
 
-        // 用户不是任何租户的管理员,从所有租户中移除该用户
+        // User is not an admin of any tenant, remove from all tenants
         if (userTenants.isNotEmpty()) {
-            log.info("用户属于{}个租户，将从所有租户中移除，userId: {}", userTenants.size, id)
+            log.info("User belongs to {} tenants, will be removed from all, userId: {}", userTenants.size, id)
             userTenants.forEach { userTenant ->
                 userTenantMapper.deleteByUserIdAndTenantId(id, userTenant.tenantId)
             }
-            log.info("用户已从所有租户中移除，userId: {}", id)
+            log.info("User removed from all tenants, userId: {}", id)
         }
 
-        // 物理删除用户
-        log.info("执行物理删除用户，userId: {}", id)
+        // Physically delete user
+        log.info("Executing physical delete user, userId: {}", id)
         return sysUserMapper.deleteById(id) > 0
     }
 
     override fun convertToResponse(sysUser: SysUser): SysUserResponse {
-        // 查询用户所属的租户数量
+        // Query tenant count for this user
         val tenantCount = userTenantMapper.selectByUserId(sysUser.id).size
 
         return SysUserResponse(

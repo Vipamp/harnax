@@ -191,7 +191,7 @@ class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - 查询所有服务商列表")
         fun `selectModelProviderList should return all providers`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, "admin")
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
 
             // Then
             assertTrue(providers.isNotEmpty())
@@ -202,7 +202,7 @@ class ModelProviderMapperTest {
         @DisplayName("selectModelProviderList - 按名称模糊查询")
         fun `selectModelProviderList should filter by name`() {
             // When
-            val providers = modelProviderMapper.selectModelProviderList(null, null, null, "admin")
+            val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
 
             // Then
             assertTrue(providers.isNotEmpty())

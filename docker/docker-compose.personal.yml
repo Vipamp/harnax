@@ -1,14 +1,14 @@
-# VIPClaw Docker Compose - 本地开发环境
-# 包含: MySQL + 后端 + 前端
+# VIPClaw Docker Compose - Personal Edition (Development)
+# Includes: MySQL + Backend + Frontend
 
 version: '3.8'
 
 services:
-  # MySQL 数据库
+  # MySQL Database
   mysql:
     image: mysql:8.0
     container_name: vipclaw-mysql
-    restart: always
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root123456
       MYSQL_DATABASE: vipclaw
@@ -18,8 +18,10 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql-data:/var/lib/mysql
-      - ./sql:/docker-entrypoint-initdb.d  # 初始化脚本
+      # MySQL data directory - can be configured via environment variable
+      - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
+      # Optional: mount init scripts directory
+      - ${MYSQL_INIT_DIR:-./init}:/docker-entrypoint-initdb.d:ro
     command: >
       --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4
@@ -33,23 +35,30 @@ services:
     networks:
       - vipclaw-network
 
-  # 后端服务
+  # Backend Service
   backend:
+    image: vipclaw-backend:personal
     build:
-      context: .
-      dockerfile: Dockerfile.backend
-      args:
-        EDITION: ${EDITION:-personal}
-    container_name: vipclaw-backend-${EDITION:-personal}
-    restart: always
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: vipclaw-backend-personal
+    restart: unless-stopped
     environment:
-      # Spring Boot 配置
-      SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
-      # 数据库配置
+      # Spring Boot Configuration
+      SPRING_PROFILES_ACTIVE: personal
+      # Database Configuration
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: vipclaw
       SPRING_DATASOURCE_PASSWORD: vipclaw123
-      # 日志配置
+      # Session Database Configuration
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_DATABASE_NAME: vipclaw
+      SESSION_USERNAME: vipclaw
+      SESSION_PASSWORD: vipclaw123
+      # Flyway Configuration
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # Log Configuration
       LOG_LEVEL: DEBUG
     ports:
       - "8080:8080"
@@ -59,7 +68,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -67,21 +76,20 @@ services:
     networks:
       - vipclaw-network
 
-  # 前端服务
+  # Frontend Service
   frontend:
+    image: vipclaw-frontend:personal
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        EDITION: ${EDITION:-personal}
-    container_name: vipclaw-frontend-${EDITION:-personal}
-    restart: always
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: vipclaw-frontend-personal
+    restart: unless-stopped
     ports:
       - "80:80"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -89,8 +97,6 @@ services:
       - vipclaw-network
 
 volumes:
-  mysql-data:
-    driver: local
   backend-logs:
     driver: local
 

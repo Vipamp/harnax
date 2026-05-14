@@ -4,9 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Size
 
 /**
- * MCP 服务更新请求 DTO
+ * MCP server update request DTO
  */
-@Schema(description = "MCP 服务更新请求对象")
+@Schema(description = "MCP server update request object")
 data class McpServerUpdateRequest(
     @Schema(description = "MCP ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     val id: Long = 0,
@@ -33,6 +33,6 @@ data class McpServerUpdateRequest(
     @Schema(description = "状态（0:禁用，1:启用）", example = "1")
     val status: Int = 0,
 
-    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int = 0,
 )

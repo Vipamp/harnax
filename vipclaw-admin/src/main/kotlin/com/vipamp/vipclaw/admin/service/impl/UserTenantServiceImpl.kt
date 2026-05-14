@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 /**
- * 用户-租户关联服务实现类
+ * User-tenant association service implementation
  */
 @Service
 class UserTenantServiceImpl(
@@ -62,14 +62,14 @@ class UserTenantServiceImpl(
     }
 
     override fun getUsersByTenantId(tenantId: Long, pageNum: Int, pageSize: Int): Any {
-        // 使用PageHelper进行分页
+        // Use PageHelper for pagination
         PageHelper.startPage<UserTenantEntity>(pageNum, pageSize)
 
-        // 查询租户下的用户关联
+        // Query user associations under tenant
         val userTenants = userTenantMapper.selectByTenantId(tenantId)
         val pageInfo = PageInfo(userTenants)
 
-        // 组装用户信息
+        // Assemble user information
         val records = userTenants.map { ut ->
             val user = sysUserMapper.selectById(ut.userId)
             mapOf(
@@ -92,21 +92,21 @@ class UserTenantServiceImpl(
 
     @Transactional
     override fun addUserToTenant(tenantId: Long, userId: Long, role: String, operator: String): Boolean {
-        // 检查租户是否存在
+        // Check if tenant exists
         val tenant = tenantMapper.selectById(tenantId)
             ?: throw BizException(messageUtil.getMessage("error.tenant.notfound"))
 
-        // 检查用户是否存在
+        // Check if user exists
         val user = sysUserMapper.selectById(userId)
             ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // 检查用户是否已经在租户中
+        // Check if user is already in tenant
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
         if (existing != null) {
             throw BizException(messageUtil.getMessage("error.user.already_in_tenant"))
         }
 
-        // 添加用户到租户
+        // Add user to tenant
         val userTenant = UserTenantEntity().apply {
             this.userId = userId
             this.tenantId = tenantId
@@ -119,11 +119,11 @@ class UserTenantServiceImpl(
 
     @Transactional
     override fun removeUserFromTenant(tenantId: Long, userId: Long, operator: String): Boolean {
-        // 检查用户是否在租户中
+        // Check if user is in tenant
         val existing = userTenantMapper.selectByUserIdAndTenantId(userId, tenantId)
             ?: throw BizException(messageUtil.getMessage("error.user.not_in_tenant"))
 
-        // 删除用户租户关联
+        // Delete user-tenant association
         return userTenantMapper.deleteByUserIdAndTenantId(userId, tenantId) > 0
     }
 }

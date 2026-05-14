@@ -3,31 +3,31 @@ package com.vipamp.vipclaw.admin.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * MCP 工具响应对象
+ * MCP tool response object
  *
  * @author vipamp
  * @since 2026-04-10
  */
-@Schema(description = "MCP 工具响应对象")
+@Schema(description = "MCP tool response object")
 data class McpToolResponse(
-    @Schema(description = "工具名称", example = "read_file")
+    @Schema(description = "Tool name", example = "read_file")
     var name: String = "",
 
-    @Schema(description = "参数列表")
+    @Schema(description = "Parameter list")
     var parameters: List<McpToolParameter> = emptyList(),
 ) {
     /**
-     * MCP 工具参数
+     * MCP tool parameter
      */
-    @Schema(description = "MCP 工具参数")
+    @Schema(description = "MCP tool parameter")
     data class McpToolParameter(
-        @Schema(description = "参数名", example = "file_path")
+        @Schema(description = "Parameter name", example = "file_path")
         var name: String = "",
 
-        @Schema(description = "参数类型", example = "string")
+        @Schema(description = "Parameter type", example = "string")
         var type: String = "",
 
-        @Schema(description = "参数注释", example = "文件路径")
+        @Schema(description = "Parameter description", example = "File path")
         var description: String = "",
     )
 }

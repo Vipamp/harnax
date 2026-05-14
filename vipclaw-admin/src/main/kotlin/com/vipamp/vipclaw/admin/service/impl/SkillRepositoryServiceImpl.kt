@@ -22,7 +22,7 @@ import java.nio.file.Files
 import java.util.stream.Collectors
 
 /**
- * 技能仓库服务实现类
+ * Skill repository service implementation
  *
  * @author vipamp
  * @since 2026-03-16
@@ -43,7 +43,7 @@ class SkillRepositoryServiceImpl(
         pageSize: Int,
     ): Page<SkillRepository> {
         log.info(
-            "分页查询技能仓库列表，pageNum: {}, pageSize: {}, name: {}, status: {}",
+            "Paginated query for skill repository list, pageNum: {}, pageSize: {}, name: {}, status: {}",
             pageNum,
             pageSize,
             name,
@@ -60,12 +60,12 @@ class SkillRepositoryServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean {
-        log.info("创建技能仓库，name: {}", request.name)
+        log.info("Creating skill repository, name: {}", request.name)
 
-        // 检查仓库名称是否存在
+        // Check if repository name already exists
         val existRepository = skillRepositoryMapper.selectByName(request.name!!)
         if (existRepository != null) {
-            throw BizException("仓库名称已存在")
+            throw BizException("Repository name already exists")
         }
 
         val repository = SkillRepository()
@@ -73,66 +73,66 @@ class SkillRepositoryServiceImpl(
         repository.url = request.url
         repository.branch = request.branch
         repository.description = request.description
-        repository.status = request.status ?: 1 // 默认启用
-        repository.active = 1 // 默认生效
+        repository.status = request.status ?: 1 // Default enabled
+        repository.active = 1 // Default active
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         repository.creator = currentUsername
 
         val success = this.skillRepositoryMapper.insert(repository) > 0
-        log.info("技能仓库创建{}，repositoryId: {}", if (success) "成功" else "失败", repository.id)
+        log.info("Skill repository creation {}, repositoryId: {}", if (success) "successful" else "failed", repository.id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateSkillRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean {
-        log.info("更新技能仓库，id: {}", id)
+        log.info("Updating skill repository, id: {}", id)
 
         val repository = skillRepositoryMapper.selectById(id)
-            ?: throw BizException("技能仓库不存在")
+            ?: throw BizException("Skill repository not found")
 
-        // 如果请求中包含仓库名称且与当前仓库名称不同，检查新仓库名称是否已被使用
+        // If request contains repository name and it's different from current name, check if new name is already in use
         if (request.name != null && request.name != repository.name) {
             val existRepository = skillRepositoryMapper.selectByName(request.name!!)
             if (existRepository != null) {
-                throw BizException("仓库名称已存在")
+                throw BizException("Repository name already exists")
             }
             repository.name = request.name
         }
 
-        // 选择性更新字段
+        // Selectively update fields
         request.url?.let { repository.url = it }
         request.branch?.let { repository.branch = it }
         request.description?.let { repository.description = it }
 
         val success = this.skillRepositoryMapper.updateById(repository) > 0
-        log.info("技能仓库更新{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("Skill repository update {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleSkillRepository(id: Long, status: Int): Boolean {
-        log.info("切换技能仓库状态，id: {}, status: {}", id, status)
+        log.info("Toggling skill repository status, id: {}, status: {}", id, status)
 
         val repository = skillRepositoryMapper.selectById(id)
-            ?: throw BizException("技能仓库不存在")
+            ?: throw BizException("Skill repository not found")
 
         return skillRepositoryMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteSkillRepository(id: Long): Boolean {
-        log.info("删除技能仓库，id: {}", id)
+        log.info("Deleting skill repository, id: {}", id)
         return skillRepositoryMapper.deleteById(id) > 0
     }
 
     override fun getByName(name: String): SkillRepository? = skillRepositoryMapper.selectByName(name)
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {
-        log.info("获取远程技能列表，repositoryId: {}", repositoryId)
+        log.info("Fetching remote skill list, repositoryId: {}", repositoryId)
         val repository = skillRepositoryMapper.selectById(repositoryId)
-            ?: throw BizException("技能仓库不存在")
+            ?: throw BizException("Skill repository not found")
         val tmpDir = localTmpDir ?: Files.createTempDirectory("git-repo-").toFile().absolutePath
         val allSkills = loadSkillsFromGit(
             repository.url,

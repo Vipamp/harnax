@@ -16,32 +16,32 @@ import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.*
 
 /**
- * 模型服务商控制器
- * 仅公有云版可用(模型市场功能)
+ * Model provider controller
+ * Available only for public edition (model marketplace feature)
  *
  * @author vipamp
  * @since 2026-03-13
  */
 @RestController
 @RequestMapping("/api/model-providers")
-@Tag(name = "模型服务商管理", description = "模型服务商的增删改查接口")
+@Tag(name = "Model Provider Management", description = "Model provider CRUD APIs")
 @RequiresEdition("public")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService,
 ) {
 
     /**
-     * 分页查询模型服务商
+     * Paginated query for model providers
      */
     @GetMapping("/page")
-    @Operation(summary = "分页查询模型服务商", description = "分页查询模型服务商列表")
+    @Operation(summary = "Get model provider list with pagination", description = "Paginated query for model provider list")
     fun pageModelProvider(
-        @Parameter(description = "服务商名称") @RequestParam(name = "name", required = false) name: String?,
-        @Parameter(description = "服务商类型") @RequestParam(name = "type", required = false) type: String?,
-        @Parameter(description = "状态") @RequestParam(name = "status", required = false) status: Int?,
-        @Parameter(description = "是否公开") @RequestParam(name = "isPublic", required = false) isPublic: Int?,
-        @Parameter(description = "当前页码") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
-        @Parameter(description = "每页条数") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+        @Parameter(description = "Provider name") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "Provider type") @RequestParam(name = "type", required = false) type: String?,
+        @Parameter(description = "Status") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Is public") @RequestParam(name = "isPublic", required = false) isPublic: Int?,
+        @Parameter(description = "Page number") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
+        @Parameter(description = "Page size") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
     ): ResultVo<Page<ModelProviderResponse>> = try {
         val page = modelProviderService.page(
             name,
@@ -53,90 +53,90 @@ class ModelProviderController(
         )
         ResultVo.success(page.mapRecords { modelProviderService.convertToResponse(it) })
     } catch (e: Exception) {
-        ResultVo.error(e.message ?: "获取模型服务商列表失败")
+        ResultVo.error(e.message ?: "Failed to get model provider list")
     }
 
     /**
-     * 获取模型服务商详情
+     * Get model provider details
      */
     @GetMapping("/{id}")
-    @Operation(summary = "获取模型服务商详情", description = "根据 ID 获取模型服务商详情")
+    @Operation(summary = "Get model provider details", description = "Get model provider details by ID")
     fun getModelProvider(
-        @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<ModelProviderResponse?> {
         val response = modelProviderService.getModelProvider(id)
         return ResultVo.success(response?.let { modelProviderService.convertToResponse(it) })
     }
 
     /**
-     * 创建模型服务商
+     * Create model provider
      */
     @PostMapping
-    @Operation(summary = "创建模型服务商", description = "创建新的模型服务商")
+    @Operation(summary = "Create model provider", description = "Create a new model provider")
     fun createModelProvider(
         @Valid @RequestBody request: ModelProviderCreateRequest,
     ): ResultVo<Void> = if (modelProviderService.createModelProvider(request)) {
         ResultVo.success()
     } else {
-        ResultVo.error("创建模型服务商失败")
+        ResultVo.error("Failed to create model provider")
     }
 
     /**
-     * 更新模型服务商
+     * Update model provider
      */
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新模型服务商", description = "更新模型服务商信息")
+    @Operation(summary = "Update model provider", description = "Update model provider information")
     fun updateModelProvider(
-        @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: ModelProviderUpdateRequest,
     ): ResultVo<Void> = if (modelProviderService.updateModelProvider(id, request)) {
         ResultVo.success()
     } else {
-        ResultVo.error("更新模型服务商失败")
+        ResultVo.error("Failed to update model provider")
     }
 
     /**
-     * 切换模型服务商状态
+     * Toggle model provider status
      */
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换模型服务商状态", description = "启用/禁用模型服务商")
+    @Operation(summary = "Toggle model provider status", description = "Enable/disable model provider")
     fun toggleModelProvider(
-        @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "启用状态（0:禁用 1:启用）") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Enable status (0: disabled 1: enabled)") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = if (modelProviderService.toggleModelProvider(id, status)) {
         ResultVo.success()
     } else {
-        ResultVo.error("切换模型服务商状态失败")
+        ResultVo.error("Failed to toggle model provider status")
     }
 
     /**
-     * 删除模型服务商
+     * Delete model provider
      */
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除模型服务商", description = "删除指定的模型服务商")
+    @Operation(summary = "Delete model provider", description = "Delete specified model provider")
     fun delete(
-        @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long,
-    ): ResultVo<Void> = if (modelProviderService.deleteModelProvider(id)) ResultVo.success() else ResultVo.error("删除模型服务商失败")
+        @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<Void> = if (modelProviderService.deleteModelProvider(id)) ResultVo.success() else ResultVo.error("Failed to delete model provider")
 
     /**
-     * 连接测试
+     * Connectivity test
      */
     @PostMapping("/{id}/test")
-    @Operation(summary = "连接测试", description = "测试模型服务商连接是否正常")
+    @Operation(summary = "Connectivity test", description = "Test if model provider connection is normal")
     fun connectivityTest(
-        @Parameter(description = "模型服务商 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Model provider ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Boolean> {
         val result = modelProviderService.connectivityTest(id)
         return ResultVo.success(result)
     }
 
     /**
-     * 获取模型统计信息
+     * Get model statistics
      */
     @GetMapping("/{id}/stats")
-    @Operation(summary = "获取模型统计信息", description = "获取指定服务商下的模型统计信息")
+    @Operation(summary = "Get model statistics", description = "Get model statistics for specified provider")
     fun getModelStats(
-        @Parameter(description = "服务商 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Provider ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<ModelStatsInfo> {
         val stats = modelProviderService.getModelStats(id)
         return ResultVo.success(stats)

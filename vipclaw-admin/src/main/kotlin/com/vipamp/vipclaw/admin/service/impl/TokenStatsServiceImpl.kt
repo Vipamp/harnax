@@ -13,7 +13,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Token 消耗统计服务实现类
+ * Token consumption statistics service implementation
  *
  * @author vipamp
  * @since 2026-04-11
@@ -28,7 +28,7 @@ class TokenStatsServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun saveTokenStats(tokenStats: TokenStats): Boolean {
         log.info(
-            "保存 Token 消耗记录, agentId: {}, sessionId: {}, chatModelId: {}, totalToken: {}",
+            "Saving Token consumption record, agentId: {}, sessionId: {}, chatModelId: {}, totalToken: {}",
             tokenStats.agentId,
             tokenStats.sessionId,
             tokenStats.chatModelId,
@@ -36,16 +36,16 @@ class TokenStatsServiceImpl(
         )
 
         val success = this.tokenStatsMapper.insert(tokenStats) > 0
-        log.info("Token 消耗记录保存{}", if (success) "成功" else "失败")
+        log.info("Token consumption record saved {}", if (success) "successfully" else "failed")
         return success
     }
 
     override fun getAggregationStats(startTime: String, endTime: String): TokenStatsAggregationResponse {
-        log.info("获取 Token 聚合统计数据, startTime: {}, endTime: {}", startTime, endTime)
+        log.info("Fetching Token aggregation statistics, startTime: {}, endTime: {}", startTime, endTime)
 
         val response = TokenStatsAggregationResponse()
 
-        // 获取总体统计
+        // Get overall statistics
         val overallMap = tokenStatsMapper.getOverallStats(startTime, endTime)
         if (overallMap != null) {
             response.overall = TokenStatsAggregationResponse.mapToOverallStats(overallMap as Map<String, Any?>)
@@ -53,20 +53,20 @@ class TokenStatsServiceImpl(
             response.overall = OverallStats()
         }
 
-        // 按模型聚合
+        // Aggregate by model
         val modelData = tokenStatsMapper.aggregateByModel(startTime, endTime)
         response.modelStats = modelData!!.map { TokenStatsAggregationResponse.mapToModelStats(it as Map<String, Any?>) }
 
-        // 按会话聚合
+        // Aggregate by session
         val sessionData = tokenStatsMapper.aggregateBySession(startTime, endTime)
         response.sessionStats =
             sessionData!!.map { TokenStatsAggregationResponse.mapToSessionStats(it as Map<String, Any?>) }
 
-        // 按智能体聚合
+        // Aggregate by agent
         val agentData = tokenStatsMapper.aggregateByAgent(startTime, endTime)
         response.agentStats = agentData!!.map { TokenStatsAggregationResponse.mapToAgentStats(it as Map<String, Any?>) }
 
-        log.info("Token 聚合统计数据获取完成")
+        log.info("Token aggregation statistics retrieval completed")
         return response
     }
 
@@ -76,7 +76,7 @@ class TokenStatsServiceImpl(
         granularity: String,
     ): TokenStatsAggregationResponse {
         log.info(
-            "获取 Token 时序统计数据, startTime: {}, endTime: {}, granularity: {}",
+            "Fetching Token time series data, startTime: {}, endTime: {}, granularity: {}",
             startTime,
             endTime,
             granularity,
@@ -84,22 +84,22 @@ class TokenStatsServiceImpl(
 
         val response = TokenStatsAggregationResponse()
 
-        // 不支持按周统计
+        // Weekly statistics not supported
         var actualGranularity = if ("week" == granularity) "day" else granularity
 
-        // 根据时间粒度查询时序数据
+        // Query time series data based on time granularity
         val timeSeriesData = when (actualGranularity) {
             "hour" -> tokenStatsMapper.getTimeSeriesByHour(startTime, endTime)
             "month" -> tokenStatsMapper.getTimeSeriesByMonth(startTime, endTime)
             else -> tokenStatsMapper.getTimeSeriesByDay(startTime, endTime)
         }
 
-        // 补全所有时间点（即使没有数据也要显示为0）
+        // Fill all time points (even if no data, should display as 0)
         val filledTimeSeriesData = fillTimePoints(timeSeriesData, startTime, endTime, actualGranularity)
 
         response.timeSeriesData = filledTimeSeriesData.map { TokenStatsAggregationResponse.mapToTimeSeriesData(it) }
 
-        log.info("Token 时序统计数据获取完成，共 {} 条记录", response.timeSeriesData!!.size)
+        log.info("Token time series data retrieval completed, total {} records", response.timeSeriesData!!.size)
         return response
     }
 
@@ -108,7 +108,7 @@ class TokenStatsServiceImpl(
         endTime: String,
         granularity: String,
     ): TokenStatsAggregationResponse {
-        log.info("获取模型时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
+        log.info("Fetching model time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "model")
     }
 
@@ -117,7 +117,7 @@ class TokenStatsServiceImpl(
         endTime: String,
         granularity: String,
     ): TokenStatsAggregationResponse {
-        log.info("获取智能体时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
+        log.info("Fetching agent time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "agent")
     }
 
@@ -126,12 +126,12 @@ class TokenStatsServiceImpl(
         endTime: String,
         granularity: String,
     ): TokenStatsAggregationResponse {
-        log.info("获取会话时序统计数据, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
+        log.info("Fetching session time series data, startTime: {}, endTime: {}, granularity: {}", startTime, endTime, granularity)
         return getDimensionTimeSeriesData(startTime, endTime, granularity, "session")
     }
 
     /**
-     * 通用维度时序数据查询
+     * Generic dimension time series data query
      */
     private fun getDimensionTimeSeriesData(
         startTime: String,
@@ -141,10 +141,10 @@ class TokenStatsServiceImpl(
     ): TokenStatsAggregationResponse {
         val response = TokenStatsAggregationResponse()
 
-        // 不支持按周统计
+        // Weekly statistics not supported
         var actualGranularity = if ("week" == granularity) "day" else granularity
 
-        // 根据维度类型和时间粒度查询时序数据
+        // Query time series data based on dimension type and time granularity
         val timeSeriesData = when (dimensionType) {
             "model" -> when (actualGranularity) {
                 "hour" -> tokenStatsMapper.getModelTimeSeriesByHour(startTime, endTime)
@@ -167,7 +167,7 @@ class TokenStatsServiceImpl(
             else -> emptyList()
         }
 
-        // 补全所有时间点(按维度分组补全)
+        // Fill time points by dimension
         val filledTimeSeriesData = fillDimensionTimePoints(
             timeSeriesData,
             startTime,
@@ -180,12 +180,12 @@ class TokenStatsServiceImpl(
             TokenStatsAggregationResponse.mapToDimensionTimeSeriesData(it as MutableMap<String?, Any?>, dimensionType)
         }
 
-        log.info("{} 时序统计数据获取完成，共 {} 条记录", dimensionType, response.timeSeriesData!!.size)
+        log.info("{} time series data retrieval completed, total {} records", dimensionType, response.timeSeriesData!!.size)
         return response
     }
 
     /**
-     * 补全时间点，确保从开始到结束的所有时间点都有数据（没有数据的点为0）
+     * Fill time points to ensure all time points from start to end have data (points without data are 0)
      */
     private fun fillTimePoints(
         queryData: MutableList<MutableMap<String?, Any?>?>?,
@@ -197,7 +197,7 @@ class TokenStatsServiceImpl(
         val startTime = LocalDateTime.parse(startTimeStr, formatter)
         val endTime = LocalDateTime.parse(endTimeStr, formatter)
 
-        // 将查询结果转为 Map，方便查找
+        // Convert query results to Map for easy lookup
         val dataMap = mutableMapOf<String, Map<String?, Any?>?>()
         for (data in queryData ?: emptyList()) {
             val timePointObj = data?.get("timePoint") as? LocalDateTime?
@@ -214,7 +214,7 @@ class TokenStatsServiceImpl(
         val result = mutableListOf<Map<String, Any?>?>()
         var currentTime = startTime
 
-        // 根据粒度规范化起始时间
+        // Normalize start time based on granularity
         currentTime = when (granularity) {
             "hour" -> currentTime.withMinute(0).withSecond(0)
             "month" -> currentTime.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0)
@@ -239,10 +239,10 @@ class TokenStatsServiceImpl(
                 ).also { currentTime = currentTime.plusDays(1) }
             }
 
-            // 查找该时间点的数据，如果没有则创建为0
+            // Find data for this time point, if not found create with 0
             val data = dataMap[timeKey]
             if (data == null) {
-                // 创建空数据
+                // Create empty data
                 val emptyData = mutableMapOf<String, Any>(
                     "timePoint" to displayTime,
                     "totalInputToken" to 0L,
@@ -252,7 +252,7 @@ class TokenStatsServiceImpl(
                 )
                 result.add(emptyData)
             } else {
-                // 使用查询到的数据，但更新 timePoint 为显示时间
+                // Use queried data, but update timePoint to display time
                 val mutableData = data.toMutableMap()
                 mutableData["timePoint"] = displayTime
                 result.add(mutableData as Map<String, Any?>?)
@@ -263,7 +263,7 @@ class TokenStatsServiceImpl(
     }
 
     /**
-     * 补全维度时间点，确保每个维度从开始到结束的所有时间点都有数据（没有数据的点为0）
+     * Fill dimension time points to ensure all time points from start to end have data for each dimension (points without data are 0)
      */
     private fun fillDimensionTimePoints(
         queryData: List<MutableMap<String?, Any?>?>?,
@@ -276,7 +276,7 @@ class TokenStatsServiceImpl(
         val startTime = LocalDateTime.parse(startTimeStr, formatter)
         val endTime = LocalDateTime.parse(endTimeStr, formatter)
 
-        // 按维度ID分组
+        // Group by dimension ID
         val dimensionIdField = when (dimensionType) {
             "session" -> "sessionId"
             "agent" -> "agentId"
@@ -294,9 +294,9 @@ class TokenStatsServiceImpl(
 
         val result = mutableListOf<Map<String, Any>>()
 
-        // 对每个维度补全时间点
+        // Fill time points for each dimension
         for ((dimensionId, dimData) in dimensionGroups) {
-            // 将该维度的数据转为 Map
+            // Convert this dimension's data to Map
             val dataMap = mutableMapOf<String, Map<String, Any>>()
             for (data in dimData) {
                 val timePointObj = data["timePoint"]
@@ -310,10 +310,10 @@ class TokenStatsServiceImpl(
                 }
             }
 
-            // 补全该维度的时间点
+            // Fill time points for this dimension
             var currentTime = startTime
 
-            // 根据粒度规范化起始时间
+            // Normalize start time based on granularity
             currentTime = when (granularity) {
                 "hour" -> currentTime.withMinute(0).withSecond(0)
                 "month" -> currentTime.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0)
@@ -338,10 +338,10 @@ class TokenStatsServiceImpl(
                     ).also { currentTime = currentTime.plusDays(1) }
                 }
 
-                // 查找该时间点的数据，如果没有则创建为0
+                // Find data for this time point, if not found create with 0
                 val data = dataMap[timeKey]
                 if (data == null) {
-                    // 创建空数据，保留维度信息
+                    // Create empty data, preserve dimension information
                     val emptyData = mutableMapOf<String, Any>(
                         "timePoint" to displayTime,
                         "totalInputToken" to 0L,
@@ -350,7 +350,7 @@ class TokenStatsServiceImpl(
                         "totalFee" to BigDecimal.ZERO,
                     )
 
-                    // 保留维度字段
+                    // Preserve dimension fields
                     val sampleData = if (dimData.isEmpty()) emptyMap() else dimData[0]
                     when (dimensionType) {
                         "model" -> {
@@ -371,7 +371,7 @@ class TokenStatsServiceImpl(
 
                     result.add(emptyData)
                 } else {
-                    // 使用查询到的数据，但更新 timePoint 为显示时间
+                    // Use queried data, but update timePoint to display time
                     val mutableData = data.toMutableMap()
                     mutableData["timePoint"] = displayTime
                     result.add(mutableData)

@@ -4,20 +4,20 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 
 /**
- * 统一响应结果类
+ * Unified response result class
  */
-@Schema(description = "统一响应结果")
+@Schema(description = "Unified response result")
 data class ResultVo<T>(
-    @Schema(description = "状态码", example = "200")
+    @Schema(description = "Status code", example = "200")
     val code: Int = 200,
 
-    @Schema(description = "响应消息", example = "success")
+    @Schema(description = "Response message", example = "success")
     val message: String = "success",
 
-    @Schema(description = "响应数据")
+    @Schema(description = "Response data")
     val data: T? = null,
 
-    @Schema(description = "时间戳", example = "1704067200000")
+    @Schema(description = "Timestamp", example = "1704067200000")
     val timestamp: Long = System.currentTimeMillis(),
 ) : Serializable {
 
@@ -25,38 +25,38 @@ data class ResultVo<T>(
         private const val serialVersionUID = 1L
 
         /**
-         * 成功响应
+         * Success response
          */
         @JvmStatic
         fun <T> success(): ResultVo<T> = ResultVo(200, "success", null)
 
         /**
-         * 成功响应（带数据）
+         * Success response (with data)
          */
         @JvmStatic
         fun <T> success(data: T): ResultVo<T> = ResultVo(200, "success", data)
 
         /**
-         * 成功响应（带消息和数据）
+         * Success response (with message and data)
          */
         @JvmStatic
         fun <T> success(message: String, data: T): ResultVo<T> = ResultVo(200, message, data)
 
         /**
-         * 失败响应
+         * Error response
          */
         @JvmStatic
         fun <T> error(message: String): ResultVo<T> = ResultVo(500, message, null)
 
         /**
-         * 失败响应（带状态码）
+         * Error response (with status code)
          */
         @JvmStatic
         fun <T> error(code: Int, message: String): ResultVo<T> = ResultVo(code, message, null)
     }
 
     /**
-     * 判断是否成功
+     * Whether successful
      */
     fun isSuccess(): Boolean = this.code == 200
 }

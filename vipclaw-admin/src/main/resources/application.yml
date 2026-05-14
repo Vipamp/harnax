@@ -13,9 +13,9 @@ spring:
   
   # 数据源配置
   datasource:
-    url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       minimum-idle: 5
@@ -77,10 +77,10 @@ jwt:
   expiration: 7200000 # 2 小时（毫秒）
 
 session:
-  jdbc-url: jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-  database-name: vipclaw
-  username: root
-  password: 123456
+  jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+  database-name: ${SESSION_DATABASE_NAME:vipclaw}
+  username: ${SESSION_USERNAME:root}
+  password: ${SESSION_PASSWORD:123456}
 
 local:
   tmp-dir: /Users/heqingsong/vipclaw-admin/tmp

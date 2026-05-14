@@ -4,13 +4,13 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.*
 
 /**
- * 模型创建请求对象
+ * Model creation request object
  */
-@Schema(description = "模型创建请求对象")
+@Schema(description = "Model creation request object")
 data class ModelCreateRequest(
-    @field:NotBlank(message = "模型名称不能为空")
-    @field:Size(min = 1, max = 100, message = "模型名称长度必须在 1-100 个字符之间")
-    @Schema(description = "模型名称", example = "GPT-4", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotBlank(message = "Model name不能为空")
+    @field:Size(min = 1, max = 100, message = "Model name长度必须在 1-100 个字符之间")
+    @Schema(description = "Model name", example = "GPT-4", requiredMode = Schema.RequiredMode.REQUIRED)
     val name: String,
 
     @field:NotBlank(message = "模型技术名称不能为空")
@@ -25,8 +25,8 @@ data class ModelCreateRequest(
     @Schema(description = "描述", example = "OpenAI 最强的多模态模型")
     val description: String? = null,
 
-    @Schema(description = "模型类型（chat/embedding）", example = "chat", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotBlank(message = "模型类型不能为空")
+    @Schema(description = "Model type（chat/embedding）", example = "chat", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotBlank(message = "Model type不能为空")
     val modelType: String,
 
     @Schema(description = "是否支持联网", example = "0")

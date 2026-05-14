@@ -12,13 +12,13 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * Token管理控制器
- * 处理Token刷新等操作
+ * Token management controller
+ * Handles token refresh and other operations
  *
  * @author vipamp
  * @since 2026-05-01
  */
-@Tag(name = "Token管理", description = "Token刷新等接口")
+@Tag(name = "Token Management", description = "Token refresh and other APIs")
 @RestController
 @RequestMapping("/api/auth")
 class TokenController(
@@ -28,17 +28,17 @@ class TokenController(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 刷新Token
-     * 继承当前租户上下文
+     * Refresh token
+     * Inherits current tenant context
      */
     @PostMapping("/refresh-token")
-    @Operation(summary = "刷新Token", description = "刷新JWT Token，继承当前租户上下文")
+    @Operation(summary = "Refresh token", description = "Refresh JWT token, inherits current tenant context")
     fun refreshToken(): ResultVo<Map<String, Any>> {
         return try {
             val currentUser = SecurityUtils.getCurrentUser()
-                ?: return ResultVo.error("用户未登录")
+                ?: return ResultVo.error("User not logged in")
 
-            // 从当前请求中获取租户ID（由TenantInterceptor设置）
+            // Get tenant ID from current request (set by TenantInterceptor)
             val currentToken = getCurrentToken()
             val tenantId = if (currentToken != null) {
                 jwtUtil.getTenantIdFromToken(currentToken)
@@ -46,7 +46,7 @@ class TokenController(
                 null
             }
 
-            // 生成新Token，继承租户ID
+            // Generate new token, inheriting tenant ID
             val newToken = jwtUtil.generateToken(
                 currentUser.id,
                 currentUser.username,
@@ -54,7 +54,7 @@ class TokenController(
                 currentUser.isAdmin,
             )
 
-            log.info("Token刷新成功，userId: {}, tenantId: {}", currentUser.id, tenantId)
+            log.info("Token refreshed successfully, userId: {}, tenantId: {}", currentUser.id, tenantId)
 
             ResultVo.success(
                 mapOf(
@@ -64,13 +64,13 @@ class TokenController(
                 ),
             )
         } catch (e: Exception) {
-            log.error("Token刷新失败", e)
-            ResultVo.error(e.message ?: "Token刷新失败")
+            log.error("Failed to refresh token", e)
+            ResultVo.error(e.message ?: "Failed to refresh token")
         } as ResultVo<Map<String, Any>>
     }
 
     /**
-     * 从当前请求中获取Token
+     * Get token from current request
      */
     private fun getCurrentToken(): String? = try {
         val request = org.springframework.web.context.request.RequestContextHolder

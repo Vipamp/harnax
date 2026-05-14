@@ -13,15 +13,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * 技能仓库管理控制器
- * 仅公有云版可用(技能市场功能)
+ * Skill repository management controller
+ * Available only for public edition (skill marketplace feature)
  *
  * @author vipamp
  * @since 2026-03-16
  */
 @RestController
 @RequestMapping("/api/skill-repositories")
-@Tag(name = "技能仓库管理", description = "技能仓库相关接口")
+@Tag(name = "Skill Repository Management", description = "Skill repository related APIs")
 @RequiresEdition("public")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService,
@@ -30,18 +30,18 @@ class SkillRepositoryController(
     private val log = LoggerFactory.getLogger(SkillRepositoryController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取技能仓库列表", description = "分页查询技能仓库信息")
+    @Operation(summary = "Get skill repository list with pagination", description = "Paginated query for skill repository information")
     fun pageSkillRepository(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "仓库名称") @RequestParam(name = "name", required = false) name: String?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Repository name") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<SkillRepositoryResponse>> = try {
         val page = skillRepositoryService.page(
             name,
@@ -51,48 +51,48 @@ class SkillRepositoryController(
         )
         ResultVo.success(page.mapRecords { SkillRepositoryResponse.fromEntity(it) })
     } catch (e: Exception) {
-        log.error("获取技能仓库列表失败", e)
-        ResultVo.error(e.message ?: "获取技能仓库列表失败")
+        log.error("Failed to get skill repository list", e)
+        ResultVo.error(e.message ?: "Failed to get skill repository list")
     }
 
     @GetMapping("/active")
-    @Operation(summary = "获取所有启用的仓库列表", description = "获取所有启用的仓库列表")
+    @Operation(summary = "Get all active repositories", description = "Get list of all active repositories")
     fun getActiveRepositories(): ResultVo<List<SkillRepositoryResponse>> = try {
         val repositories = skillRepositoryService.getActiveRepositories()
         val responseList = repositories.map { SkillRepositoryResponse.fromEntity(it) }
         ResultVo.success(responseList)
     } catch (e: Exception) {
-        log.error("获取启用的仓库列表失败", e)
-        ResultVo.error(e.message ?: "获取启用的仓库列表失败")
+        log.error("Failed to get active repositories", e)
+        ResultVo.error(e.message ?: "Failed to get active repositories")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取技能仓库详情", description = "根据技能仓库 ID 获取技能仓库信息")
+    @Operation(summary = "Get skill repository details", description = "Get skill repository information by skill repository ID")
     fun getSkillRepository(
-        @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SkillRepositoryResponse?> = try {
         val repository = skillRepositoryService.getSkillRepository(id)
         ResultVo.success(repository?.let { SkillRepositoryResponse.fromEntity(it) })
     } catch (e: Exception) {
-        log.error("获取技能仓库详情失败", e)
-        ResultVo.error(e.message ?: "获取技能仓库详情失败")
+        log.error("Failed to get skill repository details", e)
+        ResultVo.error(e.message ?: "Failed to get skill repository details")
     }
 
     @PostMapping
-    @Operation(summary = "创建技能仓库", description = "新增技能仓库信息")
+    @Operation(summary = "Create skill repository", description = "Add new skill repository information")
     fun createRepository(
         @Valid @RequestBody request: SkillRepositoryCreateRequest,
     ): ResultVo<Void> = try {
-        if (skillRepositoryService.createSkillRepository(request)) ResultVo.success() else ResultVo.error("创建技能仓库失败")
+        if (skillRepositoryService.createSkillRepository(request)) ResultVo.success() else ResultVo.error("Failed to create skill repository")
     } catch (e: Exception) {
-        log.error("创建技能仓库失败", e)
-        ResultVo.error(e.message ?: "创建技能仓库失败")
+        log.error("Failed to create skill repository", e)
+        ResultVo.error(e.message ?: "Failed to create skill repository")
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "更新技能仓库", description = "根据技能仓库 ID 更新技能仓库信息")
+    @Operation(summary = "Update skill repository", description = "Update skill repository information by skill repository ID")
     fun updateSkillRepository(
-        @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SkillRepositoryUpdateRequest,
     ): ResultVo<Void> = try {
         if (skillRepositoryService.updateSkillRepository(
@@ -102,18 +102,18 @@ class SkillRepositoryController(
         ) {
             ResultVo.success()
         } else {
-            ResultVo.error("更新技能仓库失败")
+            ResultVo.error("Failed to update skill repository")
         }
     } catch (e: Exception) {
-        log.error("更新技能仓库失败", e)
-        ResultVo.error(e.message ?: "更新技能仓库失败")
+        log.error("Failed to update skill repository", e)
+        ResultVo.error(e.message ?: "Failed to update skill repository")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换技能仓库状态", description = "根据技能仓库 ID 切换技能仓库状态")
+    @Operation(summary = "Toggle skill repository status", description = "Toggle skill repository status by skill repository ID")
     fun toggleSkillRepository(
-        @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "技能仓库状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill repository status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
         if (skillRepositoryService.toggleSkillRepository(
                 id,
@@ -122,33 +122,33 @@ class SkillRepositoryController(
         ) {
             ResultVo.success()
         } else {
-            ResultVo.error("更新技能仓库失败")
+            ResultVo.error("Failed to update skill repository")
         }
     } catch (e: Exception) {
-        log.error("更新技能仓库失败", e)
-        ResultVo.error(e.message ?: "更新技能仓库失败")
+        log.error("Failed to update skill repository", e)
+        ResultVo.error(e.message ?: "Failed to update skill repository")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除技能仓库", description = "根据技能仓库 ID 删除技能仓库")
+    @Operation(summary = "Delete skill repository", description = "Delete skill repository by skill repository ID")
     fun deleteSkillRepository(
-        @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (skillRepositoryService.deleteSkillRepository(id)) ResultVo.success() else ResultVo.error("删除技能仓库失败")
+        if (skillRepositoryService.deleteSkillRepository(id)) ResultVo.success() else ResultVo.error("Failed to delete skill repository")
     } catch (e: Exception) {
-        log.error("删除技能仓库失败", e)
-        ResultVo.error(e.message ?: "删除技能仓库失败")
+        log.error("Failed to delete skill repository", e)
+        ResultVo.error(e.message ?: "Failed to delete skill repository")
     }
 
     @GetMapping("/fetch/{id}")
-    @Operation(summary = "获取远程技能列表", description = "从远程仓库获取可同步的技能列表")
+    @Operation(summary = "Get remote skill list", description = "Get syncable skills from remote repository")
     fun fetchRemoteSkills(
-        @Parameter(description = "技能仓库 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Skill repository ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<List<SyncSkillResponse>> = try {
         val skills = skillRepositoryService.fetchRemoteSkills(id)
         ResultVo.success(skills)
     } catch (e: Exception) {
-        log.error("获取远程技能列表失败", e)
-        ResultVo.error(e.message ?: "获取远程技能列表失败")
+        log.error("Failed to get remote skill list", e)
+        ResultVo.error(e.message ?: "Failed to get remote skill list")
     }
 }

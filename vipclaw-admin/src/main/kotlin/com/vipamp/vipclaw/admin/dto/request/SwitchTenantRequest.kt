@@ -4,11 +4,11 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotNull
 
 /**
- * 切换租户请求 DTO
+ * Switch tenant request DTO
  */
-@Schema(description = "切换租户请求对象")
+@Schema(description = "Switch tenant request object")
 data class SwitchTenantRequest(
-    @Schema(description = "租户ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotNull(message = "租户ID不能为空")
+    @Schema(description = "Tenant ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotNull(message = "Tenant ID cannot be empty")
     val tenantId: Long,
 )

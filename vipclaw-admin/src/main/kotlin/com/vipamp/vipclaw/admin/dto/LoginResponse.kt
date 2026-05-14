@@ -6,21 +6,21 @@ import io.swagger.v3.oas.annotations.media.Schema
 /**
  * 登录响应 DTO
  */
-@Schema(description = "登录响应对象")
+@Schema(description = "Login response object")
 data class LoginResponse(
-    @Schema(description = "访问令牌", example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
+    @Schema(description = "Access token", example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
     val accessToken: String? = null,
 
-    @Schema(description = "令牌类型", example = "Bearer")
+    @Schema(description = "Token type", example = "Bearer")
     val tokenType: String? = null,
 
-    @Schema(description = "过期时间（秒）", example = "7200")
+    @Schema(description = "Expiration time (seconds)", example = "7200")
     val expiresIn: Long? = null,
 
     @Schema(description = "过期时间戳（毫秒）", example = "1717020800000")
     val expiresAt: Long? = null,
 
-    @Schema(description = "用户信息")
+    @Schema(description = "User information")
     val userInfo: UserInfo? = null,
 
     @Schema(description = "用户所属租户列表")
@@ -63,20 +63,20 @@ data class LoginResponse(
     }
 
     /**
-     * 用户信息 DTO
+     * User information DTO
      */
-    @Schema(description = "用户信息")
+    @Schema(description = "User information")
     data class UserInfo(
-        @Schema(description = "用户 ID", example = "1")
+        @Schema(description = "User ID", example = "1")
         val userId: Long? = null,
 
-        @Schema(description = "用户名", example = "admin")
+        @Schema(description = "Username", example = "admin")
         val username: String? = null,
 
-        @Schema(description = "昵称", example = "管理员")
+        @Schema(description = "Nickname", example = "管理员")
         val nickname: String? = null,
 
-        @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
+        @Schema(description = "Avatar URL", example = "https://example.com/avatar.jpg")
         val avatar: String? = null,
 
         @Schema(description = "邮箱", example = "admin@example.com")

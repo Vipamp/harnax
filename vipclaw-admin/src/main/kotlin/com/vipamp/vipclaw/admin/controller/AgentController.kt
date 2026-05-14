@@ -16,15 +16,15 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.*
 
 /**
- * 智能体管理控制器
- * 企业版和公有云版可用(Agent 共享功能)
+ * Agent management controller
+ * Available for enterprise and public editions (Agent sharing feature)
  *
  * @author vipamp
  * @since 2026-03-18
  */
 @RestController
 @RequestMapping("/api/agents")
-@Tag(name = "智能体管理", description = "智能体相关接口")
+@Tag(name = "Agent Management", description = "Agent related APIs")
 @RequiresEdition("enterprise", "public")
 class AgentController(
     private val agentService: AgentService,
@@ -33,80 +33,80 @@ class AgentController(
     private val log = LoggerFactory.getLogger(AgentController::class.java)
 
     @GetMapping("/page")
-    @Operation(summary = "分页获取智能体列表", description = "分页查询智能体信息")
+    @Operation(summary = "Get agent list with pagination", description = "Paginated query for agent information")
     fun pageAgent(
-        @Parameter(description = "页码", example = "1") @RequestParam(
+        @Parameter(description = "Page number", example = "1") @RequestParam(
             name = "pageNum",
             defaultValue = "1",
         ) pageNum: Int?,
-        @Parameter(description = "每页大小", example = "10") @RequestParam(
+        @Parameter(description = "Page size", example = "10") @RequestParam(
             name = "pageSize",
             defaultValue = "10",
         ) pageSize: Int?,
-        @Parameter(description = "智能体名称") @RequestParam(name = "name", required = false) name: String?,
-        @Parameter(description = "状态筛选字段") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Agent name") @RequestParam(name = "name", required = false) name: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<AgentResponse>> = try {
         val page = agentService.page(name, status, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { agentService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取智能体列表失败", e)
-        ResultVo.error(e.message ?: "获取智能体列表失败")
+        log.error("Failed to get agent list", e)
+        ResultVo.error(e.message ?: "Failed to get agent list")
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "获取智能体详情", description = "根据智能体 ID 获取智能体信息")
+    @Operation(summary = "Get agent details", description = "Get agent information by agent ID")
     fun getAgent(
-        @Parameter(description = "智能体 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Agent ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<AgentResponse?> = try {
         ResultVo.success(agentService.getAgent(id)?.let { agentService.convertToResponse(it) })
     } catch (e: Exception) {
-        log.error("获取智能体详情失败", e)
-        ResultVo.error(e.message ?: "获取智能体详情失败")
+        log.error("Failed to get agent details", e)
+        ResultVo.error(e.message ?: "Failed to get agent details")
     }
 
     @PostMapping
-    @Operation(summary = "创建智能体", description = "新增智能体信息")
+    @Operation(summary = "Create agent", description = "Add new agent information")
     fun createAgent(
         @Validated @RequestBody request: AgentCreateRequest,
     ): ResultVo<Void> = try {
-        if (agentService.createAgent(request)) ResultVo.success() else ResultVo.error("创建智能体失败")
+        if (agentService.createAgent(request)) ResultVo.success() else ResultVo.error("Failed to create agent")
     } catch (e: Exception) {
-        log.error("创建智能体失败", e)
-        ResultVo.error(e.message ?: "创建智能体失败")
+        log.error("Failed to create agent", e)
+        ResultVo.error(e.message ?: "Failed to create agent")
     }
 
     @PutMapping("/update/{agentId}")
-    @Operation(summary = "更新智能体", description = "根据智能体 ID 更新智能体信息")
+    @Operation(summary = "Update agent", description = "Update agent information by agent ID")
     fun updateAgent(
-        @Parameter(description = "智能体 ID") @PathVariable(name = "agentId") agentId: Long,
+        @Parameter(description = "Agent ID") @PathVariable(name = "agentId") agentId: Long,
         @Validated @RequestBody request: AgentUpdateRequest,
     ): ResultVo<Void> = try {
-        if (agentService.updateAgent(agentId, request)) ResultVo.success() else ResultVo.error("更新智能体失败")
+        if (agentService.updateAgent(agentId, request)) ResultVo.success() else ResultVo.error("Failed to update agent")
     } catch (e: Exception) {
-        log.error("更新智能体失败", e)
-        ResultVo.error(e.message ?: "更新智能体失败")
+        log.error("Failed to update agent", e)
+        ResultVo.error(e.message ?: "Failed to update agent")
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "切换智能体状态", description = "根据智能体 ID 切换智能体状态")
+    @Operation(summary = "Toggle agent status", description = "Toggle agent status by agent ID")
     fun toggleAgent(
-        @Parameter(description = "智能体 ID") @PathVariable(name = "id") id: Long,
-        @Parameter(description = "智能体状态") @RequestParam(name = "status") status: Int,
+        @Parameter(description = "Agent ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Agent status") @RequestParam(name = "status") status: Int,
     ): ResultVo<Void> = try {
-        if (agentService.toggleAgentStatus(id, status)) ResultVo.success() else ResultVo.error("更新智能体失败")
+        if (agentService.toggleAgentStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle agent status")
     } catch (e: Exception) {
-        log.error("更新智能体失败", e)
-        ResultVo.error(e.message ?: "更新智能体失败")
+        log.error("Failed to update agent", e)
+        ResultVo.error(e.message ?: "Failed to update agent")
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除智能体", description = "根据智能体 ID 删除智能体")
+    @Operation(summary = "Delete agent", description = "Delete agent by agent ID")
     fun deleteAgent(
-        @Parameter(description = "智能体 ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Agent ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
-        if (agentService.deleteAgent(id)) ResultVo.success() else ResultVo.error("删除智能体失败")
+        if (agentService.deleteAgent(id)) ResultVo.success() else ResultVo.error("Failed to delete agent")
     } catch (e: Exception) {
-        log.error("删除智能体失败", e)
-        ResultVo.error(e.message ?: "删除智能体失败")
+        log.error("Failed to delete agent", e)
+        ResultVo.error(e.message ?: "Failed to delete agent")
     }
 }

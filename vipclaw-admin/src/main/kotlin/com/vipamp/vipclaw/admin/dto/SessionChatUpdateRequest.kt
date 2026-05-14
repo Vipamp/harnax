@@ -9,12 +9,12 @@ import io.swagger.v3.oas.annotations.media.Schema
  * @Project: vipclaw
  */
 data class SessionChatUpdateRequest(
-    @Schema(description = "是否启用深度思考")
+    @Schema(description = "Enable deep thinking")
     val enableThink: Boolean? = false,
 
-    @Schema(description = "是否启用联网搜索")
+    @Schema(description = "Enable web search")
     val enableSearch: Boolean? = false,
 
-    @Schema(description = "是否启用计划")
+    @Schema(description = "Enable planning")
     val enablePlan: Boolean? = false,
 )

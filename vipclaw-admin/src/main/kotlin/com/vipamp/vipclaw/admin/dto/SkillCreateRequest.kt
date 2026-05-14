@@ -4,20 +4,20 @@ import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.*
 
 /**
- * 技能创建请求对象
+ * Skill creation request object
  */
-@Schema(description = "技能创建请求对象")
+@Schema(description = "Skill creation request object")
 data class SkillCreateRequest(
-    @Size(min = 1, max = 100, message = "技能名称长度必须在 1-100 之间")
+    @Size(min = 1, max = 100, message = "Skill name length must be between 1-100")
     val name: String? = null,
-    @Schema(description = "仓库ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Repository ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     val repositoryId: Long? = null,
-    @Schema(description = "技能描述")
+    @Schema(description = "Skill description")
     val description: String? = null,
-    @Schema(description = "skill.md 内容")
+    @Schema(description = "skill.md content")
     val skillmd: String? = null,
-    @Schema(description = "资源信息")
+    @Schema(description = "Resource information")
     val resources: String? = null,
-    @Schema(description = "状态 (0:禁用 1:正常)")
+    @Schema(description = "Status (0:disabled 1:enabled)")
     val status: Int? = null,
 )

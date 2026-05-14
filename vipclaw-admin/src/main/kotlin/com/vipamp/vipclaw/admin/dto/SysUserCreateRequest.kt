@@ -15,27 +15,27 @@ import jakarta.validation.constraints.Size
  */
 @Schema(description = "用户创建请求对象")
 data class SysUserCreateRequest(
-    @Schema(description = "用户名", example = "zhangsan", requiredMode = Schema.RequiredMode.REQUIRED)
-    @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "用户名只能包含字母、数字和下划线")
+    @Schema(description = "Username", example = "zhangsan", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Pattern(regexp = "^[a-zA-Z0-9_]+$", message = "Username只能包含字母、数字和下划线")
     val username: String,
 
-    @Schema(description = "密码(明文)", requiredMode = Schema.RequiredMode.REQUIRED)
-    @Size(min = 6, max = 100, message = "密码长度必须在 6-100 之间")
+    @Schema(description = "Password (plaintext)", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Size(min = 6, max = 100, message = "Password length must be between 6-100")
     val password: String,
 
-    @Schema(description = "昵称", example = "张三", requiredMode = Schema.RequiredMode.REQUIRED)
-    @Size(min = 1, max = 50, message = "昵称长度必须在 1-50 之间")
+    @Schema(description = "Nickname", example = "张三", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Size(min = 1, max = 50, message = "Nickname长度必须在 1-50 之间")
     val nickname: String,
 
-    @Schema(description = "邮箱", example = "zhangsan@example.com")
+    @Schema(description = "Email", example = "zhangsan@example.com")
     val email: String? = null,
 
-    @Schema(description = "手机号", example = "13800138000")
+    @Schema(description = "Phone number", example = "13800138000")
     val phone: String? = null,
 
-    @Schema(description = "性别 (0:女 1:男 2:未知)", example = "2")
+    @Schema(description = "Gender (0:female 1:male 2:unknown)", example = "2")
     val gender: Int? = 2,
 
-    @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
+    @Schema(description = "Avatar URL", example = "https://example.com/avatar.jpg")
     val avatar: String? = null,
 )

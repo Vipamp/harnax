@@ -5,15 +5,15 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 
 /**
- * 创建租户请求 DTO
+ * Create tenant request DTO
  */
-@Schema(description = "创建租户请求对象")
+@Schema(description = "Create tenant request object")
 data class CreateTenantRequest(
-    @Schema(description = "租户名称", example = "示例公司", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotBlank(message = "租户名称不能为空")
+    @Schema(description = "Tenant name", example = "Example Company", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotBlank(message = "Tenant name cannot be empty")
     val name: String,
 
-    @Schema(description = "租户管理员用户ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @field:NotNull(message = "租户管理员用户ID不能为空")
+    @Schema(description = "Tenant administrator user ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @field:NotNull(message = "Tenant administrator user ID cannot be empty")
     val adminUserId: Long,
 )

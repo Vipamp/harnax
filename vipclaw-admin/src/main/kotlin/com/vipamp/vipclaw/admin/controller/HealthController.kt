@@ -13,19 +13,19 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * @Author: heqingsong
  * @Date: 2026/4/19
- * @Description: HealthController
+ * @Description: Health check controller
  * @Project: vipclaw
  */
 @RestController
 @RequestMapping("/api/")
-@Tag(name = "健康监测", description = "Health 监测")
+@Tag(name = "Health Check", description = "Health monitoring")
 class HealthController(private val editionUtil: EditionUtil) {
 
     @GetMapping("/health")
-    @Schema(description = "健康检查")
+    @Schema(description = "Health check")
     fun health(): ResultVo<String?> = success("OK")
 
     @GetMapping("/info")
-    @Schema(description = "获取版本信息")
+    @Schema(description = "Get version information")
     fun version(): ResultVo<SystemInfo> = success(SystemInfo.from(editionUtil))
 }

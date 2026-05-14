@@ -14,86 +14,86 @@ import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 
 /**
- * 验证码服务实现类
+ * Captcha service implementation
  */
 @Service
 class CaptchaServiceImpl : CaptchaService {
 
     private val log = LoggerFactory.getLogger(CaptchaServiceImpl::class.java)
 
-    // 简化实现:使用内存存储验证码(实际项目中应使用 Redis)
+    // Simplified implementation: use in-memory storage for captcha (should use Redis in actual project)
     private val captchaStore = ConcurrentHashMap<String, CaptchaInfo>()
 
     companion object {
-        // 验证码宽度
+        // Captcha width
         private const val WIDTH = 120
 
-        // 验证码高度
+        // Captcha height
         private const val HEIGHT = 40
 
-        // 验证码字符数
+        // Captcha character count
         private const val CODE_LENGTH = 4
 
-        // 验证码过期时间(5 分钟)
+        // Captcha expiration time (5 minutes)
         private const val EXPIRE_TIME: Long = 300
 
-        // 验证码字符集合(去除容易混淆的字符)
+        // Captcha character set (excluding confusing characters)
         private const val CHAR_SET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
     }
 
     override fun generateCaptcha(): CaptchaResponse = try {
-        // 1. 生成随机验证码
+        // 1. Generate random captcha code
         val code = generateRandomCode()
 
-        // 2. 生成验证码图片
+        // 2. Generate captcha image
         val image = createCaptchaImage(code)
 
-        // 3. 转换为 Base64
+        // 3. Convert to Base64
         val base64Image = convertToBase64(image)
 
-        // 4. 生成唯一 key
+        // 4. Generate unique key
         val captchaKey = generateCaptchaKey()
 
-        // 5. 存储验证码信息
+        // 5. Store captcha info
         captchaStore[captchaKey] = CaptchaInfo(code, System.currentTimeMillis())
 
-        log.info("生成验证码,captchaKey: {}", captchaKey)
+        log.info("Captcha generated, captchaKey: {}", captchaKey)
 
-        // 6. 返回响应
+        // 6. Return response
         CaptchaResponse(base64Image, captchaKey, EXPIRE_TIME)
     } catch (e: Exception) {
-        log.error("生成验证码失败", e)
-        throw BizException("生成验证码失败:${e.message}")
+        log.error("Failed to generate captcha", e)
+        throw BizException("Failed to generate captcha: ${e.message}")
     }
 
     override fun validateCaptcha(captchaKey: String, code: String): Boolean {
         val captchaInfo = captchaStore[captchaKey]
             ?: run {
-                log.warn("验证码不存在,captchaKey: {}", captchaKey)
+                log.warn("Captcha not found, captchaKey: {}", captchaKey)
                 return false
             }
 
-        // 检查是否过期
+        // Check if expired
         val currentTime = System.currentTimeMillis()
         if (currentTime - captchaInfo.createTime > TimeUnit.SECONDS.toMillis(EXPIRE_TIME)) {
             captchaStore.remove(captchaKey)
-            log.warn("验证码已过期,captchaKey: {}", captchaKey)
+            log.warn("Captcha expired, captchaKey: {}", captchaKey)
             return false
         }
 
-        // 验证验证码(忽略大小写)
+        // Validate captcha (case insensitive)
         val valid = captchaInfo.code.equals(code, ignoreCase = true)
 
-        // 验证后删除验证码(一次性使用)
+        // Delete captcha after validation (one-time use)
         captchaStore.remove(captchaKey)
 
-        log.info("验证码验证{},captchaKey: {}, code: {}", if (valid) "成功" else "失败", captchaKey, code)
+        log.info("Captcha validation {}, captchaKey: {}, code: {}", if (valid) "successful" else "failed", captchaKey, code)
 
         return valid
     }
 
     /**
-     * 生成随机验证码
+     * Generate random captcha code
      */
     private fun generateRandomCode(): String {
         val random = Random()
@@ -103,26 +103,26 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 创建验证码图片
+     * Create captcha image
      */
     private fun createCaptchaImage(code: String): BufferedImage {
         val image = BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB)
         val g = image.createGraphics()
 
-        // 设置背景色
+        // Set background color
         g.color = Color.WHITE
         g.fillRect(0, 0, WIDTH, HEIGHT)
 
-        // 设置字体
+        // Set font
         g.font = java.awt.Font("Arial", java.awt.Font.BOLD, 24)
 
-        // 绘制干扰线
+        // Draw interference lines
         drawDisturbanceLines(g)
 
-        // 绘制验证码文字
+        // Draw captcha text
         drawCodeString(g, code)
 
-        // 绘制干扰点
+        // Draw interference points
         drawDisturbancePoints(g)
 
         g.dispose()
@@ -130,7 +130,7 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 绘制干扰线
+     * Draw interference lines
      */
     private fun drawDisturbanceLines(g: Graphics2D) {
         val random = Random()
@@ -145,7 +145,7 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 绘制验证码文字
+     * Draw captcha text
      */
     private fun drawCodeString(g: Graphics2D, code: String) {
         val random = Random()
@@ -163,7 +163,7 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 绘制干扰点
+     * Draw interference points
      */
     private fun drawDisturbancePoints(g: Graphics2D) {
         val random = Random()
@@ -176,7 +176,7 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 获取随机颜色
+     * Get random color
      */
     private fun getRandomColor(): Color {
         val random = Random()
@@ -184,7 +184,7 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 将图片转换为 Base64
+     * Convert image to Base64
      */
     private fun convertToBase64(image: BufferedImage): String {
         val baos = java.io.ByteArrayOutputStream()
@@ -195,12 +195,12 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     /**
-     * 生成验证码 key
+     * Generate captcha key
      */
     private fun generateCaptchaKey(): String = UUID.randomUUID().toString().replace("-", "")
 
     /**
-     * 验证码信息内部类
+     * Captcha info inner class
      */
     private data class CaptchaInfo(
         val code: String,

@@ -1,12 +1,10 @@
 package com.vipamp.vipclaw.admin.interceptor
 
 import com.vipamp.vipclaw.admin.annotation.SkipTenantFilter
-import com.vipamp.vipclaw.admin.context.TenantContext
 import org.apache.ibatis.cache.CacheKey
 import org.apache.ibatis.executor.Executor
 import org.apache.ibatis.mapping.BoundSql
 import org.apache.ibatis.mapping.MappedStatement
-import org.apache.ibatis.mapping.SqlCommandType
 import org.apache.ibatis.mapping.SqlSource
 import org.apache.ibatis.plugin.*
 import org.apache.ibatis.reflection.SystemMetaObject

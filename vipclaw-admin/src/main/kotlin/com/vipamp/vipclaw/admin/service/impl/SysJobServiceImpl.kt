@@ -19,7 +19,7 @@ import org.springframework.util.StringUtils.hasText
 import java.time.LocalDateTime
 
 /**
- * 定时任务服务实现类
+ * Scheduled job service implementation
  *
  * @author vipamp
  * @since 2026-03-16
@@ -34,7 +34,7 @@ class SysJobServiceImpl(
     private val log = LoggerFactory.getLogger(SysJobServiceImpl::class.java)
 
     /**
-     * 获取 Scheduler 实例
+     * Get Scheduler instance
      */
     private fun getScheduler(): Scheduler = schedulerFactoryBean.scheduler
 
@@ -45,7 +45,7 @@ class SysJobServiceImpl(
         pageSize: Int,
     ): Page<SysJob> {
         log.info(
-            "分页查询定时任务列表，pageNum: {}, pageSize: {}, keyword: {}, jobStatus: {}",
+            "Paginated query for scheduled job list, pageNum: {}, pageSize: {}, keyword: {}, jobStatus: {}",
             pageNum,
             pageSize,
             keyword,
@@ -60,20 +60,20 @@ class SysJobServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createJob(request: SysJobCreateRequest): Boolean {
-        log.info("创建定时任务，jobName: {}", request.jobName)
+        log.info("Creating scheduled job, jobName: {}", request.jobName)
 
-        // 检查任务名称和组名是否已存在
+        // Check if job name and group already exist
         val existJob = sysJobMapper.selectByNameAndGroup(
             request.jobName,
             if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT",
         )
         if (existJob != null) {
-            throw BizException("该任务名称和组名已存在")
+            throw BizException("Job name and group already exist")
         }
 
-        // 验证 Cron 表达式
+        // Validate Cron expression
         if (!CronExpression.isValidExpression(request.cronExpression)) {
-            throw BizException("Cron 表达式格式不正确")
+            throw BizException("Invalid Cron expression format")
         }
 
         val job = SysJob()
@@ -81,27 +81,27 @@ class SysJobServiceImpl(
         job.jobGroup = (if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT").toString()
         job.jobClass = request.jobClass!!
         job.cronExpression = request.cronExpression!!
-        job.jobStatus = 0 // 默认暂停
+        job.jobStatus = 0 // Default paused
         job.concurrent = request.concurrent ?: 1
         job.description = request.description!!
-        job.isPublic = 0 // 默认不公开
+        job.isPublic = 0 // Default not public
         job.active = 1
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         job.creator = currentUsername!!
 
         val success = saveJob(job)
-        log.info("定时任务创建{}，jobId: {}", if (success) "成功" else "失败", job.id)
+        log.info("Scheduled job creation {}, jobId: {}", if (success) "successful" else "failed", job.id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateJob(id: Long, request: SysJobUpdateRequest): Boolean {
-        log.info("更新定时任务，id: {}", id)
+        log.info("Updating scheduled job, id: {}", id)
 
         val job = getSysJob(id) ?: return false
-        // 如果修改了任务名称或组名，检查是否冲突
+        // If job name or group is modified, check for conflicts
         if (job.jobName != request.jobName ||
             job.jobGroup != (if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT")
         ) {
@@ -110,22 +110,22 @@ class SysJobServiceImpl(
                 (if (hasText(request.jobGroup)) request.jobGroup else "DEFAULT")!!,
             )!!
             if (existJob.id != id) {
-                throw BizException("该任务名称和组名已存在")
+                throw BizException("Job name and group already exist")
             }
         }
 
-        // 验证 Cron 表达式
+        // Validate Cron expression
         if (!CronExpression.isValidExpression(request.cronExpression)) {
-            throw BizException("Cron 表达式格式不正确")
+            throw BizException("Invalid Cron expression format")
         }
 
-        // 如果任务正在运行，先停止
+        // If job is running, stop it first
         if (job.jobStatus == 1) {
             try {
                 getScheduler().deleteJob(JobKey.jobKey(job.jobName, job.jobGroup))
             } catch (e: SchedulerException) {
-                log.error("停止定时任务失败", e)
-                throw BizException("停止定时任务失败: ${e.message}")
+                log.error("Failed to stop scheduled job", e)
+                throw BizException("Failed to stop scheduled job: ${e.message}")
             }
         }
 
@@ -135,27 +135,27 @@ class SysJobServiceImpl(
         job.cronExpression = request.cronExpression!!
         job.concurrent = request.concurrent ?: 1
         job.description = request.description!!
-        job.jobStatus = 0 // 更新后重置为暂停状态
+        job.jobStatus = 0 // Reset to paused state after update
 
         val success = updateJobById(job)
-        log.info("定时任务更新{}，id: {}", if (success) "成功" else "失败", id)
+        log.info("Scheduled job update {}, id: {}", if (success) "successful" else "failed", id)
         return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteJob(id: Long): Boolean {
-        log.info("删除定时任务，id: {}", id)
+        log.info("Deleting scheduled job, id: {}", id)
 
         val job = sysJobMapper.selectById(id)
-            ?: throw BizException("定时任务不存在")
+            ?: throw BizException("Scheduled job not found")
 
-        // 如果任务正在运行，先停止
+        // If job is running, stop it first
         if (job.jobStatus == 1) {
             try {
                 getScheduler().deleteJob(JobKey.jobKey(job.jobName, job.jobGroup))
             } catch (e: SchedulerException) {
-                log.error("停止定时任务失败", e)
-                throw BizException("停止定时任务失败: ${e.message}")
+                log.error("Failed to stop scheduled job", e)
+                throw BizException("Failed to stop scheduled job: ${e.message}")
             }
         }
 
@@ -164,64 +164,64 @@ class SysJobServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun startJob(id: Long): Boolean {
-        log.info("启动定时任务，id: {}", id)
+        log.info("Starting scheduled job, id: {}", id)
 
         val job = sysJobMapper.selectById(id)
-            ?: throw BizException("定时任务不存在")
+            ?: throw BizException("Scheduled job not found")
 
         if (job.jobStatus == 1) {
-            throw BizException("定时任务已经是运行状态")
+            throw BizException("Scheduled job is already running")
         }
 
         return try {
             scheduleJob(job)
 
-            // 更新任务状态
+            // Update job status
             sysJobMapper.updateStatus(id, 1) > 0
         } catch (e: Exception) {
-            log.error("启动定时任务失败", e)
-            throw BizException("启动定时任务失败: ${e.message}")
+            log.error("Failed to start scheduled job", e)
+            throw BizException("Failed to start scheduled job: ${e.message}")
         }
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun pauseJob(id: Long): Boolean {
-        log.info("暂停定时任务，id: {}", id)
+        log.info("Pausing scheduled job, id: {}", id)
 
         val job = sysJobMapper.selectById(id)
-            ?: throw BizException("定时任务不存在")
+            ?: throw BizException("Scheduled job not found")
 
         if (job.jobStatus == 0) {
-            throw BizException("定时任务已经是暂停状态")
+            throw BizException("Scheduled job is already paused")
         }
 
         return try {
             getScheduler().pauseJob(JobKey.jobKey(job.jobName, job.jobGroup))
             getScheduler().deleteJob(JobKey.jobKey(job.jobName, job.jobGroup))
 
-            // 更新任务状态
+            // Update job status
             sysJobMapper.updateStatus(id, 0) > 0
         } catch (e: SchedulerException) {
-            log.error("暂停定时任务失败", e)
-            throw BizException("暂停定时任务失败: ${e.message}")
+            log.error("Failed to pause scheduled job", e)
+            throw BizException("Failed to pause scheduled job: ${e.message}")
         }
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun runJobOnce(id: Long): Boolean {
-        log.info("立即执行定时任务，id: {}", id)
+        log.info("Executing scheduled job immediately, id: {}", id)
 
         val job = getSysJob(id) ?: return false
         return try {
-            // 创建临时任务立即执行
+            // Create temporary job to execute immediately
             val jobKey = JobKey.jobKey(job.jobName + "_ONCE", job.jobGroup)
 
-            // 先删除可能存在的旧任务
+            // First delete old job if it exists
             if (getScheduler().checkExists(jobKey)) {
                 getScheduler().deleteJob(jobKey)
             }
 
-            // 创建 JobDetail
+            // Create JobDetail
             val jobDataMap = JobDataMap()
             jobDataMap.put("sysJob", job)
 
@@ -230,7 +230,7 @@ class SysJobServiceImpl(
                 .usingJobData(jobDataMap)
                 .build()
 
-            // 创建立即执行的 Trigger
+            // Create trigger to execute immediately
             val trigger = TriggerBuilder.newTrigger()
                 .withIdentity(job.jobName + "_ONCE_TRIGGER", job.jobGroup)
                 .startNow()
@@ -239,30 +239,30 @@ class SysJobServiceImpl(
             getScheduler().scheduleJob(jobDetail, trigger)
             true
         } catch (e: Exception) {
-            log.error("立即执行定时任务失败", e)
-            throw BizException("立即执行定时任务失败: ${e.message}")
+            log.error("Failed to execute scheduled job immediately", e)
+            throw BizException("Failed to execute scheduled job immediately: ${e.message}")
         }
     }
 
     override fun loadJobsToScheduler() {
-        log.info("加载所有运行中的定时任务到调度器")
+        log.info("Loading all running scheduled jobs to scheduler")
 
         val runningJobs = getRunningJobs()
         for (job in runningJobs) {
             try {
                 scheduleJob(job)
-                log.info("已加载定时任务: {}.{}", job.jobGroup, job.jobName)
+                log.info("Scheduled job loaded: {}.{}", job.jobGroup, job.jobName)
             } catch (e: Exception) {
-                log.error("加载定时任务失败: {}.{}", job.jobGroup, job.jobName, e)
+                log.error("Failed to load scheduled job: {}.{}", job.jobGroup, job.jobName, e)
             }
         }
-        log.info("共加载 {} 个定时任务", runningJobs.size)
+        log.info("Total {} scheduled jobs loaded", runningJobs.size)
     }
 
     override fun getRunningJobs(): List<SysJob> = sysJobMapper.selectRunningJobs()
 
     /**
-     * 保存定时任务
+     * Save scheduled job
      */
     private fun saveJob(job: SysJob): Boolean {
         job.createTime = LocalDateTime.now()
@@ -271,7 +271,7 @@ class SysJobServiceImpl(
     }
 
     /**
-     * 更新定时任务
+     * Update scheduled job
      */
     private fun updateJobById(job: SysJob): Boolean {
         job.updateTime = LocalDateTime.now()
@@ -279,20 +279,20 @@ class SysJobServiceImpl(
     }
 
     /**
-     * 调度定时任务
+     * Schedule scheduled job
      *
-     * @param job 定时任务实体
-     * @throws Exception 调度异常
+     * @param job Scheduled job entity
+     * @throws Exception Scheduling exception
      */
     @Throws(Exception::class)
     private fun scheduleJob(job: SysJob) {
-        // 获取任务类
+        // Get job class
         val jobClass = getJobClass(job.jobClass)
 
-        // 构建 JobDetail
+        // Build JobDetail
         val jobKey = JobKey.jobKey(job.jobName, job.jobGroup)
 
-        // 如果任务已存在，先删除
+        // If job already exists, delete it first
         if (getScheduler().checkExists(jobKey)) {
             getScheduler().deleteJob(jobKey)
         }
@@ -305,15 +305,15 @@ class SysJobServiceImpl(
             .usingJobData(jobDataMap)
             .build()
 
-        // 构建 CronTrigger
+        // Build CronTrigger
         var cronScheduleBuilder = CronScheduleBuilder.cronSchedule(job.cronExpression)
 
-        // 根据并发设置
+        // Based on concurrent setting
         if (job.concurrent != null && job.concurrent == 0) {
-            // 禁止并发执行
+            // Disable concurrent execution
             cronScheduleBuilder = cronScheduleBuilder.withMisfireHandlingInstructionDoNothing()
         } else {
-            // 允许并发执行
+            // Allow concurrent execution
             cronScheduleBuilder = cronScheduleBuilder.withMisfireHandlingInstructionFireAndProceed()
         }
 
@@ -326,33 +326,33 @@ class SysJobServiceImpl(
     }
 
     /**
-     * 获取任务类
+     * Get job class
      *
-     * @param className 类全路径名
-     * @return Job 类
-     * @throws ClassNotFoundException 类不存在异常
+     * @param className Full class path name
+     * @return Job class
+     * @throws ClassNotFoundException Class not found exception
      */
     @Throws(ClassNotFoundException::class)
     @Suppress("UNCHECKED_CAST")
     private fun getJobClass(className: String): Class<out Job> {
         val clazz = Class.forName(className)
         if (!Job::class.java.isAssignableFrom(clazz)) {
-            throw BizException("任务类必须实现 org.quartz.Job 接口")
+            throw BizException("Job class must implement org.quartz.Job interface")
         }
         return clazz as Class<out Job>
     }
 
     /**
-     * 应用启动后加载所有运行中的任务
+     * Load all running jobs after application startup
      */
     @PostConstruct
     fun init() {
         try {
-            // 等待调度器初始化完成
+            // Wait for scheduler initialization to complete
             Thread.sleep(3000)
             loadJobsToScheduler()
         } catch (e: Exception) {
-            log.error("初始化定时任务失败", e)
+            log.error("Failed to initialize scheduled jobs", e)
         }
     }
 }

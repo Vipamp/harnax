@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
 /**
- * 模型服务商服务实现类
+ * Model provider service implementation
  *
  * @author vipamp
  * @since 2026-03-13
@@ -34,7 +34,7 @@ class ModelProviderServiceImpl(
     private val log = LoggerFactory.getLogger(ModelProviderServiceImpl::class.java)
 
     override fun page(name: String?, type: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider> {
-        // 获取当前用户
+        // Get current user
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<Agent>(pageNum, pageSize)
         return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentUsername))
@@ -43,22 +43,22 @@ class ModelProviderServiceImpl(
     override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
 
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
-        // 检查供应商名称是否已存在
+        // Check if provider name already exists
         if (modelProviderMapper.countByName(request.name) > 0) {
-            throw BizException("供应商名称已存在")
+            throw BizException("Provider name already exists")
         }
 
         val modelProvider = ModelProvider()
         modelProvider.type = request.type
         modelProvider.name = request.name
         modelProvider.description = request.description
-        modelProvider.apiKey = request.apiKey // 允许为 null
-        modelProvider.baseUrl = request.baseUrl // 允许为 null
+        modelProvider.apiKey = request.apiKey // Allow null
+        modelProvider.baseUrl = request.baseUrl // Allow null
         modelProvider.isPublic = request.isPublic ?: 1
-        modelProvider.status = 1 // 默认启用
-        modelProvider.active = 1 // 默认正常
+        modelProvider.status = 1 // Default enabled
+        modelProvider.active = 1 // Default active
 
-        // 设置创建人
+        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         modelProvider.creator = currentUsername
         modelProvider.createTime = LocalDateTime.now()
@@ -69,29 +69,29 @@ class ModelProviderServiceImpl(
 
     override fun updateModelProvider(id: Long, request: ModelProviderUpdateRequest): Boolean {
         val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException("供应商不存在")
+            ?: throw BizException("Provider not found")
 
-        // 如果修改了名称，检查是否重复
+        // If name is modified, check for duplicates
         if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
             if (modelProviderMapper.countByName(request.name) > 0) {
-                throw BizException("供应商名称已存在")
+                throw BizException("Provider name already exists")
             }
             modelProvider.name = request.name
         }
 
-        // 如果修改了类型，直接更新（类型不校验唯一性）
+        // If type is modified, update directly (type does not require uniqueness check)
         if (!request.type.isNullOrBlank() && request.type != modelProvider.type) {
             modelProvider.type = request.type
         }
 
-        // 更新描述字段
+        // Update description field
         if (request.description != null) {
             modelProvider.description = request.description
         }
 
-        // 更新其他字段（只更新非 null 字段）
+        // Update other fields (only update non-null fields)
         request.apiKey?.let { apiKey ->
-            // 如果 API Key 不为空且不是脱敏格式，则更新
+            // If API Key is not empty and not in masked format, update it
             if (apiKey.isNotBlank() && !apiKey.contains("****")) {
                 modelProvider.apiKey = apiKey
             }
@@ -105,12 +105,12 @@ class ModelProviderServiceImpl(
 
     override fun updateStatus(id: Long, status: Int): Boolean {
         val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException("模型服务商不存在")
+            ?: throw BizException("Model provider not found")
 
-        // 如果要禁用，检查是否有启用的模型
+        // If disabling, check if there are enabled models
         if (modelProvider.status == 1 && status == 0) {
             if (modelMapper.countActiveModelsByProviderId(id) > 0) {
-                throw BizException("该服务商下有启用的模型，无法禁用")
+                throw BizException("Cannot disable: there are enabled models under this provider")
             }
         }
 
@@ -120,9 +120,9 @@ class ModelProviderServiceImpl(
     override fun toggleModelProvider(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModelProvider(id: Long): Boolean {
-        // 检查是否有启用的模型
+        // Check if there are enabled models
         if (modelMapper.countActiveModelsByProviderId(id) > 0) {
-            throw BizException("该服务商下有启用的模型，无法删除")
+            throw BizException("Cannot delete: there are enabled models under this provider")
         }
         return modelProviderMapper.deleteById(id) > 0
     }
@@ -138,10 +138,10 @@ class ModelProviderServiceImpl(
 
     override fun connectivityTest(id: Long): Boolean {
         val modelProvider = this.modelProviderMapper.selectById(id)
-            ?: throw BizException("模型服务商不存在")
+            ?: throw BizException("Model provider not found")
 
-        // TODO: 实现实际的连接测试逻辑
-        // 目前直接返回 true
+        // TODO: Implement actual connectivity test logic
+        // Currently returns true directly
         return true
     }
 }
