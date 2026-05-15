@@ -1,4 +1,4 @@
-# 个人版功能开关配置
+# Personal edition feature toggle configuration
 vipclaw:
   edition: personal
   features:
@@ -12,7 +12,7 @@ vipclaw:
     phone-login: false
     email-login: false
 
-# 生产环境禁用 Swagger
+# Disable Swagger in production
 springdoc:
   api-docs:
     enabled: false

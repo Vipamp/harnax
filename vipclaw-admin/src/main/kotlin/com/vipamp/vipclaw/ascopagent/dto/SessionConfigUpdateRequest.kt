@@ -3,20 +3,16 @@ package com.vipamp.vipclaw.ascopagent.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 会话配置更新请求 DTO
- *
- * @Author: heqingsong
- * @Date: 2026/4/27
- * @Project: vipclaw
+ * Session configuration update request DTO
  */
-@Schema(description = "会话配置更新请求")
+@Schema(description = "Session configuration update request")
 data class SessionConfigUpdateRequest(
-    @Schema(description = "是否启用深度思考")
+    @Schema(description = "Enable deep thinking")
     val enableThink: Boolean = false,
 
-    @Schema(description = "是否启用联网搜索")
+    @Schema(description = "Enable web search")
     val enableSearch: Boolean = false,
 
-    @Schema(description = "是否启用计划")
+    @Schema(description = "Enable planning")
     val enablePlan: Boolean = false,
 )

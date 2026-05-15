@@ -6,33 +6,33 @@ import java.time.Duration
 import java.time.LocalDateTime
 
 /**
- * 定时任务日志响应对象
+ * Scheduled job log response object
  */
-@Schema(description = "定时任务日志响应对象")
+@Schema(description = "Scheduled job log response object")
 data class SysJobLogResponse(
-    @Schema(description = "日志ID", example = "1")
+    @Schema(description = "Log ID", example = "1")
     val id: Long? = null,
-    @Schema(description = "任务ID", example = "1")
+    @Schema(description = "Job ID", example = "1")
     val jobId: Long? = null,
-    @Schema(description = "任务名称", example = "示例任务")
+    @Schema(description = "Job name", example = "Sample Job")
     val jobName: String? = null,
-    @Schema(description = "任务组名", example = "DEFAULT")
+    @Schema(description = "Job group name", example = "DEFAULT")
     val jobGroup: String? = null,
-    @Schema(description = "调用目标", example = "com.vipclaw.admin.job.SampleJob")
+    @Schema(description = "Invoke target", example = "com.vipclaw.admin.job.SampleJob")
     val invokeTarget: String? = null,
-    @Schema(description = "执行信息", example = "任务执行成功")
+    @Schema(description = "Execution message", example = "Job executed successfully")
     val jobMessage: String? = null,
-    @Schema(description = "执行状态（0-失败，1-成功）", example = "1")
+    @Schema(description = "Execution status (0:failed, 1:success)", example = "1")
     val status: Int? = null,
-    @Schema(description = "异常信息")
+    @Schema(description = "Exception information")
     val exceptionInfo: String? = null,
-    @Schema(description = "开始时间", example = "2026-03-16 12:00:00")
+    @Schema(description = "Start time", example = "2026-03-16 12:00:00")
     val startTime: LocalDateTime? = null,
-    @Schema(description = "结束时间", example = "2026-03-16 12:00:05")
+    @Schema(description = "End time", example = "2026-03-16 12:00:05")
     val endTime: LocalDateTime? = null,
-    @Schema(description = "执行耗时（毫秒）", example = "5000")
+    @Schema(description = "Execution duration (milliseconds)", example = "5000")
     var duration: Long? = null,
-    @Schema(description = "创建时间", example = "2026-03-16 12:00:00")
+    @Schema(description = "Creation time", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,
 ) {
     companion object {

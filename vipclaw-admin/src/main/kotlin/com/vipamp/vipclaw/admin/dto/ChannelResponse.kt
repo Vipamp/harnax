@@ -5,56 +5,53 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
 /**
- * Channel 响应 DTO
- *
- * @author vipamp
- * @since 2026-04-08
+ * Channel response DTO
  */
-@Schema(description = "Channel 响应对象")
+@Schema(description = "Channel response object")
 data class ChannelResponse(
     @Schema(description = "ID")
     val id: Long? = null,
 
-    @Schema(description = "通道名称")
+    @Schema(description = "Channel name")
     val name: String? = null,
 
-    @Schema(description = "类型(wecom/feishu/dingtalk/http)")
+    @Schema(description = "Type (wecom/feishu/dingtalk/http)")
     val type: String? = null,
 
-    @Schema(description = "类型显示名称")
+    @Schema(description = "Type display name")
     val typeDisplayName: String? = null,
 
-    @Schema(description = "关联的智能体ID")
+    @Schema(description = "Associated agent ID")
     val agentId: Long? = null,
 
-    @Schema(description = "智能体名称")
+    @Schema(description = "Agent name")
     var agentName: String? = null,
 
-    @Schema(description = "推送地址")
+    @Schema(description = "Webhook URL")
     val webhookUrl: String? = null,
 
-    @Schema(description = "验证Token")
+    @Schema(description = "Verification token")
     val token: String? = null,
 
-    @Schema(description = "加密密钥(企业微信)")
+    @Schema(description = "Encryption key (for WeCom)")
     val encodingAesKey: String? = null,
 
-    @Schema(description = "应用ID(飞书/钉钉)")
+    @Schema(description = "App ID (for Feishu/DingTalk)")
     val appId: String? = null,
 
-    @Schema(description = "应用密钥")
+    @Schema(description = "App secret")
     val appSecret: String? = null,
 
-    @Schema(description = "回调标识(用于生成回调URL)")
+    @Schema(description = "Callback key (used to generate callback URL)")
     val callbackKey: String? = null,
 
-    @Schema(description = "回调URL")
+    @Schema(description = "Callback URL")
     var callbackUrl: String? = null,
 
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     val description: String? = null,
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     val status: Int? = null,
 
     @Schema(description = "Creation time")
@@ -65,18 +62,18 @@ data class ChannelResponse(
 ) {
     companion object {
         /**
-         * 获取类型显示名称
+         * Get type display name
          */
         fun getTypeDisplayName(type: String?): String = when (type) {
-            "wecom" -> "企业微信"
-            "feishu" -> "飞书"
-            "dingtalk" -> "钉钉"
-            "http" -> "HTTP接口"
+            "wecom" -> "Enterprise WeChat"
+            "feishu" -> "Feishu"
+            "dingtalk" -> "DingTalk"
+            "http" -> "HTTP Interface"
             else -> type ?: ""
         }
 
         /**
-         * 从实体对象转换
+         * Convert from entity object
          */
         fun fromEntity(channel: Channel): ChannelResponse = ChannelResponse(
             id = channel.id,

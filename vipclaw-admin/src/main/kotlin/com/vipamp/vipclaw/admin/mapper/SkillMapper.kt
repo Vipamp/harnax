@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * Skill Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
-*/
+ * Skill Mapper interface
+ */
 @Mapper
 interface SkillMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): Skill?
 
@@ -23,7 +20,7 @@ interface SkillMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectSkillList(
         @Param("name") name: String?,
         @Param("repositoryId") repositoryId: Long?,

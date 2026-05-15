@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.vipamp.vipclaw.admin.mapper.TokenStatsMapper">
 
-    <!-- 结果映射 -->
+    <!-- Result Map -->
     <resultMap id="TokenStatsResultMap" type="com.vipamp.vipclaw.admin.entity.TokenStats">
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
@@ -15,7 +15,7 @@
         <result column="ts" property="ts"/>
     </resultMap>
 
-    <!-- ==================== 基础 CRUD 方法 ==================== -->
+    <!-- ==================== Basic CRUD Methods ==================== -->
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

@@ -5,10 +5,7 @@ import io.agentscope.core.skill.repository.GitSkillRepository
 import java.nio.file.Path
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/26
  * @Description: SkillRepositoryLoader
- * @Project: vipclaw
  */
 object GitSkillLoader {
 

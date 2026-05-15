@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
- * McpConfigAdaptor 实现类
- * 从数据库加载 MCP 配置并转换为 McpConfig
+ * McpConfigAdaptor Implementation
+ * Loads MCP configuration from database and converts to McpConfig
  */
 @Component
 class McpConfigAdaptorImpl(
@@ -24,19 +24,19 @@ class McpConfigAdaptorImpl(
             return null
         }
 
-        // 查询 MCP 服务信息
+        // Query MCP server information
         val mcpServer = mcpServerMapper.selectById(mcpId)
         if (mcpServer == null) {
             log.warn("McpServer not found: $mcpId")
             return null
         }
 
-        // 根据 MCP 类型创建对应的配置
+        // Create corresponding configuration based on MCP type
         return buildMcpConfig(mcpServer)
     }
 
     /**
-     * 根据 MCP 类型构建 McpConfig
+     * Build McpConfig based on MCP type
      */
     private fun buildMcpConfig(mcpServer: McpServer): McpConfig? = when (val type = mcpServer.type.lowercase()) {
         "stdio" -> StdioMcpConfig(

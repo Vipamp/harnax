@@ -12,7 +12,7 @@ import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 /**
- * Spring Security 配置
+ * Spring Security configuration
  */
 @Configuration
 @EnableWebSecurity
@@ -48,7 +48,7 @@ class SecurityConfig(
                 exceptions.authenticationEntryPoint { _, response, authException ->
                     response.contentType = "application/json;charset=UTF-8"
                     response.writer.write(
-                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "认证失败"}"}""",
+                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "Authentication failed"}"}""",
                     )
                 }
             }
@@ -57,7 +57,7 @@ class SecurityConfig(
     }
 
     /**
-     * CORS 配置源
+     * CORS configuration source
      */
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {

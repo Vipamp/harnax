@@ -7,35 +7,35 @@ import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
 
 /**
- * 模型服务商响应对象
+ * Model provider response object
  */
-@Schema(description = "模型服务商响应对象")
+@Schema(description = "Model provider response object")
 data class ModelProviderResponse(
     @Schema(description = "ID", example = "1")
     var id: Long = 0,
-    @Schema(description = "服务商类型（dashscope/openai/ollama）", example = "dashscope")
+    @Schema(description = "Provider type (dashscope/openai/ollama)", example = "dashscope")
     var type: String = "",
-    @Schema(description = "名称", example = "阿里云 DashScope")
+    @Schema(description = "Name", example = "Alibaba Cloud DashScope")
     var name: String = "",
-    @Schema(description = "描述", example = "阿里云提供的大语言模型 API 服务")
+    @Schema(description = "Description", example = "Large language model API service provided by Alibaba Cloud")
     var description: String? = null,
 
-    @field:Size(max = 500, message = "API 密钥长度不能超过 500 个字符")
-    @Schema(description = "API 密钥（敏感信息）", example = "sk-xxxxxxxxxxxxxxxx")
+    @field:Size(max = 500, message = "API key length cannot exceed 500 characters")
+    @Schema(description = "API key (sensitive information)", example = "sk-xxxxxxxxxxxxxxxx")
     val apiKey: String? = null,
 
     @field:Pattern(
         regexp = "^(https?:\\/\\/)?([\\w.-]+)(:\\d+)?(\\/[^\\s]*)?$|^$",
-        message = "API URL格式不正确",
+        message = "Invalid API URL format",
     )
-    @Schema(description = "API 基础地址（可为空）", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    @Schema(description = "API base URL (can be empty)", example = "https://dashscope.aliyuncs.com/compatible-mode/v1")
     val baseUrl: String? = null,
 
-    @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     var status: Int = 1,
-    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     var isPublic: Int = 0,
-    @Schema(description = "创建人", example = "admin")
+    @Schema(description = "Creator", example = "admin")
     var creator: String = "",
     @Schema(description = "Creation time", example = "2026-03-13 12:00:00")
     var createTime: LocalDateTime = LocalDateTime.now(),
@@ -58,8 +58,8 @@ data class ModelProviderResponse(
         )
 
         /**
-         * API Key 脱敏处理
-         * 规则：前 2 位 + **** + 后 4 位
+         * API Key masking
+         * Rule: first 2 chars + **** + last 4 chars
          */
         private fun maskApiKey(apiKey: String?): String? {
             if (apiKey.isNullOrEmpty()) return apiKey

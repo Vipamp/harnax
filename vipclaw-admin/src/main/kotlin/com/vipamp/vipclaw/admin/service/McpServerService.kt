@@ -8,88 +8,85 @@ import com.vipamp.vipclaw.admin.entity.McpServer
 import io.modelcontextprotocol.spec.McpSchema
 
 /**
- * MCP 服务接口
- *
- * @author vipamp
- * @since 2026-03-12
+ * MCP server service interface
  */
 interface McpServerService {
 
     /**
-     * 分页查询 MCP 服务列表
+     * Query MCP server list with pagination
      *
-     * @param keyword  模糊查询字段（名称/描述）
-     * @param status   状态筛选字段
-     * @param type     类型筛选字段（如：stdio/sse/streamablehttp）
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param keyword  Fuzzy search field (name/description)
+     * @param status   Status filter field
+     * @param type     Type filter field (e.g.: stdio/sse/streamablehttp)
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(keyword: String?, status: Int?, type: String?, pageNum: Int, pageSize: Int): Page<McpServer>
 
     /**
-     * 获取单个 MCP 服务详情
+     * Get single MCP server details
      *
      * @param id MCP ID
-     * @return MCP 服务实体
+     * @return MCP server entity
      */
     fun getMcpServer(id: Long): McpServer?
 
     /**
-     * 创建 MCP 服务
+     * Create MCP server
      *
-     * @param request MCP 服务创建请求对象
-     * @return 创建结果
+     * @param request MCP server create request object
+     * @return Create result
      */
     fun createMcpServer(request: McpServerCreateRequest): Boolean
 
     /**
-     * 更新 MCP 服务
+     * Update MCP server
      *
      * @param id      MCP ID
-     * @param request MCP 服务更新请求对象
-     * @return 更新结果
+     * @param request MCP server update request object
+     * @return Update result
      */
     fun updateMcpServer(id: Long, request: McpServerUpdateRequest): Boolean
 
     /**
-     * 切换 MCP 服务启用状态
+     * Toggle MCP server enable status
      *
      * @param id     MCP ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleMcpServerStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除 MCP 服务（逻辑删除）
+     * Delete MCP server (logical delete)
      *
      * @param id MCP ID
-     * @return 删除结果
+     * @return Delete result
      */
     fun deleteMcpServer(id: Long): Boolean
 
     /**
-     * MCP 服务连通性测试
+     * MCP server connectivity test
      *
      * @param id MCP ID
-     * @return 连通测试结果（true: 成功，false: 失败）
+     * @return Connection test result (true: success, false: failed)
      */
     fun connectivityTest(id: Long): Boolean
 
     /**
-     * 将 MCP 服务实体转换为响应对象
+     * Convert MCP server entity to response object
      *
-     * @param mcpServer MCP 服务实体
-     * @return MCP 服务响应对象
+     * @param mcpServer MCP server entity
+     * @return MCP server response object
      */
     fun convertToResponse(mcpServer: McpServer): McpServerResponse
 
     /**
-     * 列出 MCP 配置中的工具列表
+     * List tools from MCP configuration
      *
-     * @param mcpConfig MCP 配置对象
-     * @return 工具列表
+     * @param mcpConfig MCP configuration object
+     * @return Tool list
      */
     fun listTools(mcpId: Long): List<McpSchema.Tool>
 }

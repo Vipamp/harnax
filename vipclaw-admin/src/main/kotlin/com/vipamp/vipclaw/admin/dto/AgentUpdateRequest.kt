@@ -5,9 +5,6 @@ import jakarta.validation.constraints.Size
 
 /**
  * Agent update request DTO
- *
- * @author vipamp
- * @since 2026-03-18
  */
 @Schema(description = "Agent update request object")
 data class AgentUpdateRequest(
@@ -15,7 +12,7 @@ data class AgentUpdateRequest(
     var id: Long? = null,
 
     @Schema(description = "Agent name", example = "assistant")
-    @Size(min = 1, max = 100, message = "Agent name长度必须在 1-100 之间")
+    @Size(min = 1, max = 100, message = "Agent name length must be between 1-100")
     val name: String? = null,
 
     @Schema(description = "Agent description")
@@ -27,18 +24,18 @@ data class AgentUpdateRequest(
     @Schema(description = "Chat model ID", example = "1")
     val modelId: Long? = null,
 
-    @Schema(description = "MCP 服务列表")
+    @Schema(description = "MCP service list")
     val mcpList: List<AgentCreateRequest.McpConfig>? = null,
 
-    @Schema(description = "技能 ID 列表（逗号分隔）", example = "1,2,3")
+    @Schema(description = "Skill ID list (comma separated)", example = "1,2,3")
     val skillList: String? = null,
 
-    @Schema(description = "所有者")
+    @Schema(description = "Owner")
     val owner: String? = null,
 
-    @Schema(description = "状态 (0:禁用 1:正常)", example = "1")
+    @Schema(description = "Status (0:disabled 1:enabled)", example = "1")
     val status: Int? = null,
 
-    @Schema(description = "是否公开 (0:否 1:是)", example = "1")
+    @Schema(description = "Is public (0:false 1:true)", example = "1")
     val isPublic: Int? = null,
 )

@@ -16,7 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter
 import java.io.IOException
 
 /**
- * JWT 认证过滤器
+ * JWT authentication filter
  */
 @Component
 class JwtAuthenticationFilter(
@@ -36,14 +36,14 @@ class JwtAuthenticationFilter(
         try {
             val token = resolveToken(request)
             if (token == null) {
-                log.info("[JWT Filter] 请求未携带 Token: {}", requestURI)
+                log.info("[JWT Filter] Request without token: {}", requestURI)
             } else {
-                log.info("[JWT Filter] 开始验证 Token, URI: {}, token 前缀: {}", requestURI, token.take(20))
+                log.info("[JWT Filter] Start validating token, URI: {}, token prefix: {}", requestURI, token.take(20))
                 val res = tokenBlacklistService.isBlacklisted(token)
                 if (res) {
-                    log.warn("[JWT Filter] Token 已在黑名单中，拒绝访问: {}", requestURI)
-                    // 抛出异常，由 SecurityConfig 的 authenticationEntryPoint 统一处理
-                    throw org.springframework.security.authentication.AuthenticationServiceException("Token 已失效，请重新登录")
+                    log.warn("[JWT Filter] Token is in blacklist, access denied: {}", requestURI)
+                    // Throw exception, handled uniformly by authenticationEntryPoint in SecurityConfig
+                    throw org.springframework.security.authentication.AuthenticationServiceException("Token has expired, please login again")
                 }
 
                 if (jwtUtil.validateToken(token)) {
@@ -56,13 +56,13 @@ class JwtAuthenticationFilter(
                     )
                     authentication.details = WebAuthenticationDetailsSource().buildDetails(request)
                     SecurityContextHolder.getContext().authentication = authentication
-                    log.info("[JWT Filter] JWT 认证成功，userId: {}, username: {}, URI: {}", userId, username, requestURI)
+                    log.info("[JWT Filter] JWT authentication successful, userId: {}, username: {}, URI: {}", userId, username, requestURI)
                 } else {
-                    log.warn("[JWT Filter] Token 无效或已过期，URI: {}, token 前缀: {}", requestURI, token.take(20))
+                    log.warn("[JWT Filter] Token is invalid or expired, URI: {}, token prefix: {}", requestURI, token.take(20))
                 }
             }
         } catch (e: Exception) {
-            log.error("[JWT Filter] JWT 认证失败：{}", e.message, e)
+            log.error("[JWT Filter] JWT authentication failed: {}", e.message, e)
         }
 
         filterChain.doFilter(request, response)

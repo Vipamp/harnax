@@ -16,10 +16,7 @@ import org.springframework.web.server.ResponseStatusException
 import reactor.core.publisher.Flux
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/12
  * @Description: ChatController
- * @Project: vipclaw
  */
 @RestController
 @RequestMapping("/ai")
@@ -29,36 +26,36 @@ class ChatController(
 ) {
 
     /**
-     * 手动验证 JWT Token（WebFlux 端点需要）
+     * Manual JWT Token validation (required for WebFlux endpoints)
      */
     private fun validateJwtToken(request: HttpServletRequest) {
         val authHeader = request.getHeader("Authorization")
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未授权或 Token 无效")
+            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized or invalid token")
         }
 
         val token = authHeader.substring(7)
         if (!jwtUtil.validateToken(token)) {
-            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token 无效或已过期")
+            throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token")
         }
     }
 
     @PostMapping("/chat", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    @Schema(description = "聊天")
+    @Schema(description = "Chat")
     fun chat(@RequestBody request: ChatRequest, httpServletRequest: HttpServletRequest): Flux<ChatEvent> {
         validateJwtToken(httpServletRequest)
         return chatService.chat(request)
     }
 
     @PostMapping("/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    @Schema(description = "工具执行确认")
+    @Schema(description = "Tool execution confirmation")
     fun confirm(@RequestBody request: ConfirmRequest, httpServletRequest: HttpServletRequest): Flux<ChatEvent> {
         validateJwtToken(httpServletRequest)
         return chatService.confirm(request)
     }
 
     @DeleteMapping("/session/{sessionId}")
-    @Schema(description = "清空当前会话")
+    @Schema(description = "Clear current session")
     fun clearSession(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<String> {
         validateJwtToken(httpServletRequest)
         try {
@@ -70,7 +67,7 @@ class ChatController(
     }
 
     @GetMapping("/session/{sessionId}")
-    @Schema(description = "获取历史会话")
+    @Schema(description = "Get historical session")
     fun getSession(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<List<MessageLog>> {
         validateJwtToken(httpServletRequest)
         try {
@@ -81,7 +78,7 @@ class ChatController(
     }
 
     @GetMapping("/session/{sessionId}/plans")
-    @Schema(description = "获取会话的历史计划列表")
+    @Schema(description = "Get session history plan list")
     fun getSessionPlans(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<List<PlanNote>> {
         validateJwtToken(httpServletRequest)
         try {
@@ -92,7 +89,7 @@ class ChatController(
     }
 
     @GetMapping("/session/{sessionId}/current-plan")
-    @Schema(description = "获取会话的当前计划")
+    @Schema(description = "Get session current plan")
     fun getCurrentPlan(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<PlanNote?> {
         validateJwtToken(httpServletRequest)
         return try {

@@ -4,54 +4,54 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "用户实体类")
+@Schema(description = "User entity")
 class SysUser : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @Schema(description = "用户 ID")
+    @Schema(description = "User ID")
     var id: Long = 0
 
-    @Schema(description = "所属租户ID（主要租户）")
+    @Schema(description = "Tenant ID (primary tenant)")
     var tenantId: Long? = null
 
-    @Schema(description = "用户名")
+    @Schema(description = "Username")
     var username: String = ""
 
-    @Schema(description = "密码")
+    @Schema(description = "Password")
     var password: String = ""
 
-    @Schema(description = "昵称")
+    @Schema(description = "Nickname")
     var nickname: String = ""
 
-    @Schema(description = "邮箱")
+    @Schema(description = "Email")
     var email: String = ""
 
-    @Schema(description = "手机号")
+    @Schema(description = "Phone number")
     var phone: String = ""
 
-    @Schema(description = "性别 (0:女 1:男 2:未知)")
+    @Schema(description = "Gender (0:female, 1:male, 2:unknown)")
     var gender: Int = 2
 
-    @Schema(description = "头像 URL")
+    @Schema(description = "Avatar URL")
     var avatar: String? = null
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "是否是管理员(0:否,1:是)")
+    @Schema(description = "Admin status (0:no, 1:yes)")
     var isAdmin: Int = 0
 
-    @Schema(description = "最近一次登录时间")
+    @Schema(description = "Last login time")
     var lastLoginTime: LocalDateTime? = null
 
-    @Schema(description = "是否可用(0:被删除,1:可用)")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

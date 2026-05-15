@@ -20,9 +20,6 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * User service implementation
- *
- * @author vipamp
- * @since 2026-03-05
  */
 @Service
 class SysUserServiceImpl(
@@ -63,24 +60,24 @@ class SysUserServiceImpl(
         if (!isPersonal) {
             // Validate email is required
             if (request.email.isNullOrBlank()) {
-                throw BizException("Email cannot be empty")
+                throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
             }
 
             // Validate phone is required
             if (request.phone.isNullOrBlank()) {
-                throw BizException("Phone cannot be empty")
+                throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
             }
 
             // Validate email format
             val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
             if (!emailRegex.matches(request.email)) {
-                throw BizException("Invalid email format")
+                throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
             }
 
             // Validate phone format
             val phoneRegex = Regex("^1[3-9]\\d{9}$")
             if (!phoneRegex.matches(request.phone)) {
-                throw BizException("Invalid phone format")
+                throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
             }
         }
 
@@ -136,12 +133,12 @@ class SysUserServiceImpl(
         if (!isPersonal) {
             // Validate email is required
             if (request.email.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "邮箱"))
+                throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
             }
 
             // Validate phone is required
             if (request.phone.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "手机号"))
+                throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
             }
 
             // Validate email format
@@ -187,11 +184,11 @@ class SysUserServiceImpl(
             if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
                 val phoneRegex = Regex("^1[3-9]\\d{9}$")
                 if (!phoneRegex.matches(request.phone)) {
-                    throw BizException("Invalid phone format")
+                    throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
                 }
                 val existPhone = sysUserMapper.selectByPhone(request.phone)
                 if (existPhone != null) {
-                    throw BizException("Phone already exists")
+                    throw BizException(messageUtil.getMessage("error.user.phone_exists"))
                 }
             }
         }
@@ -235,7 +232,7 @@ class SysUserServiceImpl(
                     tenant?.name
                 }
 
-                val tenantNamesStr = tenantNames.joinToString("、")
+                val tenantNamesStr = tenantNames.joinToString(", ")
                 log.warn("User is tenant admin, not allowed to disable, userId: {}, tenantNames: {}", id, tenantNamesStr)
                 throw BizException(messageUtil.getMessage("error.user.is_tenant_admin_cannot_disable", *arrayOf(tenantNamesStr)))
             }
@@ -267,7 +264,7 @@ class SysUserServiceImpl(
                 tenant?.name
             }
 
-            val tenantNamesStr = tenantNames.joinToString("、")
+            val tenantNamesStr = tenantNames.joinToString(", ")
             log.warn("User is tenant admin, not allowed to delete, userId: {}, tenantNames: {}", id, tenantNamesStr)
             throw BizException(messageUtil.getMessage("error.user.is_tenant_admin", *arrayOf(tenantNamesStr)))
         }

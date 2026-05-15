@@ -7,12 +7,8 @@ import io.modelcontextprotocol.spec.McpSchema
 import org.slf4j.LoggerFactory
 
 /**
- * MCP 客户端辅助工具类
- * 提供基于 McpConfig 创建 McpClientBuilder 的方法
- *
- * @Author: heqingsong
- * @Date: 2026/3/25
- * @Project: vipclaw
+ * MCP Client Helper Utility
+ * Provides methods to create McpClientBuilder based on McpConfig
  */
 object McpHelper {
 
@@ -35,12 +31,12 @@ object McpHelper {
     }
 
     /**
-     * 根据 MCP 配置创建 MCP 客户端
+     * Create MCP client based on configuration
      *
-     * @param mcpConfig MCP 配置，支持 StdioMcpConfig、SseHttpMcpConfig、StreamableHttpMcpConfig
-     * @param isAsync 是否异步创建客户端
-     * @return McpClientWrapper 实例
-     * @throws McpErrorCode.MCP_CLIENT_CREATE_FAILED 当客户端创建失败时抛出
+     * @param mcpConfig MCP configuration, supports StdioMcpConfig, SseHttpMcpConfig, StreamableHttpMcpConfig
+     * @param isAsync Whether to create client asynchronously
+     * @return McpClientWrapper instance
+     * @throws McpErrorCode.MCP_CLIENT_CREATE_FAILED Thrown when client creation fails
      */
     fun createMcpClient(
         mcpConfig: McpConfig,
@@ -59,40 +55,40 @@ object McpHelper {
     }
 
     /**
-     * 构建 STDIO 类型的 MCP 客户端 Builder
+     * Build STDIO type MCP client Builder
      *
-     * @param mcpConfig STDIO 类型的 MCP 配置
-     * @return McpClientBuilder 实例
+     * @param mcpConfig STDIO type MCP configuration
+     * @return McpClientBuilder instance
      */
     fun buildStdioMcpClient(mcpConfig: StdioMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
         .stdioTransport(mcpConfig.command, mcpConfig.args, mcpConfig.env)
 
     /**
-     * 构建 SSE HTTP 类型的 MCP 客户端 Builder
+     * Build SSE HTTP type MCP client Builder
      *
-     * @param mcpConfig SSE HTTP 类型的 MCP 配置
-     * @return McpClientBuilder 实例
+     * @param mcpConfig SSE HTTP type MCP configuration
+     * @return McpClientBuilder instance
      */
     fun buildSseMcpClient(mcpConfig: SseHttpMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
         .sseTransport(mcpConfig.url)
         .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
 
     /**
-     * 构建 Streamable HTTP 类型的 MCP 客户端 Builder
+     * Build Streamable HTTP type MCP client Builder
      *
-     * @param mcpConfig Streamable HTTP 类型的 MCP 配置
-     * @return McpClientBuilder 实例
+     * @param mcpConfig Streamable HTTP type MCP configuration
+     * @return McpClientBuilder instance
      */
     fun buildStreamableMcpClient(mcpConfig: StreamableHttpMcpConfig): McpClientBuilder = McpClientBuilder.create(mcpConfig.name)
         .streamableHttpTransport(mcpConfig.url)
         .applyHttpTransport(mcpConfig.headers, mcpConfig.queryParam)
 
     /**
-     * 扩展函数：应用 HTTP 传输配置
+     * Extension function: Apply HTTP transport configuration
      *
-     * @param headers HTTP 请求头
-     * @param queryParam URL 查询参数
-     * @return McpClientBuilder 实例
+     * @param headers HTTP request headers
+     * @param queryParam URL query parameters
+     * @return McpClientBuilder instance
      */
     fun McpClientBuilder.applyHttpTransport(
         headers: Map<String, String>,

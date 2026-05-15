@@ -8,95 +8,92 @@ import com.vipamp.vipclaw.admin.entity.Session
 import com.vipamp.vipclaw.ascopagent.dto.SessionConfigResponse
 
 /**
- * 会话服务接口
- *
- * @author vipamp
- * @since 2026-03-25
+ * Session service interface
  */
 interface SessionService {
 
     /**
-     * 分页查询会话列表
+     * Query session list with pagination
      *
-     * @param keyword  模糊查询字段
-     * @param status   状态筛选字段
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param keyword  Fuzzy search field
+     * @param status   Status filter field
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(keyword: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Session>
 
     /**
-     * 获取单个会话详情
+     * Get single session details
      *
-     * @param id 会话 ID
-     * @return 会话实体
+     * @param id Session ID
+     * @return Session entity
      */
     fun getSession(id: Long): Session?
 
     /**
-     * 创建会话
+     * Create session
      *
-     * @param request 会话创建请求对象
-     * @return 创建结果
+     * @param request Session create request object
+     * @return Create result
      */
     fun createSession(request: SessionCreateRequest): Boolean
 
     /**
-     * 更新会话
+     * Update session
      *
-     * @param id      会话 ID
-     * @param request 会话更新请求对象
-     * @return 更新结果
+     * @param id      Session ID
+     * @param request Session update request object
+     * @return Update result
      */
     fun updateSession(id: Long, request: SessionCreateRequest): Boolean
 
     /**
-     * 更新会话配置
+     * Update session configuration
      *
-     * @param sessionId 会话 ID
-     * @param request   会话配置更新请求对象
+     * @param sessionId Session ID
+     * @param request   Session config update request object
      */
     fun updateSessionChatConfig(sessionId: String, request: SessionChatUpdateRequest)
 
     /**
-     * 获取会话配置
+     * Get session configuration
      *
-     * @param sessionId 会话 ID
-     * @return 会话配置响应对象
+     * @param sessionId Session ID
+     * @return Session config response object
      */
     fun getSessionChatConfig(sessionId: String): SessionConfigResponse
 
     /**
-     * 切换会话启用状态
+     * Toggle session enable status
      *
-     * @param id     会话 ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param id     Session ID
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleSessionStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除会话
+     * Delete session
      *
-     * @param id 会话 ID
-     * @return 删除结果
+     * @param id Session ID
+     * @return Delete result
      */
     fun deleteSession(id: Long): Boolean
 
     /**
-     * 检查会话名称是否存在
+     * Check if session name exists
      *
-     * @param title 会话名称
-     * @return 是否存在
+     * @param title Session name
+     * @return Whether exists
      */
     fun existsByTitle(title: String): Boolean
 
     /**
-     * 将 Session 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
+     * Convert Session entity to response DTO (including complete skill and MCP information)
      *
-     * @param session 会话实体
-     * @return 响应 DTO
+     * @param session Session entity
+     * @return Response DTO
      */
     fun convertToResponse(session: Session): SessionResponse
 }

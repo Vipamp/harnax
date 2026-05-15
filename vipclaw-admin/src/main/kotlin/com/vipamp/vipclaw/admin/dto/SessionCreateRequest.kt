@@ -7,9 +7,6 @@ import jakarta.validation.constraints.Size
 
 /**
  * Session creation request object
- *
- * @author vipamp
- * @since 2026-03-25
  */
 @Schema(description = "Session creation request object")
 data class SessionCreateRequest(

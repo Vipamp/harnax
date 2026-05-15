@@ -6,8 +6,8 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 /**
- * Web MVC 配置
- * 注册租户拦截器
+ * Web MVC configuration
+ * Register tenant interceptor
  */
 @Configuration
 class TenantWebMvcConfig(
@@ -16,7 +16,7 @@ class TenantWebMvcConfig(
 ) : WebMvcConfigurer {
 
     override fun addInterceptors(registry: InterceptorRegistry) {
-        // 注册租户拦截器
+        // Register tenant interceptor
         registry.addInterceptor(tenantInterceptor)
             .addPathPatterns("/api/**")
             .excludePathPatterns(
@@ -25,7 +25,7 @@ class TenantWebMvcConfig(
                 "/api/auth/logout",
             )
 
-        // 注册版本控制拦截器
+        // Register edition control interceptor
         registry.addInterceptor(editionInterceptor)
             .addPathPatterns("/api/**")
     }

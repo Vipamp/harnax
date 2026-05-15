@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.*
 import org.springframework.web.method.HandlerMethod
+import java.io.PrintWriter
+import java.io.StringWriter
 import java.lang.reflect.Method
 
 /**
@@ -28,6 +30,8 @@ class EditionInterceptorTest {
         interceptor = EditionInterceptor(editionUtil)
         mockRequest = mock()
         mockResponse = mock()
+        val writer = PrintWriter(StringWriter())
+        whenever(mockResponse.writer).thenReturn(writer)
     }
 
     @Test
@@ -123,7 +127,7 @@ class EditionInterceptorTest {
         assertFalse(result)
         verify(mockResponse).status = HttpServletResponse.SC_NOT_FOUND
         verify(mockResponse).contentType = "application/json;charset=UTF-8"
-        verify(mockResponse).writer.write("""{"code":404,"message":"当前版本不支持此功能"}""")
+        verify(mockResponse).writer.write("""{"code":404,"message":"Feature not supported in current edition"}""")
     }
 
     @Test
@@ -166,7 +170,7 @@ class EditionInterceptorTest {
         assertFalse(result)
         verify(mockResponse).status = HttpServletResponse.SC_INTERNAL_SERVER_ERROR
         verify(mockResponse).contentType = "application/json;charset=UTF-8"
-        verify(mockResponse).writer.write("""{"code":500,"message":"服务器配置错误"}""")
+        verify(mockResponse).writer.write("""{"code":500,"message":"Server configuration error"}""")
     }
 
     @Test

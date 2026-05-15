@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "技能仓库实体类")
+@Schema(description = "Skill repository entity")
 class SkillRepository : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -13,36 +13,36 @@ class SkillRepository : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "仓库名称")
+    @Schema(description = "Repository name")
     var name: String = ""
 
-    @Schema(description = "仓库地址")
+    @Schema(description = "Repository URL")
     var url: String = ""
 
-    @Schema(description = "分支名称", example = "main")
+    @Schema(description = "Branch name", example = "main")
     var branch: String = ""
 
-    @Schema(description = "仓库描述")
+    @Schema(description = "Repository description")
     var description: String = ""
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

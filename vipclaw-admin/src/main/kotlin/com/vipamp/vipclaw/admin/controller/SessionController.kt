@@ -18,9 +18,6 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * Session management controller
- *
- * @author vipamp
- * @since 2026-03-25
  */
 @RestController
 @RequestMapping("/api/sessions")

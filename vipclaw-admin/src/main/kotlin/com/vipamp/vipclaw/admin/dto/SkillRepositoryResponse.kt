@@ -19,11 +19,11 @@ data class SkillRepositoryResponse(
     val branch: String? = null,
     @Schema(description = "Repository description")
     val description: String? = null,
-    @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
-    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int? = null,
-    @Schema(description = "创建人", example = "admin")
+    @Schema(description = "Creator", example = "admin")
     val creator: String? = null,
     @Schema(description = "Creation time", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,

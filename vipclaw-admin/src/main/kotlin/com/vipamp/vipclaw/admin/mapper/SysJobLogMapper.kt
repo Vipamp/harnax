@@ -6,15 +6,12 @@ import org.apache.ibatis.annotations.Param
 import java.time.LocalDateTime
 
 /**
- * SysJobLog Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * SysJobLog Mapper interface
  */
 @Mapper
 interface SysJobLogMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): SysJobLog?
 
@@ -24,7 +21,7 @@ interface SysJobLogMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectJobLogList(
         @Param("jobId") jobId: Long?,
         @Param("jobName") jobName: String?,

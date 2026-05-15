@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * Channel Mapper 接口
- *
- * @author vipamp
- * @since 2026-04-08
+ * Channel Mapper interface
  */
 @Mapper
 interface ChannelMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): Channel?
 
@@ -25,7 +22,7 @@ interface ChannelMapper {
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
 
     fun selectChannelList(
         @Param("keyword") keyword: String?,

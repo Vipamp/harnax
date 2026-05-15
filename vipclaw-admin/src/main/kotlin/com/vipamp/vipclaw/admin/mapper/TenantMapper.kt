@@ -5,46 +5,43 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * 租户 Mapper 接口
- *
- * @author vipamp
- * @since 2026-04-28
+ * Tenant Mapper interface
  */
 @Mapper
 interface TenantMapper {
 
     /**
-     * 根据 ID 查询租户
+     * Query tenant by ID
      */
     fun selectById(@Param("id") id: Long): TenantEntity?
 
     /**
-     * 根据名称查询租户
+     * Query tenant by name
      */
     fun selectByName(@Param("name") name: String): TenantEntity?
 
     /**
-     * 查询租户列表
+     * Query tenant list
      */
     fun selectList(@Param("name") name: String?, @Param("status") status: Int?): List<TenantEntity>
 
     /**
-     * 插入租户
+     * Insert tenant
      */
     fun insert(tenant: TenantEntity): Int
 
     /**
-     * 根据 ID 更新租户
+     * Update tenant by ID
      */
     fun updateById(tenant: TenantEntity): Int
 
     /**
-     * 更新租户状态
+     * Update tenant status
      */
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     /**
-     * 根据 ID 删除租户（逻辑删除）
+     * Delete tenant by ID (logical delete)
      */
     fun deleteById(@Param("id") id: Long): Int
 }

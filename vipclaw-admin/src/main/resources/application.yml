@@ -7,11 +7,11 @@ spring:
   application:
     name: vipclaw-admin
   
-  # 激活版本 Profile(通过 Maven 编译时注入)
+  # Active version profile (injected via Maven during compilation)
   profiles:
     active: ${edition.current:personal}
   
-  # 数据源配置
+  # Datasource configuration
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
@@ -30,6 +30,18 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
+  # Flyway Configuration
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    schemas: vipclaw
+    baseline-on-migrate: true
+    baseline-version: 1
+    validate-on-migrate: true
+    clean-disabled: true
+    sql-migration-prefixes: V
+    repeatable-sql-migration-prefixes: R
+
   quartz:
     job-store-type: memory
     properties:
@@ -46,7 +58,7 @@ spring:
             threadPriority: 5
 
 
-# MyBatis 配置
+# MyBatis configuration
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.vipamp.vipclaw.admin.entity
@@ -54,7 +66,7 @@ mybatis:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-# Springdoc OpenAPI (Swagger) 配置
+# Springdoc OpenAPI (Swagger) configuration
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -71,10 +83,10 @@ logging:
     root: INFO
   com.example.vipclaw.admin: DEBUG
 
-# JWT 配置
+# JWT configuration
 jwt:
   secret: vipclaw-secret-key-2026-vipclaw-admin-backend-jwt-token-authentication
-  expiration: 7200000 # 2 小时（毫秒）
+  expiration: 7200000 # 2 hours (milliseconds)
 
 session:
   jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://localhost:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}

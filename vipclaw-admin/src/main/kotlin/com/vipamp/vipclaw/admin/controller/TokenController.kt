@@ -14,9 +14,6 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * Token management controller
  * Handles token refresh and other operations
- *
- * @author vipamp
- * @since 2026-05-01
  */
 @Tag(name = "Token Management", description = "Token refresh and other APIs")
 @RestController

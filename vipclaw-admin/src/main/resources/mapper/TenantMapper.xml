@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.vipamp.vipclaw.admin.mapper.TenantMapper">
 
-    <!-- 结果映射 -->
+    <!-- Result Map -->
     <resultMap id="TenantResultMap" type="com.vipamp.vipclaw.admin.entity.TenantEntity">
         <id column="id" property="id"/>
         <result column="name" property="name"/>
@@ -13,7 +13,7 @@
         <result column="update_time" property="updateTime"/>
     </resultMap>
 
-    <!-- 根据 ID 查询租户 -->
+    <!-- Query tenant by ID -->
     <select id="selectById" resultMap="TenantResultMap">
         SELECT * FROM tenant
         WHERE id = #{id}
@@ -21,7 +21,7 @@
         LIMIT 1
     </select>
 
-    <!-- 根据名称查询租户 -->
+    <!-- Query tenant by name -->
     <select id="selectByName" resultMap="TenantResultMap">
         SELECT * FROM tenant
         WHERE name = #{name}
@@ -29,7 +29,7 @@
         LIMIT 1
     </select>
 
-    <!-- 查询租户列表 -->
+    <!-- Query tenant list -->
     <select id="selectList" resultMap="TenantResultMap">
         SELECT * FROM tenant
         WHERE active = 1
@@ -42,7 +42,7 @@
         ORDER BY create_time DESC
     </select>
 
-    <!-- 插入租户 -->
+    <!-- Insert tenant -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO tenant (
             name,
@@ -61,7 +61,7 @@
         )
     </insert>
 
-    <!-- 根据 ID 更新租户 -->
+    <!-- Update tenant by ID -->
     <update id="updateById">
         UPDATE tenant
         <set>
@@ -77,7 +77,7 @@
         AND active = 1
     </update>
 
-    <!-- 更新租户状态 -->
+    <!-- Update tenant status -->
     <update id="updateStatus">
         UPDATE tenant
         SET status = #{status},
@@ -86,7 +86,7 @@
         AND active = 1
     </update>
 
-    <!-- 根据 ID 删除租户（逻辑删除） -->
+    <!-- Delete tenant by ID (logical delete) -->
     <update id="deleteById">
         UPDATE tenant
         SET active = 0,

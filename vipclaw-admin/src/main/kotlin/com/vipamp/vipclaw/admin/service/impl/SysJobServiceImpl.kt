@@ -20,9 +20,6 @@ import java.time.LocalDateTime
 
 /**
  * Scheduled job service implementation
- *
- * @author vipamp
- * @since 2026-03-16
  */
 @Service
 class SysJobServiceImpl(

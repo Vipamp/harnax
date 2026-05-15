@@ -4,7 +4,7 @@ import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 登录响应 DTO
+ * Login response DTO
  */
 @Schema(description = "Login response object")
 data class LoginResponse(
@@ -17,16 +17,16 @@ data class LoginResponse(
     @Schema(description = "Expiration time (seconds)", example = "7200")
     val expiresIn: Long? = null,
 
-    @Schema(description = "过期时间戳（毫秒）", example = "1717020800000")
+    @Schema(description = "Expiration timestamp (milliseconds)", example = "1717020800000")
     val expiresAt: Long? = null,
 
     @Schema(description = "User information")
     val userInfo: UserInfo? = null,
 
-    @Schema(description = "用户所属租户列表")
+    @Schema(description = "User's tenant list")
     val tenants: List<TenantResponse>? = null,
 
-    @Schema(description = "当前租户ID")
+    @Schema(description = "Current tenant ID")
     val currentTenantId: Long? = null,
 ) {
     companion object {
@@ -73,22 +73,22 @@ data class LoginResponse(
         @Schema(description = "Username", example = "admin")
         val username: String? = null,
 
-        @Schema(description = "Nickname", example = "管理员")
+        @Schema(description = "Nickname", example = "Administrator")
         val nickname: String? = null,
 
         @Schema(description = "Avatar URL", example = "https://example.com/avatar.jpg")
         val avatar: String? = null,
 
-        @Schema(description = "邮箱", example = "admin@example.com")
+        @Schema(description = "Email", example = "admin@example.com")
         val email: String? = null,
 
-        @Schema(description = "手机号", example = "13800138000")
+        @Schema(description = "Phone number", example = "13800138000")
         val phone: String? = null,
 
-        @Schema(description = "性别 (0:女 1:男 2:保密)", example = "1")
+        @Schema(description = "Gender (0:female 1:male 2:unknown)", example = "1")
         val gender: Int? = null,
 
-        @Schema(description = "是否是管理员(0:否,1:是)", example = "0")
+        @Schema(description = "Whether administrator (0:no, 1:yes)", example = "0")
         val isAdmin: Int? = null,
     ) {
         companion object {

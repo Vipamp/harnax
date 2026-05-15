@@ -4,67 +4,64 @@ import com.vipamp.vipclaw.admin.dto.TokenStatsAggregationResponse
 import com.vipamp.vipclaw.admin.entity.TokenStats
 
 /**
- * Token 消耗统计服务接口
- *
- * @author vipamp
- * @since 2026-04-11
+ * Token consumption statistics service interface
  */
 interface TokenStatsService {
 
     /**
-     * 保存 Token 消耗记录
+     * Save token consumption record
      *
-     * @param tokenStats Token 统计实体
-     * @return 保存结果
+     * @param tokenStats Token statistics entity
+     * @return Save result
      */
     fun saveTokenStats(tokenStats: TokenStats): Boolean
 
     /**
-     * 获取聚合统计数据
+     * Get aggregation statistics
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 聚合统计响应
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Aggregation statistics response
      */
     fun getAggregationStats(startTime: String, endTime: String): TokenStatsAggregationResponse
 
     /**
-     * 获取时序数据
+     * Get time series data
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @param granularity 时间粒度 (hour/day/week/month)
-     * @return 聚合统计响应(包含时序数据)
+     * @param startTime Start time
+     * @param endTime   End time
+     * @param granularity Time granularity (hour/day/week/month)
+     * @return Aggregation statistics response (includes time series data)
      */
     fun getTimeSeriesData(startTime: String, endTime: String, granularity: String): TokenStatsAggregationResponse
 
     /**
-     * 获取按模型的时序数据
+     * Get time series data by model
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @param granularity 时间粒度 (hour/day/month)
-     * @return 聚合统计响应(包含时序数据)
+     * @param startTime Start time
+     * @param endTime   End time
+     * @param granularity Time granularity (hour/day/month)
+     * @return Aggregation statistics response (includes time series data)
      */
     fun getModelTimeSeriesData(startTime: String, endTime: String, granularity: String): TokenStatsAggregationResponse
 
     /**
-     * 获取按智能体的时序数据
+     * Get time series data by agent
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @param granularity 时间粒度 (hour/day/month)
-     * @return 聚合统计响应(包含时序数据)
+     * @param startTime Start time
+     * @param endTime   End time
+     * @param granularity Time granularity (hour/day/month)
+     * @return Aggregation statistics response (includes time series data)
      */
     fun getAgentTimeSeriesData(startTime: String, endTime: String, granularity: String): TokenStatsAggregationResponse
 
     /**
-     * 获取按会话的时序数据
+     * Get time series data by session
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @param granularity 时间粒度 (hour/day/month)
-     * @return 聚合统计响应(包含时序数据)
+     * @param startTime Start time
+     * @param endTime   End time
+     * @param granularity Time granularity (hour/day/month)
+     * @return Aggregation statistics response (includes time series data)
      */
     fun getSessionTimeSeriesData(startTime: String, endTime: String, granularity: String): TokenStatsAggregationResponse
 }

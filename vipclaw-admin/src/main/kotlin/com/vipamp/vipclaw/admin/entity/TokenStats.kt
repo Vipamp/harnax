@@ -5,7 +5,7 @@ import java.io.Serializable
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
-@Schema(description = "Token 消耗统计实体类")
+@Schema(description = "Token consumption statistics entity")
 class TokenStats : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -14,27 +14,27 @@ class TokenStats : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "智能体 ID")
+    @Schema(description = "Agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "对话模型 ID")
+    @Schema(description = "Chat model ID")
     var chatModelId: Long = 0
 
-    @Schema(description = "输入 token 数量")
+    @Schema(description = "Input token count")
     var inputToken: Long = 0
 
-    @Schema(description = "输出 token 数量")
+    @Schema(description = "Output token count")
     var outputToken: Long = 0
 
-    @Schema(description = "总 token 数量")
+    @Schema(description = "Total token count")
     var totalToken: Long = 0
 
-    @Schema(description = "模型费用（单位：元）")
+    @Schema(description = "Model fee (unit: yuan)")
     var fee: BigDecimal = BigDecimal.ZERO
 
-    @Schema(description = "时间戳")
+    @Schema(description = "Timestamp")
     var ts: LocalDateTime = LocalDateTime.now()
 }

@@ -24,7 +24,7 @@ docker/
 ├── dist/                        # Build artifacts (not committed to git)
 │   ├── backend/                 # Backend JAR files
 │   └── frontend/                # Frontend static files
-└── sql/                         # Database migration scripts
+└── data/                        # MySQL data directory (not committed to git)
 ```
 
 ## Quick Start
@@ -260,7 +260,6 @@ rm -rf docker/data/mysql
 | Variable | Description | Default |
 |----------|-------------|---------|  
 | MYSQL_DATA_DIR | MySQL data directory (local path) | ./data/mysql |
-| MYSQL_INIT_DIR | MySQL initialization scripts directory | ./init |
 
 ### Backend
 
@@ -289,5 +288,5 @@ rm -rf docker/data/mysql
 
 - All Docker files are in the `docker/` directory to keep the root clean
 - Build artifacts in `docker/dist/` are not committed to git
-- Database migration scripts should be placed in `docker/sql/`
+- Database migrations are managed by Flyway (see `vipclaw-admin/src/main/resources/db/`)
 - Use `.dockerignore` to optimize build context

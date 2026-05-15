@@ -75,6 +75,10 @@ class TenantServiceImplTest {
             isAdmin = 0
             active = 1
         }
+
+        // Mock messageUtil to return the key as message
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { it.arguments[0] as String }
+        `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { it.arguments[0] as String }
     }
 
     @Nested

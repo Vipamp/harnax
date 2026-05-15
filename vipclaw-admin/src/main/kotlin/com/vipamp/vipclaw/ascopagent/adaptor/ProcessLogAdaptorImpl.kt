@@ -12,12 +12,8 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * ProcessLogAdaptor 实现类
- * 将处理日志信息保存到数据库
- *
- * @Author: heqingsong
- * @Date: 2026/4/12
- * @Project: vipclaw
+ * ProcessLogAdaptor Implementation
+ * Saves process log information to database
  */
 @Component
 class ProcessLogAdaptorImpl(
@@ -28,10 +24,10 @@ class ProcessLogAdaptorImpl(
 
     override fun emitLog(processLog: ProcessLog) {
         try {
-            // 将 ProcessLog 转换为 ProcessLogEntity 实体
+            // Convert ProcessLog to ProcessLogEntity
             val entity = convertToEntity(processLog)
 
-            // 保存到数据库
+            // Save to database
             val result = processLogMapper.insert(entity)
 
             if (result > 0) {
@@ -57,12 +53,12 @@ class ProcessLogAdaptorImpl(
                 processLog.sessionId,
                 e,
             )
-            // 不抛出异常，避免影响主流程
+            // Do not throw exception to avoid affecting main flow
         }
     }
 
     /**
-     * 将 ProcessLog 转换为 ProcessLogEntity 实体
+     * Convert ProcessLog to ProcessLogEntity
      */
     private fun convertToEntity(processLog: ProcessLog): ProcessLogEntity {
         val entity = ProcessLogEntity()
@@ -72,12 +68,12 @@ class ProcessLogAdaptorImpl(
         entity.message = processLog.message
         entity.logType = processLog.type.name
 
-        // 如果有异常，记录堆栈信息
+        // If there is an exception, record stack trace information
         if (processLog.throwable != null) {
             entity.stackTrace = getStackTrace(processLog.throwable) ?: ""
         }
 
-        // 将时间戳转换为 LocalDateTime
+        // Convert timestamp to LocalDateTime
         val dateTime = Instant.ofEpochMilli(processLog.timestamp)
             .atZone(ZoneId.systemDefault())
             .toLocalDateTime()
@@ -87,7 +83,7 @@ class ProcessLogAdaptorImpl(
     }
 
     /**
-     * 获取异常堆栈信息
+     * Get exception stack trace
      */
     private fun getStackTrace(throwable: Throwable?): String? {
         if (throwable == null) {

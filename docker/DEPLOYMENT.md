@@ -114,7 +114,6 @@ vipclaw/
 │   ├── .env.example            # 环境变量示例
 │   ├── data/                   # MySQL 数据目录
 │   └── dist/                   # 编译产物
-├── sql/                        # 数据库脚本
 └── pom.xml                     # 父 POM
 ```
 
@@ -334,16 +333,7 @@ MySQL 数据默认存储在本地目录 `docker/data/mysql`，可通过环境变
 MYSQL_DATA_DIR=/path/to/your/data docker-compose -f docker/docker-compose.personal.yml up -d
 ```
 
-#### 6.1.2 初始化脚本
-
-将 SQL 脚本放在 `docker/init/` 目录，MySQL 首次启动时会自动执行：
-
-```bash
-docker/init/
-├── V1__init.sql              # 初始化表结构
-├── V2__add_user_table.sql    # 添加用户表
-└── ...
-```
+**注意**：数据库表结构由 Flyway 自动管理，应用启动时会自动执行 `schema.sql` 创建表结构。
 
 ### 6.2 后端配置
 
@@ -847,16 +837,20 @@ docker-compose -f docker/docker-compose.personal.yml up -d
 
 详见 `docker/.env.example` 文件。
 
-### B. 数据库迁移脚本
+### B. 数据库迁移
 
-数据库迁移脚本位于 `sql/` 目录，按版本号命名：
+数据库迁移由 Flyway 自动管理，相关文件位于：
 
 ```
-sql/
-├── V1__init.sql
-├── V2__add_user_table.sql
-└── ...
+vipclaw-admin/src/main/resources/db/
+├── schema.sql                 # 初始数据库结构
+└── migration/                 # 增量迁移脚本
+    ├── V1__xxx.sql
+    ├── V2__xxx.sql
+    └── README.md
 ```
+
+详见：`vipclaw-admin/src/main/resources/db/migration/README.md`
 
 ### C. 联系支持
 

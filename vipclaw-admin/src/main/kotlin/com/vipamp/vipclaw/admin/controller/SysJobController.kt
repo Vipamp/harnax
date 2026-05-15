@@ -16,9 +16,6 @@ import java.time.LocalDateTime
 
 /**
  * Scheduled job management controller
- *
- * @author vipamp
- * @since 2026-03-16
  */
 @RestController
 @RequestMapping("/api/jobs")

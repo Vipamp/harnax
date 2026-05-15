@@ -11,9 +11,6 @@ import kotlin.math.min
 
 /**
  * Scheduled job log service implementation
- *
- * @author vipamp
- * @since 2026-03-16
  */
 @Service
 class SysJobLogServiceImpl(

@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "会话实体类")
+@Schema(description = "Session entity")
 class Session : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -13,66 +13,66 @@ class Session : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "会话名称")
+    @Schema(description = "Session title")
     var title: String = ""
 
-    @Schema(description = "会话描述")
+    @Schema(description = "Session description")
     var sessionDescription: String = ""
 
-    @Schema(description = "会话ID")
+    @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "关联的智能体ID")
+    @Schema(description = "Associated agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "智能体名称")
+    @Schema(description = "Agent name")
     var name: String = ""
 
-    @Schema(description = "智能体描述")
+    @Schema(description = "Agent description")
     var description: String = ""
 
-    @Schema(description = "系统提示词（支持 Markdown）")
+    @Schema(description = "System prompt (Markdown supported)")
     var systemPrompt: String = ""
 
-    @Schema(description = "对话模型 ID")
+    @Schema(description = "Chat model ID")
     var modelId: Long = 0
 
-    @Schema(description = "是否启用深度思考（0:否，1:是）")
+    @Schema(description = "Deep thinking enabled (0:no, 1:yes)")
     var enableThink: Int = 0
 
-    @Schema(description = "是否启用联网搜索（0:否，1:是）")
+    @Schema(description = "Internet search enabled (0:no, 1:yes)")
     var enableSearch: Int = 0
 
-    @Schema(description = "是否启用计划（0:否，1:是）")
+    @Schema(description = "Planning enabled (0:no, 1:yes)")
     var enablePlan: Int = 0
 
-    @Schema(description = "MCP 服务列表（JSON 格式）")
+    @Schema(description = "MCP service list (JSON format)")
     var mcpList: String = "[]"
 
-    @Schema(description = "技能列表（JSON 格式）")
+    @Schema(description = "Skill list (JSON format)")
     var skillList: String = "[]"
 
-    @Schema(description = "所有者")
+    @Schema(description = "Owner")
     var owner: String = ""
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

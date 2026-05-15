@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
- * SkillAdaptor 实现类
- * 从数据库加载技能并转换为 AgentSkill
+ * SkillAdaptor Implementation
+ * Loads skills from database and converts to AgentSkill
  */
 @Component
 class SkillAdaptorImpl(
@@ -24,19 +24,19 @@ class SkillAdaptorImpl(
             return null
         }
 
-        // 查询技能信息
+        // Query skill information
         val skill = skillMapper.selectById(skillId)
         if (skill == null) {
             log.warn("Skill not found: $skillId")
             return null
         }
 
-        // 转换为 AgentSkill
+        // Convert to AgentSkill
         return buildAgentSkill(skill)
     }
 
     /**
-     * 构建 AgentSkill
+     * Build AgentSkill
      */
     private fun buildAgentSkill(skill: Skill): AgentSkill? = try {
         AgentSkill.builder()

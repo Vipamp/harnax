@@ -4,19 +4,19 @@ import com.vipamp.vipclaw.admin.dto.LoginRequest
 import com.vipamp.vipclaw.admin.dto.LoginResponse
 
 /**
- * 认证服务接口
+ * Authentication service interface
  */
 interface AuthService {
 
     /**
-     * 用户登录
-     * @param request 登录请求
-     * @return 登录响应
+     * User login
+     * @param request Login request
+     * @return Login response
      */
     fun login(request: LoginRequest): LoginResponse
 
     /**
-     * 退出登录
+     * Logout
      */
     fun logout()
 }

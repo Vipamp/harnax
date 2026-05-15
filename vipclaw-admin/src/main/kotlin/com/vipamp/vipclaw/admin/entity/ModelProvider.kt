@@ -5,12 +5,9 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * 模型供应商实体类
- *
- * @author vipamp
- * @since 2026-03-13
+ * Model provider entity
  */
-@Schema(description = "模型供应商实体类")
+@Schema(description = "Model provider entity")
 class ModelProvider : Serializable {
 
     companion object {
@@ -24,74 +21,74 @@ class ModelProvider : Serializable {
     var id: Long = 1
 
     /**
-     * 所属租户ID
+     * Tenant ID
      */
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
     /**
-     * 服务商类型(dashscope/openai/ollama)
+     * Provider type (dashscope/openai/ollama)
      */
-    @Schema(description = "服务商类型(dashscope/openai/ollama)")
+    @Schema(description = "Provider type (dashscope/openai/ollama)")
     var type: String = ""
 
     /**
-     * 名称
+     * Name
      */
-    @Schema(description = "名称")
+    @Schema(description = "Name")
     var name: String = ""
 
     /**
-     * 描述
+     * Description
      */
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     var description: String? = null
 
     /**
-     * API 密钥
+     * API key
      */
-    @Schema(description = "API 密钥")
+    @Schema(description = "API key")
     var apiKey: String? = null
 
     /**
-     * API 地址
+     * API base URL
      */
-    @Schema(description = "API 地址")
+    @Schema(description = "API base URL")
     var baseUrl: String? = null
 
     /**
-     * 是否启用(0:禁用,1:启用)
+     * Status (0:disabled, 1:enabled)
      */
-    @Schema(description = "是否启用(0:禁用,1:启用)")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
     /**
-     * 是否公开(0:否,1:是)
+     * Public status (0:no, 1:yes)
      */
-    @Schema(description = "是否公开(0:否,1:是)")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
     /**
-     * 创建人
+     * Creator
      */
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
     /**
-     * 是否可用(0:被删除,1:可用)
+     * Active status (0:deleted, 1:active)
      */
-    @Schema(description = "是否可用(0:被删除,1:可用)")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
     /**
-     * 创建时间
+     * Creation time
      */
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
-     * 更新时间
+     * Update time
      */
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

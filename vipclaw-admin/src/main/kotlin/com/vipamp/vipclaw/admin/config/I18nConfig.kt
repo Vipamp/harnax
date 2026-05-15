@@ -9,32 +9,32 @@ import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver
 import java.util.Locale
 
 /**
- * 国际化配置类
+ * Internationalization configuration
  *
- * 配置 MessageSource 和 LocaleResolver
+ * Configure MessageSource and LocaleResolver
  */
 @Configuration
 class I18nConfig {
 
     /**
-     * 配置消息源
+     * Configure message source
      *
-     * 从 i18n/messages*.properties 加载消息资源
+     * Load message resources from i18n/messages*.properties
      */
     @Bean
     fun messageSource(): MessageSource {
         val messageSource = ReloadableResourceBundleMessageSource()
         messageSource.setBasename("classpath:i18n/messages")
         messageSource.setDefaultEncoding("UTF-8")
-        messageSource.setCacheSeconds(3600) // 缓存 1 小时
-        messageSource.setUseCodeAsDefaultMessage(true) // 找不到消息时返回 code 本身
+        messageSource.setCacheSeconds(3600) // Cache for 1 hour
+        messageSource.setUseCodeAsDefaultMessage(true) // Return code itself when message not found
         return messageSource
     }
 
     /**
-     * 配置错误消息源
+     * Configure error message source
      *
-     * 从 i18n/messages_error*.properties 加载错误消息资源
+     * Load error message resources from i18n/messages_error*.properties
      */
     @Bean
     fun errorMessageSource(): MessageSource {
@@ -47,10 +47,10 @@ class I18nConfig {
     }
 
     /**
-     * 配置语言解析器
+     * Configure locale resolver
      *
-     * 从 Accept-Language 请求头解析用户语言偏好
-     * 默认使用英文
+     * Parse user language preference from Accept-Language request header
+     * Default to English
      */
     @Bean
     fun localeResolver(): LocaleResolver {

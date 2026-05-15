@@ -3,29 +3,25 @@ package com.vipamp.vipclaw.ascopagent.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * Chat 请求 DTO
- *
- * @Author: heqingsong
- * @Date: 2026/4/12
- * @Project: vipclaw
+ * Chat Request DTO
  */
-@Schema(description = "Chat 请求")
+@Schema(description = "Chat Request")
 data class ChatRequest(
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     val sessionId: String,
 
-    @Schema(description = "消息内容")
+    @Schema(description = "Message content")
     val message: String,
 
-    @Schema(description = "图片 URL 列表")
+    @Schema(description = "Image URL list")
     val imageUrl: List<String> = emptyList(),
 
-    @Schema(description = "是否启用思考模式")
+    @Schema(description = "Enable thinking mode")
     val enableThink: Boolean = false,
 
-    @Schema(description = "是否启用搜索")
+    @Schema(description = "Enable search")
     val enableSearch: Boolean = false,
 
-    @Schema(description = "是否启用计划")
+    @Schema(description = "Enable planning")
     val enablePlan: Boolean = false,
 )

@@ -1,17 +1,17 @@
 package com.vipamp.vipclaw.admin.config
 
 /**
- * 版本控制注解
- * 用于声明 API 或 Controller 支持的版本列表
+ * Edition control annotation
+ * Used to declare the list of editions supported by an API or Controller
  *
- * 使用示例:
+ * Usage example:
  * ```kotlin
  * @RequiresEdition("enterprise", "public")
  * @RestController
  * class SysUserController { ... }
  * ```
  *
- * @property value 支持的版本列表,如 "personal", "enterprise", "public"
+ * @property value List of supported editions, e.g., "personal", "enterprise", "public"
  */
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.RUNTIME)

@@ -14,13 +14,13 @@ data class SkillResponse(
     val id: Long? = null,
     @Schema(description = "Skill name", example = "test-skill")
     val name: String? = null,
-    @Schema(description = "仓库ID", example = "1")
+    @Schema(description = "Repository ID", example = "1")
     val repositoryId: Long? = null,
     @Schema(description = "Repository name", example = "qoder-skills")
     var repositoryName: String? = null,
-    @Schema(description = "仓库地址", example = "https://github.com/example/repo")
+    @Schema(description = "Repository URL", example = "https://github.com/example/repo")
     var repositoryUrl: String? = null,
-    @Schema(description = "分支名称", example = "main")
+    @Schema(description = "Branch name", example = "main")
     var repositoryBranch: String? = null,
     @Schema(description = "Skill description")
     val description: String? = null,
@@ -28,11 +28,11 @@ data class SkillResponse(
     val skillmd: String? = null,
     @Schema(description = "Resource information")
     val resources: String? = null,
-    @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
-    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int? = null,
-    @Schema(description = "创建人", example = "admin")
+    @Schema(description = "Creator", example = "admin")
     val creator: String? = null,
     @Schema(description = "Creation time", example = "2026-03-16 12:00:00")
     val createTime: LocalDateTime? = null,
@@ -41,7 +41,7 @@ data class SkillResponse(
 ) {
     companion object {
         /**
-         * 从 Skill 实体转换为 SkillResponse
+         * Convert Skill entity to SkillResponse
          */
         @JvmStatic
         fun fromEntity(

@@ -7,71 +7,68 @@ import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Agent
 
 /**
- * 智能体服务接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * Agent service interface
  */
 interface AgentService {
 
     /**
-     * 分页查询智能体列表
+     * Query agent list with pagination
      *
-     * @param name     智能体名称
-     * @param status   状态筛选字段
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param name     Agent name
+     * @param status   Status filter field
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Agent>
 
     /**
-     * 获取单个智能体详情
+     * Get single agent details
      *
-     * @param id 智能体 ID
-     * @return 智能体实体
+     * @param id Agent ID
+     * @return Agent entity
      */
     fun getAgent(id: Long): Agent?
 
     /**
-     * 创建智能体
+     * Create agent
      *
-     * @param request 智能体创建请求对象
-     * @return 创建结果
+     * @param request Agent create request object
+     * @return Create result
      */
     fun createAgent(request: AgentCreateRequest): Boolean
 
     /**
-     * 更新智能体
+     * Update agent
      *
-     * @param id      智能体 ID
-     * @param request 智能体更新请求对象
-     * @return 更新结果
+     * @param id      Agent ID
+     * @param request Agent update request object
+     * @return Update result
      */
     fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean
 
     /**
-     * 切换智能体启用状态
+     * Toggle agent enable status
      *
-     * @param id     智能体 ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param id     Agent ID
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleAgentStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除智能体
+     * Delete agent
      *
-     * @param id 智能体 ID
-     * @return 删除结果
+     * @param id Agent ID
+     * @return Delete result
      */
     fun deleteAgent(id: Long): Boolean
 
     /**
-     * 将 Agent 实体转换为响应 DTO（包含完整的技能和 MCP 信息）
+     * Convert Agent entity to response DTO (including complete skill and MCP information)
      *
-     * @param agent 智能体实体
-     * @return 响应 DTO
+     * @param agent Agent entity
+     * @return Response DTO
      */
     fun convertToResponse(agent: Agent): AgentResponse
 }

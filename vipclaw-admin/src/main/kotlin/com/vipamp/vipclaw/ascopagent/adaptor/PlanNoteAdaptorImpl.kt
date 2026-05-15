@@ -12,11 +12,8 @@ import org.springframework.stereotype.Component
 import org.springframework.util.StringUtils
 
 /**
- * PlanNoteAdaptor 实现类
- * 从数据库加载和保存 PlanNote
- *
- * @author vipamp
- * @since 2026-04-16
+ * PlanNoteAdaptor Implementation
+ * Loads and saves PlanNote from/to database
  */
 @Component
 class PlanNoteAdaptorImpl(
@@ -26,16 +23,16 @@ class PlanNoteAdaptorImpl(
 
     private val log = LoggerFactory.getLogger(PlanNoteAdaptorImpl::class.java)
 
-    // 创建支持 Kotlin 的 ObjectMapper
+    // Create ObjectMapper with Kotlin support
     private val kotlinObjectMapper = ObjectMapper()
         .registerModule(KotlinModule.Builder().build())
 
     override fun save(planNote: PlanNote) {
         try {
-            // 转换为实体
+            // Convert to entity
             val entity = convertToEntity(planNote)
 
-            // 保存到数据库
+            // Save to database
             val result = planNoteMapper.insert(entity)
 
             if (result > 0) {
@@ -103,7 +100,7 @@ class PlanNoteAdaptorImpl(
     }
 
     /**
-     * 将 PlanNote 领域对象转换为实体
+     * Convert PlanNote domain object to entity
      */
     @Throws(JsonProcessingException::class)
     private fun convertToEntity(planNote: PlanNote): PlanNoteEntity {
@@ -114,7 +111,7 @@ class PlanNoteAdaptorImpl(
         entity.description = planNote.description
         entity.expectedOutcome = planNote.expectedOutcome
 
-        // 将子任务列表转换为 JSON 字符串
+        // Convert subtask list to JSON string
         if (planNote.subtasks.isNotEmpty()) {
             entity.subtasks = kotlinObjectMapper.writeValueAsString(planNote.subtasks)
         }
@@ -123,14 +120,14 @@ class PlanNoteAdaptorImpl(
         entity.finishedAt = planNote.finishedAt
         entity.costTimeseconds = planNote.costTimeSeconds
 
-        // 设置状态
+        // Set status
         entity.status = planNote.status.name
 
         return entity
     }
 
     /**
-     * 将实体转换为 PlanNote 领域对象
+     * Convert entity to PlanNote domain object
      */
     private fun convertToDomain(entity: PlanNoteEntity): PlanNote {
         var subtasks: List<PlanSubTask>? = null

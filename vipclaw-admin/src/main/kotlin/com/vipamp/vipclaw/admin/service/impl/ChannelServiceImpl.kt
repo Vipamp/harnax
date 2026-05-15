@@ -20,9 +20,6 @@ import java.util.*
 
 /**
  * Channel service implementation
- *
- * @author vipamp
- * @since 2026-04-08
  */
 @Service
 class ChannelServiceImpl(

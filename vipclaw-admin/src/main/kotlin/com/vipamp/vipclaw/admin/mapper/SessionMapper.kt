@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * 会话 Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-25
+ * Session Mapper interface
  */
 @Mapper
 interface SessionMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): Session?
 
@@ -23,7 +20,7 @@ interface SessionMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
 
     fun selectSessionList(
         @Param("keyword") keyword: String?,

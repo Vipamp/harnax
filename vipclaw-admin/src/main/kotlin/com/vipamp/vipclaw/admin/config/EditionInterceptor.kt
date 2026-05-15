@@ -8,11 +8,11 @@ import org.springframework.web.method.HandlerMethod
 import org.springframework.web.servlet.HandlerInterceptor
 
 /**
- * 版本控制拦截器
- * 在请求处理前检查 @RequiresEdition 注解并验证当前版本
+ * Edition control interceptor
+ * Checks @RequiresEdition annotation and validates current edition before request processing
  *
- * 如果请求的 API 标注了 @RequiresEdition 且当前版本不在支持列表中,
- * 则返回 404 Not Found,避免暴露系统能力
+ * If the API is annotated with @RequiresEdition and current edition is not in the supported list,
+ * returns 404 Not Found to avoid exposing system capabilities
  */
 @Component
 class EditionInterceptor(
@@ -26,36 +26,36 @@ class EditionInterceptor(
         response: HttpServletResponse,
         handler: Any,
     ): Boolean {
-        // 只处理方法级别的请求
+        // Only process method-level requests
         if (handler !is HandlerMethod) {
             return true
         }
 
-        // 获取方法或类级别的 @RequiresEdition 注解
+        // Get @RequiresEdition annotation at method or class level
         val methodAnnotation = handler.getMethodAnnotation(RequiresEdition::class.java)
         val classAnnotation = handler.beanType.getAnnotation(RequiresEdition::class.java)
         val annotation = methodAnnotation ?: classAnnotation ?: return true
 
-        // 检查注解值是否为空
+        // Check if annotation value is empty
         if (annotation.value.isEmpty()) {
             log.error("@RequiresEdition must not be empty on ${handler.method}")
             response.status = HttpServletResponse.SC_INTERNAL_SERVER_ERROR
             response.contentType = "application/json;charset=UTF-8"
-            response.writer.write("""{"code":500,"message":"服务器配置错误"}""")
+            response.writer.write("""{"code":500,"message":"Server configuration error"}""")
             return false
         }
 
-        // 验证当前版本
+        // Validate current edition
         val currentEdition = editionUtil.getCurrentEdition()
         if (currentEdition in annotation.value) {
             return true
         }
 
-        // 版本不匹配,返回 404
+        // Edition mismatch, return 404
         log.warn("Access denied: edition=$currentEdition, required=${annotation.value.contentToString()}, path=${request.requestURI}")
         response.status = HttpServletResponse.SC_NOT_FOUND
         response.contentType = "application/json;charset=UTF-8"
-        response.writer.write("""{"code":404,"message":"当前版本不支持此功能"}""")
+        response.writer.write("""{"code":404,"message":"Feature not supported in current edition"}""")
         return false
     }
 }

@@ -11,12 +11,8 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * TokenStatAdaptor 实现类
- * 将 Token 消耗统计信息保存到数据库
- *
- * @Author: heqingsong
- * @Date: 2026/4/12
- * @Project: vipclaw
+ * TokenStatAdaptor Implementation
+ * Saves token consumption statistics to database
  */
 @Component
 class TokenStatAdaptorImpl(
@@ -27,10 +23,10 @@ class TokenStatAdaptorImpl(
 
     override fun saveTokenStat(tokenStat: TokenStat) {
         try {
-            // 将 TokenStat 转换为 TokenStats 实体
+            // Convert TokenStat to TokenStats entity
             val tokenStats = convertToEntity(tokenStat)
 
-            // 保存到数据库
+            // Save to database
             val result = tokenStatsMapper.insert(tokenStats)
 
             if (result > 0) {
@@ -61,7 +57,7 @@ class TokenStatAdaptorImpl(
     }
 
     /**
-     * 将 TokenStat 转换为 TokenStats 实体
+     * Convert TokenStat to TokenStats entity
      */
     private fun convertToEntity(tokenStat: TokenStat): TokenStats {
         val tokenStats = TokenStats()
@@ -72,10 +68,10 @@ class TokenStatAdaptorImpl(
         tokenStats.outputToken = tokenStat.outputToken.toLong()
         tokenStats.totalToken = tokenStat.totalToken.toLong()
 
-        // 费用暂时设为 0，后续可以根据模型计费规则计算
+        // Fee temporarily set to 0, can be calculated based on model billing rules later
         tokenStats.fee = BigDecimal.ZERO
 
-        // 将时间戳转换为 LocalDateTime
+        // Convert timestamp to LocalDateTime
         val dateTime = Instant.ofEpochMilli(tokenStat.timestamp)
             .atZone(ZoneId.systemDefault())
             .toLocalDateTime()

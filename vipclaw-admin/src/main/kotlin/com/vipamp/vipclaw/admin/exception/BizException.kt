@@ -1,7 +1,7 @@
 package com.vipamp.vipclaw.admin.exception
 
 /**
- * 业务异常类
+ * Business exception class
  */
 class BizException : RuntimeException {
 

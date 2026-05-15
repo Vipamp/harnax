@@ -6,55 +6,52 @@ import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.dto.response.UserTenantResponse
 
 /**
- * 租户服务接口
- *
- * @author vipamp
- * @since 2026-04-28
+ * Tenant service interface
  */
 interface TenantService {
 
     /**
-     * 创建租户
+     * Create tenant
      */
     fun createTenant(request: CreateTenantRequest, creator: String): TenantResponse
 
     /**
-     * 根据 ID 获取租户
+     * Get tenant by ID
      */
     fun getTenantById(id: Long): TenantResponse?
 
     /**
-     * 分页查询租户列表
+     * Query tenant list with pagination
      */
     fun getTenantList(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<TenantResponse>
 
     /**
-     * 切换租户状态
+     * Toggle tenant status
      */
     fun toggleStatus(id: Long): Boolean
 
     /**
-     * 删除租户
+     * Delete tenant
      */
     fun deleteTenant(id: Long): Boolean
 
     /**
-     * 查询租户下的用户列表
+     * Query user list under tenant
      */
     fun getTenantUsers(tenantId: Long, pageNum: Int, pageSize: Int): Page<UserTenantResponse>
 
     /**
-     * 添加用户到租户
+     * Add user to tenant
      */
     fun addUserToTenant(tenantId: Long, userId: Long, role: String): Boolean
 
     /**
-     * 从租户移除用户
+     * Remove user from tenant
      */
     fun removeUserFromTenant(tenantId: Long, userId: Long): Boolean
 
     /**
-     * 更新用户在租户中的角色
+     * Update user role in tenant
      */
     fun updateUserRole(tenantId: Long, userId: Long, role: String): Boolean
 }

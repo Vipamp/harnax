@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * SysTokenBlacklist Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * SysTokenBlacklist Mapper interface
  */
 @Mapper
 interface SysTokenBlacklistMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): SysTokenBlacklist?
 
@@ -23,12 +20,12 @@ interface SysTokenBlacklistMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     /**
-     * 根据 Token 哈希值查询
+     * Query by Token Hash
      *
-     * @param tokenHash Token 哈希值
-     * @return Token 黑名单记录
+     * @param tokenHash Token hash value
+     * @return Token blacklist record
      */
     fun selectByTokenHash(@Param("tokenHash") tokenHash: String?): SysTokenBlacklist?
 }

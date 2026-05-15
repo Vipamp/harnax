@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "处理日志实体类")
+@Schema(description = "Process log entity")
 class ProcessLogEntity : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -13,24 +13,24 @@ class ProcessLogEntity : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "智能体 ID")
+    @Schema(description = "Agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "智能体名称")
+    @Schema(description = "Agent name")
     var agentName: String = ""
 
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "日志消息")
+    @Schema(description = "Log message")
     var message: String = ""
 
-    @Schema(description = "日志类型 (INFO/WARN/ERROR)")
+    @Schema(description = "Log type (INFO/WARN/ERROR)")
     var logType: String = "INFO"
 
-    @Schema(description = "异常堆栈信息")
+    @Schema(description = "Exception stack trace")
     var stackTrace: String = ""
 
-    @Schema(description = "时间戳")
+    @Schema(description = "Timestamp")
     var ts: LocalDateTime = LocalDateTime.now()
 }

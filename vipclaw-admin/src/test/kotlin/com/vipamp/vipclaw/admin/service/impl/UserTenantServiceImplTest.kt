@@ -3,6 +3,8 @@ package com.vipamp.vipclaw.admin.service.impl
 import com.vipamp.vipclaw.admin.entity.TenantEntity
 import com.vipamp.vipclaw.admin.entity.UserTenantEntity
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
+import com.vipamp.vipclaw.admin.mapper.SysUserMapper
 import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.mapper.UserTenantMapper
 import org.junit.jupiter.api.Assertions.*
@@ -35,6 +37,12 @@ class UserTenantServiceImplTest {
     @Mock
     private lateinit var tenantMapper: TenantMapper
 
+    @Mock
+    private lateinit var sysUserMapper: SysUserMapper
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var userTenantService: UserTenantServiceImpl
 
@@ -61,6 +69,10 @@ class UserTenantServiceImplTest {
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
         }
+
+        // Mock messageUtil to return the key as message
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { it.arguments[0] as String }
+        `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { it.arguments[0] as String }
     }
 
     @Nested

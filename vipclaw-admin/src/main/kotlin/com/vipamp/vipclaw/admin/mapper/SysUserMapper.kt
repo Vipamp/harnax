@@ -6,56 +6,53 @@ import org.apache.ibatis.annotations.Param
 import java.time.LocalDateTime
 
 /**
- * SysUser Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * SysUser Mapper interface
  */
 @Mapper
 interface SysUserMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     /**
-     * 根据 ID 查询用户
+     * Query user by ID
      *
-     * @param id 用户 ID
-     * @return 用户实体
+     * @param id User ID
+     * @return User entity
      */
     fun selectById(@Param("id") id: Long): SysUser?
 
     /**
-     * 插入用户
+     * Insert user
      *
-     * @param sysuser 用户实体
-     * @return 影响行数
+     * @param sysuser User entity
+     * @return Affected rows
      */
     fun insert(sysuser: SysUser): Int
 
     /**
-     * 根据 ID 更新用户
+     * Update user by ID
      *
-     * @param sysuser 用户实体
-     * @return 影响行数
+     * @param sysuser User entity
+     * @return Affected rows
      */
     fun updateById(sysuser: SysUser): Int
 
     /**
-     * 根据 ID 删除用户（逻辑删除）
+     * Delete user by ID (logical delete)
      *
-     * @param id 用户 ID
-     * @return 影响行数
+     * @param id User ID
+     * @return Affected rows
      */
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     /**
-     * 查询用户列表（带条件）
+     * Query user list with conditions
      *
-     * @param keyword 关键字（搜索 username/nickname/email/phone）
-     * @param status 用户状态
-     * @param tenantId 租户ID过滤
-     * @return 用户列表
+     * @param keyword Keyword (search username/nickname/email/phone)
+     * @param status User status
+     * @param tenantId Tenant ID filter
+     * @return User list
      */
     fun selectUserList(
         @Param("keyword") keyword: String?,
@@ -64,35 +61,35 @@ interface SysUserMapper {
     ): List<SysUser>
 
     /**
-     * 根据用户名查询
+     * Query by username
      *
-     * @param username 用户名
-     * @return 用户实体
+     * @param username Username
+     * @return User entity
      */
     fun selectByUsername(@Param("username") username: String): SysUser?
 
     /**
-     * 根据手机号查询
+     * Query by phone
      *
-     * @param phone 手机号
-     * @return 用户实体
+     * @param phone Phone number
+     * @return User entity
      */
     fun selectByPhone(@Param("phone") phone: String): SysUser?
 
     /**
-     * 根据邮箱查询
+     * Query by email
      *
-     * @param email 邮箱
-     * @return 用户实体
+     * @param email Email
+     * @return User entity
      */
     fun selectByEmail(@Param("email") email: String): SysUser?
 
     /**
-     * 更新用户状态
+     * Update user status
      *
-     * @param id 用户 ID
-     * @param status 新状态
-     * @return 影响行数
+     * @param id User ID
+     * @param status New status
+     * @return Affected rows
      */
     fun updateStatus(
         @Param("id") id: Long,
@@ -100,11 +97,11 @@ interface SysUserMapper {
     ): Int
 
     /**
-     * 更新用户最近一次登录时间
+     * Update user's last login time
      *
-     * @param id 用户 ID
-     * @param lastLoginTime 登录时间
-     * @return 影响行数
+     * @param id User ID
+     * @param lastLoginTime Login time
+     * @return Affected rows
      */
     fun updateLastLoginTime(
         @Param("id") id: Long,

@@ -5,12 +5,9 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * Channel 通道实体类
- *
- * @author vipamp
- * @since 2026-04-08
+ * Channel entity
  */
-@Schema(description = "Channel 通道实体类")
+@Schema(description = "Channel entity")
 class Channel : Serializable {
 
     companion object {
@@ -20,48 +17,48 @@ class Channel : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "通道名称")
+    @Schema(description = "Channel name")
     var name: String = ""
 
-    @Schema(description = "类型(wecom/feishu/dingtalk/http)")
+    @Schema(description = "Type (wecom/feishu/dingtalk/http)")
     var type: String = ""
 
-    @Schema(description = "关联的智能体ID")
+    @Schema(description = "Associated agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "推送地址")
+    @Schema(description = "Webhook URL")
     var webhookUrl: String = ""
 
-    @Schema(description = "验证Token")
+    @Schema(description = "Verification token")
     var token: String = ""
 
-    @Schema(description = "加密密钥(企业微信)")
+    @Schema(description = "Encryption key (WeCom)")
     var encodingAesKey: String = ""
 
-    @Schema(description = "应用ID(飞书/钉钉)")
+    @Schema(description = "App ID (Feishu/DingTalk)")
     var appId: String = ""
 
-    @Schema(description = "应用密钥")
+    @Schema(description = "App secret")
     var appSecret: String = ""
 
-    @Schema(description = "回调标识(用于生成回调URL)")
+    @Schema(description = "Callback key (used to generate callback URL)")
     var callbackKey: String = ""
 
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     var description: String = ""
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "工具调用日志实体类")
+@Schema(description = "Tool call log entity")
 class ToolCallLogEntity : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -13,33 +13,33 @@ class ToolCallLogEntity : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "智能体 ID")
+    @Schema(description = "Agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "工具名称")
+    @Schema(description = "Tool name")
     var toolName: String = ""
 
-    @Schema(description = "工具参数（JSON 格式）")
+    @Schema(description = "Tool arguments (JSON format)")
     var args: String = ""
 
-    @Schema(description = "工具执行结果")
+    @Schema(description = "Tool execution result")
     var result: String = ""
 
-    @Schema(description = "是否成功（1-成功，0-失败）")
+    @Schema(description = "Success status (1-success, 0-failure)")
     var success: Int = 0
 
-    @Schema(description = "开始时间戳")
+    @Schema(description = "Start timestamp")
     var startTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "结束时间戳")
+    @Schema(description = "End timestamp")
     var endTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "执行耗时（毫秒）")
+    @Schema(description = "Execution duration (milliseconds)")
     var duration: Long = 0
 
-    @Schema(description = "时间戳")
+    @Schema(description = "Timestamp")
     var ts: LocalDateTime = LocalDateTime.now()
 }

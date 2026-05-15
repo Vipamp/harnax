@@ -7,11 +7,8 @@ import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 
 /**
- * 用户上下文工具类
- * 用于获取当前登录用户信息
- *
- * @author vipamp
- * @since 2026-03-19
+ * User context utility
+ * Used to get current logged-in user information
  */
 @Component
 class UserContextUtil {
@@ -23,20 +20,20 @@ class UserContextUtil {
         private const val BEARER_PREFIX = "Bearer "
 
         /**
-         * 获取当前请求
+         * Get current request
          *
-         * @return 当前 HttpServletRequest
+         * @return Current HttpServletRequest
          */
         fun getCurrentRequest(): HttpServletRequest? = try {
             val attributes = RequestContextHolder.getRequestAttributes() as ServletRequestAttributes?
             attributes?.request
         } catch (e: Exception) {
-            LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前请求失败：{}", e.message)
+            LoggerFactory.getLogger(UserContextUtil::class.java).error("Failed to get current request: {}", e.message)
             null
         }
 
         /**
-         * 从请求头中获取 Token
+         * Get token from request header
          *
          * @return JWT Token
          */
@@ -52,28 +49,28 @@ class UserContextUtil {
         }
 
         /**
-         * 获取当前登录用户名
+         * Get current logged-in username
          *
-         * @param jwtUtil JWT 工具类
-         * @return 用户名，未登录返回 null
+         * @param jwtUtil JWT utility
+         * @return Username, null if not logged in
          */
         fun getCurrentUsername(jwtUtil: JwtUtil): String = try {
             val token = getToken()
             if (token != null && jwtUtil.validateToken(token)) {
                 jwtUtil.getUsernameFromToken(token)
             } else {
-                throw RuntimeException("未登录")
+                throw RuntimeException("Not logged in")
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            throw RuntimeException("未登录")
+            throw RuntimeException("Not logged in")
         }
 
         /**
-         * 获取当前登录用户 ID
+         * Get current logged-in user ID
          *
-         * @param jwtUtil JWT 工具类
-         * @return 用户 ID，未登录返回 null
+         * @param jwtUtil JWT utility
+         * @return User ID, null if not logged in
          */
         fun getCurrentUserId(jwtUtil: JwtUtil): Long? = try {
             val token = getToken()
@@ -84,7 +81,7 @@ class UserContextUtil {
                 null
             }
         } catch (e: Exception) {
-            LoggerFactory.getLogger(UserContextUtil::class.java).error("获取当前用户ID失败：{}", e.message)
+            LoggerFactory.getLogger(UserContextUtil::class.java).error("Failed to get current user ID: {}", e.message)
             null
         }
     }

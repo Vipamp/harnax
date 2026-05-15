@@ -11,8 +11,8 @@ import org.springframework.stereotype.Component
 import org.springframework.web.servlet.HandlerInterceptor
 
 /**
- * 租户上下文拦截器
- * 解析请求头中的 X-Tenant-ID，验证用户权限，并注入 TenantContext
+ * Tenant context interceptor
+ * Parse X-Tenant-ID from request header, verify user permissions, and inject TenantContext
  */
 @Component
 class TenantInterceptor(
@@ -27,7 +27,7 @@ class TenantInterceptor(
     ): Boolean {
         val tenantIdHeader = request.getHeader("X-Tenant-ID")
 
-        // 如果没有租户头，跳过（某些公开接口不需要租户上下文）
+        // If no tenant header, skip (some public APIs don't need tenant context)
         if (tenantIdHeader.isNullOrBlank()) {
             return true
         }
@@ -38,13 +38,13 @@ class TenantInterceptor(
         val currentUser = SecurityUtils.getCurrentUser()
             ?: throw BizException(messageUtil.getMessage("error.auth.not_logged_in"))
 
-        // 全局管理员跳过验证
+        // Global admin skip verification
         if (currentUser.isAdmin == 1) {
             TenantContext.setTenantId(tenantId)
             return true
         }
 
-        // 验证用户是否属于该租户
+        // Verify if user belongs to this tenant
         val userTenant = userTenantMapper.selectByUserIdAndTenantId(currentUser.id, tenantId)
 
         if (userTenant == null) {
@@ -65,7 +65,7 @@ class TenantInterceptor(
         handler: Any,
         ex: Exception?,
     ) {
-        // 清理 ThreadLocal 防止内存泄漏
+        // Clean up ThreadLocal to prevent memory leak
         TenantContext.clear()
     }
 }

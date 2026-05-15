@@ -13,8 +13,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
- * ChatModelConfigAdaptor 实现类
- * 从数据库加载模型配置并转换为 ChatModelConfig
+ * ChatModelConfigAdaptor Implementation
+ * Loads model configuration from database and converts to ChatModelConfig
  */
 @Component
 class ChatModelConfigAdaptorImpl(
@@ -30,26 +30,26 @@ class ChatModelConfigAdaptorImpl(
             return null
         }
 
-        // 查询模型信息
+        // Query model information
         val model = modelMapper.selectById(modelId)
         if (model == null) {
             log.warn("Model not found: $modelId")
             return null
         }
 
-        // 查询模型服务商信息
+        // Query model provider information
         val provider = modelProviderMapper.selectById(model.providerId)
         if (provider == null) {
             log.warn("Model provider not found: ${model.providerId}")
             return null
         }
 
-        // 根据服务商类型创建对应的配置
+        // Create corresponding configuration based on provider type
         return buildChatModelConfig(model, provider)
     }
 
     /**
-     * 根据服务商类型构建 ChatModelConfig
+     * Build ChatModelConfig based on provider type
      */
     private fun buildChatModelConfig(model: Model, provider: ModelProvider): ChatModelConfig? {
         val providerType = provider.name?.lowercase()

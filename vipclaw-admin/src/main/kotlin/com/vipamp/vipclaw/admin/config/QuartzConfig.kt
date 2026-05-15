@@ -8,10 +8,7 @@ import org.springframework.scheduling.quartz.AdaptableJobFactory
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 
 /**
- * Quartz 配置类
- *
- * @author vipamp
- * @since 2026-03-16
+ * Quartz configuration
  */
 @Configuration
 class QuartzConfig {

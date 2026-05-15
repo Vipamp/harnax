@@ -11,26 +11,26 @@ data class McpServerUpdateRequest(
     @Schema(description = "MCP ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     val id: Long = 0,
 
-    @Schema(description = "MCP 名称", example = "my-mcp-server")
-    @Size(max = 100, message = "MCP 名称长度不能超过 100 个字符")
+    @Schema(description = "MCP name", example = "my-mcp-server")
+    @Size(max = 100, message = "MCP name length cannot exceed 100 characters")
     val name: String = "",
 
-    @Schema(description = "MCP 描述", example = "这是一个 MCP 服务")
+    @Schema(description = "MCP description", example = "This is an MCP server")
     val description: String = "",
 
-    @Schema(description = "MCP 类型（stdio/sse/streamablehttp）", example = "stdio")
+    @Schema(description = "MCP type (stdio/sse/streamablehttp)", example = "stdio")
     val type: String = "streamablehttp",
 
     @Schema(
-        description = "执行命令（仅 stdio 类型生效）",
+        description = "Execute command (only for stdio type)",
         example = "npx -y @modelcontextprotocol/server-filesystem /tmp",
     )
     val command: String = "",
 
-    @Schema(description = "服务地址（sse/streamablehttp 类型生效）", example = "http://localhost:3000/sse")
+    @Schema(description = "Service URL (for sse/streamablehttp type)", example = "http://localhost:3000/sse")
     val url: String = "",
 
-    @Schema(description = "状态（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int = 0,
 
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")

@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * PlanNoteEntity Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * PlanNoteEntity Mapper interface
  */
 @Mapper
 interface PlanNoteMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): PlanNoteEntity?
 
@@ -23,7 +20,7 @@ interface PlanNoteMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectBySessionIdAndPlanId(
         @Param("sessionId") sessionId: String,
         @Param("planId") planId: String,

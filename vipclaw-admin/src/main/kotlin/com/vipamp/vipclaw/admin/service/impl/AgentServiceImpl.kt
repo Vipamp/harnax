@@ -22,9 +22,6 @@ import java.time.LocalDateTime
 
 /**
  * Agent service implementation
- *
- * @author vipamp
- * @since 2026-03-18
  */
 @Service
 class AgentServiceImpl(

@@ -15,9 +15,6 @@ import org.springframework.web.bind.annotation.*
 /**
  * Skill repository management controller
  * Available only for public edition (skill marketplace feature)
- *
- * @author vipamp
- * @since 2026-03-16
  */
 @RestController
 @RequestMapping("/api/skill-repositories")

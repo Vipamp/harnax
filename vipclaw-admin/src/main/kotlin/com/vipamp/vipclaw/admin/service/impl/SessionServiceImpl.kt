@@ -23,9 +23,6 @@ import java.util.*
 
 /**
  * Session service implementation
- *
- * @author vipamp
- * @since 2026-03-25
  */
 @Service
 class SessionServiceImpl(

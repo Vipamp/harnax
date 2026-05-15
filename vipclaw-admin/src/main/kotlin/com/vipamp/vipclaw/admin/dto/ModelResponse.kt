@@ -11,37 +11,37 @@ import java.time.LocalDateTime
 data class ModelResponse(
     @Schema(description = "ID", example = "1")
     var id: Long? = null,
-    @Schema(description = "名称", example = "GPT-4")
+    @Schema(description = "Name", example = "GPT-4")
     var name: String? = null,
     @Schema(description = "Model name", example = "gpt-4")
     var modelName: String? = null,
-    @Schema(description = "模型供应商ID", example = "1")
+    @Schema(description = "Model provider ID", example = "1")
     var providerId: Long? = null,
-    @Schema(description = "模型供应商名称", example = "OpenAI")
+    @Schema(description = "Model provider name", example = "OpenAI")
     var providerName: String? = null,
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     var description: String? = null,
-    @Schema(description = "Model type（chat/embedding）", example = "chat")
+    @Schema(description = "Model type (chat/embedding)", example = "chat")
     var modelType: String? = null,
-    @Schema(description = "能力标签", example = "[\"reasoning\", \"tool\"]")
+    @Schema(description = "Capability tags", example = "[\"reasoning\", \"tool\"]")
     var tags: List<String>? = null,
-    @Schema(description = "是否支持联网", example = "0")
+    @Schema(description = "Whether supports internet search", example = "0")
     var supportInternet: Int? = null,
-    @Schema(description = "是否支持推理", example = "0")
+    @Schema(description = "Whether supports reasoning", example = "0")
     var supportReasoning: Int? = null,
-    @Schema(description = "是否支持工具", example = "0")
+    @Schema(description = "Whether supports tools", example = "0")
     var supportTool: Int? = null,
-    @Schema(description = "是否支持MCP", example = "0")
+    @Schema(description = "Whether supports MCP", example = "0")
     var supportMcp: Int? = null,
-    @Schema(description = "是否支持视觉", example = "0")
+    @Schema(description = "Whether supports vision", example = "0")
     var supportVision: Int? = null,
-    @Schema(description = "价格（元/百万token）", example = "0.0000")
+    @Schema(description = "Price (CNY/million tokens)", example = "0.0000")
     var price: Double? = null,
-    @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     var status: Int? = null,
-    @Schema(description = "是否公开（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     var isPublic: Int? = null,
-    @Schema(description = "创建人", example = "admin")
+    @Schema(description = "Creator", example = "admin")
     var creator: String? = null,
     @Schema(description = "Creation time", example = "2026-03-13 12:00:00")
     var createTime: LocalDateTime? = null,
@@ -71,7 +71,7 @@ data class ModelResponse(
         )
 
         /**
-         * 根据能力字段自动计算标签列表
+         * Automatically calculate tag list based on capability fields
          */
         private fun calculateTags(model: Model): List<String> {
             val tags = mutableListOf<String>()

@@ -3,7 +3,7 @@ package com.vipamp.vipclaw.admin.entity
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 
-@Schema(description = "PlanNote实体类")
+@Schema(description = "PlanNote entity")
 class PlanNoteEntity : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -12,33 +12,33 @@ class PlanNoteEntity : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "会话ID")
+    @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "计划ID")
+    @Schema(description = "Plan ID")
     var planId: String = ""
 
-    @Schema(description = "计划名称")
+    @Schema(description = "Plan name")
     var name: String = ""
 
-    @Schema(description = "计划描述")
+    @Schema(description = "Plan description")
     var description: String = ""
 
-    @Schema(description = "预期结果")
+    @Schema(description = "Expected outcome")
     var expectedOutcome: String = ""
 
-    @Schema(description = "子任务列表（JSON格式）")
+    @Schema(description = "Subtasks list (JSON format)")
     var subtasks: String = ""
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createdAt: String = ""
 
-    @Schema(description = "完成时间")
+    @Schema(description = "Completion time")
     var finishedAt: String? = null
 
-    @Schema(description = "耗时（秒）")
+    @Schema(description = "Cost time (seconds)")
     var costTimeseconds: Long = 0
 
-    @Schema(description = "状态")
+    @Schema(description = "Status")
     var status: String = ""
 }

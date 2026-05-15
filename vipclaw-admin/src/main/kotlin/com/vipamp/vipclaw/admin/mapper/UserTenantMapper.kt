@@ -5,26 +5,23 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * 用户-租户关联 Mapper 接口
- *
- * @author vipamp
- * @since 2026-04-28
+ * User-Tenant Association Mapper interface
  */
 @Mapper
 interface UserTenantMapper {
 
     /**
-     * 根据用户 ID 查询租户列表
+     * Query tenant list by user ID
      */
     fun selectByUserId(@Param("userId") userId: Long): List<UserTenantEntity>
 
     /**
-     * 根据租户 ID 查询用户列表
+     * Query user list by tenant ID
      */
     fun selectByTenantId(@Param("tenantId") tenantId: Long): List<UserTenantEntity>
 
     /**
-     * 根据用户 ID 和租户 ID 查询
+     * Query by user ID and tenant ID
      */
     fun selectByUserIdAndTenantId(
         @Param("userId") userId: Long,
@@ -32,12 +29,12 @@ interface UserTenantMapper {
     ): UserTenantEntity?
 
     /**
-     * 插入用户-租户关联
+     * Insert user-tenant association
      */
     fun insert(userTenant: UserTenantEntity): Int
 
     /**
-     * 根据用户 ID 和租户 ID 删除
+     * Delete by user ID and tenant ID
      */
     fun deleteByUserIdAndTenantId(
         @Param("userId") userId: Long,
@@ -45,12 +42,12 @@ interface UserTenantMapper {
     ): Int
 
     /**
-     * 根据租户 ID 删除所有关联
+     * Delete all associations by tenant ID
      */
     fun deleteByTenantId(@Param("tenantId") tenantId: Long): Int
 
     /**
-     * 更新用户角色
+     * Update user role
      */
     fun updateRole(
         @Param("userId") userId: Long,

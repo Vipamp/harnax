@@ -3,26 +3,26 @@ package com.vipamp.vipclaw.admin.service
 import java.time.LocalDateTime
 
 /**
- * Token 黑名单服务接口
+ * Token blacklist service interface
  */
 interface SysTokenBlacklistService {
 
     /**
-     * 将 Token 加入黑名单
+     * Add token to blacklist
      *
      * @param token      JWT Token
-     * @param username   用户名
-     * @param userId     用户 ID
-     * @param expireTime 过期时间
-     * @param reason     原因
+     * @param username   Username
+     * @param userId     User ID
+     * @param expireTime Expire time
+     * @param reason     Reason
      */
     fun addToBlacklist(token: String, username: String, userId: Long, expireTime: LocalDateTime, reason: String): Unit
 
     /**
-     * 检查 Token 是否在黑名单中
+     * Check if token is in blacklist
      *
      * @param token JWT Token
-     * @return true-在黑名单中，false-不在黑名单
+     * @return true-in blacklist, false-not in blacklist
      */
     fun isBlacklisted(token: String): Boolean
 }

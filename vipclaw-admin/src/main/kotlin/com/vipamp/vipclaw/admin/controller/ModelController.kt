@@ -17,9 +17,6 @@ import org.springframework.web.bind.annotation.*
 /**
  * Model controller
  * Available only for public edition (model marketplace feature)
- *
- * @author vipamp
- * @since 2026-03-13
  */
 @RestController
 @RequestMapping("/api/models")

@@ -11,10 +11,7 @@ import org.springframework.stereotype.Component
 import kotlin.io.path.Path
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/12
  * @Description: LauncherBean
- * @Project: vipclaw
  */
 @Component
 class LauncherConfig {

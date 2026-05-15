@@ -5,25 +5,22 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * Token 消耗统计 Mapper 接口
- * SQL 配置在 resources/mapper/TokenStatsMapper.xml 中
- *
- * @author vipamp
- * @since 2026-04-11
+ * Token Consumption Statistics Mapper interface
+ * SQL configuration in resources/mapper/TokenStatsMapper.xml
  */
 @Mapper
 interface TokenStatsMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun insert(tokenStats: TokenStats): Int
 
     /**
-     * 按模型聚合查询 Token 消耗
+     * Aggregate query Token consumption by model
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 聚合结果列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Aggregated result list
      */
     fun aggregateByModel(
         @Param("startTime") startTime: String?,
@@ -31,11 +28,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按会话聚合查询 Token 消耗
+     * Aggregate query Token consumption by session
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 聚合结果列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Aggregated result list
      */
     fun aggregateBySession(
         @Param("startTime") startTime: String?,
@@ -43,11 +40,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按智能体聚合查询 Token 消耗
+     * Aggregate query Token consumption by agent
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 聚合结果列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Aggregated result list
      */
     fun aggregateByAgent(
         @Param("startTime") startTime: String?,
@@ -55,11 +52,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 获取总体统计信息
+     * Get overall statistics
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 总体统计
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Overall statistics
      */
     fun getOverallStats(
         @Param("startTime") startTime: String?,
@@ -67,11 +64,11 @@ interface TokenStatsMapper {
     ): MutableMap<String?, Any?>?
 
     /**
-     * 按小时查询 Token 消耗时序数据
+     * Query Token consumption time series data by hour
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 时序数据列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Time series data list
      */
     fun getTimeSeriesByHour(
         @Param("startTime") startTime: String?,
@@ -79,11 +76,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按天查询 Token 消耗时序数据
+     * Query Token consumption time series data by day
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 时序数据列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Time series data list
      */
     fun getTimeSeriesByDay(
         @Param("startTime") startTime: String?,
@@ -91,11 +88,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按周查询 Token 消耗时序数据
+     * Query Token consumption time series data by week
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 时序数据列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Time series data list
      */
     fun getTimeSeriesByWeek(
         @Param("startTime") startTime: String?,
@@ -103,11 +100,11 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按月查询 Token 消耗时序数据
+     * Query Token consumption time series data by month
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 时序数据列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Time series data list
      */
     fun getTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
@@ -115,7 +112,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按模型+小时查询 Token 消耗时序数据
+     * Query Token consumption time series data by model + hour
      */
     fun getModelTimeSeriesByHour(
         @Param("startTime") startTime: String?,
@@ -123,7 +120,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按模型+天查询 Token 消耗时序数据
+     * Query Token consumption time series data by model + day
      */
     fun getModelTimeSeriesByDay(
         @Param("startTime") startTime: String?,
@@ -131,7 +128,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按模型+月查询 Token 消耗时序数据
+     * Query Token consumption time series data by model + month
      */
     fun getModelTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
@@ -139,7 +136,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按智能体+小时查询 Token 消耗时序数据
+     * Query Token consumption time series data by agent + hour
      */
     fun getAgentTimeSeriesByHour(
         @Param("startTime") startTime: String?,
@@ -147,7 +144,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按智能体+天查询 Token 消耗时序数据
+     * Query Token consumption time series data by agent + day
      */
     fun getAgentTimeSeriesByDay(
         @Param("startTime") startTime: String?,
@@ -155,7 +152,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按智能体+月查询 Token 消耗时序数据
+     * Query Token consumption time series data by agent + month
      */
     fun getAgentTimeSeriesByMonth(
         @Param("startTime") startTime: String?,
@@ -163,7 +160,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按会话+小时查询 Token 消耗时序数据
+     * Query Token consumption time series data by session + hour
      */
     fun getSessionTimeSeriesByHour(
         @Param("startTime") startTime: String?,
@@ -171,7 +168,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按会话+天查询 Token 消耗时序数据
+     * Query Token consumption time series data by session + day
      */
     fun getSessionTimeSeriesByDay(
         @Param("startTime") startTime: String?,
@@ -179,7 +176,7 @@ interface TokenStatsMapper {
     ): MutableList<MutableMap<String?, Any?>?>?
 
     /**
-     * 按会话+月查询 Token 消耗时序数据
+     * Query Token consumption time series data by session + month
      */
     fun getSessionTimeSeriesByMonth(
         @Param("startTime") startTime: String?,

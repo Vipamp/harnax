@@ -3,7 +3,7 @@ package com.vipamp.vipclaw.admin.entity
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 
-@Schema(description = "Token 黑名单实体")
+@Schema(description = "Token blacklist entity")
 class SysTokenBlacklist {
     @Schema(description = "ID")
     var id: Long = 0
@@ -11,25 +11,25 @@ class SysTokenBlacklist {
     @Schema(description = "JWT Token")
     var token: String = ""
 
-    @Schema(description = "Token 的 SHA256 哈希值")
+    @Schema(description = "SHA256 hash of the token")
     var tokenHash: String = ""
 
-    @Schema(description = "用户名")
+    @Schema(description = "Username")
     var username: String = ""
 
-    @Schema(description = "用户 ID")
+    @Schema(description = "User ID")
     var userId: Long = 0
 
-    @Schema(description = "加入黑名单原因")
+    @Schema(description = "Reason for blacklisting")
     var reason: String = "logout"
 
-    @Schema(description = "Token 过期时间")
+    @Schema(description = "Token expiration time")
     var expireTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "操作 IP")
+    @Schema(description = "Operation IP")
     var createIp: String = ""
 
     companion object {

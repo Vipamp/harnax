@@ -16,9 +16,6 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * Channel management controller
- *
- * @author vipamp
- * @since 2026-04-08
  */
 @RestController
 @RequestMapping("/api/channels")

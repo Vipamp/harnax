@@ -13,19 +13,19 @@ data class McpServerResponse(
     val id: Long? = null,
     @Schema(description = "MCP name", example = "my-mcp-server")
     val name: String? = null,
-    @Schema(description = "MCP description", example = "这是一个 MCP 服务")
+    @Schema(description = "MCP description", example = "This is an MCP server")
     val description: String? = null,
-    @Schema(description = "MCP type（stdio/sse/streamablehttp）", example = "stdio")
+    @Schema(description = "MCP type (stdio/sse/streamablehttp)", example = "stdio")
     val type: String? = null,
-    @Schema(description = "Execute command（仅 stdio 类型生效）")
+    @Schema(description = "Execute command (only for stdio type)")
     val command: String? = null,
-    @Schema(description = "Service URL（sse/streamablehttp 类型生效）")
+    @Schema(description = "Service URL (for sse/streamablehttp type)")
     val url: String? = null,
-    @Schema(description = "是否启用（0:禁用，1:启用）", example = "1")
+    @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
-    @Schema(description = "Whether public（0:否，1:是）", example = "1")
+    @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int? = null,
-    @Schema(description = "创建人", example = "admin")
+    @Schema(description = "Creator", example = "admin")
     val creator: String? = null,
     @Schema(description = "Creation time", example = "2026-03-12 12:00:00")
     val createTime: LocalDateTime? = null,

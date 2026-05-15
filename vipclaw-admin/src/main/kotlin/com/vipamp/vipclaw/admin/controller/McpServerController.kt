@@ -14,9 +14,6 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * MCP server management controller
- *
- * @author vipamp
- * @since 2026-03-12
  */
 @RestController
 @RequestMapping("/api/mcp")

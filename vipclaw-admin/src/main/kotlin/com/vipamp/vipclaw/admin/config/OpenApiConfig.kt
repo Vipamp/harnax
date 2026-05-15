@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
 /**
- * Swagger/OpenAPI 配置类
+ * Swagger/OpenAPI configuration
  */
 @Configuration
 class OpenApiConfig {
@@ -19,7 +19,7 @@ class OpenApiConfig {
             Info()
                 .title("VIPClaw Admin API")
                 .version("1.0.0")
-                .description("VIPClaw 后端管理系统 API 文档")
+                .description("VIPClaw Backend Management System API Documentation")
                 .contact(
                     Contact()
                         .name("VIPClaw Team")

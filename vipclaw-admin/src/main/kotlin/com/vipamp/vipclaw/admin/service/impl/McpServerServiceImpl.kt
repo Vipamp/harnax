@@ -23,9 +23,6 @@ import org.springframework.util.StringUtils.hasText
 
 /**
  * MCP server service implementation
- *
- * @author vipamp
- * @since 2026-03-12
  */
 @Service
 class McpServerServiceImpl(

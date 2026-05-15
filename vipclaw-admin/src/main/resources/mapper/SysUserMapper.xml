@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.vipamp.vipclaw.admin.mapper.SysUserMapper">
 
-    <!-- 结果映射 -->
+    <!-- Result Map -->
     <resultMap id="SysUserResultMap" type="com.vipamp.vipclaw.admin.entity.SysUser">
         <id column="id" property="id"/>
         <result column="username" property="username"/>
@@ -20,9 +20,9 @@
         <result column="update_time" property="updateTime"/>
     </resultMap>
 
-    <!-- ==================== 基础 CRUD 方法 ==================== -->
+    <!-- ==================== Basic CRUD Methods ==================== -->
 
-    <!-- 根据ID查询 -->
+    <!-- Query by ID -->
     <select id="selectById" resultMap="SysUserResultMap">
         SELECT * FROM sys_user
         WHERE id = #{id}
@@ -30,7 +30,7 @@
         LIMIT 1
     </select>
 
-    <!-- 插入用户 -->
+    <!-- Insert user -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_user (
         username,
@@ -61,7 +61,7 @@
         )
     </insert>
 
-    <!-- 根据ID更新 -->
+    <!-- Update by ID -->
     <update id="updateById">
         UPDATE sys_user SET
         username = #{username},
@@ -77,16 +77,16 @@
         WHERE id = #{id}
     </update>
 
-    <!-- 根据ID删除（逻辑删除） -->
+    <!-- Delete by ID (logical delete) -->
     <update id="deleteById">
         UPDATE sys_user SET active = 0, update_time = NOW()
         WHERE id = #{id}
         AND active = 1
     </update>
 
-    <!-- ==================== 自定义查询方法 ==================== -->
+    <!-- ==================== Custom Query Methods ==================== -->
 
-    <!-- 查询用户列表（带条件） -->
+    <!-- Query user list (with conditions) -->
     <select id="selectUserList" resultMap="SysUserResultMap">
         SELECT 
             u.*,
@@ -112,7 +112,7 @@
         ORDER BY u.update_time DESC
     </select>
 
-    <!-- 根据用户名查询 -->
+    <!-- Query by username -->
     <select id="selectByUsername" resultMap="SysUserResultMap">
         SELECT * FROM sys_user
         WHERE username = #{username}
@@ -120,7 +120,7 @@
         LIMIT 1
     </select>
 
-    <!-- 根据手机号查询 -->
+    <!-- Query by phone -->
     <select id="selectByPhone" resultMap="SysUserResultMap">
         SELECT * FROM sys_user
         WHERE phone = #{phone}
@@ -128,7 +128,7 @@
         LIMIT 1
     </select>
 
-    <!-- 根据邮箱查询 -->
+    <!-- Query by email -->
     <select id="selectByEmail" resultMap="SysUserResultMap">
         SELECT * FROM sys_user
         WHERE email = #{email}
@@ -136,7 +136,7 @@
         LIMIT 1
     </select>
 
-    <!-- 更新用户状态 -->
+    <!-- Update user status -->
     <update id="updateStatus">
         UPDATE sys_user SET
         status = #{status},
@@ -145,7 +145,7 @@
         AND active = 1
     </update>
 
-    <!-- 更新用户最近一次登录时间 -->
+    <!-- Update user last login time -->
     <update id="updateLastLoginTime">
         UPDATE sys_user SET
         last_login_time = #{lastLoginTime, jdbcType=TIMESTAMP},

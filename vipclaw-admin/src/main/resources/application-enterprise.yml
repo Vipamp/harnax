@@ -1,4 +1,4 @@
-# 企业版功能开关配置
+# Enterprise edition feature toggle configuration
 vipclaw:
   edition: enterprise
   features:
@@ -12,7 +12,7 @@ vipclaw:
     phone-login: true
     email-login: true
 
-# 生产环境禁用 Swagger
+# Disable Swagger in production
 springdoc:
   api-docs:
     enabled: false

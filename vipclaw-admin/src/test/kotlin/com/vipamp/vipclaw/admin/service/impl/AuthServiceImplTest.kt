@@ -1,11 +1,15 @@
 package com.vipamp.vipclaw.admin.service.impl
 
+import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.LoginRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
+import com.vipamp.vipclaw.admin.i18n.MessageUtil
 import com.vipamp.vipclaw.admin.mapper.SysUserMapper
+import com.vipamp.vipclaw.admin.mapper.TenantMapper
 import com.vipamp.vipclaw.admin.service.CaptchaService
 import com.vipamp.vipclaw.admin.service.SysTokenBlacklistService
+import com.vipamp.vipclaw.admin.service.UserTenantService
 import com.vipamp.vipclaw.admin.util.JwtUtil
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -49,6 +53,18 @@ class AuthServiceImplTest {
     @Mock
     private lateinit var sysUserMapper: SysUserMapper
 
+    @Mock
+    private lateinit var userTenantService: UserTenantService
+
+    @Mock
+    private lateinit var editionUtil: EditionUtil
+
+    @Mock
+    private lateinit var tenantMapper: TenantMapper
+
+    @Mock
+    private lateinit var messageUtil: MessageUtil
+
     @InjectMocks
     private lateinit var authService: AuthServiceImpl
 
@@ -78,6 +94,10 @@ class AuthServiceImplTest {
             captcha = "ABCD",
             captchaKey = "captcha-key-123",
         )
+
+        // Mock messageUtil to return the key as message
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { it.arguments[0] as String }
+        `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { it.arguments[0] as String }
     }
 
     @Nested

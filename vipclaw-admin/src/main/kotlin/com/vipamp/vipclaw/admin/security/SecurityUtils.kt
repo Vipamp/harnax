@@ -7,8 +7,8 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 
 /**
- * 安全工具类
- * 获取当前登录用户信息
+ * Security utility
+ * Get current logged-in user information
  */
 @Component
 class SecurityUtils(

@@ -4,30 +4,30 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "租户实体类")
+@Schema(description = "Tenant entity")
 class TenantEntity : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @Schema(description = "租户ID")
+    @Schema(description = "Tenant ID")
     var id: Long = 0
 
-    @Schema(description = "租户名称")
+    @Schema(description = "Tenant name")
     var name: String = ""
 
-    @Schema(description = "状态（0:禁用 1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Whether active (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime? = null
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime? = null
 }

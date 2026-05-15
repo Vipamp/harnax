@@ -21,9 +21,6 @@ import org.springframework.web.bind.annotation.*
 /**
  * Tenant management controller
  * Available only for public edition
- *
- * @author vipamp
- * @since 2026-04-28
  */
 @RestController
 @RequestMapping("/api/tenant")

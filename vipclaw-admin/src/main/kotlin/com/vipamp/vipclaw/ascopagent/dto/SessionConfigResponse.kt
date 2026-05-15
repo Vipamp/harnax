@@ -3,23 +3,19 @@ package com.vipamp.vipclaw.ascopagent.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 会话配置响应 DTO
- *
- * @Author: heqingsong
- * @Date: 2026/4/27
- * @Project: vipclaw
+ * Session configuration response DTO
  */
-@Schema(description = "会话配置响应")
+@Schema(description = "Session configuration response")
 data class SessionConfigResponse(
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     val sessionId: String,
 
-    @Schema(description = "是否启用深度思考")
+    @Schema(description = "Enable deep thinking")
     val enableThink: Boolean = false,
 
-    @Schema(description = "是否启用联网搜索")
+    @Schema(description = "Enable web search")
     val enableSearch: Boolean = false,
 
-    @Schema(description = "是否启用计划")
+    @Schema(description = "Enable planning")
     val enablePlan: Boolean = false,
 )

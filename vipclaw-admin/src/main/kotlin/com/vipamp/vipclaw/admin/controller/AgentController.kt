@@ -18,9 +18,6 @@ import org.springframework.web.bind.annotation.*
 /**
  * Agent management controller
  * Available for enterprise and public editions (Agent sharing feature)
- *
- * @author vipamp
- * @since 2026-03-18
  */
 @RestController
 @RequestMapping("/api/agents")

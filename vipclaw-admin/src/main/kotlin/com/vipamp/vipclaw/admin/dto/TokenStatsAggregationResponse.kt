@@ -8,24 +8,24 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * Token 统计聚合查询响应
+ * Token statistics aggregation query response
  */
-@Schema(description = "Token 统计聚合查询响应")
+@Schema(description = "Token statistics aggregation query response")
 data class TokenStatsAggregationResponse(
-    @Schema(description = "总体统计信息")
+    @Schema(description = "Overall statistics")
     var overall: OverallStats? = null,
-    @Schema(description = "按模型聚合数据")
+    @Schema(description = "Aggregated data by model")
     var modelStats: List<ModelStats>? = null,
-    @Schema(description = "按会话聚合数据")
+    @Schema(description = "Aggregated data by session")
     var sessionStats: List<SessionStats>? = null,
-    @Schema(description = "按智能体聚合数据")
+    @Schema(description = "Aggregated data by agent")
     var agentStats: List<AgentStats>? = null,
-    @Schema(description = "时序数据")
+    @Schema(description = "Time series data")
     var timeSeriesData: List<TimeSeriesData>? = null,
 ) {
     companion object {
         /**
-         * 从 Map 转换为 OverallStats
+         * Convert Map to OverallStats
          */
         fun mapToOverallStats(map: Map<String, Any?>): OverallStats = OverallStats(
             totalInputToken = (map["totalInputToken"] as? Number)?.toLong() ?: 0L,
@@ -38,7 +38,7 @@ data class TokenStatsAggregationResponse(
         )
 
         /**
-         * 从 Map 转换为 ModelStats
+         * Convert Map to ModelStats
          */
         fun mapToModelStats(map: Map<String, Any?>): ModelStats = ModelStats(
             modelId = (map["modelId"] as? Number)?.toLong(),
@@ -51,7 +51,7 @@ data class TokenStatsAggregationResponse(
         )
 
         /**
-         * 从 Map 转换为 SessionStats
+         * Convert Map to SessionStats
          */
         fun mapToSessionStats(map: Map<String, Any?>): SessionStats = SessionStats(
             sessionId = map["sessionId"] as? String,
@@ -63,7 +63,7 @@ data class TokenStatsAggregationResponse(
         )
 
         /**
-         * 从 Map 转换为 AgentStats
+         * Convert Map to AgentStats
          */
         fun mapToAgentStats(map: Map<String, Any?>): AgentStats = AgentStats(
             agentId = (map["agentId"] as? Number)?.toLong(),
@@ -75,7 +75,7 @@ data class TokenStatsAggregationResponse(
         )
 
         /**
-         * 从 Map 转换为 TimeSeriesData
+         * Convert Map to TimeSeriesData
          */
         fun mapToTimeSeriesData(map: Map<String, Any?>): TimeSeriesData = TimeSeriesData(
             timePoint = map["timePoint"] as? String,
@@ -88,7 +88,7 @@ data class TokenStatsAggregationResponse(
         )
 
         /**
-         * 从 Map 转换为 TimeSeriesData(带维度)
+         * Convert Map to TimeSeriesData (with dimension)
          */
         fun mapToDimensionTimeSeriesData(map: MutableMap<String?, Any?>, dimensionType: String?): TimeSeriesData {
             val data = TimeSeriesData()
@@ -103,7 +103,7 @@ data class TokenStatsAggregationResponse(
                 }
             }
 
-            // 根据维度类型设置维度信息
+            // Set dimension info based on dimension type
             if ("model" == dimensionType) {
                 val modelIdObj = map.get("modelId")
                 data.dimensionId = modelIdObj?.toString()
@@ -134,23 +134,23 @@ data class TokenStatsAggregationResponse(
 }
 
 /**
- * 总体统计信息
+ * Overall statistics
  */
-@Schema(description = "总体统计信息")
+@Schema(description = "Overall statistics")
 data class OverallStats(
-    @Schema(description = "总输入 Token")
+    @Schema(description = "Total input tokens")
     val totalInputToken: Long = 0L,
-    @Schema(description = "总输出 Token")
+    @Schema(description = "Total output tokens")
     val totalOutputToken: Long = 0L,
-    @Schema(description = "总 Token")
+    @Schema(description = "Total tokens")
     val grandTotalToken: Long = 0L,
-    @Schema(description = "总费用（单位：元）")
+    @Schema(description = "Total fee (unit: yuan)")
     val totalFee: BigDecimal = BigDecimal.ZERO,
-    @Schema(description = "智能体数量")
+    @Schema(description = "Agent count")
     val agentCount: Long = 0L,
-    @Schema(description = "会话数量")
+    @Schema(description = "Session count")
     val sessionCount: Long = 0L,
-    @Schema(description = "模型数量")
+    @Schema(description = "Model count")
     val modelCount: Long = 0L,
 ) : Serializable {
     companion object {
@@ -160,23 +160,23 @@ data class OverallStats(
 }
 
 /**
- * 模型统计
+ * Model statistics
  */
-@Schema(description = "模型统计")
+@Schema(description = "Model statistics")
 data class ModelStats(
-    @Schema(description = "模型 ID")
+    @Schema(description = "Model ID")
     val modelId: Long? = null,
-    @Schema(description = "模型名称")
+    @Schema(description = "Model name")
     val modelName: String? = null,
-    @Schema(description = "供应商名称")
+    @Schema(description = "Provider name")
     val providerName: String? = null,
-    @Schema(description = "总输入 Token")
+    @Schema(description = "Total input tokens")
     val totalInputToken: Long = 0L,
-    @Schema(description = "总输出 Token")
+    @Schema(description = "Total output tokens")
     val totalOutputToken: Long = 0L,
-    @Schema(description = "总 Token")
+    @Schema(description = "Total tokens")
     val grandTotalToken: Long = 0L,
-    @Schema(description = "总费用（单位：元）")
+    @Schema(description = "Total fee (unit: yuan)")
     val totalFee: BigDecimal = BigDecimal.ZERO,
 ) : Serializable {
     companion object {
@@ -186,21 +186,21 @@ data class ModelStats(
 }
 
 /**
- * 会话统计
+ * Session statistics
  */
-@Schema(description = "会话统计")
+@Schema(description = "Session statistics")
 data class SessionStats(
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     val sessionId: String? = null,
-    @Schema(description = "会话标题")
+    @Schema(description = "Session title")
     val sessionTitle: String? = null,
-    @Schema(description = "总输入 Token")
+    @Schema(description = "Total input tokens")
     val totalInputToken: Long = 0L,
-    @Schema(description = "总输出 Token")
+    @Schema(description = "Total output tokens")
     val totalOutputToken: Long = 0L,
-    @Schema(description = "总 Token")
+    @Schema(description = "Total tokens")
     val grandTotalToken: Long = 0L,
-    @Schema(description = "总费用（单位：元）")
+    @Schema(description = "Total fee (unit: yuan)")
     val totalFee: BigDecimal = BigDecimal.ZERO,
 ) : Serializable {
     companion object {
@@ -210,21 +210,21 @@ data class SessionStats(
 }
 
 /**
- * 智能体统计
+ * Agent statistics
  */
-@Schema(description = "智能体统计")
+@Schema(description = "Agent statistics")
 data class AgentStats(
-    @Schema(description = "智能体 ID")
+    @Schema(description = "Agent ID")
     val agentId: Long? = null,
-    @Schema(description = "智能体名称")
+    @Schema(description = "Agent name")
     val agentName: String? = null,
-    @Schema(description = "总输入 Token")
+    @Schema(description = "Total input tokens")
     val totalInputToken: Long = 0L,
-    @Schema(description = "总输出 Token")
+    @Schema(description = "Total output tokens")
     val totalOutputToken: Long = 0L,
-    @Schema(description = "总 Token")
+    @Schema(description = "Total tokens")
     val grandTotalToken: Long = 0L,
-    @Schema(description = "总费用（单位：元）")
+    @Schema(description = "Total fee (unit: yuan)")
     val totalFee: BigDecimal = BigDecimal.ZERO,
 ) : Serializable {
     companion object {
@@ -234,23 +234,23 @@ data class AgentStats(
 }
 
 /**
- * 时序数据
+ * Time series data
  */
-@Schema(description = "时序数据")
+@Schema(description = "Time series data")
 data class TimeSeriesData(
-    @Schema(description = "时间点")
+    @Schema(description = "Time point")
     var timePoint: String? = null,
-    @Schema(description = "维度标识(modelId/agentId/sessionId)")
+    @Schema(description = "Dimension ID (modelId/agentId/sessionId)")
     var dimensionId: String? = null,
-    @Schema(description = "维度名称(modelName/agentName/sessionTitle)")
+    @Schema(description = "Dimension name (modelName/agentName/sessionTitle)")
     var dimensionName: String? = null,
-    @Schema(description = "输入 Token")
+    @Schema(description = "Input tokens")
     var totalInputToken: Long = 0L,
-    @Schema(description = "输出 Token")
+    @Schema(description = "Output tokens")
     var totalOutputToken: Long = 0L,
-    @Schema(description = "总 Token")
+    @Schema(description = "Total tokens")
     var grandTotalToken: Long = 0L,
-    @Schema(description = "总费用（单位：元）")
+    @Schema(description = "Total fee (unit: yuan)")
     var totalFee: BigDecimal = BigDecimal.ZERO,
 ) : Serializable {
     companion object {

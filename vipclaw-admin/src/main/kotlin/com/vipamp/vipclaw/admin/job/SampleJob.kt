@@ -7,11 +7,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * 示例定时任务
- * 用于演示定时任务的基本用法
- *
- * @author vipamp
- * @since 2026-03-16
+ * Sample scheduled job
+ * Used to demonstrate basic usage of scheduled jobs
  */
 @Component
 class SampleJob : BaseJob() {
@@ -21,14 +18,14 @@ class SampleJob : BaseJob() {
     @Throws(Exception::class)
     override fun doExecute(context: JobExecutionContext) {
         val currentTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
-        log.info("【示例任务】正在执行，当前时间: {}", currentTime)
+        log.info("[Sample Job] Executing, current time: {}", currentTime)
 
-        // 这里可以编写具体的业务逻辑
-        // 例如：数据同步、报表生成、定时清理等
+        // Write specific business logic here
+        // e.g., data synchronization, report generation, scheduled cleanup, etc.
 
-        // 模拟任务执行时间
+        // Simulate job execution time
         Thread.sleep(1000)
 
-        log.info("【示例任务】执行完成")
+        log.info("[Sample Job] Execution completed")
     }
 }

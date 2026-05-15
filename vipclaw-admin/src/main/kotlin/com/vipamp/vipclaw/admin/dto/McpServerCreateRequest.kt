@@ -10,8 +10,8 @@ import jakarta.validation.constraints.Size
 @Schema(description = "MCP server creation request object")
 data class McpServerCreateRequest(
     @Schema(description = "MCP name", example = "my-mcp-server", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank(message = "MCP name不能为空")
-    @Size(max = 100, message = "MCP name长度不能超过 100 个字符")
+    @NotBlank(message = "MCP name cannot be empty")
+    @Size(max = 100, message = "MCP name length cannot exceed 100 characters")
     val name: String? = null,
 
     @Schema(description = "MCP description", example = "This is an MCP server")

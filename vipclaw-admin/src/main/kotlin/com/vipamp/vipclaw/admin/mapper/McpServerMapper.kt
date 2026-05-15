@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * McpServer Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * McpServer Mapper interface
  */
 @Mapper
 interface McpServerMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): McpServer?
 
@@ -23,7 +20,7 @@ interface McpServerMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectMcpServerList(
         @Param("keyword") keyword: String?,
         @Param("status") status: Int?,

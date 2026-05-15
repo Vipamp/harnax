@@ -19,9 +19,6 @@ import org.springframework.web.bind.annotation.*
 /**
  * User management controller
  * Available only for enterprise and public editions
- *
- * @author vipamp
- * @since 2026-03-06
  */
 @RestController
 @RequestMapping("/api/users")

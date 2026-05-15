@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * ProcessLogEntity Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
-*/
+ * ProcessLogEntity Mapper interface
+ */
 @Mapper
 interface ProcessLogMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD methods ====================
 
     fun selectById(@Param("id") id: Long): ProcessLogEntity?
 
@@ -23,5 +20,5 @@ interface ProcessLogMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
 }

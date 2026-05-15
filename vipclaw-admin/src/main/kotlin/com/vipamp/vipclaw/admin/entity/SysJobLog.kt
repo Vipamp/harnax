@@ -4,45 +4,45 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "定时任务日志实体类")
+@Schema(description = "Scheduled job log entity")
 class SysJobLog : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @Schema(description = "日志ID")
+    @Schema(description = "Log ID")
     var id: Long = 0
 
-    @Schema(description = "任务ID")
+    @Schema(description = "Job ID")
     var jobId: Long = 0
 
-    @Schema(description = "任务名称")
+    @Schema(description = "Job name")
     var jobName: String = ""
 
-    @Schema(description = "任务组名")
+    @Schema(description = "Job group")
     var jobGroup: String = ""
 
-    @Schema(description = "调用目标")
+    @Schema(description = "Invocation target")
     var invokeTarget: String = ""
 
-    @Schema(description = "执行信息")
+    @Schema(description = "Execution message")
     var jobMessage: String = ""
 
-    @Schema(description = "执行状态（0-失败，1-成功）")
+    @Schema(description = "Execution status (0-failure, 1-success)")
     var status: Int = 1
 
-    @Schema(description = "异常信息")
+    @Schema(description = "Exception information")
     var exceptionInfo = ""
 
-    @Schema(description = "开始时间")
+    @Schema(description = "Start time")
     var startTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "结束时间")
+    @Schema(description = "End time")
     var endTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 }

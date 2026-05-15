@@ -7,106 +7,103 @@ import com.vipamp.vipclaw.admin.dto.SysUserUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysUser
 
 /**
- * 用户服务接口
- *
- * @author vipamp
- * @since 2026-03-05
+ * User service interface
  */
 interface SysUserService {
 
     /**
-     * 分页查询用户列表
+     * Query user list with pagination
      *
-     * @param keyword  模糊查询字段
-     * @param status   状态筛选字段
-     * @param tenantId 租户ID过滤
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param keyword  Fuzzy search field
+     * @param status   Status filter field
+     * @param tenantId Tenant ID filter
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(keyword: String?, status: Int?, tenantId: Long?, pageNum: Int, pageSize: Int): Page<SysUser>
 
     /**
-     * 获取单个用户详情
+     * Get single user details
      *
-     * @param id 用户 ID
-     * @return 用户实体
+     * @param id User ID
+     * @return User entity
      */
     fun getSysUser(id: Long): SysUser?
 
     /**
-     * 创建用户
+     * Create user
      *
-     * @param request 用户创建请求对象
-     * @param isPersonal 是否是个人版
-     * @return 创建结果
+     * @param request User create request object
+     * @param isPersonal Whether it is personal edition
+     * @return Create result
      */
     fun createUser(request: SysUserCreateRequest, isPersonal: Boolean = false): Boolean
 
     /**
-     * 更新用户
+     * Update user
      *
-     * @param id      用户 ID
-     * @param request 用户更新请求对象
-     * @param isPersonal 是否是个人版
-     * @return 更新结果
+     * @param id      User ID
+     * @param request User update request object
+     * @param isPersonal Whether it is personal edition
+     * @return Update result
      */
     fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean = false): Boolean
 
     /**
-     * 切换用户启用状态
+     * Toggle user enable status
      *
-     * @param id     用户 ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param id     User ID
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleUserStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除用户
+     * Delete user
      *
-     * @param id 用户 ID
-     * @return 删除结果
+     * @param id User ID
+     * @return Delete result
      */
     fun deleteUser(id: Long): Boolean
 
     /**
-     * 根据用户名查询用户
+     * Query user by username
      *
-     * @param username 用户名
-     * @return 用户实体
+     * @param username Username
+     * @return User entity
      */
     fun getByUsername(username: String): SysUser?
 
     /**
-     * 检查用户名是否存在
+     * Check if username exists
      *
-     * @param username 用户名
-     * @return 是否存在
+     * @param username Username
+     * @return Whether exists
      */
     fun existsByUsername(username: String): Boolean
 
     /**
-     * 检查手机号是否存在
+     * Check if phone exists
      *
-     * @param phone 手机号
-     * @return 是否存在
+     * @param phone Phone number
+     * @return Whether exists
      */
     fun existsByPhone(phone: String): Boolean
 
     /**
-     * 检查邮箱是否存在
+     * Check if email exists
      *
-     * @param email 邮箱
-     * @return 是否存在
+     * @param email Email
+     * @return Whether exists
      */
     fun existsByEmail(email: String): Boolean
 
     /**
-     * 将用户实体转换为响应对象
+     * Convert user entity to response object
      *
-     * @param sysUser 用户实体
-     * @return 用户响应对象
+     * @param sysUser User entity
+     * @return User response object
      */
     fun convertToResponse(sysUser: SysUser): SysUserResponse
 }

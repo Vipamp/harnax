@@ -5,12 +5,9 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * 模型实体类
- *
- * @author vipamp
- * @since 2026-03-13
+ * Model entity
  */
-@Schema(description = "模型实体类")
+@Schema(description = "Model entity")
 class Model : Serializable {
 
     companion object {
@@ -20,57 +17,57 @@ class Model : Serializable {
     @Schema(description = "ID")
     var id: Long = 0
 
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "名称")
+    @Schema(description = "Name")
     var name: String = ""
 
-    @Schema(description = "模型名称")
+    @Schema(description = "Model name")
     var modelName: String = ""
 
-    @Schema(description = "模型供应商ID")
+    @Schema(description = "Model provider ID")
     var providerId: Long = 0
 
-    @Schema(description = "描述")
+    @Schema(description = "Description")
     var description: String? = null
 
-    @Schema(description = "模型类型（chat/embedding）")
+    @Schema(description = "Model type (chat/embedding)")
     var modelType: String = "chat"
 
-    @Schema(description = "是否支持联网（0:否，1:是）")
+    @Schema(description = "Internet access support (0:no, 1:yes)")
     var supportInternet: Int = 0
 
-    @Schema(description = "是否支持推理（0:否，1:是）")
+    @Schema(description = "Reasoning support (0:no, 1:yes)")
     var supportReasoning: Int = 0
 
-    @Schema(description = "是否支持工具（0:否，1:是）")
+    @Schema(description = "Tool support (0:no, 1:yes)")
     var supportTool: Int = 0
 
-    @Schema(description = "是否支持MCP（0:否，1:是）")
+    @Schema(description = "MCP support (0:no, 1:yes)")
     var supportMcp: Int = 0
 
-    @Schema(description = "是否支持视觉（0:否，1:是）")
+    @Schema(description = "Vision support (0:no, 1:yes)")
     var supportVision: Int = 0
 
-    @Schema(description = "价格（元/百万token）")
+    @Schema(description = "Price (CNY per million tokens)")
     var price: Double = 0.0
 
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String? = null
 
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

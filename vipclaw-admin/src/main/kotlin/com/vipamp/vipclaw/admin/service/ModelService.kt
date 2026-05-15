@@ -7,26 +7,23 @@ import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Model
 
 /**
- * 模型服务接口
- *
- * @author vipamp
- * @since 2026-03-13
+ * Model service interface
  */
 interface ModelService {
 
     /**
-     * 分页查询模型
+     * Query models with pagination
      *
-     * @param name       名称
-     * @param providerId 供应商ID
-     * @param modelType  模型类型
-     * @param status     状态
-     * @param tags       标签筛选（支持多个，如：internet,reasoning,tool,mcp,vision）
-     * @param minPrice   最低价格
-     * @param maxPrice   最高价格
-     * @param pageNum    当前页码
-     * @param pageSize   每页大小
-     * @return 分页结果
+     * @param name       Name
+     * @param providerId Provider ID
+     * @param modelType  Model type
+     * @param status     Status
+     * @param tags       Tags filter (supports multiple, e.g.: internet,reasoning,tool,mcp,vision)
+     * @param minPrice   Minimum price
+     * @param maxPrice   Maximum price
+     * @param pageNum    Current page number
+     * @param pageSize   Page size
+     * @return Paginated result
      */
     fun page(
         name: String?,
@@ -41,61 +38,61 @@ interface ModelService {
     ): Page<Model>
 
     /**
-     * 获取模型详情
+     * Get model details
      *
      * @param id ID
-     * @return 模型实体
+     * @return Model entity
      */
     fun getModel(id: Long): Model?
 
     /**
-     * 创建模型
+     * Create model
      *
-     * @param request 创建请求
-     * @return 模型响应
+     * @param request Create request
+     * @return Model response
      */
     fun createModel(request: ModelCreateRequest): Boolean
 
     /**
-     * 更新模型
+     * Update model
      *
      * @param id      ID
-     * @param request 更新请求
-     * @return 模型响应
+     * @param request Update request
+     * @return Model response
      */
     fun updateModel(id: Long, request: ModelUpdateRequest): Boolean
 
     /**
-     * 更新模型状态
+     * Update model status
      *
      * @param id     ID
-     * @param status 状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param status Status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun updateStatus(id: Long, status: Int): Boolean
 
     /**
-     * 切换模型状态
+     * Toggle model status
      *
      * @param id     ID
-     * @param status 状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param status Status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleModel(id: Long, status: Int): Boolean
 
     /**
-     * 删除模型（逻辑删除）
+     * Delete model (logical delete)
      *
      * @param id ID
-     * @return 删除结果
+     * @return Delete result
      */
     fun deleteModel(id: Long): Boolean
 
     /**
-     * 将模型实体转换为模型响应
+     * Convert model entity to model response
      *
-     * @param model 模型实体
-     * @return 模型响应
+     * @param model Model entity
+     * @return Model response
      */
     fun convertToResponse(model: Model): ModelResponse
 }

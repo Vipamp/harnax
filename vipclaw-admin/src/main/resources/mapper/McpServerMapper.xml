@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.vipamp.vipclaw.admin.mapper.McpServerMapper">
 
-    <!-- 结果映射 -->
+    <!-- Result Map -->
     <resultMap id="McpServerResultMap" type="com.vipamp.vipclaw.admin.entity.McpServer">
         <id column="id" property="id"/>
         <result column="name" property="name"/>
@@ -18,7 +18,7 @@
         <result column="update_time" property="updateTime"/>
     </resultMap>
 
-    <!-- ==================== 基础 CRUD 方法 ==================== -->
+    <!-- ==================== Basic CRUD Methods ==================== -->
 
     <!-- selectById -->
     <select id="selectById" resultMap="McpServerResultMap">

@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * ModelProvider Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * ModelProvider Mapper interface
  */
 @Mapper
 interface ModelProviderMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): ModelProvider?
 
@@ -25,7 +22,7 @@ interface ModelProviderMapper {
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectModelProviderList(
         @Param("name") name: String?,
         @Param("type") type: String?,

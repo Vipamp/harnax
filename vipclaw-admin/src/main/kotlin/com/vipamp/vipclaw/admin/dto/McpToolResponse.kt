@@ -4,9 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema
 
 /**
  * MCP tool response object
- *
- * @author vipamp
- * @since 2026-04-10
  */
 @Schema(description = "MCP tool response object")
 data class McpToolResponse(

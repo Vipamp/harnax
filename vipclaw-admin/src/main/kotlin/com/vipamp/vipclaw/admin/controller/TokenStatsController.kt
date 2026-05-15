@@ -16,9 +16,6 @@ import java.time.format.DateTimeFormatter
 /**
  * Token consumption statistics controller
  * Available only for enterprise and public editions
- *
- * @author vipamp
- * @since 2026-04-11
  */
 @RestController
 @RequestMapping("/api/token-stats")

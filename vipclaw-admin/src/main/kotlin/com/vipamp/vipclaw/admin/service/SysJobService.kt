@@ -6,90 +6,87 @@ import com.vipamp.vipclaw.admin.dto.SysJobUpdateRequest
 import com.vipamp.vipclaw.admin.entity.SysJob
 
 /**
- * 定时任务服务接口
- *
- * @author vipamp
- * @since 2026-03-16
+ * Scheduled job service interface
  */
 interface SysJobService {
 
     /**
-     * 分页查询定时任务列表
+     * Query scheduled job list with pagination
      *
-     * @param keyword   模糊查询字段（任务名称）
-     * @param jobStatus 状态筛选字段
-     * @param pageNum   当前页码
-     * @param pageSize  每页大小
-     * @return 分页结果
+     * @param keyword   Fuzzy search field (job name)
+     * @param jobStatus Status filter field
+     * @param pageNum   Current page number
+     * @param pageSize  Page size
+     * @return Paginated result
      */
     fun page(keyword: String?, jobStatus: Int?, pageNum: Int, pageSize: Int): Page<SysJob>
 
     /**
-     * 获取单个定时任务详情
+     * Get single scheduled job details
      *
-     * @param id 任务 ID
-     * @return 任务实体
+     * @param id Job ID
+     * @return Job entity
      */
     fun getSysJob(id: Long): SysJob?
 
     /**
-     * 创建定时任务
+     * Create scheduled job
      *
-     * @param request 任务创建请求对象
-     * @return 创建结果
+     * @param request Job create request object
+     * @return Create result
      */
     fun createJob(request: SysJobCreateRequest): Boolean
 
     /**
-     * 更新定时任务
+     * Update scheduled job
      *
-     * @param id      任务 ID
-     * @param request 任务更新请求对象
-     * @return 更新结果
+     * @param id      Job ID
+     * @param request Job update request object
+     * @return Update result
      */
     fun updateJob(id: Long, request: SysJobUpdateRequest): Boolean
 
     /**
-     * 删除定时任务
+     * Delete scheduled job
      *
-     * @param id 任务 ID
-     * @return 删除结果
+     * @param id Job ID
+     * @return Delete result
      */
     fun deleteJob(id: Long): Boolean
 
     /**
-     * 启动定时任务
+     * Start scheduled job
      *
-     * @param id 任务 ID
-     * @return 操作结果
+     * @param id Job ID
+     * @return Operation result
      */
     fun startJob(id: Long): Boolean
 
     /**
-     * 暂停定时任务
+     * Pause scheduled job
      *
-     * @param id 任务 ID
-     * @return 操作结果
+     * @param id Job ID
+     * @return Operation result
      */
     fun pauseJob(id: Long): Boolean
 
     /**
-     * 立即执行一次定时任务
+     * Execute scheduled job once immediately
      *
-     * @param id 任务 ID
-     * @return 操作结果
+     * @param id Job ID
+     * @return Operation result
      */
     fun runJobOnce(id: Long): Boolean
 
     /**
-     * 从数据库加载所有运行中的任务到调度器
+     * Load all running jobs from database to scheduler
      */
     fun loadJobsToScheduler(): Unit
 
     /**
-     * 获取所有运行中的任务
+     * Get all running jobs
      *
-     * @return 任务列表
+     * @return Job list
      */
     fun getRunningJobs(): List<SysJob>
 }

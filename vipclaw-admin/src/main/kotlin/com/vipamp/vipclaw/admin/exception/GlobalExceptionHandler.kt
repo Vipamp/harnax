@@ -16,8 +16,8 @@ import org.springframework.web.servlet.NoHandlerFoundException
 import java.sql.SQLException
 
 /**
- * 全局异常处理器
- * 统一处理所有Controller层抛出的异常，避免敏感信息泄露
+ * Global exception handler
+ * Uniformly handle all exceptions thrown at Controller layer to avoid sensitive information leakage
  */
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -25,18 +25,18 @@ class GlobalExceptionHandler {
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     /**
-     * 处理业务异常
-     * 业务异常是预期的异常，只返回业务错误码和消息
+     * Handle business exception
+     * Business exception is expected, only return business error code and message
      */
     @ExceptionHandler(BizException::class)
     fun handleBizException(ex: BizException): ResultVo<Void> {
-        log.warn("业务异常: code={}, message={}", ex.code, ex.message)
-        return ResultVo.error(ex.code, ex.message ?: "业务处理失败")
+        log.warn("Business exception: code={}, message={}", ex.code, ex.message)
+        return ResultVo.error(ex.code, ex.message ?: "Business operation failed")
     }
 
     /**
-     * 处理参数校验异常
-     * 提取第一个校验错误返回给用户
+     * Handle validation exception
+     * Extract first validation error and return to user
      */
     @ExceptionHandler(MethodArgumentNotValidException::class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -44,111 +44,111 @@ class GlobalExceptionHandler {
         val message = ex.bindingResult.fieldErrors.stream()
             .map { error -> "${error.field}: ${error.defaultMessage}" }
             .findFirst()
-            .orElse("参数校验失败")
-        log.warn("参数校验失败: {}", message)
+            .orElse("Validation failed")
+        log.warn("Validation failed: {}", message)
         return ResultVo.error(400, message)
     }
 
     /**
-     * 处理非法参数异常
+     * Handle illegal argument exception
      */
     @ExceptionHandler(IllegalArgumentException::class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     fun handleIllegalArgumentException(ex: IllegalArgumentException): ResultVo<Void> {
-        log.warn("非法参数: {}", ex.message)
-        return ResultVo.error(400, ex.message ?: "参数错误")
+        log.warn("Illegal argument: {}", ex.message)
+        return ResultVo.error(400, ex.message ?: "Parameter error")
     }
 
     /**
-     * 处理数据库访问异常
-     * 避免将数据库错误细节暴露给前端
+     * Handle database access exception
+     * Avoid exposing database error details to frontend
      */
     @ExceptionHandler(DataAccessException::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleDataAccessException(ex: DataAccessException): ResultVo<Void> {
-        log.error("数据库访问异常", ex)
-        return ResultVo.error(500, "数据库操作失败，请稍后重试")
+        log.error("Database access exception", ex)
+        return ResultVo.error(500, "Database operation failed, please try again later")
     }
 
     /**
-     * 处理SQL异常
+     * Handle SQL exception
      */
     @ExceptionHandler(SQLException::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleSQLException(ex: SQLException): ResultVo<Void> {
-        log.error("SQL异常", ex)
-        return ResultVo.error(500, "数据库操作失败，请稍后重试")
+        log.error("SQL exception", ex)
+        return ResultVo.error(500, "Database operation failed, please try again later")
     }
 
     /**
-     * 处理404异常
+     * Handle 404 exception
      */
     @ExceptionHandler(NoHandlerFoundException::class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     fun handleNoHandlerFoundException(ex: NoHandlerFoundException): ResultVo<Void> {
-        log.warn("请求的资源不存在: {}", ex.requestURL)
-        return ResultVo.error(404, "请求的资源不存在")
+        log.warn("Requested resource not found: {}", ex.requestURL)
+        return ResultVo.error(404, "Requested resource not found")
     }
 
     /**
-     * 处理请求方法不支持异常
+     * Handle request method not supported exception
      */
     @ExceptionHandler(HttpRequestMethodNotSupportedException::class)
     @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
     fun handleMethodNotSupportedException(ex: HttpRequestMethodNotSupportedException): ResultVo<Void> {
-        log.warn("不支持的请求方法: {}", ex.method)
-        return ResultVo.error(405, "不支持的请求方法")
+        log.warn("Request method not supported: {}", ex.method)
+        return ResultVo.error(405, "Request method not supported")
     }
 
     /**
-     * 处理消息不可读异常（JSON解析失败等）
+     * Handle message not readable exception (JSON parsing failure, etc.)
      */
     @ExceptionHandler(HttpMessageNotReadableException::class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     fun handleHttpMessageNotReadableException(ex: HttpMessageNotReadableException): ResultVo<Void> {
-        log.warn("请求消息解析失败: {}", ex.message)
-        return ResultVo.error(400, "请求参数格式错误")
+        log.warn("Request message parsing failed: {}", ex.message)
+        return ResultVo.error(400, "Request parameter format error")
     }
 
     /**
-     * 处理缺少请求参数异常
+     * Handle missing request parameter exception
      */
     @ExceptionHandler(MissingServletRequestParameterException::class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     fun handleMissingServletRequestParameterException(ex: MissingServletRequestParameterException): ResultVo<Void> {
-        log.warn("缺少请求参数: {}", ex.parameterName)
-        return ResultVo.error(400, "缺少必需参数: ${ex.parameterName}")
+        log.warn("Missing request parameter: {}", ex.parameterName)
+        return ResultVo.error(400, "Missing required parameter: ${ex.parameterName}")
     }
 
     /**
-     * 处理文件上传大小超限异常
+     * Handle file upload size exceeded exception
      */
     @ExceptionHandler(MaxUploadSizeExceededException::class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     fun handleMaxUploadSizeExceededException(ex: MaxUploadSizeExceededException): ResultVo<Void> {
-        log.warn("文件上传大小超限")
-        return ResultVo.error(400, "上传文件大小超过限制")
+        log.warn("File upload size exceeded")
+        return ResultVo.error(400, "File size exceeds limit")
     }
 
     /**
-     * 处理所有未捕获的运行时异常
-     * 作为兜底处理，避免将敏感信息和技术细节暴露给前端
+     * Handle all uncaught runtime exceptions
+     * Fallback handler to avoid exposing sensitive information and technical details to frontend
      */
     @ExceptionHandler(RuntimeException::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleRuntimeException(ex: RuntimeException): ResultVo<Void> {
-        log.error("系统运行时异常", ex)
-        return ResultVo.error(500, "系统内部错误，请稍后重试")
+        log.error("System runtime exception", ex)
+        return ResultVo.error(500, "System internal error, please try again later")
     }
 
     /**
-     * 处理所有未捕获的异常
-     * 最终的兜底处理
+     * Handle all uncaught exceptions
+     * Final fallback handler
      */
     @ExceptionHandler(Exception::class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     fun handleException(ex: Exception): ResultVo<Void> {
-        log.error("系统异常", ex)
-        return ResultVo.error(500, "系统错误，请稍后重试")
+        log.error("System exception", ex)
+        return ResultVo.error(500, "System error, please try again later")
     }
 }

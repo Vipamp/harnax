@@ -21,9 +21,6 @@ import java.time.LocalDateTime
 
 /**
  * Model service implementation
- *
- * @author vipamp
- * @since 2026-03-13
  */
 @Service
 class ModelServiceImpl(

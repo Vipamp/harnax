@@ -11,10 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/19
  * @Description: Health check controller
- * @Project: vipclaw
  */
 @RestController
 @RequestMapping("/api/")

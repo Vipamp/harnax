@@ -5,12 +5,9 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * 智能体实体类
- *
- * @author vipamp
- * @since 2026-03-18
+ * Agent entity
  */
-@Schema(description = "智能体实体类")
+@Schema(description = "Agent entity")
 class Agent : Serializable {
 
     companion object {
@@ -24,86 +21,86 @@ class Agent : Serializable {
     var id: Long = 0
 
     /**
-     * 所属租户ID
+     * Tenant ID
      */
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
     /**
-     * 智能体名称
+     * Agent name
      */
-    @Schema(description = "智能体名称")
+    @Schema(description = "Agent name")
     var name: String = ""
 
     /**
-     * 智能体描述
+     * Agent description
      */
-    @Schema(description = "智能体描述")
+    @Schema(description = "Agent description")
     var description: String = ""
 
     /**
-     * 系统提示词（支持 Markdown）
+     * System prompt (Markdown supported)
      */
-    @Schema(description = "系统提示词（支持 Markdown）")
+    @Schema(description = "System prompt (Markdown supported)")
     var systemPrompt: String = ""
 
     /**
-     * 对话模型 ID
+     * Chat model ID
      */
-    @Schema(description = "对话模型 ID")
+    @Schema(description = "Chat model ID")
     var modelId: Long = 0
 
     /**
-     * MCP 服务列表（JSON 格式）
+     * MCP service list (JSON format)
      */
-    @Schema(description = "MCP 服务列表（JSON 格式）")
+    @Schema(description = "MCP service list (JSON format)")
     var mcpList: String = ""
 
     /**
-     * 技能列表（JSON 格式）
+     * Skill list (JSON format)
      */
-    @Schema(description = "技能列表（JSON 格式）")
+    @Schema(description = "Skill list (JSON format)")
     var skillList: String = ""
 
     /**
-     * 所有者
+     * Owner
      */
-    @Schema(description = "所有者")
+    @Schema(description = "Owner")
     var owner: String = ""
 
     /**
-     * 是否启用（0:禁用，1:启用）
+     * Status (0:disabled, 1:enabled)
      */
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
     /**
-     * 是否公开（0:否，1:是）
+     * Public status (0:no, 1:yes)
      */
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
     /**
-     * 创建人
+     * Creator
      */
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
     /**
-     * 是否可用（0:被删除，1:可用）
+     * Active status (0:deleted, 1:active)
      */
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
     /**
-     * 创建时间
+     * Creation time
      */
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
-     * 更新时间
+     * Update time
      */
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

@@ -8,94 +8,91 @@ import com.vipamp.vipclaw.admin.dto.SyncSkillResponse
 import com.vipamp.vipclaw.admin.entity.SkillRepository
 
 /**
- * 技能仓库服务接口
- *
- * @author vipamp
- * @since 2026-03-16
+ * Skill repository service interface
  */
 interface SkillRepositoryService {
 
     /**
-     * 分页查询技能仓库列表
+     * Query skill repository list with pagination
      *
-     * @param name     仓库名称
-     * @param status   状态筛选字段
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param name     Repository name
+     * @param status   Status filter field
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SkillRepository>
 
     /**
-     * 获取所有启用的仓库列表
+     * Get all active repository list
      *
-     * @return 仓库列表
+     * @return Repository list
      */
     fun getActiveRepositories(): List<SkillRepository>
 
     /**
-     * 获取单个技能仓库详情
+     * Get single skill repository details
      *
-     * @param id 技能仓库 ID
-     * @return 技能仓库实体
+     * @param id Skill repository ID
+     * @return Skill repository entity
      */
     fun getSkillRepository(id: Long): SkillRepository?
 
     /**
-     * 创建技能仓库
+     * Create skill repository
      *
-     * @param request 技能仓库创建请求对象
-     * @return 创建结果
+     * @param request Skill repository create request object
+     * @return Create result
      */
     fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean
 
     /**
-     * 更新技能仓库
+     * Update skill repository
      *
-     * @param id      技能仓库 ID
-     * @param request 技能仓库更新请求对象
-     * @return 更新结果
+     * @param id      Skill repository ID
+     * @param request Skill repository update request object
+     * @return Update result
      */
     fun updateSkillRepository(id: Long, request: SkillRepositoryUpdateRequest): Boolean
 
     /**
-     * 切换技能仓库启用状态
+     * Toggle skill repository enable status
      *
-     * @param id     技能仓库 ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param id     Skill repository ID
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleSkillRepository(id: Long, status: Int): Boolean
 
     /**
-     * 删除技能仓库
+     * Delete skill repository
      *
-     * @param id 技能仓库 ID
-     * @return 删除结果
+     * @param id Skill repository ID
+     * @return Delete result
      */
     fun deleteSkillRepository(id: Long): Boolean
 
     /**
-     * 根据仓库名称查询仓库
+     * Query repository by name
      *
-     * @param name 仓库名称
-     * @return 技能仓库实体
+     * @param name Repository name
+     * @return Skill repository entity
      */
     fun getByName(name: String): SkillRepository?
 
     /**
-     * 获取远程技能列表（从 Git 仓库同步）
+     * Get remote skill list (sync from Git repository)
      *
-     * @param repositoryId 技能仓库 ID
-     * @return 远程技能列表
+     * @param repositoryId Skill repository ID
+     * @return Remote skill list
      */
     fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse>
 
     /**
-     * 将技能仓库实体转换为技能仓库响应对象
+     * Convert skill repository entity to skill repository response object
      *
-     * @param skillRepository 技能仓库实体
-     * @return 技能仓库响应对象
+     * @param skillRepository Skill repository entity
+     * @return Skill repository response object
      */
     fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse
 }

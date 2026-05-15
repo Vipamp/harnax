@@ -1,220 +1,349 @@
--- 创建数据库
-CREATE DATABASE IF NOT EXISTS `vipclaw` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- VIPClaw Database Initialization Script
+-- This script creates all necessary tables for the VIPClaw platform
 
-USE `vipclaw`;
+-- ============================================
+-- System Tables
+-- ============================================
 
--- 用户表
+-- Drop and create User table
 DROP TABLE IF EXISTS `sys_user`;
-CREATE TABLE `sys_user` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
-    `username` VARCHAR(50) NOT NULL COMMENT '用户名',
-    `password` VARCHAR(100) NOT NULL COMMENT '密码',
-    `nickname` VARCHAR(50) NOT NULL COMMENT '昵称',
-    `email` VARCHAR(100) NOT NULL COMMENT '邮箱',
-    `phone` VARCHAR(20) NOT NULL COMMENT '手机号',
-    `gender` TINYINT(2) DEFAULT 2 COMMENT '性别 (0:女 1:男 2:未知)',
-    `avatar` VARCHAR(255) DEFAULT '' COMMENT '头像 URL',
-    `status` TINYINT(2) DEFAULT 1 COMMENT '状态 (0:禁用 1:使用)',
-    `is_admin` TINYINT(2) DEFAULT 0 COMMENT '是否是管理员（0:否，1:是）',
-    `active` TINYINT(2) DEFAULT 1 COMMENT '状态 (0:已删除 1:未删除)',
-    `last_login_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '最近一次登陆时间',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+CREATE TABLE `sys_user`
+(
+    `id`              bigint       NOT NULL AUTO_INCREMENT COMMENT 'User ID',
+    `tenant_id`       bigint       DEFAULT NULL COMMENT 'Tenant ID (primary tenant)',
+    `username`        varchar(50)  NOT NULL,
+    `password`        varchar(100) NOT NULL,
+    `nickname`        varchar(50)  NOT NULL,
+    `email`           varchar(100) NOT NULL,
+    `phone`           varchar(20)  NOT NULL,
+    `gender`          tinyint      DEFAULT '2' COMMENT 'Gender (0: Male, 1: Female, 2: Unknown)',
+    `avatar`          varchar(255) DEFAULT '' COMMENT 'Avatar URL',
+    `status`          tinyint      DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_admin`        tinyint      DEFAULT '0' COMMENT 'Is admin (0: No, 1: Yes)',
+    `active`          tinyint      DEFAULT '1' COMMENT 'Active status (0: Inactive, 1: Active)',
+    `last_login_time` datetime     DEFAULT NULL COMMENT 'Last login time',
+    `create_time`     datetime     DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     datetime     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_username` (`username`),
-    UNIQUE KEY `uk_email` (`email`),
-    UNIQUE KEY `uk_phone` (`phone`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+    KEY               `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User table';
 
--- MCP 服务表
+-- Drop and create Token blacklist table
+DROP TABLE IF EXISTS `sys_token_blacklist`;
+CREATE TABLE `sys_token_blacklist`
+(
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Blacklist ID',
+    `token`       varchar(512) NOT NULL COMMENT 'JWT Token',
+    `token_hash`  varchar(64)  NOT NULL COMMENT 'Token hash (SHA256)',
+    `username`    varchar(50)           DEFAULT NULL,
+    `user_id`     bigint                DEFAULT NULL COMMENT 'User ID',
+    `reason`      varchar(50)           DEFAULT 'logout' COMMENT 'Blacklist reason (logout/revoke/ban/expired)',
+    `expire_time` datetime     NOT NULL COMMENT 'Token expiration time',
+    `create_time` datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `create_ip`   varchar(50)           DEFAULT NULL COMMENT 'Client IP address',
+    PRIMARY KEY (`id`),
+    KEY           `idx_expire_time` (`expire_time`),
+    KEY           `idx_user_id` (`user_id`),
+    KEY           `idx_username` (`username`),
+    KEY           `idx_token_lookup` (`token_hash`,`expire_time`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token blacklist table';
+
+-- Drop and create Tenant table
+DROP TABLE IF EXISTS `tenant`;
+CREATE TABLE `tenant`
+(
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Tenant ID',
+    `name`        varchar(100) NOT NULL COMMENT 'Tenant name',
+    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `creator`     varchar(100) NOT NULL COMMENT 'Creator',
+    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tenant table';
+
+-- Drop and create User-Tenant relationship table
+DROP TABLE IF EXISTS `user_tenant`;
+CREATE TABLE `user_tenant`
+(
+    `id`        bigint NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
+    `user_id`   bigint NOT NULL COMMENT 'User ID',
+    `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
+    `role`      varchar(50) DEFAULT 'member' COMMENT 'Role (admin/member)',
+    `status`    tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `joined_at` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
+    PRIMARY KEY (`id`),
+    KEY         `idx_tenant_id` (`tenant_id`),
+    KEY         `idx_user_id` (`user_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User-Tenant relationship table';
+
+-- ============================================
+-- Business Tables
+-- ============================================
+
+-- Drop and create MCP Server table
 DROP TABLE IF EXISTS `mcp_server`;
 CREATE TABLE `mcp_server`
 (
-    `id`          BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'MCP ID',
-    `name`        VARCHAR(100) NOT NULL COMMENT 'MCP 名称',
-    `description` TEXT         DEFAULT NULL COMMENT 'MCP 描述',
-    `type`        VARCHAR(20)  NOT NULL COMMENT 'MCP 类型（stdio/sse/streamablehttp）',
-    `command`     VARCHAR(500) DEFAULT NULL COMMENT '执行命令（仅 stdio 类型生效）',
-    `url`         VARCHAR(500) DEFAULT NULL COMMENT '服务地址（sse/streamablehttp 类型生效）',
-    `status`      TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`      TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time` DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'MCP Server ID',
+    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `name`        varchar(100) NOT NULL COMMENT 'MCP Server name',
+    `description` text COMMENT 'MCP Server description',
+    `type`        varchar(20)  NOT NULL COMMENT 'MCP type (stdio/sse/streamablehttp)',
+    `command`     varchar(500)          DEFAULT NULL COMMENT 'Command (for stdio type)',
+    `url`         varchar(500)          DEFAULT NULL COMMENT 'URL (for sse/streamablehttp type)',
+    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`   tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`     varchar(100)          DEFAULT NULL,
+    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` datetime              DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务表';
+    KEY           `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP Server table';
 
--- 模型服务商表
-DROP TABLE IF EXISTS `model_provider`;
-CREATE TABLE `model_provider`
-(
-    `id`           BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`         VARCHAR(50)  NOT NULL COMMENT '服务商名称（dashscope/openai/ollama）',
-    `display_name` VARCHAR(100) NOT NULL COMMENT '显示名称',
-    `api_key`      VARCHAR(500) DEFAULT NULL COMMENT 'API 密钥',
-    `base_url`     VARCHAR(500) DEFAULT NULL COMMENT 'API 地址',
-    `status`       TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`       TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time`  DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`  DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型服务商表';
-
--- 模型表
-DROP TABLE IF EXISTS `model`;
-CREATE TABLE `model`
-(
-    `id`               BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`             VARCHAR(100) NOT NULL COMMENT '名称',
-    `model_name`       VARCHAR(100) NOT NULL COMMENT '模型名称',
-    `provider_id`      BIGINT(20)   NOT NULL COMMENT '模型供应商ID',
-    `description`      TEXT         DEFAULT NULL COMMENT '描述',
-    `model_type`       VARCHAR(20)  NOT NULL COMMENT '模型类型（chat/embedding）',
-    `support_internet` TINYINT(1)   DEFAULT 0 COMMENT '是否支持联网（0:否，1:是）',
-    `support_reasoning` TINYINT(1)  DEFAULT 0 COMMENT '是否支持推理（0:否，1:是）',
-    `support_tool`     TINYINT(1)   DEFAULT 0 COMMENT '是否支持工具（0:否，1:是）',
-    `support_mcp`      TINYINT(1)   DEFAULT 0 COMMENT '是否支持MCP（0:否，1:是）',
-    `support_vision`   TINYINT(1)   DEFAULT 0 COMMENT '是否支持视觉（0:否，1:是）',
-    `price`            DECIMAL(10, 4) DEFAULT 0.0000 COMMENT '价格（元/百万token）',
-    `status`           TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`           TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    KEY `idx_provider_id` (`provider_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型表';
-
--- 定时任务表
-DROP TABLE IF EXISTS `sys_job`;
-CREATE TABLE `sys_job` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '任务ID',
-    `job_name` VARCHAR(100) NOT NULL COMMENT '任务名称',
-    `job_group` VARCHAR(100) NOT NULL DEFAULT 'DEFAULT' COMMENT '任务组名',
-    `job_class` VARCHAR(255) NOT NULL COMMENT '执行类全路径',
-    `cron_expression` VARCHAR(100) NOT NULL COMMENT 'Cron执行表达式',
-    `job_status` TINYINT(1) DEFAULT 0 COMMENT '状态（0-暂停，1-运行）',
-    `concurrent` TINYINT(1) DEFAULT 1 COMMENT '是否允许并发（0-禁止，1-允许）',
-    `description` VARCHAR(500) DEFAULT NULL COMMENT '任务描述',
-    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0-已删除，1-未删除）',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_job_name_group` (`job_name`, `job_group`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务表';
-
--- 定时任务日志表
-DROP TABLE IF EXISTS `sys_job_log`;
-CREATE TABLE `sys_job_log` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '日志ID',
-    `job_id` BIGINT(20) NOT NULL COMMENT '任务ID',
-    `job_name` VARCHAR(100) NOT NULL COMMENT '任务名称',
-    `job_group` VARCHAR(100) NOT NULL COMMENT '任务组名',
-    `invoke_target` VARCHAR(255) DEFAULT NULL COMMENT '调用目标',
-    `job_message` VARCHAR(500) DEFAULT NULL COMMENT '执行信息',
-    `status` TINYINT(1) DEFAULT 0 COMMENT '执行状态（0-失败，1-成功）',
-    `exception_info` TEXT DEFAULT NULL COMMENT '异常信息',
-    `start_time` DATETIME DEFAULT NULL COMMENT '开始时间',
-    `end_time` DATETIME DEFAULT NULL COMMENT '结束时间',
-    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    PRIMARY KEY (`id`),
-    KEY `idx_job_id` (`job_id`),
-    KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='定时任务日志表';
-
--- 技能仓库表
+-- Drop and create Skill Repository table
 DROP TABLE IF EXISTS `skill_repository`;
 CREATE TABLE `skill_repository`
 (
-    `id`          BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`        VARCHAR(100) NOT NULL COMMENT '仓库名称',
-    `url`         VARCHAR(500) DEFAULT NULL COMMENT '仓库地址',
-    `branch`      VARCHAR(100) DEFAULT 'main' COMMENT '分支名称',
-    `description` TEXT         DEFAULT NULL COMMENT '仓库描述',
-    `status`      TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`      TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time` DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time` DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Repository ID',
+    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `name`        varchar(100) NOT NULL,
+    `url`         varchar(500)          DEFAULT NULL,
+    `description` text,
+    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`   tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`     varchar(100)          DEFAULT NULL,
+    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` datetime              DEFAULT CURRENT_TIMESTAMP,
+    `update_time` datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `branch`      varchar(100)          DEFAULT 'main',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能仓库表';
+    KEY           `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
 
--- 技能表
+-- Drop and create Skill table
 DROP TABLE IF EXISTS `skill`;
 CREATE TABLE `skill`
 (
-    `id`            BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`          VARCHAR(100) NOT NULL COMMENT '技能名称',
-    `repository_id` BIGINT(20)   NOT NULL COMMENT '仓库ID',
-    `description`   TEXT         DEFAULT NULL COMMENT '技能描述',
-    `skillmd`       TEXT         DEFAULT NULL COMMENT 'skill.md 内容',
-    `resources`     TEXT         DEFAULT NULL COMMENT '资源信息',
-    `status`        TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`        TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Skill ID',
+    `tenant_id`     bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `name`          varchar(100) NOT NULL,
+    `repository_id` bigint       NOT NULL COMMENT 'Repository ID',
+    `description`   text,
+    `skillmd`       text COMMENT 'skill.md content',
+    `resources`     text,
+    `status`        tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`     tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`       varchar(100)          DEFAULT NULL,
+    `active`        tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time`   datetime              DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name_repository_id` (`name`, `repository_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能表';
+    KEY             `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill table';
 
--- 智能体表
+-- Drop and create Model Provider table
+DROP TABLE IF EXISTS `model_provider`;
+CREATE TABLE `model_provider`
+(
+    `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Provider ID',
+    `tenant_id`   bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `type`        varchar(50)  NOT NULL COMMENT 'Provider type (dashscope/openai/ollama)',
+    `name`        varchar(100) NOT NULL COMMENT 'Display name',
+    `description` varchar(500)          DEFAULT NULL COMMENT 'Provider description',
+    `api_key`     varchar(500)          DEFAULT NULL COMMENT 'API key',
+    `base_url`    varchar(500)          DEFAULT NULL COMMENT 'API base URL',
+    `status`      tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`   tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`     varchar(100) NOT NULL COMMENT 'Creator',
+    `active`      tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` datetime              DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time` datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    KEY           `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model Provider table';
+
+-- Drop and create Model table
+DROP TABLE IF EXISTS `model`;
+CREATE TABLE `model`
+(
+    `id`                bigint       NOT NULL AUTO_INCREMENT COMMENT 'Model ID',
+    `tenant_id`         bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `name`              varchar(100) NOT NULL COMMENT 'Model name',
+    `model_name`        varchar(100) NOT NULL COMMENT 'Model identifier',
+    `provider_id`       bigint       NOT NULL COMMENT 'Model Provider ID',
+    `description`       text COMMENT 'Model description',
+    `model_type`        varchar(20)  NOT NULL COMMENT 'Model type (chat/embedding)',
+    `support_internet`  tinyint(1) DEFAULT '0' COMMENT 'Support internet search (0: No, 1: Yes)',
+    `support_reasoning` tinyint(1) DEFAULT '0' COMMENT 'Support reasoning (0: No, 1: Yes)',
+    `support_tool`      tinyint(1) DEFAULT '0' COMMENT 'Support tools (0: No, 1: Yes)',
+    `support_mcp`       tinyint(1) DEFAULT '0' COMMENT 'Support MCP (0: No, 1: Yes)',
+    `support_vision`    tinyint(1) DEFAULT '0' COMMENT 'Support vision (0: No, 1: Yes)',
+    `price`             decimal(10, 4)        DEFAULT '0.0000' COMMENT 'Price (CNY per million tokens)',
+    `status`            tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`         tinyint(1) DEFAULT '1' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`           varchar(100)          DEFAULT NULL COMMENT 'Creator',
+    `active`            tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time`       datetime              DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time`       datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    KEY                 `idx_provider_id` (`provider_id`),
+    KEY                 `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model table';
+
+-- Drop and create Agent table
 DROP TABLE IF EXISTS `agent`;
 CREATE TABLE `agent`
 (
-    `id`            BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`          VARCHAR(100) NOT NULL COMMENT '智能体名称',
-    `description`   TEXT         DEFAULT NULL COMMENT '智能体描述',
-    `system_prompt` TEXT         DEFAULT NULL COMMENT '系统提示词（支持 Markdown）',
-    `model_id`      BIGINT(20)   DEFAULT NULL COMMENT '对话模型 ID',
-    `mcp_list`      TEXT         DEFAULT NULL COMMENT 'MCP 服务列表（JSON 格式）',
-    `skill_list`    TEXT         DEFAULT NULL COMMENT '技能列表（JSON 格式）',
-    `owner`         VARCHAR(100) DEFAULT NULL COMMENT '所有者',
-    `status`        TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`        TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`   DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Agent ID',
+    `tenant_id`     bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `name`          varchar(100) NOT NULL,
+    `description`   text,
+    `system_prompt` text COMMENT 'System prompt (Markdown format)',
+    `model_id`      bigint                DEFAULT NULL COMMENT 'Model ID',
+    `mcp_list`      text COMMENT 'MCP list (JSON format)',
+    `skill_list`    text COMMENT 'Skill list (JSON format)',
+    `owner`         varchar(100)          DEFAULT NULL,
+    `status`        tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`     tinyint               DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`       varchar(100)          DEFAULT NULL,
+    `active`        tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time`   datetime              DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
+    KEY             `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent table';
 
--- Channel 通道表
-DROP TABLE IF EXISTS `channel`;
-CREATE TABLE `channel`
+-- Drop and create Session table
+DROP TABLE IF EXISTS `session`;
+CREATE TABLE `session`
 (
-    `id`               BIGINT(20)   NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `name`             VARCHAR(100) NOT NULL COMMENT '通道名称',
-    `type`             VARCHAR(20)  NOT NULL COMMENT '类型(wecom/feishu/dingtalk/http)',
-    `agent_id`         BIGINT(20)   NOT NULL COMMENT '关联的智能体ID',
-    `webhook_url`      VARCHAR(500) DEFAULT NULL COMMENT '推送地址',
-    `token`            VARCHAR(500) DEFAULT NULL COMMENT '验证Token',
-    `encoding_aes_key` VARCHAR(500) DEFAULT NULL COMMENT '加密密钥(企业微信)',
-    `app_id`           VARCHAR(100) DEFAULT NULL COMMENT '应用ID(飞书/钉钉)',
-    `app_secret`       VARCHAR(500) DEFAULT NULL COMMENT '应用密钥',
-    `callback_key`     VARCHAR(100) NOT NULL COMMENT '回调标识(用于生成回调URL)',
-    `description`      TEXT         DEFAULT NULL COMMENT '描述',
-    `status`           TINYINT(1)   DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `active`           TINYINT(1)   DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
-    `create_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `update_time`      DATETIME     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT 'Session ID',
+    `tenant_id`           bigint       NOT NULL DEFAULT '1' COMMENT 'Tenant ID',
+    `title`               varchar(100) NOT NULL,
+    `session_description` text,
+    `session_id`          varchar(100) NOT NULL COMMENT 'Unique session identifier',
+    `agent_id`            bigint                DEFAULT NULL COMMENT 'Agent ID',
+    `name`                varchar(100)          DEFAULT NULL,
+    `description`         text,
+    `system_prompt`       text COMMENT 'System prompt (Markdown format)',
+    `model_id`            bigint                DEFAULT NULL COMMENT 'Model ID',
+    `enable_think`        tinyint(1) DEFAULT '0' COMMENT 'Enable deep thinking (0: No, 1: Yes)',
+    `enable_search`       tinyint(1) DEFAULT '0' COMMENT 'Enable internet search (0: No, 1: Yes)',
+    `enable_plan`         tinyint(1) DEFAULT '0' COMMENT 'Enable planning (0: No, 1: Yes)',
+    `mcp_list`            text COMMENT 'MCP list (JSON format)',
+    `skill_list`          text COMMENT 'Skill list (JSON format)',
+    `owner`               varchar(100)          DEFAULT NULL,
+    `status`              tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public`           tinyint(1) DEFAULT '0' COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator`             varchar(100)          DEFAULT NULL,
+    `active`              tinyint(1) DEFAULT '1' COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time`         datetime              DEFAULT CURRENT_TIMESTAMP,
+    `update_time`         datetime              DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_callback_key` (`callback_key`),
-    KEY `idx_agent_id` (`agent_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel通道表';
+    KEY                   `idx_creator` (`creator`),
+    KEY                   `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session table';
 
--- Channel 消息记录表
-DROP TABLE IF EXISTS `channel_message`;
-CREATE TABLE `channel_message`
+-- Drop and create Plan Note table
+DROP TABLE IF EXISTS `plan_note`;
+CREATE TABLE `plan_note`
 (
-    `id`          BIGINT(20)    NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `channel_id`  BIGINT(20)    NOT NULL COMMENT '通道ID',
-    `session_id`  VARCHAR(100)  NOT NULL COMMENT '会话标识(用户/群组)',
-    `message_id`  VARCHAR(100)  DEFAULT NULL COMMENT '原始消息ID',
-    `role`        VARCHAR(20)   NOT NULL COMMENT '角色(user/assistant)',
-    `content`     TEXT          NOT NULL COMMENT '消息内容',
-    `sender_id`   VARCHAR(100)  DEFAULT NULL COMMENT '发送者ID',
-    `sender_name` VARCHAR(100)  DEFAULT NULL COMMENT '发送者名称',
-    `create_time` DATETIME      DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `id`               bigint       NOT NULL AUTO_INCREMENT COMMENT 'Plan ID',
+    `session_id`       varchar(128) NOT NULL COMMENT 'Session ID',
+    `plan_id`          varchar(128) NOT NULL COMMENT 'Plan identifier',
+    `name`             varchar(256) NOT NULL COMMENT 'Plan name',
+    `description`      text COMMENT 'Plan description',
+    `expected_outcome` text COMMENT 'Expected outcome',
+    `subtasks`         text COMMENT 'Subtasks list (JSON format)',
+    `created_at`       varchar(64) DEFAULT NULL COMMENT 'Creation timestamp',
+    `finished_at`      varchar(64) DEFAULT NULL COMMENT 'Completion timestamp',
+    `cost_timeseconds` bigint      DEFAULT '0' COMMENT 'Execution time (seconds)',
+    `status`           varchar(32) DEFAULT 'TODO' COMMENT 'Status (TODO, IN_PROGRESS, DONE, ABANDONED)',
     PRIMARY KEY (`id`),
-    KEY `idx_channel_session` (`channel_id`, `session_id`),
-    KEY `idx_create_time` (`create_time`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel消息记录表';
+    KEY                `idx_session_id` (`session_id`),
+    KEY                `idx_plan_id` (`plan_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Plan Note table';
+
+-- Drop and create Process Log table
+DROP TABLE IF EXISTS `process_log`;
+CREATE TABLE `process_log`
+(
+    `id`          bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+    `agent_id`    bigint       DEFAULT NULL COMMENT 'Agent ID',
+    `agent_name`  varchar(255) DEFAULT NULL COMMENT 'Agent name',
+    `session_id`  varchar(255) DEFAULT NULL COMMENT 'Session ID',
+    `message`     text COMMENT 'Log message',
+    `log_type`    varchar(20)  DEFAULT 'INFO' COMMENT 'Log type (INFO/WARN/ERROR)',
+    `stack_trace` text COMMENT 'Exception stack trace',
+    `ts`          datetime     DEFAULT NULL COMMENT 'Timestamp',
+    PRIMARY KEY (`id`),
+    KEY           `idx_agent_id` (`agent_id`),
+    KEY           `idx_session_id` (`session_id`),
+    KEY           `idx_log_type` (`log_type`),
+    KEY           `idx_ts` (`ts`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Process Log table';
+
+-- Drop and create Token Stats table
+DROP TABLE IF EXISTS `token_stats`;
+CREATE TABLE `token_stats`
+(
+    `id`            bigint NOT NULL AUTO_INCREMENT COMMENT 'Stats ID',
+    `agent_id`      bigint         DEFAULT NULL COMMENT 'Agent ID',
+    `session_id`    varchar(255)   DEFAULT NULL COMMENT 'Session ID',
+    `chat_model_id` bigint         DEFAULT NULL COMMENT 'Chat Model ID',
+    `input_token`   bigint         DEFAULT '0' COMMENT 'Input token count',
+    `output_token`  bigint         DEFAULT '0' COMMENT 'Output token count',
+    `total_token`   bigint         DEFAULT '0' COMMENT 'Total token count',
+    `ts`            datetime       DEFAULT NULL,
+    `fee`           decimal(10, 0) DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY             `idx_agent_id` (`agent_id`),
+    KEY             `idx_session_id` (`session_id`),
+    KEY             `idx_chat_model_id` (`chat_model_id`),
+    KEY             `idx_ts` (`ts`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token Statistics table';
+
+-- Drop and create Tool Call Log table
+DROP TABLE IF EXISTS `tool_call_log`;
+CREATE TABLE `tool_call_log`
+(
+    `id`         bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+    `agent_id`   bigint       DEFAULT NULL COMMENT 'Agent ID',
+    `session_id` varchar(255) DEFAULT NULL COMMENT 'Session ID',
+    `tool_name`  varchar(255) DEFAULT NULL,
+    `args`       text COMMENT 'Tool arguments (JSON format)',
+    `result`     text,
+    `success`    tinyint(1) DEFAULT '1' COMMENT 'Execution result (1: Success, 0: Failed)',
+    `start_time` datetime     DEFAULT NULL,
+    `end_time`   datetime     DEFAULT NULL,
+    `duration`   bigint       DEFAULT '0',
+    `ts`         datetime     DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY          `idx_agent_id` (`agent_id`),
+    KEY          `idx_session_id` (`session_id`),
+    KEY          `idx_tool_name` (`tool_name`),
+    KEY          `idx_ts` (`ts`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
+
+-- ============================================
+-- Initial Data
+-- ============================================
+
+-- Insert default admin user
+-- Password: admin123 (BCrypt encrypted)
+INSERT INTO `sys_user` (`id`, `tenant_id`, `username`, `password`, `nickname`, `email`, `phone`, `gender`, `avatar`,
+                        `status`, `is_admin`, `active`, `last_login_time`, `create_time`, `update_time`)
+VALUES (1, NULL, 'admin', '$2a$10$esqm4yYiXlpoCQsUOcjGIubYyUU0irYEcLJpCQBpkAtP/Pmm6XphS', 'System Admin',
+        'admin@vipclaw.com', '', 1, '', 1, 1, 1, '2026-05-13 22:48:44', '2026-04-22 16:35:55', '2026-05-13 22:48:44');
+
+-- Insert default tenant
+INSERT INTO `tenant` (`id`, `name`, `status`, `creator`, `active`, `create_time`, `update_time`)
+VALUES (1, 'Default Organization', 1, 'system', 1, '2026-05-01 11:10:40', '2026-05-07 15:32:08');
+
+-- Insert admin-tenant relationship
+INSERT INTO `user_tenant` (`id`, `user_id`, `tenant_id`, `role`, `status`, `joined_at`)
+VALUES (1, 1, 1, 'admin', 1, '2026-05-01 11:10:42');
+
+

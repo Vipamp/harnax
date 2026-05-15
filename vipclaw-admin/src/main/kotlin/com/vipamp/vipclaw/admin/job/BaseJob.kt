@@ -11,11 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import java.time.LocalDateTime
 
 /**
- * 定时任务基类
- * 所有定时任务都需要继承此类
- *
- * @author vipamp
- * @since 2026-03-16
+ * Base scheduled job class
+ * All scheduled jobs must extend this class
  */
 abstract class BaseJob : Job {
 
@@ -25,7 +22,7 @@ abstract class BaseJob : Job {
     protected lateinit var jobLogService: SysJobLogService
 
     /**
-     * 任务执行入口
+     * Job execution entry point
      */
     @Throws(JobExecutionException::class)
     override fun execute(context: JobExecutionContext) {
@@ -33,11 +30,11 @@ abstract class BaseJob : Job {
         val sysJob = dataMap["sysJob"] as? SysJob
 
         if (sysJob == null) {
-            log.error("任务执行失败：未获取到任务信息")
+            log.error("Job execution failed: Job information not retrieved")
             return
         }
 
-        // 创建日志记录
+        // Create log record
         val jobLog = SysJobLog().apply {
             jobId = sysJob.id
             jobName = sysJob.jobName
@@ -46,22 +43,22 @@ abstract class BaseJob : Job {
             startTime = LocalDateTime.now()
         }
 
-        log.info("定时任务开始执行 - 任务名称: {}, 任务组: {}", sysJob.jobName, sysJob.jobGroup)
+        log.info("Scheduled job started - Job name: {}, Job group: {}", sysJob.jobName, sysJob.jobGroup)
 
         try {
-            // 执行具体任务逻辑
+            // Execute specific job logic
             doExecute(context)
 
-            // 记录成功日志
+            // Record success log
             jobLog.status = 1
-            jobLog.jobMessage = "任务执行成功"
-            log.info("定时任务执行成功 - 任务名称: {}", sysJob.jobName)
+            jobLog.jobMessage = "Job executed successfully"
+            log.info("Scheduled job executed successfully - Job name: {}", sysJob.jobName)
         } catch (e: Exception) {
-            // 记录失败日志
+            // Record failure log
             jobLog.status = 0
-            jobLog.jobMessage = "任务执行失败: ${e.message}"
+            jobLog.jobMessage = "Job execution failed: ${e.message}"
             jobLog.exceptionInfo = getExceptionInfo(e)
-            log.error("定时任务执行失败 - 任务名称: {}, 错误: {}", sysJob.jobName, e.message, e)
+            log.error("Scheduled job failed - Job name: {}, Error: {}", sysJob.jobName, e.message, e)
             throw JobExecutionException(e)
         } finally {
             jobLog.endTime = LocalDateTime.now()
@@ -70,19 +67,19 @@ abstract class BaseJob : Job {
     }
 
     /**
-     * 具体任务执行逻辑，由子类实现
+     * Specific job execution logic, implemented by subclasses
      *
-     * @param context 任务执行上下文
-     * @throws Exception 执行异常
+     * @param context Job execution context
+     * @throws Exception Execution exception
      */
     @Throws(Exception::class)
     protected abstract fun doExecute(context: JobExecutionContext)
 
     /**
-     * 获取异常信息
+     * Get exception information
      *
-     * @param e 异常对象
-     * @return 异常信息字符串
+     * @param e Exception object
+     * @return Exception information string
      */
     private fun getExceptionInfo(e: Exception): String {
         val sb = StringBuilder()
@@ -90,7 +87,7 @@ abstract class BaseJob : Job {
         for (element in e.stackTrace) {
             sb.append("\tat ").append(element.toString()).append("\n")
         }
-        // 限制长度，防止存储溢出
+        // Limit length to prevent storage overflow
         val result = sb.toString()
         return if (result.length > 4000) result.substring(0, 4000) + "..." else result
     }

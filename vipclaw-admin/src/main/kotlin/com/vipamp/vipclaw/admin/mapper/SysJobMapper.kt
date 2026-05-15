@@ -5,15 +5,12 @@ import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
 /**
- * SysJob Mapper 接口
- *
- * @author vipamp
- * @since 2026-03-18
+ * SysJob Mapper interface
  */
 @Mapper
 interface SysJobMapper {
 
-    // ==================== 基础 CRUD 方法 ====================
+    // ==================== Basic CRUD Methods ====================
 
     fun selectById(@Param("id") id: Long): SysJob?
 
@@ -23,7 +20,7 @@ interface SysJobMapper {
 
     fun deleteById(@Param("id") id: Long): Int
 
-    // ==================== 自定义查询方法 ====================
+    // ==================== Custom Query Methods ====================
     fun selectJobList(
         @Param("keyword") keyword: String?,
         @Param("jobStatus") jobStatus: Int?,
@@ -31,11 +28,11 @@ interface SysJobMapper {
     ): List<SysJob>
 
     /**
-     * 根据任务名称和组名查询
+     * Query by job name and group
      *
-     * @param jobName 任务名称
-     * @param jobGroup 任务组名
-     * @return 定时任务实体
+     * @param jobName Job name
+     * @param jobGroup Job group name
+     * @return Scheduled job entity
      */
     fun selectByNameAndGroup(
         @Param("jobName") jobName: String,
@@ -43,9 +40,9 @@ interface SysJobMapper {
     ): SysJob?
 
     /**
-     * 查询所有运行中的定时任务
+     * Query all running scheduled jobs
      *
-     * @return 运行中的定时任务列表
+     * @return List of running scheduled jobs
      */
     fun selectRunningJobs(): List<SysJob>
 

@@ -5,7 +5,7 @@ import org.springframework.boot.SpringApplication
 import org.springframework.boot.autoconfigure.SpringBootApplication
 
 /**
- * VIPClaw Admin 后端服务启动类
+ * VIPClaw Admin Backend Service Application Entry Point
  */
 @SpringBootApplication
 @MapperScan("com.vipamp.vipclaw.admin.mapper")

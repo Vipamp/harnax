@@ -1,26 +1,26 @@
 package com.vipamp.vipclaw.admin.context
 
 /**
- * 租户上下文
- * 使用 ThreadLocal 存储当前请求的租户 ID
+ * Tenant context
+ * Uses ThreadLocal to store the current request's tenant ID
  */
 object TenantContext {
     private val CONTEXT = ThreadLocal<Long>()
 
     /**
-     * 设置租户 ID
+     * Set tenant ID
      */
     fun setTenantId(tenantId: Long) {
         CONTEXT.set(tenantId)
     }
 
     /**
-     * 获取租户 ID
+     * Get tenant ID
      */
     fun getTenantId(): Long? = CONTEXT.get()
 
     /**
-     * 清理租户上下文
+     * Clear tenant context
      */
     fun clear() {
         CONTEXT.remove()

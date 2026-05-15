@@ -3,38 +3,34 @@ package com.vipamp.vipclaw.ascopagent.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * Confirm 请求 DTO
- *
- * @Author: heqingsong
- * @Date: 2026/4/12
- * @Project: vipclaw
+ * Confirm Request DTO
  */
-@Schema(description = "Confirm 请求")
+@Schema(description = "Confirm Request")
 data class ConfirmRequest(
-    @Schema(description = "会话 ID")
+    @Schema(description = "Session ID")
     val sessionId: String,
 
-    @Schema(description = "是否确认")
+    @Schema(description = "Whether confirmed")
     val isConfirmed: Boolean = false,
 
-    @Schema(description = "工具信息列表")
+    @Schema(description = "Tool information list")
     val toolInfoList: List<ToolInfo> = listOf(),
 
-    @Schema(description = "是否启用思考模式")
+    @Schema(description = "Enable thinking mode")
     val enableThink: Boolean = false,
 
-    @Schema(description = "是否启用搜索")
+    @Schema(description = "Enable search")
     val enableSearch: Boolean = false,
 ) {
     /**
-     * 工具信息
+     * Tool information
      */
-    @Schema(description = "工具信息")
+    @Schema(description = "Tool information")
     data class ToolInfo(
-        @Schema(description = "工具 ID")
+        @Schema(description = "Tool ID")
         val toolId: String? = null,
 
-        @Schema(description = "工具名称")
+        @Schema(description = "Tool name")
         val toolName: String? = null,
     )
 }

@@ -2,7 +2,7 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.vipamp.vipclaw.admin.mapper.SysTokenBlacklistMapper">
 
-    <!-- 结果映射 -->
+    <!-- Result Map -->
     <resultMap id="SysTokenBlacklistResultMap" type="com.vipamp.vipclaw.admin.entity.SysTokenBlacklist">
         <id column="id" property="id"/>
         <result column="token" property="token"/>
@@ -23,7 +23,7 @@
         <result column="create_ip" property="createIp"/>
     </resultMap>
 
-    <!-- ==================== 基础 CRUD 方法 ==================== -->
+    <!-- ==================== Basic CRUD Methods ==================== -->
 
     <!-- selectById -->
     <select id="selectById" resultMap="SysTokenBlacklistResultMap">

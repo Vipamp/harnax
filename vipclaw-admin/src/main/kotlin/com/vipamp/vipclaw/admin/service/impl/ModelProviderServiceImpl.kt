@@ -20,9 +20,6 @@ import java.time.LocalDateTime
 
 /**
  * Model provider service implementation
- *
- * @author vipamp
- * @since 2026-03-13
  */
 @Service
 class ModelProviderServiceImpl(

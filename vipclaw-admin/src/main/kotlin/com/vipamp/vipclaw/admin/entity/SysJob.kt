@@ -4,48 +4,48 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
-@Schema(description = "定时任务实体类")
+@Schema(description = "Scheduled job entity")
 class SysJob : Serializable {
     companion object {
         private const val serialVersionUID = 1L
     }
 
-    @Schema(description = "任务ID")
+    @Schema(description = "Job ID")
     var id: Long = 0
 
-    @Schema(description = "任务名称")
+    @Schema(description = "Job name")
     var jobName: String = ""
 
-    @Schema(description = "任务组名")
+    @Schema(description = "Job group")
     var jobGroup: String = ""
 
-    @Schema(description = "执行类全路径")
+    @Schema(description = "Fully qualified class name")
     var jobClass: String = ""
 
-    @Schema(description = "Cron执行表达式")
+    @Schema(description = "Cron expression")
     var cronExpression: String = ""
 
-    @Schema(description = "状态（0-暂停，1-运行）")
+    @Schema(description = "Status (0-paused, 1-running)")
     var jobStatus: Int = 1
 
-    @Schema(description = "是否允许并发（0-禁止，1-允许）")
+    @Schema(description = "Concurrent execution allowed (0-no, 1-yes)")
     var concurrent: Int = 1
 
-    @Schema(description = "任务描述")
+    @Schema(description = "Job description")
     var description: String = ""
 
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
-    @Schema(description = "是否可用（0-已删除，1-未删除）")
+    @Schema(description = "Active status (0-deleted, 1-active)")
     var active: Int = 1
 
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

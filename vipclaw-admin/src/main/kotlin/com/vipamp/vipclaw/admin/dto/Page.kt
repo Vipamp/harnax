@@ -5,9 +5,6 @@ import com.github.pagehelper.PageInfo
 /**
  * Custom pagination class
  * Based on PageHelper's PageInfo
- *
- * @author vipamp
- * @since 2026-04-19
  */
 data class Page<T>(
     var pageNum: Long = 1,

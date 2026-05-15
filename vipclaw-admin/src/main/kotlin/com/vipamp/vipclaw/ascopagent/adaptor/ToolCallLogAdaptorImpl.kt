@@ -12,12 +12,8 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * ToolCallLogAdaptor 实现类
- * 将工具调用日志信息保存到数据库
- *
- * @Author: heqingsong
- * @Date: 2026/4/14
- * @Project: vipclaw
+ * ToolCallLogAdaptor Implementation
+ * Saves tool call log information to database
  */
 @Component
 class ToolCallLogAdaptorImpl(
@@ -29,10 +25,10 @@ class ToolCallLogAdaptorImpl(
 
     override fun emit(toolCallInfo: ToolCallInfo) {
         try {
-            // 将 ToolCallInfo 转换为 ToolCallLogEntity 实体
+            // Convert ToolCallInfo to ToolCallLogEntity
             val entity = convertToEntity(toolCallInfo)
 
-            // 保存到数据库
+            // Save to database
             val result = toolCallLogMapper.insert(entity)
 
             if (result > 0) {
@@ -58,12 +54,12 @@ class ToolCallLogAdaptorImpl(
                 toolCallInfo.toolName,
                 e,
             )
-            // 不抛出异常，避免影响主流程
+            // Do not throw exception to avoid affecting main flow
         }
     }
 
     /**
-     * 将 ToolCallInfo 转换为 ToolCallLogEntity 实体
+     * Convert ToolCallInfo to ToolCallLogEntity
      */
     private fun convertToEntity(toolCallInfo: ToolCallInfo): ToolCallLogEntity {
         val entity = ToolCallLogEntity()
@@ -71,7 +67,7 @@ class ToolCallLogAdaptorImpl(
         entity.sessionId = toolCallInfo.sessionId
         entity.toolName = toolCallInfo.toolName
 
-        // 将 args Map 转换为 JSON 字符串
+        // Convert args Map to JSON string
         try {
             entity.args = objectMapper.writeValueAsString(toolCallInfo.args)
         } catch (e: JsonProcessingException) {
@@ -85,10 +81,10 @@ class ToolCallLogAdaptorImpl(
 
         entity.result = toolCallInfo.result
 
-        // 设置是否成功标志
+        // Set success flag
         entity.success = if (toolCallInfo.success) 1 else 0
 
-        // 将时间戳转换为 LocalDateTime
+        // Convert timestamp to LocalDateTime
         val startDateTime = Instant.ofEpochMilli(toolCallInfo.startTime)
             .atZone(ZoneId.systemDefault())
             .toLocalDateTime()
@@ -101,7 +97,7 @@ class ToolCallLogAdaptorImpl(
 
         entity.duration = toolCallInfo.duration
 
-        // 设置记录时间戳（使用结束时间）
+        // Set record timestamp (using end time)
         entity.ts = endDateTime
 
         return entity

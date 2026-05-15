@@ -11,7 +11,7 @@ import java.util.*
 import javax.crypto.SecretKey
 
 /**
- * JWT 工具类
+ * JWT utility
  */
 @Component
 class JwtUtil {
@@ -25,7 +25,7 @@ class JwtUtil {
     private var expiration: Long = 7200000
 
     /**
-     * 获取签名密钥
+     * Get signing key
      */
     private fun getSigningKey(): SecretKey {
         val keyBytes = secret.toByteArray(StandardCharsets.UTF_8)
@@ -33,12 +33,12 @@ class JwtUtil {
     }
 
     /**
-     * 生成 JWT Token
+     * Generate JWT Token
      *
-     * @param userId 用户 ID
-     * @param username 用户名
-     * @param tenantId 租户 ID
-     * @param isAdmin 是否管理员
+     * @param userId User ID
+     * @param username Username
+     * @param tenantId Tenant ID
+     * @param isAdmin Is admin flag
      * @return JWT Token
      */
     fun generateToken(userId: Long, username: String, tenantId: Long? = null, isAdmin: Int = 0): String {
@@ -63,10 +63,10 @@ class JwtUtil {
     }
 
     /**
-     * 从 Token 中获取用户 ID
+     * Get user ID from token
      *
      * @param token JWT Token
-     * @return 用户 ID
+     * @return User ID
      */
     fun getUserIdFromToken(token: String): Long {
         val claims = getClaimsFromToken(token)
@@ -74,10 +74,10 @@ class JwtUtil {
     }
 
     /**
-     * 从 Token 中获取用户名
+     * Get username from token
      *
      * @param token JWT Token
-     * @return 用户名
+     * @return Username
      */
     fun getUsernameFromToken(token: String): String {
         val claims = getClaimsFromToken(token)
@@ -85,7 +85,7 @@ class JwtUtil {
     }
 
     /**
-     * 验证 Token 是否有效
+     * Validate if token is valid
      *
      * @param token JWT Token
      * @return true/false
@@ -94,15 +94,15 @@ class JwtUtil {
         val expiration = getExpirationDateFromToken(token)
         !expiration.before(Date())
     } catch (e: Exception) {
-        log.error("验证 Token 失败：{}", e.message)
+        log.error("Failed to validate token: {}", e.message)
         false
     }
 
     /**
-     * 获取过期时间
+     * Get expiration time
      *
      * @param token JWT Token
-     * @return 过期时间
+     * @return Expiration time
      */
     private fun getExpirationDateFromToken(token: String): Date {
         val claims = getClaimsFromToken(token)
@@ -110,7 +110,7 @@ class JwtUtil {
     }
 
     /**
-     * 获取 Claims
+     * Get claims
      *
      * @param token JWT Token
      * @return Claims
@@ -122,10 +122,10 @@ class JwtUtil {
         .payload
 
     /**
-     * 从 Token 中获取租户 ID
+     * Get tenant ID from token
      *
      * @param token JWT Token
-     * @return 租户 ID
+     * @return Tenant ID
      */
     fun getTenantIdFromToken(token: String): Long? = try {
         val claims = getClaimsFromToken(token)
@@ -135,10 +135,10 @@ class JwtUtil {
     }
 
     /**
-     * 从 Token 中获取 isAdmin 标识
+     * Get isAdmin flag from token
      *
      * @param token JWT Token
-     * @return isAdmin (1=管理员, 0=普通用户)
+     * @return isAdmin (1=admin, 0=regular user)
      */
     fun getIsAdminFromToken(token: String): Int? = try {
         val claims = getClaimsFromToken(token)
@@ -148,9 +148,9 @@ class JwtUtil {
     }
 
     /**
-     * 获取过期时间（毫秒）
+     * Get expiration time (milliseconds)
      *
-     * @return 过期时间
+     * @return Expiration time
      */
     fun getExpirationTime(): Long = expiration
 }

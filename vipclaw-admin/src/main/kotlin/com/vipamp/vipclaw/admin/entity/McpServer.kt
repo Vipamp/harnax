@@ -5,12 +5,9 @@ import java.io.Serializable
 import java.time.LocalDateTime
 
 /**
- * MCP 服务实体类
- *
- * @author vipamp
- * @since 2026-03-12
+ * MCP server entity
  */
-@Schema(description = "MCP 服务实体类")
+@Schema(description = "MCP server entity")
 class McpServer : Serializable {
 
     companion object {
@@ -24,74 +21,74 @@ class McpServer : Serializable {
     var id: Long = 0
 
     /**
-     * 所属租户ID
+     * Tenant ID
      */
-    @Schema(description = "所属租户ID")
+    @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
     /**
-     * MCP 名称
+     * MCP name
      */
-    @Schema(description = "MCP 名称")
+    @Schema(description = "MCP name")
     var name: String = ""
 
     /**
-     * MCP 描述
+     * MCP description
      */
-    @Schema(description = "MCP 描述")
+    @Schema(description = "MCP description")
     var description: String = ""
 
     /**
-     * MCP 类型（stdio/sse/streamablehttp）
+     * MCP type (stdio/sse/streamablehttp)
      */
-    @Schema(description = "MCP 类型（stdio/sse/streamablehttp）")
+    @Schema(description = "MCP type (stdio/sse/streamablehttp)")
     var type: String = "streamablehttp"
 
     /**
-     * 执行命令（仅 stdio 类型生效）
+     * Execution command (only for stdio type)
      */
-    @Schema(description = "执行命令（仅 stdio 类型生效）")
+    @Schema(description = "Execution command (only for stdio type)")
     var command: String = ""
 
     /**
-     * 服务地址（sse/streamablehttp 类型生效）
+     * Service URL (for sse/streamablehttp type)
      */
-    @Schema(description = "服务地址（sse/streamablehttp 类型生效）")
+    @Schema(description = "Service URL (for sse/streamablehttp type)")
     var url: String = ""
 
     /**
-     * 是否启用（0:禁用，1:启用）
+     * Status (0:disabled, 1:enabled)
      */
-    @Schema(description = "是否启用（0:禁用，1:启用）")
+    @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
 
     /**
-     * 是否公开（0:否，1:是）
+     * Public status (0:no, 1:yes)
      */
-    @Schema(description = "是否公开（0:否，1:是）")
+    @Schema(description = "Public status (0:no, 1:yes)")
     var isPublic: Int = 1
 
     /**
-     * 创建人
+     * Creator
      */
-    @Schema(description = "创建人")
+    @Schema(description = "Creator")
     var creator: String = ""
 
     /**
-     * 是否可用（0:被删除，1:可用）
+     * Active status (0:deleted, 1:active)
      */
-    @Schema(description = "是否可用（0:被删除，1:可用）")
+    @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
     /**
-     * 创建时间
+     * Creation time
      */
-    @Schema(description = "创建时间")
+    @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 
     /**
-     * 更新时间
+     * Update time
      */
-    @Schema(description = "更新时间")
+    @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
 }

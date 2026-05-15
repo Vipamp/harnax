@@ -14,9 +14,6 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Token consumption statistics service implementation
- *
- * @author vipamp
- * @since 2026-04-11
  */
 @Service
 class TokenStatsServiceImpl(

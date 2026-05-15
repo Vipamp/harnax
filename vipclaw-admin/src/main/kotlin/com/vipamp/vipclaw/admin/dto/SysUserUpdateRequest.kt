@@ -16,25 +16,25 @@ data class SysUserUpdateRequest(
     @Schema(description = "User ID", example = "1")
     val id: Long? = null,
 
-    @Schema(description = "用户名", example = "zhangsan", accessMode = Schema.AccessMode.READ_ONLY)
+    @Schema(description = "Username", example = "zhangsan", accessMode = Schema.AccessMode.READ_ONLY)
     val username: String? = null,
 
-    @Schema(description = "昵称")
+    @Schema(description = "Nickname")
     @Size(max = 50, message = "Nickname length cannot exceed 50 characters")
     val nickname: String? = null,
 
-    @Schema(description = "邮箱")
+    @Schema(description = "Email")
     @Email(message = "Invalid email format")
     val email: String? = null,
 
-    @Schema(description = "手机号")
+    @Schema(description = "Phone number")
     @Pattern(regexp = "^1[3-9]\\d{9}$|^$", message = "Invalid phone number format")
     val phone: String? = null,
 
-    @Schema(description = "性别 (0:女 1:男 2:未知)")
+    @Schema(description = "Gender (0:female 1:male 2:unknown)")
     val gender: Int? = null,
 
-    @Schema(description = "头像 URL", example = "https://example.com/avatar.jpg")
+    @Schema(description = "Avatar URL", example = "https://example.com/avatar.jpg")
     val avatar: String? = null,
 
     @Schema(description = "Whether is administrator (0:no, 1:yes)")

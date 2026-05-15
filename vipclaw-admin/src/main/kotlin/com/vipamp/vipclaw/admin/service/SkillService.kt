@@ -7,82 +7,79 @@ import com.vipamp.vipclaw.admin.dto.SkillUpdateRequest
 import com.vipamp.vipclaw.admin.entity.Skill
 
 /**
- * 技能服务接口
- *
- * @author vipamp
- * @since 2026-03-16
+ * Skill service interface
  */
 interface SkillService {
 
     /**
-     * 分页查询技能列表
+     * Paginated query for skill list
      *
-     * @param name         技能名称
-     * @param repositoryId 仓库ID
-     * @param status       状态筛选字段
-     * @param pageNum      当前页码
-     * @param pageSize     每页大小
-     * @return 分页结果
+     * @param name         Skill name
+     * @param repositoryId Repository ID
+     * @param status       Status filter field
+     * @param pageNum      Current page number
+     * @param pageSize     Page size
+     * @return Paginated result
      */
     fun page(name: String?, repositoryId: Long?, status: Int?, pageNum: Int, pageSize: Int): Page<Skill>
 
     /**
-     * 获取单个技能详情
+     * Get single skill details
      *
-     * @param id 技能 ID
-     * @return 技能实体
+     * @param id Skill ID
+     * @return Skill entity
      */
     fun getSkill(id: Long): Skill?
 
     /**
-     * 创建技能
+     * Create skill
      *
-     * @param request 技能创建请求对象
-     * @return 创建结果
+     * @param request Skill creation request object
+     * @return Creation result
      */
     fun createSkill(request: SkillCreateRequest): Boolean
 
     /**
-     * 更新技能
+     * Update skill
      *
-     * @param id      技能 ID
-     * @param request 技能更新请求对象
-     * @return 更新结果
+     * @param id      Skill ID
+     * @param request Skill update request object
+     * @return Update result
      */
     fun updateSkill(id: Long, request: SkillUpdateRequest): Boolean
 
     /**
-     * 切换技能启用状态
+     * Toggle skill enable status
      *
-     * @param id     技能 ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param id     Skill ID
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleSkillStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除技能
+     * Delete skill
      *
-     * @param id 技能 ID
-     * @return 删除结果
+     * @param id Skill ID
+     * @return Deletion result
      */
     fun deleteSkill(id: Long): Boolean
 
     /**
-     * 根据技能名称查询技能
+     * Query skill by name
      *
-     * @param repositoryId 仓库 ID
-     * @param name         技能名称
-     * @return 技能实体
+     * @param repositoryId Repository ID
+     * @param name         Skill name
+     * @return Skill entity
      */
     fun getByNameAndRepo(repositoryId: Long, name: String): Skill?
 
     /**
-     * 批量保存技能（同步用）
+     * Batch save skills (for sync)
      *
-     * @param repositoryId 仓库 ID
-     * @param skills       技能列表
-     * @return 保存的技能数量
+     * @param repositoryId Repository ID
+     * @param skills       Skill list
+     * @return Number of saved skills
      */
     fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int
 

@@ -20,10 +20,7 @@ import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/12
  * @Description: ChatService
- * @Project: vipclaw
  */
 @Service
 class ChatService(
@@ -80,7 +77,7 @@ class ChatService(
     }
 
     /**
-     * 根据 sessionId 从数据库获取 Session 信息，然后创建 Agent
+     * Create Agent based on sessionId by retrieving Session from database
      */
     private fun createAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): ReActAgentWrapper {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
@@ -88,7 +85,7 @@ class ChatService(
 
         log.info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
 
-        // 构建 AgentSpec
+        // Build AgentSpec
         val agentSpec = AgentSpec.builder()
             .id(session.agentId ?: throw IllegalArgumentException("Session.agentId cannot be null"))
             .name(session.name ?: "Agent-${session.sessionId}")
@@ -97,7 +94,7 @@ class ChatService(
             .chatModelId(session.modelId ?: throw IllegalArgumentException("Session.modelId cannot be null"))
             .build()
 
-        // 使用 launcher 创建 Agent
+        // Use launcher to create Agent
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sessionId,
@@ -123,7 +120,7 @@ class ChatService(
     fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? = launcher.loadSessionCurrentPlanNote(sessionId)
 
     /**
-     * 获取会话的聊天配置
+     * Get chat configuration for session
      */
     fun getSessionConfig(sessionId: String): SessionConfigResponse {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
@@ -138,7 +135,7 @@ class ChatService(
     }
 
     /**
-     * 更新会话的聊天配置
+     * Update chat configuration for session
      */
     fun updateSessionConfig(sessionId: String, request: SessionConfigUpdateRequest) {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)

@@ -5,8 +5,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 /**
- * 版本工具类
- * 用于在代码中判断当前打包的版本和功能开关
+ * Edition utility
+ * Used to check current packaged edition and feature toggles in code
  */
 @Component
 class EditionUtil {
@@ -22,7 +22,7 @@ class EditionUtil {
     @Value("\${edition.current}")
     private lateinit var currentEdition: String
 
-    // 功能开关配置
+    // Feature toggle configuration
     @Value("\${vipclaw.features.user-management:false}")
     private var userManagementEnabled: Boolean = false
 
@@ -45,29 +45,29 @@ class EditionUtil {
     private var emailLoginEnabled: Boolean = false
 
     /**
-     * 判断是否是个人版
+     * Check if it's personal edition
      */
     fun isPersonal(): Boolean = currentEdition == EDITION_PERSONAL
 
     /**
-     * 判断是否是企业版
+     * Check if it's enterprise edition
      */
     fun isEnterprise(): Boolean = currentEdition == EDITION_ENTERPRISE
 
     /**
-     * 判断是否是公网版
+     * Check if it's public edition
      */
     fun isPublic(): Boolean = currentEdition == EDITION_PUBLIC
 
     /**
-     * 获取当前版本名称(用于调试日志,不对外暴露)
+     * Get current edition name (for debug logging, not exposed externally)
      */
     fun getCurrentEdition(): String = currentEdition
 
     /**
-     * 检查功能是否启用
-     * @param feature 功能名称
-     * @return 是否启用
+     * Check if feature is enabled
+     * @param feature Feature name
+     * @return Whether enabled
      */
     fun isFeatureEnabled(feature: String): Boolean = when (feature) {
         "user-management" -> userManagementEnabled

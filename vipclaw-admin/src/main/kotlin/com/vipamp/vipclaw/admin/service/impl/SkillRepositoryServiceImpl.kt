@@ -23,9 +23,6 @@ import java.util.stream.Collectors
 
 /**
  * Skill repository service implementation
- *
- * @author vipamp
- * @since 2026-03-16
  */
 @Service
 class SkillRepositoryServiceImpl(

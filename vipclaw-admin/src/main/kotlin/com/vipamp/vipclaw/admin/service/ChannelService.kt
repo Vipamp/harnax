@@ -7,80 +7,77 @@ import com.vipamp.vipclaw.admin.dto.Page
 import com.vipamp.vipclaw.admin.entity.Channel
 
 /**
- * Channel 服务接口
- *
- * @author vipamp
- * @since 2026-04-08
+ * Channel service interface
  */
 interface ChannelService {
 
     /**
-     * 分页查询 Channel 列表
+     * Query Channel list with pagination
      *
-     * @param keyword  模糊查询字段
-     * @param type     类型筛选
-     * @param status   状态筛选
-     * @param pageNum  当前页码
-     * @param pageSize 每页大小
-     * @return 分页结果
+     * @param keyword  Fuzzy search field
+     * @param type     Type filter
+     * @param status   Status filter
+     * @param pageNum  Current page number
+     * @param pageSize Page size
+     * @return Paginated result
      */
     fun page(keyword: String?, type: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Channel>
 
     /**
-     * 获取单个 Channel 详情
+     * Get single Channel details
      *
      * @param id Channel ID
-     * @return Channel 实体
+     * @return Channel entity
      */
     fun getChannel(id: Long): Channel?
 
     /**
-     * 创建 Channel
+     * Create Channel
      *
-     * @param request Channel 创建请求对象
-     * @return 创建结果
+     * @param request Channel create request object
+     * @return Create result
      */
     fun createChannel(request: ChannelCreateRequest): Boolean
 
     /**
-     * 更新 Channel
+     * Update Channel
      *
      * @param id      Channel ID
-     * @param request Channel 更新请求对象
-     * @return 更新结果
+     * @param request Channel update request object
+     * @return Update result
      */
     fun updateChannel(id: Long, request: ChannelUpdateRequest): Boolean
 
     /**
-     * 切换 Channel 启用状态
+     * Toggle Channel enable status
      *
      * @param id     Channel ID
-     * @param status 启用状态（0:禁用，1:启用）
-     * @return 更新结果
+     * @param status Enable status (0:disabled, 1:enabled)
+     * @return Update result
      */
     fun toggleChannelStatus(id: Long, status: Int): Boolean
 
     /**
-     * 删除 Channel
+     * Delete Channel
      *
      * @param id Channel ID
-     * @return 删除结果
+     * @return Delete result
      */
     fun deleteChannel(id: Long): Boolean
 
     /**
-     * 根据回调标识查询 Channel
+     * Query Channel by callback key
      *
-     * @param callbackKey 回调标识
-     * @return Channel 实体
+     * @param callbackKey Callback key
+     * @return Channel entity
      */
     fun getByCallbackKey(callbackKey: String): Channel?
 
     /**
-     * 将 Channel 实体转换为响应 DTO
+     * Convert Channel entity to response DTO
      *
-     * @param channel Channel 实体
-     * @return 响应 DTO
+     * @param channel Channel entity
+     * @return Response DTO
      */
     fun convertToResponse(channel: Channel): ChannelResponse
 }
