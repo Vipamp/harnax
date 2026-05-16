@@ -37,14 +37,15 @@ INSERT INTO `sys_user` (`username`, `password`, `nickname`, `email`, `phone`, `g
 -- ============================================
 CREATE TABLE IF NOT EXISTS `model_provider` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `type` VARCHAR(50) NOT NULL COMMENT '服务商类型（dashscope/openai/ollama）',
+    `type` VARCHAR(50) NOT NULL COMMENT '服务商类型(dashscope/openai/ollama)',
     `name` VARCHAR(100) NOT NULL COMMENT '名称',
+    `description` TEXT DEFAULT NULL COMMENT '描述',
     `api_key` VARCHAR(500) DEFAULT NULL COMMENT 'API 密钥',
     `base_url` VARCHAR(500) DEFAULT NULL COMMENT 'API 地址',
-    `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
+    `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用(0:禁用,1:启用)',
+    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开(0:否,1:是)',
     `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
-    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用(0:被删除,1:可用)',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
@@ -427,3 +428,36 @@ INSERT INTO `sys_token_blacklist` (`token`, `token_hash`, `username`, `user_id`,
 ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test1', 'hash001', 'testuser1', 1, 'logout', '2026-04-26 10:00:00', '192.168.1.100'),
 ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test2', 'hash002', 'testuser2', 2, 'logout', '2026-04-26 11:00:00', '192.168.1.101'),
 ('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.admin', 'hash003', 'admin', 4, 'force_logout', '2026-04-26 12:00:00', '192.168.1.1');
+
+-- ============================================
+-- 17. Tenant table
+-- ============================================
+CREATE TABLE IF NOT EXISTS `tenant` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Tenant ID',
+    `name` VARCHAR(100) NOT NULL COMMENT 'Tenant name',
+    `status` TINYINT(2) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
+    `creator` VARCHAR(100) NOT NULL COMMENT 'Creator',
+    `active` TINYINT(2) DEFAULT 1 COMMENT 'Status (0:deleted, 1:active)',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Tenant table';
+
+-- ============================================
+-- 18. User-Tenant Association table
+-- ============================================
+CREATE TABLE IF NOT EXISTS `user_tenant` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `user_id` BIGINT(20) NOT NULL COMMENT 'User ID',
+    `tenant_id` BIGINT(20) NOT NULL COMMENT 'Tenant ID',
+    `role` VARCHAR(50) NOT NULL DEFAULT 'member' COMMENT 'Role (admin/member)',
+    `status` TINYINT(2) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
+    `joined_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT 'Create time',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_tenant` (`user_id`, `tenant_id`),
+    KEY `idx_user_id` (`user_id`),
+    KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User-Tenant Association table';

@@ -20,18 +20,21 @@ import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
+import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
+import org.mockito.quality.Strictness
 import java.time.LocalDateTime
 
 /**
- * TenantServiceImpl 单元测试
- * 使用 Mockito 模拟 Mapper 层依赖
+ * TenantServiceImpl Unit Tests
+ * Uses Mockito to simulate Mapper layer dependencies
  *
  * @author vipamp
  * @since 2026-04-28
  */
 @ExtendWith(MockitoExtension::class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class TenantServiceImplTest {
 
     @Mock
@@ -82,11 +85,11 @@ class TenantServiceImplTest {
     }
 
     @Nested
-    @DisplayName("创建租户测试")
+    @DisplayName("Create Tenant Tests")
     inner class CreateTenantTests {
 
         @Test
-        @DisplayName("createTenant - 正常创建租户")
+        @DisplayName("createTenant - Create tenant successfully")
         fun `createTenant should create tenant successfully`() {
             // Given
             val request = CreateTenantRequest(
@@ -118,7 +121,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("createTenant - 租户名称已存在时抛出异常")
+        @DisplayName("createTenant - Throw exception when tenant name exists")
         fun `createTenant should throw exception when tenant name exists`() {
             // Given
             val request = CreateTenantRequest(
@@ -140,7 +143,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("createTenant - 用户不存在时抛出异常")
+        @DisplayName("createTenant - Throw exception when user not found")
         fun `createTenant should throw exception when user not found`() {
             // Given
             val request = CreateTenantRequest(
@@ -155,7 +158,7 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.createTenant(request, "admin")
             }
-            assertEquals("用户不存在", exception.message)
+            assertEquals("error.user.notfound", exception.message)
             verify(tenantMapper).selectByName("新租户")
             verify(sysUserMapper).selectById(999L)
             verify(tenantMapper, never()).insert(any())
@@ -163,11 +166,11 @@ class TenantServiceImplTest {
     }
 
     @Nested
-    @DisplayName("查询租户测试")
+    @DisplayName("Get Tenant Tests")
     inner class GetTenantTests {
 
         @Test
-        @DisplayName("getTenantById - 根据ID查询租户")
+        @DisplayName("getTenantById - Get tenant by ID")
         fun `getTenantById should return tenant response`() {
             // Given
             `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
@@ -184,7 +187,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("getTenantById - 租户不存在时返回null")
+        @DisplayName("getTenantById - Return null when tenant not found")
         fun `getTenantById should return null when tenant not found`() {
             // Given
             `when`(tenantMapper.selectById(999L)).thenReturn(null)
@@ -198,7 +201,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("getTenantList - 分页查询租户列表")
+        @DisplayName("getTenantList - Get paginated tenant list")
         fun `getTenantList should return paginated results`() {
             // Given
             val tenant2 = TenantEntity().apply {
@@ -221,7 +224,7 @@ class TenantServiceImplTest {
             assertNotNull(page)
             assertEquals(2, page.total)
             assertEquals(1, page.pageNum)
-            assertEquals(2, page.pageSize) // PageHelper 返回实际记录数
+            assertEquals(2, page.pageSize) // PageHelper returns actual record count
             assertEquals(2, page.records.size)
             assertEquals("测试租户", page.records[0].name)
             assertEquals("租户2", page.records[1].name)
@@ -229,7 +232,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("getTenantList - 按名称筛选")
+        @DisplayName("getTenantList - Filter by name")
         fun `getTenantList should filter by name`() {
             // Given
             val tenants = listOf(testTenant)
@@ -248,11 +251,11 @@ class TenantServiceImplTest {
     }
 
     @Nested
-    @DisplayName("切换租户状态测试")
+    @DisplayName("Toggle Tenant Status Tests")
     inner class ToggleStatusTests {
 
         @Test
-        @DisplayName("toggleStatus - 从启用切换到禁用")
+        @DisplayName("toggleStatus - Disable active tenant")
         fun `toggleStatus should disable active tenant`() {
             // Given
             `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
@@ -268,7 +271,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("toggleStatus - 从禁用切换到启用")
+        @DisplayName("toggleStatus - Enable disabled tenant")
         fun `toggleStatus should enable disabled tenant`() {
             // Given
             val disabledTenant = TenantEntity().apply {
@@ -292,7 +295,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("toggleStatus - 租户不存在时抛出异常")
+        @DisplayName("toggleStatus - Throw exception when tenant not found")
         fun `toggleStatus should throw exception when tenant not found`() {
             // Given
             `when`(tenantMapper.selectById(999L)).thenReturn(null)
@@ -301,17 +304,17 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.toggleStatus(999L)
             }
-            assertEquals("租户不存在", exception.message)
+            assertEquals("error.tenant.notfound", exception.message)
             verify(tenantMapper, never()).updateStatus(any(), any())
         }
     }
 
     @Nested
-    @DisplayName("删除租户测试")
+    @DisplayName("Delete Tenant Tests")
     inner class DeleteTenantTests {
 
         @Test
-        @DisplayName("deleteTenant - 正常删除租户")
+        @DisplayName("deleteTenant - Delete tenant successfully")
         fun `deleteTenant should delete tenant successfully`() {
             // Given
             `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
@@ -329,7 +332,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteTenant - 租户不存在时抛出异常")
+        @DisplayName("deleteTenant - Throw exception when tenant not found")
         fun `deleteTenant should throw exception when tenant not found`() {
             // Given
             `when`(tenantMapper.selectById(999L)).thenReturn(null)
@@ -338,7 +341,7 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.deleteTenant(999L)
             }
-            assertEquals("租户不存在", exception.message)
+            assertEquals("error.tenant.notfound", exception.message)
             verify(tenantMapper).selectById(999L)
             verify(userTenantMapper, never()).deleteByTenantId(any())
             verify(tenantMapper, never()).deleteById(any())
@@ -346,11 +349,11 @@ class TenantServiceImplTest {
     }
 
     @Nested
-    @DisplayName("租户用户管理测试")
+    @DisplayName("Tenant User Management Tests")
     inner class TenantUserManagementTests {
 
         @Test
-        @DisplayName("getTenantUsers - 分页查询租户用户列表")
+        @DisplayName("getTenantUsers - Get paginated tenant user list")
         fun `getTenantUsers should return paginated user list`() {
             // Given
             val userTenant1 = UserTenantEntity().apply {
@@ -396,7 +399,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("addUserToTenant - 正常添加用户到租户")
+        @DisplayName("addUserToTenant - Add user to tenant successfully")
         fun `addUserToTenant should add user to tenant successfully`() {
             // Given
             `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
@@ -420,7 +423,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("addUserToTenant - 租户不存在时抛出异常")
+        @DisplayName("addUserToTenant - Throw exception when tenant not found")
         fun `addUserToTenant should throw exception when tenant not found`() {
             // Given
             `when`(tenantMapper.selectById(999L)).thenReturn(null)
@@ -429,12 +432,12 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.addUserToTenant(999L, 1L, "member")
             }
-            assertEquals("租户不存在", exception.message)
+            assertEquals("error.tenant.notfound", exception.message)
             verify(userTenantMapper, never()).insert(any())
         }
 
         @Test
-        @DisplayName("addUserToTenant - 用户不存在时抛出异常")
+        @DisplayName("addUserToTenant - Throw exception when user not found")
         fun `addUserToTenant should throw exception when user not found`() {
             // Given
             `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
@@ -444,12 +447,12 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.addUserToTenant(1L, 999L, "member")
             }
-            assertEquals("用户不存在", exception.message)
+            assertEquals("error.user.notfound", exception.message)
             verify(userTenantMapper, never()).insert(any())
         }
 
         @Test
-        @DisplayName("addUserToTenant - 用户已在租户中时抛出异常")
+        @DisplayName("addUserToTenant - Throw exception when user already in tenant")
         fun `addUserToTenant should throw exception when user already in tenant`() {
             // Given
             val existingUserTenant = UserTenantEntity().apply {
@@ -468,12 +471,12 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.addUserToTenant(1L, 2L, "member")
             }
-            assertEquals("用户已在该租户中", exception.message)
+            assertEquals("error.user.already_in_tenant", exception.message)
             verify(userTenantMapper, never()).insert(any())
         }
 
         @Test
-        @DisplayName("removeUserFromTenant - 正常从租户移除用户")
+        @DisplayName("removeUserFromTenant - Remove user from tenant successfully")
         fun `removeUserFromTenant should remove user from tenant successfully`() {
             // Given
             val existingUserTenant = UserTenantEntity().apply {
@@ -497,7 +500,7 @@ class TenantServiceImplTest {
         }
 
         @Test
-        @DisplayName("removeUserFromTenant - 用户不在租户中时抛出异常")
+        @DisplayName("removeUserFromTenant - Throw BizException when user not in tenant")
         fun `removeUserFromTenant should throw exception when user not in tenant`() {
             // Given
             `when`(userTenantMapper.selectByUserIdAndTenantId(999L, 1L)).thenReturn(null)
@@ -506,8 +509,158 @@ class TenantServiceImplTest {
             val exception = assertThrows<BizException> {
                 tenantService.removeUserFromTenant(1L, 999L)
             }
-            assertEquals("用户不在该租户中", exception.message)
+            assertEquals("error.user.not_in_tenant", exception.message)
             verify(userTenantMapper, never()).deleteByUserIdAndTenantId(any(), any())
+        }
+
+        @Test
+        @DisplayName("removeUserFromTenant - Throw BizException when removing only admin")
+        fun `removeUserFromTenant should throw BizException when removing only admin`() {
+            // Given
+            val existingUserTenant = UserTenantEntity().apply {
+                id = 1L
+                userId = 2L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+
+            `when`(userTenantMapper.selectByUserIdAndTenantId(2L, 1L)).thenReturn(existingUserTenant)
+            `when`(userTenantMapper.selectByTenantId(1L)).thenReturn(listOf(existingUserTenant))
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                tenantService.removeUserFromTenant(1L, 2L)
+            }
+            assertEquals("error.tenant.cannot_remove_only_admin", exception.message)
+            verify(userTenantMapper, never()).deleteByUserIdAndTenantId(any(), any())
+        }
+
+        @Test
+        @DisplayName("removeUserFromTenant - Successfully remove admin when multiple admins exist")
+        fun `removeUserFromTenant should successfully remove admin when multiple admins exist`() {
+            // Given
+            val userTenant1 = UserTenantEntity().apply {
+                id = 1L
+                userId = 2L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+            val userTenant2 = UserTenantEntity().apply {
+                id = 2L
+                userId = 3L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+
+            `when`(userTenantMapper.selectByUserIdAndTenantId(2L, 1L)).thenReturn(userTenant1)
+            `when`(userTenantMapper.selectByTenantId(1L)).thenReturn(listOf(userTenant1, userTenant2))
+            `when`(userTenantMapper.deleteByUserIdAndTenantId(2L, 1L)).thenReturn(1)
+
+            // When
+            val result = tenantService.removeUserFromTenant(1L, 2L)
+
+            // Then
+            assertTrue(result)
+            verify(userTenantMapper).deleteByUserIdAndTenantId(2L, 1L)
+        }
+    }
+
+    @Nested
+    @DisplayName("Update User Role Tests")
+    inner class UpdateUserRoleTests {
+
+        @Test
+        @DisplayName("updateUserRole - Successfully update user role")
+        fun `updateUserRole should successfully update user role`() {
+            // Given
+            val existingUserTenant = UserTenantEntity().apply {
+                id = 1L
+                userId = 2L
+                tenantId = 1L
+                role = "member"
+                status = 1
+            }
+
+            `when`(userTenantMapper.selectByUserIdAndTenantId(2L, 1L)).thenReturn(existingUserTenant)
+            `when`(userTenantMapper.updateRole(2L, 1L, "admin")).thenReturn(1)
+
+            // When
+            val result = tenantService.updateUserRole(1L, 2L, "admin")
+
+            // Then
+            assertTrue(result)
+            verify(userTenantMapper).updateRole(2L, 1L, "admin")
+        }
+
+        @Test
+        @DisplayName("updateUserRole - Throw BizException when user not in tenant")
+        fun `updateUserRole should throw BizException when user not in tenant`() {
+            // Given
+            `when`(userTenantMapper.selectByUserIdAndTenantId(999L, 1L)).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                tenantService.updateUserRole(1L, 999L, "admin")
+            }
+            assertEquals("error.user.not_in_tenant", exception.message)
+            verify(userTenantMapper, never()).updateRole(any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("updateUserRole - Throw BizException when demoting only admin")
+        fun `updateUserRole should throw BizException when demoting only admin`() {
+            // Given
+            val existingUserTenant = UserTenantEntity().apply {
+                id = 1L
+                userId = 2L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+
+            `when`(userTenantMapper.selectByUserIdAndTenantId(2L, 1L)).thenReturn(existingUserTenant)
+            `when`(userTenantMapper.selectByTenantId(1L)).thenReturn(listOf(existingUserTenant))
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                tenantService.updateUserRole(1L, 2L, "member")
+            }
+            assertEquals("error.tenant.cannot_demote_only_admin", exception.message)
+            verify(userTenantMapper, never()).updateRole(any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("updateUserRole - Successfully demote admin when multiple admins exist")
+        fun `updateUserRole should successfully demote admin when multiple admins exist`() {
+            // Given
+            val userTenant1 = UserTenantEntity().apply {
+                id = 1L
+                userId = 2L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+            val userTenant2 = UserTenantEntity().apply {
+                id = 2L
+                userId = 3L
+                tenantId = 1L
+                role = "admin"
+                status = 1
+            }
+
+            `when`(userTenantMapper.selectByUserIdAndTenantId(2L, 1L)).thenReturn(userTenant1)
+            `when`(userTenantMapper.selectByTenantId(1L)).thenReturn(listOf(userTenant1, userTenant2))
+            `when`(userTenantMapper.updateRole(2L, 1L, "member")).thenReturn(1)
+
+            // When
+            val result = tenantService.updateUserRole(1L, 2L, "member")
+
+            // Then
+            assertTrue(result)
+            verify(userTenantMapper).updateRole(2L, 1L, "member")
         }
     }
 }

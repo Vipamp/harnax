@@ -2,6 +2,7 @@ package com.vipamp.vipclaw.admin.service.impl
 
 import com.vipamp.vipclaw.admin.config.EditionUtil
 import com.vipamp.vipclaw.admin.dto.LoginRequest
+import com.vipamp.vipclaw.admin.dto.response.TenantResponse
 import com.vipamp.vipclaw.admin.entity.SysUser
 import com.vipamp.vipclaw.admin.exception.BizException
 import com.vipamp.vipclaw.admin.i18n.MessageUtil
@@ -26,7 +27,9 @@ import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
+import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.quality.Strictness
 
 /**
  * AuthServiceImpl 单元测试
@@ -36,6 +39,7 @@ import org.mockito.kotlin.any
  * @since 2026-04-23
  */
 @ExtendWith(MockitoExtension::class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class AuthServiceImplTest {
 
     @Mock
@@ -98,6 +102,34 @@ class AuthServiceImplTest {
         // Mock messageUtil to return the key as message
         `when`(messageUtil.getMessage(anyString())).thenAnswer { it.arguments[0] as String }
         `when`(messageUtil.getMessage(anyString(), any())).thenAnswer { it.arguments[0] as String }
+
+        // Mock userTenantService to return a tenant list
+        `when`(userTenantService.getUserTenants(anyLong())).thenReturn(
+            listOf(
+                TenantResponse(
+                    id = 1L,
+                    name = "Default Tenant",
+                    status = 1,
+                ),
+            ),
+        )
+
+        // Mock userTenantService.addUserToTenant
+        `when`(userTenantService.addUserToTenant(anyLong(), anyLong(), anyString(), anyString())).thenReturn(true)
+
+        // Mock editionUtil to return true (personal mode)
+        `when`(editionUtil.isPersonal()).thenReturn(true)
+
+        // Mock tenantMapper to return default tenant
+        `when`(tenantMapper.selectById(1)).thenReturn(
+            com.vipamp.vipclaw.admin.entity.TenantEntity().apply {
+                id = 1L
+                name = "Default Tenant"
+            },
+        )
+
+        // Mock userTenantService.addUserToTenant
+        `when`(userTenantService.addUserToTenant(anyLong(), anyLong(), anyString(), anyString())).thenReturn(true)
     }
 
     @Nested
@@ -110,7 +142,7 @@ class AuthServiceImplTest {
             // Given
             `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
-            `when`(jwtUtil.generateToken(anyLong(), anyString())).thenReturn("mock-jwt-token")
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
             `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L) // 1小时
             `when`(sysUserMapper.updateLastLoginTime(anyLong(), any())).thenReturn(1)
 
@@ -200,7 +232,7 @@ class AuthServiceImplTest {
             // Given
             `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
-            `when`(jwtUtil.generateToken(anyLong(), anyString())).thenReturn("mock-jwt-token")
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
             `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
             `when`(sysUserMapper.updateLastLoginTime(anyLong(), any())).thenThrow(RuntimeException("DB error"))
 

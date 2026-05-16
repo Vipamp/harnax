@@ -21,8 +21,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * SysUserMapper 集成测试
- * 使用 Testcontainers 启动真实的 MySQL 容器测试 MyBatis SQL 映射
+ * SysUserMapper Integration Tests
+ * Uses Testcontainers to start a real MySQL container for testing MyBatis SQL mappings
  *
  * @author vipamp
  * @since 2026-04-25
@@ -54,11 +54,11 @@ class SysUserMapperTest {
     private lateinit var sysUserMapper: SysUserMapper
 
     @Nested
-    @DisplayName("基础 CRUD 测试")
+    @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询用户")
+        @DisplayName("selectById - Query user by ID")
         fun `selectById should return user by id`() {
             // When
             val user = sysUserMapper.selectById(1L)
@@ -81,7 +81,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 查询不存在的用户返回 null")
+        @DisplayName("selectById - Return null when user not exists")
         fun `selectById should return null when user not exists`() {
             // When
             val user = sysUserMapper.selectById(999L)
@@ -91,7 +91,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 不返回已删除的用户（active=0）")
+        @DisplayName("selectById - Not return deleted user (active=0)")
         fun `selectById should not return deleted user`() {
             // When
             val user = sysUserMapper.selectById(5L)
@@ -101,7 +101,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 插入新用户")
+        @DisplayName("insert - Create new user")
         fun `insert should create new user`() {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -127,7 +127,7 @@ class SysUserMapperTest {
             assertEquals(1, result)
             assertTrue(newUser.id > 0)
 
-            // 验证可以查询到
+            // Verify can be queried
             val insertedUser = sysUserMapper.selectById(newUser.id)
             assertNotNull(insertedUser)
             assertEquals("newuser", insertedUser.username)
@@ -135,7 +135,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新用户信息")
+        @DisplayName("updateById - Update user info")
         fun `updateById should update user info`() {
             // Given
             val userId = 1L
@@ -158,7 +158,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 逻辑删除用户")
+        @DisplayName("deleteById - Logically delete user")
         fun `deleteById should logically delete user`() {
             // Given
             val userId = 2L
@@ -172,13 +172,13 @@ class SysUserMapperTest {
             // Then
             assertEquals(1, result)
 
-            // selectById 应该查不到（因为 active=0）
+            // selectById should not return it (because active=0)
             val deletedUser = sysUserMapper.selectById(userId)
             assertNull(deletedUser)
         }
 
         @Test
-        @DisplayName("deleteById - 删除不存在的用户返回 0")
+        @DisplayName("deleteById - Return 0 when user not exists")
         fun `deleteById should return 0 when user not exists`() {
             // When
             val result = sysUserMapper.deleteById(999L)
@@ -188,9 +188,9 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 不会重复删除已删除的用户")
+        @DisplayName("deleteById - Not delete already deleted user")
         fun `deleteById should not delete already deleted user`() {
-            // When - id=5 是已删除用户
+            // When - id=5 is deleted user
             val result = sysUserMapper.deleteById(5L)
 
             // Then
@@ -199,25 +199,26 @@ class SysUserMapperTest {
     }
 
     @Nested
-    @DisplayName("自定义查询测试")
+    @DisplayName("Custom Query Tests")
     inner class CustomQueryTests {
 
         @Test
-        @DisplayName("selectUserList - 查询所有用户列表")
+        @DisplayName("selectUserList - Query all user list")
         fun `selectUserList should return all users`() {
             // When
-            val users = sysUserMapper.selectUserList(null, null, 0)
+            val users = sysUserMapper.selectUserList(null, null, null)
 
             // Then
             assertTrue(users.isNotEmpty())
-            assertTrue(users.size >= 4) // 至少有 4 个 active=1 的用户
+            // Should return all active users (at least 4 users with active=1)
+            assertTrue(users.size >= 4)
         }
 
         @Test
-        @DisplayName("selectUserList - 按用户名模糊查询")
+        @DisplayName("selectUserList - Filter by username")
         fun `selectUserList should filter by username`() {
             // When
-            val users = sysUserMapper.selectUserList("testuser", null, 0)
+            val users = sysUserMapper.selectUserList("testuser", null, null)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -227,10 +228,10 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectUserList - 按状态查询")
+        @DisplayName("selectUserList - Filter by status")
         fun `selectUserList should filter by status`() {
             // When
-            val users = sysUserMapper.selectUserList(null, 0, 0)
+            val users = sysUserMapper.selectUserList(null, 0, null)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -240,10 +241,10 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectUserList - 按关键字查询")
+        @DisplayName("selectUserList - Filter by keyword")
         fun `selectUserList should filter by keyword`() {
             // When
-            val users = sysUserMapper.selectUserList("testuser", null, 0)
+            val users = sysUserMapper.selectUserList("testuser", null, null)
 
             // Then
             assertTrue(users.isNotEmpty())
@@ -258,7 +259,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectByUsername - 根据用户名查询用户")
+        @DisplayName("selectByUsername - Query user by username")
         fun `selectByUsername should return user by username`() {
             // When
             val user = sysUserMapper.selectByUsername("testuser1")
@@ -270,7 +271,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectByUsername - 查询不存在的用户名返回 null")
+        @DisplayName("selectByUsername - Return null when username not exists")
         fun `selectByUsername should return null when username not exists`() {
             // When
             val user = sysUserMapper.selectByUsername("nonexistent")
@@ -280,7 +281,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectByPhone - 根据手机号查询用户")
+        @DisplayName("selectByPhone - Query user by phone")
         fun `selectByPhone should return user by phone`() {
             // When
             val user = sysUserMapper.selectByPhone("13800138001")
@@ -291,7 +292,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("selectByEmail - 根据邮箱查询用户")
+        @DisplayName("selectByEmail - Query user by email")
         fun `selectByEmail should return user by email`() {
             // When
             val user = sysUserMapper.selectByEmail("test1@example.com")
@@ -303,11 +304,11 @@ class SysUserMapperTest {
     }
 
     @Nested
-    @DisplayName("状态管理测试")
+    @DisplayName("Status Management Tests")
     inner class StatusManagementTests {
 
         @Test
-        @DisplayName("updateStatus - 更新用户状态")
+        @DisplayName("updateStatus - Update user status")
         fun `updateStatus should update user status`() {
             // Given
             val userId = 1L
@@ -325,7 +326,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("updateStatus - 更新不存在的用户返回 0")
+        @DisplayName("updateStatus - Return 0 when user not exists")
         fun `updateStatus should return 0 when user not exists`() {
             // When
             val result = sysUserMapper.updateStatus(999L, 0)
@@ -336,11 +337,11 @@ class SysUserMapperTest {
     }
 
     @Nested
-    @DisplayName("其他功能测试")
+    @DisplayName("Other Feature Tests")
     inner class OtherFeatureTests {
 
         @Test
-        @DisplayName("updateLastLoginTime - 更新最后登录时间")
+        @DisplayName("updateLastLoginTime - Update last login time")
         fun `updateLastLoginTime should update last login time`() {
             // Given
             val userId = 1L
@@ -358,7 +359,7 @@ class SysUserMapperTest {
         }
 
         @Test
-        @DisplayName("updateLastLoginTime - 更新不存在的用户返回 0")
+        @DisplayName("updateLastLoginTime - Return 0 when user not exists")
         fun `updateLastLoginTime should return 0 when user not exists`() {
             // Given
             val loginTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)

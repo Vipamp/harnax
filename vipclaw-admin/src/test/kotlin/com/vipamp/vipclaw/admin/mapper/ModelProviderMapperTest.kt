@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * ModelProviderMapper 集成测试
+ * ModelProviderMapper Integration Tests
  *
  * @author vipamp
  * @since 2026-04-25
@@ -53,11 +53,11 @@ class ModelProviderMapperTest {
     private lateinit var modelProviderMapper: ModelProviderMapper
 
     @Nested
-    @DisplayName("基础 CRUD 测试")
+    @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询模型服务商")
+        @DisplayName("selectById - Query model provider by ID")
         fun `selectById should return model provider by id`() {
             // When
             val provider = modelProviderMapper.selectById(1L)
@@ -73,7 +73,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 查询不存在的服务商返回 null")
+        @DisplayName("selectById - Return null when provider not exists")
         fun `selectById should return null when provider not exists`() {
             // When
             val provider = modelProviderMapper.selectById(999L)
@@ -83,7 +83,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 不返回已删除的服务商")
+        @DisplayName("selectById - Do not return deleted provider")
         fun `selectById should not return deleted provider`() {
             // When
             val provider = modelProviderMapper.selectById(4L)
@@ -93,7 +93,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 插入新服务商")
+        @DisplayName("insert - Insert new model provider")
         fun `insert should create new provider`() {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -123,7 +123,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新服务商信息")
+        @DisplayName("updateById - Update provider information")
         fun `updateById should update provider info`() {
             // Given
             val providerId = 1L
@@ -144,7 +144,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 逻辑删除服务商")
+        @DisplayName("deleteById - Logically delete model provider")
         fun `deleteById should logically delete provider`() {
             // Given
             val providerId = 2L
@@ -162,11 +162,11 @@ class ModelProviderMapperTest {
     }
 
     @Nested
-    @DisplayName("状态管理测试")
+    @DisplayName("Status Management Tests")
     inner class StatusManagementTests {
 
         @Test
-        @DisplayName("updateStatus - 更新服务商状态")
+        @DisplayName("updateStatus - Update model provider status")
         fun `updateStatus should update provider status`() {
             // Given
             val providerId = 1L
@@ -184,11 +184,11 @@ class ModelProviderMapperTest {
     }
 
     @Nested
-    @DisplayName("自定义查询测试")
+    @DisplayName("Custom Query Tests")
     inner class CustomQueryTests {
 
         @Test
-        @DisplayName("selectModelProviderList - 查询所有服务商列表")
+        @DisplayName("selectModelProviderList - Query all model providers")
         fun `selectModelProviderList should return all providers`() {
             // When
             val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
@@ -199,20 +199,20 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("selectModelProviderList - 按名称模糊查询")
+        @DisplayName("selectModelProviderList - Filter by name")
         fun `selectModelProviderList should filter by name`() {
             // When
             val providers = modelProviderMapper.selectModelProviderList(null, null, null, 1, "admin")
 
             // Then
             assertTrue(providers.isNotEmpty())
-            // 测试数据中有包含"阿里"的服务商
+            // Test data has providers containing "阿里" in name
             val hasAliProvider = providers.any { it.name.contains("阿里") }
             assertTrue(hasAliProvider || providers.size >= 3)
         }
 
         @Test
-        @DisplayName("countByType - 统计指定类型服务商数量")
+        @DisplayName("countByType - Count providers by type")
         fun `countByType should count providers by type`() {
             // When
             val count = modelProviderMapper.countByType("dashscope")
@@ -222,7 +222,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("countByName - 统计指定名称服务商数量")
+        @DisplayName("countByName - Count providers by name")
         fun `countByName should count providers by name`() {
             // When
             val count = modelProviderMapper.countByName("阿里云百炼")
@@ -232,7 +232,7 @@ class ModelProviderMapperTest {
         }
 
         @Test
-        @DisplayName("countByName - 不存在的名称返回 0")
+        @DisplayName("countByName - Return 0 for non-existent name")
         fun `countByName should return 0 for non-existent name`() {
             // When
             val count = modelProviderMapper.countByName("不存在的名称")

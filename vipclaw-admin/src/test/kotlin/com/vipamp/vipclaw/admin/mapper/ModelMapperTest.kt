@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * ModelMapper 集成测试
+ * ModelMapper Integration Tests
  *
  * @author vipamp
  * @since 2026-04-25
@@ -53,11 +53,11 @@ class ModelMapperTest {
     private lateinit var modelMapper: ModelMapper
 
     @Nested
-    @DisplayName("基础 CRUD 测试")
+    @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询模型")
+        @DisplayName("selectById - Query model by ID")
         fun `selectById should return model by id`() {
             // When
             val model = modelMapper.selectById(1L)
@@ -74,7 +74,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 查询不存在的模型返回 null")
+        @DisplayName("selectById - Return null when model not exists")
         fun `selectById should return null when model not exists`() {
             // When
             val model = modelMapper.selectById(999L)
@@ -84,7 +84,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 不返回已删除的模型")
+        @DisplayName("selectById - Do not return deleted model")
         fun `selectById should not return deleted model`() {
             // When
             val model = modelMapper.selectById(5L)
@@ -94,7 +94,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 插入新模型")
+        @DisplayName("insert - Insert new model")
         fun `insert should create new model`() {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -131,7 +131,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新模型信息")
+        @DisplayName("updateById - Update model information")
         fun `updateById should update model info`() {
             // Given
             val modelId = 1L
@@ -152,7 +152,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 逻辑删除模型")
+        @DisplayName("deleteById - Logically delete model")
         fun `deleteById should logically delete model`() {
             // Given
             val modelId = 2L
@@ -170,11 +170,11 @@ class ModelMapperTest {
     }
 
     @Nested
-    @DisplayName("状态管理测试")
+    @DisplayName("Status Management Tests")
     inner class StatusManagementTests {
 
         @Test
-        @DisplayName("updateStatus - 更新模型状态")
+        @DisplayName("updateStatus - Update model status")
         fun `updateStatus should update model status`() {
             // Given
             val modelId = 1L
@@ -192,11 +192,11 @@ class ModelMapperTest {
     }
 
     @Nested
-    @DisplayName("自定义查询测试")
+    @DisplayName("Custom Query Tests")
     inner class CustomQueryTests {
 
         @Test
-        @DisplayName("selectModelList - 查询所有模型列表")
+        @DisplayName("selectModelList - Query all models")
         fun `selectModelList should return all models`() {
             // When
             val models = modelMapper.selectModelList(null, null, null, null, null, null, null, "admin")
@@ -207,7 +207,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("selectModelList - 按服务商 ID 查询")
+        @DisplayName("selectModelList - Filter by provider ID")
         fun `selectModelList should filter by provider id`() {
             // When
             val models = modelMapper.selectModelList(null, 1L, null, null, null, null, null, "admin")
@@ -220,7 +220,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("selectModelList - 按模型类型查询")
+        @DisplayName("selectModelList - Filter by model type")
         fun `selectModelList should filter by model type`() {
             // When
             val models = modelMapper.selectModelList(null, null, "chat", null, null, null, null, "admin")
@@ -233,7 +233,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("countByProviderIdAndName - 统计服务商下指定名称的模型数量")
+        @DisplayName("countByProviderIdAndName - Count models by provider and name")
         fun `countByProviderIdAndName should count models by provider and name`() {
             // When
             val count = modelMapper.countByProviderIdAndName(1L, "GPT-4")
@@ -243,7 +243,7 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("countByProviderIdAndModelName - 统计服务商下指定模型名称的数量")
+        @DisplayName("countByProviderIdAndModelName - Count models by provider and model name")
         fun `countByProviderIdAndModelName should count models by provider and model name`() {
             // When
             val count = modelMapper.countByProviderIdAndModelName(1L, "gpt-4")
@@ -253,13 +253,13 @@ class ModelMapperTest {
         }
 
         @Test
-        @DisplayName("countActiveModelsByProviderId - 统计服务商下启用的模型数量")
+        @DisplayName("countActiveModelsByProviderId - Count active models by provider")
         fun `countActiveModelsByProviderId should count active models by provider`() {
             // When
             val count = modelMapper.countActiveModelsByProviderId(1L)
 
             // Then
-            assertTrue(count >= 2) // 至少有 2 个启用的模型
+            assertTrue(count >= 2) // At least 2 active models
         }
     }
 }
