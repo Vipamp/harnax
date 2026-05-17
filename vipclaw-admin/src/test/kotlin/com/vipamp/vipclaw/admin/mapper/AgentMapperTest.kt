@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * AgentMapper 集成测试
+ * AgentMapper Integration Tests
  *
  * @author vipamp
  * @since 2026-04-25
@@ -53,11 +53,11 @@ class AgentMapperTest {
     private lateinit var agentMapper: AgentMapper
 
     @Nested
-    @DisplayName("基础 CRUD 测试")
+    @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询智能体")
+        @DisplayName("selectById - Query agent by ID")
         fun `selectById should return agent by id`() {
             // When
             val agent = agentMapper.selectById(1L)
@@ -76,7 +76,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 查询不存在的智能体返回 null")
+        @DisplayName("selectById - Return null when agent not exists")
         fun `selectById should return null when agent not exists`() {
             // When
             val agent = agentMapper.selectById(999L)
@@ -86,7 +86,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 不返回已删除的智能体")
+        @DisplayName("selectById - Do not return deleted agent")
         fun `selectById should not return deleted agent`() {
             // When
             val agent = agentMapper.selectById(4L)
@@ -96,7 +96,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 插入新智能体")
+        @DisplayName("insert - Insert new agent")
         fun `insert should create new agent`() {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -129,7 +129,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新智能体信息")
+        @DisplayName("updateById - Update agent info")
         fun `updateById should update agent info`() {
             // Given
             val agentId = 1L
@@ -151,7 +151,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 逻辑删除智能体")
+        @DisplayName("deleteById - Logically delete agent")
         fun `deleteById should logically delete agent`() {
             // Given
             val agentId = 2L
@@ -169,11 +169,11 @@ class AgentMapperTest {
     }
 
     @Nested
-    @DisplayName("状态管理测试")
+    @DisplayName("Status Management Tests")
     inner class StatusManagementTests {
 
         @Test
-        @DisplayName("updateStatus - 更新智能体状态")
+        @DisplayName("updateStatus - Update agent status")
         fun `updateStatus should update agent status`() {
             // Given
             val agentId = 1L
@@ -191,11 +191,11 @@ class AgentMapperTest {
     }
 
     @Nested
-    @DisplayName("自定义查询测试")
+    @DisplayName("Custom Query Tests")
     inner class CustomQueryTests {
 
         @Test
-        @DisplayName("selectAgentList - 查询所有智能体列表")
+        @DisplayName("selectAgentList - Query all agents")
         fun `selectAgentList should return all agents`() {
             // When
             val agents = agentMapper.selectAgentList(null, null, "testuser1")
@@ -206,7 +206,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("selectAgentList - 按名称模糊查询")
+        @DisplayName("selectAgentList - Filter by name")
         fun `selectAgentList should filter by name`() {
             // When
             val agents = agentMapper.selectAgentList("Test Agent", null, "testuser1")
@@ -219,7 +219,7 @@ class AgentMapperTest {
         }
 
         @Test
-        @DisplayName("selectAgentList - 权限过滤：返回公开或当前用户创建的")
+        @DisplayName("selectAgentList - Filter by permission: return public or created by current user")
         fun `selectAgentList should filter by permission`() {
             // When - testuser1 应该看到自己创建的和公开的
             val agents = agentMapper.selectAgentList(null, null, "testuser1")

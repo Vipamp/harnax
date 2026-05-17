@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * McpServerMapper 集成测试
+ * McpServerMapper Integration Tests
  *
  * @author vipamp
  * @since 2026-04-25
@@ -53,11 +53,11 @@ class McpServerMapperTest {
     private lateinit var mcpServerMapper: McpServerMapper
 
     @Nested
-    @DisplayName("基础 CRUD 测试")
+    @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
 
         @Test
-        @DisplayName("selectById - 根据 ID 查询 MCP 服务")
+        @DisplayName("selectById - Query MCP server by ID")
         fun `selectById should return mcp server by id`() {
             // When
             val mcpServer = mcpServerMapper.selectById(1L)
@@ -74,7 +74,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 查询不存在的 MCP 服务返回 null")
+        @DisplayName("selectById - Return null when MCP server not exists")
         fun `selectById should return null when mcp server not exists`() {
             // When
             val mcpServer = mcpServerMapper.selectById(999L)
@@ -84,7 +84,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectById - 不返回已删除的 MCP 服务")
+        @DisplayName("selectById - Do not return deleted MCP server")
         fun `selectById should not return deleted mcp server`() {
             // When
             val mcpServer = mcpServerMapper.selectById(4L)
@@ -94,7 +94,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("insert - 插入新 MCP 服务")
+        @DisplayName("insert - Insert new MCP server")
         fun `insert should create new mcp server`() {
             // Given
             val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
@@ -125,7 +125,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新 MCP 服务信息")
+        @DisplayName("updateById - Update MCP server info")
         fun `updateById should update mcp server info`() {
             // Given
             val mcpServerId = 1L
@@ -146,7 +146,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("deleteById - 逻辑删除 MCP 服务")
+        @DisplayName("deleteById - Logically delete MCP server")
         fun `deleteById should logically delete mcp server`() {
             // Given
             val mcpServerId = 2L
@@ -164,11 +164,11 @@ class McpServerMapperTest {
     }
 
     @Nested
-    @DisplayName("状态管理测试")
+    @DisplayName("Status Management Tests")
     inner class StatusManagementTests {
 
         @Test
-        @DisplayName("updateStatus - 更新 MCP 服务状态")
+        @DisplayName("updateStatus - Update MCP server status")
         fun `updateStatus should update mcp server status`() {
             // Given
             val mcpServerId = 1L
@@ -186,11 +186,11 @@ class McpServerMapperTest {
     }
 
     @Nested
-    @DisplayName("自定义查询测试")
+    @DisplayName("Custom Query Tests")
     inner class CustomQueryTests {
 
         @Test
-        @DisplayName("selectMcpServerList - 查询所有 MCP 服务列表")
+        @DisplayName("selectMcpServerList - Query all MCP servers")
         fun `selectMcpServerList should return all mcp servers`() {
             // When
             val mcpServers = mcpServerMapper.selectMcpServerList(null, null, null, "admin")
@@ -201,7 +201,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectMcpServerList - 按名称模糊查询")
+        @DisplayName("selectMcpServerList - Filter by name")
         fun `selectMcpServerList should filter by name`() {
             // When
             val mcpServers = mcpServerMapper.selectMcpServerList("Weather", null, null, "admin")
@@ -214,7 +214,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectMcpServerList - 按状态查询")
+        @DisplayName("selectMcpServerList - Filter by status")
         fun `selectMcpServerList should filter by status`() {
             // When
             val mcpServers = mcpServerMapper.selectMcpServerList(null, 0, null, "admin")
@@ -227,7 +227,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectByName - 根据名称查询 MCP 服务")
+        @DisplayName("selectByName - Query MCP server by name")
         fun `selectByName should return mcp server by name`() {
             // When
             val mcpServer = mcpServerMapper.selectByName("Weather MCP")
@@ -238,7 +238,7 @@ class McpServerMapperTest {
         }
 
         @Test
-        @DisplayName("selectByName - 查询不存在的名称返回 null")
+        @DisplayName("selectByName - Return null when name not exists")
         fun `selectByName should return null when name not exists`() {
             // When
             val mcpServer = mcpServerMapper.selectByName("Nonexistent MCP")
