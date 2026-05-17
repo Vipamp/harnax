@@ -1,0 +1,101 @@
+server:
+  port: 8080
+#  servlet:
+#    context-path: /admin
+
+spring:
+  application:
+    name: harnax-admin
+  
+  # Active version profile (injected via Maven during compilation)
+  profiles:
+    active: ${edition.current:personal}
+  
+  # Datasource configuration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      pool-name: HarnaxHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+  
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+
+  # Flyway Configuration
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    schemas: harnax
+    baseline-on-migrate: true
+    baseline-version: 1
+    validate-on-migrate: true
+    clean-disabled: true
+    sql-migration-prefixes: V
+    repeatable-sql-migration-prefixes: R
+
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: HarnaxScheduler
+            instanceId: AUTO
+          jobStore:
+            class: org.quartz.simpl.RAMJobStore
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+
+
+# MyBatis configuration
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.agnetix.harnax.admin.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# Springdoc OpenAPI (Swagger) configuration
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: ${SWAGGER_ENABLED:true}
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: ${SWAGGER_ENABLED:true}
+    operations-sorter: alpha
+    tags-sorter: alpha
+  default-flat-param-object: true
+
+logging:
+  level:
+    root: INFO
+  com.example.harnax.admin: DEBUG
+
+# JWT configuration
+jwt:
+  secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
+  expiration: 7200000 # 2 hours (milliseconds)
+
+session:
+  jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+  database-name: ${SESSION_DATABASE_NAME:harnax}
+  username: ${SESSION_USERNAME:root}
+  password: ${SESSION_PASSWORD:123456}
+
+local:
+  tmp-dir: /Users/heqingsong/harnax-admin/tmp
+
+edition:
+  current: public

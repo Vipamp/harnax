@@ -1,4 +1,4 @@
-# VIPClaw Docker Compose - Personal Edition (Development)
+# Harnax Docker Compose - Personal Edition (Development)
 # Includes: MySQL + Backend + Frontend
 
 version: '3.8'
@@ -7,13 +7,13 @@ services:
   # MySQL Database
   mysql:
     image: mysql:8.0
-    container_name: vipclaw-mysql
+    container_name: harnax-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root123456
-      MYSQL_DATABASE: vipclaw
-      MYSQL_USER: vipclaw
-      MYSQL_PASSWORD: vipclaw123
+      MYSQL_DATABASE: harnax
+      MYSQL_USER: harnax
+      MYSQL_PASSWORD: harnax123
       TZ: Asia/Shanghai
     ports:
       - "3306:3306"
@@ -31,28 +31,28 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - vipclaw-network
+      - harnax-network
 
   # Backend Service
   backend:
-    image: vipclaw-backend:personal
+    image: harnax-backend:personal
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: vipclaw-backend-personal
+    container_name: harnax-backend-personal
     restart: unless-stopped
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: personal
       # Database Configuration
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: vipclaw
-      SPRING_DATASOURCE_PASSWORD: vipclaw123
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: harnax
+      SPRING_DATASOURCE_PASSWORD: harnax123
       # Session Database Configuration
-      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      SESSION_DATABASE_NAME: vipclaw
-      SESSION_USERNAME: vipclaw
-      SESSION_PASSWORD: vipclaw123
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_DATABASE_NAME: harnax
+      SESSION_USERNAME: harnax
+      SESSION_PASSWORD: harnax123
       # Flyway Configuration
       SPRING_FLYWAY_ENABLED: "true"
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
@@ -72,15 +72,15 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - vipclaw-network
+      - harnax-network
 
   # Frontend Service
   frontend:
-    image: vipclaw-frontend:personal
+    image: harnax-frontend:personal
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
-    container_name: vipclaw-frontend-personal
+    container_name: harnax-frontend-personal
     restart: unless-stopped
     ports:
       - "80:80"
@@ -92,12 +92,12 @@ services:
       timeout: 5s
       retries: 3
     networks:
-      - vipclaw-network
+      - harnax-network
 
 volumes:
   backend-logs:
     driver: local
 
 networks:
-  vipclaw-network:
+  harnax-network:
     driver: bridge

@@ -1,0 +1,33 @@
+# 测试环境配置
+spring:
+  datasource:
+    # Testcontainers会动态设置这个值，这里只是占位
+    url: jdbc:mysql://localhost:3306/harnax_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: test
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 5
+      idle-timeout: 30000
+      pool-name: TestHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+
+# MyBatis 配置
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# JWT 配置
+jwt:
+  secret: harnax-test-secret-key-2026
+  expiration: 7200000
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.agnetix.harnax.admin: DEBUG
+    com.agnetix.harnax.admin.mapper: DEBUG

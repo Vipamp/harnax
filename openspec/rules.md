@@ -79,10 +79,10 @@
 | **Kotlin All-Open** | 2.2.20 | Kotlin Spring 支持 |
 
 #### 项目模块结构
-- **vipclaw-admin**: 管理后台服务（主应用）
-- **vipclaw-agent**: 智能体模块（包含 vipclaw-agent-core）
-- **vipclaw-channel**: 多渠道集成模块
-- **vipclaw-common**: 公共工具模块
+- **harnax-admin**: 管理后台服务（主应用）
+- **harnax-agent**: 智能体模块（包含 harnax-agent-core）
+- **harnax-channel**: 多渠道集成模块
+- **harnax-common**: 公共工具模块
 
 #### 版本发布配置
 项目支持三个版本 Profile：
@@ -90,7 +90,7 @@
 - **enterprise**: 企业版
 - **public**: 公网版
 
-## 2. 前端项目 (vipclaw-webui)
+## 2. 前端项目 (harnax-webui)
 
 ### 2.1 前端技术栈及版本
 

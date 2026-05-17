@@ -10,7 +10,7 @@ description: 在需要基于实体类开发 CURD 操作时，开发对应的前�
 - **接口规范**: RESTful API，统一返回 Result 包装类型
 - **分页**: MyBatis Plus Page 对象
 
-> vipclaw-admin 是需要开发的后端代码模块，vipclaw-webui 是需要开发的前端代码模块，其他模块不要动
+> harnax-admin 是需要开发的后端代码模块，harnax-webui 是需要开发的前端代码模块，其他模块不要动
 
 ## 二、开发流程
 

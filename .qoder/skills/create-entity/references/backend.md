@@ -2,13 +2,13 @@
 
 ### 代码规范
 
-- 所有类都需要加上类的注释，作者为 `vipamp`，日期为 `yyyy-MM-dd`，例如：
+- 所有类都需要加上类的注释，作者为 `agnetix`，日期为 `yyyy-MM-dd`，例如：
 
 ```java
 /**
  * <类描述>
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-05
  */
 ```
@@ -47,7 +47,7 @@ import java.io.Serializable;
 /**
  * 用户实体类
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-05
  */
 @Data
@@ -157,7 +157,7 @@ public class SysUser implements Serializable {
 /**
  * 用户创建请求 DTO
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-05
  */
 @Data
@@ -308,7 +308,7 @@ public class SysUserUpdateRequest {
 /**
  * 用户响应 DTO
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-05
  */
 @Data
@@ -410,7 +410,7 @@ public class SysUserResponse {
 /**
  * 用户 Mapper 接口
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-06
  */
 @Mapper
@@ -468,7 +468,7 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
 /**
  * 用户服务接口
  *
- * @author vipamp
+ * @author agnetix
  * @since 2026-03-05
  */
 public interface SysUserService extends IService<SysUser> {
@@ -750,7 +750,7 @@ TODO
 ```java
 /**
  * 用户管理控制器
- * @author vipclaw
+ * @author harnax
  *
  */
 @Slf4j

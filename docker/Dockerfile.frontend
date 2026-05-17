@@ -1,4 +1,4 @@
-# VIPClaw Frontend Dockerfile - Single Stage Build
+# Harnax Frontend Dockerfile - Single Stage Build
 # Uses locally built static files, no Node.js build inside Docker
 
 FROM nginx:alpine
@@ -27,6 +27,6 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 CMD ["nginx", "-g", "daemon off;"]
 
 # Metadata
-LABEL maintainer="vipamp"
+LABEL maintainer="harnax"
 LABEL version="1.0.0"
-LABEL description="VIPClaw Frontend"
+LABEL description="Harnax Frontend"

@@ -1,6 +1,6 @@
-# VIPClaw Docker Deployment
+# Harnax Docker Deployment
 
-This directory contains all Docker-related configuration files for VIPClaw.
+This directory contains all Docker-related configuration files for Harnax.
 
 ## Prerequisites
 
@@ -70,34 +70,34 @@ If you prefer to build manually:
 
 ```bash
 # Build JAR package
-mvn clean package -pl vipclaw-admin -am -Ppersonal -DskipTests
+mvn clean package -pl harnax-admin -am -Ppersonal -DskipTests
 
 # Copy to docker/dist/backend/
 mkdir -p docker/dist/backend
-cp vipclaw-admin/target/vipclaw-admin-*.jar docker/dist/backend/
+cp harnax-admin/target/harnax-admin-*.jar docker/dist/backend/
 ```
 
 ### 2. Build Frontend
 
 ```bash
 # Build frontend
-cd vipclaw-webui
+cd harnax-webui
 npm run build:personal
 
 # Copy to docker/dist/frontend/
 cd ..
 mkdir -p docker/dist/frontend
-cp -r vipclaw-webui/dist/* docker/dist/frontend/
+cp -r harnax-webui/dist/* docker/dist/frontend/
 ```
 
 ### 3. Build Docker Images
 
 ```bash
 # Build backend image
-docker build -f docker/Dockerfile.backend -t vipclaw-backend:personal .
+docker build -f docker/Dockerfile.backend -t harnax-backend:personal .
 
 # Build frontend image
-docker build -f docker/Dockerfile.frontend -t vipclaw-frontend:personal .
+docker build -f docker/Dockerfile.frontend -t harnax-frontend:personal .
 ```
 
 ### 4. Start Services
@@ -143,10 +143,10 @@ docker-compose -f docker/docker-compose.personal.yml exec mysql mysqladmin ping 
 
 ```bash
 # Connect to MySQL
-docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u vipclaw -pvipclaw123
+docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u harnax -pharnax123
 
 # Show databases
-docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u vipclaw -pvipclaw123 -e "SHOW DATABASES;"
+docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u harnax -pharnax123 -e "SHOW DATABASES;"
 ```
 
 ## Production Deployment
@@ -182,7 +182,7 @@ Production configuration uses external database and includes:
 
 3. Verify database connection:
    ```bash
-   docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u vipclaw -pvipclaw123 -e "SELECT 1"
+   docker-compose -f docker/docker-compose.personal.yml exec mysql mysql -u harnax -pharnax123 -e "SELECT 1"
    ```
 
 ### Frontend cannot access backend API
@@ -214,7 +214,7 @@ docker/
         ├── ibdata1
         ├── ib_logfile0
         ├── ib_logfile1
-        └── vipclaw/    # Database files
+        └── harnax/    # Database files
 ```
 
 **To backup:**
@@ -224,7 +224,7 @@ tar czf mysql-backup-$(date +%Y%m%d).tar.gz docker/data/mysql
 
 # Or use mysqldump
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysqldump -u vipclaw -pvipclaw123 vipclaw > backup.sql
+  mysqldump -u harnax -pharnax123 harnax > backup.sql
 ```
 
 **To restore:**
@@ -234,7 +234,7 @@ tar xzf mysql-backup-20260514.tar.gz -C docker/data/
 
 # From SQL dump
 docker-compose -f docker/docker-compose.personal.yml exec -T mysql \
-  mysql -u vipclaw -pvipclaw123 vipclaw < backup.sql
+  mysql -u harnax -pharnax123 harnax < backup.sql
 ```
 
 ### Clean up
@@ -244,7 +244,7 @@ docker-compose -f docker/docker-compose.personal.yml exec -T mysql \
 docker-compose -f docker/docker-compose.personal.yml down
 
 # Remove images
-docker rmi vipclaw-backend:personal vipclaw-frontend:personal
+docker rmi harnax-backend:personal harnax-frontend:personal
 
 # Remove volumes (backend logs only, MySQL data is in local directory)
 docker-compose -f docker/docker-compose.personal.yml down -v
@@ -266,11 +266,11 @@ rm -rf docker/data/mysql
 | Variable | Description | Default |
 |----------|-------------|---------|  
 | SPRING_PROFILES_ACTIVE | Spring profile | personal |
-| SPRING_DATASOURCE_URL | Database URL | jdbc:mysql://mysql:3306/vipclaw |
-| SPRING_DATASOURCE_USERNAME | Database username | vipclaw |
-| SPRING_DATASOURCE_PASSWORD | Database password | vipclaw123 |
+| SPRING_DATASOURCE_URL | Database URL | jdbc:mysql://mysql:3306/harnax |
+| SPRING_DATASOURCE_USERNAME | Database username | harnax |
+| SPRING_DATASOURCE_PASSWORD | Database password | harnax123 |
 | SESSION_JDBC_URL | Session database URL | (same as SPRING_DATASOURCE_URL) |
-| SESSION_DATABASE_NAME | Session database name | vipclaw |
+| SESSION_DATABASE_NAME | Session database name | harnax |
 | SESSION_USERNAME | Session database username | (same as SPRING_DATASOURCE_USERNAME) |
 | SESSION_PASSWORD | Session database password | (same as SPRING_DATASOURCE_PASSWORD) |
 | LOG_LEVEL | Log level | DEBUG (dev) / INFO (prod) |
@@ -288,5 +288,5 @@ rm -rf docker/data/mysql
 
 - All Docker files are in the `docker/` directory to keep the root clean
 - Build artifacts in `docker/dist/` are not committed to git
-- Database migrations are managed by Flyway (see `vipclaw-admin/src/main/resources/db/`)
+- Database migrations are managed by Flyway (see `harnax-admin/src/main/resources/db/`)
 - Use `.dockerignore` to optimize build context

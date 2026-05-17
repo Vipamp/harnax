@@ -8,7 +8,7 @@
 
 ### 1. 修复了 TenantServiceImpl 中的所有硬编码错误消息
 
-**文件**: `vipclaw-admin/src/main/kotlin/com/vipamp/vipclaw/admin/service/impl/TenantServiceImpl.kt`
+**文件**: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TenantServiceImpl.kt`
 
 #### 修改前:
 ```kotlin
@@ -56,7 +56,7 @@ error.user.not_in_tenant=User not in this tenant
 
 ### 4. 更新了测试用例
 
-**文件**: `vipclaw-admin/src/test/kotlin/com/vipamp/vipclaw/admin/service/impl/TenantServiceImplTest.kt`
+**文件**: `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/TenantServiceImplTest.kt`
 
 添加了 `MessageUtil` 的 mock 配置:
 
@@ -110,7 +110,7 @@ verify(messageUtil).getMessage("error.tenant.name_exists")
 ## 编译验证
 
 ```bash
-mvn clean compile -DskipTests -pl vipclaw-admin -am
+mvn clean compile -DskipTests -pl harnax-admin -am
 ```
 
 编译状态: ✅ **BUILD SUCCESS**
@@ -124,13 +124,13 @@ mvn clean compile -DskipTests -pl vipclaw-admin -am
 ## 相关文件
 
 ### 修改的文件
-- `vipclaw-admin/src/main/kotlin/com/vipamp/vipclaw/admin/service/impl/TenantServiceImpl.kt`
-- `vipclaw-admin/src/main/resources/i18n/messages_error_zh_CN.properties`
-- `vipclaw-admin/src/main/resources/i18n/messages_error.properties`
-- `vipclaw-admin/src/test/kotlin/com/vipamp/vipclaw/admin/service/impl/TenantServiceImplTest.kt`
+- `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/TenantServiceImpl.kt`
+- `harnax-admin/src/main/resources/i18n/messages_error_zh_CN.properties`
+- `harnax-admin/src/main/resources/i18n/messages_error.properties`
+- `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/service/impl/TenantServiceImplTest.kt`
 
 ### 依赖的文件
-- `vipclaw-admin/src/main/kotlin/com/vipamp/vipclaw/admin/i18n/MessageUtil.kt`
+- `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/i18n/MessageUtil.kt`
 
 ## 后续建议
 

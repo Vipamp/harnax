@@ -1,7 +1,7 @@
 -- 检查 admin 用户的 isAdmin 字段值
 -- 执行日期: 2026-04-21
 
-USE `vipclaw`;
+USE `harnax`;
 
 -- 1. 查看 admin 用户的完整信息
 SELECT 

@@ -1,7 +1,7 @@
 -- 用户表结构升级脚本
 -- 从旧版本升级到新版本,添加缺失字段和索引
 
-USE `vipclaw`;
+USE `harnax`;
 
 -- 添加 is_admin 字段(如果不存在)
 ALTER TABLE `sys_user` 

@@ -1,4 +1,4 @@
-# VIPClaw Docker Compose - Production Environment
+# Harnax Docker Compose - Production Environment
 # Includes: Backend + Frontend (uses external database)
 
 version: '3.8'
@@ -6,20 +6,20 @@ version: '3.8'
 services:
   # Backend Service
   backend:
-    image: vipclaw-backend:personal
-    container_name: vipclaw-backend
+    image: harnax-backend:personal
+    container_name: harnax-backend
     restart: always
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
       # Database Configuration (external database)
-      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
-      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-vipclaw}
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
       # Session Database Configuration
-      SESSION_JDBC_URL: ${SESSION_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}}
-      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-vipclaw}
-      SESSION_USERNAME: ${SESSION_DB_USERNAME:-${DB_USERNAME:-vipclaw}}
+      SESSION_JDBC_URL: ${SESSION_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}}
+      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax}
+      SESSION_USERNAME: ${SESSION_DB_USERNAME:-${DB_USERNAME:-harnax}}
       SESSION_PASSWORD: ${SESSION_DB_PASSWORD:-${DB_PASSWORD:-}}
       # Flyway Configuration
       SPRING_FLYWAY_ENABLED: "true"
@@ -31,7 +31,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - /var/log/vipclaw:/app/logs
+      - /var/log/harnax:/app/logs
       - /etc/localtime:/etc/localtime:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
@@ -51,12 +51,12 @@ services:
         condition: on-failure
         max_attempts: 3
     networks:
-      - vipclaw-network
+      - harnax-network
 
   # Frontend Service
   frontend:
-    image: vipclaw-frontend:personal
-    container_name: vipclaw-frontend
+    image: harnax-frontend:personal
+    container_name: harnax-frontend
     restart: always
     ports:
       - "80:80"
@@ -83,8 +83,8 @@ services:
         condition: on-failure
         max_attempts: 3
     networks:
-      - vipclaw-network
+      - harnax-network
 
 networks:
-  vipclaw-network:
+  harnax-network:
     driver: bridge

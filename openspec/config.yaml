@@ -19,5 +19,5 @@ rules:
     - Break tasks into chunks of max 2 hours
   code:
     - 整个项目开发遵循 rules.md 规范
-    - vipclaw-admin 项目遵守 `vipclaw-admin-rules.md` 中的规范
+    - harnax-admin 项目遵守 `harnax-admin-rules.md` 中的规范
     - Spring Boot Native 构建遵循 `spring-boot-native.md` 规范

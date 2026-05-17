@@ -8,7 +8,7 @@ description: 用户创建 springboot 项目，包含后端和前端，并内置�
 ### 1.1 创建 pom.xml 文件，作为父项目
 
 - 指定完整项目名称，如果没有指定，像用户提问
-- 指定包名，默认为`com.vipamp.admin`
+- 指定包名，默认为`com.agnetix.admin`
 
 ### 1.2 在项目中引入一些属性配置和依赖
 

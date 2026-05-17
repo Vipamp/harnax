@@ -1,4 +1,4 @@
-# VIPClaw 多版本 CI/CD 配置
+# Harnax 多版本 CI/CD 配置
 # 支持个人版、企业版、公有云版的并行构建
 
 stages:
@@ -26,10 +26,10 @@ build-backend-personal:
   stage: build
   image: maven:3.9-eclipse-temurin-21
   script:
-    - cd vipclaw-admin
+    - cd harnax-admin
     - mvn clean package -Ppersonal -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/personal
-    - cp target/vipclaw-admin-*.jar ../dist/personal/
+    - cp target/harnax-admin-*.jar ../dist/personal/
   artifacts:
     paths:
       - dist/personal/
@@ -42,10 +42,10 @@ build-backend-enterprise:
   stage: build
   image: maven:3.9-eclipse-temurin-21
   script:
-    - cd vipclaw-admin
+    - cd harnax-admin
     - mvn clean package -Penterprise -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/enterprise
-    - cp target/vipclaw-admin-*.jar ../dist/enterprise/
+    - cp target/harnax-admin-*.jar ../dist/enterprise/
   artifacts:
     paths:
       - dist/enterprise/
@@ -58,10 +58,10 @@ build-backend-public:
   stage: build
   image: maven:3.9-eclipse-temurin-21
   script:
-    - cd vipclaw-admin
+    - cd harnax-admin
     - mvn clean package -Ppublic -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/public
-    - cp target/vipclaw-admin-*.jar ../dist/public/
+    - cp target/harnax-admin-*.jar ../dist/public/
   artifacts:
     paths:
       - dist/public/
@@ -76,11 +76,11 @@ test-backend:
   stage: test
   image: maven:3.9-eclipse-temurin-21
   script:
-    - cd vipclaw-admin
+    - cd harnax-admin
     - mvn test $MAVEN_OPTS
   artifacts:
     reports:
-      junit: vipclaw-admin/target/surefire-reports/TEST-*.xml
+      junit: harnax-admin/target/surefire-reports/TEST-*.xml
     expire_in: 30 days
   tags:
     - docker
@@ -90,12 +90,12 @@ test-frontend-personal:
   stage: test
   image: node:20-alpine
   script:
-    - cd vipclaw-webui
+    - cd harnax-webui
     - npm ci
     - npm run build:personal
   artifacts:
     paths:
-      - vipclaw-webui/dist/
+      - harnax-webui/dist/
     expire_in: 1 day
   tags:
     - docker
@@ -127,12 +127,12 @@ docker-personal:
   services:
     - docker:24-dind
   script:
-    - docker build --build-arg EDITION=personal -t vipclaw-admin:personal -f Dockerfile.backend .
-    - docker tag vipclaw-admin:personal $CI_REGISTRY_IMAGE/vipclaw-admin:personal-$CI_COMMIT_SHORT_SHA
-    - docker tag vipclaw-admin:personal $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest
+    - docker build --build-arg EDITION=personal -t harnax-admin:personal -f Dockerfile.backend .
+    - docker tag harnax-admin:personal $CI_REGISTRY_IMAGE/harnax-admin:personal-$CI_COMMIT_SHORT_SHA
+    - docker tag harnax-admin:personal $CI_REGISTRY_IMAGE/harnax-admin:personal-latest
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:personal-$CI_COMMIT_SHORT_SHA
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:personal-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:personal-latest
   dependencies:
     - build-backend-personal
   only:
@@ -148,12 +148,12 @@ docker-enterprise:
   services:
     - docker:24-dind
   script:
-    - docker build --build-arg EDITION=enterprise -t vipclaw-admin:enterprise -f Dockerfile.backend .
-    - docker tag vipclaw-admin:enterprise $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-$CI_COMMIT_SHORT_SHA
-    - docker tag vipclaw-admin:enterprise $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-latest
+    - docker build --build-arg EDITION=enterprise -t harnax-admin:enterprise -f Dockerfile.backend .
+    - docker tag harnax-admin:enterprise $CI_REGISTRY_IMAGE/harnax-admin:enterprise-$CI_COMMIT_SHORT_SHA
+    - docker tag harnax-admin:enterprise $CI_REGISTRY_IMAGE/harnax-admin:enterprise-latest
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-$CI_COMMIT_SHORT_SHA
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:enterprise-latest
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:enterprise-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:enterprise-latest
   dependencies:
     - build-backend-enterprise
   only:
@@ -169,12 +169,12 @@ docker-public:
   services:
     - docker:24-dind
   script:
-    - docker build --build-arg EDITION=public -t vipclaw-admin:public -f Dockerfile.backend .
-    - docker tag vipclaw-admin:public $CI_REGISTRY_IMAGE/vipclaw-admin:public-$CI_COMMIT_SHORT_SHA
-    - docker tag vipclaw-admin:public $CI_REGISTRY_IMAGE/vipclaw-admin:public-latest
+    - docker build --build-arg EDITION=public -t harnax-admin:public -f Dockerfile.backend .
+    - docker tag harnax-admin:public $CI_REGISTRY_IMAGE/harnax-admin:public-$CI_COMMIT_SHORT_SHA
+    - docker tag harnax-admin:public $CI_REGISTRY_IMAGE/harnax-admin:public-latest
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:public-$CI_COMMIT_SHORT_SHA
-    - docker push $CI_REGISTRY_IMAGE/vipclaw-admin:public-latest
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:public-$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE/harnax-admin:public-latest
   dependencies:
     - build-backend-public
   only:
@@ -192,10 +192,10 @@ deploy-personal:
   script:
     - echo "部署个人版到测试环境"
     # 实际部署命令根据环境配置
-    # - ssh deploy@personal-server "docker pull $CI_REGISTRY_IMAGE/vipclaw-admin:personal-latest && docker-compose up -d"
+    # - ssh deploy@personal-server "docker pull $CI_REGISTRY_IMAGE/harnax-admin:personal-latest && docker-compose up -d"
   environment:
     name: personal-test
-    url: https://personal.vipclaw.example.com
+    url: https://personal.harnax.example.com
   only:
     - main
   tags:
@@ -210,7 +210,7 @@ deploy-enterprise:
     # 实际部署命令根据环境配置
   environment:
     name: enterprise-test
-    url: https://enterprise.vipclaw.example.com
+    url: https://enterprise.harnax.example.com
   only:
     - main
   tags:
@@ -225,7 +225,7 @@ deploy-public:
     # 实际部署命令根据环境配置
   environment:
     name: public-prod
-    url: https://vipclaw.example.com
+    url: https://harnax.example.com
   only:
     - tags
   when: manual

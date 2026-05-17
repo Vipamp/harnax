@@ -1,4 +1,4 @@
-# VIPClaw Backend Dockerfile - Single Stage Build
+# Harnax Backend Dockerfile - Single Stage Build
 # Uses locally built JAR package, no compilation inside Docker
 
 FROM eclipse-temurin:21-jre
@@ -8,18 +8,18 @@ ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Create non-root user
-RUN groupadd -r vipclaw && useradd -r -g vipclaw vipclaw
+RUN groupadd -r harnax && useradd -r -g harnax harnax
 
 WORKDIR /app
 
 # Copy JAR file from docker/dist/backend/
-COPY docker/dist/backend/vipclaw-admin-*.jar app.jar
+COPY docker/dist/backend/harnax-admin-*.jar app.jar
 
 # Create log directory and set permissions
-RUN mkdir -p /app/logs && chown -R vipclaw:vipclaw /app
+RUN mkdir -p /app/logs && chown -R harnax:harnax /app
 
 # Switch to non-root user
-USER vipclaw
+USER harnax
 
 # Expose port
 EXPOSE 8080
@@ -35,6 +35,6 @@ ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+Heap
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
 
 # Metadata
-LABEL maintainer="vipamp"
+LABEL maintainer="agnetix"
 LABEL version="1.0.0"
-LABEL description="VIPClaw Admin Backend"
+LABEL description="Harnax Admin Backend"

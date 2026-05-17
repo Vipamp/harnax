@@ -1,0 +1,20 @@
+# Enterprise edition feature toggle configuration
+harnax:
+  edition: enterprise
+  features:
+    user-management: true
+    token-monitor: true
+    billing: false
+    multi-tenant: false
+    agent-sharing: true
+    model-market: false
+    skill-market: false
+    phone-login: true
+    email-login: true
+
+# Disable Swagger in production
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

@@ -5,7 +5,7 @@
 | 字段 | 内容 |
 |-----|------|
 | 模块名称 | 用户管理 (User Management) |
-| 所属系统 | VIPClaw 管理后台 |
+| 所属系统 | Harnax 管理后台 |
 | 文档版本 | V1.0 |
 | 编写日期 | 2026-04-20 |
 | 优先级 | 🔴 P0（核心基础模块） |
@@ -16,7 +16,7 @@
 
 ### 2.1 功能定位
 
-用户管理模块是 VIPClaw 平台的基础核心模块，负责管理系统用户的完整生命周期，包括：
+用户管理模块是 Harnax 平台的基础核心模块，负责管理系统用户的完整生命周期，包括：
 - 用户的创建、查询、更新、删除（CRUD）
 - 用户状态管理（启用/禁用）
 - 管理员权限控制
@@ -847,9 +847,9 @@ FROM sys_user
 - Mapper: `SysUserMapper.kt`, `SysUserMapper.xml`
 
 **前端文件**:
-- 页面: `vipclaw-webui/src/pages/user/management/index.tsx`
-- 服务: `vipclaw-webui/src/services/ant-design-pro/user.ts`
-- 路由: `vipclaw-webui/config/routes.ts`
+- 页面: `harnax-webui/src/pages/user/management/index.tsx`
+- 服务: `harnax-webui/src/services/ant-design-pro/user.ts`
+- 路由: `harnax-webui/config/routes.ts`
 
 **测试文件**:
 - 单元测试: `SysUserServiceImplTest.kt`

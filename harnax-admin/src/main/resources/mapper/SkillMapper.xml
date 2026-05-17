@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.admin.mapper.SkillMapper">
+
+    <!-- Result Map -->
+    <resultMap id="SkillResultMap" type="com.agnetix.harnax.admin.entity.Skill">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="repository_id" property="repositoryId"/>
+        <result column="description" property="description"/>
+        <result column="skillmd" property="skillmd"/>
+        <result column="resources" property="resources"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== Basic CRUD Methods ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="SkillResultMap">
+        SELECT * FROM skill WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE skill SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- selectByNameAndRepo -->
+    <select id="selectByNameAndRepo" resultMap="SkillResultMap">
+        SELECT * FROM skill WHERE name = #{name} AND repository_id = #{repositoryId} AND active = 1 LIMIT 1
+    </select>
+
+    <!-- updateStatus -->
+    <update id="updateStatus">
+        UPDATE skill SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO skill (
+        name, repository_id, description, skillmd, resources, status, is_public, creator, active, create_time,
+        update_time
+        ) VALUES (
+        #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{status}, #{isPublic}, #{creator},
+        #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE skill SET
+        name = #{name},
+        repository_id = #{repositoryId},
+        description = #{description},
+        skillmd = #{skillmd},
+        resources = #{resources},
+        is_public = #{isPublic},
+        creator = #{creator},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- selectSkillList -->
+    <select id="selectSkillList" resultMap="SkillResultMap">
+        SELECT * FROM skill
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='name != null and name != ""'>
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test='repositoryId != null'>
+            AND repository_id = #{repositoryId}
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- updateSkillFields -->
+    <update id="updateSkillFields">
+        UPDATE skill
+        <set>
+            <if test='description != null'>description = #{description},</if>
+            <if test='skillmd != null'>skillmd = #{skillmd},</if>
+            <if test='resources != null'>resources = #{resources},</if>
+            update_time = NOW()
+        </set>
+        WHERE id = #{id} AND active = 1
+    </update>
+
+</mapper>

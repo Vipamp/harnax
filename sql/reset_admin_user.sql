@@ -14,7 +14,7 @@
 -- 密码：admin123
 -- ==========================================
 
-USE `vipclaw`;
+USE `harnax`;
 
 -- 如果需要重置 admin 用户，可以执行以下删除操作
 -- 然后重启应用，会自动重新创建
@@ -42,7 +42,7 @@ INSERT INTO `sys_user` (
     'admin',
     '$2a$10$esqm4yYiXlpoCQsUOcjGIubYyUU0irYEcLJpCQBpkAtP/Pmm6XphS',
     '系统管理员',
-    'admin@vipclaw.com',
+    'admin@harnax.com',
     '13800138000',
     1,
     '',

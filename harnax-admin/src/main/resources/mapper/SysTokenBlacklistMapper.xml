@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.admin.mapper.SysTokenBlacklistMapper">
+
+    <!-- Result Map -->
+    <resultMap id="SysTokenBlacklistResultMap" type="com.agnetix.harnax.admin.entity.SysTokenBlacklist">
+        <id column="id" property="id"/>
+        <result column="token" property="token"/>
+        <result column="token_hash" property="tokenHash"/>
+        <result column="username" property="username"/>
+        <result column="user_id" property="userId"/>
+        <result column="reason" property="reason"/>
+        <result column="expire_time" property="expireTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_ip" property="createIp"/>
+        <result column="token" property="token"/>
+        <result column="token_hash" property="tokenHash"/>
+        <result column="username" property="username"/>
+        <result column="user_id" property="userId"/>
+        <result column="reason" property="reason"/>
+        <result column="expire_time" property="expireTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="create_ip" property="createIp"/>
+    </resultMap>
+
+    <!-- ==================== Basic CRUD Methods ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="SysTokenBlacklistResultMap">
+        SELECT * FROM sys_token_blacklist WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE sys_token_blacklist SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- selectByTokenHash -->
+    <select id="selectByTokenHash" resultMap="SysTokenBlacklistResultMap">
+        SELECT * FROM sys_token_blacklist WHERE token_hash = #{tokenHash} AND expire_time > NOW()
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_token_blacklist (
+        token, token_hash, username, user_id, reason, expire_time, create_time, create_ip, token_hash, user_id,
+        expire_time, create_time, create_ip
+        ) VALUES (
+        #{token}, #{tokenHash}, #{username}, #{userId}, #{reason}, #{expireTime}, #{createTime}, #{createIp},
+        #{tokenHash}, #{userId}, #{expireTime}, #{createTime}, #{createIp}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE sys_token_blacklist SET
+        token = #{token},
+        token_hash = #{tokenHash},
+        username = #{username},
+        user_id = #{userId},
+        reason = #{reason},
+        expire_time = #{expireTime},
+        create_ip = #{createIp},
+        token_hash = #{tokenHash},
+        user_id = #{userId},
+        expire_time = #{expireTime},
+        create_ip = #{createIp}
+        WHERE id = #{id}
+    </update>
+
+</mapper>

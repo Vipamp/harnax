@@ -1,4 +1,4 @@
-# VIPClaw 打包部署手册
+# Harnax 打包部署手册
 
 ## 目录
 
@@ -17,7 +17,7 @@
 
 ## 1. 概述
 
-VIPClaw 是一个基于 Spring Boot 3 + React 的多版本 AI 管理平台，支持 personal（个人版）、enterprise（企业版）和 public（公有云版）三种部署模式。
+Harnax 是一个基于 Spring Boot 3 + React 的多版本 AI 管理平台，支持 personal（个人版）、enterprise（企业版）和 public（公有云版）三种部署模式。
 
 本手册详细介绍项目的构建、打包和部署流程，采用本地编译 + Docker 容器化的部署方案。
 
@@ -95,12 +95,12 @@ VIPClaw 是一个基于 Spring Boot 3 + React 的多版本 AI 管理平台，支
 ## 3. 项目结构
 
 ```
-vipclaw/
-├── vipclaw-admin/              # 后端主服务
+harnax/
+├── harnax-admin/              # 后端主服务
 │   ├── src/main/kotlin/        # Kotlin 源代码
 │   ├── src/main/resources/     # 配置文件
 │   └── pom.xml                 # Maven 配置
-├── vipclaw-webui/              # 前端项目
+├── harnax-webui/              # 前端项目
 │   ├── src/                    # React 源代码
 │   ├── package.json            # npm 配置
 │   └── config/                 # 构建配置
@@ -151,18 +151,18 @@ chmod +x docker/build.sh
 
 ```bash
 # 编译打包（跳过测试）
-mvn clean package -pl vipclaw-admin -am -Ppersonal -DskipTests
+mvn clean package -pl harnax-admin -am -Ppersonal -DskipTests
 
 # 复制 JAR 到 Docker 目录
 mkdir -p docker/dist/backend
-cp vipclaw-admin/target/vipclaw-admin-*.jar docker/dist/backend/
+cp harnax-admin/target/harnax-admin-*.jar docker/dist/backend/
 ```
 
 #### 4.2.2 构建前端
 
 ```bash
 # 进入前端目录
-cd vipclaw-webui
+cd harnax-webui
 
 # 安装依赖（首次构建）
 npm install
@@ -175,17 +175,17 @@ cd ..
 
 # 复制前端文件到 Docker 目录
 mkdir -p docker/dist/frontend
-cp -r vipclaw-webui/dist/* docker/dist/frontend/
+cp -r harnax-webui/dist/* docker/dist/frontend/
 ```
 
 #### 4.2.3 构建 Docker 镜像
 
 ```bash
 # 构建后端镜像
-docker build -f docker/Dockerfile.backend -t vipclaw-backend:personal .
+docker build -f docker/Dockerfile.backend -t harnax-backend:personal .
 
 # 构建前端镜像
-docker build -f docker/Dockerfile.frontend -t vipclaw-frontend:personal .
+docker build -f docker/Dockerfile.frontend -t harnax-frontend:personal .
 ```
 
 ### 4.3 构建产物说明
@@ -195,7 +195,7 @@ docker build -f docker/Dockerfile.frontend -t vipclaw-frontend:personal .
 ```
 docker/dist/
 ├── backend/
-│   └── vipclaw-admin-1.0.0-SNAPSHOT.jar  # 后端 JAR 包
+│   └── harnax-admin-1.0.0-SNAPSHOT.jar  # 后端 JAR 包
 └── frontend/
     ├── index.html                         # 前端入口文件
     ├── assets/                            # 静态资源
@@ -230,9 +230,9 @@ docker-compose -f docker/docker-compose.personal.yml logs -f
 
 | 服务 | 容器名称 | 端口 | 说明 |
 |------|---------|------|------|
-| MySQL | vipclaw-mysql | 3306 | 数据库服务 |
-| Backend | vipclaw-backend-personal | 8080 | 后端 API 服务 |
-| Frontend | vipclaw-frontend-personal | 80 | 前端 Web 界面 |
+| MySQL | harnax-mysql | 3306 | 数据库服务 |
+| Backend | harnax-backend-personal | 8080 | 后端 API 服务 |
+| Frontend | harnax-frontend-personal | 80 | 前端 Web 界面 |
 
 #### 5.1.3 访问应用
 
@@ -249,13 +249,13 @@ docker-compose -f docker/docker-compose.personal.yml logs -f
 
 ```sql
 -- 创建数据库
-CREATE DATABASE vipclaw CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE harnax CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- 创建用户
-CREATE USER 'vipclaw'@'%' IDENTIFIED BY 'your_password';
+CREATE USER 'harnax'@'%' IDENTIFIED BY 'your_password';
 
 -- 授权
-GRANT ALL PRIVILEGES ON vipclaw.* TO 'vipclaw'@'%';
+GRANT ALL PRIVILEGES ON harnax.* TO 'harnax'@'%';
 FLUSH PRIVILEGES;
 ```
 
@@ -272,13 +272,13 @@ cp .env.example .env
 
 ```bash
 # 数据库配置
-SPRING_DATASOURCE_URL=jdbc:mysql://your-db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
-SPRING_DATASOURCE_USERNAME=vipclaw
+SPRING_DATASOURCE_URL=jdbc:mysql://your-db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+SPRING_DATASOURCE_USERNAME=harnax
 SPRING_DATASOURCE_PASSWORD=your_password
 
 # Session 数据库配置（可选，默认使用主数据库）
-SESSION_JDBC_URL=jdbc:mysql://your-db-host:3306/vipclaw?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
-SESSION_USERNAME=vipclaw
+SESSION_JDBC_URL=jdbc:mysql://your-db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+SESSION_USERNAME=harnax
 SESSION_PASSWORD=your_password
 
 # 日志级别
@@ -342,11 +342,11 @@ MYSQL_DATA_DIR=/path/to/your/data docker-compose -f docker/docker-compose.person
 | 变量名 | 说明 | 默认值 | 必填 |
 |--------|------|--------|------|
 | SPRING_PROFILES_ACTIVE | Spring 配置文件 | personal | 是 |
-| SPRING_DATASOURCE_URL | 数据库连接 URL | jdbc:mysql://localhost:3306/vipclaw | 是 |
+| SPRING_DATASOURCE_URL | 数据库连接 URL | jdbc:mysql://localhost:3306/harnax | 是 |
 | SPRING_DATASOURCE_USERNAME | 数据库用户名 | root | 是 |
 | SPRING_DATASOURCE_PASSWORD | 数据库密码 | 123456 | 是 |
 | SESSION_JDBC_URL | Session 数据库 URL | (同主数据库) | 否 |
-| SESSION_DATABASE_NAME | Session 数据库名称 | vipclaw | 否 |
+| SESSION_DATABASE_NAME | Session 数据库名称 | harnax | 否 |
 | SESSION_USERNAME | Session 数据库用户名 | (同主数据库) | 否 |
 | SESSION_PASSWORD | Session 数据库密码 | (同主数据库) | 否 |
 | LOG_LEVEL | 日志级别 | DEBUG（开发）/ INFO（生产） | 否 |
@@ -384,7 +384,7 @@ docker/data/mysql/
 ├── ib_logfile0          # InnoDB 日志文件
 ├── ib_logfile1
 ├── auto.cnf
-└── vipclaw/             # 数据库文件
+└── harnax/             # 数据库文件
     ├── *.ibd            # 表数据文件
     └── *.frm            # 表结构文件
 ```
@@ -403,11 +403,11 @@ tar czf mysql-backup-$(date +%Y%m%d_%H%M%S).tar.gz docker/data/mysql
 ```bash
 # 使用 mysqldump 导出
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysqldump -u vipclaw -pvipclaw123 \
+  mysqldump -u harnax -pharnax123 \
   --single-transaction \
   --routines \
   --triggers \
-  vipclaw > backup_$(date +%Y%m%d).sql
+  harnax > backup_$(date +%Y%m%d).sql
 ```
 
 ### 7.3 数据恢复
@@ -430,7 +430,7 @@ docker-compose -f docker/docker-compose.personal.yml up -d
 ```bash
 # 导入 SQL 文件
 docker-compose -f docker/docker-compose.personal.yml exec -T mysql \
-  mysql -u vipclaw -pvipclaw123 vipclaw < backup_20260514.sql
+  mysql -u harnax -pharnax123 harnax < backup_20260514.sql
 ```
 
 ### 7.4 数据库连接测试
@@ -438,15 +438,15 @@ docker-compose -f docker/docker-compose.personal.yml exec -T mysql \
 ```bash
 # 连接 MySQL
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysql -u vipclaw -pvipclaw123
+  mysql -u harnax -pharnax123
 
 # 执行 SQL 查询
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysql -u vipclaw -pvipclaw123 -e "SHOW DATABASES;"
+  mysql -u harnax -pharnax123 -e "SHOW DATABASES;"
 
 # 查看表结构
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysql -u vipclaw -pvipclaw123 -e "USE vipclaw; SHOW TABLES;"
+  mysql -u harnax -pharnax123 -e "USE harnax; SHOW TABLES;"
 ```
 
 ---
@@ -506,7 +506,7 @@ docker-compose -f docker/docker-compose.personal.yml logs --tail=100 backend
 
 ```
 docker/data/logs/
-└── vipclaw-admin.log    # 应用日志
+└── harnax-admin.log    # 应用日志
 ```
 
 ### 8.3 健康检查
@@ -518,7 +518,7 @@ docker/data/logs/
 docker-compose -f docker/docker-compose.personal.yml ps
 
 # 查看服务详细信息
-docker inspect vipclaw-backend-personal
+docker inspect harnax-backend-personal
 ```
 
 #### 8.3.2 健康检查接口
@@ -557,7 +557,7 @@ docker-compose -f docker/docker-compose.personal.yml exec frontend sh
 docker stats
 
 # 查看指定容器
-docker stats vipclaw-backend-personal
+docker stats harnax-backend-personal
 ```
 
 ### 8.5 镜像管理
@@ -568,15 +568,15 @@ docker stats vipclaw-backend-personal
 # 查看所有镜像
 docker images
 
-# 查看 VIPClaw 相关镜像
-docker images | grep vipclaw
+# 查看 Harnax 相关镜像
+docker images | grep harnax
 ```
 
 #### 8.5.2 清理镜像
 
 ```bash
 # 删除指定镜像
-docker rmi vipclaw-backend:personal
+docker rmi harnax-backend:personal
 
 # 删除所有未使用的镜像
 docker image prune -a
@@ -603,7 +603,7 @@ docker-compose -f docker/docker-compose.personal.yml logs backend
 ```bash
 # 测试数据库连通性
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysql -u vipclaw -pvipclaw123 -e "SELECT 1"
+  mysql -u harnax -pharnax123 -e "SELECT 1"
 ```
 
 3. 检查环境变量
@@ -766,7 +766,7 @@ docker-compose -f docker/docker-compose.personal.yml up -d
 **A**:
 ```bash
 docker-compose -f docker/docker-compose.personal.yml exec mysql \
-  mysql -u vipclaw -pvipclaw123 vipclaw -e "SHOW TABLES;"
+  mysql -u harnax -pharnax123 harnax -e "SHOW TABLES;"
 ```
 
 ### Q4: 如何重置数据库？
@@ -842,7 +842,7 @@ docker-compose -f docker/docker-compose.personal.yml up -d
 数据库迁移由 Flyway 自动管理，相关文件位于：
 
 ```
-vipclaw-admin/src/main/resources/db/
+harnax-admin/src/main/resources/db/
 ├── schema.sql                 # 初始数据库结构
 └── migration/                 # 增量迁移脚本
     ├── V1__xxx.sql
@@ -850,7 +850,7 @@ vipclaw-admin/src/main/resources/db/
     └── README.md
 ```
 
-详见：`vipclaw-admin/src/main/resources/db/migration/README.md`
+详见：`harnax-admin/src/main/resources/db/migration/README.md`
 
 ### C. 联系支持
 
@@ -860,4 +860,4 @@ vipclaw-admin/src/main/resources/db/
 
 **文档版本**：v1.0.0  
 **更新日期**：2026-05-14  
-**维护团队**：VIPClaw 开发团队
+**维护团队**：Harnax 开发团队

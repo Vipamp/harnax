@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.admin.mapper.ToolCallLogMapper">
+
+    <!-- Result Map -->
+    <resultMap id="ToolCallLogEntityResultMap" type="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+        <id column="id" property="id"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="tool_name" property="toolName"/>
+        <result column="args" property="args"/>
+        <result column="result" property="result"/>
+        <result column="success" property="success"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="duration" property="duration"/>
+        <result column="ts" property="ts"/>
+    </resultMap>
+
+    <!-- ==================== Basic CRUD Methods ==================== -->
+
+    <!-- selectById -->
+    <select id="selectById" resultMap="ToolCallLogEntityResultMap">
+        SELECT * FROM tool_call_log_entity WHERE id = #{id} LIMIT 1
+    </select>
+
+    <!-- deleteById -->
+    <update id="deleteById">
+        UPDATE tool_call_log_entity SET active = 0 WHERE id = #{id}
+    </update>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO tool_call_log_entity (
+        agent_id, session_id, tool_name, args, result, success, start_time, end_time, duration, ts
+        ) VALUES (
+        #{agentId}, #{sessionId}, #{toolName}, #{args}, #{result}, #{success}, #{startTime}, #{endTime}, #{duration},
+        #{ts}
+        )
+    </insert>
+
+    <!-- updateById -->
+    <update id="updateById">
+        UPDATE tool_call_log_entity SET
+        agent_id = #{agentId},
+        session_id = #{sessionId},
+        tool_name = #{toolName},
+        args = #{args},
+        result = #{result},
+        success = #{success},
+        start_time = #{startTime},
+        end_time = #{endTime},
+        duration = #{duration},
+        ts = #{ts}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectBySessionId" resultType="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+        SELECT * FROM tool_call_log_entity WHERE session_id = #{sessionId} AND active = 1
+    </select>
+    <select id="selectByToolName" resultType="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+        SELECT * FROM tool_call_log_entity WHERE tool_name = #{toolName} AND active = 1
+    </select>
+</mapper>

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.admin.mapper.UserTenantMapper">
+
+    <!-- Result Map -->
+    <resultMap id="UserTenantResultMap" type="com.agnetix.harnax.admin.entity.UserTenantEntity">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="role" property="role"/>
+        <result column="status" property="status"/>
+        <result column="joined_at" property="joinedAt"/>
+    </resultMap>
+
+    <!-- Query tenant list by user ID -->
+    <select id="selectByUserId" resultMap="UserTenantResultMap">
+        SELECT * FROM user_tenant
+        WHERE user_id = #{userId}
+        AND status = 1
+        ORDER BY joined_at DESC
+    </select>
+
+    <!-- Query user list by tenant ID -->
+    <select id="selectByTenantId" resultMap="UserTenantResultMap">
+        SELECT * FROM user_tenant
+        WHERE tenant_id = #{tenantId}
+        AND status = 1
+        ORDER BY joined_at DESC
+    </select>
+
+    <!-- Query by user ID and tenant ID -->
+    <select id="selectByUserIdAndTenantId" resultMap="UserTenantResultMap">
+        SELECT * FROM user_tenant
+        WHERE user_id = #{userId}
+        AND tenant_id = #{tenantId}
+        AND status = 1
+        LIMIT 1
+    </select>
+
+    <!-- Insert user-tenant association -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO user_tenant (
+            user_id,
+            tenant_id,
+            role,
+            status,
+            joined_at
+        ) VALUES (
+            #{userId},
+            #{tenantId},
+            #{role},
+            #{status},
+            #{joinedAt}
+        )
+    </insert>
+
+    <!-- Delete by user ID and tenant ID -->
+    <update id="deleteByUserIdAndTenantId">
+        UPDATE user_tenant
+        SET status = 0
+        WHERE user_id = #{userId}
+        AND tenant_id = #{tenantId}
+        AND status = 1
+    </update>
+
+    <!-- Delete all associations by tenant ID -->
+    <update id="deleteByTenantId">
+        UPDATE user_tenant
+        SET status = 0
+        WHERE tenant_id = #{tenantId}
+        AND status = 1
+    </update>
+
+    <!-- Update user role -->
+    <update id="updateRole">
+        UPDATE user_tenant
+        SET role = #{role}
+        WHERE user_id = #{userId}
+        AND tenant_id = #{tenantId}
+        AND status = 1
+    </update>
+
+</mapper>

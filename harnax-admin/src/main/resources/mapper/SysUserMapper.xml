@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.admin.mapper.SysUserMapper">
+
+    <!-- Result Map -->
+    <resultMap id="SysUserResultMap" type="com.agnetix.harnax.admin.entity.SysUser">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="password" property="password"/>
+        <result column="nickname" property="nickname"/>
+        <result column="email" property="email"/>
+        <result column="phone" property="phone"/>
+        <result column="gender" property="gender"/>
+        <result column="avatar" property="avatar"/>
+        <result column="status" property="status"/>
+        <result column="is_admin" property="isAdmin"/>
+        <result column="last_login_time" property="lastLoginTime"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- ==================== Basic CRUD Methods ==================== -->
+
+    <!-- Query by ID -->
+    <select id="selectById" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE id = #{id}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- Insert user -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_user (
+        username,
+        password,
+        nickname,
+        email,
+        phone,
+        gender,
+        avatar,
+        status,
+        is_admin,
+        active,
+        create_time,
+        update_time
+        ) VALUES (
+        #{username},
+        #{password},
+        #{nickname},
+        #{email},
+        #{phone},
+        #{gender},
+        #{avatar},
+        #{status},
+        #{isAdmin},
+        #{active},
+        #{createTime},
+        #{updateTime}
+        )
+    </insert>
+
+    <!-- Update by ID -->
+    <update id="updateById">
+        UPDATE sys_user SET
+        username = #{username},
+        password = #{password},
+        nickname = #{nickname},
+        email = #{email},
+        phone = #{phone},
+        gender = #{gender},
+        avatar = #{avatar},
+        is_admin = #{isAdmin},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <!-- Delete by ID (logical delete) -->
+    <update id="deleteById">
+        UPDATE sys_user SET active = 0, update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+    <!-- ==================== Custom Query Methods ==================== -->
+
+    <!-- Query user list (with conditions) -->
+    <select id="selectUserList" resultMap="SysUserResultMap">
+        SELECT 
+            u.*,
+            COUNT(ut.id) as tenantCount
+        FROM sys_user u
+        LEFT JOIN user_tenant ut ON u.id = ut.user_id AND ut.status = 1
+        <if test="tenantId != null">
+            INNER JOIN user_tenant ut_filter ON u.id = ut_filter.user_id AND ut_filter.tenant_id = #{tenantId} AND ut_filter.status = 1
+        </if>
+        WHERE u.active = 1
+        <if test="keyword != null and keyword != ''">
+            AND (
+            u.username LIKE CONCAT('%', #{keyword}, '%')
+            OR u.nickname LIKE CONCAT('%', #{keyword}, '%')
+            OR u.email LIKE CONCAT('%', #{keyword}, '%')
+            OR u.phone LIKE CONCAT('%', #{keyword}, '%')
+            )
+        </if>
+        <if test="status != null">
+            AND u.status = #{status, jdbcType=INTEGER}
+        </if>
+        GROUP BY u.id
+        ORDER BY u.update_time DESC
+    </select>
+
+    <!-- Query by username -->
+    <select id="selectByUsername" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE username = #{username}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- Query by phone -->
+    <select id="selectByPhone" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE phone = #{phone}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- Query by email -->
+    <select id="selectByEmail" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE email = #{email}
+        AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- Update user status -->
+    <update id="updateStatus">
+        UPDATE sys_user SET
+        status = #{status},
+        update_time = NOW()
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+    <!-- Update user last login time -->
+    <update id="updateLastLoginTime">
+        UPDATE sys_user SET
+        last_login_time = #{lastLoginTime, jdbcType=TIMESTAMP},
+        update_time = #{lastLoginTime, jdbcType=TIMESTAMP}
+        WHERE id = #{id}
+        AND active = 1
+    </update>
+
+</mapper>

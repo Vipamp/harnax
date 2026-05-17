@@ -5,19 +5,19 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.vipamp</groupId>
-    <artifactId>vipclaw</artifactId>
+    <groupId>com.agnetix</groupId>
+    <artifactId>harnax</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>vipclaw</name>
-    <description>VIPClaw Parent Project</description>
+    <name>harnax</name>
+    <description>Harnax Parent Project</description>
 
     <modules>
-        <module>vipclaw-common</module>
-        <module>vipclaw-agent</module>
-        <module>vipclaw-channel</module>
-        <module>vipclaw-admin</module>
+        <module>harnax-common</module>
+        <module>harnax-agent</module>
+        <module>harnax-channel</module>
+        <module>harnax-admin</module>
     </modules>
 
     <properties>
