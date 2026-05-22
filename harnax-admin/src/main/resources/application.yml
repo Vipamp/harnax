@@ -1,7 +1,5 @@
 server:
   port: 8080
-#  servlet:
-#    context-path: /admin
 
 spring:
   application:
@@ -36,7 +34,7 @@ spring:
     locations: classpath:db/migration
     schemas: harnax
     baseline-on-migrate: true
-    baseline-version: 1
+    baseline-version: 0
     validate-on-migrate: true
     clean-disabled: true
     sql-migration-prefixes: V
@@ -95,7 +93,7 @@ session:
   password: ${SESSION_PASSWORD:123456}
 
 local:
-  tmp-dir: /Users/heqingsong/harnax-admin/tmp
+  tmp-dir: ${LOCAL_TMP_DIR:/tmp/harnax}
 
 edition:
   current: public

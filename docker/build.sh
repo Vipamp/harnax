@@ -32,6 +32,7 @@ echo "✅ All dependencies are installed."
 # Step 1: Build backend JAR
 echo ""
 echo "📦 Step 1: Building backend JAR..."
+mvn spotless:apply
 mvn clean package -pl harnax-admin -am -P$EDITION -DskipTests
 
 # Copy JAR to docker/dist/backend/
@@ -50,6 +51,9 @@ npm run build:$EDITION
 echo "📋 Copying frontend files to docker/dist/frontend/..."
 cd ..
 mkdir -p docker/dist/frontend
+cd harnax-webui
+npm install
+cd ..
 cp -r harnax-webui/dist/* docker/dist/frontend/
 echo "✅ Frontend built successfully."
 

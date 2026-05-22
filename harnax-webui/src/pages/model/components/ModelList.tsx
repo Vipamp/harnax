@@ -97,9 +97,8 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
   }, [providerId, filters]);
 
   // 切换模型状态
-  const handleToggle = async (id: number, currentStatus: number) => {
+  const handleToggle = async (id: number, newStatus: number) => {
     try {
-      const newStatus = currentStatus === 1 ? 0 : 1;
       await toggleModel(id, newStatus);
       message.success(intl.formatMessage({ id: 'pages.message.toggleSuccess', defaultMessage: 'Status toggled successfully' }));
       // 只更新当前卡片状态，不重新加载整个列表
@@ -293,7 +292,7 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
                         </Popconfirm>
                         <Switch
                           checked={model.status === 1}
-                          onChange={() => handleToggle(model.id, model.status)}
+                          onChange={(checked) => handleToggle(model.id, checked ? 1 : 0)}
                           checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
                           unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
                           style={{

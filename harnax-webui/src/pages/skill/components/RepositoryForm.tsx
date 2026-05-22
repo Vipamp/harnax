@@ -120,26 +120,39 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           label={intl.formatMessage({ id: 'pages.skill.repository.name', defaultMessage: 'Repository Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.skill.repository.nameRequired', defaultMessage: 'Please enter repository name' }) }]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.skill.repository.name.placeholder', defaultMessage: 'Please enter repository name' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.name.placeholder', defaultMessage: 'Please enter repository name' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
         <Form.Item 
           name="url" 
           label={intl.formatMessage({ id: 'pages.skill.repository.url', defaultMessage: 'Repository URL' })}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.skill.repository.url.placeholder', defaultMessage: 'Please enter repository URL' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.url.placeholder', defaultMessage: 'Please enter repository URL' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
         <Form.Item 
           name="branch" 
           label={intl.formatMessage({ id: 'pages.skill.repository.branch', defaultMessage: 'Branch Name' })}
           initialValue="main"
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.skill.repository.branch.placeholder', defaultMessage: 'Please enter branch name, e.g.: main' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.branch.placeholder', defaultMessage: 'Please enter branch name, e.g.: main' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
         <Form.Item 
           name="description" 
           label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
         >
-          <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.skill.repository.description.placeholder', defaultMessage: 'Please enter repository description' })} />
+          <TextArea 
+            rows={3} 
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.description.placeholder', defaultMessage: 'Please enter repository description' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
         <Form.Item 
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}

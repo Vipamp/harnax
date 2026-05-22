@@ -186,7 +186,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
               resize: 'vertical',
               overflow: 'auto',
               minHeight: '32px',
-              fontSize: '12px'
+              fontSize: '12px',
             }}
           />
         </Form.Item>

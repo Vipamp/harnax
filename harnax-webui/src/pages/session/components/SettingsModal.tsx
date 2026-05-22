@@ -141,7 +141,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
           ]}
           validateTrigger="onBlur"
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.session.namePlaceholder', defaultMessage: 'Please enter session name' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.session.namePlaceholder', defaultMessage: 'Please enter session name' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item
@@ -152,12 +155,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
             rows={1}
             placeholder={intl.formatMessage({ id: 'pages.session.descriptionPlaceholder', defaultMessage: 'Please enter session description (optional)' })}
             maxLength={500}
-            style={{ 
-              resize: 'vertical', 
-              overflow: 'auto', 
-              minHeight: '32px',
-              fontSize: '13px',
-            }}
+            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -175,6 +173,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
               label: `${agent.name}${agent.description ? ` - ${agent.description}` : ''}`,
               value: agent.id,
             }))}
+            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 

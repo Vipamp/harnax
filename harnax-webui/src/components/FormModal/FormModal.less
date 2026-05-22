@@ -293,7 +293,7 @@
       }
     }
     
-    /* 文本域 */
+    /* 文本域 - 统一样式，与模型服务商弹窗保持一致 */
     .ant-input-textarea,
     .ant-input-textarea-show-count {
       display: block !important;
@@ -311,6 +311,7 @@
       
       /* 文本域内部的 textarea 元素 */
       textarea.ant-input {
+        font-size: 12px !important;
         min-height: 32px !important;
         padding: 8px 12px !important;
         border-radius: 6px !important;
@@ -319,6 +320,8 @@
         color: var(--vip-text-primary) !important;
         /* 支持 autoSize 和手动 resize 共存 */
         overflow: auto !important;
+        resize: vertical !important;
+        transition: all 0.2s ease !important;
         
         &:hover {
           border-color: var(--vip-primary) !important;

@@ -20,6 +20,8 @@ services:
     volumes:
       # MySQL data directory - can be configured via environment variable
       - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
+      # Database initialization scripts
+      - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
     command: >
       --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4
@@ -56,12 +58,15 @@ services:
       # Flyway Configuration
       SPRING_FLYWAY_ENABLED: "true"
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      LOCAL_TIME_ZONE: Asia/Shanghai
+      LOCAL_TMP_DIR: ${LOCAL_TMP_DIR:-/tmp/harnax}
       # Log Configuration
       LOG_LEVEL: DEBUG
     ports:
       - "8080:8080"
     volumes:
       - backend-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       mysql:
         condition: service_healthy

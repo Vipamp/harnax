@@ -333,7 +333,7 @@ MySQL 数据默认存储在本地目录 `docker/data/mysql`，可通过环境变
 MYSQL_DATA_DIR=/path/to/your/data docker-compose -f docker/docker-compose.personal.yml up -d
 ```
 
-**注意**：数据库表结构由 Flyway 自动管理，应用启动时会自动执行 `schema.sql` 创建表结构。
+**注意**：数据库表结构由 Flyway 自动管理，应用启动时会自动执行 `V1__init_schema.sql` 创建表结构。
 
 ### 6.2 后端配置
 
@@ -843,7 +843,7 @@ docker-compose -f docker/docker-compose.personal.yml up -d
 
 ```
 harnax-admin/src/main/resources/db/
-├── schema.sql                 # 初始数据库结构
+├── V1__init_schema.sql                 # 初始数据库结构
 └── migration/                 # 增量迁移脚本
     ├── V1__xxx.sql
     ├── V2__xxx.sql

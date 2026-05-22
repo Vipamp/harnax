@@ -2754,6 +2754,32 @@ html.dark {
         box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
       }
     }
+
+    /* 文本域 */
+    .ant-input-textarea,
+    .ant-input-textarea-show-count {
+      textarea.ant-input {
+        font-size: 13px !important;
+        padding: 8px 12px !important;
+        border-radius: 6px !important;
+        border: 1px solid var(--vip-border) !important;
+        transition: all 0.2s ease !important;
+
+        &:hover {
+          border-color: var(--vip-primary) !important;
+        }
+
+        &:focus,
+        &.ant-input-focused {
+          border-color: var(--vip-primary) !important;
+          box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1) !important;
+        }
+
+        &::placeholder {
+          color: var(--vip-text-tertiary) !important;
+        }
+      }
+    }
   }
 
   /* 表单项整体间距 */

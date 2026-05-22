@@ -94,9 +94,8 @@ const ModelListTable: React.FC<ModelListProps> = ({ providerId, onEdit, filters 
   }, [providerId, filters]);
 
   // 切换模型状态
-  const handleToggle = async (id: number, currentStatus: number) => {
+  const handleToggle = async (id: number, newStatus: number) => {
     try {
-      const newStatus = currentStatus === 1 ? 0 : 1;
       const response = await toggleModel(id, newStatus);
       
       if (response.code === 200) {

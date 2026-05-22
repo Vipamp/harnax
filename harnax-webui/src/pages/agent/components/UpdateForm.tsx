@@ -295,7 +295,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         layout="horizontal"
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
-        style={{ marginTop: 24, fontSize: '14px' }}
+        style={{ marginTop: 24 }}
       >
         {currentStep === 0 && (
           <>
@@ -305,7 +305,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.nameRequired', defaultMessage: 'Please enter agent name' }) }]}>
               <Input 
                 placeholder={intl.formatMessage({ id: 'pages.agent.namePlaceholder', defaultMessage: 'Please enter agent name' })}
-                style={{ fontSize: '14px' }}
               />
             </Form.Item>
 
@@ -316,7 +315,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <TextArea 
                 rows={3} 
                 placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
-                style={{ fontSize: '13px' }}
+                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </Form.Item>
 
@@ -338,7 +337,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Select
                 placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })}
                 allowClear
-                style={{ fontSize: '14px' }}
                 options={models.map(model => ({
                   label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`,
                   value: model.id,
@@ -353,7 +351,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <Input 
                 placeholder={intl.formatMessage({ id: 'pages.agent.ownerPlaceholder', defaultMessage: 'Auto-filled with current user' })}
                 disabled
-                style={{ fontSize: '14px' }}
               />
             </Form.Item>
 

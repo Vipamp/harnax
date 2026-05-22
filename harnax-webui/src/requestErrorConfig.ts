@@ -135,31 +135,33 @@ export const errorConfig: RequestConfig = {
       if (status === 401) {
         // 未授权，先检查 localStorage 中是否有 token
         const tokenInfoStr = localStorage.getItem('tokenInfo');
-        if (!tokenInfoStr) {
-          // 确实没有登录，跳转到登录页
-          localStorage.removeItem('currentUser');
-          localStorage.removeItem('tokenInfo');
-          // 避免登录页重复跳转
-          if (window.location.pathname !== '/login') {
+        
+        // 清除本地存储的登录信息
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('tokenInfo');
+        
+        // 避免登录页重复跳转
+        if (window.location.pathname !== '/login') {
+          // 显示错误提示
+          if (!tokenInfoStr) {
+            // 没有 token，直接跳转
             history.push({
               pathname: '/login',
               search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
             });
+          } else {
+            // 有 token 但返回 401，说明 token 过期或无效
+            message.error('登录已过期，请重新登录');
+            // 延迟跳转，让用户看到错误提示
+            setTimeout(() => {
+              if (window.location.pathname !== '/login') {
+                history.push({
+                  pathname: '/login',
+                  search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
+                });
+              }
+            }, 1000);
           }
-        } else {
-          // 有 token 但返回 401，说明 token 可能过期或无效，提示用户重新登录
-          message.error('登录已过期，请重新登录');
-          localStorage.removeItem('currentUser');
-          localStorage.removeItem('tokenInfo');
-          // 延迟跳转，让用户看到错误提示
-          setTimeout(() => {
-            if (window.location.pathname !== '/login') {
-              history.push({
-                pathname: '/login',
-                search: `?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`,
-              });
-            }
-          }, 1000);
         }
         return;
       }

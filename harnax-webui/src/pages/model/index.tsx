@@ -215,9 +215,8 @@ const ModelManagement: React.FC = () => {
   };
 
   // 切换服务商状态
-  const handleToggleProvider = async (id: number, currentStatus: number) => {
+  const handleToggleProvider = async (id: number, newStatus: number) => {
     try {
-      const newStatus = currentStatus === 1 ? 0 : 1;
       const response = await toggleModelProvider(id, newStatus);
       
       if (response.code === 200) {
@@ -231,7 +230,7 @@ const ModelManagement: React.FC = () => {
         );
         if (selectedProvider?.id === id) {
           setSelectedProvider((prev) =>
-            prev ? { ...prev, status: prev.status === 1 ? 0 : 1 } : null
+            prev ? { ...prev, status: newStatus } : null
           );
         }
       } else {

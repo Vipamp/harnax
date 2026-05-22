@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.config
 
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.context.MessageSource
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -9,32 +10,27 @@ import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver
 import java.util.Locale
 
 /**
- * Internationalization configuration
- *
- * Configure MessageSource and LocaleResolver
+ * 国际化配置
  */
 @Configuration
 class I18nConfig {
 
     /**
-     * Configure message source
-     *
-     * Load message resources from i18n/messages*.properties
+     * 消息源配置
      */
     @Bean
     fun messageSource(): MessageSource {
         val messageSource = ReloadableResourceBundleMessageSource()
         messageSource.setBasename("classpath:i18n/messages")
         messageSource.setDefaultEncoding("UTF-8")
-        messageSource.setCacheSeconds(3600) // Cache for 1 hour
-        messageSource.setUseCodeAsDefaultMessage(true) // Return code itself when message not found
+        messageSource.setCacheSeconds(3600)
+        messageSource.setUseCodeAsDefaultMessage(true)
+        messageSource.setFallbackToSystemLocale(false) // 禁止fallback到系统Locale，避免中文系统上英文请求返回中文
         return messageSource
     }
 
     /**
-     * Configure error message source
-     *
-     * Load error message resources from i18n/messages_error*.properties
+     * 错误消息源配置
      */
     @Bean
     fun errorMessageSource(): MessageSource {
@@ -43,26 +39,28 @@ class I18nConfig {
         messageSource.setDefaultEncoding("UTF-8")
         messageSource.setCacheSeconds(3600)
         messageSource.setUseCodeAsDefaultMessage(true)
+        messageSource.setFallbackToSystemLocale(false) // 禁止fallback到系统Locale，避免中文系统上英文请求返回中文
         return messageSource
     }
 
     /**
-     * Configure locale resolver
-     *
-     * Parse user language preference from Accept-Language request header
-     * Default to English
+     * Locale解析器
+     * 从 Accept-Language 请求头解析语言偏好，默认英文
      */
     @Bean
     fun localeResolver(): LocaleResolver {
-        val resolver = AcceptHeaderLocaleResolver()
-        resolver.setDefaultLocale(Locale.ENGLISH)
-        resolver.setSupportedLocales(
-            listOf(
-                Locale.ENGLISH,
-                Locale.SIMPLIFIED_CHINESE,
-                Locale("zh", "CN"),
-            ),
-        )
-        return resolver
+        return object : AcceptHeaderLocaleResolver() {
+            override fun resolveLocale(request: HttpServletRequest): Locale {
+                val header = request.getHeader("Accept-Language")
+                if (header.isNullOrBlank()) {
+                    return Locale.ENGLISH
+                }
+                return when {
+                    header.startsWith("zh", ignoreCase = true) -> Locale.SIMPLIFIED_CHINESE
+                    header.startsWith("en", ignoreCase = true) -> Locale.ENGLISH
+                    else -> Locale.ENGLISH
+                }
+            }
+        }
     }
 }

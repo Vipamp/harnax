@@ -1143,6 +1143,251 @@ import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/comp
 4. 使用 `SearchInput`、`FilterSelect`、`ActionButton` 替换原生组件
 5. 测试功能和样式是否正常
 
+### 2.7 弹窗表单 TextArea 字体样式统一规范
+
+#### 问题背景
+
+在多个弹窗表单中，描述信息（TextArea）的字体大小与其他输入框不一致，主要原因是：
+- 部分组件使用了内联样式 `fontSize: '13px'` 或 `fontSize: '14px'`
+- FormModal 全局样式缺少 textarea 的 `font-size` 定义
+- 不同弹窗使用了不同的样式策略，导致视觉不统一
+
+#### 样式体系架构
+
+项目存在两套样式系统，需要明确职责边界：
+
+**1. FormModal 样式系统（组件级）**
+- **文件位置**: `src/components/FormModal/FormModal.less`
+- **适用范围**: 所有使用 `<FormModal>` 组件的弹窗
+- **字体大小**: `12px`（统一标准）
+- **管理策略**: 在 FormModal.less 中定义统一的 TextArea 公共样式
+
+**2. global.less 样式系统（全局级）**
+- **文件位置**: `src/global.less`
+- **适用范围**: ProForm 等其他表单组件
+- **字体大小**: `13px`（与 Input、Select 保持一致）
+- **管理策略**: 在全局样式中补充 ProForm 弹窗的 textarea 定义
+
+#### 强制要求
+
+##### 字体大小规范
+- ✅ **所有弹窗中的 TextArea 字体大小必须为 `12px`**
+- ✅ **禁止在组件中使用内联 `fontSize` 样式**（如 `style={{ fontSize: '13px' }}`）
+- ✅ **禁止在 Form 容器上设置 `fontSize`**（如 `style={{ fontSize: '14px' }}`）
+- ✅ **禁止在 Input、Select 等组件上单独设置 `fontSize`**
+
+##### 公共样式使用规范
+- ✅ **必须使用 FormModal 的公共样式**：所有使用 FormModal 的弹窗，TextArea 自动继承统一样式
+- ✅ **特殊需求使用等宽字体**：系统提示词、代码编辑等场景可添加 `fontFamily: 'monospace'`
+- ✅ **保持样式对象一致**：描述和系统提示词应使用相同的样式对象
+
+#### 标准实现模式
+
+**✅ 正确示例：**
+```tsx
+// 模式1：普通描述 TextArea（使用 FormModal 公共样式）
+<TextArea 
+  rows={3} 
+  placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
+/>
+
+// 模式2：系统提示词 TextArea（等宽字体）
+<TextArea 
+  rows={8} 
+  placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt' })}
+  style={{ fontFamily: 'monospace', fontSize: '12px' }}
+/>
+
+// 模式3：描述 TextArea（与系统提示词保持一致）
+<TextArea 
+  rows={3} 
+  placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
+  style={{ fontFamily: 'monospace', fontSize: '12px' }}
+/>
+```
+
+**❌ 错误示例：**
+```tsx
+// 错误1：使用 13px 或 14px 字体
+<TextArea 
+  rows={3} 
+  placeholder="请输入描述"
+  style={{ fontSize: '13px' }}  // ❌ 字体偏大
+/>
+
+// 错误2：在 Form 容器上设置 fontSize
+<Form style={{ marginTop: 24, fontSize: '14px' }}>  // ❌ 影响所有子元素
+  <Input />
+  <TextArea />
+</Form>
+
+// 错误3：在 Input/Select 上单独设置 fontSize
+<Input style={{ fontSize: '14px' }} />  // ❌ 字体偏大
+<Select style={{ fontSize: '14px' }} />  // ❌ 字体偏大
+
+// 错误4：描述和系统提示词样式不一致
+<TextArea rows={3} style={{ fontFamily: 'monospace' }} />  // ❌ 缺少 fontSize
+<TextArea rows={8} style={{ fontFamily: 'monospace', fontSize: '12px' }} />  // ✅ 完整样式
+```
+
+#### FormModal 公共样式定义
+
+**文件**: `src/components/FormModal/FormModal.less`（第 296-340 行）
+
+```less
+/* 文本域 - 统一样式，与模型服务商弹窗保持一致 */
+.ant-input-textarea,
+.ant-input-textarea-show-count {
+  display: block !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  
+  > * {
+    border: none !important;
+    box-shadow: none !important;
+  }
+  
+  textarea.ant-input {
+    font-size: 12px !important;           // ← 统一字体大小
+    min-height: 32px !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    border: 1px solid var(--vip-border) !important;
+    background: var(--vip-bg-container) !important;
+    color: var(--vip-text-primary) !important;
+    overflow: auto !important;
+    resize: vertical !important;          // 允许垂直调整
+    transition: all 0.2s ease !important; // 平滑过渡动画
+    
+    &:hover {
+      border-color: var(--vip-primary) !important;
+    }
+    
+    &:focus,
+    &.ant-input-focused {
+      border-color: var(--vip-primary) !important;
+      box-shadow: 0 0 0 2px rgba(var(--vip-primary-rgb), 0.1) !important;
+    }
+    
+    &::placeholder {
+      color: var(--vip-text-tertiary) !important;
+    }
+  }
+}
+```
+
+#### 已修复的组件
+
+以下组件已统一字体样式为 12px：
+
+| 组件 | 文件路径 | 修复内容 |
+|------|---------|---------|
+| **智能体创建** | `src/pages/agent/components/CreateForm.tsx` | 移除 Form、Input、Select、TextArea 的内联 fontSize（14px → 12px），使用公共样式 |
+| **智能体编辑** | `src/pages/agent/components/UpdateForm.tsx` | 移除 Form、Input、Select、TextArea 的内联 fontSize（14px → 12px），使用公共样式 |
+| **模型服务商** | `src/pages/model/components/ProviderForm.tsx` | 移除 TextArea 的内联 fontSize，使用公共样式 |
+| **会话创建** | `src/pages/session/components/SettingsModal.tsx` | 移除描述 TextArea 的内联样式（13px → 12px），使用公共样式 |
+| **MCP 创建** | `src/pages/mcp/components/CreateForm.tsx` | 为 Input、TextArea、Select 添加内联 `fontSize: '12px'`（保险措施） |
+| **MCP 编辑** | `src/pages/mcp/components/UpdateForm.tsx` | 为 Input、TextArea、Select 添加内联 `fontSize: '12px'`（保险措施） |
+
+#### 特殊场景：等宽字体
+
+对于需要编辑代码、提示词等场景，可以使用等宽字体：
+
+**适用场景**:
+- ✅ 系统提示词（System Prompt）
+- ✅ 代码片段
+- ✅ 模板文本
+- ✅ Markdown 内容
+
+**标准样式**:
+```tsx
+style={{ fontFamily: 'monospace', fontSize: '12px' }}
+```
+
+**注意事项**:
+- 必须同时设置 `fontFamily` 和 `fontSize`，确保样式完整
+- 所有使用等宽字体的 TextArea 应保持样式对象完全一致
+- 描述信息和系统提示词应使用相同的样式，保持视觉统一
+
+#### 验收标准
+
+##### 代码审查检查项
+- [ ] 所有 TextArea 未使用内联 `fontSize` 样式（除非是等宽字体场景）
+- [ ] Form 容器未设置 `fontSize`
+- [ ] Input、Select 等组件未单独设置 `fontSize`
+- [ ] 使用等宽字体的 TextArea 样式对象完整（fontFamily + fontSize）
+- [ ] 描述和系统提示词的样式完全一致（如适用）
+
+##### 视觉验收检查项
+- [ ] 所有弹窗中的 TextArea 字体大小为 12px
+- [ ] 描述信息与系统提示词字体样式一致（如都使用等宽字体）
+- [ ] TextArea 与 Input、Select 的字体大小协调统一
+- [ ] 不同弹窗之间的 TextArea 样式保持一致
+- [ ] hover 和 focus 状态样式正常
+
+#### 开发流程
+
+##### 新增弹窗表单
+1. 使用 `<FormModal>` 组件（自动继承统一样式）
+2. TextArea 不设置内联 `fontSize`（除非需要等宽字体）
+3. 如需等宽字体，使用 `style={{ fontFamily: 'monospace', fontSize: '12px' }}`
+4. 测试字体是否与其他弹窗一致
+
+##### 迁移旧弹窗
+1. 识别所有使用了内联 `fontSize` 的 TextArea、Input、Select
+2. 移除所有内联 `fontSize` 样式
+3. 移除 Form 容器上的 `fontSize` 设置
+4. 对于需要等宽字体的场景，添加完整的样式对象
+5. 测试功能和样式是否正常
+
+##### 字体不一致问题排查
+如果发现某个弹窗的字体与其他弹窗不一致：
+
+1. **检查是否使用了 FormModal 组件**：只有使用 FormModal 才能继承公共样式
+2. **检查是否有内联 fontSize**：移除所有 `style={{ fontSize: '13px' }}` 或 `style={{ fontSize: '14px' }}`
+3. **检查 Form 容器是否有 fontSize**：移除 `style={{ fontSize: '14px' }}` 等设置
+4. **硬刷新浏览器**：按 `Cmd+Shift+R` (Mac) 或 `Ctrl+Shift+R` (Windows) 清除 CSS 缓存
+5. **添加内联 fontSize 保险**：如果公共样式仍不生效，添加 `style={{ fontSize: '12px' }}`（参考 MCP 的做法）
+6. **检查全局样式覆盖**：查看 global.less 是否有更高优先级的样式覆盖
+
+#### 常见问题
+
+**Q1: 为什么 TextArea 的字体比 Input 大？**
+- A: 这是因为 TextArea 使用了内联样式或继承了 Form 的 fontSize。应该移除所有内联样式，让 FormModal 公共样式统一管理。
+
+**Q2: 如何让描述和系统提示词的字体完全一致？**
+- A: 使用相同的样式对象：`style={{ fontFamily: 'monospace', fontSize: '12px' }}`。必须同时设置 fontFamily 和 fontSize。
+
+**Q3: 为什么有些弹窗使用 12px，有些使用 13px？**
+- A: 这是因为使用了不同的样式系统。FormModal 使用 12px（组件级），ProForm 使用 13px（全局级）。新开发的弹窗应统一使用 FormModal（12px）。
+
+**Q4: 可以在 TextArea 中使用其他字体大小吗？**
+- A: 不建议。除非有特殊设计需求，否则应统一使用 12px，保持整个系统的视觉一致性。
+
+**Q5: MCP 弹窗字体不一致怎么办？**
+- A: MCP 弹窗曾出现字体不一致的问题，原因是：
+  1. **CSS 缓存问题**：浏览器缓存了旧的 FormModal.less 样式
+  2. **样式优先级问题**：某些全局样式可能覆盖了 FormModal 的公共样式
+  3. **缺少明确的 fontSize**：MCP 的 Input、Select、TextArea 没有明确的字体大小定义
+  
+  **解决方案**：为 MCP 弹窗的所有表单元素添加明确的 `style={{ fontSize: '12px' }}` 内联样式，确保即使 CSS 缓存也能正确显示。
+  
+  **已修复的文件**：
+  - `src/pages/mcp/components/CreateForm.tsx`：为 5 个组件添加 fontSize（名称 Input、描述 TextArea、类型 Select、命令 Input、URL Input）
+  - `src/pages/mcp/components/UpdateForm.tsx`：为 5 个组件添加 fontSize（与 CreateForm 相同）
+  
+  **经验教训**：当公共样式不生效时，可以添加内联 `fontSize: '12px'` 作为保险措施，避免缓存和优先级问题。
+
+**Q6: 什么时候应该使用内联 fontSize，什么时候应该使用公共样式？**
+- A: 遵循以下原则：
+  - **优先使用公共样式**：FormModal.less 已经定义了统一的 12px 字体，大部分情况不需要内联样式
+  - **等宽字体场景**：系统提示词、代码编辑等需要 `fontFamily: 'monospace'` 的场景，必须同时设置 `fontSize: '12px'`
+  - **公共样式不生效时**：如果发现某个弹窗的字体与其他弹窗不一致（如 MCP 的情况），可以添加内联 `fontSize: '12px'` 作为保险
+  - **避免过度使用**：不要为每个组件都添加内联 fontSize，这会增加维护成本
+
 ### 2.8 详情页头部公共组件规范
 
 #### 组件架构

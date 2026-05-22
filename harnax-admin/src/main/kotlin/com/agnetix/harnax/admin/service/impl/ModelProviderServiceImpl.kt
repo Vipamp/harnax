@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.entity.Agent
 import com.agnetix.harnax.admin.entity.ModelProvider
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.mapper.ModelMapper
 import com.agnetix.harnax.admin.mapper.ModelProviderMapper
 import com.agnetix.harnax.admin.service.ModelProviderService
@@ -19,10 +20,11 @@ import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
 /**
- * Model provider service implementation
+ * 模型服务商服务实现
  */
 @Service
 class ModelProviderServiceImpl(
+    private val messageUtil: MessageUtil,
     private val modelMapper: ModelMapper,
     private val jwtUtil: JwtUtil,
     private val modelProviderMapper: ModelProviderMapper,
@@ -40,22 +42,22 @@ class ModelProviderServiceImpl(
     override fun getModelProvider(id: Long): ModelProvider? = this.modelProviderMapper.selectById(id)
 
     override fun createModelProvider(request: ModelProviderCreateRequest): Boolean {
-        // Check if provider name already exists
+        // 检查服务商名称是否已存在
         if (modelProviderMapper.countByName(request.name) > 0) {
-            throw BizException("Provider name already exists")
+            throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
         }
 
         val modelProvider = ModelProvider()
         modelProvider.type = request.type
         modelProvider.name = request.name
         modelProvider.description = request.description
-        modelProvider.apiKey = request.apiKey // Allow null
-        modelProvider.baseUrl = request.baseUrl // Allow null
+        modelProvider.apiKey = request.apiKey // 允许为空
+        modelProvider.baseUrl = request.baseUrl // 允许为空
         modelProvider.isPublic = request.isPublic ?: 1
-        modelProvider.status = 1 // Default enabled
-        modelProvider.active = 1 // Default active
+        modelProvider.status = 1 // 默认启用
+        modelProvider.active = 1 // 默认启用
 
-        // Set creator
+        // 设置创建者
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         modelProvider.creator = currentUsername
         modelProvider.createTime = LocalDateTime.now()
@@ -66,29 +68,29 @@ class ModelProviderServiceImpl(
 
     override fun updateModelProvider(id: Long, request: ModelProviderUpdateRequest): Boolean {
         val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException("Provider not found")
+            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
-        // If name is modified, check for duplicates
+        // 如果修改了名称，检查是否重复
         if (!request.name.isNullOrBlank() && request.name != modelProvider.name) {
             if (modelProviderMapper.countByName(request.name) > 0) {
-                throw BizException("Provider name already exists")
+                throw BizException(messageUtil.getMessage("error.model.provider.name_exists"))
             }
             modelProvider.name = request.name
         }
 
-        // If type is modified, update directly (type does not require uniqueness check)
+        // 如果修改了类型，直接更新（类型不需要唯一性校验）
         if (!request.type.isNullOrBlank() && request.type != modelProvider.type) {
             modelProvider.type = request.type
         }
 
-        // Update description field
+        // 更新描述字段
         if (request.description != null) {
             modelProvider.description = request.description
         }
 
-        // Update other fields (only update non-null fields)
+        // 更新其他字段（仅更新非空字段）
         request.apiKey?.let { apiKey ->
-            // If API Key is not empty and not in masked format, update it
+            // API Key 非空且非脱敏格式时才更新
             if (apiKey.isNotBlank() && !apiKey.contains("****")) {
                 modelProvider.apiKey = apiKey
             }
@@ -102,12 +104,12 @@ class ModelProviderServiceImpl(
 
     override fun updateStatus(id: Long, status: Int): Boolean {
         val modelProvider = modelProviderMapper.selectById(id)
-            ?: throw BizException("Model provider not found")
+            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
-        // If disabling, check if there are enabled models
+        // 停用时检查是否存在启用的模型
         if (modelProvider.status == 1 && status == 0) {
             if (modelMapper.countActiveModelsByProviderId(id) > 0) {
-                throw BizException("Cannot disable: there are enabled models under this provider")
+                throw BizException(messageUtil.getMessage("error.model.provider.cannot_disable"))
             }
         }
 
@@ -117,9 +119,9 @@ class ModelProviderServiceImpl(
     override fun toggleModelProvider(id: Long, status: Int): Boolean = updateStatus(id, status)
 
     override fun deleteModelProvider(id: Long): Boolean {
-        // Check if there are enabled models
+        // 检查是否存在启用的模型
         if (modelMapper.countActiveModelsByProviderId(id) > 0) {
-            throw BizException("Cannot delete: there are enabled models under this provider")
+            throw BizException(messageUtil.getMessage("error.model.provider.cannot_delete"))
         }
         return modelProviderMapper.deleteById(id) > 0
     }
@@ -135,10 +137,10 @@ class ModelProviderServiceImpl(
 
     override fun connectivityTest(id: Long): Boolean {
         val modelProvider = this.modelProviderMapper.selectById(id)
-            ?: throw BizException("Model provider not found")
+            ?: throw BizException(messageUtil.getMessage("error.model.provider.notfound"))
 
-        // TODO: Implement actual connectivity test logic
-        // Currently returns true directly
+        // TODO: 实现真实的连接测试逻辑
+        // 目前直接返回 true
         return true
     }
 }

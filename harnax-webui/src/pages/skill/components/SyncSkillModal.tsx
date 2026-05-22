@@ -125,7 +125,10 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       align: 'center',
       render: (exists: boolean) => (
         <Tag color={exists ? 'orange' : 'green'}>
-          {intl.formatMessage({ id: "pages.skill.sync.existsYes", defaultMessage: "Exists" })}
+          {exists 
+            ? intl.formatMessage({ id: "pages.skill.sync.existsYes", defaultMessage: "Exists" })
+            : intl.formatMessage({ id: "pages.skill.sync.existsNo", defaultMessage: "New" })
+          }
         </Tag>
       ),
     },

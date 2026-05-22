@@ -111,7 +111,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             { max: 100, message: intl.formatMessage({ id: 'pages.mcp.nameMax', defaultMessage: 'Name cannot exceed 100 characters' }) },
           ]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.mcp.namePlaceholder', defaultMessage: 'Enter MCP name' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.mcp.namePlaceholder', defaultMessage: 'Enter MCP name' })}
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item
@@ -122,7 +125,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             rows={3}
             placeholder={intl.formatMessage({ id: 'pages.mcp.descriptionPlaceholder', defaultMessage: 'Enter MCP service description (optional)' })}
             maxLength={500}
-            style={{ resize: 'vertical', overflow: 'auto', minHeight: '32px' }}
+            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -135,6 +138,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             placeholder={intl.formatMessage({ id: 'pages.mcp.typePlaceholder', defaultMessage: 'Please select MCP type' })}
             onChange={(val: string) => setMcpType(val)}
             options={mcpTypeOptions}
+            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -145,7 +149,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             rules={[{ required: true, message: intl.formatMessage({ id: 'pages.mcp.commandRequired', defaultMessage: 'stdio type requires execution command' }) }]}
             extra={intl.formatMessage({ id: 'pages.mcp.commandExtra', defaultMessage: 'stdio type: enter command line to start MCP process, supports parameters' })}
           >
-            <Input placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })} />
+            <Input 
+              placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
+              style={{ fontSize: '12px' }}
+            />
           </Form.Item>
         )}
 
@@ -159,7 +166,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             ]}
             extra={intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
           >
-            <Input placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'} />
+            <Input 
+              placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
+              style={{ fontSize: '12px' }}
+            />
           </Form.Item>
         )}
 

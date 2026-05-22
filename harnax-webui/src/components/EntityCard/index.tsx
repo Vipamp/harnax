@@ -291,7 +291,7 @@ const EntityCard: React.FC<EntityCardProps> = ({
           <div onClick={(e) => e.stopPropagation()}>
             <Switch
               checked={status === 1}
-              onChange={() => onToggle(entity.id, status)}
+              onChange={() => onToggle(entity.id, status === 1 ? 0 : 1)}
               checkedChildren={intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}
               unCheckedChildren={intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}
               style={{

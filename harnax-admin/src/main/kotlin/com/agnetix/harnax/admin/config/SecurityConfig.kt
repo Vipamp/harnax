@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.config
 
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -12,7 +13,7 @@ import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 /**
- * Spring Security configuration
+ * Spring Security 配置
  */
 @Configuration
 @EnableWebSecurity
@@ -39,16 +40,24 @@ class SecurityConfig(
                         "/webjars/**",
                     )
                     .permitAll()
+                    // AI 聊天端点使用控制器中的手动 JWT 校验
+                    .requestMatchers("/ai/**")
+                    .permitAll()
                     .anyRequest()
                     .authenticated()
             }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
             .exceptionHandling { exceptions ->
-                exceptions.authenticationEntryPoint { _, response, authException ->
+                exceptions.authenticationEntryPoint { request, response, authException ->
+                    // 设置 401 状态码
+                    response.status = HttpServletResponse.SC_UNAUTHORIZED
                     response.contentType = "application/json;charset=UTF-8"
+                    
+                    // 返回标准化错误响应
+                    val errorMessage = authException?.message ?: "Authentication failed"
                     response.writer.write(
-                        """{"success":false,"errorCode":"${response.status}","errorMessage":"${authException?.message ?: "Authentication failed"}"}""",
+                        """{"success":false,"code":401,"errorCode":"401","errorMessage":"${errorMessage}","message":"${errorMessage}"}""",
                     )
                 }
             }
@@ -57,7 +66,7 @@ class SecurityConfig(
     }
 
     /**
-     * CORS configuration source
+     * CORS 配置
      */
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
@@ -69,7 +78,9 @@ class SecurityConfig(
             "Content-Type",
             "X-Requested-With",
             "Accept",
+            "Accept-Language",
             "Origin",
+            "X-Tenant-ID",
             "Access-Control-Request-Method",
             "Access-Control-Request-Headers",
         )

@@ -2493,7 +2493,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder={loading ? "AI 正在输出中，请稍候..." : "输入消息... (Enter 发送，Shift + Enter 换行)"}
+              placeholder={loading 
+                ? intl.formatMessage({ id: 'pages.session.inputPlaceholder.loading', defaultMessage: 'AI is outputting, please wait...' })
+                : intl.formatMessage({ id: 'pages.session.inputPlaceholder.default', defaultMessage: 'Enter message... (Enter to send, Shift + Enter for new line)' })
+              }
               autoSize={{ minRows: 2, maxRows: 6 }}
             />
           </div>

@@ -148,12 +148,18 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         
         <Form.Item name="name" label={intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}>
-          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} 
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
         
         <Form.Item name="modelName" label={intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' }) }]}>
-          <Input placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} />
+          <Input 
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} 
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item name="modelType" label={intl.formatMessage({ id: 'pages.model.type', defaultMessage: 'Model Type' })}
@@ -164,11 +170,17 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
               label: intl.formatMessage({ id: `pages.model.${opt.value}`, defaultMessage: opt.label }),
               value: opt.value,
             }))}
-            onChange={handleModelTypeChange} />
+            onChange={handleModelTypeChange}
+            style={{ fontSize: '12px' }} />
         </Form.Item>
         
         <Form.Item name="price" label={intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price (CNY/M tokens)' })}>
-          <Input type="number" step="0.0001" placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} />
+          <Input 
+            type="number" 
+            step="0.0001" 
+            placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} 
+            style={{ fontSize: '12px' }}
+          />
         </Form.Item>
 
         <Form.Item name="description" label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}>
@@ -218,7 +230,8 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             options={[
               { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
               { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-            ]} />
+            ]}
+            style={{ fontSize: '12px' }} />
         </Form.Item>
 
         <Form.Item name="isPublic" label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}

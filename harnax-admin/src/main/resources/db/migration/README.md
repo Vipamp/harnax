@@ -4,40 +4,41 @@
 
 ```
 db/
-├── schema.sql              # Initial database schema (executed once on first run)
-└── migration/              # Incremental migration scripts (V1__, V2__, etc.)
+└── migration/              # All migration scripts (V1__, V2__, etc.)
+    ├── V1__init_schema.sql # Initial database schema (executed once on first run)
     └── README.md           # This file
 ```
 
 ## How It Works
 
-### Initial Schema (schema.sql)
+### All Migrations in One Directory
 
-- **Purpose**: Creates the initial database structure
-- **Execution**: Runs only once when the database is first created
-- **File**: `db/schema.sql`
-- **Contains**: All initial table definitions from `docker/sql/init.sql`
+All migration scripts are located in `db/migration/` directory:
 
-### Incremental Migrations (migration/)
+- **Initial Schema** (`V1__init_schema.sql`):
+  - **Purpose**: Creates the initial database structure
+  - **Execution**: Runs only once when the database is first created
+  - **Contains**: All initial table definitions
 
-- **Purpose**: Apply schema changes after initial deployment
-- **Execution**: Runs in version order (V1, V2, V3, ...)
-- **Naming Convention**: `V{version}__{description}.sql`
-  - Example: `V1__add_user_preferences.sql`
-  - Example: `V2__modify_agent_table.sql`
+- **Incremental Migrations** (`V2__*.sql`, `V3__*.sql`, etc.):
+  - **Purpose**: Apply schema changes after initial deployment
+  - **Execution**: Runs in version order (V1, V2, V3, ...)
+  - **Naming Convention**: `V{version}__{description}.sql`
+    - Example: `V2__add_user_preferences.sql`
+    - Example: `V3__modify_agent_table.sql`
 
 ## Creating New Migrations
 
 When you need to modify the database schema:
 
-1. **Create a new SQL file** in `migration/` directory
+1. **Create a new SQL file** in `db/migration/` directory
 2. **Follow naming convention**: `V{next_version}__{description}.sql`
 3. **Write standard SQL** (no DROP TABLE, use ALTER TABLE)
 
 ### Example
 
 ```sql
--- V1__add_user_preferences.sql
+-- V2__add_user_preferences.sql
 -- Add user preferences table
 
 CREATE TABLE IF NOT EXISTS `user_preferences` (
@@ -66,20 +67,22 @@ spring:
     clean-disabled: true
 ```
 
+All migration scripts are loaded from `db/migration/` directory and executed in version order.
+
 ## Workflow
 
 ### First Deployment (Fresh Database)
 
 1. Flyway creates `flyway_schema_history` table
-2. Executes `schema.sql` to create initial tables
-3. Records baseline version in history table
-4. Checks `migration/` for any scripts newer than baseline
-5. Executes migration scripts in order
+2. Scans `db/migration/` for all migration scripts
+3. Executes `V1__init_schema.sql` to create initial tables
+4. Executes subsequent migration scripts in version order (V2, V3, ...)
+5. Records all executed versions in history table
 
 ### Subsequent Deployments
 
 1. Flyway checks `flyway_schema_history` for current version
-2. Scans `migration/` for new scripts
+2. Scans `db/migration/` for new scripts
 3. Executes new migrations in version order
 4. Updates history table
 

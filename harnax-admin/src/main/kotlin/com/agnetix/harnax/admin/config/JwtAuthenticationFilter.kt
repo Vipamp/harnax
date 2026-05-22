@@ -39,6 +39,8 @@ class JwtAuthenticationFilter(
                 log.info("[JWT Filter] Request without token: {}", requestURI)
             } else {
                 log.info("[JWT Filter] Start validating token, URI: {}, token prefix: {}", requestURI, token.take(20))
+                
+                // Check if token is blacklisted
                 val res = tokenBlacklistService.isBlacklisted(token)
                 if (res) {
                     log.warn("[JWT Filter] Token is in blacklist, access denied: {}", requestURI)
@@ -46,6 +48,7 @@ class JwtAuthenticationFilter(
                     throw org.springframework.security.authentication.AuthenticationServiceException("Token has expired, please login again")
                 }
 
+                // Validate token
                 if (jwtUtil.validateToken(token)) {
                     val userId = jwtUtil.getUserIdFromToken(token)
                     val username = jwtUtil.getUsernameFromToken(token)
@@ -59,10 +62,18 @@ class JwtAuthenticationFilter(
                     log.info("[JWT Filter] JWT authentication successful, userId: {}, username: {}, URI: {}", userId, username, requestURI)
                 } else {
                     log.warn("[JWT Filter] Token is invalid or expired, URI: {}, token prefix: {}", requestURI, token.take(20))
+                    // Throw exception for invalid or expired token
+                    throw org.springframework.security.authentication.AuthenticationServiceException("Token is invalid or expired, please login again")
                 }
             }
+        } catch (e: org.springframework.security.authentication.AuthenticationServiceException) {
+            // Re-throw authentication exceptions to be handled by SecurityConfig
+            log.error("[JWT Filter] Authentication exception: {}", e.message)
+            throw e
         } catch (e: Exception) {
             log.error("[JWT Filter] JWT authentication failed: {}", e.message, e)
+            // For other exceptions, throw as authentication exception
+            throw org.springframework.security.authentication.AuthenticationServiceException("Authentication failed: ${e.message}")
         }
 
         filterChain.doFilter(request, response)

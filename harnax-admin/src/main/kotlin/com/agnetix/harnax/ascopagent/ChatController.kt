@@ -7,12 +7,14 @@ import com.agnetix.harnax.agent.chat.ChatEvent
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.ascopagent.dto.ChatRequest
 import com.agnetix.harnax.ascopagent.dto.ConfirmRequest
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import reactor.core.publisher.Flux
 
 /**
@@ -22,7 +24,7 @@ import reactor.core.publisher.Flux
 @RequestMapping("/ai")
 class ChatController(
     private val chatService: ChatService,
-    private val jwtUtil: JwtUtil,
+    private val jwtUtil: JwtUtil
 ) {
 
     /**
@@ -56,7 +58,10 @@ class ChatController(
 
     @DeleteMapping("/session/{sessionId}")
     @Schema(description = "Clear current session")
-    fun clearSession(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<String> {
+    fun clearSession(
+        @PathVariable("sessionId") sessionId: String,
+        httpServletRequest: HttpServletRequest,
+    ): ResultVo<String> {
         validateJwtToken(httpServletRequest)
         try {
             chatService.clearSession(sessionId)
@@ -68,7 +73,10 @@ class ChatController(
 
     @GetMapping("/session/{sessionId}")
     @Schema(description = "Get historical session")
-    fun getSession(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<List<MessageLog>> {
+    fun getSession(
+        @PathVariable("sessionId") sessionId: String,
+        httpServletRequest: HttpServletRequest,
+    ): ResultVo<List<MessageLog>> {
         validateJwtToken(httpServletRequest)
         try {
             return ResultVo.success(chatService.loadSessionMessages(sessionId))
@@ -79,7 +87,10 @@ class ChatController(
 
     @GetMapping("/session/{sessionId}/plans")
     @Schema(description = "Get session history plan list")
-    fun getSessionPlans(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<List<PlanNote>> {
+    fun getSessionPlans(
+        @PathVariable("sessionId") sessionId: String,
+        httpServletRequest: HttpServletRequest,
+    ): ResultVo<List<PlanNote>> {
         validateJwtToken(httpServletRequest)
         try {
             return ResultVo.success(chatService.loadSessionHistoryPlan(sessionId))
@@ -90,7 +101,10 @@ class ChatController(
 
     @GetMapping("/session/{sessionId}/current-plan")
     @Schema(description = "Get session current plan")
-    fun getCurrentPlan(@PathVariable("sessionId") sessionId: String, httpServletRequest: HttpServletRequest): ResultVo<PlanNote?> {
+    fun getCurrentPlan(
+        @PathVariable("sessionId") sessionId: String,
+        httpServletRequest: HttpServletRequest,
+    ): ResultVo<PlanNote?> {
         validateJwtToken(httpServletRequest)
         return try {
             ResultVo.success(chatService.loadSessionCurrentPlanNote(sessionId))

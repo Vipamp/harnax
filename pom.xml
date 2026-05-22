@@ -29,7 +29,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <spring-boot.version>3.5.8</spring-boot.version>
-        <agent-scope.version>1.0.10</agent-scope.version>
+        <agent-scope.version>1.1.0-RC2</agent-scope.version>
         <hikaricp.version>5.0.1</hikaricp.version>
         <spotless.version>2.44.5</spotless.version>
     </properties>

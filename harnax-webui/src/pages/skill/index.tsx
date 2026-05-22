@@ -157,7 +157,7 @@ const SkillManagement: React.FC = () => {
         <Col span={6}>
           <Card
             title={
-              <span>
+              <span style={{ fontSize: '14px', fontWeight: 600 }}>
                 <GithubOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
                 {intl.formatMessage({ id: 'pages.skill.repository', defaultMessage: 'Skill Repository' })}
               </span>
@@ -194,7 +194,7 @@ const SkillManagement: React.FC = () => {
           <Card
             title={
               selectedRepository ? (
-                <span>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>
                   <ThunderboltOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
                   {intl.formatMessage({ id: 'pages.skill.list', defaultMessage: 'Skill List' })}
                   <Tag color="blue" style={{ marginLeft: 8 }}>
@@ -202,7 +202,7 @@ const SkillManagement: React.FC = () => {
                   </Tag>
                 </span>
               ) : (
-                <span>
+                <span style={{ fontSize: '14px', fontWeight: 600 }}>
                   <ThunderboltOutlined style={{ marginRight: 8, color: '#4f6ef7' }} />
                   {intl.formatMessage({ id: 'pages.skill.list', defaultMessage: 'Skill List' })}
                 </span>
