@@ -53,11 +53,11 @@ class SecurityConfig(
                     // 设置 401 状态码
                     response.status = HttpServletResponse.SC_UNAUTHORIZED
                     response.contentType = "application/json;charset=UTF-8"
-                    
+
                     // 返回标准化错误响应
                     val errorMessage = authException?.message ?: "Authentication failed"
                     response.writer.write(
-                        """{"success":false,"code":401,"errorCode":"401","errorMessage":"${errorMessage}","message":"${errorMessage}"}""",
+                        """{"success":false,"code":401,"errorCode":"401","errorMessage":"$errorMessage","message":"$errorMessage"}""",
                     )
                 }
             }

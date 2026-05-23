@@ -1,8 +1,11 @@
-package com.agnetix.harnax.channel
+package com.agnetix.harnax.channel.sdk.config
 
 /**
  * Channel 配置规格
  * 用于定义一个对话通道的完整配置
+ *
+ * 该类作为 SDK 层的平台无关抽象，不依赖任何特定框架。
+ * 渠道实现模块可将其与数据库实体映射使用。
  */
 data class ChannelSpec(
     val id: Long,

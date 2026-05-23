@@ -5,6 +5,7 @@ import com.agnetix.harnax.channel.adaptor.dingtalk.DingTalkAdaptor
 import com.agnetix.harnax.channel.adaptor.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.adaptor.http.HttpAdaptor
 import com.agnetix.harnax.channel.adaptor.wecom.WeComAdaptor
+import com.agnetix.harnax.channel.client.PlatformHttpClient
 
 /**
  * Channel 适配器工厂
@@ -40,4 +41,11 @@ object ChannelAdaptorFactory {
      * 获取所有支持的类型
      */
     fun getSupportedTypes(): List<ChannelType> = adaptors.keys.toList()
+
+    /**
+     * 创建飞书适配器（支持依赖注入）
+     * @param httpClient HTTP 客户端
+     * @return 飞书适配器实例
+     */
+    fun createFeishuAdaptor(httpClient: PlatformHttpClient = PlatformHttpClient()): FeishuAdaptor = FeishuAdaptor(httpClient)
 }

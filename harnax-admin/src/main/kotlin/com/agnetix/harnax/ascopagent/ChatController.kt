@@ -7,14 +7,12 @@ import com.agnetix.harnax.agent.chat.ChatEvent
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.ascopagent.dto.ChatRequest
 import com.agnetix.harnax.ascopagent.dto.ConfirmRequest
-import com.fasterxml.jackson.databind.ObjectMapper
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import reactor.core.publisher.Flux
 
 /**
@@ -24,7 +22,7 @@ import reactor.core.publisher.Flux
 @RequestMapping("/ai")
 class ChatController(
     private val chatService: ChatService,
-    private val jwtUtil: JwtUtil
+    private val jwtUtil: JwtUtil,
 ) {
 
     /**

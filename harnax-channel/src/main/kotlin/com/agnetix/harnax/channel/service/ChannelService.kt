@@ -209,6 +209,92 @@ class ChannelService(
      */
     fun getSupportedTypes(): List<ChannelType> = adaptorFactory.getSupportedTypes()
 
+    /**
+     * 启动通道（用于 WebSocket 模式）
+     * @param channelId Channel ID
+     * @param messageHandler 消息处理函数
+     */
+    suspend fun startChannel(channelId: Long, messageHandler: suspend (ChannelMessage) -> Unit) {
+        val channel = channelResolver(channelId) ?: return
+
+        // 只有飞书适配器支持 WebSocket 模式
+        val adaptor = adaptorFactory.getAdaptor(channel.type)
+            ?: throw RuntimeException("No adaptor found for channel type: ${channel.type}")
+
+        if (adaptor is com.agnetix.harnax.channel.adaptor.feishu.FeishuAdaptor) {
+            adaptor.startChannel(channel, messageHandler)
+        } else {
+            logger.warn("Channel $channelId does not support WebSocket mode")
+        }
+    }
+
+    /**
+     * 停止通道（用于 WebSocket 模式）
+     * @param channelId Channel ID
+     */
+    suspend fun stopChannel(channelId: Long) {
+        val channel = channelResolver(channelId) ?: return
+
+        val adaptor = adaptorFactory.getAdaptor(channel.type)
+            ?: throw RuntimeException("No adaptor found for channel type: ${channel.type}")
+
+        if (adaptor is com.agnetix.harnax.channel.adaptor.feishu.FeishuAdaptor) {
+            adaptor.stopChannel(channel)
+        } else {
+            logger.warn("Channel $channelId does not support WebSocket mode")
+        }
+    }
+
+    /**
+     * 处理 HTTP 回调请求（仅 Webhook 模式）
+     * @param channelId Channel ID
+     * @param request HTTP 请求
+     * @param messageHandler 消息处理函数
+     * @return 响应对象
+     */
+    fun handleWebhookCallback(
+        channelId: Long,
+        request: HttpServletRequest,
+        messageHandler: suspend (ChannelMessage) -> Unit,
+    ): Any? {
+        val channel = channelResolverSync(channelId) ?: return null
+
+        if (channel.communicationMode != "webhook") {
+            throw RuntimeException("Channel $channelId is not in webhook mode")
+        }
+
+        val adaptor = adaptorFactory.getAdaptor(channel.type)
+            ?: throw RuntimeException("No adaptor found for channel type: ${channel.type}")
+
+        if (adaptor is com.agnetix.harnax.channel.adaptor.feishu.FeishuAdaptor) {
+            return adaptor.verifySignature(request, channel).let { isValid ->
+                if (!isValid) {
+                    throw com.agnetix.harnax.channel.error.ChannelSignatureException(
+                        channelType = channel.type,
+                        detail = "Signature verification failed",
+                    )
+                }
+
+                // 处理 URL 验证
+                val verificationResponse = adaptor.handleUrlVerification(request, channel)
+                if (verificationResponse != null) {
+                    return verificationResponse
+                }
+
+                // 解析并处理消息
+                val message = adaptor.parseMessage(request)
+                runBlocking {
+                    messageHandler(message)
+                }
+
+                null
+            }
+        }
+
+        logger.warn("Channel $channelId does not support webhook callback")
+        return null
+    }
+
     // ==================== 私有辅助方法 ====================
 
     /**
@@ -254,7 +340,24 @@ class ChannelService(
     ) {
         when (adaptor) {
             is WeComAdaptor -> adaptor.sendRichMessage(channel, sessionId, richMessage)
-            is FeishuAdaptor -> adaptor.sendRichMessage(channel, sessionId, richMessage)
+            is FeishuAdaptor -> {
+                // FeishuAdaptor 的 sendRichMessage 现在由通信模式处理
+                if (channel.communicationMode == "websocket") {
+                    // WebSocket 模式：暂未实现
+                    throw ChannelSendException(
+                        channelType = channel.type,
+                        platformErrorCode = null,
+                        message = "Rich message sending via WebSocket mode not yet implemented. Please use 'webhook' mode.",
+                    )
+                } else {
+                    // Webhook 模式：使用原有逻辑（通过 WebhookMode 处理）
+                    throw ChannelSendException(
+                        channelType = channel.type,
+                        platformErrorCode = null,
+                        message = "Rich message sending for Feishu is not supported in current implementation.",
+                    )
+                }
+            }
             is DingTalkAdaptor -> adaptor.sendRichMessage(channel, sessionId, richMessage)
             else -> throw ChannelSendException(
                 channelType = channel.type,

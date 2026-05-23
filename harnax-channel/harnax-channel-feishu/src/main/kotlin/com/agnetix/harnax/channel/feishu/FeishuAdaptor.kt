@@ -1,19 +1,16 @@
-package com.agnetix.harnax.channel.adaptor.feishu
+package com.agnetix.harnax.channel.feishu
 
-import com.agnetix.harnax.channel.ChannelSpec
-import com.agnetix.harnax.channel.ChannelType
-import com.agnetix.harnax.channel.adaptor.ChannelAdaptor
-import com.agnetix.harnax.channel.adaptor.ChannelCommunicationMode
-import com.agnetix.harnax.channel.adaptor.WebhookMode
-import com.agnetix.harnax.channel.client.PlatformHttpClient
-import com.agnetix.harnax.channel.client.PlatformResponse
-import com.agnetix.harnax.channel.error.ChannelSendException
-import com.agnetix.harnax.channel.message.*
+import com.agnetix.harnax.channel.feishu.client.PlatformHttpClient
+import com.agnetix.harnax.channel.feishu.client.PlatformResponse
+import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
+import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
+import com.agnetix.harnax.channel.sdk.config.ChannelSpec
+import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.error.ChannelSendException
+import com.agnetix.harnax.channel.sdk.message.*
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
-import org.springframework.web.util.ContentCachingRequestWrapper
 import java.nio.charset.StandardCharsets
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -25,6 +22,9 @@ import javax.crypto.spec.SecretKeySpec
  * 支持两种通信模式：
  * - Webhook 模式：HTTP 回调，需要公网 IP 或域名
  * - WebSocket 模式：长连接，无需公网，适用于内网环境
+ *
+ * 本模块实现 SDK 的 ChannelAdaptor 接口，
+ * 使用 ChannelRequest 替代 HttpServletRequest，与 Servlet 框架解耦。
  */
 class FeishuAdaptor(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
@@ -33,66 +33,37 @@ class FeishuAdaptor(
     private val logger = LoggerFactory.getLogger(FeishuAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
 
-    // 两种通信模式实例
-    private lateinit var webhookMode: WebhookMode
-    private val webSocketMode: FeishuWebSocketMode
-
-    init {
-        // 初始化 WebSocket 模式（需要 httpClient 用于发送消息）
-        webSocketMode = FeishuWebSocketMode(httpClient)
-
-        // 初始化 Webhook 模式（延迟初始化，需要使用 this 引用）
-        webhookMode = WebhookMode(
-            httpClient = httpClient,
-            messageParser = ::parseMessageInternal,
-            signatureVerifier = ::verifySignatureInternal,
-            urlVerificationHandler = ::handleUrlVerificationInternal,
-            messageSender = ::sendMessageInternal,
-            richMessageSender = ::sendRichMessageInternal,
-        )
-    }
+    // WebSocket 通信模式实例
+    private val webSocketMode: FeishuWebSocketMode = FeishuWebSocketMode(httpClient)
 
     override fun getType(): ChannelType = ChannelType.FEISHU
 
-    override fun verifySignature(request: HttpServletRequest, channel: ChannelSpec): Boolean = verifySignatureInternal(request, channel)
-
     /**
-     * 内部签名验证方法
+     * 验证回调签名
+     * 使用平台无关的 ChannelRequest 替代 HttpServletRequest
+     *
+     * 飞书签名验证逻辑：
+     * 签名内容 = timestamp + nonce + appSecret + body
+     * 签名算法 = HmacSHA256(appSecret, 签名内容)
      */
-    private fun verifySignatureInternal(request: HttpServletRequest, channel: ChannelSpec): Boolean {
-        val signature = request.getHeader("X-Lark-Signature") ?: return false
-        val timestamp = request.getHeader("X-Lark-Request-Timestamp") ?: return false
-        val nonce = request.getHeader("X-Lark-Request-Nonce") ?: return false
+    override fun verifySignature(request: ChannelRequest, channel: ChannelSpec): Boolean {
+        val signature = request.headers["X-Lark-Signature"] ?: return false
+        val timestamp = request.headers["X-Lark-Request-Timestamp"] ?: return false
+        val nonce = request.headers["X-Lark-Request-Nonce"] ?: return false
 
-        // 读取请求体
-        val wrappedRequest = if (request is ContentCachingRequestWrapper) {
-            request
-        } else {
-            ContentCachingRequestWrapper(request)
-        }
-        val body = wrappedRequest.inputStream.readBytes().toString(StandardCharsets.UTF_8)
-
-        // 飞书签名验证
         val appSecret = channel.appSecret ?: return false
-        val contentToSign = timestamp + nonce + appSecret + body
+        val contentToSign = timestamp + nonce + appSecret + request.body
         val computedSignature = hmacSha256(appSecret, contentToSign)
 
         return signature.equals(computedSignature, ignoreCase = true)
     }
 
-    override fun parseMessage(request: HttpServletRequest): ChannelMessage = parseMessageInternal(request)
-
     /**
-     * 内部消息解析方法
+     * 解析消息
+     * 使用平台无关的 ChannelRequest 替代 HttpServletRequest
      */
-    private fun parseMessageInternal(request: HttpServletRequest): ChannelMessage {
-        val wrappedRequest = if (request is ContentCachingRequestWrapper) {
-            request
-        } else {
-            ContentCachingRequestWrapper(request)
-        }
-
-        val body = wrappedRequest.inputStream.readBytes().toString(StandardCharsets.UTF_8)
+    override fun parseMessage(request: ChannelRequest): ChannelMessage {
+        val body = request.body
         logger.debug("Received Feishu callback: {}", body)
 
         return try {
@@ -123,21 +94,38 @@ class FeishuAdaptor(
         }
     }
 
+    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any {
+        return mapOf(
+            "code" to 0,
+            "msg" to "success",
+            "data" to mapOf(
+                "content" to reply,
+            ),
+        )
+    }
+
     /**
-     * 内部 URL 验证处理方法
+     * 推送消息到平台
+     * 根据通信模式自动选择发送方式
      */
-    private fun handleUrlVerificationInternal(request: HttpServletRequest, channel: ChannelSpec): Any? {
-        val wrappedRequest = if (request is ContentCachingRequestWrapper) {
-            request
-        } else {
-            ContentCachingRequestWrapper(request)
-        }
+    override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
+        getMode(channel).sendMessage(channel, sessionId, message)
+    }
 
-        val body = wrappedRequest.inputStream.readBytes().toString(StandardCharsets.UTF_8)
+    /**
+     * 发送富消息
+     */
+    override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+        getMode(channel).sendRichMessage(channel, sessionId, richMessage)
+    }
 
+    /**
+     * 处理 URL 验证请求
+     * 飞书首次配置 Webhook 时会发送验证请求
+     */
+    override fun handleUrlVerification(request: ChannelRequest, channel: ChannelSpec): Any? {
         return try {
-            val event = objectMapper.readValue(body, FeishuEvent::class.java)
-            // 飞书 URL 验证会返回 challenge
+            val event = objectMapper.readValue(request.body, FeishuEvent::class.java)
             if (event.type == "url_verification") {
                 mapOf("challenge" to (event.challenge ?: ""))
             } else {
@@ -148,41 +136,52 @@ class FeishuAdaptor(
         }
     }
 
-    override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-        getMode(channel).sendMessage(channel, sessionId, message)
-    }
-
-    /**
-     * 内部发送消息方法
-     */
-    private suspend fun sendMessageInternal(channel: ChannelSpec, sessionId: String, message: String) {
-        val webhookUrl = channel.webhookUrl
-        if (webhookUrl.isNullOrBlank()) {
-            throw ChannelSendException(
-                channelType = ChannelType.FEISHU,
-                platformErrorCode = null,
-                message = "Feishu webhook URL is not configured",
-            )
-        }
-
-        logger.info("Sending message to Feishu webhook: $webhookUrl")
-
-        // 构建文本消息
-        val messageBody = FeishuMessageBuilder.buildText(message)
-
-        // 发送消息
-        val response = httpClient.postJson(webhookUrl, messageBody)
-
-        // 处理响应
-        handleSendResponse(response)
-    }
-
     /**
      * 根据 channel 配置获取当前使用的通信模式
      */
     private fun getMode(channel: ChannelSpec): ChannelCommunicationMode = when (channel.communicationMode) {
         "websocket" -> webSocketMode
-        else -> webhookMode
+        else -> {
+            // Webhook 模式：直接使用 httpClient 发送
+            // Webhook 模式下，消息接收由外部 Controller 处理
+            // 这里只处理发送逻辑
+            object : ChannelCommunicationMode {
+                override fun getModeName() = "webhook"
+                override fun isCallbackMode() = true
+                override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
+                    logger.info("Webhook mode for channel ${channel.id} - no startup needed")
+                }
+                override fun stop(channel: ChannelSpec) {
+                    logger.info("Webhook mode for channel ${channel.id} - no cleanup needed")
+                }
+                override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
+                    val webhookUrl = channel.webhookUrl
+                    if (webhookUrl.isNullOrBlank()) {
+                        throw ChannelSendException(
+                            channelType = ChannelType.FEISHU,
+                            platformErrorCode = null,
+                            message = "Feishu webhook URL is not configured",
+                        )
+                    }
+                    val messageBody = FeishuMessageBuilder.buildText(message)
+                    val response = httpClient.postJson(webhookUrl, messageBody)
+                    handleSendResponse(response)
+                }
+                override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+                    val webhookUrl = channel.webhookUrl
+                    if (webhookUrl.isNullOrBlank()) {
+                        throw ChannelSendException(
+                            channelType = ChannelType.FEISHU,
+                            platformErrorCode = null,
+                            message = "Feishu webhook URL is not configured",
+                        )
+                    }
+                    val messageBody = FeishuMessageBuilder.buildFromRichMessage(richMessage)
+                    val response = httpClient.postJson(webhookUrl, messageBody)
+                    handleSendResponse(response)
+                }
+            }
+        }
     }
 
     /**
@@ -197,13 +196,6 @@ class FeishuAdaptor(
      */
     fun stopChannel(channel: ChannelSpec) {
         getMode(channel).stop(channel)
-    }
-
-    /**
-     * 内部发送富消息方法
-     */
-    private suspend fun sendRichMessageInternal(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
-//        sendRichMessage(channel, sessionId, richMessage)
     }
 
     /**
@@ -246,19 +238,6 @@ class FeishuAdaptor(
                 )
             }
         }
-    }
-
-    override fun handleUrlVerification(request: HttpServletRequest, channel: ChannelSpec): Any? = handleUrlVerificationInternal(request, channel)
-
-    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any {
-        // 飞书通常通过 webhook 主动推送回复，这里返回 JSON 格式
-        return mapOf(
-            "code" to 0,
-            "msg" to "success",
-            "data" to mapOf(
-                "content" to reply,
-            ),
-        )
     }
 
     private fun hmacSha256(key: String, data: String): String {

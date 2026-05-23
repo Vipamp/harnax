@@ -39,7 +39,7 @@ class JwtAuthenticationFilter(
                 log.info("[JWT Filter] Request without token: {}", requestURI)
             } else {
                 log.info("[JWT Filter] Start validating token, URI: {}, token prefix: {}", requestURI, token.take(20))
-                
+
                 // Check if token is blacklisted
                 val res = tokenBlacklistService.isBlacklisted(token)
                 if (res) {
