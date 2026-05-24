@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.SysJobLog
+import com.agnetix.harnax.entity.SysJobLog
 import java.time.LocalDateTime
 
 /**

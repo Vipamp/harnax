@@ -5,11 +5,11 @@ import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelResponse
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.Agent
-import com.agnetix.harnax.admin.entity.Channel
-import com.agnetix.harnax.admin.mapper.ChannelMapper
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.ChannelService
+import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.Channel
+import com.agnetix.harnax.mapper.ChannelMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value

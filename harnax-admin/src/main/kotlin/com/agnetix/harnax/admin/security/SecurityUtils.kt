@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.security
 
-import com.agnetix.harnax.admin.entity.SysUser
-import com.agnetix.harnax.admin.mapper.SysUserMapper
+import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.mapper.SysUserMapper
 import jakarta.annotation.PostConstruct
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component

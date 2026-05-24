@@ -1,6 +1,6 @@
 package com.agnetix.harnax.admin.dto
 
-import com.agnetix.harnax.admin.entity.SysJobLog
+import com.agnetix.harnax.entity.SysJobLog
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Duration
 import java.time.LocalDateTime

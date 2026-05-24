@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.TokenStatsAggregationResponse
-import com.agnetix.harnax.admin.entity.TokenStats
+import com.agnetix.harnax.entity.TokenStats
 
 /**
  * Token consumption statistics service interface

@@ -1,14 +1,14 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.Model
-import com.agnetix.harnax.admin.entity.ModelProvider
-import com.agnetix.harnax.admin.mapper.ModelMapper
-import com.agnetix.harnax.admin.mapper.ModelProviderMapper
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.model.ChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.DashScopeChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.OllamaChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
+import com.agnetix.harnax.entity.Model
+import com.agnetix.harnax.entity.ModelProvider
+import com.agnetix.harnax.mapper.ModelMapper
+import com.agnetix.harnax.mapper.ModelProviderMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 

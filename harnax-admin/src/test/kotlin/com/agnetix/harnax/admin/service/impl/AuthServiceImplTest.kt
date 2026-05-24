@@ -3,15 +3,16 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.response.TenantResponse
-import com.agnetix.harnax.admin.entity.SysUser
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
-import com.agnetix.harnax.admin.mapper.SysUserMapper
-import com.agnetix.harnax.admin.mapper.TenantMapper
 import com.agnetix.harnax.admin.service.CaptchaService
 import com.agnetix.harnax.admin.service.SysTokenBlacklistService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.entity.TenantEntity
+import com.agnetix.harnax.mapper.SysUserMapper
+import com.agnetix.harnax.mapper.TenantMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -122,7 +123,7 @@ class AuthServiceImplTest {
 
         // Mock tenantMapper to return default tenant
         `when`(tenantMapper.selectById(1)).thenReturn(
-            com.agnetix.harnax.admin.entity.TenantEntity().apply {
+            TenantEntity().apply {
                 id = 1L
                 name = "Default Tenant"
             },

@@ -1,0 +1,34 @@
+package com.agnetix.harnax.mapper
+
+import com.agnetix.harnax.entity.Channel
+import org.apache.ibatis.annotations.Mapper
+import org.apache.ibatis.annotations.Param
+
+/**
+ * Channel Mapper interface
+ */
+@Mapper
+interface ChannelMapper {
+
+    // ==================== Basic CRUD Methods ====================
+
+    fun selectById(@Param("id") id: Long): Channel?
+
+    fun insert(channel: Channel): Int
+
+    fun updateById(channel: Channel): Int
+
+    fun deleteById(@Param("id") id: Long): Int
+
+    fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
+    // ==================== Custom Query Methods ====================
+
+    fun selectChannelList(
+        @Param("keyword") keyword: String?,
+        @Param("type") type: String?,
+        @Param("status") status: Int?,
+    ): List<Channel>
+
+    fun selectByCallbackKey(@Param("callbackKey") callbackKey: String): Channel?
+}

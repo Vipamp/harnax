@@ -1,8 +1,8 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.PlanNoteEntity
-import com.agnetix.harnax.admin.mapper.PlanNoteMapper
 import com.agnetix.harnax.agent.adaptor.*
+import com.agnetix.harnax.entity.PlanNoteEntity
+import com.agnetix.harnax.mapper.PlanNoteMapper
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper

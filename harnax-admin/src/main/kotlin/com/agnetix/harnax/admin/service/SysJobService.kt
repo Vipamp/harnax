@@ -3,7 +3,7 @@ package com.agnetix.harnax.admin.service
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SysJobCreateRequest
 import com.agnetix.harnax.admin.dto.SysJobUpdateRequest
-import com.agnetix.harnax.admin.entity.SysJob
+import com.agnetix.harnax.entity.SysJob
 
 /**
  * Scheduled job service interface

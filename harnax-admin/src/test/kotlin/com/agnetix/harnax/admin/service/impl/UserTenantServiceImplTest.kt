@@ -1,13 +1,13 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.entity.SysUser
-import com.agnetix.harnax.admin.entity.TenantEntity
-import com.agnetix.harnax.admin.entity.UserTenantEntity
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
-import com.agnetix.harnax.admin.mapper.SysUserMapper
-import com.agnetix.harnax.admin.mapper.TenantMapper
-import com.agnetix.harnax.admin.mapper.UserTenantMapper
+import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.entity.TenantEntity
+import com.agnetix.harnax.entity.UserTenantEntity
+import com.agnetix.harnax.mapper.SysUserMapper
+import com.agnetix.harnax.mapper.TenantMapper
+import com.agnetix.harnax.mapper.UserTenantMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName

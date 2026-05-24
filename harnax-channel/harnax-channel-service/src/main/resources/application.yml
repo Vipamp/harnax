@@ -1,0 +1,29 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: harnax-channel-service
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/harnax?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# Router configuration
+router:
+  service:
+    url: ${ROUTER_URL:http://localhost:8080}
+
+# Channel configuration
+channel:
+  auto-start: true  # Auto-start all enabled channels on startup

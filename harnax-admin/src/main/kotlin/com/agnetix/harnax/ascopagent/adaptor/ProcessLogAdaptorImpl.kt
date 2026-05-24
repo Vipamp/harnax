@@ -1,9 +1,9 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.ProcessLogEntity
-import com.agnetix.harnax.admin.mapper.ProcessLogMapper
 import com.agnetix.harnax.agent.adaptor.ProcessLog
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
+import com.agnetix.harnax.entity.ProcessLogEntity
+import com.agnetix.harnax.mapper.ProcessLogMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.io.PrintWriter

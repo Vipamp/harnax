@@ -1,0 +1,32 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: harnax-session-router
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+# Session Router Configuration
+router:
+  health:
+    heartbeat-timeout-ms: 30000   # Heartbeat timeout: 30 seconds
+    check-interval-ms: 5000       # Health check interval: 5 seconds
+  session:
+    ttl-minutes: 30               # Session mapping TTL: 30 minutes
+    cache-size: 10000             # Local cache max size
+  proxy:
+    connect-timeout-ms: 5000      # Proxy connect timeout
+    read-timeout-ms: 60000        # Proxy read timeout (long for AI processing)

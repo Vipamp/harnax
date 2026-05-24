@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerResponse
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.McpServer
+import com.agnetix.harnax.entity.McpServer
 import io.modelcontextprotocol.spec.McpSchema
 
 /**

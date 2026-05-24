@@ -19,6 +19,7 @@
         <module>harnax-channel-sdk</module>
         <module>harnax-channel-feishu</module>
         <module>harnax-channel-wechat</module>
+        <module>harnax-channel-service</module>
     </modules>
 
     <dependencies>

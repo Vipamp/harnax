@@ -5,7 +5,7 @@ import com.agnetix.harnax.admin.dto.ModelProviderResponse
 import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
 import com.agnetix.harnax.admin.dto.ModelStatsInfo
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.ModelProvider
+import com.agnetix.harnax.entity.ModelProvider
 
 /**
  * Model provider service interface

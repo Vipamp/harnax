@@ -3,11 +3,12 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SysJobCreateRequest
 import com.agnetix.harnax.admin.dto.SysJobUpdateRequest
-import com.agnetix.harnax.admin.entity.SysJob
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SysJobService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
+import com.agnetix.harnax.entity.SysJob
+import com.agnetix.harnax.mapper.SysJobMapper
 import com.github.pagehelper.PageHelper
 import jakarta.annotation.PostConstruct
 import org.quartz.*
@@ -25,7 +26,7 @@ import java.time.LocalDateTime
 class SysJobServiceImpl(
     private val schedulerFactoryBean: SchedulerFactoryBean,
     private val jwtUtil: JwtUtil,
-    private val sysJobMapper: com.agnetix.harnax.admin.mapper.SysJobMapper,
+    private val sysJobMapper: SysJobMapper,
 ) : SysJobService {
 
     private val log = LoggerFactory.getLogger(SysJobServiceImpl::class.java)

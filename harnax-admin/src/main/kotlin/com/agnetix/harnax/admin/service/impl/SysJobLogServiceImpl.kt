@@ -1,9 +1,9 @@
 package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.SysJobLog
-import com.agnetix.harnax.admin.mapper.SysJobLogMapper
 import com.agnetix.harnax.admin.service.SysJobLogService
+import com.agnetix.harnax.entity.SysJobLog
+import com.agnetix.harnax.mapper.SysJobLogMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime

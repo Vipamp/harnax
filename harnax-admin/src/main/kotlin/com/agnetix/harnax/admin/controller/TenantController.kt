@@ -7,10 +7,10 @@ import com.agnetix.harnax.admin.dto.request.AddUserToTenantRequest
 import com.agnetix.harnax.admin.dto.request.CreateTenantRequest
 import com.agnetix.harnax.admin.dto.response.TenantResponse
 import com.agnetix.harnax.admin.dto.response.UserTenantResponse
-import com.agnetix.harnax.admin.mapper.SysUserMapper
 import com.agnetix.harnax.admin.service.TenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
+import com.agnetix.harnax.mapper.SysUserMapper
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

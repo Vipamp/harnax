@@ -1,9 +1,9 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.TokenStats
-import com.agnetix.harnax.admin.mapper.TokenStatsMapper
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.token.TokenStat
+import com.agnetix.harnax.entity.TokenStats
+import com.agnetix.harnax.mapper.TokenStatsMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.math.BigDecimal

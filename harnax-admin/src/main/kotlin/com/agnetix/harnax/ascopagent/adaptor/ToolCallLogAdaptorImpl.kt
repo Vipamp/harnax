@@ -1,9 +1,9 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.ToolCallLogEntity
-import com.agnetix.harnax.admin.mapper.ToolCallLogMapper
 import com.agnetix.harnax.agent.adaptor.ToolCallInfo
 import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
+import com.agnetix.harnax.entity.ToolCallLogEntity
+import com.agnetix.harnax.mapper.ToolCallLogMapper
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory

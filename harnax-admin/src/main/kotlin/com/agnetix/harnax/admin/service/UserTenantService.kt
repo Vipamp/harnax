@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.response.TenantResponse
-import com.agnetix.harnax.admin.entity.UserTenantEntity
+import com.agnetix.harnax.entity.UserTenantEntity
 
 /**
  * User-tenant association service interface

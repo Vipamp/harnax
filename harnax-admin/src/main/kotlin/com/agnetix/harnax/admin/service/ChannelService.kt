@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelResponse
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.Channel
+import com.agnetix.harnax.entity.Channel
 
 /**
  * Channel service interface

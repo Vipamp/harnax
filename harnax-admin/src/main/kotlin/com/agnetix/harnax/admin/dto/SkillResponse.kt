@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.dto
 
-import com.agnetix.harnax.admin.entity.Skill
-import com.agnetix.harnax.admin.entity.SkillRepository
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillRepository
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 

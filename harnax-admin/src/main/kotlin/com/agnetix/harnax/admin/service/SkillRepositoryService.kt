@@ -5,7 +5,7 @@ import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
 import com.agnetix.harnax.admin.dto.SkillRepositoryResponse
 import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
-import com.agnetix.harnax.admin.entity.SkillRepository
+import com.agnetix.harnax.entity.SkillRepository
 
 /**
  * Skill repository service interface

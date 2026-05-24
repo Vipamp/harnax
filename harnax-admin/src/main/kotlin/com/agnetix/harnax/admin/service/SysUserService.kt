@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
-import com.agnetix.harnax.admin.entity.SysUser
+import com.agnetix.harnax.entity.SysUser
 
 /**
  * User service interface

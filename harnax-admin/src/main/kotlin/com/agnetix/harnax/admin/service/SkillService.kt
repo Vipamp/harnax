@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
-import com.agnetix.harnax.admin.entity.Skill
+import com.agnetix.harnax.entity.Skill
 
 /**
  * Skill service interface

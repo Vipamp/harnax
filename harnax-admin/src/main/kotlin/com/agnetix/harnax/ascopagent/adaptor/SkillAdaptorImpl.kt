@@ -1,8 +1,8 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.Skill
-import com.agnetix.harnax.admin.mapper.SkillMapper
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.mapper.SkillMapper
 import io.agentscope.core.skill.AgentSkill
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component

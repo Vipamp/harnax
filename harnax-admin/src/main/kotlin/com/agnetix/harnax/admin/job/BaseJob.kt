@@ -1,8 +1,8 @@
 package com.agnetix.harnax.admin.job
 
-import com.agnetix.harnax.admin.entity.SysJob
-import com.agnetix.harnax.admin.entity.SysJobLog
 import com.agnetix.harnax.admin.service.SysJobLogService
+import com.agnetix.harnax.entity.SysJob
+import com.agnetix.harnax.entity.SysJobLog
 import org.quartz.Job
 import org.quartz.JobExecutionContext
 import org.quartz.JobExecutionException

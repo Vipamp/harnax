@@ -1,6 +1,6 @@
 package com.agnetix.harnax.admin.dto
 
-import com.agnetix.harnax.admin.entity.Agent
+import com.agnetix.harnax.entity.Agent
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
 

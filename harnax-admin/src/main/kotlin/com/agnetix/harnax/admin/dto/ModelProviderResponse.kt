@@ -1,6 +1,6 @@
 package com.agnetix.harnax.admin.dto
 
-import com.agnetix.harnax.admin.entity.ModelProvider
+import com.agnetix.harnax.entity.ModelProvider
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Size

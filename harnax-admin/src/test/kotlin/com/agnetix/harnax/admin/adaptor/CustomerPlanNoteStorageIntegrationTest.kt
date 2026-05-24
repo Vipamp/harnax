@@ -1,9 +1,9 @@
 package com.agnetix.harnax.admin.adaptor
 
-import com.agnetix.harnax.admin.mapper.PlanNoteMapper
 import com.agnetix.harnax.agent.CustomerPlanNoteStorage
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.TaskState
+import com.agnetix.harnax.mapper.PlanNoteMapper
 import io.agentscope.core.plan.model.Plan
 import io.agentscope.core.plan.model.PlanState
 import io.agentscope.core.plan.model.SubTask

@@ -1,8 +1,8 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.entity.SysTokenBlacklist
-import com.agnetix.harnax.admin.mapper.SysTokenBlacklistMapper
 import com.agnetix.harnax.admin.service.SysTokenBlacklistService
+import com.agnetix.harnax.entity.SysTokenBlacklist
+import com.agnetix.harnax.mapper.SysTokenBlacklistMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional

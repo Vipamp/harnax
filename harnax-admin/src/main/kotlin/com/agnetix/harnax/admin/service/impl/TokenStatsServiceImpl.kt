@@ -2,9 +2,9 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.dto.OverallStats
 import com.agnetix.harnax.admin.dto.TokenStatsAggregationResponse
-import com.agnetix.harnax.admin.entity.TokenStats
-import com.agnetix.harnax.admin.mapper.TokenStatsMapper
 import com.agnetix.harnax.admin.service.TokenStatsService
+import com.agnetix.harnax.entity.TokenStats
+import com.agnetix.harnax.mapper.TokenStatsMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional

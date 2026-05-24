@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.ModelCreateRequest
 import com.agnetix.harnax.admin.dto.ModelResponse
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.Model
+import com.agnetix.harnax.entity.Model
 
 /**
  * Model service interface

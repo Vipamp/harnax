@@ -4,7 +4,7 @@ import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.entity.Agent
+import com.agnetix.harnax.entity.Agent
 
 /**
  * Agent service interface

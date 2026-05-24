@@ -1,9 +1,9 @@
 package com.agnetix.harnax.ascopagent.adaptor
 
-import com.agnetix.harnax.admin.entity.McpServer
-import com.agnetix.harnax.admin.mapper.McpServerMapper
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.*
+import com.agnetix.harnax.entity.McpServer
+import com.agnetix.harnax.mapper.McpServerMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 

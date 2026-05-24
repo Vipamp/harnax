@@ -1,6 +1,5 @@
 package com.agnetix.harnax.ascopagent
 
-import com.agnetix.harnax.admin.mapper.SessionMapper
 import com.agnetix.harnax.agent.*
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.ChatEvent
@@ -11,6 +10,7 @@ import com.agnetix.harnax.ascopagent.dto.ChatRequest
 import com.agnetix.harnax.ascopagent.dto.ConfirmRequest
 import com.agnetix.harnax.ascopagent.dto.SessionConfigResponse
 import com.agnetix.harnax.ascopagent.dto.SessionConfigUpdateRequest
+import com.agnetix.harnax.mapper.SessionMapper
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
