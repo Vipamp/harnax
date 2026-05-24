@@ -1,40 +1,40 @@
 package com.agnetix.harnax.channel.sdk.message
 
 /**
- * 平台无关的请求抽象
- * 将 HTTP 请求的核心信息提取为平台无关的数据类
+ * Platform-agnostic Request Abstraction
+ * Extracts core HTTP request information into a platform-agnostic data class
  *
- * 各渠道模块负责将 Servlet Request 或其他框架的 Request
- * 转换为此 ChannelRequest，实现 SDK 与特定框架的解耦。
+ * Each channel module is responsible for converting Servlet Request or other framework Requests
+ * into this ChannelRequest, decoupling the SDK from specific frameworks.
  */
 data class ChannelRequest(
     /**
-     * 请求头
+     * Request headers
      */
     val headers: Map<String, String> = emptyMap(),
 
     /**
-     * 请求体原始内容
+     * Raw request body content
      */
     val body: String = "",
 
     /**
-     * 查询参数
+     * Query parameters
      */
     val parameters: Map<String, String> = emptyMap(),
 
     /**
-     * 请求方法 (GET, POST, etc.)
+     * Request method (GET, POST, etc.)
      */
     val method: String = "GET",
 
     /**
-     * 请求路径
+     * Request path
      */
     val path: String = "",
 
     /**
-     * 客户端 IP 地址
+     * Client IP address
      */
     val remoteAddr: String? = null,
 

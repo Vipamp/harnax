@@ -5,61 +5,93 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.RichMessage
 
 /**
- * Channel 通信模式接口
- * 定义不同通信方式（Webhook、WebSocket等）的通用行为契约
+ * Channel Communication Mode Interface
+ * Defines common behavior contracts for different communication methods (Webhook, WebSocket, etc.)
  *
- * 设计目标：
- * - 统一不同通信模式的接口，让上层 Adaptor 不感知底层通信方式
- * - 支持动态切换通信模式（如从 Webhook 切换到 WebSocket）
- * - 可扩展新的通信模式（如消息队列、gRPC 等）
+ * Design Goals:
+ * - Unify interfaces for different communication modes, making upper-level Adaptors unaware of the underlying method
+ * - Support dynamic switching of communication modes (e.g., from Webhook to WebSocket)
+ * - Extensible for new communication modes (e.g., message queues, gRPC, etc.)
  */
 interface ChannelCommunicationMode {
     /**
-     * 获取通信模式名称
-     * @return 模式名称（如 "webhook", "websocket"）
+     * Get communication mode name
+     * @return Mode name (e.g., "webhook", "websocket")
      */
     fun getModeName(): String
 
     /**
-     * 判断是否为回调模式
-     * @return true 表示需要外部 HTTP 回调，false 表示主动拉取或长连接
+     * Check if this is a callback mode
+     * @return true if external HTTP callback is needed, false for active polling or long connection
      */
     fun isCallbackMode(): Boolean
 
     /**
-     * 启动通信模式
-     * @param channel Channel 配置
-     * @param messageHandler 消息处理函数
+     * Start communication mode
+     * @param channel Channel configuration
+     * @param messageHandler Message processing function
      *
-     * 说明：
-     * - Webhook 模式：空操作，由外部 Servlet 容器处理
-     * - WebSocket 模式：建立长连接并阻塞监听
+     * Notes:
+     * - Webhook mode: No-op, handled by external Servlet container
+     * - WebSocket mode: Establish long connection and block listening
      */
     fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit)
 
     /**
-     * 停止通信模式
-     * @param channel Channel 配置
+     * Stop communication mode
+     * @param channel Channel configuration
      *
-     * 说明：
-     * - Webhook 模式：空操作
-     * - WebSocket 模式：关闭长连接
+     * Notes:
+     * - Webhook mode: No-op
+     * - WebSocket mode: Close long connection
      */
     fun stop(channel: ChannelSpec)
 
     /**
-     * 发送文本消息
-     * @param channel Channel 配置
-     * @param sessionId 会话 ID
-     * @param message 消息内容
+     * Send text message
+     * @param channel Channel configuration
+     * @param sessionId Session ID
+     * @param message Message content
      */
     suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String)
 
     /**
-     * 发送富消息
-     * @param channel Channel 配置
-     * @param sessionId 会话 ID
-     * @param richMessage 富消息对象
+     * Send rich message
+     * @param channel Channel configuration
+     * @param sessionId Session ID
+     * @param richMessage Rich message object
      */
     suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage)
+
+    /**
+     * Whether this communication mode supports streaming output
+     *
+     * Returns true if the underlying communication method can send
+     * text fragments incrementally to the platform.
+     *
+     * @return Whether streaming output is supported
+     */
+    fun supportsStreamingOutput(): Boolean = false
+
+    /**
+     * Send streaming text fragment
+     *
+     * Called for each text fragment when streaming output is supported.
+     *
+     * @param channel Channel configuration
+     * @param sessionId Session ID
+     * @param fragment Text fragment content
+     * @param isLast Whether this is the last fragment
+     */
+    suspend fun sendStreamingFragment(channel: ChannelSpec, sessionId: String, fragment: String, isLast: Boolean) {}
+
+    /**
+     * Send typing indicator
+     *
+     * Shows a "thinking/typing" status to the user while AI is processing.
+     *
+     * @param channel Channel configuration
+     * @param sessionId Session ID
+     */
+    suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {}
 }

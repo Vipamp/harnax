@@ -20,19 +20,19 @@ import java.util.concurrent.ConcurrentHashMap
 import com.lark.oapi.ws.Client as WsClient
 
 /**
- * 飞书 WebSocket 长连接模式实现
- * 基于飞书官方 Java SDK (oapi-sdk 2.4.0) 实现 WebSocket 全双工通信
+ * Feishu WebSocket Long Connection Mode Implementation
+ * Implements WebSocket full-duplex communication based on Feishu official Java SDK (oapi-sdk 2.4.0)
  *
- * 特点：
- * - 无需公网 IP 或域名，只需能访问公网
- * - 内置加密和鉴权，无需额外处理签名
- * - 适用于内网开发环境和企业私有化部署
- * - 支持自动重连
+ * Features:
+ * - No public IP or domain required, only needs public network access
+ * - Built-in encryption and authentication, no additional signature handling needed
+ * - Suitable for intranet development environment and enterprise private deployment
+ * - Supports automatic reconnection
  *
- * 注意事项：
- * - WebSocket 仅用于接收消息，发送消息仍需调用 Open API
- * - 每个 Channel 对应一个独立的 WebSocket 连接
- * - 飞书 WebSocket 为集群模式，同一应用多个客户端只有一个会收到消息
+ * Notes:
+ * - WebSocket is only used for receiving messages, sending messages still requires calling Open API
+ * - Each Channel corresponds to an independent WebSocket connection
+ * - Feishu WebSocket operates in cluster mode, only one client will receive messages for the same application
  */
 class FeishuWebSocketMode(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
@@ -41,10 +41,10 @@ class FeishuWebSocketMode(
     private val logger = LoggerFactory.getLogger(FeishuWebSocketMode::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
 
-    // 存储每个 Channel 的 WebSocket 客户端
+    // Stores WebSocket client for each Channel
     private val wsClients = ConcurrentHashMap<Long, WsClient>()
 
-    // 存储每个 Channel 的消息处理器
+    // Stores message handler for each Channel
     private val messageHandlers = ConcurrentHashMap<Long, suspend (ChannelMessage) -> Unit>()
 
     override fun getModeName(): String = "websocket"
@@ -52,10 +52,10 @@ class FeishuWebSocketMode(
     override fun isCallbackMode(): Boolean = false
 
     /**
-     * 启动 WebSocket 长连接
+     * Start WebSocket long connection
      *
-     * @param channel Channel 配置
-     * @param messageHandler 消息处理函数
+     * @param channel Channel configuration
+     * @param messageHandler Message processing function
      */
     override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         if (wsClients.containsKey(channel.id)) {
@@ -73,7 +73,7 @@ class FeishuWebSocketMode(
         logger.info("Starting WebSocket connection for channel: ${channel.id}")
 
         try {
-            // 创建消息事件处理器
+            // Create message event handler
             val messageEventHandler = object : ImService.P2MessageReceiveV1Handler() {
                 override fun handle(data: P2MessageReceiveV1?) {
                     if (data == null) {
@@ -81,7 +81,7 @@ class FeishuWebSocketMode(
                         return
                     }
 
-                    // 异步处理消息（不阻塞事件处理）
+                    // Process message asynchronously (do not block event processing)
                     runBlocking {
                         try {
                             val channelMessage = parseFeishuEvent(data, channel.id)
@@ -100,18 +100,18 @@ class FeishuWebSocketMode(
                 }
             }
 
-            // 创建事件分发器并注册消息处理器
+            // Create event dispatcher and register message handler
             val eventDispatcher = EventDispatcher.newBuilder("", "")
                 .onP2MessageReceiveV1(messageEventHandler)
                 .build()
 
-            // 创建 WebSocket 客户端
+            // Create WebSocket client
             val wsClient = WsClient.Builder(appId, appSecret)
                 .eventHandler(eventDispatcher)
                 .autoReconnect(true)
                 .build()
 
-            // 在后台线程启动（非阻塞）
+            // Start in background thread (non-blocking)
             Thread {
                 try {
                     wsClient.start()
@@ -140,9 +140,9 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 停止 WebSocket 长连接
+     * Stop WebSocket long connection
      *
-     * @param channel Channel 配置
+     * @param channel Channel configuration
      */
     override fun stop(channel: ChannelSpec) {
         val wsClient = wsClients.remove(channel.id)
@@ -158,8 +158,8 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 发送文本消息
-     * 通过飞书 Open API 发送（需要 tenant_access_token）
+     * Send text message
+     * Sent via Feishu Open API (requires tenant_access_token)
      */
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         val appId = channel.appId
@@ -173,11 +173,11 @@ class FeishuWebSocketMode(
             )
         }
 
-        // 获取 tenant_access_token
+        // Get tenant_access_token
         val token = getTenantAccessToken(appId, appSecret)
 
-        // 构建消息体（必须包含 receive_id）
-        // 注意：飞书 API 要求 content 字段是 JSON 字符串，不是对象
+        // Build message body (must include receive_id)
+        // Note: Feishu API requires content field to be JSON string, not object
         val contentJson = objectMapper.writeValueAsString(mapOf("text" to message))
         val messageBody = mapOf(
             "receive_id" to sessionId,
@@ -187,7 +187,7 @@ class FeishuWebSocketMode(
 
         logger.debug("Sending Feishu message: receive_id={}, msg_type={}, content={}", sessionId, "text", message)
 
-        // 调用飞书 Open API 发送消息
+        // Call Feishu Open API to send message
         val url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
         val response = httpClient.postJson(
             url,
@@ -205,7 +205,7 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 发送富消息
+     * Send rich message
      */
     override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
         val appId = channel.appId
@@ -219,10 +219,10 @@ class FeishuWebSocketMode(
             )
         }
 
-        // 获取 tenant_access_token
+        // Get tenant_access_token
         val token = getTenantAccessToken(appId, appSecret)
 
-        // 构建富消息体（必须包含 receive_id）
+        // Build rich message body (must include receive_id)
         val content = FeishuMessageBuilder.buildFromRichMessage(richMessage)
         val contentJson = objectMapper.writeValueAsString(content["content"])
         val messageBody = mapOf(
@@ -231,7 +231,7 @@ class FeishuWebSocketMode(
             "content" to contentJson,
         )
 
-        // 调用飞书 Open API 发送消息
+        // Call Feishu Open API to send message
         val url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
         val response = httpClient.postJson(
             url,
@@ -245,8 +245,8 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 获取 tenant_access_token
-     * 用于调用飞书 Open API
+     * Get tenant_access_token
+     * Used to call Feishu Open API
      */
     private suspend fun getTenantAccessToken(appId: String, appSecret: String): String {
         val requestBody = mapOf(
@@ -297,7 +297,7 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 解析飞书事件为 ChannelMessage
+     * Parse Feishu event to ChannelMessage
      */
     private fun parseFeishuEvent(event: P2MessageReceiveV1, channelId: Long): ChannelMessage? {
         return try {
@@ -351,7 +351,7 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * 处理发送响应
+     * Handle send response
      */
     private fun handleSendResponse(response: PlatformResponse) {
         when (response) {

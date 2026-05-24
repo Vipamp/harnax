@@ -9,15 +9,15 @@ import org.springframework.web.reactive.function.client.WebClient
 import java.time.Duration
 
 /**
- * 平台 HTTP 客户端
- * 基于 Spring WebFlux WebClient 封装的统一 HTTP 客户端
- * 用于向飞书 Open API 发送消息
+ * Platform HTTP Client
+ * Unified HTTP client encapsulated based on Spring WebFlux WebClient
+ * Used to send messages to Feishu Open API
  *
- * 特性：
- * - 共享连接池
- * - 超时配置（连接 5s，读取 10s）
- * - 自动重试（最多 3 次，指数退避）
- * - 响应验证
+ * Features:
+ * - Shared connection pool
+ * - Timeout configuration (connect 5s, read 10s)
+ * - Automatic retry (up to 3 times, exponential backoff)
+ * - Response validation
  */
 class PlatformHttpClient(
     private val maxRetries: Int = 3,
@@ -35,12 +35,12 @@ class PlatformHttpClient(
         .build()
 
     /**
-     * 发送 JSON POST 请求
+     * Send JSON POST request
      *
-     * @param url 目标 URL
-     * @param body 请求体对象（会被序列化为 JSON）
-     * @param headers 额外的 HTTP Headers
-     * @return PlatformResponse 响应对象
+     * @param url Target URL
+     * @param body Request body object (will be serialized to JSON)
+     * @param headers Additional HTTP Headers
+     * @return PlatformResponse response object
      */
     suspend fun postJson(
         url: String,
@@ -88,7 +88,7 @@ class PlatformHttpClient(
     }
 
     /**
-     * 带重试的执行器
+     * Executor with retry logic
      */
     private suspend fun executeWithRetry(
         url: String,
@@ -139,18 +139,16 @@ class PlatformHttpClient(
     }
 
     /**
-     * 判断错误是否可重试
+     * Determine if error is retryable
      */
-    private fun isRetryableError(statusCode: Int): Boolean {
-        return statusCode == 429 ||
-            statusCode == 500 ||
-            statusCode == 502 ||
-            statusCode == 503 ||
-            statusCode == 504
-    }
+    private fun isRetryableError(statusCode: Int): Boolean = statusCode == 429 ||
+        statusCode == 500 ||
+        statusCode == 502 ||
+        statusCode == 503 ||
+        statusCode == 504
 
     /**
-     * 计算重试延迟（指数退避）
+     * Calculate retry delay (exponential backoff)
      */
     private fun calculateDelay(attempt: Int): Long {
         val delay = initialDelayMs * Math.pow(retryMultiplier, (attempt - 1).toDouble()).toLong()

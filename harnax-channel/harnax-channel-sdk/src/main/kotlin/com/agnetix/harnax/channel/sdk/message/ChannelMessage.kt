@@ -3,96 +3,96 @@ package com.agnetix.harnax.channel.sdk.message
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 
 /**
- * 消息类型
+ * Message Type
  */
 enum class MessageType {
-    TEXT, // 文本消息
-    MARKDOWN, // Markdown 格式消息
-    IMAGE, // 图片消息
-    FILE, // 文件消息
-    CARD, // 卡片消息（交互式卡片）
-    EVENT, // 事件消息
+    TEXT, // Text message
+    MARKDOWN, // Markdown format message
+    IMAGE, // Image message
+    FILE, // File message
+    CARD, // Card message (interactive card)
+    EVENT, // Event message
 }
 
 /**
- * 消息角色
+ * Message Role
  */
 enum class MessageRole {
-    USER, // 用户消息
-    ASSISTANT, // AI 回复
-    SYSTEM, // 系统消息
+    USER, // User message
+    ASSISTANT, // AI reply
+    SYSTEM, // System message
 }
 
 /**
- * 统一消息模型
- * 用于在不同平台间统一消息格式
+ * Unified Message Model
+ * Used to unify message format across different platforms
  *
- * 该类是 SDK 的核心消息模型，平台无关。
- * 各渠道 Adaptor 负责将平台特定消息转换为此格式。
+ * This class is the core message model of the SDK, platform-agnostic.
+ * Each channel Adaptor is responsible for converting platform-specific messages to this format.
  */
 data class ChannelMessage(
     /**
-     * 消息 ID
+     * Message ID
      */
     val messageId: String? = null,
 
     /**
-     * 会话 ID（用户 ID 或群组 ID）
+     * Session ID (user ID or group ID)
      */
     val sessionId: String,
 
     /**
-     * 消息类型
+     * Message type
      */
     val messageType: MessageType = MessageType.TEXT,
 
     /**
-     * 消息角色
+     * Message role
      */
     val role: MessageRole = MessageRole.USER,
 
     /**
-     * 消息内容
+     * Message content
      */
     val content: String,
 
     /**
-     * 平台类型
+     * Platform type
      */
     val channelType: ChannelType,
 
     /**
-     * 发送者名称
+     * Sender name
      */
     val senderName: String? = null,
 
     /**
-     * 发送者 ID
+     * Sender ID
      */
     val senderId: String? = null,
 
     /**
-     * 是否是群聊消息
+     * Whether this is a group message
      */
     val isGroupMessage: Boolean = false,
 
     /**
-     * 群组 ID（如果是群聊）
+     * Group ID (if group chat)
      */
     val groupId: String? = null,
 
     /**
-     * @ 用户列表
+     * @-mentioned user list
      */
     val atUserIds: List<String> = emptyList(),
 
     /**
-     * 原始消息内容（平台特定格式）
+     * Original message content (platform-specific format)
      */
     val rawContent: Any? = null,
 
     /**
-     * 时间戳
+     * Timestamp
      */
     val timestamp: Long = System.currentTimeMillis(),
 ) {

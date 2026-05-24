@@ -1,16 +1,16 @@
 package com.agnetix.harnax.channel.feishu.client
 
 /**
- * 平台 HTTP 响应
- * 封装各平台 webhook 调用的响应结果
+ * Platform HTTP Response
+ * Encapsulates response results from platform webhook calls
  */
 sealed class PlatformResponse {
     /**
-     * 成功响应
-     * @param statusCode HTTP 状态码
-     * @param body 响应体原文
-     * @param platformCode 平台特定的成功码（如 "0"）
-     * @param platformMessage 平台特定的成功消息
+     * Success response
+     * @param statusCode HTTP status code
+     * @param body Response body text
+     * @param platformCode Platform-specific success code (e.g., "0")
+     * @param platformMessage Platform-specific success message
      */
     data class Success(
         val statusCode: Int,
@@ -20,12 +20,12 @@ sealed class PlatformResponse {
     ) : PlatformResponse()
 
     /**
-     * 错误响应
-     * @param statusCode HTTP 状态码
-     * @param body 响应体原文
-     * @param platformCode 平台特定的错误码
-     * @param platformMessage 平台特定的错误消息
-     * @param exception 原始异常
+     * Error response
+     * @param statusCode HTTP status code
+     * @param body Response body text
+     * @param platformCode Platform-specific error code
+     * @param platformMessage Platform-specific error message
+     * @param exception Original exception
      */
     data class Error(
         val statusCode: Int,

@@ -1,11 +1,11 @@
 package com.agnetix.harnax.channel.sdk.config
 
 /**
- * Channel 配置规格
- * 用于定义一个对话通道的完整配置
+ * Channel Configuration Specification
+ * Used to define a complete configuration for a conversation channel
  *
- * 该类作为 SDK 层的平台无关抽象，不依赖任何特定框架。
- * 渠道实现模块可将其与数据库实体映射使用。
+ * This class is a platform-agnostic abstraction at the SDK layer, not dependent on any specific framework.
+ * Channel implementation modules can map it to database entities.
  */
 data class ChannelSpec(
     val id: Long,
@@ -19,7 +19,7 @@ data class ChannelSpec(
     val appSecret: String? = null,
     val callbackKey: String,
     val status: Int = 1,
-    val communicationMode: String = "webhook", // "webhook" 或 "websocket"
+    val communicationMode: String = "webhook", // "webhook" or "websocket"
 ) {
     companion object {
         @JvmStatic

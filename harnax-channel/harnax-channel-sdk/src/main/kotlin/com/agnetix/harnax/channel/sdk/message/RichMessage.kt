@@ -1,29 +1,29 @@
 package com.agnetix.harnax.channel.sdk.message
 
 /**
- * 富消息抽象基类
- * 平台无关的富消息表示，各平台适配器负责转换为平台特定格式
+ * Rich Message Abstract Base Class
+ * Platform-agnostic rich message representation, each platform adaptor is responsible for converting to platform-specific format
  */
 sealed class RichMessage
 
 /**
- * 纯文本消息
+ * Plain Text Message
  */
 data class TextRichMessage(
     val content: String,
 ) : RichMessage()
 
 /**
- * Markdown 格式消息
+ * Markdown Format Message
  */
 data class MarkdownRichMessage(
     val content: String,
 ) : RichMessage()
 
 /**
- * 图片消息
- * @param imageUrl 图片 URL
- * @param mediaId 平台媒体 ID（如果已上传）
+ * Image Message
+ * @param imageUrl Image URL
+ * @param mediaId Platform media ID (if already uploaded)
  */
 data class ImageRichMessage(
     val imageUrl: String,
@@ -31,10 +31,10 @@ data class ImageRichMessage(
 ) : RichMessage()
 
 /**
- * 文件消息
- * @param fileUrl 文件 URL
- * @param fileName 文件名
- * @param mediaId 平台媒体 ID（如果已上传）
+ * File Message
+ * @param fileUrl File URL
+ * @param fileName File name
+ * @param mediaId Platform media ID (if already uploaded)
  */
 data class FileRichMessage(
     val fileUrl: String,
@@ -43,10 +43,10 @@ data class FileRichMessage(
 ) : RichMessage()
 
 /**
- * 卡片消息（交互式卡片）
- * @param title 卡片标题
- * @param elements 卡片内容元素列表
- * @param actions 卡片操作按钮列表
+ * Card Message (interactive card)
+ * @param title Card title
+ * @param elements Card content element list
+ * @param actions Card action button list
  */
 data class CardRichMessage(
     val title: String,
@@ -55,50 +55,50 @@ data class CardRichMessage(
 ) : RichMessage()
 
 /**
- * 卡片元素
+ * Card Element
  */
 sealed class CardElement
 
 /**
- * 文本元素
+ * Text Element
  */
 data class TextCardElement(
     val content: String,
 ) : CardElement()
 
 /**
- * 图片元素
+ * Image Element
  */
 data class ImageCardElement(
     val imageUrl: String,
 ) : CardElement()
 
 /**
- * Markdown 元素
+ * Markdown Element
  */
 data class MarkdownCardElement(
     val content: String,
 ) : CardElement()
 
 /**
- * 分割线元素
+ * Divider Element
  */
 object DividerCardElement : CardElement()
 
 /**
- * 备注元素（小字说明）
+ * Note Element (small text description)
  */
 data class NoteCardElement(
     val text: String,
 ) : CardElement()
 
 /**
- * 卡片操作按钮
+ * Card Action Button
  */
 sealed class CardAction
 
 /**
- * URL 跳转按钮
+ * URL Navigation Button
  */
 data class UrlCardAction(
     val label: String,
@@ -106,7 +106,7 @@ data class UrlCardAction(
 ) : CardAction()
 
 /**
- * 回调按钮（触发回调事件）
+ * Callback Button (triggers callback event)
  */
 data class CallbackCardAction(
     val label: String,
@@ -114,7 +114,7 @@ data class CallbackCardAction(
 ) : CardAction()
 
 /**
- * 复合富消息（包含多个消息）
+ * Composite Rich Message (contains multiple messages)
  */
 data class CompositeRichMessage(
     val messages: List<RichMessage>,

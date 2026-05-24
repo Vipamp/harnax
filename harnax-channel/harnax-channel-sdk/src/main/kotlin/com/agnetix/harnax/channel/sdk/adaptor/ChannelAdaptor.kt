@@ -7,65 +7,65 @@ import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
 
 /**
- * Channel 适配器接口
- * 定义各渠道的通用行为契约
+ * Channel Adapter Interface
+ * Defines the common behavior contract for all channels
  *
- * SDK 版本使用 ChannelRequest 替代 HttpServletRequest，
- * 实现与 Servlet 框架的解耦，使 SDK 可在非 Servlet 环境下使用。
+ * The SDK version uses ChannelRequest instead of HttpServletRequest,
+ * decoupling from the Servlet framework to allow SDK usage in non-Servlet environments.
  *
- * 生命周期:
- * 1. receiveMessage  - 接收并验证消息
- * 2. parseMessage    - 解析消息为统一格式
- * 3. (AgentAdaptor)  - 由 Agent 处理消息
- * 4. buildResponse   - 构建 Agent 回复的响应
- * 5. sendMessage     - 主动推送消息到平台
+ * Lifecycle:
+ * 1. receiveMessage  - Receive and validate message
+ * 2. parseMessage    - Parse message into unified format
+ * 3. (AgentAdaptor)  - Agent processes the message
+ * 4. buildResponse   - Build response for Agent reply
+ * 5. sendMessage     - Push message to platform
  */
 interface ChannelAdaptor {
 
     /**
-     * 获取平台类型
+     * Get platform type
      */
     fun getType(): ChannelType
 
     /**
-     * 验证回调签名
-     * @param request 平台无关的请求对象
-     * @param channel Channel 配置
-     * @return 签名是否有效
+     * Verify callback signature
+     * @param request Platform-agnostic request object
+     * @param channel Channel configuration
+     * @return Whether the signature is valid
      */
     fun verifySignature(request: ChannelRequest, channel: ChannelSpec): Boolean
 
     /**
-     * 解析消息
-     * @param request 平台无关的请求对象
-     * @return 统一消息对象
+     * Parse message
+     * @param request Platform-agnostic request object
+     * @return Unified message object
      */
     fun parseMessage(request: ChannelRequest): ChannelMessage
 
     /**
-     * 构建响应
-     * @param reply AI 回复内容
-     * @param originalMessage 原始消息
-     * @return 平台特定格式的响应
+     * Build response
+     * @param reply AI reply content
+     * @param originalMessage Original message
+     * @return Platform-specific response format
      */
     fun buildResponse(reply: String, originalMessage: ChannelMessage): Any
 
     /**
-     * 推送消息到平台
-     * @param channel Channel 配置
-     * @param sessionId 会话标识
-     * @param message 消息内容
+     * Push message to platform
+     * @param channel Channel configuration
+     * @param sessionId Session identifier
+     * @param message Message content
      */
     suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String)
 
     /**
-     * 发送富消息到平台
-     * @param channel Channel 配置
-     * @param sessionId 会话标识
-     * @param richMessage 富消息对象
+     * Send rich message to platform
+     * @param channel Channel configuration
+     * @param sessionId Session identifier
+     * @param richMessage Rich message object
      */
     suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
-        // 默认实现：将富消息降级为纯文本发送
+        // Default implementation: degrade rich message to plain text
         val textContent = when (richMessage) {
             is com.agnetix.harnax.channel.sdk.message.TextRichMessage -> richMessage.content
             is com.agnetix.harnax.channel.sdk.message.MarkdownRichMessage -> richMessage.content
@@ -75,10 +75,59 @@ interface ChannelAdaptor {
     }
 
     /**
-     * 处理 URL 验证请求（首次配置时的验证）
-     * @param request 平台无关的请求对象
-     * @param channel Channel 配置
-     * @return 验证响应，返回 null 表示非验证请求
+     * Handle URL verification request (verification on initial configuration)
+     * @param request Platform-agnostic request object
+     * @param channel Channel configuration
+     * @return Verification response, null indicates non-verification request
      */
     fun handleUrlVerification(request: ChannelRequest, channel: ChannelSpec): Any? = null
+
+    /**
+     * Whether this channel supports streaming output
+     *
+     * Returns true if the channel can send text fragments incrementally to users,
+     * enabling real-time display of AI responses as they are generated.
+     *
+     * Channels that support streaming:
+     * - HTTP SSE: Each text fragment can be sent as a separate SSE event
+     * - Some platforms that support message update/edit APIs
+     *
+     * Channels that don't support streaming:
+     * - WeChat: Can only send complete messages via ILinkClient
+     * - Feishu: API doesn't support partial message updates
+     * - DingTalk: Similar limitations
+     *
+     * @return Whether streaming output is supported
+     */
+    fun supportsStreamingOutput(): Boolean = false
+
+    /**
+     * Send streaming text fragment
+     *
+     * Called by ChannelChatService for each TextStreamEvent when the channel
+     * supports real-time streaming output (supportsStreamingOutput() = true).
+     *
+     * Only effective when supportsStreamingOutput() returns true.
+     * Default implementation is no-op.
+     *
+     * @param channel Channel configuration
+     * @param sessionId Session identifier
+     * @param fragment Text fragment content
+     * @param isLast Whether this is the last fragment
+     */
+    suspend fun sendStreamingFragment(channel: ChannelSpec, sessionId: String, fragment: String, isLast: Boolean) {}
+
+    /**
+     * Send typing indicator
+     *
+     * Called by ChannelChatService to show a "thinking/typing" indicator
+     * to the user while the AI is processing the response.
+     *
+     * Useful for channels that don't support streaming output but can
+     * display a typing indicator (e.g., WeChat supports "typing" status).
+     *
+     * @param channel Channel configuration
+     * @param sessionId Session identifier
+     */
+    suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {}
 }

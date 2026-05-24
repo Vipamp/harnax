@@ -1,14 +1,15 @@
 package com.agnetix.harnax.channel.sdk.config
 
 /**
- * Channel 类型枚举
- * 支持的机器人平台类型
+ * Channel Type Enum
+ * Supported bot platform types
  */
 enum class ChannelType(val code: String, val displayName: String) {
-    WECOM("wecom", "企业微信"),
-    FEISHU("feishu", "飞书"),
-    DINGTALK("dingtalk", "钉钉"),
-    HTTP("http", "HTTP接口"),
+    WECOM("wecom", "WeCom"),
+    WECHAT("wechat", "WeChat"),
+    FEISHU("feishu", "Feishu"),
+    DINGTALK("dingtalk", "DingTalk"),
+    HTTP("http", "HTTP API"),
     ;
 
     companion object {

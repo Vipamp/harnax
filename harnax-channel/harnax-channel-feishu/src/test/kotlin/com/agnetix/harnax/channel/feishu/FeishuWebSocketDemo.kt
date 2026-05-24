@@ -1,28 +1,39 @@
 package com.agnetix.harnax.channel.feishu
 
+import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
+import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
+import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
+import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
-import kotlinx.coroutines.runBlocking
+import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import java.util.Scanner
 
 /**
- * 飞书 WebSocket 长连接模式演示
+ * Feishu WebSocket Long Connection Mode Demo
  *
- * 功能：
- * 1. 演示如何配置飞书 WebSocket 模式
- * 2. 说明 WebSocket 模式的使用场景和优势
- * 3. 提供完整的配置示例和使用指南
+ * Features:
+ * 1. Demonstrates how to configure Feishu WebSocket mode
+ * 2. Explains use cases and advantages of WebSocket mode
+ * 3. Provides complete configuration examples and usage guide
+ * 4. Shows ChannelChatService integration with startChannelWithAgent()
  *
- * 使用方法：
- * 1. 在飞书开放平台创建企业自建应用
- * 2. 获取 App ID 和 App Secret
- * 3. 运行此 Demo，输入凭证即可查看配置示例
+ * Two processing modes:
+ * - Method A: startChannelWithAgent() (recommended) - one-line setup with automatic orchestration
+ * - Method B: startChannel() + manual message handling - fine-grained control
  *
- * 优势：
- * - 无需公网 IP 或域名
- * - 无需内网穿透工具
- * - 内置加密和鉴权
- * - 适用于本地开发和内网部署
+ * Usage:
+ * 1. Create an enterprise self-built application on Feishu Open Platform
+ * 2. Get App ID and App Secret
+ * 3. Run this Demo, enter credentials to view configuration examples
+ *
+ * Advantages:
+ * - No public IP or domain required
+ * - No intranet penetration tools needed
+ * - Built-in encryption and authentication
+ * - Suitable for local development and intranet deployment
  */
 object FeishuWebSocketDemo {
 
@@ -31,55 +42,55 @@ object FeishuWebSocketDemo {
     @JvmStatic
     fun main(args: Array<String>) {
         println("=".repeat(70))
-        println("飞书 WebSocket 长连接模式演示")
+        println("Feishu WebSocket Long Connection Mode Demo")
         println("=".repeat(70))
 
         println(
             """
             
-            【使用说明】
-            1. 登录飞书开放平台: https://open.feishu.cn
-            2. 创建企业自建应用
-            3. 获取应用的 App ID 和 App Secret
-            4. 在应用中启用机器人功能
-            5. 添加事件订阅：im.message.receive_v1
-            6. 运行此演示进行验证测试
+            [Usage Instructions]
+            1. Login to Feishu Open Platform: https://open.feishu.cn
+            2. Create an enterprise self-built application
+            3. Get the application's App ID and App Secret
+            4. Enable bot functionality in the application
+            5. Add event subscription: im.message.receive_v1
+            6. Run this demo for verification testing
             
-            【WebSocket 模式优势】
-            - 无需公网 IP 或域名
-            - 无需内网穿透（如 ngrok）
-            - 内置加密传输，无需处理签名
-            - 适用于本地开发环境和内网部署
+            [WebSocket Mode Advantages]
+            - No public IP or domain required
+            - No intranet penetration (e.g., ngrok) needed
+            - Built-in encrypted transmission, no signature handling needed
+            - Suitable for local development environment and intranet deployment
             
             """.trimIndent(),
         )
 
-        // 获取用户输入
-        println("\n【步骤 1】请输入飞书应用配置")
+        // Get user input
+        println("\n[Step 1] Please enter Feishu application configuration")
         println("-".repeat(70))
 
-        print("请输入 App ID (例如: cli_xxxxxxxxxxxxx): ")
+        print("Please enter App ID (e.g., cli_xxxxxxxxxxxxx): ")
         val appId = scanner.nextLine().trim()
 
-        print("请输入 App Secret: ")
+        print("Please enter App Secret: ")
         val appSecret = scanner.nextLine().trim()
 
         if (appId.isBlank() || appSecret.isBlank()) {
-            println("\n❌ 错误: App ID 和 App Secret 不能为空")
+            println("\n❌ Error: App ID and App Secret cannot be empty")
             return
         }
 
-        println("\n✅ 配置信息已接收")
+        println("\n✅ Configuration information received")
         println("  - App ID: ${maskSecret(appId, 4, 4)}")
         println("  - App Secret: ${maskSecret(appSecret)}")
 
-        // 创建 Channel 配置
-        println("\n【步骤 2】创建飞书 Channel 配置 (WebSocket 模式)")
+        // Create Channel configuration
+        println("\n[Step 2] Create Feishu Channel configuration (WebSocket mode)")
         println("-".repeat(70))
 
         val channel = ChannelSpec.builder()
             .id(1L)
-            .name("飞书 WebSocket 演示")
+            .name("Feishu WebSocket Demo")
             .type(ChannelType.FEISHU)
             .agentId(1L)
             .callbackKey("feishu-ws-demo")
@@ -88,150 +99,144 @@ object FeishuWebSocketDemo {
             .communicationMode("websocket")
             .build()
 
-        println("✅ Channel 配置创建成功:")
+        println("✅ Channel configuration created successfully:")
         println("  - 名称: ${channel.name}")
         println("  - 类型: ${channel.type.displayName}")
         println("  - 通信模式: ${channel.communicationMode}")
         println("  - App ID: ${maskSecret(channel.appId ?: "", 4, 4)}")
         println("  - Agent ID: ${channel.agentId}")
 
-        // 启动 WebSocket 连接
-        println("\n【步骤 3】启动 WebSocket 连接")
+        // Start WebSocket connection
+        println("\n[Step 3] Start WebSocket connection")
         println("-".repeat(70))
 
         val adaptor = FeishuAdaptor()
-        adaptor.startChannel(channel) { message ->
-            // 处理接收到的消息
-            println("收到消息: ${message.content}")
+        val agentAdaptor = DemoFeishuAgent()
+        val sessionManager = DemoSessionManager()
 
-            // 调用 AI 模型生成回复
-            val reply = "Hello: ${message.content}"
-            // 发送回复
-            runBlocking {
-                adaptor.sendMessage(channel, message.sessionId, reply)
-            }
-        }
+        // Method A: Recommended - use startChannelWithAgent() for automatic orchestration
+        // This automatically handles: session management, AI processing, message sending
+        adaptor.startChannelWithAgent(channel, agentAdaptor, sessionManager)
 
-        println("✅ WebSocket 连接已启动")
+        println("✅ WebSocket connection started")
 
-        // 阻塞主线程保持运行
-        println("\n输入 'quit' 退出...")
+        // Block main thread to keep running
+        println("\nType 'quit' to exit...")
         while (true) {
             val input = scanner.nextLine()
             if (input.lowercase() == "quit") {
                 adaptor.stopChannel(channel)
-                println("✅ WebSocket 连接已关闭")
+                println("✅ WebSocket connection closed")
                 break
             }
         }
 
-        // 显示配置说明
-        println("\n【步骤 4】WebSocket 模式配置说明")
+        // Display configuration instructions
+        println("\n[Step 4] WebSocket Mode Configuration Guide")
         println("-".repeat(70))
 
         println(
             """
-            📋 WebSocket 模式配置清单：
+            📋 WebSocket Mode Configuration Checklist:
             
-            ✅ 已完成：
-            1. 创建 ChannelSpec 并设置 communicationMode="websocket"
-            2. 配置 appId 和 appSecret（必需）
-            3. 设置 callbackKey 用于标识通道
+            ✅ Completed:
+            1. Created ChannelSpec with communicationMode="websocket"
+            2. Configured appId and appSecret (required)
+            3. Set callbackKey to identify the channel
             
-            📝 后续需要在飞书开放平台完成：
-            1. 启用机器人功能
-               路径：应用详情 -> 机器人 -> 启用机器人
+            📝 Remaining tasks to complete on Feishu Open Platform:
+            1. Enable bot functionality
+               Path: App Details -> Bot -> Enable Bot
             
-            2. 添加事件订阅
-               路径：应用详情 -> 事件订阅 -> 添加事件
-               事件类型：im.message.receive_v1（接收消息 v2.0）
+            2. Add event subscription
+               Path: App Details -> Event Subscription -> Add Event
+               Event type: im.message.receive_v1 (Receive Message v2.0)
             
-            3. 发布应用版本
-               路径：应用版本管理与发布 -> 创建版本 -> 申请发布
+            3. Publish application version
+               Path: App Version Management & Publishing -> Create Version -> Apply for Publishing
             
-            4. 将机器人添加到群聊
-               在群聊设置中添加应用机器人
+            4. Add bot to group chat
+               Add application bot in group chat settings
             
             """.trimIndent(),
         )
 
-        // 显示代码示例
-        println("\n【步骤 5】代码使用示例")
+        // Display code example
+        println("\n[Step 5] Code Usage Example")
         println("-".repeat(70))
 
         println(
             """
-            💻 Kotlin 代码示例：
+            💻 Kotlin Code Example (Recommended - startChannelWithAgent):
             
-            // 1. 创建飞书适配器
+            // 1. Create Feishu adaptor and AI agent
             val adaptor = FeishuAdaptor()
+            val agentAdaptor = YourAgentAdaptor()  // Implement AgentAdaptor
+            val sessionManager = YourSessionManager()  // Implement ChannelSessionManager
             
-            // 2. 创建 Channel 配置
+            // 2. Create Channel configuration
             val channel = ChannelSpec.builder()
                 .id(1L)
-                .name("飞书机器人")
+                .name("Feishu Bot")
                 .type(ChannelType.FEISHU)
                 .agentId(1L)
                 .appId("your_app_id")
                 .appSecret("your_app_secret")
-                .communicationMode("websocket")  // ← 关键配置
+                .communicationMode("websocket")  // ← Key configuration
                 .callbackKey("feishu-bot")
                 .build()
             
-            // 3. 启动 WebSocket 连接
+            // 3. Start WebSocket channel with AI Agent (one-line setup)
+            //    This automatically handles: receive → AgentAdaptor → send reply
+            adaptor.startChannelWithAgent(channel, agentAdaptor, sessionManager)
+            
+            --- Alternative: Manual message handling ---
+            
             adaptor.startChannel(channel) { message ->
-                // 4. 处理接收到的消息
-                println("收到消息: ${'$'}{message.content}")
-                
-                // 5. 调用 AI 模型生成回复
                 val reply = callAIModel(message.content)
-                
-                // 6. 发送回复
-                runBlocking {
-                    adaptor.sendMessage(channel, message.sessionId, reply)
-                }
+                adaptor.sendMessage(channel, message.sessionId, reply)
             }
             
             """.trimIndent(),
         )
 
-        // 显示 Webhook vs WebSocket 对比
-        println("\n【步骤 6】Webhook vs WebSocket 对比")
+        // Display Webhook vs WebSocket comparison
+        println("\n[Step 6] Webhook vs WebSocket Comparison")
         println("-".repeat(70))
 
         println(
             """
-            📊 两种通信模式对比：
+            📊 Two Communication Modes Comparison:
             
             ┌──────────────────┬──────────────────┬──────────────────┐
-            │ 特性             │ Webhook 模式     │ WebSocket 模式   │
+            │ Feature          │ Webhook Mode     │ WebSocket Mode   │
             ├──────────────────┼──────────────────┼──────────────────┤
-            │ 公网 IP          │ ✅ 需要          │ ❌ 不需要        │
-            │ 域名             │ ✅ 需要          │ ❌ 不需要        │
-            │ 内网穿透         │ ✅ 需要 (开发)   │ ❌ 不需要        │
-            │ 签名验证         │ ✅ 需要处理      │ ❌ SDK 自动处理  │
-            │ 消息延迟         │ 低               │ 低               │
-            │ 适用场景         │ 生产环境         │ 开发/内网环境    │
-            │ 配置复杂度       │ 中等             │ 简单             │
-            │ 网络要求         │ 可接收外部请求   │ 可访问公网       │
+            │ Public IP        │ ✅ Required      │ ❌ Not required  │
+            │ Domain           │ ✅ Required      │ ❌ Not required  │
+            │ Intranet Penetr. │ ✅ Required (Dev)│ ❌ Not required  │
+            │ Signature Verify │ ✅ Manual handle │ ❌ SDK automatic │
+            │ Message Latency  │ Low              │ Low              │
+            │ Use Case         │ Production       │ Dev/Intranet     │
+            │ Config Complexity│ Medium           │ Simple           │
+            │ Network Require. │ Receive external │ Access public    │
             └──────────────────┴──────────────────┴──────────────────┘
             
-            💡 推荐：
-            - 本地开发：使用 WebSocket 模式
-            - 内网部署：使用 WebSocket 模式
-            - 公网生产：使用 Webhook 模式（更稳定）
+            💡 Recommendations:
+            - Local development: Use WebSocket mode
+            - Intranet deployment: Use WebSocket mode
+            - Public production: Use Webhook mode (more stable)
             
             """.trimIndent(),
         )
 
-        // 完成
+        // Complete
         println("\n" + "=".repeat(70))
-        println("飞书 WebSocket 演示完成！")
+        println("Feishu WebSocket Demo completed!")
         println("=".repeat(70))
     }
 
     /**
-     * 隐藏敏感信息
+     * Mask sensitive information
      */
     private fun maskSecret(
         secret: String,
@@ -245,5 +250,56 @@ object FeishuWebSocketDemo {
         val end = if (showEnd > 0) secret.takeLast(showEnd) else ""
         val middle = "*".repeat(secret.length - showStart - showEnd)
         return "$start$middle$end"
+    }
+}
+
+/**
+ * Demo Feishu AI Agent
+ *
+ * Simple AgentAdaptor implementation for Feishu demo.
+ * In actual projects, replace with LLM API integration.
+ */
+class DemoFeishuAgent : AgentAdaptor() {
+
+    override fun getName(): String = "demo-feishu-agent"
+
+    override fun supportsStreaming(): Boolean = true
+
+    override suspend fun process(context: AgentContext): AgentResponse {
+        val userMessage = context.message.content
+        val reply = "Hello! I received your message: \"$userMessage\""
+        return AgentResponse(content = reply, shouldReply = true)
+    }
+
+    override fun streamProcess(context: AgentContext): Flow<AgentStreamEvent> = flow {
+        val userMessage = context.message.content
+        val reply = "Hello! I received your message: \"$userMessage\""
+        emit(AgentStreamEvent.TextStreamEvent(reply, true))
+        emit(AgentStreamEvent.EndStreamEvent(fullContent = reply))
+    }
+}
+
+/**
+ * Demo Session Manager
+ *
+ * In-memory implementation for demo purposes.
+ * In actual projects, replace with database-backed implementation.
+ */
+class DemoSessionManager : ChannelSessionManager {
+    private val sessions = mutableMapOf<String, MutableList<com.agnetix.harnax.channel.sdk.message.ChannelMessage>>()
+
+    override suspend fun getHistory(channelId: Long, sessionId: String, limit: Int): List<com.agnetix.harnax.channel.sdk.message.ChannelMessage> {
+        val key = "$channelId-$sessionId"
+        return sessions[key]?.takeLast(limit) ?: emptyList()
+    }
+
+    override suspend fun addMessage(channelId: Long, message: com.agnetix.harnax.channel.sdk.message.ChannelMessage) {
+        val key = "$channelId-${message.sessionId}"
+        sessions.getOrPut(key) { mutableListOf() }.add(message)
+    }
+
+    override suspend fun clearHistory(channelId: Long, sessionId: String) {
+        val key = "$channelId-$sessionId"
+        sessions.remove(key)
     }
 }

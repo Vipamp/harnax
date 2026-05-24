@@ -5,41 +5,41 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageRole
 
 /**
- * Channel 会话管理接口
- * 用于管理多轮对话的历史消息
+ * Channel Session Management Interface
+ * Used to manage multi-turn conversation history
  *
- * 该接口是 SDK 层的平台无关抽象，
- * 具体实现可基于内存、数据库、Redis 等存储。
+ * This interface is a platform-agnostic abstraction at the SDK level,
+ * specific implementations can be based on memory, database, Redis, etc.
  */
 interface ChannelSessionManager {
 
     /**
-     * 获取会话的历史消息
+     * Get session history messages
      * @param channelId Channel ID
-     * @param sessionId 会话标识
-     * @param limit 限制返回的消息数量
-     * @return 历史消息列表
+     * @param sessionId Session identifier
+     * @param limit Limit number of returned messages
+     * @return History message list
      */
     suspend fun getHistory(channelId: Long, sessionId: String, limit: Int = 20): List<ChannelMessage>
 
     /**
-     * 添加消息到会话
+     * Add message to session
      * @param channelId Channel ID
-     * @param message 消息对象
+     * @param message Message object
      */
     suspend fun addMessage(channelId: Long, message: ChannelMessage)
 
     /**
-     * 清除会话历史
+     * Clear session history
      * @param channelId Channel ID
-     * @param sessionId 会话标识
+     * @param sessionId Session identifier
      */
     suspend fun clearHistory(channelId: Long, sessionId: String)
 
     /**
-     * 将历史消息转换为 Agent 可用的格式
-     * @param messages 历史消息列表
-     * @return Agent 可用的消息列表
+     * Convert history messages to Agent-compatible format
+     * @param messages History message list
+     * @return Agent-compatible message list
      */
     fun toAgentMessages(messages: List<ChannelMessage>): List<AgentMessage> = messages.map { msg ->
         AgentMessage(

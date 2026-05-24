@@ -3,8 +3,8 @@ package com.agnetix.harnax.channel.sdk.error
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 
 /**
- * Channel 模块异常基类
- * 所有 Channel 相关操作的异常都继承自此类
+ * Channel Module Exception Base Class
+ * All Channel-related operation exceptions inherit from this class
  */
 sealed class ChannelException(
     override val message: String,
@@ -12,15 +12,15 @@ sealed class ChannelException(
 ) : RuntimeException(message, cause)
 
 /**
- * Channel 未找到异常
+ * Channel Not Found Exception
  */
 class ChannelNotFoundException(
     val channelId: Long,
 ) : ChannelException("Channel $channelId not found")
 
 /**
- * Channel 发送消息异常
- * 携带平台特定的错误码和错误信息
+ * Channel Send Message Exception
+ * Carries platform-specific error code and error message
  */
 class ChannelSendException(
     val channelType: ChannelType,
@@ -30,7 +30,7 @@ class ChannelSendException(
 ) : ChannelException(message, cause)
 
 /**
- * Channel 签名验证失败异常
+ * Channel Signature Verification Failed Exception
  */
 class ChannelSignatureException(
     val channelType: ChannelType,
@@ -38,7 +38,7 @@ class ChannelSignatureException(
 ) : ChannelException("Signature verification failed for ${channelType.displayName}: $detail")
 
 /**
- * Channel 配置不完整异常
+ * Channel Configuration Incomplete Exception
  */
 class ChannelConfigException(
     val channelId: Long,
@@ -46,7 +46,7 @@ class ChannelConfigException(
 ) : ChannelException("Channel $channelId missing required config: ${missingFields.joinToString()}")
 
 /**
- * Channel 请求超时异常
+ * Channel Request Timeout Exception
  */
 class ChannelTimeoutException(
     val channelType: ChannelType,
@@ -54,7 +54,7 @@ class ChannelTimeoutException(
 ) : ChannelException("Request timed out for ${channelType.displayName} after ${timeoutMs}ms")
 
 /**
- * Channel 频率限制异常
+ * Channel Rate Limit Exception
  */
 class ChannelRateLimitException(
     val channelType: ChannelType,

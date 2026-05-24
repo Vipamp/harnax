@@ -3,13 +3,13 @@ package com.agnetix.harnax.channel.feishu
 import com.agnetix.harnax.channel.sdk.message.*
 
 /**
- * 飞书消息构建器
- * 将平台无关的 RichMessage 转换为飞书 webhook JSON 格式
+ * Feishu Message Builder
+ * Converts platform-agnostic RichMessage to Feishu webhook JSON format
  */
 object FeishuMessageBuilder {
 
     /**
-     * 构建纯文本消息
+     * Build plain text message
      */
     fun buildText(content: String): Map<String, Any> = mapOf(
         "msg_type" to "text",
@@ -17,7 +17,7 @@ object FeishuMessageBuilder {
     )
 
     /**
-     * 构建富文本消息（飞书使用 post 类型模拟 Markdown）
+     * Build rich text message (Feishu uses post type to simulate Markdown)
      */
     fun buildPost(title: String, content: String): Map<String, Any> {
         val contentElements = content.lines()
@@ -40,7 +40,7 @@ object FeishuMessageBuilder {
     }
 
     /**
-     * 构建图片消息
+     * Build image message
      */
     fun buildImage(imageKey: String): Map<String, Any> = mapOf(
         "msg_type" to "image",
@@ -48,7 +48,7 @@ object FeishuMessageBuilder {
     )
 
     /**
-     * 构建文件消息
+     * Build file message
      */
     fun buildFile(fileKey: String): Map<String, Any> = mapOf(
         "msg_type" to "file",
@@ -56,7 +56,7 @@ object FeishuMessageBuilder {
     )
 
     /**
-     * 构建交互式卡片消息
+     * Build interactive card message
      */
     fun buildInteractiveCard(
         title: String,
@@ -148,7 +148,7 @@ object FeishuMessageBuilder {
     }
 
     /**
-     * 从 RichMessage 自动构建消息
+     * Auto-build message from RichMessage
      */
     fun buildFromRichMessage(richMessage: RichMessage): Map<String, Any> = when (richMessage) {
         is TextRichMessage -> buildText(richMessage.content)

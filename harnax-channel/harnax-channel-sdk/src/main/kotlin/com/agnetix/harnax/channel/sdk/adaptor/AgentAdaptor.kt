@@ -4,23 +4,34 @@ import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.message.AgentMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 
 /**
- * Agent 消息处理器抽象类
+ * Agent Message Processor Abstract Class
  *
- * 作为 SDK 的核心抽象，定义了消息从渠道接收到处理完成的生命周期：
- * 1. 渠道接收消息 → ChannelAdaptor 解析为 ChannelMessage
- * 2. AgentAdaptor.process() 处理 ChannelMessage，产生 AgentResponse
- * 3. ChannelAdaptor 将 AgentResponse 通过原渠道发送回去
+ * As the core abstraction of the SDK, it defines the lifecycle of message processing
+ * from channel reception to completion:
+ * 1. Channel receives message → ChannelAdaptor parses it into ChannelMessage
+ * 2. AgentAdaptor.process()/streamProcess() handles ChannelMessage, produces response
+ * 3. ChannelAdaptor sends response back through the original channel
  *
- * 设计理念：
- * - 平台无关：AgentAdaptor 不关心消息来自哪个渠道（微信/飞书/钉钉/HTTP）
- * - 可扩展：通过 AgentContext 提供完整的上下文信息
- * - 可观测：提供 beforeProcess/afterProcess/onError 钩子
- * - 容错：提供默认的 onError 实现，子类可覆盖
+ * Two processing modes:
+ * - process(): Returns a single AgentResponse (batch mode, suitable for simple agents)
+ * - streamProcess(): Returns Flow<AgentStreamEvent> (streaming mode, suitable for AI agents with real-time output)
  *
- * 使用方式：
+ * Default streamProcess() implementation wraps process() result into a single-element Flow,
+ * so subclasses only implementing process() will still work with streaming infrastructure.
+ *
+ * Design Principles:
+ * - Platform-agnostic: AgentAdaptor doesn't care which channel the message comes from (WeChat/Feishu/DingTalk/HTTP)
+ * - Extensible: Provides complete context information through AgentContext
+ * - Observable: Offers beforeProcess/afterProcess/onError hooks
+ * - Fault-tolerant: Provides default onError implementation that subclasses can override
+ *
+ * Usage:
  * ```
+ * // Batch mode (simple agent)
  * class MyAgentAdaptor : AgentAdaptor() {
  *     override fun getName() = "my-agent"
  *
@@ -29,143 +40,190 @@ import com.agnetix.harnax.channel.sdk.message.RichMessage
  *         return AgentResponse(content = reply)
  *     }
  * }
+ *
+ * // Streaming mode (AI agent with real-time output)
+ * class MyStreamingAgentAdaptor : AgentAdaptor() {
+ *     override fun getName() = "my-streaming-agent"
+ *     override fun supportsStreaming() = true
+ *
+ *     override fun streamProcess(context: AgentContext): Flow<AgentStreamEvent> {
+ *         return callLLMStream(context.message.content, context.history)
+ *             .map { AgentStreamEvent.TextStreamEvent(it, false) }
+ *             .concatWith(flow { emit(AgentStreamEvent.EndStreamEvent()) })
+ *     }
+ * }
  * ```
  */
 abstract class AgentAdaptor {
 
     /**
-     * 获取 Agent 名称/标识
-     * 用于日志记录和监控
+     * Get Agent name/identifier
+     * Used for logging and monitoring
      */
     abstract fun getName(): String
 
     /**
-     * 处理消息 - 核心处理逻辑
+     * Process message - core processing logic
      *
-     * 接收来自渠道的消息，经过 Agent 处理后返回响应。
-     * 这是整个消息处理流程的核心方法，子类必须实现。
+     * Receives messages from the channel, processes them through the Agent, and returns a response.
+     * This is the core method of the entire message processing flow and must be implemented by subclasses.
      *
-     * @param context 消息处理上下文，包含原始消息、历史记录、渠道配置等
-     * @return Agent 处理结果
+     * @param context Message processing context, containing original message, history, channel config, etc.
+     * @return Agent processing result
      */
     abstract suspend fun process(context: AgentContext): AgentResponse
 
     /**
-     * 判断是否支持处理该消息
+     * Streaming process message - returns a Flow of stream events
      *
-     * 可根据消息类型、渠道类型等条件过滤。
-     * 返回 false 时，该消息将被跳过，不会调用 process()。
+     * This method enables real-time output from AI agents. Each AgentStreamEvent represents
+     * a fragment of the AI response (text, thinking, completion, or error).
      *
-     * @param message 渠道消息
-     * @return 是否支持处理
+     * Default implementation wraps the process() result into a single-element Flow:
+     * - Emits TextStreamEvent with the complete response content
+     * - Emits EndStreamEvent to signal completion
+     *
+     * Subclasses that support streaming should override this method to emit text fragments
+     * incrementally, providing a better user experience for channels that support real-time output.
+     *
+     * @param context Message processing context
+     * @return Flow of AgentStreamEvent events
+     */
+    open fun streamProcess(context: AgentContext): Flow<AgentStreamEvent> = flow {
+        val response = process(context)
+        emit(AgentStreamEvent.TextStreamEvent(response.content, true))
+        emit(AgentStreamEvent.EndStreamEvent(fullContent = response.content))
+    }
+
+    /**
+     * Whether this AgentAdaptor supports streaming output
+     *
+     * Returns true if streamProcess() emits incremental TextStreamEvent fragments
+     * (i.e., not just wrapping process() result as a single event).
+     *
+     * ChannelChatService uses this flag together with ChannelAdaptor.supportsStreamingOutput()
+     * to decide the output strategy:
+     * - Both true → Send each text fragment immediately (real-time streaming)
+     * - Either false → Buffer all text and send as single message (batch mode)
+     *
+     * @return Whether streaming output is supported
+     */
+    open fun supportsStreaming(): Boolean = false
+
+    /**
+     * Determine whether to support processing this message
+     *
+     * Can filter based on message type, channel type, etc.
+     * Returns false to skip the message without calling process().
+     *
+     * @param message Channel message
+     * @return Whether to support processing
      */
     open fun supports(message: ChannelMessage): Boolean = true
 
     /**
-     * 处理前的钩子
+     * Pre-processing hook
      *
-     * 在 process() 之前调用，可用于：
-     * - 预处理消息内容
-     * - 记录请求日志
-     * - 限流检查
-     * - 上下文增强
+     * Called before process(), can be used for:
+     * - Pre-processing message content
+     * - Logging request information
+     * - Rate limit checks
+     * - Context enhancement
      *
-     * @param context 消息处理上下文
+     * @param context Message processing context
      */
     open suspend fun onBeforeProcess(context: AgentContext) {}
 
     /**
-     * 处理后的钩子
+     * Post-processing hook
      *
-     * 在 process() 成功完成后调用，可用于：
-     * - 记录响应日志
-     * - 统计指标
-     * - 消息持久化
+     * Called after process() completes successfully, can be used for:
+     * - Logging response information
+     * - Metrics collection
+     * - Message persistence
      *
-     * @param context 消息处理上下文
-     * @param response Agent 处理结果
+     * @param context Message processing context
+     * @param response Agent processing result
      */
     open suspend fun onAfterProcess(context: AgentContext, response: AgentResponse) {}
 
     /**
-     * 处理异常的钩子
+     * Error handling hook
      *
-     * 在 process() 抛出异常时调用，可用于：
-     * - 降级响应
-     * - 异常上报
-     * - 重试逻辑
+     * Called when process() throws an exception, can be used for:
+     * - Degraded response
+     * - Error reporting
+     * - Retry logic
      *
-     * 默认实现返回一条错误提示消息。
+     * Default implementation returns an error message.
      *
-     * @param context 消息处理上下文
-     * @param error 异常对象
-     * @return 降级的 Agent 响应
+     * @param context Message processing context
+     * @param error Exception object
+     * @return Degraded Agent response
      */
-    open suspend fun onError(context: AgentContext, error: Throwable): AgentResponse {
-        return AgentResponse(
-            content = "抱歉，处理您的消息时遇到了问题，请稍后重试。",
-            shouldReply = true,
-            metadata = mapOf("error" to (error.message ?: "unknown error")),
-        )
-    }
+    open suspend fun onError(context: AgentContext, error: Throwable): AgentResponse = AgentResponse(
+        content = "Sorry, encountered a problem while processing your message. Please try again later.",
+        shouldReply = true,
+        metadata = mapOf("error" to (error.message ?: "unknown error")),
+    )
 }
 
 /**
- * Agent 消息处理上下文
+ * Agent Message Processing Context
  *
- * 封装了 AgentAdaptor.process() 所需的全部信息，
- * 包括原始消息、会话历史、渠道配置和自定义元数据。
+ * Encapsulates all information required by AgentAdaptor.process(),
+ * including original message, session history, channel configuration, and custom metadata.
  */
 data class AgentContext(
     /**
-     * 原始渠道消息
+     * Original channel message
      */
     val message: ChannelMessage,
 
     /**
-     * 会话历史消息列表
+     * Session history messages
      */
     val history: List<AgentMessage> = emptyList(),
 
     /**
-     * 渠道配置信息
+     * Channel configuration information
      */
     val channelSpec: ChannelSpec,
 
     /**
-     * 自定义元数据
-     * 可用于传递请求级别的附加信息（如 traceId、userId 等）
+     * Custom metadata
+     * Can be used to pass request-level additional information (e.g., traceId, userId, etc.)
      */
     val metadata: Map<String, Any> = emptyMap(),
 )
 
 /**
- * Agent 处理结果
+ * Agent Processing Result
  *
- * AgentAdaptor.process() 的返回类型，
- * 包含处理后的回复内容以及可选的富消息和元数据。
+ * Return type of AgentAdaptor.process(),
+ * Contains the reply content and optional rich message and metadata.
  */
 data class AgentResponse(
     /**
-     * 回复文本内容
+     * Reply text content
      */
     val content: String,
 
     /**
-     * 富消息对象（可选）
-     * 如果设置了富消息，渠道适配器应优先使用富消息发送
+     * Rich message object (optional)
+     * If set, the channel adaptor should prioritize sending the rich message
      */
     val richMessage: RichMessage? = null,
 
     /**
-     * 是否需要回复
-     * 某些场景下 Agent 可能不需要回复（如仅记录日志的旁路处理）
+     * Whether to reply
+     * In some scenarios, the Agent may not need to reply (e.g., bypass processing that only logs)
      */
     val shouldReply: Boolean = true,
 
     /**
-     * 自定义元数据
-     * 可用于传递处理结果的附加信息（如 token 使用量、模型名称等）
+     * Custom metadata
+     * Can be used to pass additional processing result information (e.g., token usage, model name, etc.)
      */
     val metadata: Map<String, Any> = emptyMap(),
 )

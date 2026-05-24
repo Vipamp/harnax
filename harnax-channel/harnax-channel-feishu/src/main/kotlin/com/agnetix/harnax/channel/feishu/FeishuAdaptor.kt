@@ -2,12 +2,15 @@ package com.agnetix.harnax.channel.feishu
 
 import com.agnetix.harnax.channel.feishu.client.PlatformHttpClient
 import com.agnetix.harnax.channel.feishu.client.PlatformResponse
+import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.*
+import com.agnetix.harnax.channel.sdk.service.ChannelChatService
+import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.LoggerFactory
@@ -16,15 +19,15 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * 飞书适配器
- * 处理飞书机器人的回调消息
+ * Feishu Adapter
+ * Handles callback messages from Feishu bot
  *
- * 支持两种通信模式：
- * - Webhook 模式：HTTP 回调，需要公网 IP 或域名
- * - WebSocket 模式：长连接，无需公网，适用于内网环境
+ * Supports two communication modes:
+ * - Webhook mode: HTTP callback, requires public IP or domain
+ * - WebSocket mode: Long connection, no public network needed, suitable for intranet environments
  *
- * 本模块实现 SDK 的 ChannelAdaptor 接口，
- * 使用 ChannelRequest 替代 HttpServletRequest，与 Servlet 框架解耦。
+ * This module implements the SDK's ChannelAdaptor interface,
+ * using ChannelRequest instead of HttpServletRequest, decoupled from Servlet framework.
  */
 class FeishuAdaptor(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
@@ -33,18 +36,18 @@ class FeishuAdaptor(
     private val logger = LoggerFactory.getLogger(FeishuAdaptor::class.java)
     private val objectMapper = ObjectMapper().registerKotlinModule()
 
-    // WebSocket 通信模式实例
+    // WebSocket communication mode instance
     private val webSocketMode: FeishuWebSocketMode = FeishuWebSocketMode(httpClient)
 
     override fun getType(): ChannelType = ChannelType.FEISHU
 
     /**
-     * 验证回调签名
-     * 使用平台无关的 ChannelRequest 替代 HttpServletRequest
+     * Verify callback signature
+     * Uses platform-agnostic ChannelRequest instead of HttpServletRequest
      *
-     * 飞书签名验证逻辑：
-     * 签名内容 = timestamp + nonce + appSecret + body
-     * 签名算法 = HmacSHA256(appSecret, 签名内容)
+     * Feishu signature verification logic:
+     * Signature content = timestamp + nonce + appSecret + body
+     * Signature algorithm = HmacSHA256(appSecret, signature content)
      */
     override fun verifySignature(request: ChannelRequest, channel: ChannelSpec): Boolean {
         val signature = request.headers["X-Lark-Signature"] ?: return false
@@ -59,8 +62,8 @@ class FeishuAdaptor(
     }
 
     /**
-     * 解析消息
-     * 使用平台无关的 ChannelRequest 替代 HttpServletRequest
+     * Parse message
+     * Uses platform-agnostic ChannelRequest instead of HttpServletRequest
      */
     override fun parseMessage(request: ChannelRequest): ChannelMessage {
         val body = request.body
@@ -94,57 +97,73 @@ class FeishuAdaptor(
         }
     }
 
-    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any {
-        return mapOf(
-            "code" to 0,
-            "msg" to "success",
-            "data" to mapOf(
-                "content" to reply,
-            ),
-        )
-    }
+    override fun buildResponse(reply: String, originalMessage: ChannelMessage): Any = mapOf(
+        "code" to 0,
+        "msg" to "success",
+        "data" to mapOf(
+            "content" to reply,
+        ),
+    )
 
     /**
-     * 推送消息到平台
-     * 根据通信模式自动选择发送方式
+     * Push message to platform
+     * Automatically selects sending method based on communication mode
      */
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         getMode(channel).sendMessage(channel, sessionId, message)
     }
 
     /**
-     * 发送富消息
+     * Send rich message
      */
     override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
         getMode(channel).sendRichMessage(channel, sessionId, richMessage)
     }
 
     /**
-     * 处理 URL 验证请求
-     * 飞书首次配置 Webhook 时会发送验证请求
+     * Feishu does not support streaming output
+     *
+     * Feishu Open API does not support partial message updates,
+     * messages must be sent as complete content.
      */
-    override fun handleUrlVerification(request: ChannelRequest, channel: ChannelSpec): Any? {
-        return try {
-            val event = objectMapper.readValue(request.body, FeishuEvent::class.java)
-            if (event.type == "url_verification") {
-                mapOf("challenge" to (event.challenge ?: ""))
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
-        }
+    override fun supportsStreamingOutput(): Boolean = false
+
+    /**
+     * Send typing indicator
+     *
+     * Feishu API does not currently support a typing indicator,
+     * this is a no-op implementation that can be extended in the future
+     * if Feishu adds such API support.
+     */
+    override suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {
+        // Feishu API does not support typing indicator yet, no-op
+        logger.debug("Typing indicator not supported by Feishu, skipping for session $sessionId")
     }
 
     /**
-     * 根据 channel 配置获取当前使用的通信模式
+     * Handle URL verification request
+     * Feishu sends a verification request when configuring Webhook for the first time
+     */
+    override fun handleUrlVerification(request: ChannelRequest, channel: ChannelSpec): Any? = try {
+        val event = objectMapper.readValue(request.body, FeishuEvent::class.java)
+        if (event.type == "url_verification") {
+            mapOf("challenge" to (event.challenge ?: ""))
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Get the current communication mode based on channel configuration
      */
     private fun getMode(channel: ChannelSpec): ChannelCommunicationMode = when (channel.communicationMode) {
         "websocket" -> webSocketMode
         else -> {
-            // Webhook 模式：直接使用 httpClient 发送
-            // Webhook 模式下，消息接收由外部 Controller 处理
-            // 这里只处理发送逻辑
+            // Webhook mode: directly use httpClient to send
+            // In Webhook mode, message receiving is handled by external Controller
+            // This only handles sending logic
             object : ChannelCommunicationMode {
                 override fun getModeName() = "webhook"
                 override fun isCallbackMode() = true
@@ -185,21 +204,52 @@ class FeishuAdaptor(
     }
 
     /**
-     * 启动通道（用于 WebSocket 模式）
+     * Start channel (for WebSocket mode)
      */
     fun startChannel(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         getMode(channel).start(channel, messageHandler)
     }
 
     /**
-     * 停止通道（用于 WebSocket 模式）
+     * Start Feishu channel with AI Agent integration
+     *
+     * Convenience method that creates ChannelChatService internally and
+     * automatically handles the complete message processing flow:
+     * 1. Start WebSocket/Webhook communication mode
+     * 2. Each incoming message is processed by ChannelChatService.chat():
+     *    - Save user message to session
+     *    - Call AgentAdaptor for AI processing
+     *    - Determine output strategy (batch for Feishu)
+     *    - Send AI reply via Feishu
+     *    - Save AI reply to session
+     *
+     * Feishu uses batch mode (supportsStreamingOutput=false):
+     * - Messages are sent as complete content after AI processing finishes
+     *
+     * @param channel Channel configuration
+     * @param agentAdaptor AI Agent processor
+     * @param sessionManager Session manager for conversation history
+     */
+    fun startChannelWithAgent(
+        channel: ChannelSpec,
+        agentAdaptor: AgentAdaptor,
+        sessionManager: ChannelSessionManager,
+    ) {
+        val chatService = ChannelChatService(sessionManager)
+        startChannel(channel) { message ->
+            chatService.chat(message, channel, agentAdaptor, this)
+        }
+    }
+
+    /**
+     * Stop channel (for WebSocket mode)
      */
     fun stopChannel(channel: ChannelSpec) {
         getMode(channel).stop(channel)
     }
 
     /**
-     * 处理发送响应
+     * Handle send response
      */
     private fun handleSendResponse(response: PlatformResponse) {
         when (response) {
@@ -268,7 +318,7 @@ class FeishuAdaptor(
 }
 
 /**
- * 飞书事件格式
+ * Feishu event format
  */
 data class FeishuEvent(
     val ts: Long? = null,
@@ -280,7 +330,7 @@ data class FeishuEvent(
 )
 
 /**
- * 飞书消息格式
+ * Feishu message format
  */
 data class FeishuMessage(
     val messageId: String? = null,
@@ -293,7 +343,7 @@ data class FeishuMessage(
 )
 
 /**
- * 飞书发送者信息
+ * Feishu sender information
  */
 data class FeishuSender(
     val senderId: FeishuSenderId? = null,
