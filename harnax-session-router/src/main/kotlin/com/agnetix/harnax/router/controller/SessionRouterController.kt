@@ -1,14 +1,13 @@
 package com.agnetix.harnax.router.controller
 
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import reactor.core.publisher.Flux
-import java.util.concurrent.Executors
 
 /**
  * Session Router Controller.
@@ -42,34 +41,17 @@ class SessionRouterController(
 
     /**
      * Proxy an SSE streaming chat request.
-     * Uses SseEmitter to stream events back to the caller.
+     * Returns Flux<ChatEvent> which Spring serializes as text/event-stream.
+     * Jackson polymorphism handles automatic JSON serialization.
      */
-    @PostMapping("/agent/chat/stream")
+    @PostMapping("/agent/chat/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun proxyChatStream(
         @RequestParam sessionId: String,
         @RequestParam(required = false) agentId: Long?,
         @RequestBody requestBody: Map<String, Any>,
-    ): SseEmitter {
+    ): Flux<ChatEvent> {
         log.debug("Received stream proxy request for session: $sessionId")
-        val emitter = SseEmitter(0L) // No timeout
-
-        Executors.newSingleThreadExecutor().execute {
-            try {
-                val flux = sessionRouterService.proxyStreamRequest(sessionId, agentId, requestBody)
-                (flux as Flux<String>).doOnNext { event ->
-                    emitter.send(SseEmitter.event().data(event, MediaType.APPLICATION_JSON))
-                }.doOnComplete {
-                    emitter.complete()
-                }.doOnError { e ->
-                    emitter.completeWithError(e)
-                }.subscribe()
-            } catch (e: Exception) {
-                log.error("SSE proxy error: ${e.message}", e)
-                emitter.completeWithError(e)
-            }
-        }
-
-        return emitter
+        return Flux.from(sessionRouterService.proxyStreamRequest(sessionId, agentId, requestBody))
     }
 
     /**

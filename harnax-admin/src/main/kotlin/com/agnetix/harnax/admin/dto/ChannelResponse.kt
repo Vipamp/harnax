@@ -33,6 +33,9 @@ data class ChannelResponse(
     @Schema(description = "Callback key (used to generate callback URL)")
     val callbackKey: String? = null,
 
+    @Schema(description = "Immutable session ID (UUID)")
+    val sessionId: String? = null,
+
     @Schema(description = "Callback URL")
     var callbackUrl: String? = null,
 
@@ -84,6 +87,7 @@ data class ChannelResponse(
             typeDisplayName = getTypeDisplayName(channel.type),
             agentId = channel.agentId,
             callbackKey = channel.callbackKey,
+            sessionId = channel.sessionId,
             communicationMode = channel.communicationMode,
             enabled = channel.enabled,
             configJson = channel.configJson,

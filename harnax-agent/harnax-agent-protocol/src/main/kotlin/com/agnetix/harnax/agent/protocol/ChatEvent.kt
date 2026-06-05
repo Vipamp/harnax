@@ -1,14 +1,17 @@
-package com.agnetix.harnax.agent.chat
+package com.agnetix.harnax.agent.protocol
 
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.agentscope.core.model.ChatUsage
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/1
- * @Description: ChatEvent
- * @Project: harnax
+ * ChatEvent - polymorphic streaming event type for agent communication.
+ *
+ * Used as the unified transport type across the entire streaming chain:
+ * agent-service → session-router → channel-service.
+ *
+ * Jackson annotations enable automatic polymorphic (de)serialization
+ * so that Flux<ChatEvent> can be sent over SSE without manual JSON handling.
  */
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
@@ -37,15 +40,13 @@ data class TokenUsage(
 ) {
     companion object {
         fun fromChatUsage(chatUsage: ChatUsage?): TokenUsage? {
-            if (chatUsage == null) {
-                return null as TokenUsage?
-            }
+            if (chatUsage == null) return null
             return TokenUsage(
-                chatUsage.inputTokens,
-                chatUsage.outputTokens,
-                chatUsage.totalTokens,
-                chatUsage.time,
-                System.currentTimeMillis(),
+                inputTokens = chatUsage.inputTokens,
+                outputTokens = chatUsage.outputTokens,
+                totalTokens = chatUsage.totalTokens,
+                costTime = chatUsage.time,
+                timestamp = System.currentTimeMillis(),
             )
         }
     }
@@ -101,8 +102,8 @@ data class ToolResultChatEvent(
 }
 
 /**
- * 表示 AI 输出事件流结束的事件
- * 前端可以通过此事件判断 AI 输出是否完成
+ * Signals the end of the AI output event stream.
+ * Consumers can use this to determine when AI output is complete.
  */
 data class EndEventChatEvent(
     override val tokenUsage: TokenUsage? = null,

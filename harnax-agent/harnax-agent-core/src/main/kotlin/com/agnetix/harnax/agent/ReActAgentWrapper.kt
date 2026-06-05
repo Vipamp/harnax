@@ -2,9 +2,9 @@ package com.agnetix.harnax.agent
 
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
-import com.agnetix.harnax.agent.chat.ChatEvent
-import com.agnetix.harnax.agent.chat.ChatEventConverter
-import com.agnetix.harnax.agent.chat.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.ChatEventConverter
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import io.agentscope.core.ReActAgent
 import io.agentscope.core.agent.StreamOptions
 import io.agentscope.core.message.*

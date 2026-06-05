@@ -24,6 +24,11 @@
         <!-- Internal dependencies -->
         <dependency>
             <groupId>com.agnetix</groupId>
+            <artifactId>harnax-agent-protocol</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.agnetix</groupId>
             <artifactId>harnax-channel-sdk</artifactId>
             <version>1.0.0-SNAPSHOT</version>
         </dependency>

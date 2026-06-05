@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS `channel` (
     `type`               VARCHAR(20)  NOT NULL                                       COMMENT '渠道类型 wecom/wechat/feishu/dingtalk/http',
     `agent_id`           BIGINT(20)   NOT NULL                                       COMMENT '关联的智能体 ID',
     `callback_key`       VARCHAR(100) NOT NULL                                       COMMENT '回调标识(用于生成回调URL)',
+    `session_id`         VARCHAR(64)  NOT NULL                                       COMMENT '不可变的会话ID(UUID), 创建时生成',
     `communication_mode` VARCHAR(20)  NOT NULL DEFAULT 'webhook'                     COMMENT '通信模式 webhook/websocket/long_polling',
     `enabled`            TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '是否随服务启动自动监听 (0:否,1:是)',
     `config_json`        TEXT         DEFAULT NULL                                   COMMENT '渠道差异化配置 JSON',
@@ -220,11 +221,11 @@ CREATE TABLE IF NOT EXISTS `channel` (
     KEY `idx_type_enabled_status_active` (`type`, `enabled`, `status`, `active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel 通道配置表';
 
-INSERT INTO `channel` (`name`, `type`, `agent_id`, `callback_key`, `communication_mode`, `enabled`, `config_json`, `description`, `status`, `active`) VALUES
-('Test WeCom Channel', 'wecom', 1, 'test-wecom', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/wecom","token":"test-token","encodingAesKey":"aes-key-123"}', '企业微信测试通道', 1, 1),
-('Test HTTP Channel', 'http', 2, 'test-http', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/http","token":"http-token"}', 'HTTP测试通道', 1, 1),
-('Test Feishu Channel', 'feishu', 1, 'test-feishu', 'websocket', 1, '{"appId":"app-id-123","appSecret":"app-secret-123"}', '飞书测试通道', 1, 1),
-('Deleted Channel', 'wecom', 1, 'test-deleted', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/deleted","token":"deleted-token"}', '已删除通道', 1, 0);
+INSERT INTO `channel` (`name`, `type`, `agent_id`, `callback_key`, `session_id`, `communication_mode`, `enabled`, `config_json`, `description`, `status`, `active`) VALUES
+('Test WeCom Channel', 'wecom', 1, 'test-wecom', 'sess-wecom-001', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/wecom","token":"test-token","encodingAesKey":"aes-key-123"}', '企业微信测试通道', 1, 1),
+('Test HTTP Channel', 'http', 2, 'test-http', 'sess-http-001', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/http","token":"http-token"}', 'HTTP测试通道', 1, 1),
+('Test Feishu Channel', 'feishu', 1, 'test-feishu', 'sess-feishu-001', 'websocket', 1, '{"appId":"app-id-123","appSecret":"app-secret-123"}', '飞书测试通道', 1, 1),
+('Deleted Channel', 'wecom', 1, 'test-deleted', 'sess-deleted-001', 'webhook', 1, '{"webhookUrl":"http://localhost:8080/webhook/deleted","token":"deleted-token"}', '已删除通道', 1, 0);
 
 -- ============================================
 -- 9. 会话表

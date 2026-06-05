@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS `channel` (
     `type`               VARCHAR(20)  NOT NULL                                       COMMENT '渠道类型 wecom/wechat/feishu/dingtalk/http',
     `agent_id`           BIGINT(20)   NOT NULL                                       COMMENT '关联的智能体 ID',
     `callback_key`       VARCHAR(100) NOT NULL                                       COMMENT '回调标识(用于生成回调URL)',
+    `session_id`         VARCHAR(64)  NOT NULL                                       COMMENT '不可变的会话ID(UUID), 创建时生成',
     `communication_mode` VARCHAR(20)  NOT NULL DEFAULT 'webhook'                     COMMENT '通信模式 webhook/websocket/long_polling',
     `enabled`            TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '是否随服务启动自动监听 (0:否,1:是)',
     `config_json`        TEXT         DEFAULT NULL                                   COMMENT '渠道差异化配置 JSON: {appId,appSecret,encodingAesKey,webhookUrl,token,...}',
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS `channel` (
 
 
 INSERT INTO `channel`
-(`tenant_id`, `name`, `type`, `agent_id`, `callback_key`, `communication_mode`, `enabled`, `config_json`, `description`, `creator`, `status`, `active`)
+(`tenant_id`, `name`, `type`, `agent_id`, `callback_key`, `session_id`, `communication_mode`, `enabled`, `config_json`, `description`, `creator`, `status`, `active`)
 VALUES
     (
         1,                                          -- tenant_id
@@ -36,6 +37,7 @@ VALUES
         'feishu',                                   -- type
         1,                                          -- agent_id (关联的智能体ID，按实际改)
         'feishu-ws-20260605',                       -- callback_key (唯一标识，用于生成回调URL)
+        'ch-feishu-ws-001',                         -- session_id (不可变会话ID)
         'websocket',                                -- communication_mode (飞书长连接模式)
         1,                                          -- enabled (随服务启动自动监听)
         '{

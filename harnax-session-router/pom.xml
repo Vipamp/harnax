@@ -21,6 +21,13 @@
     </properties>
 
     <dependencies>
+        <!-- Harnax Agent Protocol (for ChatEvent type) -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-agent-protocol</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

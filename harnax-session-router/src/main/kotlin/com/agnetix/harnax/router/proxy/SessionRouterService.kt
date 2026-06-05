@@ -1,5 +1,6 @@
 package com.agnetix.harnax.router.proxy
 
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.*
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Flux
 
 /**
  * Core session router service.
@@ -65,9 +67,10 @@ class SessionRouterService(
 
     /**
      * Proxy an SSE streaming request to the correct agent-service instance.
-     * Returns a Flux of SSE events that can be streamed back to the caller.
+     * Returns a Flux<ChatEvent> that can be streamed back to the caller.
+     * Jackson polymorphism handles automatic JSON deserialization of ChatEvent subtypes.
      */
-    fun proxyStreamRequest(sessionId: String, agentId: Long?, requestBody: Map<String, Any>): org.reactivestreams.Publisher<String> {
+    fun proxyStreamRequest(sessionId: String, agentId: Long?, requestBody: Map<String, Any>): Flux<ChatEvent> {
         val instance = resolveInstanceBlocking(sessionId)
         val url = "${instance.getBaseUrl()}/api/agent/chat/stream?sessionId=$sessionId" +
             (if (agentId != null) "&agentId=$agentId" else "")
@@ -79,7 +82,7 @@ class SessionRouterService(
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(requestBody)
             .retrieve()
-            .bodyToFlux(String::class.java)
+            .bodyToFlux(ChatEvent::class.java)
             .doOnComplete {
                 sessionMappingService.refreshActiveTime(sessionId)
             }

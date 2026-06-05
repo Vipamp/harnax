@@ -2,9 +2,9 @@ package com.agnetix.harnax.agent.service.chat
 
 import com.agnetix.harnax.agent.*
 import com.agnetix.harnax.agent.adaptor.PlanNote
-import com.agnetix.harnax.agent.chat.ChatEvent
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest

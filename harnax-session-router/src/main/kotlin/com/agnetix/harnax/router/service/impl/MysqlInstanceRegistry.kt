@@ -15,7 +15,7 @@ import java.time.LocalDateTime
 @Service
 class MysqlInstanceRegistry(
     private val agentInstanceMapper: AgentInstanceMapper,
-    @Value("\${router.health.heartbeat-timeout-ms:30000}")
+    @Value($$"${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
 ) : InstanceRegistry {
 

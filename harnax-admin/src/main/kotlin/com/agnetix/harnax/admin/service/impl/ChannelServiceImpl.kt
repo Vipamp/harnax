@@ -58,6 +58,7 @@ class ChannelServiceImpl(
             status = request.status ?: 1
             tenantId = TenantContext.getTenantId() ?: 1
             callbackKey = generateCallbackKey(request.type)
+            sessionId = generateSessionId()
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
         }
@@ -127,4 +128,9 @@ class ChannelServiceImpl(
         val uuid = UUID.randomUUID().toString().replace("-", "").substring(0, 16)
         return "$prefix-$uuid"
     }
+
+    /**
+     * Generate immutable session ID (UUID)
+     */
+    private fun generateSessionId(): String = UUID.randomUUID().toString()
 }

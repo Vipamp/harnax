@@ -36,6 +36,9 @@ class Channel : Serializable {
     @Schema(description = "Callback key (used to generate callback URL)")
     var callbackKey: String = ""
 
+    @Schema(description = "Immutable session ID, generated at creation time (UUID)")
+    var sessionId: String = ""
+
     @Schema(description = "Communication mode (webhook/websocket/long_polling)")
     var communicationMode: String = "webhook"
 

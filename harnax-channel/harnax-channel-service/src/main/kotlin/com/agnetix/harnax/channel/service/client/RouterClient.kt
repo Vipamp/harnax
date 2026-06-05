@@ -1,5 +1,6 @@
 package com.agnetix.harnax.channel.service.client
 
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
@@ -46,13 +47,14 @@ class RouterClient(
 
     /**
      * Send a message to the agent via the session-router with SSE streaming.
-     * Returns a Flow of SSE events that can be collected.
+     * Returns a Flow<ChatEvent> that can be collected.
+     * Jackson polymorphism handles automatic JSON deserialization of ChatEvent subtypes.
      * @param sessionId Session identifier
      * @param agentId Agent ID
      * @param message User message content
-     * @return Flow of SSE event strings
+     * @return Flow of ChatEvent
      */
-    fun streamToAgent(sessionId: String, agentId: Long, message: String): kotlinx.coroutines.flow.Flow<String> {
+    fun streamToAgent(sessionId: String, agentId: Long, message: String): kotlinx.coroutines.flow.Flow<ChatEvent> {
         val requestBody = mapOf("message" to message)
 
         log.debug("Sending stream request to router for session=$sessionId, agentId=$agentId")
@@ -62,7 +64,7 @@ class RouterClient(
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(requestBody)
             .retrieve()
-            .bodyToFlux(String::class.java)
+            .bodyToFlux(ChatEvent::class.java)
             .asFlow()
     }
 }

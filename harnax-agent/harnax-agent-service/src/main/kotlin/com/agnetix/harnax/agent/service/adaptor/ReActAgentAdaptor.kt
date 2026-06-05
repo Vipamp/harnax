@@ -1,10 +1,10 @@
 package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.*
-import com.agnetix.harnax.agent.chat.ChatEvent
-import com.agnetix.harnax.agent.chat.EndEventChatEvent
-import com.agnetix.harnax.agent.chat.StreamTextChatEvent
-import com.agnetix.harnax.agent.chat.StreamThinkingChatEvent
+import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
+import com.agnetix.harnax.agent.protocol.StreamThinkingChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.AgentContext

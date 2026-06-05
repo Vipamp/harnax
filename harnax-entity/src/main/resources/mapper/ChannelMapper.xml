@@ -10,6 +10,7 @@
         <result column="type"               property="type"/>
         <result column="agent_id"           property="agentId"/>
         <result column="callback_key"       property="callbackKey"/>
+        <result column="session_id"         property="sessionId"/>
         <result column="communication_mode" property="communicationMode"/>
         <result column="enabled"            property="enabled"/>
         <result column="config_json"        property="configJson"/>
@@ -22,7 +23,7 @@
     </resultMap>
 
     <sql id="BaseColumnList">
-        id, tenant_id, name, type, agent_id, callback_key,
+        id, tenant_id, name, type, agent_id, callback_key, session_id,
         communication_mode, enabled, config_json, description,
         creator, status, active, create_time, update_time
     </sql>
@@ -49,11 +50,11 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO channel (
-            tenant_id, name, type, agent_id, callback_key,
+            tenant_id, name, type, agent_id, callback_key, session_id,
             communication_mode, enabled, config_json, description,
             creator, status, active, create_time, update_time
         ) VALUES (
-            #{tenantId}, #{name}, #{type}, #{agentId}, #{callbackKey},
+            #{tenantId}, #{name}, #{type}, #{agentId}, #{callbackKey}, #{sessionId},
             #{communicationMode}, #{enabled}, #{configJson}, #{description},
             #{creator}, #{status}, #{active}, #{createTime}, #{updateTime}
         )

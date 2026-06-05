@@ -1,4 +1,6 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
@@ -8,47 +10,41 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>harnax-agent-core</artifactId>
+    <artifactId>harnax-agent-protocol</artifactId>
     <packaging>jar</packaging>
 
-    <name>harnax-agent</name>
-    <url>http://maven.apache.org</url>
+    <name>harnax-agent-protocol</name>
+    <description>Harnax Agent Protocol - ChatEvent types, converters, and streaming event definitions</description>
 
     <dependencies>
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-agent-protocol</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-        </dependency>
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-common</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-        </dependency>
+        <!-- AgentScope (for Event, Msg, ChatUsage, ToolUseBlock, ToolResultBlock) -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope</artifactId>
             <version>${agent-scope.version}</version>
         </dependency>
+
+        <!-- Reactor Core (for Flux) -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
+        </dependency>
+
+        <!-- Jackson (for polymorphic JSON serialization of ChatEvent) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Kotlin -->
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
             <artifactId>kotlin-stdlib-jdk8</artifactId>
             <version>${kotlin.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlin</groupId>
-            <artifactId>kotlin-test</artifactId>
-            <version>${kotlin.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.zaxxer</groupId>
-            <artifactId>HikariCP</artifactId>
-            <version>${hikaricp.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jgit</groupId>
-            <artifactId>org.eclipse.jgit</artifactId>
         </dependency>
     </dependencies>
 
@@ -67,7 +63,6 @@
                         </goals>
                         <configuration>
                             <sourceDirs>
-                                <sourceDir>target/generated-sources/annotations</sourceDir>
                                 <sourceDir>src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
@@ -81,11 +76,9 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <jvmTarget>1.8</jvmTarget>
+                    <jvmTarget>21</jvmTarget>
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
-
 </project>

@@ -18,6 +18,7 @@ data class ChannelSpec(
     val appId: String? = null,
     val appSecret: String? = null,
     val callbackKey: String,
+    val sessionId: String = "",
     val status: Int = 1,
     val communicationMode: String = "webhook", // "webhook" or "websocket"
 ) {
@@ -38,6 +39,7 @@ class ChannelSpecBuilder {
     private var appId: String? = null
     private var appSecret: String? = null
     private var callbackKey: String = ""
+    private var sessionId: String = ""
     private var status: Int = 1
     private var communicationMode: String = "webhook"
 
@@ -51,6 +53,7 @@ class ChannelSpecBuilder {
     fun appId(appId: String?) = apply { this.appId = appId }
     fun appSecret(appSecret: String?) = apply { this.appSecret = appSecret }
     fun callbackKey(callbackKey: String) = apply { this.callbackKey = callbackKey }
+    fun sessionId(sessionId: String) = apply { this.sessionId = sessionId }
     fun status(status: Int) = apply { this.status = status }
     fun communicationMode(mode: String) = apply { this.communicationMode = mode }
 
@@ -65,6 +68,7 @@ class ChannelSpecBuilder {
         appId = appId,
         appSecret = appSecret,
         callbackKey = callbackKey,
+        sessionId = sessionId,
         status = status,
         communicationMode = communicationMode,
     )

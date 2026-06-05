@@ -33,6 +33,7 @@ object ChannelEntityConverter {
             .type(channelType)
             .agentId(entity.agentId)
             .callbackKey(entity.callbackKey)
+            .sessionId(entity.sessionId)
             .communicationMode(entity.communicationMode)
             .status(entity.status)
             .webhookUrl(cfg.string("webhookUrl"))

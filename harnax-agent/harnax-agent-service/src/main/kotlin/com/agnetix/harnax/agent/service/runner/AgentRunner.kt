@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent.service.runner
 
-import kotlinx.coroutines.flow.Flow
+import com.agnetix.harnax.agent.protocol.ChatEvent
+import reactor.core.publisher.Flux
 
 /**
  * Agent runner interface.
@@ -19,12 +20,13 @@ interface AgentRunner {
 
     /**
      * Process a message with streaming output.
+     * Returns Flux<ChatEvent> which is the unified streaming type across the entire chain.
      * @param sessionId Session identifier for context tracking
      * @param message User message content
      * @param agentId Agent ID to determine which agent to use
-     * @return Flow of streaming events
+     * @return Flux of ChatEvent
      */
-    fun streamProcess(sessionId: String, message: String, agentId: Long): Flow<AgentStreamEvent>
+    fun streamProcess(sessionId: String, message: String, agentId: Long): Flux<ChatEvent>
 
     /**
      * Initialize an agent instance.
@@ -37,14 +39,4 @@ interface AgentRunner {
      * @param agentId Agent ID
      */
     suspend fun destroyAgent(agentId: Long)
-}
-
-/**
- * Sealed class representing streaming events from agent processing.
- */
-sealed class AgentStreamEvent {
-    data class TextStreamEvent(val content: String, val isLast: Boolean) : AgentStreamEvent()
-    data class ThinkingStreamEvent(val content: String, val isLast: Boolean = false) : AgentStreamEvent()
-    data class EndStreamEvent(val fullContent: String?) : AgentStreamEvent()
-    data class ErrorStreamEvent(val error: String, val cause: Throwable? = null) : AgentStreamEvent()
 }
