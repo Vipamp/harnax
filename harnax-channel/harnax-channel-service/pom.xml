@@ -37,6 +37,11 @@
             <artifactId>harnax-channel-feishu</artifactId>
             <version>1.0.0-SNAPSHOT</version>
         </dependency>
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-entity</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
 
         <!-- Spring Boot Web -->
         <dependency>

@@ -6,6 +6,10 @@ import java.time.LocalDateTime
 
 /**
  * Channel entity
+ *
+ * 公共业务字段 + 渠道差异化配置 JSON。
+ * 不同渠道（飞书/微信/企业微信/钉钉/HTTP）特有的 appId/appSecret/encodingAesKey/
+ * webhookUrl/token 等扩展字段，统一序列化到 [configJson] 字段中存储。
  */
 @Schema(description = "Channel entity")
 class Channel : Serializable {
@@ -23,32 +27,29 @@ class Channel : Serializable {
     @Schema(description = "Channel name")
     var name: String = ""
 
-    @Schema(description = "Type (wecom/feishu/dingtalk/http)")
+    @Schema(description = "Channel type (wecom/wechat/feishu/dingtalk/http)")
     var type: String = ""
 
     @Schema(description = "Associated agent ID")
     var agentId: Long = 0
 
-    @Schema(description = "Webhook URL")
-    var webhookUrl: String = ""
-
-    @Schema(description = "Verification token")
-    var token: String = ""
-
-    @Schema(description = "Encryption key (WeCom)")
-    var encodingAesKey: String = ""
-
-    @Schema(description = "App ID (Feishu/DingTalk)")
-    var appId: String = ""
-
-    @Schema(description = "App secret")
-    var appSecret: String = ""
-
     @Schema(description = "Callback key (used to generate callback URL)")
     var callbackKey: String = ""
 
+    @Schema(description = "Communication mode (webhook/websocket/long_polling)")
+    var communicationMode: String = "webhook"
+
+    @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)")
+    var enabled: Int = 1
+
+    @Schema(description = "Channel-specific config JSON, e.g. {appId,appSecret,encodingAesKey,webhookUrl,token,...}")
+    var configJson: String? = null
+
     @Schema(description = "Description")
-    var description: String = ""
+    var description: String? = null
+
+    @Schema(description = "Creator")
+    var creator: String = "system"
 
     @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1

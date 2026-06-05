@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.agnetix.harnax.admin.mapper.SysTokenBlacklistMapper">
+<mapper namespace="com.agnetix.harnax.mapper.SysTokenBlacklistMapper">
 
     <!-- Result Map -->
-    <resultMap id="SysTokenBlacklistResultMap" type="com.agnetix.harnax.admin.entity.SysTokenBlacklist">
+    <resultMap id="SysTokenBlacklistResultMap" type="com.agnetix.harnax.entity.SysTokenBlacklist">
         <id column="id" property="id"/>
         <result column="token" property="token"/>
         <result column="token_hash" property="tokenHash"/>

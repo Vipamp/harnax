@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.agnetix.harnax.admin.mapper.PlanNoteMapper">
+<mapper namespace="com.agnetix.harnax.mapper.PlanNoteMapper">
 
     <!-- Result Map -->
-    <resultMap id="PlanNoteEntityResultMap" type="com.agnetix.harnax.admin.entity.PlanNoteEntity">
+    <resultMap id="PlanNoteEntityResultMap" type="com.agnetix.harnax.entity.PlanNoteEntity">
         <id column="id" property="id"/>
         <result column="session_id" property="sessionId"/>
         <result column="plan_id" property="planId"/>

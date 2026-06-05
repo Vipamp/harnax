@@ -15,10 +15,10 @@ import org.springframework.web.client.RestTemplate
  */
 @Component
 class AgentServiceRegistrar(
-    @Value("\${agent.service.instance-id}") private val instanceId: String,
-    @Value("\${server.port:8081}") private val port: Int,
-    @Value("\${router.service.url}") private val routerUrl: String,
-    @Value("\${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
+    @Value($$"${agent.service.instance-id}") private val instanceId: String,
+    @Value($$"${server.port:8082}") private val port: Int,
+    @Value($$"${router.service.url}") private val routerUrl: String,
+    @Value($$"${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentServiceRegistrar::class.java)

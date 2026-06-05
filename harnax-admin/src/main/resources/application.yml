@@ -59,7 +59,7 @@ spring:
 # MyBatis configuration
 mybatis:
   mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.agnetix.harnax.admin.entity
+  type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

@@ -26,9 +26,9 @@ mybatis:
 
 # Session Configuration
 session:
-  jdbc-url: jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+  jdbc-url: jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
   username: root
-  password: root
+  password: 123456
   database-name: harnax
 
 # Local Configuration
@@ -42,3 +42,15 @@ logging:
     org.mybatis: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+jwt:
+  secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
+  expiration: 7200000 # 2 hours (milliseconds)
+
+router:
+  service:
+    url: http://localhost:8081
+
+agent:
+  service:
+    instance-id: agent-service-1

@@ -357,7 +357,6 @@ class MybatisTenantInterceptor : Interceptor {
     private fun hasSkipTenantFilterAnnotation(mappedStatement: MappedStatement): Boolean {
         return try {
             val statementId = mappedStatement.id
-            // statementId format: com.agnetix.harnax.admin.mapper.XxxMapper.methodName
             val lastDotIndex = statementId.lastIndexOf('.')
             if (lastDotIndex == -1) return false
 
@@ -380,7 +379,7 @@ class MybatisTenantInterceptor : Interceptor {
 
     /**
      * Extract table name from Mapper method ID
-     * Example: com.agnetix.harnax.admin.mapper.AgentMapper.selectById -> agent
+     * Example: com.agnetix.harnax.mapper.AgentMapper.selectById -> agent
      */
     private fun extractTableName(statementId: String): String {
         // Extract part after last dot, e.g., AgentMapper.selectById

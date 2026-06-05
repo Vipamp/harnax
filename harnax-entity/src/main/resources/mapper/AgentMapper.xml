@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.agnetix.harnax.admin.mapper.AgentMapper">
+<mapper namespace="com.agnetix.harnax.mapper.AgentMapper">
 
     <!-- Result Map -->
-    <resultMap id="AgentResultMap" type="com.agnetix.harnax.admin.entity.Agent">
+    <resultMap id="AgentResultMap" type="com.agnetix.harnax.entity.Agent">
         <id column="id" property="id"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>

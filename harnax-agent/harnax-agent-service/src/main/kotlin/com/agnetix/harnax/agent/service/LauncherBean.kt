@@ -28,7 +28,7 @@ class LauncherConfig {
         password = password,
         databaseName = databaseName,
         tableName = "session_record",
-        createIfNotExist = true,
+        createIfNotExist = false,
     )
 
     @Bean

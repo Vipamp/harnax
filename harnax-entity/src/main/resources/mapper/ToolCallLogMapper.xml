@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.agnetix.harnax.admin.mapper.ToolCallLogMapper">
+<mapper namespace="com.agnetix.harnax.mapper.ToolCallLogMapper">
 
     <!-- Result Map -->
-    <resultMap id="ToolCallLogEntityResultMap" type="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+    <resultMap id="ToolCallLogEntityResultMap" type="com.agnetix.harnax.entity.ToolCallLogEntity">
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
         <result column="session_id" property="sessionId"/>
@@ -55,10 +55,10 @@
         WHERE id = #{id}
     </update>
 
-    <select id="selectBySessionId" resultType="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+    <select id="selectBySessionId" resultType="com.agnetix.harnax.entity.ToolCallLogEntity">
         SELECT * FROM tool_call_log_entity WHERE session_id = #{sessionId} AND active = 1
     </select>
-    <select id="selectByToolName" resultType="com.agnetix.harnax.admin.entity.ToolCallLogEntity">
+    <select id="selectByToolName" resultType="com.agnetix.harnax.entity.ToolCallLogEntity">
         SELECT * FROM tool_call_log_entity WHERE tool_name = #{toolName} AND active = 1
     </select>
 </mapper>

@@ -5,9 +5,9 @@ spring:
   application:
     name: harnax-channel-service
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/harnax?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:root}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
     enabled: true
@@ -22,7 +22,7 @@ mybatis:
 # Router configuration
 router:
   service:
-    url: ${ROUTER_URL:http://localhost:8080}
+    url: ${ROUTER_URL:http://localhost:8081}
 
 # Channel configuration
 channel:

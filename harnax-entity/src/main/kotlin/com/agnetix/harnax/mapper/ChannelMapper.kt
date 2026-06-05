@@ -31,4 +31,10 @@ interface ChannelMapper {
     ): List<Channel>
 
     fun selectByCallbackKey(@Param("callbackKey") callbackKey: String): Channel?
+
+    /**
+     * 查询所有需要在 channel-service 启动时自动建立监听的渠道：
+     * enabled=1 AND status=1 AND active=1。
+     */
+    fun selectAutoStartChannels(): List<Channel>
 }

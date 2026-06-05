@@ -1,79 +1,94 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.agnetix.harnax.admin.mapper.ChannelMapper">
+<mapper namespace="com.agnetix.harnax.mapper.ChannelMapper">
 
     <!-- Result Map -->
-    <resultMap id="ChannelResultMap" type="com.agnetix.harnax.admin.entity.Channel">
-        <id column="id" property="id"/>
-        <result column="name" property="name"/>
-        <result column="type" property="type"/>
-        <result column="agent_id" property="agentId"/>
-        <result column="webhook_url" property="webhookUrl"/>
-        <result column="token" property="token"/>
-        <result column="encoding_aes_key" property="encodingAesKey"/>
-        <result column="app_id" property="appId"/>
-        <result column="app_secret" property="appSecret"/>
-        <result column="callback_key" property="callbackKey"/>
-        <result column="description" property="description"/>
-        <result column="status" property="status"/>
-        <result column="active" property="active"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+    <resultMap id="ChannelResultMap" type="com.agnetix.harnax.entity.Channel">
+        <id     column="id"                 property="id"/>
+        <result column="tenant_id"          property="tenantId"/>
+        <result column="name"               property="name"/>
+        <result column="type"               property="type"/>
+        <result column="agent_id"           property="agentId"/>
+        <result column="callback_key"       property="callbackKey"/>
+        <result column="communication_mode" property="communicationMode"/>
+        <result column="enabled"            property="enabled"/>
+        <result column="config_json"        property="configJson"/>
+        <result column="description"        property="description"/>
+        <result column="creator"            property="creator"/>
+        <result column="status"             property="status"/>
+        <result column="active"             property="active"/>
+        <result column="create_time"        property="createTime"/>
+        <result column="update_time"        property="updateTime"/>
     </resultMap>
+
+    <sql id="BaseColumnList">
+        id, tenant_id, name, type, agent_id, callback_key,
+        communication_mode, enabled, config_json, description,
+        creator, status, active, create_time, update_time
+    </sql>
 
     <!-- ==================== Basic CRUD Methods ==================== -->
 
-    <!-- selectById -->
     <select id="selectById" resultMap="ChannelResultMap">
-        SELECT * FROM channel WHERE id = #{id} LIMIT 1
+        SELECT <include refid="BaseColumnList"/>
+        FROM channel
+        WHERE id = #{id}
+        LIMIT 1
     </select>
 
-    <!-- deleteById -->
     <update id="deleteById">
-        UPDATE channel SET active = 0 WHERE id = #{id}
+        UPDATE channel SET active = 0, update_time = NOW() WHERE id = #{id}
     </update>
 
-    <!-- selectByCallbackKey -->
     <select id="selectByCallbackKey" resultMap="ChannelResultMap">
-        SELECT * FROM channel WHERE callback_key = #{callbackKey} AND active = 1 LIMIT 1
+        SELECT <include refid="BaseColumnList"/>
+        FROM channel
+        WHERE callback_key = #{callbackKey} AND active = 1
+        LIMIT 1
     </select>
 
-    <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO channel (
-        name, description, type, callback_url, callback_key,
-        status, active, create_time, update_time
+            tenant_id, name, type, agent_id, callback_key,
+            communication_mode, enabled, config_json, description,
+            creator, status, active, create_time, update_time
         ) VALUES (
-        #{name}, #{description}, #{type}, #{callbackUrl}, #{callbackKey},
-        #{status}, #{active}, #{createTime}, #{updateTime}
+            #{tenantId}, #{name}, #{type}, #{agentId}, #{callbackKey},
+            #{communicationMode}, #{enabled}, #{configJson}, #{description},
+            #{creator}, #{status}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
-    <!-- updateById -->
     <update id="updateById">
         UPDATE channel SET
-        name = #{name},
-        description = #{description},
-        type = #{type},
-        callback_url = #{callbackUrl},
-        callback_key = #{callbackKey},
-        active = #{active},
-        update_time = #{updateTime}
+            tenant_id          = #{tenantId},
+            name               = #{name},
+            type               = #{type},
+            agent_id           = #{agentId},
+            callback_key       = #{callbackKey},
+            communication_mode = #{communicationMode},
+            enabled            = #{enabled},
+            config_json        = #{configJson},
+            description        = #{description},
+            status             = #{status},
+            active             = #{active},
+            update_time        = #{updateTime}
         WHERE id = #{id}
     </update>
 
-    <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE channel SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
-    <!-- selectChannelList -->
+    <!-- ==================== Custom Query Methods ==================== -->
+
     <select id="selectChannelList" resultMap="ChannelResultMap">
-        SELECT * FROM channel
+        SELECT <include refid="BaseColumnList"/>
+        FROM channel
         WHERE active = 1
         <if test='keyword != null and keyword != ""'>
             AND (name LIKE CONCAT('%', #{keyword}, '%')
-            OR description LIKE CONCAT('%', #{keyword}, '%'))
+                 OR description LIKE CONCAT('%', #{keyword}, '%'))
         </if>
         <if test='type != null and type != ""'>
             AND type = #{type}
@@ -82,6 +97,13 @@
             AND status = #{status}
         </if>
         ORDER BY create_time DESC
+    </select>
+
+    <select id="selectAutoStartChannels" resultMap="ChannelResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM channel
+        WHERE enabled = 1 AND status = 1 AND active = 1
+        ORDER BY id ASC
     </select>
 
 </mapper>

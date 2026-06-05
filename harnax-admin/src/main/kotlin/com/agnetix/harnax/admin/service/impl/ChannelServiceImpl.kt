@@ -16,7 +16,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
-import java.util.*
+import java.util.UUID
 
 /**
  * Channel service implementation
@@ -47,27 +47,20 @@ class ChannelServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createChannel(request: ChannelCreateRequest): Boolean = try {
-        val channel = Channel()
-        channel.name = request.name!!
-        channel.type = request.type!!
-        channel.agentId = request.agentId!!
-        channel.webhookUrl = request.webhookUrl!!
-        channel.token = request.token!!
-        channel.encodingAesKey = request.encodingAesKey!!
-        channel.appId = request.appId!!
-        channel.appSecret = request.appSecret!!
-        channel.description = request.description!!
-        channel.status = request.status ?: 1
-
-        // Set tenant ID
-        channel.tenantId = TenantContext.getTenantId() ?: 1
-
-        // Generate unique callback key
-        val callbackKey = generateCallbackKey(request.type)
-        channel.callbackKey = callbackKey
-
-        channel.createTime = LocalDateTime.now()
-        channel.updateTime = LocalDateTime.now()
+        val channel = Channel().apply {
+            name = request.name!!
+            type = request.type!!
+            agentId = request.agentId!!
+            communicationMode = request.communicationMode ?: "webhook"
+            enabled = request.enabled ?: 1
+            configJson = request.configJson
+            description = request.description
+            status = request.status ?: 1
+            tenantId = TenantContext.getTenantId() ?: 1
+            callbackKey = generateCallbackKey(request.type)
+            createTime = LocalDateTime.now()
+            updateTime = LocalDateTime.now()
+        }
         channelMapper.insert(channel)
         true
     } catch (e: Exception) {
@@ -83,12 +76,11 @@ class ChannelServiceImpl(
         request.name?.let { channel.name = it }
         request.type?.let { channel.type = it }
         request.agentId?.let { channel.agentId = it }
-        request.webhookUrl?.let { channel.webhookUrl = it }
-        request.token?.let { channel.token = it }
-        request.encodingAesKey?.let { channel.encodingAesKey = it }
-        request.appId?.let { channel.appId = it }
-        request.appSecret?.let { channel.appSecret = it }
+        request.communicationMode?.let { channel.communicationMode = it }
+        request.enabled?.let { channel.enabled = it }
+        request.configJson?.let { channel.configJson = it }
         request.description?.let { channel.description = it }
+        request.status?.let { channel.status = it }
 
         channel.updateTime = LocalDateTime.now()
         channelMapper.updateById(channel)
@@ -99,7 +91,7 @@ class ChannelServiceImpl(
     }
 
     override fun toggleChannelStatus(id: Long, status: Int): Boolean {
-        val channel = channelMapper.selectById(id)
+        channelMapper.selectById(id)
             ?: throw RuntimeException("Channel not found")
         return channelMapper.updateStatus(id, status) > 0
     }

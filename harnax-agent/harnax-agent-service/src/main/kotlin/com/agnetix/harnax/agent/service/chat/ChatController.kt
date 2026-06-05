@@ -1,12 +1,12 @@
 package com.agnetix.harnax.agent.service.chat
 
-import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.ChatEvent
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
 import com.agnetix.harnax.agent.service.dto.ResultVo
+import com.agnetix.harnax.agent.service.util.JwtUtil
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus

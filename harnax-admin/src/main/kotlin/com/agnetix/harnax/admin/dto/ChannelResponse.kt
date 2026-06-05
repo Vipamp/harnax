@@ -12,10 +12,13 @@ data class ChannelResponse(
     @Schema(description = "ID")
     val id: Long? = null,
 
+    @Schema(description = "Tenant ID")
+    val tenantId: Long? = null,
+
     @Schema(description = "Channel name")
     val name: String? = null,
 
-    @Schema(description = "Type (wecom/feishu/dingtalk/http)")
+    @Schema(description = "Channel type (wecom/wechat/feishu/dingtalk/http)")
     val type: String? = null,
 
     @Schema(description = "Type display name")
@@ -27,29 +30,26 @@ data class ChannelResponse(
     @Schema(description = "Agent name")
     var agentName: String? = null,
 
-    @Schema(description = "Webhook URL")
-    val webhookUrl: String? = null,
-
-    @Schema(description = "Verification token")
-    val token: String? = null,
-
-    @Schema(description = "Encryption key (for WeCom)")
-    val encodingAesKey: String? = null,
-
-    @Schema(description = "App ID (for Feishu/DingTalk)")
-    val appId: String? = null,
-
-    @Schema(description = "App secret")
-    val appSecret: String? = null,
-
     @Schema(description = "Callback key (used to generate callback URL)")
     val callbackKey: String? = null,
 
     @Schema(description = "Callback URL")
     var callbackUrl: String? = null,
 
+    @Schema(description = "Communication mode (webhook/websocket/long_polling)")
+    val communicationMode: String? = null,
+
+    @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)")
+    val enabled: Int? = null,
+
+    @Schema(description = "Channel-specific configuration JSON")
+    val configJson: String? = null,
+
     @Schema(description = "Description")
     val description: String? = null,
+
+    @Schema(description = "Creator")
+    val creator: String? = null,
 
     @Schema(description = "Status (0:disabled, 1:enabled)")
     val status: Int? = null,
@@ -66,6 +66,7 @@ data class ChannelResponse(
          */
         fun getTypeDisplayName(type: String?): String = when (type) {
             "wecom" -> "Enterprise WeChat"
+            "wechat" -> "WeChat"
             "feishu" -> "Feishu"
             "dingtalk" -> "DingTalk"
             "http" -> "HTTP Interface"
@@ -77,17 +78,17 @@ data class ChannelResponse(
          */
         fun fromEntity(channel: Channel): ChannelResponse = ChannelResponse(
             id = channel.id,
+            tenantId = channel.tenantId,
             name = channel.name,
             type = channel.type,
             typeDisplayName = getTypeDisplayName(channel.type),
             agentId = channel.agentId,
-            webhookUrl = channel.webhookUrl,
-            token = channel.token,
-            encodingAesKey = channel.encodingAesKey,
-            appId = channel.appId,
-            appSecret = channel.appSecret,
             callbackKey = channel.callbackKey,
+            communicationMode = channel.communicationMode,
+            enabled = channel.enabled,
+            configJson = channel.configJson,
             description = channel.description,
+            creator = channel.creator,
             status = channel.status,
             createTime = channel.createTime,
             updateTime = channel.updateTime,

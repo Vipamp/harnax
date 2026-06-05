@@ -10,7 +10,6 @@ import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
 import com.agnetix.harnax.channel.service.client.RouterClient
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
-import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -68,15 +67,5 @@ class ChannelManager(
         ChannelType.WECHAT -> wechatAdaptor
         ChannelType.FEISHU -> feishuAdaptor
         else -> throw IllegalArgumentException("Unsupported channel type: $type")
-    }
-
-    /**
-     * Auto-start channels on application startup (placeholder).
-     * In production, this would load channel configurations from the database.
-     */
-    @PostConstruct
-    fun init() {
-        log.info("ChannelManager initialized. Channel auto-start is configured per application settings.")
-        // TODO: Load channel configurations from database and start them
     }
 }
