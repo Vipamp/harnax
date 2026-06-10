@@ -42,6 +42,16 @@ enum class HarnaxErrorCode(
     DB_ERROR("5001", "数据库操作失败"),
     DB_DUPLICATE_KEY("5002", "唯一键冲突"),
     DB_CONSTRAINT_VIOLATION("5003", "约束违反"),
+
+    // ==================== Agent 链路错误 (6000-6999) ====================
+    AGENT_MODEL_NOT_FOUND("6001", "模型配置未找到"),
+    AGENT_MCP_NOT_FOUND("6002", "MCP 服务配置 [{}] 未找到"),
+    AGENT_SKILL_NOT_FOUND("6003", "Skill [{}] 未找到"),
+    AGENT_LLM_CALL_FAILED("6004", "LLM 调用失败: {}"),
+    AGENT_INIT_FAILED("6005", "Agent 初始化失败: {}"),
+    ROUTER_PROXY_ERROR("6010", "路由代理请求失败: {}"),
+    ROUTER_NO_INSTANCE("6011", "无可用 Agent 实例"),
+    ROUTER_CONNECTION_ERROR("6012", "连接路由服务失败: {}"),
     ;
 
     /**

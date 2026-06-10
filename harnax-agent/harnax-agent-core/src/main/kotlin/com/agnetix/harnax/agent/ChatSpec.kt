@@ -6,10 +6,16 @@ package com.agnetix.harnax.agent
  * @Description: ChatSpec
  * @Project: harnax
  */
+enum class Permission {
+    NeedConfirmed,
+    AllApproval,
+}
+
 class ChatSpec(
     val enableThinking: Boolean,
     val enableSearch: Boolean,
     val enablePlan: Boolean,
+    val permission: Permission = Permission.NeedConfirmed,
 ) {
     companion object {
         @JvmStatic
@@ -21,14 +27,17 @@ class ChatSpecBuilder {
     private var enableThinking: Boolean = false
     private var enableSearch: Boolean = false
     private var enablePlan: Boolean = false
+    private var permission: Permission = Permission.AllApproval
 
     fun enableThinking(enableThinking: Boolean) = apply { this.enableThinking = enableThinking }
     fun enableSearch(enableSearch: Boolean) = apply { this.enableSearch = enableSearch }
     fun enablePlan(enablePlan: Boolean) = apply { this.enablePlan = enablePlan }
+    fun permission(permission: Permission) = apply { this.permission = permission }
 
     fun build() = ChatSpec(
         enableThinking = enableThinking,
         enableSearch = enableSearch,
         enablePlan = enablePlan,
+        permission = permission,
     )
 }

@@ -1,9 +1,9 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory

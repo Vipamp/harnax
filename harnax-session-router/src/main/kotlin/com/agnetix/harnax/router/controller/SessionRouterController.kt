@@ -1,11 +1,18 @@
 package com.agnetix.harnax.router.controller
 
+import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.router.dto.InstanceInfo
+import com.agnetix.harnax.router.dto.InstanceOperationResponse
+import com.agnetix.harnax.router.dto.RouterHealthResponse
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
-import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import reactor.core.publisher.Flux
 
@@ -27,31 +34,31 @@ class SessionRouterController(
     private val log = LoggerFactory.getLogger(SessionRouterController::class.java)
 
     /**
-     * Proxy a synchronous chat request to the correct agent-service instance.
+     * Proxy a direct (non-streaming) chat request to the correct agent-service instance.
      */
     @PostMapping("/agent/chat")
-    suspend fun proxyChat(
-        @RequestParam sessionId: String,
-        @RequestParam(required = false) agentId: Long?,
-        @RequestBody requestBody: Map<String, Any>,
-    ): ResponseEntity<String> {
-        log.debug("Received chat proxy request for session: $sessionId")
-        return sessionRouterService.proxyChatRequest(sessionId, agentId, requestBody)
+    suspend fun proxyChat(@RequestBody request: ChatAgentRequest): ResultVo<ChatResponse> {
+        log.debug("Received chat proxy request for session: ${request.sessionId}")
+        return sessionRouterService.proxyChatRequest(request)
     }
 
     /**
      * Proxy an SSE streaming chat request.
-     * Returns Flux<ChatEvent> which Spring serializes as text/event-stream.
-     * Jackson polymorphism handles automatic JSON serialization.
+     * Accepts AgentRequest in body, returns Flux<ChatEvent> as text/event-stream.
      */
     @PostMapping("/agent/chat/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun proxyChatStream(
-        @RequestParam sessionId: String,
-        @RequestParam(required = false) agentId: Long?,
-        @RequestBody requestBody: Map<String, Any>,
-    ): Flux<ChatEvent> {
-        log.debug("Received stream proxy request for session: $sessionId")
-        return Flux.from(sessionRouterService.proxyStreamRequest(sessionId, agentId, requestBody))
+    fun proxyChatStream(@RequestBody request: ChatAgentRequest): Flux<ChatEvent> {
+        log.debug("Received stream proxy request for session: ${request.sessionId}")
+        return sessionRouterService.proxyStreamRequest(request)
+    }
+
+    /**
+     * Proxy a command request to the correct agent-service instance.
+     */
+    @PostMapping("/agent/command")
+    suspend fun proxyCommand(@RequestBody request: CommandAgentRequest): ResultVo<CommandResponse> {
+        log.debug("Received command proxy request for session: ${request.sessionId}")
+        return sessionRouterService.proxyCommandRequest(request)
     }
 
     /**
@@ -62,59 +69,56 @@ class SessionRouterController(
         @RequestParam instanceId: String,
         @RequestParam host: String,
         @RequestParam port: Int,
-    ): ResponseEntity<Map<String, String>> {
+    ): ResultVo<InstanceOperationResponse> {
         log.info("Instance registration request: $instanceId at $host:$port")
         instanceRegistry.registerInstance(instanceId, host, port)
-        return ResponseEntity.ok(mapOf("status" to "registered", "instanceId" to instanceId))
+        return ResultVo.success(InstanceOperationResponse(status = "registered", instanceId = instanceId))
     }
 
     /**
      * Refresh heartbeat for an existing instance.
      */
     @PostMapping("/instance/heartbeat")
-    fun heartbeat(@RequestParam instanceId: String): ResponseEntity<Map<String, String>> {
+    fun heartbeat(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         instanceRegistry.refreshHeartbeat(instanceId)
-        return ResponseEntity.ok(mapOf("status" to "ok", "instanceId" to instanceId))
+        return ResultVo.success(InstanceOperationResponse(status = "ok", instanceId = instanceId))
     }
 
     /**
      * Unregister an agent-service instance.
      */
     @PostMapping("/instance/unregister")
-    fun unregisterInstance(@RequestParam instanceId: String): ResponseEntity<Map<String, String>> {
+    fun unregisterInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         log.info("Instance unregistration request: $instanceId")
         instanceRegistry.unregisterInstance(instanceId)
         sessionMappingService.rebindAllSessions(instanceId, "")
-        return ResponseEntity.ok(mapOf("status" to "unregistered", "instanceId" to instanceId))
+        return ResultVo.success(InstanceOperationResponse(status = "unregistered", instanceId = instanceId))
     }
 
     /**
      * Get all registered instances.
      */
     @GetMapping("/instance/list")
-    fun listInstances(): ResponseEntity<List<Map<String, Any>>> {
+    fun listInstances(): ResultVo<List<InstanceInfo>> {
         val instances = instanceRegistry.getHealthyInstances()
         val result = instances.map { inst ->
-            mapOf(
-                "instanceId" to inst.instanceId,
-                "host" to inst.host,
-                "port" to inst.port,
-                "status" to inst.status,
-                "lastHeartbeat" to inst.lastHeartbeat.toString(),
+            InstanceInfo(
+                instanceId = inst.instanceId,
+                host = inst.host,
+                port = inst.port,
+                status = inst.status,
+                lastHeartbeat = inst.lastHeartbeat.toString(),
             )
         }
-        return ResponseEntity.ok(result)
+        return ResultVo.success(result)
     }
 
     /**
      * Health check endpoint.
      */
     @GetMapping("/health")
-    fun health(): Map<String, Any> {
+    fun health(): ResultVo<RouterHealthResponse> {
         val healthyCount = instanceRegistry.getHealthyInstances().size
-        return mapOf(
-            "status" to "UP",
-            "healthyInstances" to healthyCount,
-        )
+        return ResultVo.success(RouterHealthResponse(status = "UP", healthyInstances = healthyCount))
     }
 }

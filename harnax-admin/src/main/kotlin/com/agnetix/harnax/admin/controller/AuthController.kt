@@ -4,7 +4,6 @@ import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.CaptchaResponse
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.LoginResponse
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.request.SwitchTenantRequest
 import com.agnetix.harnax.admin.dto.response.TenantResponse
 import com.agnetix.harnax.admin.security.SecurityUtils
@@ -12,6 +11,7 @@ import com.agnetix.harnax.admin.service.AuthService
 import com.agnetix.harnax.admin.service.CaptchaService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid

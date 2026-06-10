@@ -9,7 +9,6 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
-import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.McpServer
@@ -28,7 +27,6 @@ import org.springframework.util.StringUtils.hasText
 class McpServerServiceImpl(
     private val jwtUtil: JwtUtil,
     private val mcpServerMapper: McpServerMapper,
-    private val mcpAdaptor: McpConfigAdaptor,
 ) : McpServerService {
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
@@ -185,7 +183,7 @@ class McpServerServiceImpl(
     override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer)
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
-        val mcpServer = mcpAdaptor.getConfig(mcpId) ?: throw BizException("MCP server not found")
+        val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
         return McpHelper.listTools(mcpServer)
     }
 }

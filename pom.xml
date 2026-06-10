@@ -15,11 +15,12 @@
 
     <modules>
         <module>harnax-common</module>
+        <module>harnax-entity</module>
+        <module>harnax-protocol</module>
         <module>harnax-agent</module>
         <module>harnax-channel</module>
         <module>harnax-admin</module>
         <module>harnax-session-router</module>
-        <module>harnax-entity</module>
     </modules>
 
     <properties>
@@ -27,12 +28,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>21</java.version>
-        <kotlin.version>2.2.20</kotlin.version>
+        <kotlin.version>2.2.21</kotlin.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <spring-boot.version>3.5.8</spring-boot.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
         <agent-scope.version>1.1.0-RC2</agent-scope.version>
         <hikaricp.version>5.0.1</hikaricp.version>
+        <mybatis-spring-boot.version>4.0.1</mybatis-spring-boot.version>
         <spotless.version>2.44.5</spotless.version>
     </properties>
 
@@ -55,6 +57,25 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- Lock mybatis-spring-boot-starter to unified version -->
+            <dependency>
+                <groupId>org.mybatis.spring.boot</groupId>
+                <artifactId>mybatis-spring-boot-starter</artifactId>
+                <version>${mybatis-spring-boot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mybatis.spring.boot</groupId>
+                <artifactId>mybatis-spring-boot-starter-test</artifactId>
+                <version>${mybatis-spring-boot.version}</version>
+            </dependency>
+
+            <!-- Lock swagger annotations to unified version -->
+            <dependency>
+                <groupId>io.swagger.core.v3</groupId>
+                <artifactId>swagger-annotations-jakarta</artifactId>
+                <version>2.2.28</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -62,10 +83,6 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-reload4j</artifactId>
         </dependency>
     </dependencies>
 

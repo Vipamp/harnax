@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.protocol
 
+import com.agnetix.harnax.common.error.HarnaxErrorCode
+import com.agnetix.harnax.common.error.HarnaxException
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import io.agentscope.core.model.ChatUsage
@@ -25,6 +27,7 @@ import io.agentscope.core.model.ChatUsage
     JsonSubTypes.Type(value = CallToolChatEvent::class, name = "CallToolEvent"),
     JsonSubTypes.Type(value = ToolResultChatEvent::class, name = "ToolResultEvent"),
     JsonSubTypes.Type(value = EndEventChatEvent::class, name = "EndEvent"),
+    JsonSubTypes.Type(value = ErrorChatEvent::class, name = "ErrorEvent"),
 )
 interface ChatEvent {
     val eventType: EventType
@@ -111,6 +114,30 @@ data class EndEventChatEvent(
     override val eventType: EventType = EventType.EndEvent
 }
 
+/**
+ * Signals an error during agent processing.
+ * Carries a structured error code from HarnaxErrorCode and a human-readable message.
+ * Consumers (channel-service) convert this to a user-friendly error reply.
+ */
+data class ErrorChatEvent(
+    val code: String,
+    val message: String,
+    override val tokenUsage: TokenUsage? = null,
+) : ChatEvent {
+    override val eventType: EventType = EventType.ErrorEvent
+
+    companion object {
+        /** Construct from a HarnaxException */
+        fun from(e: HarnaxException) = ErrorChatEvent(code = e.code, message = e.message)
+
+        /** Construct from a HarnaxErrorCode with optional format args */
+        fun from(code: HarnaxErrorCode, vararg args: Any?): ErrorChatEvent {
+            val ex = code.format(*args)
+            return ErrorChatEvent(code = ex.code, message = ex.message)
+        }
+    }
+}
+
 enum class EventType {
     ThinkingEvent,
     CallToolEvent,
@@ -118,4 +145,5 @@ enum class EventType {
     TextEvent,
     ToolConfirmEvent,
     EndEvent,
+    ErrorEvent,
 }

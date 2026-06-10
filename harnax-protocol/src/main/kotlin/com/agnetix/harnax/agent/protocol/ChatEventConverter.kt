@@ -1,6 +1,5 @@
 package com.agnetix.harnax.agent.protocol
 
-import com.fasterxml.jackson.databind.ObjectMapper
 import io.agentscope.core.agent.Event
 import io.agentscope.core.agent.EventType
 import io.agentscope.core.message.MessageMetadataKeys.CHAT_USAGE
@@ -9,6 +8,7 @@ import io.agentscope.core.message.ToolResultBlock
 import io.agentscope.core.message.ToolUseBlock
 import io.agentscope.core.model.ChatUsage
 import reactor.core.publisher.Flux
+import tools.jackson.databind.ObjectMapper
 
 /**
  * ChatEventConverter - converts agentscope Event to ChatEvent.

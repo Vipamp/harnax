@@ -2,8 +2,8 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.common.SystemInfo
 import com.agnetix.harnax.admin.config.EditionUtil
-import com.agnetix.harnax.admin.dto.ResultVo
-import com.agnetix.harnax.admin.dto.ResultVo.Companion.success
+import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.dto.ResultVo.Companion.success
 import io.swagger.v3.oas.annotations.media.Schema
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.web.bind.annotation.GetMapping

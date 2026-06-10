@@ -1,5 +1,6 @@
 package com.agnetix.harnax.channel.sdk.service
 
+import com.agnetix.harnax.agent.protocol.AgentRequest
 import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
 import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
@@ -11,6 +12,7 @@ import com.agnetix.harnax.channel.sdk.message.MessageRole
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import kotlinx.coroutines.flow.collect
 import org.slf4j.LoggerFactory
+import java.util.UUID
 
 /**
  * Channel Chat Service
@@ -63,7 +65,11 @@ open class ChannelChatService(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         channelAdaptor: ChannelAdaptor,
+        agentRequest: AgentRequest? = null,
     ) {
+        // Generate short request ID for error tracing: req-xxxxxxxx
+        val requestId = "req-${UUID.randomUUID().toString().take(8)}"
+
         try {
             // 1. Save user message to session
             sessionManager.addMessage(channel.id, message)
@@ -75,6 +81,8 @@ open class ChannelChatService(
                 message = message,
                 history = agentMessages,
                 channelSpec = channel,
+                agentRequest = agentRequest,
+                requestId = requestId,
             )
 
             // 3. Call pre-processing hook
@@ -87,8 +95,8 @@ open class ChannelChatService(
                 batchSend(context, channel, message, channelAdaptor, agentAdaptor)
             }
         } catch (e: Exception) {
-            logger.error("Error processing message from channel ${channel.id}: ${e.message}", e)
-            handleChatError(e, message, channel, agentAdaptor, channelAdaptor)
+            logger.error("[$requestId] Error processing message from channel ${channel.id}: ${e.message}", e)
+            handleChatError(e, message, channel, agentAdaptor, channelAdaptor, requestId)
         }
     }
 
@@ -133,8 +141,12 @@ open class ChannelChatService(
                     agentAdaptor.onAfterProcess(context, response)
                 }
                 is AgentStreamEvent.ErrorStreamEvent -> {
-                    logger.error("Stream error for session ${message.sessionId}: ${event.error}", event.cause)
-                    channelAdaptor.sendMessage(channel, message.sessionId, "Sorry, an error occurred during processing. Please try again later.")
+                    logger.error("[${event.code}][${event.requestId}] Stream error for session ${message.sessionId}: ${event.message}", event.cause)
+                    channelAdaptor.sendMessage(
+                        channel,
+                        message.sessionId,
+                        formatErrorMessage(event.code, event.requestId, event.message),
+                    )
                 }
             }
         }
@@ -191,8 +203,12 @@ open class ChannelChatService(
                         agentAdaptor.onAfterProcess(context, response)
                     }
                     is AgentStreamEvent.ErrorStreamEvent -> {
-                        logger.error("Agent error for session ${message.sessionId}: ${event.error}", event.cause)
-                        channelAdaptor.sendMessage(channel, message.sessionId, "Sorry, an error occurred during processing. Please try again later.")
+                        logger.error("[${event.code}][${event.requestId}] Agent error for session ${message.sessionId}: ${event.message}", event.cause)
+                        channelAdaptor.sendMessage(
+                            channel,
+                            message.sessionId,
+                            formatErrorMessage(event.code, event.requestId, event.message),
+                        )
                     }
                 }
             }
@@ -218,10 +234,12 @@ open class ChannelChatService(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         channelAdaptor: ChannelAdaptor,
+        requestId: String = "",
     ) {
         val context = AgentContext(
             message = message,
             channelSpec = channel,
+            requestId = requestId,
         )
         val errorResponse = agentAdaptor.onError(context, error)
         if (errorResponse.shouldReply) {
@@ -247,4 +265,14 @@ open class ChannelChatService(
             .build()
         sessionManager.addMessage(channel.id, assistantMessage)
     }
+
+    /**
+     * Format error message for user-facing output.
+     *
+     * Format: `[error-code][request-id][user-readable message]`
+     * - error-code: from HarnaxErrorCode (e.g., "6001")
+     * - request-id: short request identifier for tracing (e.g., "req-a1b2c3d4")
+     * - message: user-readable error description
+     */
+    private fun formatErrorMessage(code: String, requestId: String, message: String): String = "[$code][$requestId][$message]"
 }

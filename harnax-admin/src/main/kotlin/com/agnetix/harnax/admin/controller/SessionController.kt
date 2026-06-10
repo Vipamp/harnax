@@ -1,13 +1,8 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.dto.ResultVo
-import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
-import com.agnetix.harnax.admin.dto.SessionCreateRequest
-import com.agnetix.harnax.admin.dto.SessionResponse
-import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.service.SessionService
-import com.agnetix.harnax.ascopagent.dto.SessionConfigResponse
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.media.Schema
@@ -113,8 +108,9 @@ class SessionController(
     @Schema(description = "Get session chat configuration")
     fun getSessionConfig(
         @PathVariable("sessionId") sessionId: String,
-    ): ResultVo<SessionConfigResponse> = try {
-        ResultVo.success(sessionService.getSessionChatConfig(sessionId))
+    ): ResultVo<SessionResponse?> = try {
+        val sessionChatConfig = sessionService.getSessionChatConfig(sessionId)
+        ResultVo.success(sessionChatConfig?.let { sessionService.convertToResponse(it) })
     } catch (e: Exception) {
         ResultVo.error(e.toString())
     }

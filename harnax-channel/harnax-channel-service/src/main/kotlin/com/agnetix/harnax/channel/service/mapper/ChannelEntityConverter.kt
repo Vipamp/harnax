@@ -3,9 +3,9 @@ package com.agnetix.harnax.channel.service.mapper
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.entity.Channel
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.LoggerFactory
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.module.kotlin.jacksonObjectMapper
 
 /**
  * Channel 实体 → SDK 层 [ChannelSpec] 的转换器。
@@ -19,7 +19,7 @@ object ChannelEntityConverter {
 
     private val log = LoggerFactory.getLogger(ChannelEntityConverter::class.java)
 
-    private val objectMapper: ObjectMapper = ObjectMapper().registerKotlinModule()
+    private val objectMapper: ObjectMapper = jacksonObjectMapper()
 
     fun toSpec(entity: Channel): ChannelSpec {
         val cfg = parseConfig(entity.configJson)

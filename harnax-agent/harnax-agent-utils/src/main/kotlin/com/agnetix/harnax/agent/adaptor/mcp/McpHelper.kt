@@ -1,5 +1,6 @@
 package com.agnetix.harnax.agent.adaptor.mcp
 
+import com.agnetix.harnax.entity.McpServer
 import io.agentscope.core.tool.mcp.McpClientBuilder
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.modelcontextprotocol.spec.McpSchema
@@ -17,19 +18,47 @@ object McpHelper {
 
     private val log = LoggerFactory.getLogger(McpHelper::class.java)
 
-    fun listTools(mcpConfig: McpConfig): List<McpSchema.Tool> {
-        val mcpClient = createMcpClient(mcpConfig, false)
+    fun listTools(mcpServer: McpServer): List<McpSchema.Tool> {
+        val mcpClient = createMcpClient(mcpServer, false)
         try {
             mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
         } catch (t: Throwable) {
-            log.error("Failed to initialize McpClient `${mcpConfig.name}`", t)
-            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpConfig.name)
+            log.error("Failed to initialize McpClient `${mcpServer.name}`", t)
+            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
         }
         try {
             return mcpClient.listTools()?.block() ?: emptyList()
         } catch (t: Throwable) {
-            log.error("Failed to list tools from McpClient `${mcpConfig.name}`", t)
-            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpConfig.name)
+            log.error("Failed to list tools from McpClient `${mcpServer.name}`", t)
+            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
+        }
+    }
+
+    /**
+     * Build McpConfig based on MCP type
+     */
+    fun buildMcpConfig(mcpServer: McpServer): McpConfig? = when (val type = mcpServer.type.lowercase()) {
+        "stdio" -> StdioMcpConfig(
+            mcpServer.name,
+            mcpServer.command,
+            emptyList(),
+            emptyMap(),
+        )
+        "sse" -> SseHttpMcpConfig(
+            mcpServer.name,
+            mcpServer.url,
+            emptyMap(),
+            emptyMap(),
+        )
+        "streamablehttp" -> StreamableHttpMcpConfig(
+            mcpServer.name,
+            mcpServer.url,
+            emptyMap(),
+            emptyMap(),
+        )
+        else -> {
+            log.warn("Unsupported MCP type: $type")
+            null
         }
     }
 
@@ -42,9 +71,10 @@ object McpHelper {
      * @throws McpErrorCode.MCP_CLIENT_CREATE_FAILED 当客户端创建失败时抛出
      */
     fun createMcpClient(
-        mcpConfig: McpConfig,
+        mcpServer: McpServer,
         isAsync: Boolean,
     ): McpClientWrapper {
+        val mcpConfig = buildMcpConfig(mcpServer) ?: throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format("MCP config is null")
         val builder = when (mcpConfig) {
             is StdioMcpConfig -> buildStdioMcpClient(mcpConfig)
             is SseHttpMcpConfig -> buildSseMcpClient(mcpConfig)

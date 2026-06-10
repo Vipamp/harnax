@@ -11,9 +11,8 @@ import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.*
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.LoggerFactory
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.nio.charset.StandardCharsets
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -34,7 +33,7 @@ class FeishuAdaptor(
 ) : ChannelAdaptor {
 
     private val logger = LoggerFactory.getLogger(FeishuAdaptor::class.java)
-    private val objectMapper = ObjectMapper().registerKotlinModule()
+    private val objectMapper = jacksonObjectMapper()
 
     // WebSocket communication mode instance
     private val webSocketMode: FeishuWebSocketMode = FeishuWebSocketMode(httpClient)
@@ -236,8 +235,10 @@ class FeishuAdaptor(
         sessionManager: ChannelSessionManager,
     ) {
         val chatService = ChannelChatService(sessionManager)
+        val messageParser = FeishuMessageParser()
         startChannel(channel) { message ->
-            chatService.chat(message, channel, agentAdaptor, this)
+            val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
+            chatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
     }
 

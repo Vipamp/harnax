@@ -1,9 +1,9 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.config.RequiresEdition
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.TokenStatsAggregationResponse
 import com.agnetix.harnax.admin.service.TokenStatsService
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

@@ -1,28 +1,20 @@
 package com.agnetix.harnax.admin.config
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.KotlinModule
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.module.kotlin.jacksonObjectMapper
 
 /**
  * Jackson JSON serialization configuration
  *
- * Configure Kotlin support to resolve isXXX field getter method recognition issue
+ * Configure Kotlin support to resolve isXXX field getter method recognition issue.
+ * Jackson 3.x writes dates as ISO-8601 by default (WRITE_DATES_AS_TIMESTAMPS removed).
+ * Java time support is built into Jackson 3.x databind (no separate JavaTimeModule needed).
  */
 @Configuration
 class JacksonConfig {
 
     @Bean
-    fun objectMapper(): ObjectMapper = Jackson2ObjectMapperBuilder.json()
-        // Register Kotlin module - resolve isXXX field serialization issue
-        .modulesToInstall(KotlinModule.Builder().build())
-        // Register Java 8 time module
-        .modulesToInstall(JavaTimeModule())
-        // Serialization configuration
-        .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-        .build()
+    fun objectMapper(): ObjectMapper = jacksonObjectMapper()
 }

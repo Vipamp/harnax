@@ -1,6 +1,6 @@
 package com.agnetix.harnax.agent.adaptor
 
-import com.agnetix.harnax.agent.adaptor.mcp.McpConfig
+import com.agnetix.harnax.entity.McpServer
 
 /**
  * MCP 配置适配器接口
@@ -16,5 +16,5 @@ fun interface McpConfigAdaptor {
      *
      * @return McpConfig 实例
      */
-    fun getConfig(mcpId: Long): McpConfig?
+    fun getConfig(mcpId: Long): McpServer?
 }

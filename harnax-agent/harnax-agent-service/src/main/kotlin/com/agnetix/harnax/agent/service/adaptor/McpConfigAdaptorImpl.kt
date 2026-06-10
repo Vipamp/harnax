@@ -18,7 +18,7 @@ class McpConfigAdaptorImpl(
 
     private val log = LoggerFactory.getLogger(McpConfigAdaptorImpl::class.java)
 
-    override fun getConfig(mcpId: Long): McpConfig? {
+    override fun getConfig(mcpId: Long): McpServer? {
         if (mcpId <= 0) {
             log.warn("Invalid mcpId: $mcpId")
             return null
@@ -32,34 +32,6 @@ class McpConfigAdaptorImpl(
         }
 
         // Create corresponding configuration based on MCP type
-        return buildMcpConfig(mcpServer)
-    }
-
-    /**
-     * Build McpConfig based on MCP type
-     */
-    private fun buildMcpConfig(mcpServer: McpServer): McpConfig? = when (val type = mcpServer.type.lowercase()) {
-        "stdio" -> StdioMcpConfig(
-            mcpServer.name,
-            mcpServer.command,
-            emptyList(),
-            emptyMap(),
-        )
-        "sse" -> SseHttpMcpConfig(
-            mcpServer.name,
-            mcpServer.url,
-            emptyMap(),
-            emptyMap(),
-        )
-        "streamablehttp" -> StreamableHttpMcpConfig(
-            mcpServer.name,
-            mcpServer.url,
-            emptyMap(),
-            emptyMap(),
-        )
-        else -> {
-            log.warn("Unsupported MCP type: $type")
-            null
-        }
+        return mcpServer
     }
 }

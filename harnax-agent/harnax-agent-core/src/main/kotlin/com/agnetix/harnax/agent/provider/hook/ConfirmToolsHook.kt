@@ -20,7 +20,7 @@ class ConfirmToolsHook : Hook {
         this.dangerousTools.addAll(dangerousTools)
     }
 
-    override fun <T : HookEvent> onEvent(event: T): Mono<T?> {
+    override fun <T : HookEvent> onEvent(event: T): Mono<T> {
         if (event is PostReasoningEvent) {
             val reasoningMsg = event.reasoningMessage ?: return Mono.just(event)
             if (reasoningMsg.getContentBlocks(ToolUseBlock::class.java)

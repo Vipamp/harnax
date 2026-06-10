@@ -8,16 +8,15 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
-import com.agnetix.harnax.ascopagent.dto.SessionConfigResponse
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.SysJob
 import com.agnetix.harnax.mapper.SessionMapper
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 import java.util.*
 
@@ -209,19 +208,11 @@ class SessionServiceImpl(
         return sessionMapper.updateById(session) > 0
     }
 
-    override fun getSessionChatConfig(sessionId: String): SessionConfigResponse {
+    override fun getSessionChatConfig(sessionId: String): Session? {
         log.info("Getting session configuration, sessionId: {}", sessionId)
 
         // Query session by sessionId (status enabled)
-        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-            ?: throw BizException("Session not found or disabled")
-
-        return SessionConfigResponse(
-            sessionId = session.sessionId,
-            enableThink = session.enableThink == 1,
-            enableSearch = session.enableSearch == 1,
-            enablePlan = session.enablePlan == 1,
-        )
+        return sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
     }
 
     @Transactional(rollbackFor = [Exception::class])

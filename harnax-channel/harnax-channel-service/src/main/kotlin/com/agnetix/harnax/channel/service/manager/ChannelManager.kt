@@ -1,10 +1,13 @@
 package com.agnetix.harnax.channel.service.manager
 
+import com.agnetix.harnax.agent.protocol.AgentRequest
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
+import com.agnetix.harnax.channel.feishu.FeishuMessageParser
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
+import com.agnetix.harnax.channel.sdk.parser.MessageParser
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
@@ -37,13 +40,17 @@ class ChannelManager(
     /** RouterAgentAdaptor that delegates to agent-service via session-router */
     private val routerAgentAdaptor = RouterAgentAdaptor(routerClient)
 
+    /** Feishu-specific message parser */
+    private val feishuMessageParser = FeishuMessageParser()
+
     /**
      * Handle an incoming channel message.
      * Routes the message through the session-router to agent-service
      * and sends the response back through the channel.
      *
-     * This method uses ChannelChatService from the SDK, which provides
-     * the full orchestration: session saving, agent processing, and response sending.
+     * Flow:
+     * 1. Parse ChannelMessage → AgentRequest using channel-specific MessageParser
+     * 2. Pass AgentRequest to ChannelChatService for processing
      *
      * @param message The channel message to process
      * @param channel The channel configuration
@@ -52,9 +59,14 @@ class ChannelManager(
         log.info("Received message from channel ${channel.id}, session=${message.sessionId}")
 
         val channelAdaptor = getAdaptor(channel.type)
+        val messageParser = getParser(channel.type)
+
+        // Parse channel message into AgentRequest (ChatAgentRequest or CommandAgentRequest)
+        val agentRequest = messageParser.parse(message)
+        log.info("Parsed message as {} for session={}", agentRequest.type, message.sessionId)
 
         try {
-            chatService.chat(message, channel, routerAgentAdaptor, channelAdaptor)
+            chatService.chat(message, channel, routerAgentAdaptor, channelAdaptor, agentRequest)
         } catch (e: Exception) {
             log.error("Error handling message from channel ${channel.id}: ${e.message}", e)
         }
@@ -67,5 +79,25 @@ class ChannelManager(
         ChannelType.WECHAT -> wechatAdaptor
         ChannelType.FEISHU -> feishuAdaptor
         else -> throw IllegalArgumentException("Unsupported channel type: $type")
+    }
+
+    /**
+     * Get the appropriate MessageParser for the given channel type.
+     * Each channel has its own parser that converts incoming messages
+     * into AgentRequest (ChatAgentRequest or CommandAgentRequest).
+     */
+    private fun getParser(type: ChannelType): MessageParser = when (type) {
+        ChannelType.FEISHU -> feishuMessageParser
+        else -> defaultMessageParser
+    }
+
+    companion object {
+        /** Default parser that always creates ChatAgentRequest */
+        private val defaultMessageParser: MessageParser = object : MessageParser {
+            override fun parse(message: ChannelMessage): AgentRequest = com.agnetix.harnax.agent.protocol.ChatAgentRequest(
+                sessionId = message.sessionId,
+                message = message.content,
+            )
+        }
     }
 }

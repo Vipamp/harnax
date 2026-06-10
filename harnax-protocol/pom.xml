@@ -5,18 +5,25 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.agnetix</groupId>
-        <artifactId>harnax-agent</artifactId>
+        <artifactId>harnax</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>harnax-agent-protocol</artifactId>
+    <artifactId>harnax-protocol</artifactId>
     <packaging>jar</packaging>
 
-    <name>harnax-agent-protocol</name>
+    <name>harnax-protocol</name>
     <description>Harnax Agent Protocol - ChatEvent types, converters, and streaming event definitions</description>
 
     <dependencies>
+        <!-- harnax-common (for HarnaxErrorCode / HarnaxException) -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- AgentScope (for Event, Msg, ChatUsage, ToolUseBlock, ToolResultBlock) -->
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -30,14 +37,16 @@
             <artifactId>reactor-core</artifactId>
         </dependency>
 
-        <!-- Jackson (for polymorphic JSON serialization of ChatEvent) -->
+        <!-- Jackson 3.x (for polymorphic JSON serialization of ChatEvent) -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- Jackson annotations (shared between 2.x and 3.x, package: com.fasterxml.jackson.annotation) -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- Kotlin -->

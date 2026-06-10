@@ -26,26 +26,32 @@ class RouterAgentAdaptor(
     override suspend fun process(context: AgentContext): AgentResponse {
         val agentId = context.channelSpec.agentId
         val sessionId = context.channelSpec.sessionId
-        val responseContent = routerClient.sendToAgent(
+        val chatResponse = routerClient.sendToAgent(
             sessionId = sessionId,
             agentId = agentId,
             message = context.message.content,
         )
-        return AgentResponse(content = responseContent, shouldReply = true)
+        return AgentResponse(content = chatResponse.content, shouldReply = true)
     }
 
     override fun supportsStreaming(): Boolean = true
 
     override fun streamProcess(context: AgentContext): Flow<AgentStreamEvent> = flow {
-        val agentId = context.channelSpec.agentId
         val sessionId = context.channelSpec.sessionId
+        val agentId = context.channelSpec.agentId
+        val requestId = context.requestId
 
-        routerClient.streamToAgent(
+        // Use parsed AgentRequest if available, otherwise fall back to chat with message content
+        val request = context.agentRequest ?: ChatAgentRequest(
             sessionId = sessionId,
-            agentId = agentId,
             message = context.message.content,
+        )
+
+        routerClient.streamRequest(
+            request = request,
+            agentId = agentId,
         ).collect { chatEvent ->
-            val streamEvent = convertChatEvent(chatEvent)
+            val streamEvent = convertChatEvent(chatEvent, requestId)
             if (streamEvent != null) {
                 emit(streamEvent)
             }
@@ -53,9 +59,9 @@ class RouterAgentAdaptor(
     }
 
     /**
-     * Convert ChatEvent (from harnax-agent-protocol) to AgentStreamEvent (from channel SDK)
+     * Convert ChatEvent (from harnax-protocol) to AgentStreamEvent (from channel SDK)
      */
-    private fun convertChatEvent(event: ChatEvent): AgentStreamEvent? = when (event) {
+    private fun convertChatEvent(event: ChatEvent, requestId: String): AgentStreamEvent? = when (event) {
         is StreamTextChatEvent -> AgentStreamEvent.TextStreamEvent(
             content = event.message,
             isLast = event.isLast,
@@ -65,6 +71,11 @@ class RouterAgentAdaptor(
             isLast = event.isLast,
         )
         is EndEventChatEvent -> AgentStreamEvent.EndStreamEvent()
+        is ErrorChatEvent -> AgentStreamEvent.ErrorStreamEvent(
+            code = event.code,
+            message = event.message,
+            requestId = requestId,
+        )
         else -> null // Tool events are not relevant for channel output
     }
 }

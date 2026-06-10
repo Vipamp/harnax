@@ -2,13 +2,13 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

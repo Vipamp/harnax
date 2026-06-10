@@ -5,9 +5,9 @@ import com.agnetix.harnax.admin.dto.ModelCreateRequest
 import com.agnetix.harnax.admin.dto.ModelResponse
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.ModelService
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

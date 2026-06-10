@@ -1,11 +1,10 @@
 package com.agnetix.harnax.channel.feishu.client
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.client.WebClient
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Duration
 
 /**
@@ -28,7 +27,7 @@ class PlatformHttpClient(
     private val readTimeoutMs: Long = 10000,
 ) {
     private val logger = LoggerFactory.getLogger(PlatformHttpClient::class.java)
-    private val objectMapper = ObjectMapper().registerKotlinModule()
+    private val objectMapper = jacksonObjectMapper()
 
     private val webClient: WebClient = WebClient.builder()
         .codecs { config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024) } // 10MB

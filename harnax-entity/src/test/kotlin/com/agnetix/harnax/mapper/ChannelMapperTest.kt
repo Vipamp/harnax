@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -102,8 +102,7 @@ class ChannelMapperTest {
                 name = "New Channel"
                 type = "http"
                 agentId = 1L
-                webhookUrl = "http://localhost:8080/webhook/new"
-                token = "new-token"
+                configJson = """{"webhookUrl":"http://localhost:8080/webhook/new","token":"new-token"}"""
                 callbackKey = "test-new"
                 description = "新通道"
                 status = 1

@@ -11,13 +11,13 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.SessionMapper
-import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.core.JacksonException
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -75,7 +75,7 @@ class AgentServiceImpl(
         if (!request.mcpList.isNullOrEmpty()) {
             try {
                 agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
-            } catch (e: JsonProcessingException) {
+            } catch (e: JacksonException) {
                 throw RuntimeException("Failed to serialize MCP list to JSON", e)
             }
         }
@@ -117,7 +117,7 @@ class AgentServiceImpl(
                 // Store directly in JSON format: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
                 try {
                     agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
-                } catch (e: JsonProcessingException) {
+                } catch (e: JacksonException) {
                     throw RuntimeException("Failed to serialize MCP list to JSON", e)
                 }
             }

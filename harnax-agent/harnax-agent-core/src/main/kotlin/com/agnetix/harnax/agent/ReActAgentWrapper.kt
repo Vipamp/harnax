@@ -5,6 +5,9 @@ import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatEventConverter
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.common.error.HarnaxErrorCode
+import com.agnetix.harnax.common.error.HarnaxException
 import io.agentscope.core.ReActAgent
 import io.agentscope.core.agent.StreamOptions
 import io.agentscope.core.message.*
@@ -50,8 +53,18 @@ class ReActAgentWrapper(
         .doOnNext { sessionManager?.saveSession() }
         .flatMap { ChatEventConverter.convert(it, dangerousTools) }
         .doOnNext { extracted(it) }
-        .doOnComplete { /* 流完成时会自动发射 EndEvent */ }
         .concatWith(Flux.just(EndEventChatEvent()))
+        .onErrorResume { e ->
+            val errorEvent = if (e is HarnaxException) {
+                ErrorChatEvent.from(e)
+            } else {
+                ErrorChatEvent(
+                    code = HarnaxErrorCode.SYSTEM_ERROR.code,
+                    message = e.message ?: "Unknown error",
+                )
+            }
+            Flux.just(errorEvent, EndEventChatEvent())
+        }
 
     private fun textBlock(prompt: String): TextBlock = TextBlock.builder().text(prompt).build()
 

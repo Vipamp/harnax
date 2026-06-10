@@ -6,11 +6,20 @@ import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.ReActAgentWrapper
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
+import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.runner.AgentRunner
+import com.agnetix.harnax.common.error.HarnaxErrorCode
+import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.mapper.SessionMapper
-import kotlinx.coroutines.reactor.awaitSingleOrNull
+import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
@@ -29,40 +38,86 @@ class DefaultAgentRunner(
 
     private val log = LoggerFactory.getLogger(DefaultAgentRunner::class.java)
     private val agentCache = ConcurrentHashMap<String, ReActAgentWrapper>()
+    private val activeStreams = ConcurrentHashMap<String, Subscription>()
 
-    override suspend fun process(sessionId: String, message: String, agentId: Long): String {
-        log.info("Processing message for session=$sessionId, agentId=$agentId")
-        val flux = streamProcess(sessionId, message, agentId)
-        // Collect all stream events and extract the final text
-        val events = flux.collectList().awaitSingleOrNull() ?: emptyList()
-        val textContent = events
-            .filterIsInstance<com.agnetix.harnax.agent.protocol.StreamTextChatEvent>()
-            .joinToString("") { it.message }
-        return textContent.ifEmpty { "No response generated" }
+    override fun process(request: ChatAgentRequest): ChatResponse {
+        val sessionId = request.sessionId
+        log.info("Processing direct chat request for session=$sessionId")
+        val events = streamProcess(request).collectList().block() ?: emptyList()
+        return ChatResponse.fromEvents(sessionId, events)
     }
 
-    override fun streamProcess(sessionId: String, message: String, agentId: Long): Flux<ChatEvent> {
-        log.info("Streaming message for session=$sessionId, agentId=$agentId: $message")
+    override fun streamProcess(request: ChatAgentRequest): Flux<ChatEvent> {
+        val sessionId = request.sessionId
+        val message = request.message
+        log.info("Streaming message for session=$sessionId: $message")
         try {
-            // TODO: support dynamic UserIdentifier from request context
             val userIdentifier = UserIdentifier(0)
-            val agent = getOrCreateAgent(sessionId, agentId, userIdentifier)
+            val agent = getOrCreateAgent(sessionId, userIdentifier)
             return agent.callStream(message)
+                .doOnSubscribe { subscription ->
+                    activeStreams[sessionId] = subscription
+                    log.debug("Stream started for session=$sessionId")
+                }
+                .doFinally {
+                    activeStreams.remove(sessionId)
+                    log.debug("Stream ended for session=$sessionId")
+                }
         } catch (e: Exception) {
             log.error("Error creating agent or streaming for session=$sessionId: ${e.message}", e)
-            return Flux.error(e)
+            val errorEvent = if (e is HarnaxException) {
+                ErrorChatEvent.from(e)
+            } else {
+                ErrorChatEvent(
+                    code = HarnaxErrorCode.AGENT_INIT_FAILED.code,
+                    message = e.message ?: "Agent initialization failed",
+                )
+            }
+            return Flux.just(errorEvent, EndEventChatEvent())
         }
     }
 
+    override fun executeCommand(request: CommandAgentRequest): CommandResponse {
+        val sessionId = request.sessionId
+        val command = request.command
+        log.info("Executing command for session=$sessionId, command=$command")
+        return when (command) {
+            CommandType.INTERRUPT -> {
+                interrupt(sessionId)
+                CommandResponse.success(sessionId, message = "Stream interrupted")
+            }
+            CommandType.CLEAR -> {
+                clearSession(sessionId)
+                CommandResponse.success(sessionId, message = "Session cleared")
+            }
+            CommandType.COMPACT -> {
+                // TODO: implement memory compaction/summarization
+                log.info("Compact command received for session=$sessionId (not yet implemented)")
+                CommandResponse.success(sessionId, message = "Compact not yet implemented")
+            }
+        }
+    }
+
+    override fun interrupt(sessionId: String) {
+        val subscription = activeStreams.remove(sessionId)
+        if (subscription != null) {
+            subscription.cancel()
+            log.info("Interrupted active stream for session=$sessionId")
+        } else {
+            log.info("No active stream to interrupt for session=$sessionId")
+        }
+    }
+
+    override fun loadHistory(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)
+        .flatMap { MessageLogConverter.convert(it) }
+
     override suspend fun initAgent(agentId: Long) {
         log.info("Initializing agent: $agentId")
-        // Agent will be lazily created on first request via streamProcess/process
+        // Agent will be lazily created on first request via streamProcess
     }
 
     override suspend fun destroyAgent(agentId: Long) {
         log.info("Destroying agent: $agentId")
-        // Remove all cached agents associated with this agentId
-        // Since cache is keyed by sessionId, we remove entries whose agent was created for this agentId
         agentCache.keys.forEach { key ->
             agentCache.remove(key)
             log.info("Removed cached agent for session=$key")
@@ -73,44 +128,36 @@ class DefaultAgentRunner(
      * Clear session and remove cached agent.
      */
     fun clearSession(sessionId: String) {
+        interrupt(sessionId)
         agentCache.remove(sessionId)
         launcher.clearSession(sessionId)
         log.info("Cleared session and agent cache for sessionId=$sessionId")
     }
 
     /**
-     * Load session messages for history display.
-     */
-    fun loadSessionMessages(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)
-        .flatMap { MessageLogConverter.convert(it) }
-
-    /**
      * Get or create an agent for the given sessionId.
      * Retrieves session configuration from DB and builds the agent via AscopeAgentLauncher.
      */
-    private fun getOrCreateAgent(sessionId: String, agentId: Long, userIdentifier: UserIdentifier): ReActAgentWrapper = agentCache.computeIfAbsent(sessionId) { sid ->
+    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): ReActAgentWrapper = agentCache.computeIfAbsent(sessionId) { sid ->
         val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
             ?: throw IllegalArgumentException("Session not found: $sid")
 
         log.info("Creating agent for session=$sid, agentId=${session.agentId}")
 
-        // Build ChatSpec from session configuration
         val chatSpec = ChatSpecBuilder()
             .enableThinking(session.enableThink == 1)
             .enableSearch(session.enableSearch == 1)
             .enablePlan(session.enablePlan == 1)
             .build()
 
-        // Build AgentSpec from session data
         val agentSpec = AgentSpec.builder()
-            .id(session.agentId ?: throw IllegalArgumentException("Session.agentId cannot be null"))
-            .name(session.name ?: "Agent-${session.sessionId}")
-            .description(session.description ?: "")
-            .systemPrompt(session.systemPrompt ?: "")
-            .chatModelId(session.modelId ?: throw IllegalArgumentException("Session.modelId cannot be null"))
+            .id(session.agentId)
+            .name(session.name)
+            .description(session.description)
+            .systemPrompt(session.systemPrompt)
+            .chatModelId(session.modelId)
             .build()
 
-        // Use launcher to create Agent
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sid,

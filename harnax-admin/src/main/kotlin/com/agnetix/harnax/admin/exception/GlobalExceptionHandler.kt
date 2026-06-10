@@ -1,6 +1,6 @@
 package com.agnetix.harnax.admin.exception
 
-import com.agnetix.harnax.admin.dto.ResultVo
+import com.agnetix.harnax.common.dto.ResultVo
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpStatus

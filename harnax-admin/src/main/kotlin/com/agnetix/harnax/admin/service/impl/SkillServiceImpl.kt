@@ -14,12 +14,12 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SysJob
 import com.agnetix.harnax.mapper.SkillMapper
-import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.databind.ObjectMapper
 
 /**
  * Skill service implementation

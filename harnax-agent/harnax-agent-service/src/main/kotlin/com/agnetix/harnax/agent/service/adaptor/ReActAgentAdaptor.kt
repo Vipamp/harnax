@@ -3,6 +3,7 @@ package com.agnetix.harnax.agent.service.adaptor
 import com.agnetix.harnax.agent.*
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.StreamThinkingChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
@@ -78,11 +79,12 @@ class ReActAgentAdaptor(
     override fun streamProcess(context: AgentContext): Flow<AgentStreamEvent> = flow {
         val agentWrapper = createAgent(context)
         val userMessage = context.message.content
+        val requestId = context.requestId
 
         agentWrapper.callStream(userMessage)
             .asFlow()
             .collect { chatEvent: ChatEvent ->
-                val streamEvent = convertChatEvent(chatEvent)
+                val streamEvent = convertChatEvent(chatEvent, requestId)
                 if (streamEvent != null) {
                     emit(streamEvent)
                 }
@@ -138,7 +140,7 @@ class ReActAgentAdaptor(
      * - EndEventChatEvent → EndStreamEvent
      * - Other events (ToolConfirm, CallTool, ToolResult) are filtered out for channels
      */
-    private fun convertChatEvent(event: ChatEvent): AgentStreamEvent? = when (event) {
+    private fun convertChatEvent(event: ChatEvent, requestId: String): AgentStreamEvent? = when (event) {
         is StreamTextChatEvent -> AgentStreamEvent.TextStreamEvent(
             content = event.message,
             isLast = event.isLast,
@@ -148,6 +150,11 @@ class ReActAgentAdaptor(
             isLast = event.isLast,
         )
         is EndEventChatEvent -> AgentStreamEvent.EndStreamEvent()
+        is ErrorChatEvent -> AgentStreamEvent.ErrorStreamEvent(
+            code = event.code,
+            message = event.message,
+            requestId = requestId,
+        )
         else -> null // Tool events are not relevant for channel output
     }
 }

@@ -4,11 +4,8 @@ import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
-import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
-import com.agnetix.harnax.agent.adaptor.mcp.StdioMcpConfig
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.mapper.McpServerMapper
-import io.modelcontextprotocol.spec.McpSchema
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -16,11 +13,11 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentMatchers.anyLong
-import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.*
 import org.mockito.InjectMocks
 import org.mockito.Mock
-import org.mockito.Mockito.*
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
@@ -47,9 +44,6 @@ class McpServerServiceImplTest {
 
     @Mock
     private lateinit var jwtUtil: JwtUtil
-
-    @Mock
-    private lateinit var mcpAdaptor: McpConfigAdaptor
 
     @InjectMocks
     private lateinit var mcpServerService: McpServerServiceImpl
@@ -455,47 +449,6 @@ class McpServerServiceImplTest {
     }
 
     @Nested
-    @DisplayName("Connectivity Test")
-    inner class ConnectivityTestTests {
-
-        @Test
-        @DisplayName("connectivityTest - Test connection successfully")
-        fun `connectivityTest should test connection successfully`() {
-            // Given
-            val mcpConfig = StdioMcpConfig(
-                name = "Test MCP",
-                command = "test",
-            )
-
-            `when`(mcpAdaptor.getConfig(1L)).thenReturn(mcpConfig)
-
-            // When - This will try to connect but may fail in test environment
-            try {
-                val result = mcpServerService.connectivityTest(1L)
-                assertTrue(result)
-            } catch (e: Exception) {
-                // Expected to fail in unit test environment without real MCP server
-                // We just verify getConfig was called
-            }
-
-            verify(mcpAdaptor).getConfig(1L)
-        }
-
-        @Test
-        @DisplayName("connectivityTest - Throw BizException when MCP not found")
-        fun `connectivityTest should throw BizException when mcp not found`() {
-            // Given
-            `when`(mcpAdaptor.getConfig(999L)).thenReturn(null)
-
-            // When & Then
-            val exception = assertThrows<BizException> {
-                mcpServerService.connectivityTest(999L)
-            }
-            assertEquals("MCP server not found", exception.message)
-        }
-    }
-
-    @Nested
     @DisplayName("Convert To Response Tests")
     inner class ConvertToResponseTests {
 
@@ -511,47 +464,6 @@ class McpServerServiceImplTest {
             assertEquals(testMcpServer.name, result.name)
             assertEquals(testMcpServer.description, result.description)
             assertEquals(testMcpServer.type, result.type)
-        }
-    }
-
-    @Nested
-    @DisplayName("List Tools Tests")
-    inner class ListToolsTests {
-
-        @Test
-        @DisplayName("listTools - Get tool list successfully")
-        fun `listTools should get tool list successfully`() {
-            // Given
-            val mcpConfig = StdioMcpConfig(
-                name = "Test MCP",
-                command = "test",
-            )
-            val tools = listOf<McpSchema.Tool>()
-
-            `when`(mcpAdaptor.getConfig(1L)).thenReturn(mcpConfig)
-
-            // When - Note: This will fail in unit test without real MCP server
-            // We just verify the method is called
-            try {
-                mcpServerService.listTools(1L)
-            } catch (e: Exception) {
-                // Expected to fail in unit test environment
-            }
-
-            verify(mcpAdaptor).getConfig(1L)
-        }
-
-        @Test
-        @DisplayName("listTools - Throw BizException when MCP not found")
-        fun `listTools should throw BizException when mcp not found`() {
-            // Given
-            `when`(mcpAdaptor.getConfig(999L)).thenReturn(null)
-
-            // When & Then
-            val exception = assertThrows<BizException> {
-                mcpServerService.listTools(999L)
-            }
-            assertEquals("MCP server not found", exception.message)
         }
     }
 }

@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.stereotype.Component
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import kotlin.io.path.Path
 
 /**
@@ -15,6 +17,9 @@ import kotlin.io.path.Path
  */
 @Component
 class LauncherConfig {
+
+    @Bean
+    fun objectMapper(): ObjectMapper = jacksonObjectMapper()
 
     @Bean
     fun createSessionConfig(

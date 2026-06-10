@@ -9,13 +9,12 @@ import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.message.RichMessage
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.lark.oapi.event.EventDispatcher
 import com.lark.oapi.service.im.ImService
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.ConcurrentHashMap
 import com.lark.oapi.ws.Client as WsClient
 
@@ -39,7 +38,7 @@ class FeishuWebSocketMode(
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(FeishuWebSocketMode::class.java)
-    private val objectMapper = ObjectMapper().registerKotlinModule()
+    private val objectMapper = jacksonObjectMapper()
 
     // Stores WebSocket client for each Channel
     private val wsClients = ConcurrentHashMap<Long, WsClient>()

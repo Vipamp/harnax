@@ -4,9 +4,9 @@ import com.agnetix.harnax.admin.dto.ChannelCreateRequest
 import com.agnetix.harnax.admin.dto.ChannelResponse
 import com.agnetix.harnax.admin.dto.ChannelUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.ChannelService
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

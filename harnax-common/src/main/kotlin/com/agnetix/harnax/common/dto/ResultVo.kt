@@ -1,10 +1,10 @@
-package com.agnetix.harnax.agent.service.dto
+package com.agnetix.harnax.common.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 
 /**
- * Unified response result class
+ * Unified response result class used across all modules.
  */
 @Schema(description = "Unified response result")
 data class ResultVo<T>(

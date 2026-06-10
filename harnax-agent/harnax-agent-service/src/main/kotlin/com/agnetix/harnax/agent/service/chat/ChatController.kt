@@ -5,8 +5,8 @@ import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
-import com.agnetix.harnax.agent.service.dto.ResultVo
 import com.agnetix.harnax.agent.service.util.JwtUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus

@@ -14,10 +14,6 @@
     <name>harnax-common</name>
     <url>http://maven.apache.org</url>
 
-    <properties>
-        <kotlin.version>2.2.20</kotlin.version>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
@@ -36,6 +32,13 @@
             <groupId>com.github.pagehelper</groupId>
             <artifactId>pagehelper</artifactId>
             <version>6.1.0</version>
+        </dependency>
+
+        <!-- Swagger Annotations (for @Schema on ResultVo) -->
+        <dependency>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-annotations-jakarta</artifactId>
+            <version>2.2.28</version>
         </dependency>
     </dependencies>
 
@@ -63,7 +66,10 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <jvmTarget>1.8</jvmTarget>
+                    <jvmTarget>21</jvmTarget>
+                    <args>
+                        <arg>-Xannotation-default-target=param-property</arg>
+                    </args>
                 </configuration>
             </plugin>
         </plugins>

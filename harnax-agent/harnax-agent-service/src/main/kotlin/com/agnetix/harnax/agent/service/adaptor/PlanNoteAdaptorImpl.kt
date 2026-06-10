@@ -3,13 +3,13 @@ package com.agnetix.harnax.agent.service.adaptor
 import com.agnetix.harnax.agent.adaptor.*
 import com.agnetix.harnax.entity.PlanNoteEntity
 import com.agnetix.harnax.mapper.PlanNoteMapper
-import com.fasterxml.jackson.core.JsonProcessingException
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.util.StringUtils
+import tools.jackson.core.JacksonException
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.module.kotlin.jacksonObjectMapper
 
 /**
  * PlanNoteAdaptor Implementation
@@ -24,8 +24,7 @@ class PlanNoteAdaptorImpl(
     private val log = LoggerFactory.getLogger(PlanNoteAdaptorImpl::class.java)
 
     // Create ObjectMapper with Kotlin support
-    private val kotlinObjectMapper = ObjectMapper()
-        .registerModule(KotlinModule.Builder().build())
+    private val kotlinObjectMapper = jacksonObjectMapper()
 
     override fun save(planNote: PlanNote) {
         try {
@@ -102,7 +101,7 @@ class PlanNoteAdaptorImpl(
     /**
      * Convert PlanNote domain object to entity
      */
-    @Throws(JsonProcessingException::class)
+    @Throws(JacksonException::class)
     private fun convertToEntity(planNote: PlanNote): PlanNoteEntity {
         val entity = PlanNoteEntity()
         entity.sessionId = planNote.sessionId
@@ -138,7 +137,7 @@ class PlanNoteAdaptorImpl(
                     entity.subtasks,
                     object : TypeReference<List<PlanSubTask>>() {},
                 )
-            } catch (e: JsonProcessingException) {
+            } catch (e: JacksonException) {
                 log.error("Failed to parse subtasks JSON for planId: ${entity.planId}", e)
                 subtasks = emptyList()
             }

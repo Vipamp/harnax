@@ -17,7 +17,7 @@ class AdminUserInitializer(
 
     private val log = LoggerFactory.getLogger(AdminUserInitializer::class.java)
 
-    override fun run(vararg args: String?) {
+    override fun run(vararg args: String) {
         // Check if admin user already exists
         val existingUser = try {
             sysUserService.getByUsername("admin")

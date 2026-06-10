@@ -59,13 +59,20 @@ sealed class AgentStreamEvent {
      * Error Stream Event
      *
      * Represents an error during AI processing.
-     * Channels should handle this gracefully (e.g., send error message to user).
+     * Carries structured error information for user-facing error messages.
      *
-     * @param error Error message
-     * @param cause Optional exception cause
+     * ChannelChatService formats the final user message as:
+     * `[error-code][request-id][user-readable message]`
+     *
+     * @param code Error code from HarnaxErrorCode (e.g., "6001")
+     * @param message User-readable error description (from HarnaxErrorCode.format())
+     * @param requestId Request identifier for tracing/debugging
+     * @param cause Optional exception cause (for logging, not exposed to user)
      */
     data class ErrorStreamEvent(
-        val error: String,
+        val code: String,
+        val message: String,
+        val requestId: String = "",
         val cause: Throwable? = null,
     ) : AgentStreamEvent()
 }

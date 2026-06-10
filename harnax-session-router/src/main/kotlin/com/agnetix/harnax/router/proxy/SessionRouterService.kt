@@ -1,13 +1,22 @@
 package com.agnetix.harnax.router.proxy
 
+import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.*
+import org.springframework.core.ParameterizedTypeReference
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.core.publisher.Flux
@@ -33,14 +42,14 @@ class SessionRouterService(
     private val log = LoggerFactory.getLogger(SessionRouterService::class.java)
 
     /**
-     * Proxy a synchronous chat request to the correct agent-service instance.
+     * Proxy a direct (non-streaming) chat request to the correct agent-service instance.
      * If the session has no binding, select a healthy instance and bind.
      * If the bound instance is down, reroute to another instance.
      */
-    suspend fun proxyChatRequest(sessionId: String, agentId: Long?, requestBody: Map<String, Any>): ResponseEntity<String> {
+    suspend fun proxyChatRequest(request: ChatAgentRequest): ResultVo<ChatResponse> {
+        val sessionId = request.sessionId
         val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/chat?sessionId=$sessionId" +
-            (if (agentId != null) "&agentId=$agentId" else "")
+        val url = "${instance.getBaseUrl()}/api/agent/chat"
 
         log.debug("Proxying chat request for session $sessionId to instance ${instance.instanceId} at $url")
 
@@ -48,47 +57,78 @@ class SessionRouterService(
             val response = webClient.post()
                 .uri(url)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(requestBody)
+                .bodyValue(request)
                 .retrieve()
-                .toEntity(String::class.java)
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
                 .awaitSingleOrNull()
 
-            // Refresh session active time on success
             sessionMappingService.refreshActiveTime(sessionId)
 
-            return response ?: ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("No response from agent-service")
+            return response ?: ResultVo.error("No response from agent-service")
         } catch (e: Exception) {
             log.error("Failed to proxy chat request for session $sessionId: ${e.message}", e)
-            // Try failover
-            return tryFailover(sessionId, agentId, requestBody, e)
+            return tryFailover(sessionId, request)
         }
     }
 
     /**
      * Proxy an SSE streaming request to the correct agent-service instance.
      * Returns a Flux<ChatEvent> that can be streamed back to the caller.
-     * Jackson polymorphism handles automatic JSON deserialization of ChatEvent subtypes.
      */
-    fun proxyStreamRequest(sessionId: String, agentId: Long?, requestBody: Map<String, Any>): Flux<ChatEvent> {
+    fun proxyStreamRequest(request: ChatAgentRequest): Flux<ChatEvent> {
+        val sessionId = request.sessionId
         val instance = resolveInstanceBlocking(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/chat/stream?sessionId=$sessionId" +
-            (if (agentId != null) "&agentId=$agentId" else "")
+        val url = "${instance.getBaseUrl()}/api/agent/chat/stream"
 
         log.debug("Proxying stream request for session $sessionId to instance ${instance.instanceId} at $url")
 
         return webClient.post()
             .uri(url)
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(requestBody)
+            .bodyValue(request)
             .retrieve()
             .bodyToFlux(ChatEvent::class.java)
             .doOnComplete {
                 sessionMappingService.refreshActiveTime(sessionId)
             }
-            .doOnError { e ->
+            .onErrorResume { e ->
                 log.error("Stream proxy error for session $sessionId: ${e.message}", e)
+                Flux.just(
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                        message = e.message ?: "Failed to reach agent-service",
+                    ),
+                    EndEventChatEvent(),
+                )
             }
+    }
+
+    /**
+     * Proxy a command request to the correct agent-service instance.
+     */
+    suspend fun proxyCommandRequest(request: CommandAgentRequest): ResultVo<CommandResponse> {
+        val sessionId = request.sessionId
+        val instance = resolveInstance(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/command"
+
+        log.debug("Proxying command request for session $sessionId to instance ${instance.instanceId} at $url")
+
+        try {
+            val response = webClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+                .awaitSingleOrNull()
+
+            sessionMappingService.refreshActiveTime(sessionId)
+
+            return response ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("Failed to proxy command request for session $sessionId: ${e.message}", e)
+            return tryCommandFailover(sessionId, request)
+        }
     }
 
     /**
@@ -147,29 +187,50 @@ class SessionRouterService(
      */
     private suspend fun tryFailover(
         sessionId: String,
-        agentId: Long?,
-        requestBody: Map<String, Any>,
-        originalError: Exception,
-    ): ResponseEntity<String> {
+        request: ChatAgentRequest,
+    ): ResultVo<ChatResponse> {
         try {
             val newInstance = sessionMappingService.rerouteSession(sessionId)
-            val url = "${instanceRegistry.getInstance(newInstance)?.getBaseUrl()}/api/agent/chat?sessionId=$sessionId" +
-                (if (agentId != null) "&agentId=$agentId" else "")
+            val url = "${instanceRegistry.getInstance(newInstance)?.getBaseUrl()}/api/agent/chat"
 
             val response = webClient.post()
                 .uri(url)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(requestBody)
+                .bodyValue(request)
                 .retrieve()
-                .toEntity(String::class.java)
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
                 .awaitSingleOrNull()
 
-            return response ?: ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("Failover response also failed")
+            return response ?: ResultVo.error("No response from failover instance")
         } catch (failoverError: Exception) {
             log.error("Failover also failed for session $sessionId: ${failoverError.message}", failoverError)
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("All agent-service instances unavailable: ${originalError.message}")
+            return ResultVo.error("Failover failed: ${failoverError.message}")
+        }
+    }
+
+    /**
+     * Try failover for command requests by rerouting to another instance.
+     */
+    private suspend fun tryCommandFailover(
+        sessionId: String,
+        request: CommandAgentRequest,
+    ): ResultVo<CommandResponse> {
+        try {
+            val newInstance = sessionMappingService.rerouteSession(sessionId)
+            val url = "${instanceRegistry.getInstance(newInstance)?.getBaseUrl()}/api/agent/command"
+
+            val response = webClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+                .awaitSingleOrNull()
+
+            return response ?: ResultVo.error("No response from failover instance")
+        } catch (failoverError: Exception) {
+            log.error("Command failover also failed for session $sessionId: ${failoverError.message}", failoverError)
+            return ResultVo.error("Command failover failed: ${failoverError.message}")
         }
     }
 

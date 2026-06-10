@@ -4,7 +4,6 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.dto.SessionResponse
-import com.agnetix.harnax.ascopagent.dto.SessionConfigResponse
 import com.agnetix.harnax.entity.Session
 
 /**
@@ -62,7 +61,7 @@ interface SessionService {
      * @param sessionId Session ID
      * @return Session config response object
      */
-    fun getSessionChatConfig(sessionId: String): SessionConfigResponse
+    fun getSessionChatConfig(sessionId: String): Session?
 
     /**
      * Toggle session enable status

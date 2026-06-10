@@ -1,9 +1,16 @@
 package com.agnetix.harnax.agent.service.controller
 
+import com.agnetix.harnax.agent.chat.MessageLog
+import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
-import com.agnetix.harnax.agent.service.dto.ChatRequest
-import com.agnetix.harnax.agent.service.dto.ChatResponse
+import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.service.runner.AgentRunner
+import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
@@ -26,41 +33,77 @@ class AgentController(
     private val log = LoggerFactory.getLogger(AgentController::class.java)
 
     /**
-     * Process a chat message synchronously.
-     * Called by session-router after routing to this instance.
+     * Process a chat message with direct (non-streaming) output.
+     * Collects all streaming events internally and returns an aggregated ChatResponse.
      */
     @PostMapping("/chat")
-    @Operation(summary = "Process chat message", description = "Send a message to the agent and receive a response")
-    suspend fun chat(
-        @RequestParam sessionId: String,
-        @RequestParam agentId: Long,
-        @RequestBody request: ChatRequest,
-    ): Map<String, Any> {
-        log.info("Processing chat request for session=$sessionId, agentId=$agentId")
-        val response = agentRunner.process(sessionId, request.message, agentId)
-        return mapOf(
-            "code" to 200,
-            "message" to "success",
-            "data" to ChatResponse(response),
-            "sessionId" to sessionId,
-        )
+    @Operation(summary = "Process chat message (direct output)", description = "Send an AgentRequest and receive an aggregated ChatResponse")
+    fun chat(@RequestBody request: ChatAgentRequest): ResultVo<ChatResponse> {
+        log.info("Processing direct request for session=${request.sessionId}, type=${request.type}")
+        return try {
+            ResultVo.success(agentRunner.process(request))
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to process chat")
+        }
     }
 
     /**
      * Process a chat message with streaming output.
-     * Called by session-router after routing to this instance.
-     * Returns Flux<ChatEvent> which Spring serializes as text/event-stream.
-     * Jackson polymorphism handles automatic JSON serialization of ChatEvent subtypes.
+     * Accepts AgentRequest in the body (type, sessionId, message).
+     * Returns Flux<ChatEvent> streamed as text/event-stream.
      */
     @PostMapping("/chat/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    @Operation(summary = "Process chat message with streaming", description = "Send a message and receive streaming response via SSE")
-    fun chatStream(
-        @RequestParam sessionId: String,
-        @RequestParam agentId: Long,
-        @RequestBody request: ChatRequest,
-    ): Flux<ChatEvent> {
-        log.info("Processing stream request for session=$sessionId, agentId=$agentId")
-        return agentRunner.streamProcess(sessionId, request.message, agentId)
+    @Operation(summary = "Process chat message with streaming", description = "Send an AgentRequest and receive streaming ChatEvent response via SSE")
+    fun chatStream(@RequestBody request: ChatAgentRequest): Flux<ChatEvent> {
+        log.info("Processing stream request for session=${request.sessionId}, type=${request.type}")
+        return agentRunner.streamProcess(request)
+            .onErrorResume { e ->
+                log.error("Unhandled stream error for session=${request.sessionId}", e)
+                Flux.just(
+                    ErrorChatEvent(code = HarnaxErrorCode.SYSTEM_ERROR.code, message = e.message ?: "Internal error"),
+                    EndEventChatEvent(),
+                )
+            }
+    }
+
+    /**
+     * Execute a command request.
+     * Accepts AgentRequest with type=COMMAND and a Command payload.
+     */
+    @PostMapping("/command")
+    @Operation(summary = "Execute command", description = "Execute a command via AgentRequest and receive CommandResponse")
+    fun executeCommand(@RequestBody request: CommandAgentRequest): ResultVo<CommandResponse> {
+        log.info("Processing command request for session=${request.sessionId}, command=${request.command}")
+        return try {
+            ResultVo.success(agentRunner.executeCommand(request))
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to execute command")
+        }
+    }
+
+    /**
+     * Interrupt the ongoing stream for a session.
+     */
+    @PostMapping("/chat/interrupt/{sessionId}")
+    @Operation(summary = "Interrupt active stream", description = "Cancel the ongoing streaming response for a session")
+    fun interrupt(@PathVariable sessionId: String): ResultVo<String> {
+        log.info("Interrupting stream for session=$sessionId")
+        agentRunner.interrupt(sessionId)
+        return ResultVo.success("OK")
+    }
+
+    /**
+     * Load historical messages for a session.
+     */
+    @GetMapping("/chat/history/{sessionId}")
+    @Operation(summary = "Load chat history", description = "Get historical messages for a session")
+    fun loadHistory(@PathVariable sessionId: String): ResultVo<List<MessageLog>> {
+        log.info("Loading history for session=$sessionId")
+        return try {
+            ResultVo.success(agentRunner.loadHistory(sessionId))
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to load history")
+        }
     }
 
     /**
@@ -69,5 +112,5 @@ class AgentController(
      */
     @GetMapping("/health")
     @Operation(summary = "Health check", description = "Check if agent-service is healthy")
-    fun health(): Map<String, String> = mapOf("status" to "UP")
+    fun health(): ResultVo<String> = ResultVo.success("UP")
 }

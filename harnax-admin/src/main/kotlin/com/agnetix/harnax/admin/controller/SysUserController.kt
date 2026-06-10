@@ -3,12 +3,12 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.Page
-import com.agnetix.harnax.admin.dto.ResultVo
 import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.SysUserService
+import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag

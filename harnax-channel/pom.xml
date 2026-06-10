@@ -26,12 +26,12 @@
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-common</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.agnetix</groupId>
-            <artifactId>harnax-agent-core</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <artifactId>harnax-protocol</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
@@ -62,11 +62,11 @@
         </dependency>
         <!-- Jackson for JSON processing -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
+            <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
+            <groupId>tools.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>
         </dependency>
         <!-- WebFlux for HTTP client -->
@@ -78,12 +78,10 @@
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
-            <version>1.8.1</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-reactor</artifactId>
-            <version>1.8.1</version>
         </dependency>
         <!-- Servlet API -->
         <dependency>
@@ -93,7 +91,7 @@
         </dependency>
         <!-- XML Processing -->
         <dependency>
-            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <groupId>tools.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-xml</artifactId>
         </dependency>
         <!-- 飞书开放平台 SDK (用于 WebSocket 长连接) -->

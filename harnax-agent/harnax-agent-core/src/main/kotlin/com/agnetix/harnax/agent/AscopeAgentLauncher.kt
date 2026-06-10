@@ -13,6 +13,7 @@ import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import io.agentscope.core.memory.InMemoryMemory
 import io.agentscope.core.memory.Memory
 import io.agentscope.core.memory.autocontext.AutoContextMemory
@@ -76,8 +77,8 @@ class AscopeAgentLauncher(
 //        val chatModelConfig = chatModelConfigAdaptor.getConfig(agentSpec.chatModelId) ?: throw IllegalArgumentException(
 //            "Chat model config not found"
 //        )
-        val chatModelConfig = DashScopeChatModelConfig("qwen3-max-2026-01-23", "sk-5404e4ddac8645a1bd3555c00376a1f5")
-        val chatModel = ModelHelper.createChatModel(chatModelConfig, chatSpec)
+        val chatModelConfig = DashScopeChatModelConfig("qwen3-max-2026-01-23", "sk-b6e5de9b14a947f5b9e9c7065c1fc0ec")
+        val chatModel = ModelHelper.createChatModel(chatModelConfig, chatSpec.enableThinking, chatSpec.enableSearch)
         agentBuilder.model(chatModel)
 
         // mcp
@@ -87,7 +88,7 @@ class AscopeAgentLauncher(
                 agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync))
             } else if (!it.skipIfMissing) {
                 log.error("Mcp config with id `${it.mcpId}` not found.")
-                throw IllegalArgumentException("Mcp config with id `${it.mcpId}` not found.")
+                throw HarnaxErrorCode.AGENT_MCP_NOT_FOUND.format(it.mcpId)
             } else {
                 log.warn("Mcp config with id `${it.mcpId}` not found.")
             }
@@ -101,7 +102,9 @@ class AscopeAgentLauncher(
                 userIdentifier,
             )
             agentBuilder.addTool(toolBox)
-            needConfirmedTools.addAll(toolBox.needConfirmedTools())
+            if (chatSpec.permission == Permission.NeedConfirmed) {
+                needConfirmedTools.addAll(toolBox.needConfirmedTools())
+            }
         }
 
         if (agentSpec.contextForTools.isNotEmpty()) {
@@ -121,7 +124,7 @@ class AscopeAgentLauncher(
             } else {
                 if (!it.skipIfMissing) {
                     log.error("Skill with id `${it.skillId}` not found.")
-                    throw IllegalArgumentException("Skill with id `${it.skillId}` not found.")
+                    throw HarnaxErrorCode.AGENT_SKILL_NOT_FOUND.format(it.skillId)
                 } else {
                     log.warn("Skill with id `${it.skillId}` not found.")
                 }

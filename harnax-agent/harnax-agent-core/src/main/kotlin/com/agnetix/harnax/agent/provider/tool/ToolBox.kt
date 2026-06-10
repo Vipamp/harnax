@@ -2,7 +2,6 @@ package com.agnetix.harnax.agent.provider.tool
 
 import com.agnetix.harnax.agent.adaptor.ToolCallInfo
 import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
-import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import org.slf4j.LoggerFactory
 
 /**
@@ -17,7 +16,7 @@ abstract class ToolBox {
     private lateinit var toolCallLogAdaptor: ToolCallLogAdaptor
     private val needConfirmedTools: MutableSet<String> = mutableSetOf()
     private lateinit var name: String
-    private val log = LoggerFactory.getLogger(McpHelper::class.java)
+    private val log = LoggerFactory.getLogger(ToolBox::class.java)
 
     /**
      * 获取工具名称（子类必须实现）
@@ -38,7 +37,7 @@ abstract class ToolBox {
     }
 
     fun userIdentifier(): UserIdentifier = userIdentifier
-    fun needConfirmedTools(): Set<String> = needConfirmedTools
+    fun needConfirmedTools(): Set<String> = needConfirmedTools.map { "$name::$it" }.toSet()
 
     @Suppress("UNCHECKED_CAST")
     protected fun <T> execute(

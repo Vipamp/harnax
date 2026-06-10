@@ -16,10 +16,6 @@
     <name>harnax-entity</name>
     <description>Harnax Entity and Mapper Module - Shared database entities and mappers</description>
 
-    <properties>
-        <kotlin.version>2.2.20</kotlin.version>
-    </properties>
-
     <dependencies>
         <!-- Springdoc OpenAPI (Swagger 3) -->
         <dependency>
@@ -32,7 +28,7 @@
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>3.0.4</version>
+            <version>${mybatis-spring-boot.version}</version>
         </dependency>
 
         <!-- MySQL Driver -->
@@ -49,9 +45,51 @@
             <version>${kotlin.version}</version>
         </dependency>
 
-        <!-- Jackson Kotlin Module -->
         <dependency>
-            <groupId>com.fasterxml.jackson.module</groupId>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-test</artifactId>
+            <version>${kotlin.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito.kotlin</groupId>
+            <artifactId>mockito-kotlin</artifactId>
+            <version>5.4.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.10.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <version>1.19.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.19.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jdbc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Jackson 3.x Kotlin Module -->
+        <dependency>
+            <groupId>tools.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>
         </dependency>
     </dependencies>
