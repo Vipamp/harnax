@@ -35,6 +35,26 @@ session:
 local:
   tmp-dir: /tmp/harnax-agent
 
+# Harness Configuration (distributed agent runtime)
+harness:
+  enable-workspace-context: false
+  enable-memory-hooks: false
+  enable-session-persistence: true
+  minio:
+    enabled: true
+    endpoint: http://localhost:9000
+    access-key: minioadmin
+    secret-key: minioadmin
+    snapshot-bucket: harnax-snapshots
+    store-bucket: harnax-store
+    snapshot-prefix: snapshots/
+    store-prefix: store/
+  sandbox:
+    enabled: false
+    image: python:3.11-slim
+    workspace-root: /workspace
+    isolation-scope: SESSION
+
 # Logging Configuration
 logging:
   level:

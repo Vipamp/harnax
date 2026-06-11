@@ -78,4 +78,5 @@ enum class CommandType {
     INTERRUPT,
     CLEAR,
     COMPACT,
+    APPROVE,
 }

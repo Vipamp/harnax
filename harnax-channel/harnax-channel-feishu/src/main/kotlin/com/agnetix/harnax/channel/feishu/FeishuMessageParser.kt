@@ -41,6 +41,7 @@ class FeishuMessageParser : MessageParser {
         "interrupt" to CommandType.INTERRUPT,
         "stop" to CommandType.INTERRUPT,
         "compact" to CommandType.COMPACT,
+        "approve" to CommandType.APPROVE,
     )
 
     override fun parse(message: ChannelMessage): AgentRequest {

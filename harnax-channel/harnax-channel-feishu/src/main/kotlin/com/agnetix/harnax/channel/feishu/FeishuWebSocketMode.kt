@@ -15,6 +15,8 @@ import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.util.Collections
+import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
 import com.lark.oapi.ws.Client as WsClient
 
@@ -27,11 +29,13 @@ import com.lark.oapi.ws.Client as WsClient
  * - Built-in encryption and authentication, no additional signature handling needed
  * - Suitable for intranet development environment and enterprise private deployment
  * - Supports automatic reconnection
+ * - Message deduplication based on messageId to handle at-least-once delivery
  *
  * Notes:
  * - WebSocket is only used for receiving messages, sending messages still requires calling Open API
  * - Each Channel corresponds to an independent WebSocket connection
  * - Feishu WebSocket operates in cluster mode, only one client will receive messages for the same application
+ * - Feishu SDK uses at-least-once delivery, events may be re-delivered on reconnection or retry
  */
 class FeishuWebSocketMode(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
@@ -45,6 +49,14 @@ class FeishuWebSocketMode(
 
     // Stores message handler for each Channel
     private val messageHandlers = ConcurrentHashMap<Long, suspend (ChannelMessage) -> Unit>()
+
+    // Tracks processed message IDs per channel for deduplication (Feishu uses at-least-once delivery)
+    private val processedMessageIds = ConcurrentHashMap<Long, MutableSet<String>>()
+
+    companion object {
+        // Max number of message IDs to keep per channel before cleanup
+        private const val MAX_PROCESSED_IDS = 1000
+    }
 
     override fun getModeName(): String = "websocket"
 
@@ -77,6 +89,14 @@ class FeishuWebSocketMode(
                 override fun handle(data: P2MessageReceiveV1?) {
                     if (data == null) {
                         logger.warn("Received null message event for channel: ${channel.id}")
+                        return
+                    }
+
+                    // Extract messageId early for deduplication
+                    // Feishu SDK uses at-least-once delivery, same event may be delivered multiple times
+                    val messageId = data.event?.message?.messageId
+                    if (!messageId.isNullOrBlank() && !markMessageProcessed(channel.id, messageId)) {
+                        logger.debug("Duplicate message event ignored: messageId=$messageId, channel=${channel.id}")
                         return
                     }
 
@@ -292,6 +312,36 @@ class FeishuWebSocketMode(
                     cause = response.exception,
                 )
             }
+        }
+    }
+
+    /**
+     * Mark a message as processed and return whether it's a new message.
+     *
+     * Uses a per-channel Set to track processed message IDs.
+     * Returns true if the message is new (not previously seen), false if duplicate.
+     * When the set exceeds [MAX_PROCESSED_IDS], it is cleared to prevent unbounded growth.
+     *
+     * @param channelId Channel ID
+     * @param messageId Feishu message ID
+     * @return true if new message, false if already processed
+     */
+    private fun markMessageProcessed(channelId: Long, messageId: String): Boolean {
+        val ids = processedMessageIds.computeIfAbsent(channelId) {
+            Collections.synchronizedSet(LinkedHashSet())
+        }
+        synchronized(ids) {
+            if (ids.contains(messageId)) {
+                return false
+            }
+            ids.add(messageId)
+            // Prevent unbounded growth: clear oldest entries when exceeding limit
+            if (ids.size > MAX_PROCESSED_IDS) {
+                val toRemove = ids.take(ids.size - MAX_PROCESSED_IDS / 2)
+                ids.removeAll(toRemove.toSet())
+                logger.debug("Cleaned up processed message IDs for channel $channelId, remaining=${ids.size}")
+            }
+            return true
         }
     }
 

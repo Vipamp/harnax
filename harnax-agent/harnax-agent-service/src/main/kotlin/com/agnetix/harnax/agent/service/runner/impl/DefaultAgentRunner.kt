@@ -95,6 +95,11 @@ class DefaultAgentRunner(
                 log.info("Compact command received for session=$sessionId (not yet implemented)")
                 CommandResponse.success(sessionId, message = "Compact not yet implemented")
             }
+            CommandType.APPROVE -> {
+                // TODO: implement memory compaction/summarization
+                log.info("Approve command received for session=$sessionId (not yet implemented)")
+                CommandResponse.success(sessionId, message = "Approve not yet implemented")
+            }
         }
     }
 

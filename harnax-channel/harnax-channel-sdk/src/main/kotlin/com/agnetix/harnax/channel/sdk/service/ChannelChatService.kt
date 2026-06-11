@@ -49,11 +49,12 @@ open class ChannelChatService(
      * Process channel message - core entry method
      *
      * Complete flow:
-     * 1. Save user message to session
-     * 2. Build AgentContext with history
-     * 3. Determine output strategy (streaming vs batch)
-     * 4. Call AgentAdaptor and send response via ChannelAdaptor
-     * 5. Save AI reply to session
+     * 1. Read conversation history (before saving current message to avoid duplication)
+     * 2. Save user message to session
+     * 3. Build AgentContext with history
+     * 4. Determine output strategy (streaming vs batch)
+     * 5. Call AgentAdaptor and send response via ChannelAdaptor
+     * 6. Save AI reply to session
      *
      * @param message User message from channel
      * @param channel Channel configuration
@@ -71,12 +72,12 @@ open class ChannelChatService(
         val requestId = "req-${UUID.randomUUID().toString().take(8)}"
 
         try {
-            // 1. Save user message to session
-            sessionManager.addMessage(channel.id, message)
-
-            // 2. Build context with conversation history
+            // 1. Read history BEFORE saving current message to avoid duplication
             val history = sessionManager.getHistory(channel.id, message.sessionId)
             val agentMessages = sessionManager.toAgentMessages(history)
+
+            // 2. Save user message to session
+            sessionManager.addMessage(channel.id, message)
             val context = AgentContext(
                 message = message,
                 history = agentMessages,

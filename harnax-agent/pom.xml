@@ -18,6 +18,7 @@
     <modules>
         <module>harnax-agent-utils</module>
         <module>harnax-agent-core</module>
+        <module>harnax-harness-core</module>
         <module>harnax-agent-service</module>
     </modules>
 
