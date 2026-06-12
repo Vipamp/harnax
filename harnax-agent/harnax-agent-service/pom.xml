@@ -39,13 +39,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Harnax Channel SDK - for AgentAdaptor -->
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-channel-sdk</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
         <!-- Harnax Harness Core - distributed agent runtime with MinIO + Docker sandbox -->
 <!--        <dependency>-->
 <!--            <groupId>com.agnetix</groupId>-->

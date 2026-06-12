@@ -15,10 +15,28 @@
     <description>Harnax Harness Core - Distributed agent runtime with MinIO, Docker sandbox and MySQL session</description>
 
     <dependencies>
-        <!-- Reuse AgentSpec/ChatSpec/adaptor/provider from agent-core -->
+        <!-- Common: HarnaxErrorCode, HarnaxException -->
         <dependency>
             <groupId>com.agnetix</groupId>
-            <artifactId>harnax-agent-core</artifactId>
+            <artifactId>harnax-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Entity: McpServer etc. -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-entity</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Protocol: ChatEvent, ChatEventConverter -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-protocol</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Agent Utils: McpHelper, ModelHelper, ChatModelConfig -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-agent-utils</artifactId>
             <version>${project.version}</version>
         </dependency>
 
