@@ -23,11 +23,13 @@
             <artifactId>harnax-entity</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- harnax-agent-core disabled: replaced by harnax-harness-core
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-agent-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        -->
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-agent-utils</artifactId>
@@ -40,11 +42,11 @@
         </dependency>
 
         <!-- Harnax Harness Core - distributed agent runtime with MinIO + Docker sandbox -->
-<!--        <dependency>-->
-<!--            <groupId>com.agnetix</groupId>-->
-<!--            <artifactId>harnax-harness-core</artifactId>-->
-<!--            <version>${project.version}</version>-->
-<!--        </dependency>-->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-harness-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <!-- Spring Boot Web -->
         <dependency>

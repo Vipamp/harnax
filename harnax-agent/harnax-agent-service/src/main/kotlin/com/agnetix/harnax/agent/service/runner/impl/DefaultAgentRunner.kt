@@ -1,9 +1,7 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
 import com.agnetix.harnax.agent.AgentSpec
-import com.agnetix.harnax.agent.AscopeAgentLauncher
 import com.agnetix.harnax.agent.ChatSpecBuilder
-import com.agnetix.harnax.agent.ReActAgentWrapper
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
@@ -18,6 +16,8 @@ import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.HarnessAgentLauncher
+import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
@@ -27,17 +27,17 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Default implementation of AgentRunner.
- * Uses AscopeAgentLauncher to create agents based on session configuration,
+ * Uses HarnessAgentLauncher to create agents based on session configuration,
  * similar to ChatService but adapted for the AgentRunner interface.
  */
 @Service
 class DefaultAgentRunner(
-    private val launcher: AscopeAgentLauncher,
+    private val launcher: HarnessAgentLauncher,
     private val sessionMapper: SessionMapper,
 ) : AgentRunner {
 
     private val log = LoggerFactory.getLogger(DefaultAgentRunner::class.java)
-    private val agentCache = ConcurrentHashMap<String, ReActAgentWrapper>()
+    private val agentCache = ConcurrentHashMap<String, HarnessAgentWrapper>()
     private val activeStreams = ConcurrentHashMap<String, Subscription>()
 
     override fun process(request: ChatAgentRequest): ChatResponse {
@@ -141,9 +141,9 @@ class DefaultAgentRunner(
 
     /**
      * Get or create an agent for the given sessionId.
-     * Retrieves session configuration from DB and builds the agent via AscopeAgentLauncher.
+     * Retrieves session configuration from DB and builds the agent via HarnessAgentLauncher.
      */
-    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): ReActAgentWrapper = agentCache.computeIfAbsent(sessionId) { sid ->
+    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.computeIfAbsent(sessionId) { sid ->
         val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
             ?: throw IllegalArgumentException("Session not found: $sid")
 

@@ -1,6 +1,8 @@
 package com.agnetix.harnax.agent.service.chat
 
-import com.agnetix.harnax.agent.*
+import com.agnetix.harnax.agent.AgentSpec
+import com.agnetix.harnax.agent.ChatSpec
+import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
@@ -10,6 +12,8 @@ import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigResponse
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigUpdateRequest
+import com.agnetix.harnax.harness.HarnessAgentLauncher
+import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
@@ -24,7 +28,7 @@ import reactor.core.publisher.Flux
  */
 @Service
 class ChatService(
-    private val launcher: AscopeAgentLauncher,
+    private val launcher: HarnessAgentLauncher,
     private val sessionMapper: SessionMapper,
 ) {
 
@@ -79,7 +83,7 @@ class ChatService(
     /**
      * Create Agent based on sessionId by retrieving Session from database
      */
-    private fun createAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): ReActAgentWrapper {
+    private fun createAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): HarnessAgentWrapper {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
 
