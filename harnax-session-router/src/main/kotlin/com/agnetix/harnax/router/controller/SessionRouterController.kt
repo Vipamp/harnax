@@ -5,6 +5,7 @@ import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.dto.InstanceInfo
 import com.agnetix.harnax.router.dto.InstanceOperationResponse
@@ -59,6 +60,51 @@ class SessionRouterController(
     suspend fun proxyCommand(@RequestBody request: CommandAgentRequest): ResultVo<CommandResponse> {
         log.debug("Received command proxy request for session: ${request.sessionId}")
         return sessionRouterService.proxyCommandRequest(request)
+    }
+
+    /**
+     * Proxy a confirm request (SSE streaming) to the correct agent-service instance.
+     */
+    @PostMapping("/agent/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    fun proxyConfirm(@RequestBody request: ConfirmAgentRequest): Flux<ChatEvent> {
+        log.debug("Received confirm proxy request for session: ${request.sessionId}")
+        return sessionRouterService.proxyConfirmStreamRequest(request)
+    }
+
+    /**
+     * Proxy a clear session request to the correct agent-service instance.
+     */
+    @DeleteMapping("/agent/session/{sessionId}")
+    suspend fun proxyClearSession(@PathVariable sessionId: String): ResultVo<String> {
+        log.debug("Received clear session proxy request for session: $sessionId")
+        return sessionRouterService.proxyClearSession(sessionId)
+    }
+
+    /**
+     * Proxy a load history request to the correct agent-service instance.
+     */
+    @GetMapping("/agent/chat/history/{sessionId}")
+    suspend fun proxyLoadHistory(@PathVariable sessionId: String): ResultVo<List<Any>> {
+        log.debug("Received load history proxy request for session: $sessionId")
+        return sessionRouterService.proxyLoadHistory(sessionId)
+    }
+
+    /**
+     * Proxy a load plans request to the correct agent-service instance.
+     */
+    @GetMapping("/agent/session/{sessionId}/plans")
+    suspend fun proxyLoadPlans(@PathVariable sessionId: String): ResultVo<List<Any>> {
+        log.debug("Received load plans proxy request for session: $sessionId")
+        return sessionRouterService.proxyLoadPlans(sessionId)
+    }
+
+    /**
+     * Proxy a load current plan request to the correct agent-service instance.
+     */
+    @GetMapping("/agent/session/{sessionId}/current-plan")
+    suspend fun proxyLoadCurrentPlan(@PathVariable sessionId: String): ResultVo<Any?> {
+        log.debug("Received load current plan proxy request for session: $sessionId")
+        return sessionRouterService.proxyLoadCurrentPlan(sessionId)
     }
 
     /**

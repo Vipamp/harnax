@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
  * Subclasses:
  * - [ChatAgentRequest]: chat message (type = CHAT)
  * - [CommandAgentRequest]: command execution (type = COMMAND)
+ * - [ConfirmAgentRequest]: tool confirmation (type = CONFIRM)
  */
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
@@ -21,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 @JsonSubTypes(
     JsonSubTypes.Type(value = ChatAgentRequest::class, name = "CHAT"),
     JsonSubTypes.Type(value = CommandAgentRequest::class, name = "COMMAND"),
+    JsonSubTypes.Type(value = ConfirmAgentRequest::class, name = "CONFIRM"),
 )
 sealed class AgentRequest {
     abstract val type: RequestType
@@ -32,6 +34,7 @@ sealed class AgentRequest {
     fun withSessionId(newSessionId: String): AgentRequest = when (this) {
         is ChatAgentRequest -> copy(sessionId = newSessionId)
         is CommandAgentRequest -> copy(sessionId = newSessionId)
+        is ConfirmAgentRequest -> copy(sessionId = newSessionId)
     }
 }
 
@@ -62,11 +65,34 @@ data class CommandAgentRequest(
 }
 
 /**
+ * Confirm request - carries tool confirmation decision from the client.
+ *
+ * @property isConfirmed Whether the user confirmed the tool execution
+ * @property toolInfoList List of tools pending confirmation
+ */
+data class ConfirmAgentRequest(
+    override val sessionId: String,
+    val isConfirmed: Boolean,
+    val toolInfoList: List<ToolInfo> = emptyList(),
+) : AgentRequest() {
+    override val type: RequestType = RequestType.CONFIRM
+}
+
+/**
+ * Tool information for confirmation requests.
+ */
+data class ToolInfo(
+    val toolId: String? = null,
+    val toolName: String? = null,
+)
+
+/**
  * Request type discriminator.
  */
 enum class RequestType {
     CHAT,
     COMMAND,
+    CONFIRM,
 }
 
 /**

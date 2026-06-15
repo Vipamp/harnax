@@ -4,6 +4,7 @@ import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
+import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
@@ -12,6 +13,7 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
@@ -23,6 +25,10 @@ import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import io.agentscope.core.message.Msg
+import io.agentscope.core.message.MsgRole
+import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.ToolResultBlock
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -125,6 +131,40 @@ class DefaultAgentRunner(
     override fun loadHistory(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)
         .flatMap { MessageLogConverter.convert(it) }
 
+    override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
+        val sessionId = request.sessionId
+        log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}")
+        val agent = agentCache[sessionId]
+            ?: throw IllegalArgumentException("No active agent for session: $sessionId")
+        return if (request.isConfirmed) {
+            agent.callStream()
+        } else {
+            val results = request.toolInfoList.map { tool ->
+                ToolResultBlock.of(
+                    tool.toolId,
+                    tool.toolName,
+                    TextBlock.builder().text("Operation cancelled by user").build(),
+                )
+            }
+            val cancelResult = Msg.builder()
+                .name("Assistant").role(MsgRole.TOOL)
+                .content(*results.toTypedArray())
+                .build()
+            agent.callStream(msg = cancelResult)
+        }
+    }
+
+    override fun clearSession(sessionId: String) {
+        interrupt(sessionId)
+        agentCache.remove(sessionId)
+        launcher.clearSession(sessionId)
+        log.info("Cleared session and agent cache for sessionId=$sessionId")
+    }
+
+    override fun loadPlans(sessionId: String): List<PlanNote> = launcher.loadSessionHistoryPlan(sessionId)
+
+    override fun loadCurrentPlan(sessionId: String): PlanNote? = launcher.loadSessionCurrentPlanNote(sessionId)
+
     override suspend fun initAgent(agentId: Long) {
         log.info("Initializing agent: $agentId")
         // Agent will be lazily created on first request via streamProcess
@@ -136,16 +176,6 @@ class DefaultAgentRunner(
             agentCache.remove(key)
             log.info("Removed cached agent for session=$key")
         }
-    }
-
-    /**
-     * Clear session and remove cached agent.
-     */
-    fun clearSession(sessionId: String) {
-        interrupt(sessionId)
-        agentCache.remove(sessionId)
-        launcher.clearSession(sessionId)
-        log.info("Cleared session and agent cache for sessionId=$sessionId")
     }
 
     /**

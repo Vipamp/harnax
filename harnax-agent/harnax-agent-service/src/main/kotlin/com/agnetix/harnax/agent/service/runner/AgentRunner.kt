@@ -1,11 +1,13 @@
 package com.agnetix.harnax.agent.service.runner
 
+import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import reactor.core.publisher.Flux
 
 /**
@@ -53,6 +55,33 @@ interface AgentRunner {
      * @return List of MessageLog representing the conversation history
      */
     fun loadHistory(sessionId: String): List<MessageLog>
+
+    /**
+     * Confirm or reject pending tool execution.
+     * @param request ConfirmAgentRequest containing sessionId, confirmation flag, and tool info
+     * @return Flux of ChatEvent (streaming response from resumed/cancelled agent)
+     */
+    fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent>
+
+    /**
+     * Clear session state and cached agent.
+     * @param sessionId Session identifier
+     */
+    fun clearSession(sessionId: String)
+
+    /**
+     * Load plan history for a session.
+     * @param sessionId Session identifier
+     * @return List of PlanNote
+     */
+    fun loadPlans(sessionId: String): List<PlanNote>
+
+    /**
+     * Load the current active plan for a session.
+     * @param sessionId Session identifier
+     * @return PlanNote or null if no active plan
+     */
+    fun loadCurrentPlan(sessionId: String): PlanNote?
 
     /**
      * Initialize an agent instance.

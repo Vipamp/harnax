@@ -5,6 +5,7 @@ import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.dto.ResultVo
@@ -128,6 +129,126 @@ class SessionRouterService(
         } catch (e: Exception) {
             log.error("Failed to proxy command request for session $sessionId: ${e.message}", e)
             return tryCommandFailover(sessionId, request)
+        }
+    }
+
+    /**
+     * Proxy a confirm request (streaming) to the correct agent-service instance.
+     */
+    fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
+        val sessionId = request.sessionId
+        val instance = resolveInstanceBlocking(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/confirm"
+
+        log.debug("Proxying confirm stream request for session $sessionId to instance ${instance.instanceId} at $url")
+
+        return webClient.post()
+            .uri(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(request)
+            .retrieve()
+            .bodyToFlux(ChatEvent::class.java)
+            .onErrorResume { e ->
+                log.error("Confirm stream proxy error for session $sessionId: ${e.message}", e)
+                Flux.just(
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                        message = e.message ?: "Failed to reach agent-service",
+                    ),
+                    EndEventChatEvent(),
+                )
+            }
+    }
+
+    /**
+     * Proxy a clear session request to the correct agent-service instance.
+     */
+    suspend fun proxyClearSession(sessionId: String): ResultVo<String> {
+        val instance = resolveInstance(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId"
+
+        log.debug("Proxying clear session for session $sessionId to instance ${instance.instanceId} at $url")
+
+        return try {
+            val response = webClient.delete()
+                .uri(url)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<String>>() {})
+                .awaitSingleOrNull()
+
+            response ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("Failed to proxy clear session for $sessionId: ${e.message}", e)
+            ResultVo.error("Failed to clear session: ${e.message}")
+        }
+    }
+
+    /**
+     * Proxy a load history request to the correct agent-service instance.
+     */
+    suspend fun proxyLoadHistory(sessionId: String): ResultVo<List<Any>> {
+        val instance = resolveInstance(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/chat/history/$sessionId"
+
+        log.debug("Proxying load history for session $sessionId to instance ${instance.instanceId} at $url")
+
+        return try {
+            val response = webClient.get()
+                .uri(url)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
+                .awaitSingleOrNull()
+
+            response ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("Failed to proxy load history for $sessionId: ${e.message}", e)
+            ResultVo.error("Failed to load history: ${e.message}")
+        }
+    }
+
+    /**
+     * Proxy a load plans request to the correct agent-service instance.
+     */
+    suspend fun proxyLoadPlans(sessionId: String): ResultVo<List<Any>> {
+        val instance = resolveInstance(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId/plans"
+
+        log.debug("Proxying load plans for session $sessionId to instance ${instance.instanceId} at $url")
+
+        return try {
+            val response = webClient.get()
+                .uri(url)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
+                .awaitSingleOrNull()
+
+            response ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("Failed to proxy load plans for $sessionId: ${e.message}", e)
+            ResultVo.error("Failed to load plans: ${e.message}")
+        }
+    }
+
+    /**
+     * Proxy a load current plan request to the correct agent-service instance.
+     */
+    suspend fun proxyLoadCurrentPlan(sessionId: String): ResultVo<Any?> {
+        val instance = resolveInstance(sessionId)
+        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId/current-plan"
+
+        log.debug("Proxying load current plan for session $sessionId to instance ${instance.instanceId} at $url")
+
+        return try {
+            val response = webClient.get()
+                .uri(url)
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any>>() {})
+                .awaitSingleOrNull()
+
+            response ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("Failed to proxy load current plan for $sessionId: ${e.message}", e)
+            ResultVo.error("Failed to load current plan: ${e.message}")
         }
     }
 

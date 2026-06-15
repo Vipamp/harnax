@@ -1,11 +1,13 @@
 package com.agnetix.harnax.agent.service.controller
 
+import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.service.runner.AgentRunner
@@ -103,6 +105,68 @@ class AgentController(
             ResultVo.success(agentRunner.loadHistory(sessionId))
         } catch (e: Exception) {
             ResultVo.error(e.message ?: "Failed to load history")
+        }
+    }
+
+    /**
+     * Confirm or reject pending tool execution.
+     * Returns streaming response from the resumed or cancelled agent.
+     */
+    @PostMapping("/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
+    @Operation(summary = "Confirm tool execution", description = "Confirm or reject pending tool calls and resume agent streaming")
+    fun confirm(@RequestBody request: ConfirmAgentRequest): Flux<ChatEvent> {
+        log.info("Confirm request for session=${request.sessionId}, confirmed=${request.isConfirmed}")
+        return try {
+            agentRunner.confirm(request)
+        } catch (e: Exception) {
+            log.error("Error confirming for session=${request.sessionId}: ${e.message}", e)
+            Flux.just(
+                ErrorChatEvent(code = HarnaxErrorCode.SYSTEM_ERROR.code, message = e.message ?: "Confirm failed"),
+                EndEventChatEvent(),
+            )
+        }
+    }
+
+    /**
+     * Clear session state and cached agent.
+     */
+    @DeleteMapping("/session/{sessionId}")
+    @Operation(summary = "Clear session", description = "Clear session state, cached agent, and sandbox")
+    fun clearSession(@PathVariable sessionId: String): ResultVo<String> {
+        log.info("Clearing session=$sessionId")
+        return try {
+            agentRunner.clearSession(sessionId)
+            ResultVo.success("OK")
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to clear session")
+        }
+    }
+
+    /**
+     * Load plan history for a session.
+     */
+    @GetMapping("/session/{sessionId}/plans")
+    @Operation(summary = "Load plan history", description = "Get all plans for a session")
+    fun loadPlans(@PathVariable sessionId: String): ResultVo<List<PlanNote>> {
+        log.info("Loading plans for session=$sessionId")
+        return try {
+            ResultVo.success(agentRunner.loadPlans(sessionId))
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to load plans")
+        }
+    }
+
+    /**
+     * Load the current active plan for a session.
+     */
+    @GetMapping("/session/{sessionId}/current-plan")
+    @Operation(summary = "Load current plan", description = "Get the current active plan for a session")
+    fun loadCurrentPlan(@PathVariable sessionId: String): ResultVo<PlanNote?> {
+        log.info("Loading current plan for session=$sessionId")
+        return try {
+            ResultVo.success(agentRunner.loadCurrentPlan(sessionId))
+        } catch (e: Exception) {
+            ResultVo.error(e.message ?: "Failed to load current plan")
         }
     }
 
