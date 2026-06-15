@@ -38,11 +38,13 @@ sealed class AgentRequest {
 /**
  * Chat request - carries a user message for the agent to process.
  *
- * @property message User message content
+ * @property message User message content (text prompt)
+ * @property imageUrls List of image URLs or base64 data URLs for multimodal input
  */
 data class ChatAgentRequest(
     override val sessionId: String,
     val message: String,
+    val imageUrls: List<String> = emptyList(),
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CHAT
 }

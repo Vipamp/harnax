@@ -2,6 +2,7 @@ package com.agnetix.harnax.channel.service.config
 
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
+import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import org.slf4j.LoggerFactory
@@ -20,6 +21,7 @@ class ChannelConfig {
 
     @Bean
     fun webClient(): WebClient = WebClient.builder()
+        .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
         .build()
 
     /**
@@ -64,7 +66,18 @@ class ChannelConfig {
 
         override suspend fun addMessage(channelId: Long, message: ChannelMessage) {
             val key = "$channelId:${message.sessionId}"
-            sessions.computeIfAbsent(key) { mutableListOf() }.add(message)
+            // Strip image data from stored messages to avoid memory bloat in history
+            val stored = if (message.imageUrls.isNotEmpty()) {
+                message.copy(
+                    content = if (message.messageType == MessageType.IMAGE) "[image sent]" else message.content,
+                    imageUrls = emptyList(),
+                )
+            } else if (message.messageType == MessageType.IMAGE && message.content.startsWith("data:image")) {
+                message.copy(content = "[image sent]")
+            } else {
+                message
+            }
+            sessions.computeIfAbsent(key) { mutableListOf() }.add(stored)
             log.debug("Added message to key={}, total={}", key, sessions[key]?.size)
         }
 

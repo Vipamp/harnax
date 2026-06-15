@@ -82,6 +82,11 @@ data class ChannelMessage(
     val groupId: String? = null,
 
     /**
+     * Image URLs or base64 data URLs for multimodal input
+     */
+    val imageUrls: List<String> = emptyList(),
+
+    /**
      * @-mentioned user list
      */
     val atUserIds: List<String> = emptyList(),
@@ -113,6 +118,7 @@ class ChannelMessageBuilder {
     private var senderId: String? = null
     private var isGroupMessage: Boolean = false
     private var groupId: String? = null
+    private var imageUrls: List<String> = emptyList()
     private var atUserIds: List<String> = emptyList()
     private var rawContent: Any? = null
     private var timestamp: Long = System.currentTimeMillis()
@@ -127,6 +133,7 @@ class ChannelMessageBuilder {
     fun senderId(senderId: String?) = apply { this.senderId = senderId }
     fun isGroupMessage(isGroupMessage: Boolean) = apply { this.isGroupMessage = isGroupMessage }
     fun groupId(groupId: String?) = apply { this.groupId = groupId }
+    fun imageUrls(imageUrls: List<String>) = apply { this.imageUrls = imageUrls }
     fun atUserIds(atUserIds: List<String>) = apply { this.atUserIds = atUserIds }
     fun rawContent(rawContent: Any?) = apply { this.rawContent = rawContent }
     fun timestamp(timestamp: Long) = apply { this.timestamp = timestamp }
@@ -142,6 +149,7 @@ class ChannelMessageBuilder {
         senderId = senderId,
         isGroupMessage = isGroupMessage,
         groupId = groupId,
+        imageUrls = imageUrls,
         atUserIds = atUserIds,
         rawContent = rawContent,
         timestamp = timestamp,

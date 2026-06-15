@@ -91,7 +91,11 @@ class RouterClient(
      * @return Flow of ChatEvent
      */
     fun streamRequest(request: AgentRequest, agentId: Long): kotlinx.coroutines.flow.Flow<ChatEvent> = when (request) {
-        is ChatAgentRequest -> streamToAgent(sessionId = request.sessionId, message = request.message)
+        is ChatAgentRequest -> streamToAgent(
+            sessionId = request.sessionId,
+            message = request.message,
+            imageUrls = request.imageUrls,
+        )
         is CommandAgentRequest -> {
             // For commands in streaming context, send command and emit result as events
             kotlinx.coroutines.flow.flow {
@@ -131,10 +135,18 @@ class RouterClient(
      * @param message User message content
      * @return Flow of ChatEvent
      */
-    fun streamToAgent(sessionId: String, message: String): kotlinx.coroutines.flow.Flow<ChatEvent> {
-        val request = ChatAgentRequest(sessionId = sessionId, message = message)
+    fun streamToAgent(
+        sessionId: String,
+        message: String,
+        imageUrls: List<String> = emptyList(),
+    ): kotlinx.coroutines.flow.Flow<ChatEvent> {
+        val request = ChatAgentRequest(
+            sessionId = sessionId,
+            message = message,
+            imageUrls = imageUrls,
+        )
 
-        log.debug("Sending stream request to router for session=$sessionId")
+        log.debug("Sending stream request to router for session={}, imageUrls={}", sessionId, imageUrls.size)
 
         return webClient.post()
             .uri("$routerUrl/api/router/agent/chat/stream")

@@ -119,6 +119,11 @@
             <artifactId>harnax-agent-utils</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- JGit - required by agentscope GitSkillRepository -->
+        <dependency>
+            <groupId>org.eclipse.jgit</groupId>
+            <artifactId>org.eclipse.jgit</artifactId>
+        </dependency>
         <!-- Harnax Common (for ResultVo) -->
         <dependency>
             <groupId>com.agnetix</groupId>

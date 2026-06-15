@@ -6,6 +6,7 @@ import org.springframework.http.MediaType
 import org.springframework.web.reactive.function.client.WebClient
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 
 /**
  * Platform HTTP Client
@@ -83,6 +84,38 @@ class PlatformHttpClient(
             } catch (e: Exception) {
                 throw RuntimeException("HTTP request failed: ${e.message}", e)
             }
+        }
+    }
+
+    /**
+     * Download binary content via GET request
+     *
+     * Used for downloading images, files, and other binary resources from platform APIs.
+     * Returns raw byte array on success, null on failure.
+     *
+     * @param url Target URL
+     * @param headers Additional HTTP Headers (e.g., Authorization)
+     * @param timeoutMs Read timeout in milliseconds (default 30s for binary downloads)
+     * @return Raw byte array, or null if download failed
+     */
+    suspend fun getBinary(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Long = 30000,
+    ): ByteArray? {
+        logger.debug("GET binary from $url")
+
+        return try {
+            val responseMono = webClient.get()
+                .uri(url)
+                .apply { headers.forEach { (key, value) -> header(key, value) } }
+                .retrieve()
+                .bodyToMono(ByteArray::class.java)
+
+            responseMono.block(Duration.of(timeoutMs, ChronoUnit.MILLIS))
+        } catch (e: Exception) {
+            logger.error("Failed to download binary content from $url: ${e.message}", e)
+            null
         }
     }
 

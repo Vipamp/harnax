@@ -29,6 +29,7 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
+import com.agnetix.harnax.harness.sandbox.MysqlCompatibleSandboxStateStore
 import io.agentscope.core.message.Msg
 import io.agentscope.core.plan.PlanNotebook
 import io.agentscope.core.session.Session
@@ -122,13 +123,13 @@ class HarnessAgentLauncher(
 
         // ----- Chat model -----
         val chatModelConfig = DashScopeChatModelConfig(
-            "qwen3-max-2026-01-23",
+            "qwen3-vl-flash-2026-01-22",
             "sk-b6e5de9b14a947f5b9e9c7065c1fc0ec",
         )
         val chatModel = ModelHelper.createChatModel(
             chatModelConfig,
             chatSpec.enableThinking,
-            chatSpec.enableSearch,
+            true, // chatSpec.enableSearch,
         )
         agentBuilder.model(chatModel)
 
@@ -221,8 +222,12 @@ class HarnessAgentLauncher(
 
             val dockerSpec = DockerFilesystemSpec()
                 .image(harnessConfig.sandbox.image)
+                .workspaceRoot(harnessConfig.sandbox.workspaceRoot)
                 .isolationScope(harnessConfig.sandbox.isolationScope)
                 .snapshotSpec(snapshotSpec)
+                .sandboxStateStore(
+                    MysqlCompatibleSandboxStateStore(session, agentSpec.name),
+                )
 
             agentBuilder.filesystem(dockerSpec)
             agentBuilder.sandboxDistributed(

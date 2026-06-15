@@ -5,6 +5,7 @@ import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
+import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.parser.MessageParser
 import org.slf4j.LoggerFactory
 
@@ -48,6 +49,16 @@ class FeishuMessageParser : MessageParser {
         val sessionId = message.sessionId
         val rawContent = message.content.trim()
 
+        // Handle IMAGE type: use imageUrls from ChannelMessage (already downloaded by FeishuWebSocketMode)
+        if (message.messageType == MessageType.IMAGE && message.imageUrls.isNotEmpty()) {
+            logger.debug("Parsed image message for session={}, imageCount={}", sessionId, message.imageUrls.size)
+            return ChatAgentRequest(
+                sessionId = sessionId,
+                message = "Please analyze this image.",
+                imageUrls = message.imageUrls,
+            )
+        }
+
         // Strip Feishu @mention prefix (common in group chats)
         val content = mentionPrefixRegex.replace(rawContent, "").trim()
 
@@ -66,6 +77,11 @@ class FeishuMessageParser : MessageParser {
         }
 
         // Default: chat request with the cleaned content (mention stripped)
-        return ChatAgentRequest(sessionId = sessionId, message = content)
+        // Also pass through imageUrls from ChannelMessage (e.g., text messages with embedded images in post format)
+        return ChatAgentRequest(
+            sessionId = sessionId,
+            message = content,
+            imageUrls = message.imageUrls,
+        )
     }
 }

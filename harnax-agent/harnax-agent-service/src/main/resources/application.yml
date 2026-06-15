@@ -37,7 +37,7 @@ local:
 
 # Harness Configuration (distributed agent runtime)
 harness:
-  enable-workspace-context: false
+  enable-workspace-context: true
   enable-memory-hooks: false
   enable-session-persistence: true
   minio:
@@ -50,7 +50,7 @@ harness:
     snapshot-prefix: snapshots/
     store-prefix: store/
   sandbox:
-    enabled: false
+    enabled: true
     image: python:3.11-slim
     workspace-root: /workspace
     isolation-scope: SESSION

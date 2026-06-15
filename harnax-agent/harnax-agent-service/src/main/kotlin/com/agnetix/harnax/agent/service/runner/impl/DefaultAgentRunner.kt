@@ -2,6 +2,8 @@ package com.agnetix.harnax.agent.service.runner.impl
 
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
+import com.agnetix.harnax.agent.McpSpec
+import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
@@ -16,13 +18,17 @@ import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -34,6 +40,8 @@ import java.util.concurrent.ConcurrentHashMap
 class DefaultAgentRunner(
     private val launcher: HarnessAgentLauncher,
     private val sessionMapper: SessionMapper,
+    private val skillMapper: SkillMapper,
+    private val objectMapper: ObjectMapper,
 ) : AgentRunner {
 
     private val log = LoggerFactory.getLogger(DefaultAgentRunner::class.java)
@@ -50,11 +58,12 @@ class DefaultAgentRunner(
     override fun streamProcess(request: ChatAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
         val message = request.message
-        log.info("Streaming message for session=$sessionId: $message")
+        val imageUrls = request.imageUrls
+        log.info("Streaming message for session=$sessionId: $message, images=${imageUrls.size}")
         try {
             val userIdentifier = UserIdentifier(0)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
-            return agent.callStream(message)
+            return agent.callStream(message, imageUrls)
                 .doOnSubscribe { subscription ->
                     activeStreams[sessionId] = subscription
                     log.debug("Stream started for session=$sessionId")
@@ -155,13 +164,53 @@ class DefaultAgentRunner(
             .enablePlan(session.enablePlan == 1)
             .build()
 
-        val agentSpec = AgentSpec.builder()
+        val agentSpecBuilder = AgentSpec.builder()
             .id(session.agentId)
             .name(session.name)
             .description(session.description)
             .systemPrompt(session.systemPrompt)
             .chatModelId(session.modelId)
-            .build()
+
+        // Parse MCP list (JSON format: [{"id":1,"enable_skip":"true"}])
+        if (session.mcpList.isNotEmpty() && session.mcpList != "[]") {
+            try {
+                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
+                    session.mcpList,
+                    object : TypeReference<List<Map<String, Any>>>() {},
+                )
+                for (config in mcpConfigs) {
+                    val mcpId = (config["id"] as Number).toLong()
+                    val enableSkip = config["enable_skip"] as? String
+                    agentSpecBuilder.addMcpService(
+                        McpSpec(mcpId = mcpId, skipIfMissing = enableSkip == "true"),
+                    )
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to parse MCP list for session=$sid: ${e.message}", e)
+            }
+        }
+
+        // Parse skill list (comma-separated IDs)
+        if (session.skillList.isNotEmpty() && session.skillList != "[]") {
+            val skillIds = session.skillList.split(",")
+            for (skillIdStr in skillIds) {
+                try {
+                    val skillId = skillIdStr.trim().toLong()
+                    val skill: Skill? = skillMapper.selectById(skillId)
+                    if (skill != null) {
+                        agentSpecBuilder.addSkill(
+                            SkillSpec(skillId = skill.id, skillName = skill.name),
+                        )
+                    } else {
+                        log.warn("Skill not found: $skillId")
+                    }
+                } catch (e: NumberFormatException) {
+                    log.warn("Invalid skill ID: $skillIdStr")
+                }
+            }
+        }
+
+        val agentSpec = agentSpecBuilder.build()
 
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,

@@ -6,6 +6,8 @@ import com.agnetix.harnax.mapper.SkillMapper
 import io.agentscope.core.skill.AgentSkill
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 
 /**
  * SkillAdaptor Implementation
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Component
 @Component
 class SkillAdaptorImpl(
     private val skillMapper: SkillMapper,
+    private val objectMapper: ObjectMapper,
 ) : SkillAdaptor {
 
     private val log = LoggerFactory.getLogger(SkillAdaptorImpl::class.java)
@@ -39,10 +42,25 @@ class SkillAdaptorImpl(
      * Build AgentSkill
      */
     private fun buildAgentSkill(skill: Skill): AgentSkill? = try {
-        AgentSkill.builder()
+        val builder = AgentSkill.builder()
             .name(skill.name)
+            .skillContent(skill.skillmd)
             .description(skill.description)
-            .build()
+
+        // Deserialize resources JSON string to Map<String, String>
+        if (skill.resources.isNotEmpty()) {
+            try {
+                val resources: Map<String, String> = objectMapper.readValue(
+                    skill.resources,
+                    object : TypeReference<Map<String, String>>() {},
+                )
+                builder.resources(resources)
+            } catch (e: Exception) {
+                log.warn("Failed to parse resources JSON for skill: ${skill.id}", e)
+            }
+        }
+
+        builder.build()
     } catch (e: Exception) {
         log.error("Failed to build AgentSkill for skill: ${skill.id}", e)
         null

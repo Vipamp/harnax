@@ -15,6 +15,7 @@ import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.util.Base64
 import java.util.Collections
 import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
@@ -103,7 +104,7 @@ class FeishuWebSocketMode(
                     // Process message asynchronously (do not block event processing)
                     runBlocking {
                         try {
-                            val channelMessage = parseFeishuEvent(data, channel.id)
+                            val channelMessage = parseFeishuEvent(data, channel)
                             if (channelMessage != null) {
                                 val handler = messageHandlers[channel.id]
                                 if (handler != null) {
@@ -348,7 +349,8 @@ class FeishuWebSocketMode(
     /**
      * Parse Feishu event to ChannelMessage
      */
-    private fun parseFeishuEvent(event: P2MessageReceiveV1, channelId: Long): ChannelMessage? {
+    private suspend fun parseFeishuEvent(event: P2MessageReceiveV1, channel: ChannelSpec): ChannelMessage? {
+        val channelId = channel.id
         return try {
             val message = event.event?.message
 
@@ -362,20 +364,45 @@ class FeishuWebSocketMode(
             val messageType = message.messageType ?: "text"
             val senderId = event.event?.sender?.senderId?.openId ?: ""
 
-            val content = when (messageType) {
+            var textContent: String = ""
+            var imageUrls: List<String> = emptyList()
+
+            when (messageType) {
                 "text" -> {
                     val contentStr = message.content ?: "{}"
                     try {
                         val contentJson = objectMapper.readTree(contentStr)
-                        contentJson.path("text").asText("")
+                        // Check for post (rich text) format: {"content": [[[...]]]}
+                        if (contentJson.has("content") && contentJson.get("content").isArray) {
+                            val postResult = parsePostContent(contentJson, channel)
+                            textContent = postResult.first
+                            imageUrls = postResult.second
+                        } else {
+                            textContent = contentJson.path("text").asText("")
+                            imageUrls = emptyList()
+                        }
                     } catch (e: Exception) {
                         logger.warn("Failed to parse message content: ${e.message}")
-                        contentStr
+                        textContent = contentStr
+                        imageUrls = emptyList()
+                    }
+                }
+                "image" -> {
+                    val imageKey = parseImageKey(message.content)
+                    if (imageKey != null) {
+                        val dataUrl = downloadFeishuImage(channel, imageKey)
+                        textContent = "[image]"
+                        imageUrls = if (dataUrl != null) listOf(dataUrl) else emptyList()
+                    } else {
+                        logger.warn("Failed to parse image_key from content: ${message.content}")
+                        textContent = message.content ?: ""
+                        imageUrls = emptyList()
                     }
                 }
                 else -> {
                     logger.info("Unsupported message type: $messageType, using raw content")
-                    message.content ?: ""
+                    textContent = message.content ?: ""
+                    imageUrls = emptyList()
                 }
             }
 
@@ -383,7 +410,7 @@ class FeishuWebSocketMode(
                 messageId = messageId,
                 sessionId = chatId,
                 senderId = senderId,
-                content = content,
+                content = textContent,
                 channelType = ChannelType.FEISHU,
                 messageType = when (messageType) {
                     "text" -> MessageType.TEXT
@@ -391,10 +418,132 @@ class FeishuWebSocketMode(
                     "file" -> MessageType.FILE
                     else -> MessageType.TEXT
                 },
+                imageUrls = imageUrls,
                 rawContent = event,
             )
         } catch (e: Exception) {
             logger.error("Failed to parse Feishu event for channel: $channelId", e)
+            null
+        }
+    }
+
+    /**
+     * Parse image_key from Feishu image message content JSON.
+     *
+     * Feishu image message content format: {"image_key": "img_v3_xxx"}
+     * Returns null if content is malformed or image_key is missing.
+     */
+    private fun parseImageKey(content: String?): String? {
+        if (content.isNullOrBlank()) return null
+        return try {
+            val json = objectMapper.readTree(content)
+            val key = json.path("image_key").asText("")
+            key.ifBlank { null }
+        } catch (e: Exception) {
+            logger.warn("Failed to parse image content JSON: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Parse Feishu post (rich text) content format.
+     *
+     * Post content structure:
+     * {
+     *   "title": "optional title",
+     *   "content": [
+     *     [
+     *       {"tag": "text", "text": "some text", "style": []},
+     *       {"tag": "img", "image_key": "img_v3_xxx", "width": 800, "height": 600}
+     *     ]
+     *   ]
+     * }
+     *
+     * @return Pair of (extractedText, downloadedImageUrls)
+     */
+    private suspend fun parsePostContent(
+        contentJson: tools.jackson.databind.JsonNode,
+        channel: ChannelSpec,
+    ): Pair<String, List<String>> {
+        val textParts = mutableListOf<String>()
+        val imageUrls = mutableListOf<String>()
+
+        // Extract title if present
+        val title = contentJson.path("title").asText("")
+        if (title.isNotBlank()) textParts.add(title)
+
+        // Parse content array: [[{tag, ...}, ...], ...]
+        val contentArray = contentJson.get("content")
+        if (contentArray != null && contentArray.isArray) {
+            for (paragraph in contentArray) {
+                if (!paragraph.isArray) continue
+                for (element in paragraph) {
+                    val tag = element.path("tag").asText("")
+                    when (tag) {
+                        "text" -> {
+                            val text = element.path("text").asText("")
+                            if (text.isNotBlank()) textParts.add(text)
+                        }
+                        "img" -> {
+                            val imageKey = element.path("image_key").asText("")
+                            if (imageKey.isNotBlank()) {
+                                val dataUrl = downloadFeishuImage(channel, imageKey)
+                                if (dataUrl != null) {
+                                    imageUrls.add(dataUrl)
+                                } else {
+                                    logger.warn("Failed to download image in post: $imageKey")
+                                }
+                            }
+                        }
+                        "a" -> {
+                            val href = element.path("href").asText("")
+                            val text = element.path("text").asText(href)
+                            if (text.isNotBlank()) textParts.add(text)
+                        }
+                        "at" -> {
+                            val userId = element.path("user_id").asText("")
+                            val userName = element.path("user_name").asText("@user")
+                            textParts.add(userName)
+                        }
+                    }
+                }
+            }
+        }
+
+        return Pair(textParts.joinToString(" ").trim(), imageUrls.toList())
+    }
+
+    /**
+     * Download image from Feishu Image API and return as base64 data URL.
+     *
+     * Feishu Image API: GET /open-apis/im/v1/images/{image_key}
+     * Returns the raw image binary, so we need to add the Authorization header.
+     * The result is encoded as a data URL (data:image/jpeg;base64,...) for downstream consumption.
+     *
+     * Returns null if download fails.
+     */
+    private suspend fun downloadFeishuImage(channel: ChannelSpec, imageKey: String): String? {
+        val appId = channel.appId
+        val appSecret = channel.appSecret
+        if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
+            logger.warn("Cannot download image: appId/appSecret not configured for channel ${channel.id}")
+            return null
+        }
+
+        val url = "https://open.feishu.cn/open-apis/im/v1/images/$imageKey"
+        return try {
+            val token = getTenantAccessToken(appId, appSecret)
+            val headers = mapOf("Authorization" to "Bearer $token")
+            val bytes = httpClient.getBinary(url, headers)
+            if (bytes != null && bytes.isNotEmpty()) {
+                val base64 = Base64.getEncoder().encodeToString(bytes)
+                "data:image/jpeg;base64,$base64"
+            } else {
+                logger.warn("Empty response when downloading image: $imageKey")
+                null
+            }
+        } catch (e: Exception) {
+            logger.error("Failed to download image $imageKey for channel ${channel.id}: ${e.message}", e)
             null
         }
     }

@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: harnax-session-router
+  codec:
+    max-in-memory-size: 16MB  # Support large payloads (e.g., base64 image data)
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${DB_USERNAME:root}
