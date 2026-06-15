@@ -91,12 +91,14 @@ class HarnessAgentWrapper(
             .userId(userId ?: "")
 
         // Inject external sandbox for keepAlive mode (Priority 1 user-managed)
+        var keepAliveSandbox: io.agentscope.harness.agent.sandbox.Sandbox? = null
         if (keepAliveSandboxManager != null) {
             val sandbox = keepAliveSandboxManager.getOrCreate(
                 sessionId,
                 WorkspaceSpec(),
                 keepAliveSnapshotSpec,
             )
+            keepAliveSandbox = sandbox
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)
                 .workspaceRoot(sandboxWorkspaceRoot)
@@ -115,6 +117,19 @@ class HarnessAgentWrapper(
             // No sessionManager.saveSession() — SessionPersistenceHook handles this automatically
             .flatMap { ChatEventConverter.convert(it, dangerousTools) }
             .doOnNext { extracted(it) }
+            .doFinally {
+                // Persist workspace snapshot for keepAlive sandbox.
+                // stop() only persists the snapshot — it does NOT destroy the container
+                // (that's shutdown()'s job, which we intentionally skip).
+                if (keepAliveSandbox != null) {
+                    try {
+                        keepAliveSandbox.stop()
+                        log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+                    } catch (e: Exception) {
+                        log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
+                    }
+                }
+            }
             .concatWith(Flux.just(EndEventChatEvent()))
             .onErrorResume { e ->
                 log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
