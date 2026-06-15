@@ -54,6 +54,7 @@ harness:
     image: python:3.11-slim
     workspace-root: /workspace
     isolation-scope: SESSION
+    keep-alive: false
 
 # Logging Configuration
 logging:

@@ -29,6 +29,7 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
+import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.MysqlCompatibleSandboxStateStore
 import io.agentscope.core.message.Msg
 import io.agentscope.core.plan.PlanNotebook
@@ -42,6 +43,7 @@ import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -83,6 +85,7 @@ class HarnessAgentLauncher(
     val workspaceRoot: Path,
     val harnessConfig: HarnessConfig = HarnessConfig(),
     val minioConfig: MinioConfig? = null,
+    val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -207,6 +210,7 @@ class HarnessAgentLauncher(
         }
 
         // ----- Docker Sandbox + MinIO Snapshot -----
+        var keepAliveSnapshotSpec: SandboxSnapshotSpec? = null
         if (harnessConfig.sandbox.enabled) {
             val snapshotSpec = if (minioConfig != null) {
                 RemoteSnapshotSpec(
@@ -218,6 +222,10 @@ class HarnessAgentLauncher(
                 )
             } else {
                 LocalSnapshotSpec(workspaceRoot.resolve("snapshots"))
+            }
+
+            if (harnessConfig.sandbox.keepAlive) {
+                keepAliveSnapshotSpec = snapshotSpec
             }
 
             val dockerSpec = DockerFilesystemSpec()
@@ -279,6 +287,10 @@ class HarnessAgentLauncher(
                 .modelId(agentSpec.chatModelId),
             tokenStatAdaptor = tokenStatAdaptor,
             sessionId = sessionId,
+            keepAliveSandboxManager = keepAliveSandboxManager,
+            keepAliveSnapshotSpec = keepAliveSnapshotSpec,
+            sandboxImage = harnessConfig.sandbox.image,
+            sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
         )
     }
 
@@ -289,6 +301,7 @@ class HarnessAgentLauncher(
     fun clearSession(sessionId: String) {
         session.delete(SimpleSessionKey.of(sessionId))
         planNoteAdaptor.deletePlan(sessionId)
+        keepAliveSandboxManager?.destroy(sessionId)
         // Also try to delete the MinIO snapshot if available
         if (minioConfig != null) {
             try {
@@ -342,6 +355,14 @@ class HarnessAgentLauncher(
             minioConfig: MinioConfig? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
+            val keepAliveManager = if (harnessConfig.sandbox.enabled && harnessConfig.sandbox.keepAlive) {
+                KeepAliveSandboxManager(
+                    image = harnessConfig.sandbox.image,
+                    workspaceRoot = harnessConfig.sandbox.workspaceRoot,
+                )
+            } else {
+                null
+            }
             return HarnessAgentLauncher(
                 chatModelConfigAdaptor = chatModelConfigAdaptor,
                 mcpConfigAdaptor = mcpConfigAdaptor,
@@ -354,6 +375,7 @@ class HarnessAgentLauncher(
                 workspaceRoot = workspaceRoot,
                 harnessConfig = harnessConfig,
                 minioConfig = minioConfig,
+                keepAliveSandboxManager = keepAliveManager,
             )
         }
     }

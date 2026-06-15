@@ -42,6 +42,7 @@ class SandboxProperties {
     var image: String = "python:3.11-slim"
     var workspaceRoot: String = "/workspace"
     var isolationScope: String = "SESSION"
+    var keepAlive: Boolean = false
 }
 
 @ConfigurationProperties(prefix = "harness")
@@ -101,6 +102,7 @@ class HarnessAutoConfiguration {
             workspaceRoot = sandboxProps.workspaceRoot,
             isolationScope = runCatching { IsolationScope.valueOf(sandboxProps.isolationScope) }
                 .getOrDefault(IsolationScope.SESSION),
+            keepAlive = sandboxProps.keepAlive,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,

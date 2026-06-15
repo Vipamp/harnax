@@ -9,10 +9,14 @@ import io.agentscope.harness.agent.IsolationScope
  * @param image Docker image to use for sandbox containers
  * @param workspaceRoot workspace root path inside the container
  * @param isolationScope sandbox isolation scope, SESSION ensures each session gets its own container
+ * @param keepAlive when true, the sandbox container remains running between agent calls,
+ *   avoiding the overhead of container destruction and recreation; when false (default),
+ *   the container is stopped and removed after each call
  */
 data class SandboxConfig(
     val enabled: Boolean = false,
     val image: String = "python:3.11-slim",
     val workspaceRoot: String = "/workspace",
     val isolationScope: IsolationScope = IsolationScope.SESSION,
+    val keepAlive: Boolean = false,
 )

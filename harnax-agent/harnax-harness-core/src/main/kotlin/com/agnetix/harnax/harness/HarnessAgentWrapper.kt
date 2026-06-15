@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.agent.StreamOptions
 import io.agentscope.core.message.Base64Source
@@ -17,6 +18,11 @@ import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.harness.agent.HarnessAgent
+import io.agentscope.harness.agent.sandbox.SandboxContext
+import io.agentscope.harness.agent.sandbox.WorkspaceSpec
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions
+import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
 import java.nio.file.Files
@@ -39,6 +45,10 @@ import java.util.Base64
  * @param tokenStatAdaptor adaptor to persist token stats
  * @param sessionId session identifier, passed via RuntimeContext to bind sandbox + workspace
  * @param userId optional user identifier, passed via RuntimeContext
+ * @param keepAliveSandboxManager optional manager for persistent sandbox containers
+ * @param keepAliveSnapshotSpec optional snapshot spec for keepAlive sandbox workspace persistence
+ * @param sandboxImage Docker image for sandbox containers (used when keepAlive is enabled)
+ * @param sandboxWorkspaceRoot workspace root path inside container (used when keepAlive is enabled)
  */
 class HarnessAgentWrapper(
     val harnessAgent: HarnessAgent,
@@ -47,6 +57,10 @@ class HarnessAgentWrapper(
     val tokenStatAdaptor: TokenStatAdaptor,
     val sessionId: String,
     val userId: String? = null,
+    val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
+    val keepAliveSnapshotSpec: SandboxSnapshotSpec? = null,
+    val sandboxImage: String = "python:3.11-slim",
+    val sandboxWorkspaceRoot: String = "/workspace",
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -72,10 +86,30 @@ class HarnessAgentWrapper(
         options: StreamOptions,
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
-        val runtimeCtx = RuntimeContext.builder()
+        val ctxBuilder = RuntimeContext.builder()
             .sessionId(sessionId)
             .userId(userId ?: "")
-            .build()
+
+        // Inject external sandbox for keepAlive mode (Priority 1 user-managed)
+        if (keepAliveSandboxManager != null) {
+            val sandbox = keepAliveSandboxManager.getOrCreate(
+                sessionId,
+                WorkspaceSpec(),
+                keepAliveSnapshotSpec,
+            )
+            val clientOptions = DockerSandboxClientOptions()
+                .image(sandboxImage)
+                .workspaceRoot(sandboxWorkspaceRoot)
+            val sandboxContext = SandboxContext.builder()
+                .client(DockerSandboxClient())
+                .clientOptions(clientOptions)
+                .externalSandbox(sandbox)
+                .build()
+            ctxBuilder.put(SandboxContext::class.java, sandboxContext)
+            log.debug("[keepAlive] Injected external sandbox for session={}", sessionId)
+        }
+
+        val runtimeCtx = ctxBuilder.build()
 
         return harnessAgent.stream(msg.toList(), options, runtimeCtx)
             // No sessionManager.saveSession() — SessionPersistenceHook handles this automatically
