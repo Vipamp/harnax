@@ -119,12 +119,17 @@ class HarnessAgentWrapper(
             .doOnNext { extracted(it) }
             .doFinally {
                 // Persist workspace snapshot for keepAlive sandbox.
-                // stop() only persists the snapshot — it does NOT destroy the container
-                // (that's shutdown()'s job, which we intentionally skip).
+                // Only trigger snapshot upload — do NOT call stop() which would
+                // set running=false and workspaceRootReady=true, changing sandbox state.
                 if (keepAliveSandbox != null) {
                     try {
-                        keepAliveSandbox.stop()
-                        log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+                        val snapshot = keepAliveSandbox.state.snapshot
+                        if (snapshot != null && snapshot.isPersistenceEnabled) {
+                            keepAliveSandbox.persistWorkspace().use { archive ->
+                                snapshot.persist(archive)
+                            }
+                            log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+                        }
                     } catch (e: Exception) {
                         log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
                     }
