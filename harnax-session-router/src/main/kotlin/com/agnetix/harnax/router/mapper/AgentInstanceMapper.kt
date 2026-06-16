@@ -18,6 +18,21 @@ interface AgentInstanceMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     fun insert(instance: AgentInstance): Int
 
+    @Insert(
+        """
+        INSERT INTO agent_instance (instance_id, host, port, status, last_heartbeat, active)
+        VALUES (#{instanceId}, #{host}, #{port}, 'UP', #{lastHeartbeat}, 1)
+        ON DUPLICATE KEY UPDATE
+            host = VALUES(host),
+            port = VALUES(port),
+            status = 'UP',
+            last_heartbeat = VALUES(last_heartbeat),
+            active = 1,
+            update_time = NOW()
+    """,
+    )
+    fun upsertInstance(@Param("instanceId") instanceId: String, @Param("host") host: String, @Param("port") port: Int, @Param("lastHeartbeat") lastHeartbeat: java.time.LocalDateTime): Int
+
     @Select("SELECT * FROM agent_instance WHERE instance_id = #{instanceId} AND active = 1")
     fun selectByInstanceId(instanceId: String): AgentInstance?
 
@@ -39,7 +54,7 @@ interface AgentInstanceMapper {
     @Update(
         """
         UPDATE agent_instance SET status = 'DOWN', update_time = NOW() 
-        WHERE instance_id = #{instanceId} AND active = 1
+        WHERE instance_id = #{instanceId} AND active = 1 AND status IN ('UP', 'DRAINING')
     """,
     )
     fun markAsDown(instanceId: String): Int
@@ -51,4 +66,7 @@ interface AgentInstanceMapper {
     """,
     )
     fun deleteByInstanceId(instanceId: String): Int
+
+    @Delete("DELETE FROM agent_instance WHERE active = 0 AND update_time < #{cutoffTime}")
+    fun purgeDeletedInstances(@Param("cutoffTime") cutoffTime: java.time.LocalDateTime): Int
 }

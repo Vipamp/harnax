@@ -1,6 +1,5 @@
 package com.agnetix.harnax.router.service.impl
 
-import com.agnetix.harnax.router.entity.SessionMapping
 import com.agnetix.harnax.router.mapper.SessionMappingMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
@@ -8,10 +7,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
-/**
- * MySQL-backed implementation of SessionMappingService.
- * Stores session-to-instance mappings in the database.
- */
 @Service
 class MysqlSessionMappingService(
     private val sessionMappingMapper: SessionMappingMapper,
@@ -21,22 +16,8 @@ class MysqlSessionMappingService(
     private val log = LoggerFactory.getLogger(MysqlSessionMappingService::class.java)
 
     override fun bindSession(sessionId: String, instanceId: String, agentId: Long?) {
-        val existing = sessionMappingMapper.selectBySessionId(sessionId)
-        if (existing != null) {
-            // Update existing binding
-            sessionMappingMapper.updateBinding(sessionId, instanceId, LocalDateTime.now())
-            log.debug("Updated session binding: $sessionId -> $instanceId")
-        } else {
-            // Create new binding
-            val mapping = SessionMapping()
-            mapping.sessionId = sessionId
-            mapping.instanceId = instanceId
-            mapping.agentId = agentId
-            mapping.lastActiveTime = LocalDateTime.now()
-            mapping.active = 1
-            sessionMappingMapper.insert(mapping)
-            log.debug("Created session binding: $sessionId -> $instanceId")
-        }
+        sessionMappingMapper.upsertBinding(sessionId, instanceId, agentId, LocalDateTime.now())
+        log.debug("Bound session: $sessionId -> $instanceId")
     }
 
     override fun getInstanceId(sessionId: String): String? {
@@ -59,7 +40,6 @@ class MysqlSessionMappingService(
             throw IllegalStateException("No healthy agent-service instances available")
         }
 
-        // Select the instance with the least sessions (simple load balancing)
         val newInstance = selectLeastLoadedInstance(healthyInstances)
         bindSession(sessionId, newInstance.instanceId)
         log.info("Rerouted session $sessionId to instance ${newInstance.instanceId}")
@@ -72,10 +52,14 @@ class MysqlSessionMappingService(
         return count
     }
 
-    /**
-     * Select the instance with the least number of sessions.
-     */
-    private fun selectLeastLoadedInstance(instances: List<com.agnetix.harnax.router.entity.AgentInstance>): com.agnetix.harnax.router.entity.AgentInstance = instances.minByOrNull { inst ->
-        sessionMappingMapper.selectByInstanceId(inst.instanceId).size
-    } ?: instances.first()
+    override fun unbindInstanceSessions(instanceId: String): Int {
+        val count = sessionMappingMapper.deleteByInstanceId(instanceId)
+        log.info("Unbound $count sessions from instance $instanceId")
+        return count
+    }
+
+    private fun selectLeastLoadedInstance(instances: List<com.agnetix.harnax.router.entity.AgentInstance>): com.agnetix.harnax.router.entity.AgentInstance =
+        instances.minByOrNull { inst ->
+            sessionMappingMapper.countSessionsByInstance(inst.instanceId)
+        } ?: instances.first()
 }

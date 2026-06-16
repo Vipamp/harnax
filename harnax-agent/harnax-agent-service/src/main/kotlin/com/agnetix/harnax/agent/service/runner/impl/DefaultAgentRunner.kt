@@ -25,17 +25,19 @@ import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 
 /**
  * Default implementation of AgentRunner.
@@ -48,11 +50,18 @@ class DefaultAgentRunner(
     private val sessionMapper: SessionMapper,
     private val skillMapper: SkillMapper,
     private val objectMapper: ObjectMapper,
+    @Value($$"${agent.cache.max-size:500}")
+    private val cacheMaxSize: Long,
 ) : AgentRunner {
 
     private val log = LoggerFactory.getLogger(DefaultAgentRunner::class.java)
-    private val agentCache = ConcurrentHashMap<String, HarnessAgentWrapper>()
-    private val activeStreams = ConcurrentHashMap<String, Subscription>()
+    private val agentCache = Caffeine.newBuilder()
+        .maximumSize(cacheMaxSize)
+        .removalListener<String, HarnessAgentWrapper> { key, _, cause ->
+            log.info("Agent evicted from cache: session=$key, cause=$cause")
+        }
+        .build<String, HarnessAgentWrapper>()
+    private val activeStreams = JConcurrentHashMap<String, Subscription>()
 
     override fun process(request: ChatAgentRequest): ChatResponse {
         val sessionId = request.sessionId
@@ -134,8 +143,11 @@ class DefaultAgentRunner(
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
         log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}")
-        val agent = agentCache[sessionId]
-            ?: throw IllegalArgumentException("No active agent for session: $sessionId")
+        val agent = agentCache.getIfPresent(sessionId)
+            ?: run {
+                log.warn("Agent not in cache for confirm, rebuilding: session=$sessionId")
+                getOrCreateAgent(sessionId, UserIdentifier(0))
+            }
         return if (request.isConfirmed) {
             agent.callStream()
         } else {
@@ -156,7 +168,7 @@ class DefaultAgentRunner(
 
     override fun clearSession(sessionId: String) {
         interrupt(sessionId)
-        agentCache.remove(sessionId)
+        agentCache.invalidate(sessionId)
         launcher.clearSession(sessionId)
         log.info("Cleared session and agent cache for sessionId=$sessionId")
     }
@@ -172,17 +184,15 @@ class DefaultAgentRunner(
 
     override suspend fun destroyAgent(agentId: Long) {
         log.info("Destroying agent: $agentId")
-        agentCache.keys.forEach { key ->
-            agentCache.remove(key)
-            log.info("Removed cached agent for session=$key")
-        }
+        agentCache.invalidateAll()
+        log.info("Cleared all cached agents")
     }
 
     /**
      * Get or create an agent for the given sessionId.
      * Retrieves session configuration from DB and builds the agent via HarnessAgentLauncher.
      */
-    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.computeIfAbsent(sessionId) { sid ->
+    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.get(sessionId) { sid ->
         val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
             ?: throw IllegalArgumentException("Session not found: $sid")
 

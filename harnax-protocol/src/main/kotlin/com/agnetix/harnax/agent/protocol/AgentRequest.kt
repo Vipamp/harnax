@@ -48,6 +48,7 @@ data class ChatAgentRequest(
     override val sessionId: String,
     val message: String,
     val imageUrls: List<String> = emptyList(),
+    val requestId: String = "",
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CHAT
 }

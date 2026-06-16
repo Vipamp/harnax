@@ -50,7 +50,16 @@ interface InstanceRegistry {
 
     /**
      * Mark an instance as down.
+     * Returns the number of rows actually updated (0 if already DOWN by another router).
+     * @param instanceId Instance identifier
+     * @return Number of rows updated
+     */
+    fun markInstanceDown(instanceId: String): Int
+
+    /**
+     * Mark an instance as draining (graceful shutdown).
+     * No new sessions will be routed to it, but existing requests continue.
      * @param instanceId Instance identifier
      */
-    fun markInstanceDown(instanceId: String)
+    fun markAsDraining(instanceId: String)
 }

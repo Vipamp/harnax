@@ -60,6 +60,12 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
+        <!-- Caffeine for bounded agent cache -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Springdoc OpenAPI -->
         <dependency>
             <groupId>org.springdoc</groupId>

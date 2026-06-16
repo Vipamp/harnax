@@ -11,251 +11,247 @@ import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
+import com.agnetix.harnax.router.service.IdempotencyService
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
+import io.micrometer.core.instrument.MeterRegistry
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.core.publisher.Flux
+import java.time.Duration
+import java.util.UUID
 
-/**
- * Core session router service.
- * Proxies requests from channel-service to the correct agent-service instance,
- * handling session binding and failover.
- */
 @Service
 class SessionRouterService(
     private val instanceRegistry: InstanceRegistry,
     private val sessionMappingService: SessionMappingService,
+    private val idempotencyService: IdempotencyService,
     private val webClient: WebClient,
-    @Value($$"${router.proxy.connect-timeout-ms:5000}")
-    private val connectTimeoutMs: Long,
-    @Value($$"${router.proxy.read-timeout-ms:60000}")
-    private val readTimeoutMs: Long,
+    private val meterRegistry: MeterRegistry,
     @Value($$"${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
+    @Value($$"${router.proxy.stream-timeout-minutes:10}")
+    private val streamTimeoutMinutes: Long,
+    @Value($$"${router.proxy.failover-max-retries:2}")
+    private val failoverMaxRetries: Int,
 ) {
 
     private val log = LoggerFactory.getLogger(SessionRouterService::class.java)
 
-    /**
-     * Proxy a direct (non-streaming) chat request to the correct agent-service instance.
-     * If the session has no binding, select a healthy instance and bind.
-     * If the bound instance is down, reroute to another instance.
-     */
     suspend fun proxyChatRequest(request: ChatAgentRequest): ResultVo<ChatResponse> {
         val sessionId = request.sessionId
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/chat"
-
-        log.debug("Proxying chat request for session $sessionId to instance ${instance.instanceId} at $url")
-
+        val requestId = getOrGenerateRequestId(request)
+        MDC.put("sessionId", sessionId)
+        MDC.put("requestId", requestId)
         try {
-            val response = webClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
-                .awaitSingleOrNull()
+            if (!idempotencyService.tryAcquire(requestId)) {
+                log.warn("Duplicate request detected: $requestId")
+                return ResultVo.error("Duplicate request: $requestId")
+            }
 
+            val instance = resolveInstance(sessionId)
+            MDC.put("instanceId", instance.instanceId)
+            val timer = meterRegistry.timer("router.proxy.duration", "endpoint", "chat")
+            val sample = io.micrometer.core.instrument.Timer.start()
+
+            val result = executeWithRetry(sessionId, "chat") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/chat"
+                webClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("X-Request-Id", requestId)
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+
+            sample.stop(timer)
+            meterRegistry.counter("router.proxy.requests", "endpoint", "chat", "status", if (result.isSuccess()) "ok" else "error").increment()
             sessionMappingService.refreshActiveTime(sessionId)
-
-            return response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy chat request for session $sessionId: ${e.message}", e)
-            return tryFailover(sessionId, request)
+            return result
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Proxy an SSE streaming request to the correct agent-service instance.
-     * Returns a Flux<ChatEvent> that can be streamed back to the caller.
-     */
     fun proxyStreamRequest(request: ChatAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        val instance = resolveInstanceBlocking(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/chat/stream"
+        val requestId = getOrGenerateRequestId(request)
+        MDC.put("sessionId", sessionId)
+        MDC.put("requestId", requestId)
+        try {
+            val instance = resolveInstanceBlocking(sessionId)
+            MDC.put("instanceId", instance.instanceId)
+            val url = "${instance.getBaseUrl()}/api/agent/chat/stream"
 
-        log.debug("Proxying stream request for session $sessionId to instance ${instance.instanceId} at $url")
+            meterRegistry.counter("router.proxy.requests", "endpoint", "stream", "status", "ok").increment()
 
-        return webClient.post()
-            .uri(url)
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(request)
-            .retrieve()
-            .bodyToFlux(ChatEvent::class.java)
-            .doOnComplete {
-                sessionMappingService.refreshActiveTime(sessionId)
-            }
-            .onErrorResume { e ->
-                log.error("Stream proxy error for session $sessionId: ${e.message}", e)
-                Flux.just(
-                    ErrorChatEvent(
-                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
-                        message = e.message ?: "Failed to reach agent-service",
-                    ),
-                    EndEventChatEvent(),
-                )
-            }
+            return webClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Request-Id", requestId)
+                .bodyValue(request)
+                .retrieve()
+                .bodyToFlux(ChatEvent::class.java)
+                .limitRate(10)
+                .timeout(Duration.ofMinutes(streamTimeoutMinutes))
+                .doOnCancel {
+                    log.info("Stream cancelled by client for session $sessionId")
+                }
+                .doOnComplete {
+                    sessionMappingService.refreshActiveTime(sessionId)
+                }
+                .onErrorResume { e ->
+                    log.error("Stream proxy error for session $sessionId: ${e.message}", e)
+                    meterRegistry.counter("router.proxy.requests", "endpoint", "stream", "status", "error").increment()
+                    Flux.just(
+                        ErrorChatEvent(
+                            code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                            message = e.message ?: "Failed to reach agent-service",
+                        ),
+                        EndEventChatEvent(),
+                    )
+                }
+        } finally {
+            MDC.clear()
+        }
     }
 
-    /**
-     * Proxy a command request to the correct agent-service instance.
-     */
     suspend fun proxyCommandRequest(request: CommandAgentRequest): ResultVo<CommandResponse> {
         val sessionId = request.sessionId
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/command"
-
-        log.debug("Proxying command request for session $sessionId to instance ${instance.instanceId} at $url")
-
+        MDC.put("sessionId", sessionId)
         try {
-            val response = webClient.post()
+            val instance = resolveInstance(sessionId)
+            MDC.put("instanceId", instance.instanceId)
+
+            return executeWithRetry(sessionId, "command") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/command"
+                webClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(request)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }.also {
+                sessionMappingService.refreshActiveTime(sessionId)
+            }
+        } finally {
+            MDC.clear()
+        }
+    }
+
+    fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
+        val sessionId = request.sessionId
+        MDC.put("sessionId", sessionId)
+        try {
+            val instance = resolveInstanceBlocking(sessionId)
+            MDC.put("instanceId", instance.instanceId)
+            val url = "${instance.getBaseUrl()}/api/agent/confirm"
+
+            return webClient.post()
                 .uri(url)
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-                .awaitSingleOrNull()
-
-            sessionMappingService.refreshActiveTime(sessionId)
-
-            return response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy command request for session $sessionId: ${e.message}", e)
-            return tryCommandFailover(sessionId, request)
+                .bodyToFlux(ChatEvent::class.java)
+                .limitRate(10)
+                .timeout(Duration.ofMinutes(streamTimeoutMinutes))
+                .doOnCancel {
+                    log.info("Confirm stream cancelled by client for session $sessionId")
+                }
+                .onErrorResume { e ->
+                    log.error("Confirm stream proxy error for session $sessionId: ${e.message}", e)
+                    Flux.just(
+                        ErrorChatEvent(
+                            code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                            message = e.message ?: "Failed to reach agent-service",
+                        ),
+                        EndEventChatEvent(),
+                    )
+                }
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Proxy a confirm request (streaming) to the correct agent-service instance.
-     */
-    fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
-        val sessionId = request.sessionId
-        val instance = resolveInstanceBlocking(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/confirm"
-
-        log.debug("Proxying confirm stream request for session $sessionId to instance ${instance.instanceId} at $url")
-
-        return webClient.post()
-            .uri(url)
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(request)
-            .retrieve()
-            .bodyToFlux(ChatEvent::class.java)
-            .onErrorResume { e ->
-                log.error("Confirm stream proxy error for session $sessionId: ${e.message}", e)
-                Flux.just(
-                    ErrorChatEvent(
-                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
-                        message = e.message ?: "Failed to reach agent-service",
-                    ),
-                    EndEventChatEvent(),
-                )
-            }
-    }
-
-    /**
-     * Proxy a clear session request to the correct agent-service instance.
-     */
     suspend fun proxyClearSession(sessionId: String): ResultVo<String> {
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId"
-
-        log.debug("Proxying clear session for session $sessionId to instance ${instance.instanceId} at $url")
-
-        return try {
-            val response = webClient.delete()
-                .uri(url)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<String>>() {})
-                .awaitSingleOrNull()
-
-            response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy clear session for $sessionId: ${e.message}", e)
-            ResultVo.error("Failed to clear session: ${e.message}")
+        MDC.put("sessionId", sessionId)
+        try {
+            return executeWithRetry(sessionId, "clearSession") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId"
+                webClient.delete()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<String>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Proxy a load history request to the correct agent-service instance.
-     */
     suspend fun proxyLoadHistory(sessionId: String): ResultVo<List<Any>> {
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/chat/history/$sessionId"
-
-        log.debug("Proxying load history for session $sessionId to instance ${instance.instanceId} at $url")
-
-        return try {
-            val response = webClient.get()
-                .uri(url)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
-                .awaitSingleOrNull()
-
-            response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy load history for $sessionId: ${e.message}", e)
-            ResultVo.error("Failed to load history: ${e.message}")
+        MDC.put("sessionId", sessionId)
+        try {
+            return executeWithRetry(sessionId, "loadHistory") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/chat/history/$sessionId"
+                webClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Proxy a load plans request to the correct agent-service instance.
-     */
     suspend fun proxyLoadPlans(sessionId: String): ResultVo<List<Any>> {
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId/plans"
-
-        log.debug("Proxying load plans for session $sessionId to instance ${instance.instanceId} at $url")
-
-        return try {
-            val response = webClient.get()
-                .uri(url)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
-                .awaitSingleOrNull()
-
-            response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy load plans for $sessionId: ${e.message}", e)
-            ResultVo.error("Failed to load plans: ${e.message}")
+        MDC.put("sessionId", sessionId)
+        try {
+            return executeWithRetry(sessionId, "loadPlans") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId/plans"
+                webClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Proxy a load current plan request to the correct agent-service instance.
-     */
     suspend fun proxyLoadCurrentPlan(sessionId: String): ResultVo<Any?> {
-        val instance = resolveInstance(sessionId)
-        val url = "${instance.getBaseUrl()}/api/agent/session/$sessionId/current-plan"
-
-        log.debug("Proxying load current plan for session $sessionId to instance ${instance.instanceId} at $url")
-
-        return try {
-            val response = webClient.get()
-                .uri(url)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any>>() {})
-                .awaitSingleOrNull()
-
-            response ?: ResultVo.error("No response from agent-service")
-        } catch (e: Exception) {
-            log.error("Failed to proxy load current plan for $sessionId: ${e.message}", e)
-            ResultVo.error("Failed to load current plan: ${e.message}")
+        MDC.put("sessionId", sessionId)
+        try {
+            return executeWithRetry(sessionId, "loadCurrentPlan") { targetInstance ->
+                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId/current-plan"
+                webClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            MDC.clear()
         }
     }
 
-    /**
-     * Resolve which agent-service instance should handle this session.
-     * Uses existing binding if available and healthy, otherwise creates new binding.
-     */
     private suspend fun resolveInstance(sessionId: String): AgentInstance {
         val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
 
@@ -264,25 +260,16 @@ class SessionRouterService(
             if (instance != null && instance.isHealthy(heartbeatTimeoutMs)) {
                 return instance
             }
-            // Instance is down, need to reroute
             log.warn("Bound instance $existingInstanceId is unhealthy for session $sessionId, rerouting...")
         }
 
-        // No binding or unhealthy binding - select a new instance
-        val healthyInstances = instanceRegistry.getHealthyInstances()
-        if (healthyInstances.isEmpty()) {
-            throw IllegalStateException("No healthy agent-service instances available for session $sessionId")
-        }
-
-        val newInstance = selectLeastLoadedInstance(healthyInstances)
-        sessionMappingService.bindSession(sessionId, newInstance.instanceId)
-        log.info("Bound session $sessionId to instance ${newInstance.instanceId}")
+        val newInstanceId = sessionMappingService.rerouteSession(sessionId)
+        val newInstance = instanceRegistry.getInstance(newInstanceId)
+            ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
+        log.info("Bound session $sessionId to instance $newInstanceId")
         return newInstance
     }
 
-    /**
-     * Blocking version of resolveInstance for stream proxy.
-     */
     private fun resolveInstanceBlocking(sessionId: String): AgentInstance {
         val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
 
@@ -293,73 +280,50 @@ class SessionRouterService(
             }
         }
 
-        val healthyInstances = instanceRegistry.getHealthyInstances()
-        if (healthyInstances.isEmpty()) {
-            throw IllegalStateException("No healthy agent-service instances available")
-        }
-
-        val newInstance = selectLeastLoadedInstance(healthyInstances)
-        sessionMappingService.bindSession(sessionId, newInstance.instanceId)
-        return newInstance
+        val newInstanceId = sessionMappingService.rerouteSession(sessionId)
+        return instanceRegistry.getInstance(newInstanceId)
+            ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
     }
 
-    /**
-     * Try failover by rerouting to another instance.
-     */
-    private suspend fun tryFailover(
+    private suspend fun <T> executeWithRetry(
         sessionId: String,
-        request: ChatAgentRequest,
-    ): ResultVo<ChatResponse> {
+        endpoint: String,
+        action: suspend (AgentInstance) -> T,
+    ): T {
+        val instance = resolveInstance(sessionId)
+        MDC.put("instanceId", instance.instanceId)
         try {
-            val newInstance = sessionMappingService.rerouteSession(sessionId)
-            val url = "${instanceRegistry.getInstance(newInstance)?.getBaseUrl()}/api/agent/chat"
-
-            val response = webClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
-                .awaitSingleOrNull()
-
-            return response ?: ResultVo.error("No response from failover instance")
-        } catch (failoverError: Exception) {
-            log.error("Failover also failed for session $sessionId: ${failoverError.message}", failoverError)
-            return ResultVo.error("Failover failed: ${failoverError.message}")
+            return action(instance)
+        } catch (e: Exception) {
+            log.error("Failed to proxy $endpoint for session $sessionId: ${e.message}", e)
+            return retryFailover(sessionId, endpoint, action)
         }
     }
 
-    /**
-     * Try failover for command requests by rerouting to another instance.
-     */
-    private suspend fun tryCommandFailover(
+    private suspend fun <T> retryFailover(
         sessionId: String,
-        request: CommandAgentRequest,
-    ): ResultVo<CommandResponse> {
-        try {
-            val newInstance = sessionMappingService.rerouteSession(sessionId)
-            val url = "${instanceRegistry.getInstance(newInstance)?.getBaseUrl()}/api/agent/command"
+        endpoint: String,
+        action: suspend (AgentInstance) -> T,
+    ): T {
+        var lastError: Exception? = null
+        for (attempt in 1..failoverMaxRetries) {
+            try {
+                val newInstance = sessionMappingService.rerouteSession(sessionId)
+                val instance = instanceRegistry.getInstance(newInstance)
+                    ?: throw IllegalStateException("Failover instance $newInstance not found")
+                MDC.put("instanceId", instance.instanceId)
+                log.info("Failover attempt $attempt for $endpoint, session $sessionId -> ${instance.instanceId}")
+                meterRegistry.counter("router.failover.count", "endpoint", endpoint, "attempt", "$attempt").increment()
 
-            val response = webClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-                .awaitSingleOrNull()
-
-            return response ?: ResultVo.error("No response from failover instance")
-        } catch (failoverError: Exception) {
-            log.error("Command failover also failed for session $sessionId: ${failoverError.message}", failoverError)
-            return ResultVo.error("Command failover failed: ${failoverError.message}")
+                return action(instance)
+            } catch (e: Exception) {
+                lastError = e
+                log.error("Failover attempt $attempt failed for $endpoint, session $sessionId: ${e.message}", e)
+            }
         }
+        throw lastError ?: IllegalStateException("Failover exhausted for $endpoint, session $sessionId")
     }
 
-    /**
-     * Select the instance with the least number of bound sessions.
-     */
-    private fun selectLeastLoadedInstance(instances: List<AgentInstance>): AgentInstance = instances.minByOrNull {
-        // Simple heuristic: use round-robin based on instance ID hash
-        it.instanceId.hashCode()
-    } ?: instances.first()
+    private fun getOrGenerateRequestId(request: ChatAgentRequest): String =
+        request.requestId.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
 }

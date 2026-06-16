@@ -67,6 +67,12 @@
             <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- Spring Boot Actuator for Metrics -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- Springdoc OpenAPI -->
         <dependency>
             <groupId>org.springdoc</groupId>

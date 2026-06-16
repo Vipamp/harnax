@@ -24,7 +24,7 @@ class AgentInstance : Serializable {
     /** Instance port */
     var port: Int = 0
 
-    /** Instance status: UP, DOWN */
+    /** Instance status: UP, DOWN, DRAINING */
     var status: String = "UP"
 
     /** Last heartbeat timestamp */
@@ -47,6 +47,8 @@ class AgentInstance : Serializable {
         val timeoutSeconds = heartbeatTimeoutMs / 1000
         return lastHeartbeat.isAfter(LocalDateTime.now().minusSeconds(timeoutSeconds))
     }
+
+    fun isDraining(): Boolean = status == "DRAINING" && active == 1
 
     /**
      * Get the base URL for this instance.

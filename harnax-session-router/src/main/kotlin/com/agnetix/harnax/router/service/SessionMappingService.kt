@@ -48,4 +48,12 @@ interface SessionMappingService {
      * @return Number of sessions rebinding
      */
     fun rebindAllSessions(oldInstanceId: String, newInstanceId: String): Int
+
+    /**
+     * Unbind all sessions bound to a specific instance.
+     * Used during instance unregistration.
+     * @param instanceId Instance identifier
+     * @return Number of sessions unbound
+     */
+    fun unbindInstanceSessions(instanceId: String): Int
 }

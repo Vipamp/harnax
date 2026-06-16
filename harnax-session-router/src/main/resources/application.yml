@@ -26,9 +26,25 @@ router:
   health:
     heartbeat-timeout-ms: 30000   # Heartbeat timeout: 30 seconds
     check-interval-ms: 5000       # Health check interval: 5 seconds
-  session:
-    ttl-minutes: 30               # Session mapping TTL: 30 minutes
-    cache-size: 10000             # Local cache max size
   proxy:
     connect-timeout-ms: 5000      # Proxy connect timeout
     read-timeout-ms: 60000        # Proxy read timeout (long for AI processing)
+    max-in-memory-size-mb: 16     # Max in-memory buffer size for WebClient
+    stream-timeout-minutes: 10    # SSE stream overall timeout
+    failover-max-retries: 2       # Max failover retry attempts
+  cleanup:
+    retention-days: 7             # Days to keep soft-deleted records
+    cron: "0 0 3 * * ?"          # Cleanup runs daily at 3 AM
+  security:
+    enabled: false                # Enable API key auth for instance endpoints
+    api-key: ""                   # API key for instance management
+
+# Actuator / Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}

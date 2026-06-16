@@ -15,14 +15,15 @@ import com.agnetix.harnax.agent.service.chat.dto.SessionConfigUpdateRequest
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * @Description: ChatService
@@ -31,10 +32,17 @@ import java.util.concurrent.ConcurrentHashMap
 class ChatService(
     private val launcher: HarnessAgentLauncher,
     private val sessionMapper: SessionMapper,
+    @Value($$"${agent.cache.max-size:500}")
+    private val cacheMaxSize: Long,
 ) {
 
     private val log = LoggerFactory.getLogger(ChatService::class.java)
-    private val agentCache = ConcurrentHashMap<String, HarnessAgentWrapper>()
+    private val agentCache = Caffeine.newBuilder()
+        .maximumSize(cacheMaxSize)
+        .removalListener<String, HarnessAgentWrapper> { key, _, cause ->
+            log.info("Agent evicted from cache: session=$key, cause=$cause")
+        }
+        .build<String, HarnessAgentWrapper>()
 
     fun chat(request: ChatRequest): Flux<ChatEvent> {
         try {
@@ -85,7 +93,7 @@ class ChatService(
      * Caches the agent so subsequent calls reuse the same instance.
      */
     private fun getOrCreateAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): HarnessAgentWrapper =
-        agentCache.computeIfAbsent(sessionId) { sid ->
+        agentCache.get(sessionId) { sid ->
             val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
                 ?: throw IllegalArgumentException("Session not found: $sid")
 
@@ -112,7 +120,7 @@ class ChatService(
         }
 
     fun clearSession(sessionId: String) {
-        agentCache.remove(sessionId)
+        agentCache.invalidate(sessionId)
         launcher.clearSession(sessionId)
     }
 

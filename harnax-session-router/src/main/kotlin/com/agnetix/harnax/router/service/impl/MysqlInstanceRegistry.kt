@@ -3,15 +3,14 @@ package com.agnetix.harnax.router.service.impl
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.mapper.AgentInstanceMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
+import com.github.benmanes.caffeine.cache.Caffeine
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
-/**
- * MySQL-backed implementation of InstanceRegistry.
- * Stores instance information and health status in the database.
- */
 @Service
 class MysqlInstanceRegistry(
     private val agentInstanceMapper: AgentInstanceMapper,
@@ -21,33 +20,22 @@ class MysqlInstanceRegistry(
 
     private val log = LoggerFactory.getLogger(MysqlInstanceRegistry::class.java)
 
+    private val healthyInstancesCache = Caffeine.newBuilder()
+        .expireAfterWrite(5, TimeUnit.SECONDS)
+        .build<String, List<AgentInstance>>()
+
+    private val lastCacheInvalidationMs = AtomicLong(0)
+    private val cacheThrottleMs = 2000L
+
     override fun registerInstance(instanceId: String, host: String, port: Int) {
-        val existing = agentInstanceMapper.selectByInstanceId(instanceId)
-        if (existing != null) {
-            // Update existing instance
-            existing.host = host
-            existing.port = port
-            existing.status = "UP"
-            existing.lastHeartbeat = LocalDateTime.now()
-            existing.active = 1
-            agentInstanceMapper.updateHeartbeat(instanceId, LocalDateTime.now(), "UP")
-            log.info("Updated existing instance registration: $instanceId at $host:$port")
-        } else {
-            // Create new instance
-            val instance = AgentInstance()
-            instance.instanceId = instanceId
-            instance.host = host
-            instance.port = port
-            instance.status = "UP"
-            instance.lastHeartbeat = LocalDateTime.now()
-            instance.active = 1
-            agentInstanceMapper.insert(instance)
-            log.info("Registered new instance: $instanceId at $host:$port")
-        }
+        agentInstanceMapper.upsertInstance(instanceId, host, port, LocalDateTime.now())
+        throttledInvalidateCache()
+        log.info("Registered instance: $instanceId at $host:$port")
     }
 
     override fun unregisterInstance(instanceId: String) {
         agentInstanceMapper.deleteByInstanceId(instanceId)
+        healthyInstancesCache.invalidateAll()
         log.info("Unregistered instance: $instanceId")
     }
 
@@ -55,23 +43,39 @@ class MysqlInstanceRegistry(
         val rows = agentInstanceMapper.updateHeartbeat(instanceId, LocalDateTime.now(), "UP")
         if (rows == 0) {
             log.warn("Heartbeat refresh failed - instance not found: $instanceId")
+        } else {
+            throttledInvalidateCache()
         }
     }
 
-    override fun getHealthyInstances(): List<AgentInstance> {
-        // Get all instances marked as UP, then filter by heartbeat timeout
-        val allUp = agentInstanceMapper.selectHealthyInstances()
-        val healthy = allUp.filter { it.isHealthy(heartbeatTimeoutMs) }
-        log.debug("Found ${healthy.size} healthy instances out of ${allUp.size} UP instances")
-        return healthy
-    }
+    override fun getHealthyInstances(): List<AgentInstance> =
+        healthyInstancesCache.get("healthy") {
+            val allUp = agentInstanceMapper.selectHealthyInstances()
+            allUp.filter { it.isHealthy(heartbeatTimeoutMs) }
+        }
 
     override fun getAllActiveInstances(): List<AgentInstance> = agentInstanceMapper.selectAllInstances()
 
     override fun getInstance(instanceId: String): AgentInstance? = agentInstanceMapper.selectByInstanceId(instanceId)
 
-    override fun markInstanceDown(instanceId: String) {
-        agentInstanceMapper.markAsDown(instanceId)
-        log.warn("Marked instance as DOWN: $instanceId")
+    override fun markInstanceDown(instanceId: String): Int {
+        val rows = agentInstanceMapper.markAsDown(instanceId)
+        healthyInstancesCache.invalidateAll()
+        log.warn("Marked instance as DOWN: $instanceId (rows=$rows)")
+        return rows
+    }
+
+    override fun markAsDraining(instanceId: String) {
+        agentInstanceMapper.updateHeartbeat(instanceId, LocalDateTime.now(), "DRAINING")
+        healthyInstancesCache.invalidateAll()
+        log.info("Marked instance as DRAINING: $instanceId")
+    }
+
+    private fun throttledInvalidateCache() {
+        val now = System.currentTimeMillis()
+        val last = lastCacheInvalidationMs.get()
+        if (now - last >= cacheThrottleMs && lastCacheInvalidationMs.compareAndSet(last, now)) {
+            healthyInstancesCache.invalidateAll()
+        }
     }
 }

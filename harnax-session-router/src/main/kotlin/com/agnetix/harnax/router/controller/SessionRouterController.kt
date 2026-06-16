@@ -10,6 +10,7 @@ import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.dto.InstanceInfo
 import com.agnetix.harnax.router.dto.InstanceOperationResponse
 import com.agnetix.harnax.router.dto.RouterHealthResponse
+import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
@@ -29,7 +30,7 @@ import reactor.core.publisher.Flux
 class SessionRouterController(
     private val instanceRegistry: InstanceRegistry,
     private val sessionMappingService: SessionMappingService,
-    private val sessionRouterService: com.agnetix.harnax.router.proxy.SessionRouterService,
+    private val sessionRouterService: SessionRouterService,
 ) {
 
     private val log = LoggerFactory.getLogger(SessionRouterController::class.java)
@@ -137,8 +138,19 @@ class SessionRouterController(
     fun unregisterInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         log.info("Instance unregistration request: $instanceId")
         instanceRegistry.unregisterInstance(instanceId)
-        sessionMappingService.rebindAllSessions(instanceId, "")
+        sessionMappingService.unbindInstanceSessions(instanceId)
         return ResultVo.success(InstanceOperationResponse(status = "unregistered", instanceId = instanceId))
+    }
+
+    /**
+     * Mark an instance as draining (graceful shutdown).
+     * The instance stops receiving new sessions but continues processing active requests.
+     */
+    @PostMapping("/instance/drain")
+    fun drainInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
+        log.info("Instance drain request: $instanceId")
+        instanceRegistry.markAsDraining(instanceId)
+        return ResultVo.success(InstanceOperationResponse(status = "draining", instanceId = instanceId))
     }
 
     /**
@@ -146,7 +158,7 @@ class SessionRouterController(
      */
     @GetMapping("/instance/list")
     fun listInstances(): ResultVo<List<InstanceInfo>> {
-        val instances = instanceRegistry.getHealthyInstances()
+        val instances = instanceRegistry.getAllActiveInstances()
         val result = instances.map { inst ->
             InstanceInfo(
                 instanceId = inst.instanceId,
