@@ -179,4 +179,14 @@ class SessionRouterController(
         val healthyCount = instanceRegistry.getHealthyInstances().size
         return ResultVo.success(RouterHealthResponse(status = "UP", healthyInstances = healthyCount))
     }
+
+    /**
+     * Get cache statistics for monitoring.
+     */
+    @GetMapping("/metrics/cache")
+    fun cacheMetrics(): ResultVo<Map<String, Any>> {
+        val registryImpl = instanceRegistry as? com.agnetix.harnax.router.service.impl.MysqlInstanceRegistry
+        val stats = registryImpl?.getCacheStats() ?: emptyMap()
+        return ResultVo.success(stats)
+    }
 }

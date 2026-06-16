@@ -11,6 +11,15 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 5000
+      idle-timeout: 300000
+      max-lifetime: 600000
+      leak-detection-threshold: 10000  # Detect connections held > 10s
+      validation-timeout: 3000
+      keepalive-time: 30000
   flyway:
     enabled: true
     locations: classpath:db/migration
@@ -30,14 +39,16 @@ router:
     connect-timeout-ms: 5000      # Proxy connect timeout
     read-timeout-ms: 60000        # Proxy read timeout (long for AI processing)
     max-in-memory-size-mb: 16     # Max in-memory buffer size for WebClient
-    stream-timeout-minutes: 10    # SSE stream overall timeout
+    stream-timeout-minutes: 15    # SSE stream overall timeout (increased for long AI tasks)
     failover-max-retries: 2       # Max failover retry attempts
   cleanup:
     retention-days: 7             # Days to keep soft-deleted records
     cron: "0 0 3 * * ?"          # Cleanup runs daily at 3 AM
   security:
-    enabled: false                # Enable API key auth for instance endpoints
-    api-key: ""                   # API key for instance management
+    enabled: true                 # Enable API key auth by default
+    api-key: ${ROUTER_API_KEY:change-me-in-production}  # Must be set in production
+  cache:
+    instance-ttl-seconds: 3       # Instance cache TTL
 
 # Actuator / Metrics
 management:

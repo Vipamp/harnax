@@ -3,9 +3,6 @@ package com.agnetix.harnax.router.mapper
 import com.agnetix.harnax.router.entity.AgentInstance
 import org.apache.ibatis.annotations.*
 
-/**
- * Mapper for agent instance operations.
- */
 @Mapper
 interface AgentInstanceMapper {
 

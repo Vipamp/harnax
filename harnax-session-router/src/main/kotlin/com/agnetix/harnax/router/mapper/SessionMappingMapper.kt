@@ -3,9 +3,6 @@ package com.agnetix.harnax.router.mapper
 import com.agnetix.harnax.router.entity.SessionMapping
 import org.apache.ibatis.annotations.*
 
-/**
- * Mapper for session mapping operations.
- */
 @Mapper
 interface SessionMappingMapper {
 
@@ -43,6 +40,20 @@ interface SessionMappingMapper {
 
     @Select("SELECT COUNT(*) FROM session_mapping WHERE instance_id = #{instanceId} AND active = 1")
     fun countSessionsByInstance(@Param("instanceId") instanceId: String): Int
+
+    @Select(
+        """
+        <script>
+        SELECT instance_id, COUNT(*) as cnt FROM session_mapping 
+        WHERE instance_id IN 
+        <foreach item="id" collection="instanceIds" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND active = 1 GROUP BY instance_id
+        </script>
+    """,
+    )
+    fun countSessionsByInstances(@Param("instanceIds") instanceIds: List<String>): List<Map<String, Any>>
 
     @Select("SELECT * FROM session_mapping WHERE session_id = #{sessionId} AND active = 1")
     fun selectBySessionId(sessionId: String): SessionMapping?
