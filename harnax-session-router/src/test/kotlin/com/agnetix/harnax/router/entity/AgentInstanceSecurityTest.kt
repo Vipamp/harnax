@@ -24,27 +24,19 @@ class AgentInstanceSecurityTest {
     }
 
     @Test
-    fun `should block private network addresses - Class A`() {
-        assertTrue(AgentInstance.isBlockedHost("10.0.0.1"))
-        assertTrue(AgentInstance.isBlockedHost("10.255.255.255"))
-        assertTrue(AgentInstance.isBlockedHost("10.10.10.10"))
-    }
-
-    @Test
-    fun `should block private network addresses - Class B`() {
-        assertTrue(AgentInstance.isBlockedHost("172.16.0.1"))
-        assertTrue(AgentInstance.isBlockedHost("172.31.255.255"))
-        assertTrue(AgentInstance.isBlockedHost("172.20.10.5"))
-        // Should NOT block 172.15.x.x or 172.32.x.x
-        assertFalse(AgentInstance.isBlockedHost("172.15.0.1"))
-        assertFalse(AgentInstance.isBlockedHost("172.32.0.1"))
-    }
-
-    @Test
-    fun `should block private network addresses - Class C`() {
-        assertTrue(AgentInstance.isBlockedHost("192.168.0.1"))
-        assertTrue(AgentInstance.isBlockedHost("192.168.255.255"))
-        assertTrue(AgentInstance.isBlockedHost("192.168.1.100"))
+    fun `should allow RFC 1918 private network addresses`() {
+        // Class A
+        assertFalse(AgentInstance.isBlockedHost("10.0.0.1"))
+        assertFalse(AgentInstance.isBlockedHost("10.255.255.255"))
+        assertFalse(AgentInstance.isBlockedHost("10.10.10.10"))
+        // Class B
+        assertFalse(AgentInstance.isBlockedHost("172.16.0.1"))
+        assertFalse(AgentInstance.isBlockedHost("172.31.255.255"))
+        assertFalse(AgentInstance.isBlockedHost("172.20.10.5"))
+        // Class C
+        assertFalse(AgentInstance.isBlockedHost("192.168.0.1"))
+        assertFalse(AgentInstance.isBlockedHost("192.168.255.255"))
+        assertFalse(AgentInstance.isBlockedHost("192.168.1.100"))
     }
 
     @Test
@@ -64,9 +56,9 @@ class AgentInstanceSecurityTest {
     }
 
     @Test
-    fun `should block internal domains`() {
-        assertTrue(AgentInstance.isBlockedHost("service.internal"))
-        assertTrue(AgentInstance.isBlockedHost("db.local"))
+    fun `should allow internal and local domain names`() {
+        assertFalse(AgentInstance.isBlockedHost("service.internal"))
+        assertFalse(AgentInstance.isBlockedHost("db.local"))
     }
 
     @Test
@@ -91,8 +83,8 @@ class AgentInstanceSecurityTest {
 
     @Test
     fun `should allow typical production IPs`() {
-        // Kubernetes pod IPs (typically 10.x but should be blocked)
-        assertTrue(AgentInstance.isBlockedHost("10.244.0.5"))
+        // Kubernetes pod IPs (private network, allowed for internal services)
+        assertFalse(AgentInstance.isBlockedHost("10.244.0.5"))
 
         // Public cloud IPs
         assertFalse(AgentInstance.isBlockedHost("34.120.54.123"))

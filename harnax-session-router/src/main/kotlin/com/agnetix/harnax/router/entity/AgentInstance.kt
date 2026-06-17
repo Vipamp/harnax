@@ -24,19 +24,12 @@ class AgentInstance : Serializable {
             Regex("^fe80:", RegexOption.IGNORE_CASE),
         )
 
-        // Block link-local addresses
+        // Block link-local addresses (cloud metadata endpoints like 169.254.169.254)
         private val LINK_LOCAL_PATTERNS = listOf(
             Regex("^169\\.254\\."),
         )
 
-        // Block private network ranges (RFC 1918)
-        private val PRIVATE_NETWORK_PATTERNS = listOf(
-            Regex("^10\\."),
-            Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\."),
-            Regex("^192\\.168\\."),
-        )
-
-        // Block metadata and internal services
+        // Block known cloud metadata service hostnames
         private val BLOCKED_HOST_NAMES = setOf(
             "localhost",
             "metadata.google.internal",
@@ -77,46 +70,34 @@ class AgentInstance : Serializable {
 
         /**
          * Check if a host is blocked for security reasons.
-         * Blocks loopback, link-local, private networks, and known metadata endpoints.
+         * Blocks loopback, link-local, and known cloud metadata endpoints.
+         * Private network addresses (10.x, 172.16-31.x, 192.168.x) are allowed
+         * since agent-service instances typically run on internal networks.
          */
         fun isBlockedHost(host: String): Boolean {
             val trimmed = host.trim().lowercase()
 
-            // Check against blocked names first
             if (trimmed in BLOCKED_HOST_NAMES) return true
 
-            // Check IPv6 patterns
             if (LOOPBACK_PATTERNS.any { it.containsMatchIn(trimmed) }) return true
 
-            // Check IPv4 patterns
             val ipv4Pattern = Regex("^(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})$")
             val matchResult = ipv4Pattern.matchEntire(trimmed)
             if (matchResult != null) {
-                // Validate IP octets
                 val (a, b, c, d) = matchResult.destructured
                 try {
                     val octets = listOf(a.toInt(), b.toInt(), c.toInt(), d.toInt())
                     if (octets.any { it < 0 || it > 255 }) return true
 
-                    // Check loopback (0.x.x.x, 127.x.x.x)
                     if (a == "0" || a == "127") return true
 
-                    // Check link-local (169.254.x.x)
                     if (a == "169" && b == "254") return true
-
-                    // Check private networks (RFC 1918)
-                    if (a == "10") return true
-                    if (a == "172" && b.toInt() in 16..31) return true
-                    if (a == "192" && b == "168") return true
 
                     return false
                 } catch (e: NumberFormatException) {
-                    return true // Invalid IP format
+                    return true
                 }
             }
-
-            // For domain names, block known metadata endpoints
-            if (trimmed.endsWith(".internal") || trimmed.endsWith(".local")) return true
 
             return false
         }

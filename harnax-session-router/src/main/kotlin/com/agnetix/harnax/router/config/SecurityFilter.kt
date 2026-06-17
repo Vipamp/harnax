@@ -97,7 +97,7 @@ class SecurityFilter(
                 return
             }
 
-            // Check for blocked/suspicious hosts (SSRF prevention)
+            // Block dangerous addresses (loopback, link-local, metadata endpoints)
             if (AgentInstance.isBlockedHost(host)) {
                 log.warn("Registration rejected: blocked host $host for instance $instanceId")
                 writeError(response, HttpServletResponse.SC_BAD_REQUEST, "Host address not allowed")
