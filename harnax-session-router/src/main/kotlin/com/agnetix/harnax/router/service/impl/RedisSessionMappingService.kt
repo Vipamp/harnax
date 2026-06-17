@@ -6,8 +6,10 @@ import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
+import org.springframework.data.redis.core.script.DefaultRedisScript
 import java.time.Duration
 import java.time.LocalDateTime
+import java.util.UUID
 
 /**
  * Redis-based distributed session mapping service.
@@ -26,7 +28,12 @@ class RedisSessionMappingService(
         private const val SESSION_KEY_PREFIX = "router:session:"
         private const val LOCK_KEY_PREFIX = "router:lock:session:"
         private const val LOCK_TIMEOUT_SECONDS = 5L
-        private const val SESSION_TTL_HOURS = 24L // Sessions expire after 24 hours of inactivity
+        private const val SESSION_TTL_HOURS = 24L
+
+        private val RELEASE_LOCK_SCRIPT = DefaultRedisScript(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long::class.java,
+        )
     }
 
     override fun bindSession(sessionId: String, instanceId: String, agentId: Long?) {
@@ -114,9 +121,9 @@ class RedisSessionMappingService(
     override fun rerouteSession(sessionId: String): String {
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
 
-        // Use distributed lock to prevent race conditions
         val lockKey = "$LOCK_KEY_PREFIX$sessionId"
-        val locked = tryAcquireLockWithRetry(lockKey, maxRetries = 3)
+        val lockValue = UUID.randomUUID().toString()
+        val locked = tryAcquireLockWithRetry(lockKey, lockValue, maxRetries = 3)
 
         if (!locked) {
             log.warn("Failed to acquire lock for session reroute after retries: $sessionId")
@@ -153,7 +160,7 @@ class RedisSessionMappingService(
             return newInstance.instanceId
         } finally {
             try {
-                releaseLock(lockKey)
+                releaseLock(lockKey, lockValue)
             } catch (e: Exception) {
                 log.error("Failed to release lock for session $sessionId: ${e.message}")
                 // Lock will auto-expire after TTL, non-critical
@@ -164,12 +171,12 @@ class RedisSessionMappingService(
     /**
      * Try to acquire a distributed lock with retry mechanism.
      */
-    private fun tryAcquireLockWithRetry(lockKey: String, maxRetries: Int): Boolean {
+    private fun tryAcquireLockWithRetry(lockKey: String, lockValue: String, maxRetries: Int): Boolean {
         for (attempt in 1..maxRetries) {
             try {
                 val result = redisTemplate.opsForValue().setIfAbsent(
                     lockKey,
-                    Thread.currentThread().name,
+                    lockValue,
                     Duration.ofSeconds(LOCK_TIMEOUT_SECONDS),
                 )
                 if (result == true) {
@@ -193,11 +200,15 @@ class RedisSessionMappingService(
     override fun rebindAllSessions(oldInstanceId: String, newInstanceId: String): Int {
         val count = sessionMappingMapper.rebindSessions(oldInstanceId, newInstanceId)
 
-        // Update Redis cache for affected sessions
         val sessions = sessionMappingMapper.selectByInstanceId(newInstanceId)
-        for (mapping in sessions) {
-            val sessionKey = "$SESSION_KEY_PREFIX${mapping.sessionId}"
-            redisTemplate.opsForValue().set(sessionKey, newInstanceId, Duration.ofHours(SESSION_TTL_HOURS))
+        if (sessions.isNotEmpty()) {
+            val ttl = Duration.ofHours(SESSION_TTL_HOURS)
+            redisTemplate.executePipelined {
+                val ops = redisTemplate.opsForValue()
+                for (mapping in sessions) {
+                    ops.set("$SESSION_KEY_PREFIX${mapping.sessionId}", newInstanceId, ttl)
+                }
+            }
         }
 
         log.info("Rebind $count sessions from $oldInstanceId to $newInstanceId")
@@ -254,10 +265,7 @@ class RedisSessionMappingService(
         return instances.last()
     }
 
-    /**
-     * Release a distributed lock.
-     */
-    private fun releaseLock(lockKey: String) {
-        redisTemplate.delete(lockKey)
+    private fun releaseLock(lockKey: String, lockValue: String) {
+        redisTemplate.execute(RELEASE_LOCK_SCRIPT, listOf(lockKey), lockValue)
     }
 }

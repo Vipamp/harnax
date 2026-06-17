@@ -53,7 +53,6 @@ class HeartbeatHealthChecker(
     }
 
     private fun handleInstanceDown(downInstanceId: String, healthyInstances: List<AgentInstance>) {
-        // Rate limiting: check if we recently performed failover for this instance
         val now = System.currentTimeMillis()
         val lastFailoverTime = recentFailovers[downInstanceId] ?: 0
         if (now - lastFailoverTime < failoverCooldownMs) {
@@ -74,20 +73,20 @@ class HeartbeatHealthChecker(
         }
 
         val targetInstance = selectFailoverTarget(healthyInstances, downInstanceId)
-
-        // Verify target instance is not overloaded before rebinding
-        val currentLoad = getSessionCount(targetInstance.instanceId)
-        val avgLoad = getAverageSessionLoad(healthyInstances)
+        val countMap = batchGetSessionCounts(healthyInstances.map { it.instanceId })
+        val currentLoad = countMap[targetInstance.instanceId] ?: 0
+        val avgLoad = if (healthyInstances.isEmpty()) 0.0 else countMap.values.sum().toDouble() / healthyInstances.size
 
         if (currentLoad > avgLoad * 2) {
             log.warn("Target instance ${targetInstance.instanceId} is overloaded ($currentLoad sessions, avg: $avgLoad), selecting alternative")
             val alternativeTargets = healthyInstances.filter {
                 it.instanceId != targetInstance.instanceId &&
-                    getSessionCount(it.instanceId) <= avgLoad * 1.5
+                    (countMap[it.instanceId] ?: 0) <= avgLoad * 1.5
             }
             if (alternativeTargets.isNotEmpty()) {
-                val betterTarget = alternativeTargets.minByOrNull { getSessionCount(it.instanceId) }!!
-                log.info("Selected less loaded instance ${betterTarget.instanceId} (${getSessionCount(betterTarget.instanceId)} sessions)")
+                val betterTarget = alternativeTargets.minByOrNull { countMap[it.instanceId] ?: 0 }!!
+                val betterLoad = countMap[betterTarget.instanceId] ?: 0
+                log.info("Selected less loaded instance ${betterTarget.instanceId} ($betterLoad sessions)")
                 rebindSessions(downInstanceId, betterTarget)
                 recentFailovers[downInstanceId] = now
                 return
@@ -103,14 +102,16 @@ class HeartbeatHealthChecker(
         log.info("Failover: moved $rebinding sessions from $downInstanceId to ${targetInstance.instanceId}")
     }
 
-    private fun getSessionCount(instanceId: String): Int {
-        return sessionMappingMapper.countSessionsByInstance(instanceId)
-    }
-
-    private fun getAverageSessionLoad(instances: List<AgentInstance>): Double {
-        if (instances.isEmpty()) return 0.0
-        val totalSessions = instances.sumOf { getSessionCount(it.instanceId) }
-        return totalSessions.toDouble() / instances.size
+    private fun batchGetSessionCounts(instanceIds: List<String>): Map<String, Int> {
+        if (instanceIds.isEmpty()) return emptyMap()
+        val results = sessionMappingMapper.countSessionsByInstances(instanceIds)
+        val countMap = mutableMapOf<String, Int>()
+        for (row in results) {
+            val id = (row["instance_id"] ?: row["instanceId"]) as? String ?: continue
+            val cnt = (row["cnt"] as? Number)?.toInt() ?: 0
+            countMap[id] = cnt
+        }
+        return countMap
     }
 
     private fun selectFailoverTarget(healthyInstances: List<AgentInstance>, excludeInstanceId: String): AgentInstance {
