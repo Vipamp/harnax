@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.redis.core.RedisTemplate
 import java.time.Duration
 import java.time.LocalDateTime
-import java.util.concurrent.TimeUnit
 
 /**
  * Redis-based distributed instance registry.
@@ -27,7 +26,6 @@ class RedisInstanceRegistry(
         private const val INSTANCE_KEY_PREFIX = "router:instance:"
         private const val HEALTHY_SET_KEY = "router:instances:healthy"
         private const val ALL_SET_KEY = "router:instances:all"
-        private const val CACHE_TTL_SECONDS = 2L // Short TTL for fast consistency
     }
 
     override fun registerInstance(instanceId: String, host: String, port: Int) {

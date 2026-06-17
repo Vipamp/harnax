@@ -2,6 +2,7 @@ package com.agnetix.harnax.router.health
 
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.mapper.AgentInstanceMapper
+import com.agnetix.harnax.router.mapper.SessionMappingMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
@@ -16,6 +17,7 @@ class HeartbeatHealthChecker(
     private val instanceRegistry: InstanceRegistry,
     private val sessionMappingService: SessionMappingService,
     private val agentInstanceMapper: AgentInstanceMapper,
+    private val sessionMappingMapper: SessionMappingMapper,
     @Value($$"${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
     @Value($$"${router.cleanup.retention-days:7}")
@@ -102,8 +104,7 @@ class HeartbeatHealthChecker(
     }
 
     private fun getSessionCount(instanceId: String): Int {
-        // This would need to be added to SessionMappingMapper or use a simpler heuristic
-        return 0 // Placeholder - in production, query actual session count
+        return sessionMappingMapper.countSessionsByInstance(instanceId)
     }
 
     private fun getAverageSessionLoad(instances: List<AgentInstance>): Double {

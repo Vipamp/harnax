@@ -58,8 +58,6 @@ class SessionRouterService(
                 return ResultVo.error("Duplicate request: $requestId")
             }
 
-            val instance = resolveInstance(sessionId)
-            MDC.put("instanceId", instance.instanceId)
             val timer = meterRegistry.timer("router.proxy.duration", "endpoint", "chat")
             val sample = io.micrometer.core.instrument.Timer.start()
 

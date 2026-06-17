@@ -20,6 +20,7 @@ class CaffeineSessionMappingService(
     private val sessionMappingMapper: SessionMappingMapper,
     private val instanceRegistry: InstanceRegistry,
     sessionCacheTtlSeconds: Long = 300,
+    private val heartbeatTimeoutMs: Long = 30000L,
 ) : SessionMappingService {
 
     private val log = LoggerFactory.getLogger(CaffeineSessionMappingService::class.java)
@@ -50,12 +51,17 @@ class CaffeineSessionMappingService(
             return cached
         }
 
-        val mapping = sessionMappingMapper.selectBySessionId(sessionId)
-        val instanceId = mapping?.instanceId
-        if (instanceId != null) {
-            sessionCache.put(sessionId, instanceId)
+        return try {
+            val mapping = sessionMappingMapper.selectBySessionId(sessionId)
+            val instanceId = mapping?.instanceId
+            if (instanceId != null) {
+                sessionCache.put(sessionId, instanceId)
+            }
+            instanceId
+        } catch (e: Exception) {
+            log.error("MySQL error in getInstanceId($sessionId): ${e.message}", e)
+            null
         }
-        return instanceId
     }
 
     override fun unbindSession(sessionId: String) {
@@ -88,10 +94,17 @@ class CaffeineSessionMappingService(
             log.warn("Failed to acquire lock for session reroute: $sessionId")
             val existingInstanceId = getInstanceId(sessionId)
             if (existingInstanceId != null) {
-                val existingInstance = instanceRegistry.getInstance(existingInstanceId)
-                if (existingInstance != null && !existingInstance.isDraining()) {
-                    log.info("Returning existing instance for session $sessionId (lock contention)")
-                    return existingInstanceId
+                try {
+                    val existingInstance = instanceRegistry.getInstance(existingInstanceId)
+                    if (existingInstance != null &&
+                        existingInstance.isHealthy(heartbeatTimeoutMs) &&
+                        !existingInstance.isDraining()
+                    ) {
+                        log.info("Returning existing instance for session $sessionId (lock contention)")
+                        return existingInstanceId
+                    }
+                } catch (e: Exception) {
+                    log.error("Error checking instance health during lock contention: ${e.message}")
                 }
             }
             throw IllegalStateException("Concurrent reroute in progress for session: $sessionId")
@@ -110,7 +123,7 @@ class CaffeineSessionMappingService(
             return newInstance.instanceId
         } finally {
             lock.unlock()
-            rerouteLocks.remove(sessionId)
+            rerouteLocks.remove(sessionId, lock)
         }
     }
 

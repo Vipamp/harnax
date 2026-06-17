@@ -17,6 +17,7 @@ class RedisSessionMappingService(
     private val sessionMappingMapper: SessionMappingMapper,
     private val instanceRegistry: InstanceRegistry,
     private val redisTemplate: RedisTemplate<String, Any>,
+    private val heartbeatTimeoutMs: Long = 30000L,
 ) : SessionMappingService {
 
     private val log = LoggerFactory.getLogger(RedisSessionMappingService::class.java)
@@ -100,12 +101,14 @@ class RedisSessionMappingService(
     override fun refreshActiveTime(sessionId: String) {
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
 
-        // Update MySQL
         sessionMappingMapper.refreshActiveTime(sessionId, LocalDateTime.now())
 
-        // Refresh Redis TTL
-        val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
-        redisTemplate.expire(sessionKey, Duration.ofHours(SESSION_TTL_HOURS))
+        try {
+            val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
+            redisTemplate.expire(sessionKey, Duration.ofHours(SESSION_TTL_HOURS))
+        } catch (e: Exception) {
+            log.warn("Failed to refresh Redis TTL for session $sessionId: ${e.message}")
+        }
     }
 
     override fun rerouteSession(sessionId: String): String {
@@ -122,7 +125,7 @@ class RedisSessionMappingService(
             if (existingInstanceId != null) {
                 try {
                     val existingInstance = instanceRegistry.getInstance(existingInstanceId)
-                    if (existingInstance?.isHealthy(getHeartbeatTimeoutMs()) == true &&
+                    if (existingInstance?.isHealthy(heartbeatTimeoutMs) == true &&
                         !existingInstance.isDraining()
                     ) {
                         log.info("Returning existing healthy instance for session $sessionId (lock contention)")
@@ -202,10 +205,9 @@ class RedisSessionMappingService(
     }
 
     override fun unbindInstanceSessions(instanceId: String): Int {
+        val sessions = sessionMappingMapper.selectByInstanceId(instanceId)
         val count = sessionMappingMapper.deleteByInstanceId(instanceId)
 
-        // Clean up Redis cache for affected sessions
-        val sessions = sessionMappingMapper.selectByInstanceId(instanceId)
         val sessionKeys = sessions.map { "$SESSION_KEY_PREFIX${it.sessionId}" }.toTypedArray()
         if (sessionKeys.isNotEmpty()) {
             redisTemplate.delete(sessionKeys.asList())
@@ -253,33 +255,9 @@ class RedisSessionMappingService(
     }
 
     /**
-     * Try to acquire a distributed lock using Redis SET NX.
-     */
-    private fun tryAcquireLock(lockKey: String): Boolean {
-        val result = redisTemplate.opsForValue().setIfAbsent(
-            lockKey,
-            Thread.currentThread().name,
-            Duration.ofSeconds(LOCK_TIMEOUT_SECONDS),
-        )
-        return result == true
-    }
-
-    /**
      * Release a distributed lock.
      */
     private fun releaseLock(lockKey: String) {
         redisTemplate.delete(lockKey)
-    }
-
-    /**
-     * Get heartbeat timeout from instance registry (reflection workaround).
-     */
-    private fun getHeartbeatTimeoutMs(): Long {
-        return if (instanceRegistry is RedisInstanceRegistry) {
-            // Access via reflection or make it configurable
-            30000L // Default value
-        } else {
-            30000L
-        }
     }
 }

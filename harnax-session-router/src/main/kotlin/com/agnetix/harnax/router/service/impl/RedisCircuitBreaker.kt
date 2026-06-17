@@ -1,16 +1,17 @@
 package com.agnetix.harnax.router.service.impl
 
-import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import org.slf4j.LoggerFactory
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.Component
 import java.util.concurrent.TimeUnit
 
 /**
  * Redis-based distributed circuit breaker.
  * Synchronizes circuit state across multiple router nodes.
  */
-@Service
+@Component
+@ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
 class RedisCircuitBreaker(
     private val redisTemplate: RedisTemplate<String, Any>,
     private val failureThreshold: Int = 3,

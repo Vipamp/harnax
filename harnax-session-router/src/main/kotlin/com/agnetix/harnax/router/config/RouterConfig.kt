@@ -99,8 +99,9 @@ class RouterConfig(
         sessionMappingMapper: SessionMappingMapper,
         instanceRegistry: InstanceRegistry,
         redisTemplate: RedisTemplate<String, Any>,
+        @Value("${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): SessionMappingService {
-        return RedisSessionMappingService(sessionMappingMapper, instanceRegistry, redisTemplate)
+        return RedisSessionMappingService(sessionMappingMapper, instanceRegistry, redisTemplate, heartbeatTimeoutMs)
     }
 
     @Bean
@@ -130,8 +131,9 @@ class RouterConfig(
         sessionMappingMapper: SessionMappingMapper,
         instanceRegistry: InstanceRegistry,
         @Value("${router.cache.session-ttl-seconds:300}") sessionCacheTtlSeconds: Long,
+        @Value("${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): SessionMappingService {
-        return CaffeineSessionMappingService(sessionMappingMapper, instanceRegistry, sessionCacheTtlSeconds)
+        return CaffeineSessionMappingService(sessionMappingMapper, instanceRegistry, sessionCacheTtlSeconds, heartbeatTimeoutMs)
     }
 
     @Bean

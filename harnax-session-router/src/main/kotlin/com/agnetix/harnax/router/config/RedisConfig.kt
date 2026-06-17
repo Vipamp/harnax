@@ -1,11 +1,5 @@
 package com.agnetix.harnax.router.config
 
-import com.fasterxml.jackson.annotation.JsonAutoDetect
-import com.fasterxml.jackson.annotation.PropertyAccessor
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
-import com.fasterxml.jackson.module.kotlin.KotlinModule
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -13,6 +7,8 @@ import org.springframework.data.redis.connection.RedisConnectionFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.StringRedisSerializer
+import tools.jackson.annotation.JsonAutoDetect.Visibility
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Duration
 
 @Configuration(proxyBeanMethods = false)
@@ -24,21 +20,13 @@ class RedisConfig {
         val template = RedisTemplate<String, Any>()
         template.connectionFactory = connectionFactory
 
-        // Configure ObjectMapper with Kotlin and Java Time support
-        val objectMapper = ObjectMapper().apply {
-            registerModule(KotlinModule.Builder().build())
-            registerModule(JavaTimeModule())
-            disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            visibilityChecker = serializationConfig.defaultVisibilityChecker
-                .withFieldVisibility(JsonAutoDetect.Visibility.ANY)
-                .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
-                .withIsGetterVisibility(JsonAutoDetect.Visibility.NONE)
+        val objectMapper = jacksonObjectMapper().apply {
+            visibility(Visibility.ANY)
         }
 
         val jsonSerializer = GenericJackson2JsonRedisSerializer(objectMapper)
         val stringSerializer = StringRedisSerializer()
 
-        // Use String serializer for keys, JSON for values
         template.keySerializer = stringSerializer
         template.hashKeySerializer = stringSerializer
         template.valueSerializer = jsonSerializer
