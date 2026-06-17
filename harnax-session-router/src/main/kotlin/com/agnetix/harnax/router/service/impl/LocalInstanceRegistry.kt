@@ -10,40 +10,52 @@ import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-class MysqlInstanceRegistry(
+/**
+ * Local cache-based instance registry for single-node deployment.
+ * Uses Caffeine for high-performance local caching with MySQL persistence.
+ */
+class LocalInstanceRegistry(
     private val agentInstanceMapper: AgentInstanceMapper,
-    @Value($$"${router.health.heartbeat-timeout-ms:30000}")
+    @Value("${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
-    @Value($$"${router.cache.instance-ttl-seconds:3}")
+    @Value("${router.cache.instance-ttl-seconds:3}")
     instanceCacheTtlSeconds: Long = 3,
 ) : InstanceRegistry {
 
-    private val log = LoggerFactory.getLogger(MysqlInstanceRegistry::class.java)
+    private val log = LoggerFactory.getLogger(LocalInstanceRegistry::class.java)
 
     private val healthyInstancesCache = Caffeine.newBuilder()
-        .expireAfterWrite(2, TimeUnit.SECONDS) // Reduced from 5s to 2s for faster consistency
+        .expireAfterWrite(2, TimeUnit.SECONDS)
         .build<String, List<AgentInstance>>()
 
     private val instanceCache = Caffeine.newBuilder()
         .expireAfterWrite(instanceCacheTtlSeconds, TimeUnit.SECONDS)
         .maximumSize(500)
-        .recordStats() // Enable cache statistics for monitoring
+        .recordStats()
         .build<String, AgentInstance>()
 
     private val lastCacheInvalidationMs = AtomicLong(0)
-    private val cacheThrottleMs = 500L // Reduced from 2000ms to 500ms
+    private val cacheThrottleMs = 500L
 
     override fun registerInstance(instanceId: String, host: String, port: Int) {
+        // Persist to MySQL
         agentInstanceMapper.upsertInstance(instanceId, host, port, LocalDateTime.now())
+
+        // Invalidate local cache
         instanceCache.invalidate(instanceId)
         throttledInvalidateCache()
+
         log.info("Registered instance: $instanceId at $host:$port")
     }
 
     override fun unregisterInstance(instanceId: String) {
+        // Remove from MySQL
         agentInstanceMapper.deleteByInstanceId(instanceId)
+
+        // Invalidate local cache
         instanceCache.invalidate(instanceId)
         healthyInstancesCache.invalidateAll()
+
         log.info("Unregistered instance: $instanceId")
     }
 
@@ -52,6 +64,7 @@ class MysqlInstanceRegistry(
         if (rows == 0) {
             log.warn("Heartbeat refresh failed - instance not found: $instanceId")
         } else {
+            // Invalidate local cache
             instanceCache.invalidate(instanceId)
             throttledInvalidateCache()
         }
@@ -93,7 +106,6 @@ class MysqlInstanceRegistry(
 
     /**
      * Get cache statistics for monitoring.
-     * Returns hit rate, miss rate, and current size.
      */
     fun getCacheStats(): Map<String, Any> {
         val stats = instanceCache.stats()

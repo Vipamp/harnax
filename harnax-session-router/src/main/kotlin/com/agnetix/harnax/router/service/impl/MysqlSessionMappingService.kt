@@ -5,10 +5,8 @@ import com.agnetix.harnax.router.mapper.SessionMappingMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 
-@Service
 class MysqlSessionMappingService(
     private val sessionMappingMapper: SessionMappingMapper,
     private val instanceRegistry: InstanceRegistry,

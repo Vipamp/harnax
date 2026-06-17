@@ -110,6 +110,7 @@ class SessionRouterController(
 
     /**
      * Register a new agent-service instance.
+     * Validates host and port to prevent SSRF attacks.
      */
     @PostMapping("/instance/register")
     fun registerInstance(
@@ -118,6 +119,25 @@ class SessionRouterController(
         @RequestParam port: Int,
     ): ResultVo<InstanceOperationResponse> {
         log.info("Instance registration request: $instanceId at $host:$port")
+
+        // Security validation: Only allow IP addresses (no domain names)
+        if (!com.agnetix.harnax.router.entity.AgentInstance.isValidIpAddress(host)) {
+            log.warn("Rejected instance registration - invalid host format: $host")
+            return ResultVo.error("Only IPv4 addresses are allowed for security reasons")
+        }
+
+        // Security validation: Block dangerous IP ranges
+        if (com.agnetix.harnax.router.entity.AgentInstance.isBlockedHost(host)) {
+            log.warn("Rejected instance registration - blocked host: $host")
+            return ResultVo.error("Host address is not allowed")
+        }
+
+        // Security validation: Restrict port range
+        if (!com.agnetix.harnax.router.entity.AgentInstance.isValidPort(port)) {
+            log.warn("Rejected instance registration - invalid port: $port")
+            return ResultVo.error("Port must be in range ${com.agnetix.harnax.router.entity.AgentInstance.MIN_PORT}-${com.agnetix.harnax.router.entity.AgentInstance.MAX_PORT}")
+        }
+
         instanceRegistry.registerInstance(instanceId, host, port)
         return ResultVo.success(InstanceOperationResponse(status = "registered", instanceId = instanceId))
     }
@@ -185,8 +205,19 @@ class SessionRouterController(
      */
     @GetMapping("/metrics/cache")
     fun cacheMetrics(): ResultVo<Map<String, Any>> {
-        val registryImpl = instanceRegistry as? com.agnetix.harnax.router.service.impl.MysqlInstanceRegistry
-        val stats = registryImpl?.getCacheStats() ?: emptyMap()
-        return ResultVo.success(stats)
+        val instanceStats = when (val impl = instanceRegistry) {
+            is com.agnetix.harnax.router.service.impl.LocalInstanceRegistry -> impl.getCacheStats()
+            is com.agnetix.harnax.router.service.impl.MysqlInstanceRegistry -> impl.getCacheStats()
+            else -> mapOf("type" to impl.javaClass.simpleName, "message" to "Cache stats not available for this implementation")
+        }
+        val sessionStats = when (val impl = sessionMappingService) {
+            is com.agnetix.harnax.router.service.impl.CaffeineSessionMappingService -> impl.getCacheStats()
+            else -> emptyMap<String, Any>()
+        }
+        val combined = mutableMapOf<String, Any>("instance" to instanceStats)
+        if (sessionStats.isNotEmpty()) {
+            combined["session"] = sessionStats
+        }
+        return ResultVo.success(combined)
     }
 }

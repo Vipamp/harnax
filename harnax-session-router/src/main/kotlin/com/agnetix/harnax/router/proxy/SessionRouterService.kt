@@ -251,40 +251,82 @@ class SessionRouterService(
     }
 
     private suspend fun resolveInstance(sessionId: String): AgentInstance {
-        val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
+        return try {
+            val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
 
-        if (existingInstanceId != null) {
-            val instance = instanceRegistry.getInstance(existingInstanceId)
-            if (instance != null && instance.isHealthy(heartbeatTimeoutMs) && !instance.isDraining() &&
-                !circuitBreaker.isOpen(existingInstanceId)
-            ) {
-                return instance
+            if (existingInstanceId != null) {
+                try {
+                    val instance = instanceRegistry.getInstance(existingInstanceId)
+                    if (instance != null &&
+                        instance.isHealthy(heartbeatTimeoutMs) &&
+                        !instance.isDraining() &&
+                        !circuitBreaker.isOpen(existingInstanceId)
+                    ) {
+                        return instance
+                    }
+                } catch (e: Exception) {
+                    log.warn("Error checking instance $existingInstanceId: ${e.message}")
+                    // Continue to reroute
+                }
+                log.warn("Bound instance $existingInstanceId is unavailable for session $sessionId, rerouting...")
             }
-            log.warn("Bound instance $existingInstanceId is unavailable for session $sessionId, rerouting...")
-        }
 
-        val newInstanceId = sessionMappingService.rerouteSession(sessionId)
-        val newInstance = instanceRegistry.getInstance(newInstanceId)
-            ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
-        log.info("Bound session $sessionId to instance $newInstanceId")
-        return newInstance
+            val newInstanceId = try {
+                sessionMappingService.rerouteSession(sessionId)
+            } catch (e: IllegalStateException) {
+                log.error("Failed to reroute session $sessionId: ${e.message}")
+                throw e
+            } catch (e: Exception) {
+                log.error("Unexpected error during reroute for session $sessionId: ${e.message}", e)
+                throw IllegalStateException("Reroute failed: ${e.message}", e)
+            }
+
+            val newInstance = instanceRegistry.getInstance(newInstanceId)
+                ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
+            log.info("Bound session $sessionId to instance $newInstanceId")
+            newInstance
+        } catch (e: Exception) {
+            log.error("Failed to resolve instance for session $sessionId: ${e.message}", e)
+            throw e
+        }
     }
 
     private fun resolveInstanceBlocking(sessionId: String): AgentInstance {
-        val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
+        return try {
+            val existingInstanceId = sessionMappingService.getInstanceId(sessionId)
 
-        if (existingInstanceId != null) {
-            val instance = instanceRegistry.getInstance(existingInstanceId)
-            if (instance != null && instance.isHealthy(heartbeatTimeoutMs) && !instance.isDraining() &&
-                !circuitBreaker.isOpen(existingInstanceId)
-            ) {
-                return instance
+            if (existingInstanceId != null) {
+                try {
+                    val instance = instanceRegistry.getInstance(existingInstanceId)
+                    if (instance != null &&
+                        instance.isHealthy(heartbeatTimeoutMs) &&
+                        !instance.isDraining() &&
+                        !circuitBreaker.isOpen(existingInstanceId)
+                    ) {
+                        return instance
+                    }
+                } catch (e: Exception) {
+                    log.warn("Error checking instance $existingInstanceId: ${e.message}")
+                    // Continue to reroute
+                }
             }
-        }
 
-        val newInstanceId = sessionMappingService.rerouteSession(sessionId)
-        return instanceRegistry.getInstance(newInstanceId)
-            ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
+            val newInstanceId = try {
+                sessionMappingService.rerouteSession(sessionId)
+            } catch (e: IllegalStateException) {
+                log.error("Failed to reroute session $sessionId: ${e.message}")
+                throw e
+            } catch (e: Exception) {
+                log.error("Unexpected error during reroute for session $sessionId: ${e.message}", e)
+                throw IllegalStateException("Reroute failed: ${e.message}", e)
+            }
+
+            instanceRegistry.getInstance(newInstanceId)
+                ?: throw IllegalStateException("Rerouted instance $newInstanceId not found")
+        } catch (e: Exception) {
+            log.error("Failed to resolve instance for session $sessionId: ${e.message}", e)
+            throw e
+        }
     }
 
     private suspend fun <T> executeWithRetry(

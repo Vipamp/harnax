@@ -76,12 +76,12 @@ class HeartbeatHealthChecker(
         // Verify target instance is not overloaded before rebinding
         val currentLoad = getSessionCount(targetInstance.instanceId)
         val avgLoad = getAverageSessionLoad(healthyInstances)
-        
+
         if (currentLoad > avgLoad * 2) {
             log.warn("Target instance ${targetInstance.instanceId} is overloaded ($currentLoad sessions, avg: $avgLoad), selecting alternative")
-            val alternativeTargets = healthyInstances.filter { 
-                it.instanceId != targetInstance.instanceId && 
-                getSessionCount(it.instanceId) <= avgLoad * 1.5 
+            val alternativeTargets = healthyInstances.filter {
+                it.instanceId != targetInstance.instanceId &&
+                    getSessionCount(it.instanceId) <= avgLoad * 1.5
             }
             if (alternativeTargets.isNotEmpty()) {
                 val betterTarget = alternativeTargets.minByOrNull { getSessionCount(it.instanceId) }!!
