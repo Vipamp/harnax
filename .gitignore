@@ -21,7 +21,6 @@ build/
 .vscode/
 .qoder/
 openspec/
-docs/
 *.iml
 *.ipr
 *.iws
