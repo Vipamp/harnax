@@ -71,4 +71,5 @@ export default {
   'menu.system.user.management': '用户管理',
   'menu.system.tenant.management': '租户管理',
   'menu.system.token.monitor': 'Token 监控',
+  'menu.system.apikey.management': 'API Key 管理',
 };

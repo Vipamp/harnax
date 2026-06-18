@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS api_key (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     name            VARCHAR(128) NOT NULL UNIQUE COMMENT 'API Key name',
     key_hash        VARCHAR(64)  NOT NULL UNIQUE COMMENT 'SHA-256 hash of the raw key',
-    key_prefix      VARCHAR(16)  NOT NULL COMMENT 'Key prefix for display',
+    key_prefix      VARCHAR(32)  NOT NULL COMMENT 'Key prefix for display',
     scopes          VARCHAR(512) NOT NULL COMMENT 'Comma-separated scopes',
     tenant_id       BIGINT       NULL COMMENT 'Tenant ID',
     rate_limit      INT          NULL DEFAULT 60 COMMENT 'Rate limit per minute',

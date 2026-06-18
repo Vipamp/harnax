@@ -71,4 +71,5 @@ export default {
   'menu.system.user.management': 'User Management',
   'menu.system.tenant.management': 'Tenant Management',
   'menu.system.token.monitor': 'Token Monitor',
+  'menu.system.apikey.management': 'API Key Management',
 };

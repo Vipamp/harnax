@@ -405,4 +405,49 @@ declare namespace API {
     description?: string;
     status?: number;
   };
+
+  // API Key 相关类型
+  type ApiKeyItem = {
+    id: number;
+    name: string;
+    keyHash: string;
+    keyPrefix: string;
+    scopes: string;
+    tenantId?: number;
+    rateLimit: number;
+    enabled: number;
+    expiresAt?: string;
+    creator: string;
+    active: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type ApiKeyCreateRequest = {
+    name: string;
+    scopes: string;
+    tenantId?: number;
+    rateLimit?: number;
+    expiresAt?: string;
+  };
+
+  type ApiKeyUpdateRequest = {
+    scopes?: string;
+    tenantId?: number;
+    rateLimit?: number;
+    enabled?: number;
+    expiresAt?: string;
+  };
+
+  type ApiKeyCreatedResponse = {
+    id: number;
+    name: string;
+    keyPrefix: string;
+    rawKey: string;
+    scopes: string;
+    tenantId?: number;
+    rateLimit: number;
+    expiresAt?: string;
+    createTime?: string;
+  };
 }

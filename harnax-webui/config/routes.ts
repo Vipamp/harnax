@@ -134,6 +134,12 @@ export default [
         path: '/system/token-monitor',
         component: './token-monitor',
       },
+      {
+        name: 'apikey.management',
+        path: '/system/api-key',
+        component: './api-key',
+        access: 'canAccessUserManagement',
+      },
     ],
   },
   {
