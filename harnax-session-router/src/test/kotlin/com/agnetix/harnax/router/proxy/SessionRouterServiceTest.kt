@@ -1,6 +1,7 @@
 package com.agnetix.harnax.router.proxy
 
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
@@ -18,6 +19,9 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.slf4j.MDC
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.core.publisher.Mono
+import reactor.test.StepVerifier
+import java.net.ConnectException
 import java.time.LocalDateTime
 
 class SessionRouterServiceTest {
@@ -473,5 +477,150 @@ class SessionRouterServiceTest {
         val counter = meterRegistry.counter("router.proxy.requests", "endpoint", "chat", "status", "ok")
         counter.increment()
         assertEquals(1.0, counter.count())
+    }
+
+    // ==================== Failover exhaustion & circuit breaker skip ====================
+
+    @Test
+    fun `proxyChatRequest throws when all failover instances have open circuit breakers`() = runBlocking {
+        `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+
+        var rerouteCallCount = 0
+        `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {
+            rerouteCallCount++
+            "inst-reroute-$rerouteCallCount"
+        }
+        `when`(instanceRegistry.getInstance("inst-reroute-1")).thenReturn(healthyInstance("inst-reroute-1"))
+        `when`(instanceRegistry.getInstance("inst-reroute-2")).thenReturn(healthyInstance("inst-reroute-2"))
+
+        circuitBreaker.recordFailure("inst-reroute-1")
+        circuitBreaker.recordFailure("inst-reroute-1")
+        circuitBreaker.recordFailure("inst-reroute-1")
+        circuitBreaker.recordFailure("inst-reroute-2")
+        circuitBreaker.recordFailure("inst-reroute-2")
+        circuitBreaker.recordFailure("inst-reroute-2")
+
+        val request = ChatAgentRequest(
+            sessionId = "session-1",
+            message = "hello",
+            requestId = "req-exhaust",
+        )
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            runBlocking { service.proxyChatRequest(request) }
+        }
+        assertTrue(ex.message?.contains("exhausted") == true || ex.message?.contains("Failover") == true)
+    }
+
+    @Test
+    fun `retryFailover skips instances with open circuit breaker and tries next`() = runBlocking {
+        `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+
+        var rerouteCount = 0
+        `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {
+            rerouteCount++
+            "inst-failover-$rerouteCount"
+        }
+        for (i in 1..2) {
+            `when`(instanceRegistry.getInstance("inst-failover-$i")).thenReturn(healthyInstance("inst-failover-$i"))
+        }
+
+        for (i in 1..2) {
+            circuitBreaker.recordFailure("inst-failover-$i")
+            circuitBreaker.recordFailure("inst-failover-$i")
+            circuitBreaker.recordFailure("inst-failover-$i")
+        }
+
+        val request = ChatAgentRequest(
+            sessionId = "session-1",
+            message = "hello",
+            requestId = "req-cbskip",
+        )
+
+        try {
+            service.proxyChatRequest(request)
+        } catch (_: Exception) {
+        }
+
+        verify(sessionMappingService, times(2)).rerouteSession("session-1")
+        val failoverCount = meterRegistry.find("router.failover.count").counter()
+        assertNotNull(failoverCount)
+        assertEquals(2.0, failoverCount!!.count())
+    }
+
+    // ==================== Stream failover error paths ====================
+
+    @Test
+    fun `proxyStreamRequest triggers failover on connectivity error and handles reroute failure`() {
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+        `when`(sessionMappingService.rerouteSession("session-1"))
+            .thenThrow(IllegalStateException("No healthy instances for failover"))
+
+        val requestBuilder = mock(WebClient.RequestBodyUriSpec::class.java)
+        val requestHeadersBuilder = mock(WebClient.RequestBodySpec::class.java)
+        val responseSpec = mock(WebClient.ResponseSpec::class.java)
+        `when`(webClient.post()).thenReturn(requestBuilder)
+        `when`(requestBuilder.uri(anyString())).thenReturn(requestBuilder)
+        `when`(requestBuilder.contentType(any())).thenReturn(requestHeadersBuilder)
+        `when`(requestHeadersBuilder.header(anyString(), anyString())).thenReturn(requestHeadersBuilder)
+        `when`(requestHeadersBuilder.bodyValue(any())).thenReturn(requestBuilder)
+        `when`(requestBuilder.retrieve()).thenReturn(responseSpec)
+        `when`(responseSpec.bodyToFlux(any<Class<*>>())).thenReturn(
+            reactor.core.publisher.Flux.error(ConnectException("Connection refused")),
+        )
+
+        val request = ChatAgentRequest(
+            sessionId = "session-1",
+            message = "hello",
+            requestId = "req-sf-throw",
+        )
+
+        val result = service.proxyStreamRequest(request)
+
+        StepVerifier.create(result)
+            .expectNextCount(2)
+            .verifyComplete()
+    }
+
+    @Test
+    fun `proxyStreamRequest returns error when connectivity failover target has open circuit breaker`() {
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+        `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
+        `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
+
+        circuitBreaker.recordFailure("inst-2")
+        circuitBreaker.recordFailure("inst-2")
+        circuitBreaker.recordFailure("inst-2")
+
+        val requestBuilder = mock(WebClient.RequestBodyUriSpec::class.java)
+        val requestHeadersBuilder = mock(WebClient.RequestBodySpec::class.java)
+        val responseSpec = mock(WebClient.ResponseSpec::class.java)
+        `when`(webClient.post()).thenReturn(requestBuilder)
+        `when`(requestBuilder.uri(anyString())).thenReturn(requestBuilder)
+        `when`(requestBuilder.contentType(any())).thenReturn(requestHeadersBuilder)
+        `when`(requestHeadersBuilder.header(anyString(), anyString())).thenReturn(requestHeadersBuilder)
+        `when`(requestHeadersBuilder.bodyValue(any())).thenReturn(requestBuilder)
+        `when`(requestBuilder.retrieve()).thenReturn(responseSpec)
+        `when`(responseSpec.bodyToFlux(any<Class<*>>())).thenReturn(
+            reactor.core.publisher.Flux.error(ConnectException("Connection refused")),
+        )
+
+        val request = ChatAgentRequest(
+            sessionId = "session-1",
+            message = "hello",
+            requestId = "req-sf-cb",
+        )
+
+        val result = service.proxyStreamRequest(request)
+
+        StepVerifier.create(result)
+            .expectNextCount(2)
+            .verifyComplete()
     }
 }

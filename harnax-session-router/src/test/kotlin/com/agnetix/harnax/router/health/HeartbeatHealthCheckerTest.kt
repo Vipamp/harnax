@@ -135,4 +135,51 @@ class HeartbeatHealthCheckerTest {
         verify(instanceRegistry).markInstanceDown("inst-3")
         verify(sessionMappingService, times(2)).rebindAllSessions(anyString(), eq("inst-1"))
     }
+
+    @Test
+    fun `checkInstanceHealth respects failover cooldown — second call skips recently handled instance`() {
+        val healthy = healthyInstance("inst-1")
+        val down = staleInstance("inst-2")
+        `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy, down))
+        `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
+        `when`(sessionMappingService.rebindAllSessions("inst-2", "inst-1")).thenReturn(2)
+        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(mapOf("inst-1" to 3))
+
+        checker.checkInstanceHealth()
+
+        verify(instanceRegistry, times(1)).markInstanceDown("inst-2")
+
+        checker.checkInstanceHealth()
+
+        verify(instanceRegistry, times(1)).markInstanceDown("inst-2")
+    }
+
+    @Test
+    fun `checkInstanceHealth selects less loaded alternative when primary target is overloaded`() {
+        val healthy1 = healthyInstance("inst-1")
+        val healthy2 = healthyInstance("inst-3")
+        val down = staleInstance("inst-2")
+        `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy1, healthy2, down))
+        `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
+        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(
+            mapOf("inst-1" to 20, "inst-3" to 3),
+        )
+        `when`(sessionMappingService.rebindAllSessions(eq("inst-2"), anyString())).thenReturn(2)
+
+        checker.checkInstanceHealth()
+
+        verify(sessionMappingService).rebindAllSessions("inst-2", "inst-3")
+    }
+
+    @Test
+    fun `checkInstanceHealth handles no healthy instances without throwing`() {
+        val down = staleInstance("inst-1")
+        `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(down))
+        `when`(instanceRegistry.markInstanceDown("inst-1")).thenReturn(1)
+
+        assertDoesNotThrow { checker.checkInstanceHealth() }
+
+        verify(instanceRegistry).markInstanceDown("inst-1")
+        verify(sessionMappingService, never()).rebindAllSessions(anyString(), anyString())
+    }
 }

@@ -202,6 +202,33 @@ class RemoteApiKeyStoreTest {
     }
 
     @Test
+    fun `findByKeyHash does NOT cache null result — second call hits HTTP again`() {
+        withMockedRestTemplate { restTemplate ->
+            `when`(
+                restTemplate.exchange(
+                    anyString(),
+                    eq(HttpMethod.POST),
+                    any<HttpEntity<*>>(),
+                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
+                ),
+            ).thenReturn(buildResponse(null))
+
+            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
+            val result1 = store.findByKeyHash("not-found-hash")
+            val result2 = store.findByKeyHash("not-found-hash")
+
+            assertNull(result1)
+            assertNull(result2)
+            verify(restTemplate, times(2)).exchange(
+                anyString(),
+                eq(HttpMethod.POST),
+                any<HttpEntity<*>>(),
+                any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
+            )
+        }
+    }
+
+    @Test
     fun `disabled key is returned with enabled=false`() {
         withMockedRestTemplate { restTemplate ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
