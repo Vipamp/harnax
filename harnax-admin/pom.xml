@@ -136,6 +136,12 @@
             <artifactId>harnax-entity</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Harnax Auth - Internal service-to-service JWT authentication -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Harnax Channel SDK - for channel integration with AgentAdaptor -->
 <!--        <dependency>-->
 <!--            <groupId>com.agnetix</groupId>-->

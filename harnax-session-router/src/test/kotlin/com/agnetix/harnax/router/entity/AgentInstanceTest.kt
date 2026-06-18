@@ -13,7 +13,6 @@ class AgentInstanceTest {
         host: String = "localhost",
         port: Int = 8082,
     ): AgentInstance = AgentInstance().apply {
-        this.id = 1
         this.instanceId = "inst-1"
         this.host = host
         this.port = port

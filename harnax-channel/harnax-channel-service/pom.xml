@@ -37,6 +37,11 @@
             <artifactId>harnax-entity</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <!-- Spring Boot Web -->
         <dependency>

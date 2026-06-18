@@ -15,6 +15,7 @@
 
     <modules>
         <module>harnax-common</module>
+        <module>harnax-auth</module>
         <module>harnax-entity</module>
         <module>harnax-protocol</module>
         <module>harnax-agent</module>

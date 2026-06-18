@@ -103,8 +103,6 @@ class AgentInstance : Serializable {
         }
     }
 
-    var id: Long = 0
-
     /** Unique instance identifier */
     var instanceId: String = ""
 
@@ -122,12 +120,6 @@ class AgentInstance : Serializable {
 
     /** Active flag: 0=deleted, 1=active */
     var active: Int = 1
-
-    /** Creation time */
-    var createTime: LocalDateTime = LocalDateTime.now()
-
-    /** Update time */
-    var updateTime: LocalDateTime = LocalDateTime.now()
 
     /**
      * Check if instance is healthy based on heartbeat timeout.

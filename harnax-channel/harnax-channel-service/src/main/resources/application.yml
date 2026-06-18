@@ -27,3 +27,12 @@ router:
 # Channel configuration
 channel:
   auto-start: true  # Auto-start all enabled channels on startup
+
+# Unified internal authentication
+harnax:
+  auth:
+    enabled: true
+    service-id: ${SERVICE_ID:channel-0}
+    internal:
+      shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300

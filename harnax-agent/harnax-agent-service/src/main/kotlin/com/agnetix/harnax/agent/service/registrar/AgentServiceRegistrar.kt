@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.service.registrar
 
+import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
+import com.agnetix.harnax.auth.InternalTokenProvider
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -15,15 +17,21 @@ import org.springframework.web.client.RestTemplate
  */
 @Component
 class AgentServiceRegistrar(
-    @Value($$"${agent.service.instance-id}") private val instanceId: String,
-    @Value($$"${server.port:8082}") private val port: Int,
-    @Value($$"${router.service.url}") private val routerUrl: String,
-    @Value($$"${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
+    @Value("\${agent.service.instance-id}") private val instanceId: String,
+    @Value("\${server.port:8082}") private val port: Int,
+    @Value("\${router.service.url}") private val routerUrl: String,
+    @Value("\${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
+    private val tokenProvider: InternalTokenProvider,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentServiceRegistrar::class.java)
     private val restTemplate = RestTemplate()
     private var registered = false
+
+    @PostConstruct
+    fun init() {
+        restTemplate.interceptors.add(AuthRestTemplateInterceptor(tokenProvider, "router:register"))
+    }
 
     /**
      * Register this agent-service instance with the session-router on startup.

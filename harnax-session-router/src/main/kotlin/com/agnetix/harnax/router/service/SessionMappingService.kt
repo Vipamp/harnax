@@ -15,4 +15,8 @@ interface SessionMappingService {
     fun rebindAllSessions(oldInstanceId: String, newInstanceId: String): Int
 
     fun unbindInstanceSessions(instanceId: String): Int
+
+    fun getSessionCountByInstance(instanceId: String): Int
+
+    fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int>
 }

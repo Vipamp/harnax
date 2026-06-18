@@ -41,6 +41,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Harnax Auth (internal service-to-service JWT auth) -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Harnax Harness Core - distributed agent runtime with MinIO + Docker sandbox -->
         <dependency>
             <groupId>com.agnetix</groupId>

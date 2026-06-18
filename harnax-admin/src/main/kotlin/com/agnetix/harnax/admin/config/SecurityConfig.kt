@@ -43,6 +43,9 @@ class SecurityConfig(
                     // AI 聊天端点使用控制器中的手动 JWT 校验
                     .requestMatchers("/ai/**")
                     .permitAll()
+                    // 内部服务调用端点使用 harnax-auth 的 UnifiedAuthFilter 认证
+                    .requestMatchers("/api/internal/**")
+                    .permitAll()
                     .anyRequest()
                     .authenticated()
             }

@@ -1,7 +1,6 @@
 package com.agnetix.harnax.router.controller
 
 import com.agnetix.harnax.common.dto.ResultVo
-import com.agnetix.harnax.router.config.SecurityFilter
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.IdempotencyService
@@ -15,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Import
+import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -23,6 +23,7 @@ import java.time.LocalDateTime
 
 @WebMvcTest(SessionRouterController::class)
 @Import(SessionRouterControllerIntegrationTest.TestConfig::class)
+@TestPropertySource(properties = ["harnax.auth.enabled=false"])
 class SessionRouterControllerIntegrationTest {
 
     @TestConfiguration
@@ -47,9 +48,6 @@ class SessionRouterControllerIntegrationTest {
 
         @Bean
         fun objectMapper(): ObjectMapper = ObjectMapper()
-
-        @Bean
-        fun securityFilter(objectMapper: ObjectMapper): SecurityFilter = SecurityFilter("test-api-key", false, objectMapper)
     }
 
     @Autowired

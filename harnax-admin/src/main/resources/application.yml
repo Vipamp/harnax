@@ -97,3 +97,12 @@ local:
 
 edition:
   current: public
+
+# Unified internal authentication for /api/internal/** endpoints
+harnax:
+  auth:
+    enabled: true
+    service-id: ${SERVICE_ID:admin-0}
+    internal:
+      shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300

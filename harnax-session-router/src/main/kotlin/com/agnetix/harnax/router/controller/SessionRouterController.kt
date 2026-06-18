@@ -7,6 +7,7 @@ import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.auth.RequireScope
 import com.agnetix.harnax.router.dto.InstanceInfo
 import com.agnetix.harnax.router.dto.InstanceOperationResponse
 import com.agnetix.harnax.router.dto.RouterHealthResponse
@@ -38,6 +39,7 @@ class SessionRouterController(
     /**
      * Proxy a direct (non-streaming) chat request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @PostMapping("/agent/chat")
     suspend fun proxyChat(@RequestBody request: ChatAgentRequest): ResultVo<ChatResponse> {
         log.debug("Received chat proxy request for session: ${request.sessionId}")
@@ -48,6 +50,7 @@ class SessionRouterController(
      * Proxy an SSE streaming chat request.
      * Accepts AgentRequest in body, returns Flux<ChatEvent> as text/event-stream.
      */
+    @RequireScope("router:invoke")
     @PostMapping("/agent/chat/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun proxyChatStream(@RequestBody request: ChatAgentRequest): Flux<ChatEvent> {
         log.debug("Received stream proxy request for session: ${request.sessionId}")
@@ -57,6 +60,7 @@ class SessionRouterController(
     /**
      * Proxy a command request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @PostMapping("/agent/command")
     suspend fun proxyCommand(@RequestBody request: CommandAgentRequest): ResultVo<CommandResponse> {
         log.debug("Received command proxy request for session: ${request.sessionId}")
@@ -66,6 +70,7 @@ class SessionRouterController(
     /**
      * Proxy a confirm request (SSE streaming) to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @PostMapping("/agent/confirm", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
     fun proxyConfirm(@RequestBody request: ConfirmAgentRequest): Flux<ChatEvent> {
         log.debug("Received confirm proxy request for session: ${request.sessionId}")
@@ -75,6 +80,7 @@ class SessionRouterController(
     /**
      * Proxy a clear session request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @DeleteMapping("/agent/session/{sessionId}")
     suspend fun proxyClearSession(@PathVariable sessionId: String): ResultVo<String> {
         log.debug("Received clear session proxy request for session: $sessionId")
@@ -84,6 +90,7 @@ class SessionRouterController(
     /**
      * Proxy a load history request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @GetMapping("/agent/chat/history/{sessionId}")
     suspend fun proxyLoadHistory(@PathVariable sessionId: String): ResultVo<List<Any>> {
         log.debug("Received load history proxy request for session: $sessionId")
@@ -93,6 +100,7 @@ class SessionRouterController(
     /**
      * Proxy a load plans request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @GetMapping("/agent/session/{sessionId}/plans")
     suspend fun proxyLoadPlans(@PathVariable sessionId: String): ResultVo<List<Any>> {
         log.debug("Received load plans proxy request for session: $sessionId")
@@ -102,6 +110,7 @@ class SessionRouterController(
     /**
      * Proxy a load current plan request to the correct agent-service instance.
      */
+    @RequireScope("router:invoke")
     @GetMapping("/agent/session/{sessionId}/current-plan")
     suspend fun proxyLoadCurrentPlan(@PathVariable sessionId: String): ResultVo<Any?> {
         log.debug("Received load current plan proxy request for session: $sessionId")
@@ -112,6 +121,7 @@ class SessionRouterController(
      * Register a new agent-service instance.
      * Validates host and port to prevent SSRF attacks.
      */
+    @RequireScope("router:register", internalOnly = true)
     @PostMapping("/instance/register")
     fun registerInstance(
         @RequestParam instanceId: String,
@@ -145,6 +155,7 @@ class SessionRouterController(
     /**
      * Refresh heartbeat for an existing instance.
      */
+    @RequireScope("router:register", internalOnly = true)
     @PostMapping("/instance/heartbeat")
     fun heartbeat(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         instanceRegistry.refreshHeartbeat(instanceId)
@@ -154,6 +165,7 @@ class SessionRouterController(
     /**
      * Unregister an agent-service instance.
      */
+    @RequireScope("router:register", internalOnly = true)
     @PostMapping("/instance/unregister")
     fun unregisterInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         log.info("Instance unregistration request: $instanceId")
@@ -166,6 +178,7 @@ class SessionRouterController(
      * Mark an instance as draining (graceful shutdown).
      * The instance stops receiving new sessions but continues processing active requests.
      */
+    @RequireScope("router:register", internalOnly = true)
     @PostMapping("/instance/drain")
     fun drainInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
         log.info("Instance drain request: $instanceId")
@@ -176,6 +189,7 @@ class SessionRouterController(
     /**
      * Get all registered instances.
      */
+    @RequireScope("router:register", internalOnly = true)
     @GetMapping("/instance/list")
     fun listInstances(): ResultVo<List<InstanceInfo>> {
         val instances = instanceRegistry.getAllActiveInstances()
@@ -205,19 +219,10 @@ class SessionRouterController(
      */
     @GetMapping("/metrics/cache")
     fun cacheMetrics(): ResultVo<Map<String, Any>> {
-        val instanceStats = when (val impl = instanceRegistry) {
-            is com.agnetix.harnax.router.service.impl.LocalInstanceRegistry -> impl.getCacheStats()
-            is com.agnetix.harnax.router.service.impl.MysqlInstanceRegistry -> impl.getCacheStats()
-            else -> mapOf("type" to impl.javaClass.simpleName, "message" to "Cache stats not available for this implementation")
-        }
-        val sessionStats = when (val impl = sessionMappingService) {
-            is com.agnetix.harnax.router.service.impl.CaffeineSessionMappingService -> impl.getCacheStats()
-            else -> emptyMap<String, Any>()
-        }
-        val combined = mutableMapOf<String, Any>("instance" to instanceStats)
-        if (sessionStats.isNotEmpty()) {
-            combined["session"] = sessionStats
-        }
+        val combined = mutableMapOf<String, Any>(
+            "instanceRegistry" to instanceRegistry.javaClass.simpleName,
+            "sessionMappingService" to sessionMappingService.javaClass.simpleName,
+        )
         return ResultVo.success(combined)
     }
 }

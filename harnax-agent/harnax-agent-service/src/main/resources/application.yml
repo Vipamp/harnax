@@ -64,6 +64,15 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
+# Unified internal authentication
+harnax:
+  auth:
+    enabled: true
+    service-id: ${SERVICE_ID:agent-0}
+    internal:
+      shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300
+
 jwt:
   secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
   expiration: 7200000 # 2 hours (milliseconds)

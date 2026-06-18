@@ -62,13 +62,28 @@ router:
     retention-days: 7             # Days to keep soft-deleted records
     cron: "0 0 3 * * ?"          # Cleanup runs daily at 3 AM
   security:
-    enabled: true                 # Enable API key auth by default
-    api-key: ${ROUTER_API_KEY:change-me-in-production}  # Must be set in production
+    enabled: false                # Legacy X-Api-Key auth disabled; using harnax-auth JWT instead
   idempotency:
     ttl-seconds: 60               # Request deduplication TTL
   circuit-breaker:
     failure-threshold: 3          # Failures before opening circuit
     open-duration-ms: 30000       # Time before trying half-open
+
+# Unified internal authentication
+harnax:
+  auth:
+    enabled: true
+    service-id: ${SERVICE_ID:router-0}
+    internal:
+      shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300
+    external:
+      enabled: true
+
+# Admin service URL for internal API calls (API key validation, session info)
+admin:
+  service:
+    url: ${ADMIN_SERVICE_URL:http://localhost:8080}
 
 # Actuator / Metrics
 management:

@@ -1,5 +1,6 @@
 package com.agnetix.harnax.channel.service.config
 
+import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
@@ -8,6 +9,8 @@ import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.web.reactive.function.client.ClientRequest
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction
 import org.springframework.web.reactive.function.client.WebClient
 import java.util.concurrent.ConcurrentHashMap
 
@@ -15,14 +18,25 @@ import java.util.concurrent.ConcurrentHashMap
  * Channel service configuration.
  */
 @Configuration
-class ChannelConfig {
+class ChannelConfig(
+    private val tokenProvider: InternalTokenProvider,
+) {
 
     private val log = LoggerFactory.getLogger(ChannelConfig::class.java)
 
     @Bean
     fun webClient(): WebClient = WebClient.builder()
         .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
+        .filter(authFilter("router:invoke"))
         .build()
+
+    private fun authFilter(scope: String): ExchangeFilterFunction =
+        ExchangeFilterFunction { request, next ->
+            val headers = tokenProvider.authHeaders(scope)
+            val mutated = ClientRequest.from(request)
+            headers.forEach { (key, value) -> mutated.header(key, value) }
+            next.exchange(mutated.build())
+        }
 
     /**
      * Provide an in-memory ChannelSessionManager for channel service.

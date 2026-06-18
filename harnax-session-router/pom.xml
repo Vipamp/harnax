@@ -35,6 +35,13 @@
             <version>1.0.0-SNAPSHOT</version>
         </dependency>
 
+        <!-- Harnax Auth (internal service-to-service JWT auth) -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-auth</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

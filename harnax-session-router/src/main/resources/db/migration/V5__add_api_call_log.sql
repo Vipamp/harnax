@@ -1,0 +1,27 @@
+-- API call log table for recording every request
+CREATE TABLE IF NOT EXISTS api_call_log (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    caller_id       VARCHAR(128)  NOT NULL COMMENT 'service-id or API Key name',
+    caller_type     VARCHAR(32)   NOT NULL COMMENT 'INTERNAL_SERVICE or EXTERNAL_API',
+    tenant_id       BIGINT        NULL COMMENT 'Tenant ID',
+    session_id      VARCHAR(128)  NULL COMMENT 'Session ID',
+    agent_id        BIGINT        NULL COMMENT 'Agent ID',
+    agent_name      VARCHAR(128)  NULL COMMENT 'Agent name',
+    model_id        BIGINT        NULL COMMENT 'Model ID',
+    endpoint        VARCHAR(256)  NOT NULL COMMENT 'Request path',
+    method          VARCHAR(16)   NOT NULL COMMENT 'HTTP method',
+    request_type    VARCHAR(32)   NULL COMMENT 'CHAT/COMMAND/CONFIRM',
+    status_code     INT           NOT NULL COMMENT 'HTTP status code',
+    success         TINYINT(1)    NOT NULL COMMENT '1=success 0=failure',
+    error_message   VARCHAR(1024) NULL COMMENT 'Error message if failed',
+    start_time      DATETIME(3)   NOT NULL COMMENT 'Request start time',
+    end_time        DATETIME(3)   NOT NULL COMMENT 'Request end time',
+    duration_ms     BIGINT        NOT NULL COMMENT 'Duration in milliseconds',
+    instance_id     VARCHAR(128)  NULL COMMENT 'Routed agent-service instance ID',
+    request_id      VARCHAR(64)   NULL COMMENT 'Unique request ID',
+    create_time     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_caller_id (caller_id),
+    INDEX idx_session_id (session_id),
+    INDEX idx_start_time (start_time),
+    INDEX idx_tenant_id (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='API call log table';

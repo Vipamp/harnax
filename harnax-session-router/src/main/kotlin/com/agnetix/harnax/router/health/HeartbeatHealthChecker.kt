@@ -1,34 +1,26 @@
 package com.agnetix.harnax.router.health
 
 import com.agnetix.harnax.router.entity.AgentInstance
-import com.agnetix.harnax.router.mapper.AgentInstanceMapper
-import com.agnetix.harnax.router.mapper.SessionMappingMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 
 @Component
 class HeartbeatHealthChecker(
     private val instanceRegistry: InstanceRegistry,
     private val sessionMappingService: SessionMappingService,
-    private val agentInstanceMapper: AgentInstanceMapper,
-    private val sessionMappingMapper: SessionMappingMapper,
-    @Value($$"${router.health.heartbeat-timeout-ms:30000}")
+    @Value("\${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
-    @Value($$"${router.cleanup.retention-days:7}")
-    private val retentionDays: Int,
 ) {
 
     private val log = LoggerFactory.getLogger(HeartbeatHealthChecker::class.java)
 
-    // Track failover operations to prevent storm
     private val recentFailovers = ConcurrentHashMap<String, Long>()
-    private val failoverCooldownMs = 10000L // 10 seconds cooldown per instance
+    private val failoverCooldownMs = 10000L
 
     @Scheduled(fixedDelayString = "\${router.health.check-interval-ms:5000}")
     fun checkInstanceHealth() {
@@ -43,13 +35,6 @@ class HeartbeatHealthChecker(
                 handleInstanceDown(downInstance.instanceId, healthyInstances)
             }
         }
-    }
-
-    @Scheduled(cron = "\${router.cleanup.cron:0 0 3 * * ?}")
-    fun cleanupDeletedRecords() {
-        val cutoff = LocalDateTime.now().minusDays(retentionDays.toLong())
-        val purgedInstances = agentInstanceMapper.purgeDeletedInstances(cutoff)
-        log.info("Cleanup: purged $purgedInstances instances older than $retentionDays days")
     }
 
     private fun handleInstanceDown(downInstanceId: String, healthyInstances: List<AgentInstance>) {
@@ -73,7 +58,7 @@ class HeartbeatHealthChecker(
         }
 
         val targetInstance = selectFailoverTarget(healthyInstances, downInstanceId)
-        val countMap = batchGetSessionCounts(healthyInstances.map { it.instanceId })
+        val countMap = sessionMappingService.getSessionCountsByInstances(healthyInstances.map { it.instanceId })
         val currentLoad = countMap[targetInstance.instanceId] ?: 0
         val avgLoad = if (healthyInstances.isEmpty()) 0.0 else countMap.values.sum().toDouble() / healthyInstances.size
 
@@ -100,18 +85,6 @@ class HeartbeatHealthChecker(
     private fun rebindSessions(downInstanceId: String, targetInstance: AgentInstance) {
         val rebinding = sessionMappingService.rebindAllSessions(downInstanceId, targetInstance.instanceId)
         log.info("Failover: moved $rebinding sessions from $downInstanceId to ${targetInstance.instanceId}")
-    }
-
-    private fun batchGetSessionCounts(instanceIds: List<String>): Map<String, Int> {
-        if (instanceIds.isEmpty()) return emptyMap()
-        val results = sessionMappingMapper.countSessionsByInstances(instanceIds)
-        val countMap = mutableMapOf<String, Int>()
-        for (row in results) {
-            val id = (row["instance_id"] ?: row["instanceId"]) as? String ?: continue
-            val cnt = (row["cnt"] as? Number)?.toInt() ?: 0
-            countMap[id] = cnt
-        }
-        return countMap
     }
 
     private fun selectFailoverTarget(healthyInstances: List<AgentInstance>, excludeInstanceId: String): AgentInstance {

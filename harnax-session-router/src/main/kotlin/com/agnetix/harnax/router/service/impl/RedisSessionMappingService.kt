@@ -1,22 +1,19 @@
 package com.agnetix.harnax.router.service.impl
 
 import com.agnetix.harnax.router.entity.AgentInstance
-import com.agnetix.harnax.router.mapper.SessionMappingMapper
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.core.script.DefaultRedisScript
 import java.time.Duration
-import java.time.LocalDateTime
 import java.util.UUID
 
 /**
- * Redis-based distributed session mapping service.
- * Ensures session stickiness across multiple router nodes.
+ * Pure Redis-based distributed session mapping service.
+ * Redis is the single source of truth - no MySQL dependency.
  */
 class RedisSessionMappingService(
-    private val sessionMappingMapper: SessionMappingMapper,
     private val instanceRegistry: InstanceRegistry,
     private val redisTemplate: RedisTemplate<String, Any>,
     private val heartbeatTimeoutMs: Long = 30000L,
@@ -26,9 +23,10 @@ class RedisSessionMappingService(
 
     companion object {
         private const val SESSION_KEY_PREFIX = "router:session:"
+        private const val INSTANCE_SESSIONS_KEY_PREFIX = "router:instance_sessions:"
         private const val LOCK_KEY_PREFIX = "router:lock:session:"
         private const val LOCK_TIMEOUT_SECONDS = 5L
-        private const val SESSION_TTL_HOURS = 24L
+        private val SESSION_TTL = Duration.ofHours(24)
 
         private val RELEASE_LOCK_SCRIPT = DefaultRedisScript(
             "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
@@ -40,67 +38,41 @@ class RedisSessionMappingService(
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
         require(instanceId.isNotBlank() && instanceId.length <= 64) { "Invalid instance ID" }
 
-        // Persist to MySQL for durability
-        sessionMappingMapper.upsertBinding(sessionId, instanceId, agentId, LocalDateTime.now())
-
-        // Cache in Redis for fast lookup
+        // Remove old binding if exists
         val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
-        redisTemplate.opsForValue().set(sessionKey, instanceId, Duration.ofHours(SESSION_TTL_HOURS))
+        val oldInstanceId = redisTemplate.opsForValue().get(sessionKey) as? String
+        if (oldInstanceId != null && oldInstanceId != instanceId) {
+            redisTemplate.opsForSet().remove("$INSTANCE_SESSIONS_KEY_PREFIX$oldInstanceId", sessionId)
+        }
+
+        // Set new binding
+        redisTemplate.opsForValue().set(sessionKey, instanceId, SESSION_TTL)
+
+        // Add to reverse index
+        val instanceSessionsKey = "$INSTANCE_SESSIONS_KEY_PREFIX$instanceId"
+        redisTemplate.opsForSet().add(instanceSessionsKey, sessionId)
+        redisTemplate.expire(instanceSessionsKey, SESSION_TTL)
 
         log.debug("Bound session: $sessionId -> $instanceId")
     }
 
     override fun getInstanceId(sessionId: String): String? {
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
-
-        // Try Redis first (fast path)
-        return try {
-            val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
-            val cachedInstanceId = redisTemplate.opsForValue().get(sessionKey) as? String
-
-            if (cachedInstanceId != null) {
-                return cachedInstanceId
-            }
-
-            // Cache miss - load from MySQL
-            loadFromMySQLAndCache(sessionId, sessionKey)
-        } catch (e: Exception) {
-            log.error("Redis error in getInstanceId($sessionId), falling back to MySQL: ${e.message}")
-            // Fallback: direct MySQL query
-            sessionMappingMapper.selectBySessionId(sessionId)?.instanceId
-        }
-    }
-
-    private fun loadFromMySQLAndCache(sessionId: String, sessionKey: String): String? {
-        return try {
-            val mapping = sessionMappingMapper.selectBySessionId(sessionId)
-            val instanceId = mapping?.instanceId
-
-            if (instanceId != null) {
-                try {
-                    // Populate Redis cache (best-effort)
-                    redisTemplate.opsForValue().set(sessionKey, instanceId, Duration.ofHours(SESSION_TTL_HOURS))
-                } catch (e: Exception) {
-                    log.warn("Failed to cache session mapping in Redis: ${e.message}")
-                }
-            }
-
-            instanceId
-        } catch (e: Exception) {
-            log.error("Failed to load session mapping from MySQL: $sessionId", e)
-            null
-        }
+        val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
+        return redisTemplate.opsForValue().get(sessionKey) as? String
     }
 
     override fun unbindSession(sessionId: String) {
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
 
-        // Remove from MySQL
-        sessionMappingMapper.deleteBySessionId(sessionId)
-
-        // Remove from Redis
         val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
+        val instanceId = redisTemplate.opsForValue().get(sessionKey) as? String
+
         redisTemplate.delete(sessionKey)
+
+        if (instanceId != null) {
+            redisTemplate.opsForSet().remove("$INSTANCE_SESSIONS_KEY_PREFIX$instanceId", sessionId)
+        }
 
         log.debug("Unbound session: $sessionId")
     }
@@ -108,11 +80,9 @@ class RedisSessionMappingService(
     override fun refreshActiveTime(sessionId: String) {
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
 
-        sessionMappingMapper.refreshActiveTime(sessionId, LocalDateTime.now())
-
+        val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
         try {
-            val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
-            redisTemplate.expire(sessionKey, Duration.ofHours(SESSION_TTL_HOURS))
+            redisTemplate.expire(sessionKey, SESSION_TTL)
         } catch (e: Exception) {
             log.warn("Failed to refresh Redis TTL for session $sessionId: ${e.message}")
         }
@@ -127,7 +97,6 @@ class RedisSessionMappingService(
 
         if (!locked) {
             log.warn("Failed to acquire lock for session reroute after retries: $sessionId")
-            // Fallback: return existing binding if still healthy
             val existingInstanceId = getInstanceId(sessionId)
             if (existingInstanceId != null) {
                 try {
@@ -152,8 +121,6 @@ class RedisSessionMappingService(
             }
 
             val newInstance = selectLeastLoadedInstance(healthyInstances)
-
-            // Atomically update binding
             bindSession(sessionId, newInstance.instanceId)
 
             log.info("Rerouted session $sessionId to instance ${newInstance.instanceId}")
@@ -163,14 +130,51 @@ class RedisSessionMappingService(
                 releaseLock(lockKey, lockValue)
             } catch (e: Exception) {
                 log.error("Failed to release lock for session $sessionId: ${e.message}")
-                // Lock will auto-expire after TTL, non-critical
             }
         }
     }
 
-    /**
-     * Try to acquire a distributed lock with retry mechanism.
-     */
+    override fun rebindAllSessions(oldInstanceId: String, newInstanceId: String): Int {
+        val instanceSessionsKey = "$INSTANCE_SESSIONS_KEY_PREFIX$oldInstanceId"
+        val sessions = redisTemplate.opsForSet().members(instanceSessionsKey)?.map { it as String } ?: emptyList()
+
+        if (sessions.isEmpty()) return 0
+
+        val ttl = SESSION_TTL
+        for (sessionId in sessions) {
+            val sessionKey = "$SESSION_KEY_PREFIX$sessionId"
+            redisTemplate.opsForValue().set(sessionKey, newInstanceId, ttl)
+            redisTemplate.opsForSet().add("$INSTANCE_SESSIONS_KEY_PREFIX$newInstanceId", sessionId)
+        }
+
+        redisTemplate.delete(instanceSessionsKey)
+
+        log.info("Rebind ${sessions.size} sessions from $oldInstanceId to $newInstanceId")
+        return sessions.size
+    }
+
+    override fun unbindInstanceSessions(instanceId: String): Int {
+        val instanceSessionsKey = "$INSTANCE_SESSIONS_KEY_PREFIX$instanceId"
+        val sessions = redisTemplate.opsForSet().members(instanceSessionsKey)?.map { it as String } ?: emptyList()
+
+        val sessionKeys = sessions.map { "$SESSION_KEY_PREFIX$it" }
+        if (sessionKeys.isNotEmpty()) {
+            redisTemplate.delete(sessionKeys)
+        }
+        redisTemplate.delete(instanceSessionsKey)
+
+        log.info("Unbound ${sessions.size} sessions from instance $instanceId")
+        return sessions.size
+    }
+
+    override fun getSessionCountByInstance(instanceId: String): Int {
+        val instanceSessionsKey = "$INSTANCE_SESSIONS_KEY_PREFIX$instanceId"
+        return redisTemplate.opsForSet().size(instanceSessionsKey)?.toInt() ?: 0
+    }
+
+    override fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int> =
+        instanceIds.associateWith { getSessionCountByInstance(it) }
+
     private fun tryAcquireLockWithRetry(lockKey: String, lockValue: String, maxRetries: Int): Boolean {
         for (attempt in 1..maxRetries) {
             try {
@@ -179,74 +183,21 @@ class RedisSessionMappingService(
                     lockValue,
                     Duration.ofSeconds(LOCK_TIMEOUT_SECONDS),
                 )
-                if (result == true) {
-                    return true
-                }
-
-                // Lock held by another node - wait and retry
-                if (attempt < maxRetries) {
-                    Thread.sleep(50L * attempt) // Exponential backoff: 50ms, 100ms, 150ms
-                }
+                if (result == true) return true
+                if (attempt < maxRetries) Thread.sleep(50L * attempt)
             } catch (e: Exception) {
                 log.warn("Lock acquisition attempt $attempt failed for $lockKey: ${e.message}")
-                if (attempt < maxRetries) {
-                    Thread.sleep(50L * attempt)
-                }
+                if (attempt < maxRetries) Thread.sleep(50L * attempt)
             }
         }
         return false
     }
 
-    override fun rebindAllSessions(oldInstanceId: String, newInstanceId: String): Int {
-        val count = sessionMappingMapper.rebindSessions(oldInstanceId, newInstanceId)
-
-        val sessions = sessionMappingMapper.selectByInstanceId(newInstanceId)
-        if (sessions.isNotEmpty()) {
-            val ttl = Duration.ofHours(SESSION_TTL_HOURS)
-            redisTemplate.executePipelined {
-                val ops = redisTemplate.opsForValue()
-                for (mapping in sessions) {
-                    ops.set("$SESSION_KEY_PREFIX${mapping.sessionId}", newInstanceId, ttl)
-                }
-            }
-        }
-
-        log.info("Rebind $count sessions from $oldInstanceId to $newInstanceId")
-        return count
-    }
-
-    override fun unbindInstanceSessions(instanceId: String): Int {
-        val sessions = sessionMappingMapper.selectByInstanceId(instanceId)
-        val count = sessionMappingMapper.deleteByInstanceId(instanceId)
-
-        val sessionKeys = sessions.map { "$SESSION_KEY_PREFIX${it.sessionId}" }.toTypedArray()
-        if (sessionKeys.isNotEmpty()) {
-            redisTemplate.delete(sessionKeys.asList())
-        }
-
-        log.info("Unbound $count sessions from instance $instanceId")
-        return count
-    }
-
-    /**
-     * Select the least loaded instance based on active session count.
-     * Uses weighted random selection for better distribution.
-     */
     private fun selectLeastLoadedInstance(instances: List<AgentInstance>): AgentInstance {
         if (instances.size == 1) return instances.first()
 
-        // Get session counts for all instances
-        val instanceIds = instances.map { it.instanceId }
-        val countResults = sessionMappingMapper.countSessionsByInstances(instanceIds)
+        val countMap = getSessionCountsByInstances(instances.map { it.instanceId })
 
-        val countMap = mutableMapOf<String, Int>()
-        for (row in countResults) {
-            val id = (row["instance_id"] ?: row["instanceId"]) as? String ?: continue
-            val cnt = (row["cnt"] as? Number)?.toInt() ?: 0
-            countMap[id] = cnt
-        }
-
-        // Weighted random: weight = 1 / (activeCount + 1)
         val weights = instances.map { inst ->
             val activeCount = countMap[inst.instanceId] ?: 0
             1.0 / (activeCount + 1)
