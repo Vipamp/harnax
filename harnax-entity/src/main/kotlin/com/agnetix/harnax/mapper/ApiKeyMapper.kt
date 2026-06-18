@@ -24,6 +24,8 @@ interface ApiKeyMapper {
     fun selectApiKeyList(
         @Param("keyword") keyword: String?,
         @Param("enabled") enabled: Int?,
+        @Param("creator") creator: String?,
+        @Param("tenantId") tenantId: Long?,
     ): List<ApiKeyEntity>
 
     fun selectAllEnabled(): List<ApiKeyEntity>

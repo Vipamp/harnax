@@ -9,7 +9,7 @@ import com.agnetix.harnax.entity.ApiKeyEntity
 
 interface ApiKeyService {
 
-    fun page(keyword: String?, enabled: Int?, pageNum: Int, pageSize: Int): Page<ApiKeyEntity>
+    fun page(keyword: String?, enabled: Int?, creator: String?, tenantId: Long?, pageNum: Int, pageSize: Int): Page<ApiKeyEntity>
 
     fun getApiKey(id: Long): ApiKeyEntity?
 

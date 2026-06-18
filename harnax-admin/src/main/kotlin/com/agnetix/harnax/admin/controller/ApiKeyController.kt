@@ -1,11 +1,13 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.ApiKeyCreateRequest
 import com.agnetix.harnax.admin.dto.ApiKeyCreatedResponse
 import com.agnetix.harnax.admin.dto.ApiKeyResponse
 import com.agnetix.harnax.admin.dto.ApiKeyUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
+import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
@@ -32,7 +34,11 @@ class ApiKeyController(
         @Parameter(description = "Search keyword") @RequestParam(name = "keyword", required = false) keyword: String?,
         @Parameter(description = "Enabled filter") @RequestParam(name = "enabled", required = false) enabled: Int?,
     ): ResultVo<Page<ApiKeyResponse>> = try {
-        val page = apiKeyService.page(keyword, enabled, pageNum ?: 1, pageSize ?: 10)
+        val currentUser = SecurityUtils.getCurrentUser()
+        val admin = currentUser != null && currentUser.isAdmin == 1
+        val creator = if (admin) null else currentUser?.username
+        val tenantId = if (admin) null else (TenantContext.getTenantId() ?: currentUser?.tenantId)
+        val page = apiKeyService.page(keyword, enabled, creator, tenantId, pageNum ?: 1, pageSize ?: 10)
         ResultVo.success(page.mapRecords { apiKeyService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get API Key list", e)

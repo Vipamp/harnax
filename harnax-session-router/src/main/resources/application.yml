@@ -58,11 +58,6 @@ router:
     max-in-memory-size-mb: 16     # Max in-memory buffer size for WebClient
     stream-timeout-minutes: 15    # SSE stream overall timeout (increased for long AI tasks)
     failover-max-retries: 2       # Max failover retry attempts
-  cleanup:
-    retention-days: 7             # Days to keep soft-deleted records
-    cron: "0 0 3 * * ?"          # Cleanup runs daily at 3 AM
-  security:
-    enabled: false                # Legacy X-Api-Key auth disabled; using harnax-auth JWT instead
   idempotency:
     ttl-seconds: 60               # Request deduplication TTL
   circuit-breaker:

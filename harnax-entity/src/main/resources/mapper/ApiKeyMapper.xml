@@ -87,6 +87,12 @@
         <if test='enabled != null'>
             AND enabled = #{enabled}
         </if>
+        <if test='creator != null'>
+            AND creator = #{creator}
+        </if>
+        <if test='tenantId != null'>
+            AND tenant_id = #{tenantId}
+        </if>
         ORDER BY create_time DESC
     </select>
 
