@@ -30,13 +30,12 @@ class ChannelConfig(
         .filter(authFilter("router:invoke"))
         .build()
 
-    private fun authFilter(scope: String): ExchangeFilterFunction =
-        ExchangeFilterFunction { request, next ->
-            val headers = tokenProvider.authHeaders(scope)
-            val mutated = ClientRequest.from(request)
-            headers.forEach { (key, value) -> mutated.header(key, value) }
-            next.exchange(mutated.build())
-        }
+    private fun authFilter(scope: String): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
+        val headers = tokenProvider.authHeaders(scope)
+        val mutated = ClientRequest.from(request)
+        headers.forEach { (key, value) -> mutated.header(key, value) }
+        next.exchange(mutated.build())
+    }
 
     /**
      * Provide an in-memory ChannelSessionManager for channel service.

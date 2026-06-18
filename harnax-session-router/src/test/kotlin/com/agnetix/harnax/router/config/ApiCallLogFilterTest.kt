@@ -5,8 +5,8 @@ import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.auth.CallerType
 import com.agnetix.harnax.router.entity.ApiCallLog
 import com.agnetix.harnax.router.service.ApiCallLogService
-import com.agnetix.harnax.router.service.SessionInfoClient
 import com.agnetix.harnax.router.service.SessionInfo
+import com.agnetix.harnax.router.service.SessionInfoClient
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ServletOutputStream
 import jakarta.servlet.WriteListener
@@ -97,11 +97,13 @@ class ApiCallLogFilterTest {
         AuthContextHolder.set(AuthContext("user-1", "router:invoke"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         `when`(response.status).thenReturn(200)
 
@@ -126,11 +128,13 @@ class ApiCallLogFilterTest {
 
         val logCaptor = ArgumentCaptor.forClass(ApiCallLog::class.java)
         val entry = ApiCallLog().apply { callerId = "api-key-1" }
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(entry)
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(entry)
 
         filter.doFilterInternal(request, response, chain)
 
@@ -161,11 +165,13 @@ class ApiCallLogFilterTest {
             tenantId = 1L,
         )
         `when`(sessionInfoClient.getSessionInfo("sess-123")).thenReturn(sessionInfo)
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
@@ -185,11 +191,13 @@ class ApiCallLogFilterTest {
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(500)
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
@@ -208,11 +216,13 @@ class ApiCallLogFilterTest {
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(200)
         `when`(sessionInfoClient.getSessionInfo(anyString())).thenThrow(RuntimeException("Admin down"))
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         assertDoesNotThrow {
             filter.doFilterInternal(request, response, chain)
@@ -225,11 +235,13 @@ class ApiCallLogFilterTest {
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(200)
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
@@ -249,18 +261,20 @@ class ApiCallLogFilterTest {
         `when`(request.method).thenReturn("POST")
         `when`(request.getHeader("X-Request-Id")).thenReturn("header-req-id")
         `when`(response.status).thenReturn(200)
-        `when`(apiCallLogService.buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
-        )).thenReturn(ApiCallLog())
+        `when`(
+            apiCallLogService.buildLogEntry(
+                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
+                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
+                any(), any(), any(), any(),
+            ),
+        ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
         verify(apiCallLogService).buildLogEntry(
             anyString(), anyString(), any(), any(), any(), any(), any(), any(),
             anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), eq("header-req-id"),
+            any(), any(), any(), eq("header-req-id"),
         )
     }
 }

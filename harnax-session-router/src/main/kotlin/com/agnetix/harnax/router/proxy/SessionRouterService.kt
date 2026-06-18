@@ -239,7 +239,7 @@ class SessionRouterService(
                 webClient.get()
                     .uri(url)
                     .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any>>() {})
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any?>>() {})
                     .awaitSingleOrNull()
                     ?: ResultVo.error("No response from agent-service")
             }

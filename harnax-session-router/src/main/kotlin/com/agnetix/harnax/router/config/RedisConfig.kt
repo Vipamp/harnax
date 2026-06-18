@@ -1,5 +1,9 @@
 package com.agnetix.harnax.router.config
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect
+import com.fasterxml.jackson.annotation.PropertyAccessor
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -7,8 +11,6 @@ import org.springframework.data.redis.connection.RedisConnectionFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.StringRedisSerializer
-import tools.jackson.annotation.JsonAutoDetect.Visibility
-import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Duration
 
 @Configuration(proxyBeanMethods = false)
@@ -20,8 +22,13 @@ class RedisConfig {
         val template = RedisTemplate<String, Any>()
         template.connectionFactory = connectionFactory
 
-        val objectMapper = jacksonObjectMapper().apply {
-            visibility(Visibility.ANY)
+        // Spring Data Redis 4.x still uses Jackson 2.x (com.fasterxml) for serialization
+        val ptv = BasicPolymorphicTypeValidator.builder()
+            .allowIfBaseType(Any::class.java)
+            .build()
+        val objectMapper = ObjectMapper().apply {
+            setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY)
+            activateDefaultTyping(ptv, ObjectMapper.DefaultTyping.NON_FINAL)
         }
 
         val jsonSerializer = GenericJackson2JsonRedisSerializer(objectMapper)

@@ -160,8 +160,7 @@ class ApiKeyServiceImpl(
         )
     }
 
-    override fun convertToResponse(entity: ApiKeyEntity): ApiKeyResponse =
-        ApiKeyResponse.fromEntity(entity)
+    override fun convertToResponse(entity: ApiKeyEntity): ApiKeyResponse = ApiKeyResponse.fromEntity(entity)
 
     private fun loadAndCheckAccess(id: Long): ApiKeyEntity {
         val entity = apiKeyMapper.selectById(id)
@@ -182,11 +181,9 @@ class ApiKeyServiceImpl(
         }
     }
 
-    private fun currentUsername(): String =
-        UserContextUtil.getCurrentUsername(jwtUtil)
+    private fun currentUsername(): String = UserContextUtil.getCurrentUsername(jwtUtil)
 
-    private fun isAdmin(): Boolean =
-        SecurityUtils.getCurrentUser()?.isAdmin == 1
+    private fun isAdmin(): Boolean = SecurityUtils.getCurrentUser()?.isAdmin == 1
 
     private fun generateRawKey(): String {
         val bytes = ByteArray(32)

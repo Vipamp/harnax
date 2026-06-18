@@ -106,3 +106,13 @@ harnax:
     internal:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
       token-ttl-seconds: 300
+    # Public endpoints that should bypass UnifiedAuthFilter (handled by Spring Security)
+    skip-paths:
+      - /api/auth/login
+      - /api/auth/logout
+      - /api/auth/captcha
+      - /api/auth/login-methods
+      - /swagger-ui
+      - /swagger-ui.html
+      - /v3/api-docs
+      - /webjars

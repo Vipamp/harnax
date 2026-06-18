@@ -16,6 +16,7 @@ class UnifiedAuthFilter(
     private val enabled: Boolean,
     private val objectMapper: ObjectMapper,
     private val externalApiKeyValidator: ExternalApiKeyValidator? = null,
+    private val extraSkipPaths: List<String> = emptyList(),
 ) : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(UnifiedAuthFilter::class.java)
@@ -24,7 +25,7 @@ class UnifiedAuthFilter(
         "/health",
         "/actuator",
         "/ai",
-    )
+    ) + extraSkipPaths
 
     override fun doFilterInternal(
         request: HttpServletRequest,

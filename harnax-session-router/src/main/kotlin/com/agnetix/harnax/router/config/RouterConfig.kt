@@ -31,15 +31,15 @@ import java.time.Duration
 @Configuration
 @EnableScheduling
 class RouterConfig(
-    @Value("\${router.proxy.connect-timeout-ms:5000}")
+    @Value($$"${router.proxy.connect-timeout-ms:5000}")
     private val connectTimeoutMs: Int,
-    @Value("\${router.proxy.read-timeout-ms:60000}")
+    @Value($$"${router.proxy.read-timeout-ms:60000}")
     private val readTimeoutMs: Int,
-    @Value("\${router.proxy.max-in-memory-size-mb:16}")
+    @Value($$"${router.proxy.max-in-memory-size-mb:16}")
     private val maxInMemorySizeMb: Int,
-    @Value("\${router.proxy.max-connections:200}")
+    @Value($$"${router.proxy.max-connections:200}")
     private val maxConnections: Int,
-    @Value("\${router.proxy.pending-acquire-timeout-ms:10000}")
+    @Value($$"${router.proxy.pending-acquire-timeout-ms:10000}")
     private val pendingAcquireTimeoutMs: Int,
     private val tokenProvider: InternalTokenProvider,
 ) {
@@ -81,8 +81,8 @@ class RouterConfig(
 
     @Bean
     fun circuitBreaker(
-        @Value("\${router.circuit-breaker.failure-threshold:3}") failureThreshold: Int,
-        @Value("\${router.circuit-breaker.open-duration-ms:30000}") openDurationMs: Long,
+        @Value($$"${router.circuit-breaker.failure-threshold:3}") failureThreshold: Int,
+        @Value($$"${router.circuit-breaker.open-duration-ms:30000}") openDurationMs: Long,
     ): InstanceCircuitBreaker = InstanceCircuitBreaker(
         failureThreshold = failureThreshold,
         openDurationMs = openDurationMs,
@@ -94,7 +94,7 @@ class RouterConfig(
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
     fun instanceRegistry(
         redisTemplate: RedisTemplate<String, Any>,
-        @Value("\${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
+        @Value($$"${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): InstanceRegistry = RedisInstanceRegistry(redisTemplate, heartbeatTimeoutMs)
 
     @Bean
@@ -102,14 +102,14 @@ class RouterConfig(
     fun sessionMappingService(
         instanceRegistry: InstanceRegistry,
         redisTemplate: RedisTemplate<String, Any>,
-        @Value("\${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
+        @Value($$"${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): SessionMappingService = RedisSessionMappingService(instanceRegistry, redisTemplate, heartbeatTimeoutMs)
 
     @Bean
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
     fun idempotencyService(
         redisTemplate: RedisTemplate<String, Any>,
-        @Value("\${router.idempotency.ttl-seconds:60}") ttlSeconds: Long,
+        @Value($$"${router.idempotency.ttl-seconds:60}") ttlSeconds: Long,
     ): IdempotencyService = RedisIdempotencyService(redisTemplate, ttlSeconds)
 
     // ==================== Local cache mode beans ====================
@@ -117,14 +117,14 @@ class RouterConfig(
     @Bean
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "local", matchIfMissing = true)
     fun localInstanceRegistry(
-        @Value("\${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
+        @Value($$"${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): InstanceRegistry = LocalInstanceRegistry(heartbeatTimeoutMs)
 
     @Bean
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "local", matchIfMissing = true)
     fun localSessionMappingService(
         instanceRegistry: InstanceRegistry,
-        @Value("\${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
+        @Value($$"${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
     ): SessionMappingService = CaffeineSessionMappingService(instanceRegistry, heartbeatTimeoutMs)
 
     @Bean

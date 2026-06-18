@@ -30,7 +30,7 @@ class RateLimitInterceptor(
 
         if (!rateLimitChecker.tryAcquire(context.callerId, limit)) {
             log.warn("Rate limit exceeded for caller '${context.callerId}' (limit: $limit/min) on ${request.requestURI}")
-            response.status = HttpServletResponse.SC_TOO_MANY_REQUESTS
+            response.status = 429 // Too Many Requests
             response.contentType = "application/json"
             response.setHeader("Retry-After", "60")
             response.writer.write(

@@ -8,6 +8,8 @@ data class AuthProperties(
     val serviceId: String = "",
     val internal: InternalProperties = InternalProperties(),
     val external: ExternalProperties = ExternalProperties(),
+    /** Extra path prefixes to skip authentication (e.g. public auth endpoints, swagger) */
+    val skipPaths: List<String> = emptyList(),
 )
 
 data class InternalProperties(

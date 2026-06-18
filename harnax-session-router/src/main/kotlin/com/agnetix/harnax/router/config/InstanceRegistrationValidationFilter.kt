@@ -23,7 +23,7 @@ class InstanceRegistrationValidationFilter(
     private val paramPattern = Regex("^[a-zA-Z0-9._-]+$")
     private val hostPattern = Regex("^[a-zA-Z0-9._-]+$")
 
-    override fun doFilterInternal(
+    public override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
         filterChain: FilterChain,

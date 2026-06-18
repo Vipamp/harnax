@@ -73,7 +73,9 @@ class InternalApiController(
 
         val modelName = if (session.modelId > 0) {
             modelMapper.selectById(session.modelId)?.modelName
-        } else null
+        } else {
+            null
+        }
 
         val response = SessionInfoResponse(
             sessionId = session.sessionId,

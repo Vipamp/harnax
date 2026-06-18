@@ -48,11 +48,11 @@ class AuthAutoConfiguration {
         enabled = properties.enabled,
         objectMapper = objectMapper,
         externalApiKeyValidator = externalApiKeyValidator,
+        extraSkipPaths = properties.skipPaths,
     )
 
     @Bean
-    fun scopeAuthorizationInterceptor(objectMapper: ObjectMapper): ScopeAuthorizationInterceptor =
-        ScopeAuthorizationInterceptor(objectMapper)
+    fun scopeAuthorizationInterceptor(objectMapper: ObjectMapper): ScopeAuthorizationInterceptor = ScopeAuthorizationInterceptor(objectMapper)
 
     @Bean
     fun rateLimitInterceptor(
@@ -67,13 +67,12 @@ class AuthAutoConfiguration {
     fun authWebMvcConfigurer(
         scopeInterceptor: ScopeAuthorizationInterceptor,
         rateLimitInterceptor: RateLimitInterceptor?,
-    ): WebMvcConfigurer =
-        object : WebMvcConfigurer {
-            override fun addInterceptors(registry: InterceptorRegistry) {
-                registry.addInterceptor(scopeInterceptor)
-                if (rateLimitInterceptor != null) {
-                    registry.addInterceptor(rateLimitInterceptor)
-                }
+    ): WebMvcConfigurer = object : WebMvcConfigurer {
+        override fun addInterceptors(registry: InterceptorRegistry) {
+            registry.addInterceptor(scopeInterceptor)
+            if (rateLimitInterceptor != null) {
+                registry.addInterceptor(rateLimitInterceptor)
             }
         }
+    }
 }

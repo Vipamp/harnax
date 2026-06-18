@@ -40,8 +40,10 @@ class ScopeAuthorizationInterceptor(
 
         val requiredScopes = annotation.value
         if (requiredScopes.isNotEmpty() && !context.hasAnyScope(*requiredScopes)) {
-            log.warn("Caller '${context.callerId}' lacks required scope for ${request.requestURI}. " +
-                "Required: ${requiredScopes.toList()}, Has: ${context.scopes}")
+            log.warn(
+                "Caller '${context.callerId}' lacks required scope for ${request.requestURI}. " +
+                    "Required: ${requiredScopes.toList()}, Has: ${context.scopes}",
+            )
             writeError(response, HttpServletResponse.SC_FORBIDDEN, "Insufficient scope. Required: ${requiredScopes.joinToString("|")}")
             return false
         }

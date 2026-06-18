@@ -29,15 +29,14 @@ class LocalRoutingWorkflowTest {
         healthChecker = HeartbeatHealthChecker(instanceRegistry, sessionMappingService, 30000)
     }
 
-    private fun createInstance(id: String, host: String = "10.0.0.1", port: Int = 8082): AgentInstance =
-        AgentInstance().apply {
-            instanceId = id
-            this.host = host
-            this.port = port
-            status = "UP"
-            active = 1
-            lastHeartbeat = LocalDateTime.now()
-        }
+    private fun createInstance(id: String, host: String = "10.0.0.1", port: Int = 8082): AgentInstance = AgentInstance().apply {
+        instanceId = id
+        this.host = host
+        this.port = port
+        status = "UP"
+        active = 1
+        lastHeartbeat = LocalDateTime.now()
+    }
 
     @Test
     fun `complete workflow - register, bind, route, failover, drain`() {

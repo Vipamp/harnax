@@ -24,7 +24,7 @@ class ApiCallLogFilter(
         private val REQUEST_TYPE_PATTERN = Regex("/agent/(chat|command|confirm)")
     }
 
-    override fun doFilterInternal(
+    public override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
         filterChain: FilterChain,

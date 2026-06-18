@@ -92,32 +92,31 @@ class ChatService(
      * Get or create an agent for the given sessionId.
      * Caches the agent so subsequent calls reuse the same instance.
      */
-    private fun getOrCreateAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): HarnessAgentWrapper =
-        agentCache.get(sessionId) { sid ->
-            val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
-                ?: throw IllegalArgumentException("Session not found: $sid")
+    private fun getOrCreateAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.get(sessionId) { sid ->
+        val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
+            ?: throw IllegalArgumentException("Session not found: $sid")
 
-            log.info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
+        log.info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
 
-            val agentSpec = AgentSpec.builder()
-                .id(session.agentId ?: throw IllegalArgumentException("Session.agentId cannot be null"))
-                .name(session.name ?: "Agent-${session.sessionId}")
-                .description(session.description ?: "")
-                .systemPrompt(session.systemPrompt ?: "")
-                .chatModelId(session.modelId ?: throw IllegalArgumentException("Session.modelId cannot be null"))
-                .build()
+        val agentSpec = AgentSpec.builder()
+            .id(session.agentId ?: throw IllegalArgumentException("Session.agentId cannot be null"))
+            .name(session.name ?: "Agent-${session.sessionId}")
+            .description(session.description ?: "")
+            .systemPrompt(session.systemPrompt ?: "")
+            .chatModelId(session.modelId ?: throw IllegalArgumentException("Session.modelId cannot be null"))
+            .build()
 
-            val agent = launcher.createSingleAgent(
-                agentSpec = agentSpec,
-                sessionId = sid,
-                stateless = false,
-                chatSpec,
-                userIdentifier,
-            )
+        val agent = launcher.createSingleAgent(
+            agentSpec = agentSpec,
+            sessionId = sid,
+            stateless = false,
+            chatSpec,
+            userIdentifier,
+        )
 
-            log.info("Agent for session $sid created and cached successfully")
-            agent
-        }
+        log.info("Agent for session $sid created and cached successfully")
+        agent
+    }
 
     fun clearSession(sessionId: String) {
         agentCache.invalidate(sessionId)

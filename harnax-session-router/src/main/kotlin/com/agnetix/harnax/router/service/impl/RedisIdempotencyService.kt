@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
  */
 class RedisIdempotencyService(
     private val redisTemplate: RedisTemplate<String, Any>,
-    @Value("${router.idempotency.ttl-seconds:60}")
+    @param:Value("\${router.idempotency.ttl-seconds:60}")
     private val ttlSeconds: Long,
 ) : IdempotencyService {
 

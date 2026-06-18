@@ -1,7 +1,6 @@
 package com.agnetix.harnax.router.proxy
 
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
-import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
@@ -19,7 +18,6 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.slf4j.MDC
 import org.springframework.web.reactive.function.client.WebClient
-import reactor.core.publisher.Mono
 import reactor.test.StepVerifier
 import java.net.ConnectException
 import java.time.LocalDateTime
@@ -99,7 +97,7 @@ class SessionRouterServiceTest {
     }
 
     @Test
-    fun `proxyChatRequest accepts first request with given requestId`() = runBlocking {
+    fun `proxyChatRequest accepts first request with given requestId`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire("req-1")).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
@@ -119,7 +117,7 @@ class SessionRouterServiceTest {
     }
 
     @Test
-    fun `proxyChatRequest generates UUID when requestId is blank`() = runBlocking {
+    fun `proxyChatRequest generates UUID when requestId is blank`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
@@ -183,7 +181,7 @@ class SessionRouterServiceTest {
     // ==================== resolveInstance logic via proxyChatRequest ====================
 
     @Test
-    fun `proxyChatRequest reroutes when bound instance is unhealthy`() = runBlocking {
+    fun `proxyChatRequest reroutes when bound instance is unhealthy`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(staleInstance("inst-1"))
@@ -205,7 +203,7 @@ class SessionRouterServiceTest {
     }
 
     @Test
-    fun `proxyChatRequest uses existing healthy binding`() = runBlocking {
+    fun `proxyChatRequest uses existing healthy binding`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
@@ -225,7 +223,7 @@ class SessionRouterServiceTest {
     }
 
     @Test
-    fun `proxyChatRequest reroutes when no binding exists`() = runBlocking {
+    fun `proxyChatRequest reroutes when no binding exists`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn(null)
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-1")
@@ -248,7 +246,7 @@ class SessionRouterServiceTest {
     // ==================== DRAINING instance handling ====================
 
     @Test
-    fun `proxyChatRequest reroutes when bound instance is DRAINING`() = runBlocking {
+    fun `proxyChatRequest reroutes when bound instance is DRAINING`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(drainingInstance("inst-1"))
@@ -272,7 +270,7 @@ class SessionRouterServiceTest {
     // ==================== Circuit breaker integration ====================
 
     @Test
-    fun `proxyChatRequest reroutes when circuit breaker is open`() = runBlocking {
+    fun `proxyChatRequest reroutes when circuit breaker is open`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
