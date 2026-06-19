@@ -8,13 +8,13 @@
     </view>
     <view v-if="expanded" class="tool-body">
       <view v-if="args" class="tool-section">
-        <text class="tool-section-label">{{ t('chat.toolArguments') }}</text>
+        <view class="tool-section-label">参数</view>
         <scroll-view scroll-x class="tool-code-scroll">
           <text class="tool-code">{{ args }}</text>
         </scroll-view>
       </view>
       <view v-if="result" class="tool-section">
-        <text class="tool-section-label">{{ t('chat.toolResult') }}</text>
+        <view class="tool-section-label">结果</view>
         <scroll-view scroll-x class="tool-code-scroll">
           <text class="tool-code" :class="{ 'tool-error': !success }">{{ result }}</text>
         </scroll-view>
@@ -25,7 +25,6 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   toolName: string
@@ -34,14 +33,13 @@ const props = defineProps<{
   success?: boolean
 }>()
 
-const { t } = useI18n()
 const expanded = ref(false)
 
 const statusText = computed(() => {
   if (props.result !== undefined) {
-    return props.success ? t('chat.toolCompleted') : t('chat.toolFailed')
+    return props.success ? '已完成' : '失败'
   }
-  return t('chat.toolCalling')
+  return '调用中'
 })
 
 const statusColor = computed(() => {

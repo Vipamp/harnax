@@ -34,7 +34,7 @@ curl -X POST https://your-admin-host/api/api-keys \
   -H "Authorization: Bearer <your-jwt-token>" \
   -d '{
     "name": "my-app-key",
-    "scopes": "router:invoke,api:chat",
+    "scopes": "",
     "rateLimit": 100,
     "expiresAt": "2027-12-31T23:59:59"
   }'
@@ -55,15 +55,11 @@ curl -X POST https://your-admin-host/api/api-keys \
 }
 ```
 
-### 1.3 权限范围（Scopes）
+### 1.3 权限范围
 
-| Scope | 说明 | 使用场景 |
-|-------|------|---------|
-| `router:invoke` | 通过 Router 调用 Agent 的所有接口 | **必须包含此权限才能调用 Agent** |
-| `api:chat` | 允许使用对话相关接口 | 按需申请 |
-| `api:session` | 允许使用会话管理接口 | 按需申请 |
+Harnax 采用简化的权限模型：API Key 认证通过后即可访问所有对外公开的端点（`/api/router/agent/*`），无需配置 scope。
 
-> 创建时至少需要 `router:invoke` 权限。多个权限用逗号分隔。
+内部管理服务（`/api/router/instance/*`）仅限内部服务访问，外部 API Key 无法调用。
 
 ---
 
@@ -465,7 +461,7 @@ curl https://your-router-host/api/router/agent/session/my-session-001/current-pl
 | code | 说明 | 建议 |
 |------|------|------|
 | 401 | 认证失败 | 检查 API Key 是否正确、是否过期、是否被禁用 |
-| 403 | 权限不足 | 检查 API Key 的 scopes 是否包含 `router:invoke` |
+| 403 | 权限不足 | API Key 无法访问内部管理接口 |
 | 429 | 限流 | 降低请求频率，或联系管理员提高限额 |
 | 500 | 服务内部错误 | 记录 requestId 联系运维排查 |
 | 503 | 无可用 Agent 实例 | 稍后重试，Router 会自动故障转移 |

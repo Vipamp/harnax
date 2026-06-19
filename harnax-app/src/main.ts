@@ -2,8 +2,8 @@ import { createSSRApp } from 'vue'
 import { createPinia } from 'pinia'
 import { createI18n } from 'vue-i18n'
 import App from './App.vue'
-import zhCN from './src/locales/zh-CN'
-import enUS from './src/locales/en-US'
+import zhCN from './locales/zh-CN'
+import enUS from './locales/en-US'
 
 export function createApp() {
   const app = createSSRApp(App)

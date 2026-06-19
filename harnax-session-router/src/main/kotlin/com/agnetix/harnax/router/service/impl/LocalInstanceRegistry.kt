@@ -47,14 +47,11 @@ class LocalInstanceRegistry(
         }
     }
 
-    override fun getHealthyInstances(): List<AgentInstance> =
-        instances.values.filter { it.isHealthy(heartbeatTimeoutMs) }
+    override fun getHealthyInstances(): List<AgentInstance> = instances.values.filter { it.isHealthy(heartbeatTimeoutMs) }
 
-    override fun getAllActiveInstances(): List<AgentInstance> =
-        instances.values.filter { it.active == 1 }
+    override fun getAllActiveInstances(): List<AgentInstance> = instances.values.filter { it.active == 1 }
 
-    override fun getInstance(instanceId: String): AgentInstance? =
-        instances[instanceId]?.takeIf { it.active == 1 }
+    override fun getInstance(instanceId: String): AgentInstance? = instances[instanceId]?.takeIf { it.active == 1 }
 
     override fun markInstanceDown(instanceId: String): Int {
         val instance = instances[instanceId]

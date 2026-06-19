@@ -102,6 +102,26 @@ interface ChannelAdaptor {
     fun supportsStreamingOutput(): Boolean = false
 
     /**
+     * Determine whether to use streaming output for the given agent.
+     *
+     * This is the single decision point for stream vs batch output strategy.
+     * Each channel implementation can override this to control its own behavior.
+     *
+     * Default implementation requires BOTH:
+     * - Channel supports streaming output (supportsStreamingOutput() = true)
+     * - Agent supports streaming (agentAdaptor.supportsStreaming() = true)
+     *
+     * Override examples:
+     * - A channel that simulates streaming via message edit API can return true
+     *   even if supportsStreamingOutput() is false
+     * - A channel that wants to always batch can return false regardless of agent
+     *
+     * @param agentAdaptor The agent adaptor that will process the message
+     * @return Whether to use streaming output
+     */
+    fun shouldUseStreaming(agentAdaptor: AgentAdaptor): Boolean = supportsStreamingOutput() && agentAdaptor.supportsStreaming()
+
+    /**
      * Send streaming text fragment
      *
      * Called by ChannelChatService for each TextStreamEvent when the channel

@@ -183,10 +183,26 @@ class InstanceRegistrationValidationFilterTest {
     }
 
     @Test
-    fun `port 1024 is allowed`() {
-        registerRequest("inst-1", "10.0.0.1", "1024")
+    fun `port 8000 is allowed`() {
+        registerRequest("inst-1", "10.0.0.1", "8000")
         filter.doFilterInternal(request, response, chain)
         verify(chain).doFilter(request, response)
+    }
+
+    @Test
+    fun `port 7000 is rejected - out of business range`() {
+        registerRequest("inst-1", "10.0.0.1", "7000")
+        filter.doFilterInternal(request, response, chain)
+        verify(response).status = HttpServletResponse.SC_BAD_REQUEST
+        verify(chain, never()).doFilter(request, response)
+    }
+
+    @Test
+    fun `port 10000 is rejected - out of business range`() {
+        registerRequest("inst-1", "10.0.0.1", "10000")
+        filter.doFilterInternal(request, response, chain)
+        verify(response).status = HttpServletResponse.SC_BAD_REQUEST
+        verify(chain, never()).doFilter(request, response)
     }
 
     @Test

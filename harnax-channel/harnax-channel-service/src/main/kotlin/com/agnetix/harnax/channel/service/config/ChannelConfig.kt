@@ -27,11 +27,11 @@ class ChannelConfig(
     @Bean
     fun webClient(): WebClient = WebClient.builder()
         .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
-        .filter(authFilter("router:invoke"))
+        .filter(authFilter())
         .build()
 
-    private fun authFilter(scope: String): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
-        val headers = tokenProvider.authHeaders(scope)
+    private fun authFilter(): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
+        val headers = tokenProvider.authHeaders()
         val mutated = ClientRequest.from(request)
         headers.forEach { (key, value) -> mutated.header(key, value) }
         next.exchange(mutated.build())

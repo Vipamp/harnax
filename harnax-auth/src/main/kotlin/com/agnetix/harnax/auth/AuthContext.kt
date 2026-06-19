@@ -7,20 +7,12 @@ enum class CallerType {
 
 data class AuthContext(
     val callerId: String,
-    val scopes: Set<String>,
     val callerType: CallerType = CallerType.INTERNAL_SERVICE,
     val tenantId: Long? = null,
     val rateLimitPerMinute: Int? = null,
+    /** Retained for logging/observability only — not used for access control. */
+    val scopes: Set<String> = emptySet(),
 ) {
-    val scope: String get() = scopes.firstOrNull() ?: ""
-
-    constructor(callerId: String, scope: String, tenantId: Long? = null) :
-        this(callerId = callerId, scopes = setOf(scope), callerType = CallerType.INTERNAL_SERVICE, tenantId = tenantId)
-
-    fun hasScope(required: String): Boolean = required in scopes
-
-    fun hasAnyScope(vararg required: String): Boolean = required.any { it in scopes }
-
     fun isInternal(): Boolean = callerType == CallerType.INTERNAL_SERVICE
 }
 

@@ -2,7 +2,6 @@ package com.agnetix.harnax.router.service
 
 import com.agnetix.harnax.auth.ApiKeyInfo
 import com.agnetix.harnax.auth.ApiKeyStore
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.github.benmanes.caffeine.cache.Caffeine
 import org.slf4j.LoggerFactory
@@ -12,6 +11,7 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.RestTemplate
 import java.time.Instant
 import java.util.concurrent.TimeUnit
@@ -20,7 +20,8 @@ import java.util.concurrent.TimeUnit
 class RemoteApiKeyStore(
     @Value("\${admin.service.url:http://localhost:8080}")
     private val adminUrl: String,
-    private val tokenProvider: InternalTokenProvider,
+    @Value("\${admin.internal-api.secret:}")
+    private val adminSecret: String,
 ) : ApiKeyStore {
 
     private val log = LoggerFactory.getLogger(RemoteApiKeyStore::class.java)
@@ -43,9 +44,7 @@ class RemoteApiKeyStore(
         return try {
             val headers = HttpHeaders()
             headers.contentType = MediaType.APPLICATION_JSON
-            tokenProvider.authHeaders("admin:apikey").forEach { (key, value) ->
-                headers.set(key, value)
-            }
+            headers.set("Authorization", "Bearer $adminSecret")
 
             val body = mapOf("keyHash" to hash)
             val request = HttpEntity(body, headers)
@@ -68,8 +67,20 @@ class RemoteApiKeyStore(
                 enabled = data.enabled,
                 expiresAt = data.expiresAt?.let { Instant.parse(it) },
             )
+        } catch (e: HttpClientErrorException) {
+            val status = e.statusCode.value()
+            val body = e.responseBodyAsString.take(200)
+            if (status == 401) {
+                log.error(
+                    "[Router→Admin] Authentication failed (401) calling $adminUrl/api/internal/api-keys/validate. " +
+                        "Check admin.internal-api.secret matches admin's config. Response: $body",
+                )
+            } else {
+                log.warn("[Router→Admin] HTTP $status calling $adminUrl/api/internal/api-keys/validate. Response: $body")
+            }
+            null
         } catch (e: Exception) {
-            log.warn("Failed to validate API key from admin: ${e.message}")
+            log.warn("[Router→Admin] Failed to validate API key from $adminUrl: ${e.message}")
             null
         }
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onLaunch } from '@dcloudio/uni-app'
-import { useConnectionStore } from './src/store/useConnectionStore'
-import { useSessionStore } from './src/store/useSessionStore'
+import { useConnectionStore } from './store/useConnectionStore'
+import { useSessionStore } from './store/useSessionStore'
 
 onLaunch(() => {
   const connectionStore = useConnectionStore()
@@ -13,5 +13,5 @@ onLaunch(() => {
 </script>
 
 <style lang="scss">
-@import './src/styles/global.scss';
+@import './styles/global.scss';
 </style>

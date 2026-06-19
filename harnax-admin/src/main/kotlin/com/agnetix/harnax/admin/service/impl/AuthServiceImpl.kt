@@ -142,6 +142,62 @@ class AuthServiceImpl(
         return response
     }
 
+    override fun mobileLogin(request: LoginRequest): LoginResponse {
+        log.info("Mobile login, username: {}", request.username)
+
+        // 1. Validate username and password (no captcha for mobile)
+        val user: SysUser = sysUserService.getByUsername(request.username)
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
+
+        if (!BCrypt.checkpw(request.password, user.password)) {
+            throw BizException(messageUtil.getMessage("error.user.invalid_credentials"))
+        }
+
+        // 2. Check user status
+        if (user.status == 0) {
+            throw BizException(messageUtil.getMessage("error.user.disabled"))
+        }
+
+        // 3. Check tenant
+        var userTenants = userTenantService.getUserTenants(user.id)
+        if (userTenants.isEmpty() && editionUtil.isPersonal()) {
+            val defaultTenant = tenantMapper.selectById(1)
+            if (defaultTenant != null) {
+                userTenantService.addUserToTenant(1, user.id, "member", "system")
+                userTenants = userTenantService.getUserTenants(user.id)
+            }
+        }
+        if (userTenants.isEmpty() && user.isAdmin != 1) {
+            throw BizException(messageUtil.getMessage("error.user.no_tenant"))
+        }
+
+        // 4. Generate JWT Token
+        val defaultTenantId = if (userTenants.isNotEmpty()) userTenants[0].id else null
+        val accessToken = jwtUtil.generateToken(user.id, user.username, defaultTenantId, user.isAdmin)
+        val expiresAt = System.currentTimeMillis() + jwtUtil.getExpirationTime()
+
+        val userInfo = UserInfo.builder()
+            .userId(user.id).username(user.username).nickname(user.nickname)
+            .avatar(user.avatar).email(user.email).phone(user.phone)
+            .gender(user.gender).isAdmin(user.isAdmin).build()
+
+        val response = LoginResponse.builder()
+            .accessToken(accessToken).tokenType("Bearer")
+            .expiresIn(jwtUtil.getExpirationTime() / 1000)
+            .expiresAt(expiresAt).userInfo(userInfo)
+            .tenants(userTenants).currentTenantId(defaultTenantId).build()
+
+        // 5. Update last login time
+        try {
+            sysUserMapper.updateLastLoginTime(user.id, LocalDateTime.now())
+        } catch (e: Exception) {
+            log.error("Failed to update mobile user login time: {}", e.message)
+        }
+
+        log.info("Mobile login successful, userId: {}, username: {}", user.id, user.username)
+        return response
+    }
+
     override fun logout() {
         // Get current request (need to get from RequestContextHolder)
         val token = getCurrentToken()

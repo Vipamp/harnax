@@ -4,11 +4,13 @@ import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.health.HeartbeatHealthChecker
 import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.impl.CaffeineSessionMappingService
+import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
 import com.agnetix.harnax.router.service.impl.LocalInstanceRegistry
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Integration test for the complete local-mode routing workflow.
@@ -25,7 +27,7 @@ class LocalRoutingWorkflowTest {
     fun setUp() {
         instanceRegistry = LocalInstanceRegistry(heartbeatTimeoutMs = 30000)
         sessionMappingService = CaffeineSessionMappingService(instanceRegistry, 30000)
-        circuitBreaker = InstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 1000)
+        circuitBreaker = LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 1000)
         healthChecker = HeartbeatHealthChecker(instanceRegistry, sessionMappingService, 30000)
     }
 
@@ -36,6 +38,14 @@ class LocalRoutingWorkflowTest {
         status = "UP"
         active = 1
         lastHeartbeat = LocalDateTime.now()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun makeInstanceStale(registry: LocalInstanceRegistry, instanceId: String) {
+        val field = LocalInstanceRegistry::class.java.getDeclaredField("instances")
+        field.isAccessible = true
+        val instances = field.get(registry) as ConcurrentHashMap<String, AgentInstance>
+        instances[instanceId]?.lastHeartbeat = LocalDateTime.now().minusSeconds(60)
     }
 
     @Test
@@ -60,10 +70,7 @@ class LocalRoutingWorkflowTest {
         assertEquals(1, sessionMappingService.getSessionCountByInstance("inst-2"))
 
         // 3. Simulate instance-1 going DOWN (stale heartbeat)
-        val staleInst1 = createInstance("inst-1").apply {
-            lastHeartbeat = LocalDateTime.now().minusSeconds(60)
-        }
-        instanceRegistry.registerInstance(staleInst1.instanceId, staleInst1.host, staleInst1.port)
+        makeInstanceStale(instanceRegistry, "inst-1")
 
         // 4. Health checker detects and performs failover (rebinds to inst-2)
         healthChecker.checkInstanceHealth()

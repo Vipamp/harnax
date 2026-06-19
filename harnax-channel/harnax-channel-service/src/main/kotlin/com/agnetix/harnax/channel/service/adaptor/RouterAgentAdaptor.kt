@@ -7,7 +7,9 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
 import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
 import com.agnetix.harnax.channel.service.client.RouterClient
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
+import org.slf4j.LoggerFactory
 
 /**
  * Router-based Agent Adaptor.
@@ -20,6 +22,8 @@ import kotlinx.coroutines.flow.flow
 class RouterAgentAdaptor(
     private val routerClient: RouterClient,
 ) : AgentAdaptor() {
+
+    private val log = LoggerFactory.getLogger(RouterAgentAdaptor::class.java)
 
     override fun getName(): String = "router-agent-proxy"
 
@@ -41,21 +45,30 @@ class RouterAgentAdaptor(
         val agentId = context.channelSpec.agentId
         val requestId = context.requestId
 
+        log.info("[Adaptor] Starting streamProcess for session=$sessionId, agentId=$agentId, requestId=$requestId")
+
         // Use parsed AgentRequest if available, otherwise fall back to chat with message content
         val request = context.agentRequest ?: ChatAgentRequest(
             sessionId = sessionId,
             message = context.message.content,
         )
 
+        var eventCount = 0
+        val collector: FlowCollector<AgentStreamEvent> = this
         routerClient.streamRequest(
             request = request,
             agentId = agentId,
-        ).collect { chatEvent ->
+        ).collect { chatEvent: ChatEvent ->
             val streamEvent = convertChatEvent(chatEvent, requestId)
             if (streamEvent != null) {
-                emit(streamEvent)
+                log.info("[Adaptor] Converting event #$eventCount for session=$sessionId: ${chatEvent.javaClass.simpleName} -> ${streamEvent.javaClass.simpleName}")
+                eventCount++
+                collector.emit(streamEvent)
+            } else {
+                log.warn("[Adaptor] Skipped null conversion for event: ${chatEvent.javaClass.simpleName}")
             }
         }
+        log.info("[Adaptor] StreamProcess completed for session=$sessionId, total events=$eventCount")
     }
 
     /**

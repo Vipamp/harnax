@@ -1,5 +1,7 @@
 package com.agnetix.harnax.harness.sandbox
 
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.agentscope.core.session.Session
 import io.agentscope.core.state.SimpleSessionKey
 import io.agentscope.harness.agent.sandbox.SandboxIsolationKey
@@ -79,8 +81,8 @@ class MysqlCompatibleSandboxStateStore(
      * State record matching the JSON structure used by
      * [io.agentscope.harness.agent.sandbox.SessionSandboxStateStore.SandboxStateSlot].
      */
-    private data class SandboxStateSlot(
-        val json: String,
-        val deleted: Boolean,
+    private data class SandboxStateSlot @JsonCreator constructor(
+        @JsonProperty("json") val json: String,
+        @JsonProperty("deleted") val deleted: Boolean,
     ) : io.agentscope.core.state.State
 }

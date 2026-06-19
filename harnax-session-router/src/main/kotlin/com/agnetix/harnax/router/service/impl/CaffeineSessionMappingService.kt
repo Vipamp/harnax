@@ -4,6 +4,7 @@ import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
 import org.slf4j.LoggerFactory
+import org.springframework.scheduling.annotation.Scheduled
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -13,7 +14,7 @@ import java.util.concurrent.locks.ReentrantLock
  * Pure in-memory session mapping service for single-node deployment.
  * No MySQL dependency - all state is held in ConcurrentHashMap.
  */
-class CaffeineSessionMappingService(
+open class CaffeineSessionMappingService(
     private val instanceRegistry: InstanceRegistry,
     private val heartbeatTimeoutMs: Long = 30000L,
 ) : SessionMappingService {
@@ -38,8 +39,13 @@ class CaffeineSessionMappingService(
         require(sessionId.isNotBlank() && sessionId.length <= 128) { "Invalid session ID" }
         require(instanceId.isNotBlank() && instanceId.length <= 64) { "Invalid instance ID" }
 
+        val oldBinding = bindings[sessionId]
         val binding = SessionBinding(instanceId, agentId, LocalDateTime.now())
         bindings[sessionId] = binding
+
+        if (oldBinding != null && oldBinding.instanceId != instanceId) {
+            instanceSessions[oldBinding.instanceId]?.remove(sessionId)
+        }
 
         instanceSessions.computeIfAbsent(instanceId) { ConcurrentHashMap.newKeySet() }.add(sessionId)
 
@@ -144,11 +150,9 @@ class CaffeineSessionMappingService(
         return sessions.size
     }
 
-    override fun getSessionCountByInstance(instanceId: String): Int =
-        instanceSessions[instanceId]?.size ?: 0
+    override fun getSessionCountByInstance(instanceId: String): Int = instanceSessions[instanceId]?.size ?: 0
 
-    override fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int> =
-        instanceIds.associateWith { getSessionCountByInstance(it) }
+    override fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int> = instanceIds.associateWith { getSessionCountByInstance(it) }
 
     private fun selectLeastLoadedInstance(instances: List<AgentInstance>): AgentInstance {
         if (instances.size == 1) return instances.first()
@@ -171,5 +175,27 @@ class CaffeineSessionMappingService(
         }
 
         return instances.last()
+    }
+
+    /**
+     * Fallback cleanup for rerouteLocks:
+     * the normal path removes entries in the finally block of rerouteSession,
+     * but if a thread holding the lock is killed or its finally block is interrupted,
+     * the lock entry would otherwise leak permanently.
+     * Scan every 60s and remove locks that no thread is holding.
+     */
+    @Scheduled(fixedDelay = 60000)
+    open fun cleanupStaleLocks() {
+        var removed = 0
+        rerouteLocks.forEach { (sessionId, lock) ->
+            // Only remove locks not held by any thread.
+            if (!lock.isLocked) {
+                rerouteLocks.remove(sessionId, lock)
+                removed++
+            }
+        }
+        if (removed > 0) {
+            log.debug("Cleaned up {} stale reroute locks", removed)
+        }
     }
 }

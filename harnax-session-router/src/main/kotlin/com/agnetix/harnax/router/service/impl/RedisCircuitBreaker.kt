@@ -1,22 +1,20 @@
 package com.agnetix.harnax.router.service.impl
 
+import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import org.slf4j.LoggerFactory
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.stereotype.Component
 import java.util.concurrent.TimeUnit
 
 /**
- * Redis-based distributed circuit breaker.
- * Synchronizes circuit state across multiple router nodes.
+ * Redis-backed circuit breaker that synchronizes breaker state across nodes.
+ *
+ * Wired in by [com.agnetix.harnax.router.config.RouterConfig] when `router.cache.type=redis`.
  */
-@Component
-@ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
 class RedisCircuitBreaker(
     private val redisTemplate: RedisTemplate<String, Any>,
     private val failureThreshold: Int = 3,
     private val openDurationMs: Long = 30000,
-) {
+) : InstanceCircuitBreaker {
 
     private val log = LoggerFactory.getLogger(RedisCircuitBreaker::class.java)
 
@@ -27,9 +25,7 @@ class RedisCircuitBreaker(
         private const val LAST_FAILURE_SUFFIX = ":last_failure"
     }
 
-    enum class State { CLOSED, OPEN, HALF_OPEN }
-
-    fun isOpen(instanceId: String): Boolean {
+    override fun isOpen(instanceId: String): Boolean {
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
         val lastFailureKey = "$CIRCUIT_KEY_PREFIX$instanceId$LAST_FAILURE_SUFFIX"
 
@@ -59,7 +55,7 @@ class RedisCircuitBreaker(
         }
     }
 
-    fun recordFailure(instanceId: String) {
+    override fun recordFailure(instanceId: String) {
         val failuresKey = "$CIRCUIT_KEY_PREFIX$instanceId$FAILURES_SUFFIX"
         val lastFailureKey = "$CIRCUIT_KEY_PREFIX$instanceId$LAST_FAILURE_SUFFIX"
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
@@ -92,7 +88,7 @@ class RedisCircuitBreaker(
         }
     }
 
-    fun recordSuccess(instanceId: String) {
+    override fun recordSuccess(instanceId: String) {
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
         val failuresKey = "$CIRCUIT_KEY_PREFIX$instanceId$FAILURES_SUFFIX"
 
@@ -106,7 +102,7 @@ class RedisCircuitBreaker(
         }
     }
 
-    fun reset(instanceId: String) {
+    override fun reset(instanceId: String) {
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
         val failuresKey = "$CIRCUIT_KEY_PREFIX$instanceId$FAILURES_SUFFIX"
         val lastFailureKey = "$CIRCUIT_KEY_PREFIX$instanceId$LAST_FAILURE_SUFFIX"
@@ -116,18 +112,18 @@ class RedisCircuitBreaker(
         redisTemplate.delete(lastFailureKey)
     }
 
-    fun getState(instanceId: String): State {
+    override fun getState(instanceId: String): InstanceCircuitBreaker.State {
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
-        val stateStr = redisTemplate.opsForValue().get(stateKey) as? String ?: return State.CLOSED
+        val stateStr = redisTemplate.opsForValue().get(stateKey) as? String ?: return InstanceCircuitBreaker.State.CLOSED
 
         return when (stateStr) {
-            "OPEN" -> State.OPEN
-            "HALF_OPEN" -> State.HALF_OPEN
-            else -> State.CLOSED
+            "OPEN" -> InstanceCircuitBreaker.State.OPEN
+            "HALF_OPEN" -> InstanceCircuitBreaker.State.HALF_OPEN
+            else -> InstanceCircuitBreaker.State.CLOSED
         }
     }
 
-    fun getFailureCount(instanceId: String): Int {
+    override fun getFailureCount(instanceId: String): Int {
         val failuresKey = "$CIRCUIT_KEY_PREFIX$instanceId$FAILURES_SUFFIX"
         val count = redisTemplate.opsForValue().get(failuresKey) as? Number
         return count?.toInt() ?: 0

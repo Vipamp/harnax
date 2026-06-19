@@ -19,6 +19,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 @EnableWebSecurity
 class SecurityConfig(
     private val jwtAuthenticationFilter: JwtAuthenticationFilter,
+    private val internalApiAuthFilter: InternalApiAuthFilter,
 ) {
 
     @Bean
@@ -29,7 +30,10 @@ class SecurityConfig(
             .httpBasic { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/captcha")
+                auth.requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/captcha", "/api/auth/login-methods")
+                    .permitAll()
+                    // Mobile auth endpoints (login/logout/captcha) do not require JWT
+                    .requestMatchers("/api/mp/auth/**")
                     .permitAll()
                     .requestMatchers(
                         "/swagger-ui.html",
@@ -43,13 +47,14 @@ class SecurityConfig(
                     // AI 聊天端点使用控制器中的手动 JWT 校验
                     .requestMatchers("/ai/**")
                     .permitAll()
-                    // 内部服务调用端点使用 harnax-auth 的 UnifiedAuthFilter 认证
+                    // 内部服务调用端点使用 InternalApiAuthFilter 认证
                     .requestMatchers("/api/internal/**")
                     .permitAll()
                     .anyRequest()
                     .authenticated()
             }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+            .addFilterBefore(internalApiAuthFilter, org.springframework.security.web.context.SecurityContextPersistenceFilter::class.java)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
             .exceptionHandling { exceptions ->
                 exceptions.authenticationEntryPoint { request, response, authException ->

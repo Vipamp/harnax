@@ -15,7 +15,10 @@ import com.agnetix.harnax.router.service.IdempotencyService
 import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
+import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
+import jakarta.annotation.PostConstruct
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -24,9 +27,11 @@ import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
 import java.time.Duration
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class SessionRouterService(
@@ -48,6 +53,63 @@ class SessionRouterService(
 
     private val mdcKeys = setOf("sessionId", "requestId", "instanceId")
 
+    // Pre-cache hot Timer / Counter instances to avoid MeterRegistry lookups on every request.
+    private lateinit var chatTimer: Timer
+    private lateinit var chatOkCounter: Counter
+    private lateinit var chatErrorCounter: Counter
+    private lateinit var streamOkCounter: Counter
+    private lateinit var streamErrorCounter: Counter
+
+    // Failover counters are cached by (endpoint, attempt); the attempt index is dynamic.
+    private val failoverCounterCache = ConcurrentHashMap<String, Counter>()
+
+    init {
+        initMeters()
+    }
+
+    @PostConstruct
+    fun initMeters() {
+        chatTimer = meterRegistry.timer("router.proxy.duration", "endpoint", "chat")
+        chatOkCounter = meterRegistry.counter(
+            "router.proxy.requests",
+            "endpoint",
+            "chat",
+            "status",
+            "ok",
+        )
+        chatErrorCounter = meterRegistry.counter(
+            "router.proxy.requests",
+            "endpoint",
+            "chat",
+            "status",
+            "error",
+        )
+        streamOkCounter = meterRegistry.counter(
+            "router.proxy.requests",
+            "endpoint",
+            "stream",
+            "status",
+            "ok",
+        )
+        streamErrorCounter = meterRegistry.counter(
+            "router.proxy.requests",
+            "endpoint",
+            "stream",
+            "status",
+            "error",
+        )
+    }
+
+    private fun failoverCounter(endpoint: String, attempt: Int): Counter = failoverCounterCache.computeIfAbsent("$endpoint:$attempt") {
+        meterRegistry.counter(
+            "router.failover.count",
+            "endpoint",
+            endpoint,
+            "attempt",
+            attempt.toString(),
+        )
+    }
+
     suspend fun proxyChatRequest(request: ChatAgentRequest): ResultVo<ChatResponse> {
         val sessionId = request.sessionId
         val requestId = getOrGenerateRequestId(request)
@@ -58,8 +120,7 @@ class SessionRouterService(
                 return ResultVo.error("Duplicate request: $requestId")
             }
 
-            val timer = meterRegistry.timer("router.proxy.duration", "endpoint", "chat")
-            val sample = io.micrometer.core.instrument.Timer.start()
+            val sample = Timer.start()
 
             val result = executeWithRetry(sessionId, "chat") { targetInstance ->
                 val url = "${targetInstance.getBaseUrl()}/api/agent/chat"
@@ -74,14 +135,8 @@ class SessionRouterService(
                     ?: ResultVo.error("No response from agent-service")
             }
 
-            sample.stop(timer)
-            meterRegistry.counter(
-                "router.proxy.requests",
-                "endpoint",
-                "chat",
-                "status",
-                if (result.isSuccess()) "ok" else "error",
-            ).increment()
+            sample.stop(chatTimer)
+            if (result.isSuccess()) chatOkCounter.increment() else chatErrorCounter.increment()
             sessionMappingService.refreshActiveTime(sessionId)
             return result
         } finally {
@@ -341,13 +396,10 @@ class SessionRouterService(
             return result
         } catch (e: Exception) {
             circuitBreaker.recordFailure(instance.instanceId)
-            log.error("Failed to proxy $endpoint for session $sessionId: ${e.message}", e)
+            val errorMsg = describeProxyError(e, endpoint, instance)
+            log.error("Failed to proxy $endpoint for session $sessionId: $errorMsg", e)
             // Clean up MDC before failover to avoid pollution
-            if (oldInstanceId != null) {
-                MDC.put("instanceId", oldInstanceId)
-            } else {
-                MDC.remove("instanceId")
-            }
+            restoreMdc("instanceId", oldInstanceId)
             return retryFailover(sessionId, endpoint, action)
         }
     }
@@ -372,7 +424,7 @@ class SessionRouterService(
 
                 MDC.put("instanceId", currentInstance.instanceId)
                 log.info("Failover attempt $attempt for $endpoint, session $sessionId -> ${currentInstance.instanceId}")
-                meterRegistry.counter("router.failover.count", "endpoint", endpoint, "attempt", "$attempt").increment()
+                failoverCounter(endpoint, attempt).increment()
 
                 val result = action(currentInstance)
                 circuitBreaker.recordSuccess(currentInstance.instanceId)
@@ -404,9 +456,13 @@ class SessionRouterService(
             .bodyToFlux(ChatEvent::class.java)
             .limitRate(10)
             .timeout(Duration.ofMinutes(streamTimeoutMinutes))
-            .doOnNext { circuitBreaker.recordSuccess(instance.instanceId) }
+            .doOnNext { event ->
+                log.info("[Router←Agent] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
+                circuitBreaker.recordSuccess(instance.instanceId)
+            }
             .doOnComplete {
-                meterRegistry.counter("router.proxy.requests", "endpoint", "stream", "status", "ok").increment()
+                log.info("[Router←Agent] Stream completed for session=$sessionId")
+                streamOkCounter.increment()
                 sessionMappingService.refreshActiveTime(sessionId)
             }
             .doOnCancel {
@@ -414,8 +470,9 @@ class SessionRouterService(
             }
             .onErrorResume { e ->
                 circuitBreaker.recordFailure(instance.instanceId)
-                log.error("Stream proxy error for session $sessionId on ${instance.instanceId}: ${e.message}", e)
-                meterRegistry.counter("router.proxy.requests", "endpoint", "stream", "status", "error").increment()
+                val errorMsg = describeProxyError(e, "stream", instance)
+                log.error("Stream proxy error for session $sessionId on ${instance.instanceId}: $errorMsg", e)
+                streamErrorCounter.increment()
 
                 if (isConnectivityError(e)) {
                     return@onErrorResume tryStreamFailover(sessionId, requestId, request)
@@ -424,7 +481,7 @@ class SessionRouterService(
                 Flux.just(
                     ErrorChatEvent(
                         code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
-                        message = e.message ?: "Failed to reach agent-service",
+                        message = errorMsg,
                     ),
                     EndEventChatEvent(),
                 )
@@ -452,7 +509,7 @@ class SessionRouterService(
                 }
 
                 log.info("Stream failover for session $sessionId -> ${newInstance.instanceId}")
-                meterRegistry.counter("router.failover.count", "endpoint", "stream", "attempt", "1").increment()
+                failoverCounter("stream", 1).increment()
                 buildStreamFlux(sessionId, requestId, newInstance, request)
             } catch (e: Exception) {
                 log.error("Stream failover failed for session $sessionId: ${e.message}", e)
@@ -472,6 +529,27 @@ class SessionRouterService(
         e is io.netty.channel.ConnectTimeoutException ||
         e.cause is java.net.ConnectException
 
+    /**
+     * Build a descriptive error message for proxy failures, with specific context for auth errors.
+     */
+    private fun describeProxyError(e: Throwable, endpoint: String, instance: AgentInstance): String {
+        val baseUrl = instance.getBaseUrl()
+        if (e is WebClientResponseException) {
+            val status = e.statusCode.value()
+            val body = e.responseBodyAsString.take(200)
+            return when (status) {
+                401 ->
+                    "[Router→Agent] Authentication failed (401) calling $baseUrl/api/agent/$endpoint. " +
+                        "JWT may be invalid or expired. Response: $body"
+                403 ->
+                    "[Router→Agent] Forbidden (403) calling $baseUrl/api/agent/$endpoint. " +
+                        "Access denied — endpoint may be internal-only. Response: $body"
+                else -> "[Router→Agent] HTTP $status calling $baseUrl/api/agent/$endpoint. Response: $body"
+            }
+        }
+        return "[Router→Agent] Failed to proxy $endpoint to $baseUrl: ${e.message}"
+    }
+
     private fun getOrGenerateRequestId(request: ChatAgentRequest): String = request.requestId.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
 
     private fun setMDC(sessionId: String, requestId: String?) {
@@ -481,5 +559,13 @@ class SessionRouterService(
 
     private fun clearMDC() {
         mdcKeys.forEach { MDC.remove(it) }
+    }
+
+    /**
+     * Restore MDC[key] to a previous value (null means remove).
+     * Used to restore an instanceId set by an outer scope when the proxy fails, avoiding log cross-contamination.
+     */
+    private fun restoreMdc(key: String, value: String?) {
+        if (value != null) MDC.put(key, value) else MDC.remove(key)
     }
 }

@@ -29,12 +29,14 @@ class SessionRouterControllerIntegrationTest {
         sessionMappingService = mock(SessionMappingService::class.java)
         sessionRouterService = mock(SessionRouterService::class.java)
 
-        val controller = SessionRouterController(
+        val instanceController = InstanceRegistryController(
             instanceRegistry,
             sessionMappingService,
+        )
+        val agentController = AgentProxyController(
             sessionRouterService,
         )
-        mockMvc = MockMvcBuilders.standaloneSetup(controller).build()
+        mockMvc = MockMvcBuilders.standaloneSetup(instanceController, agentController).build()
     }
 
     // ==================== Health endpoint ====================

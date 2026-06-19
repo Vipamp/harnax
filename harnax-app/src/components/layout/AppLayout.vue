@@ -63,15 +63,14 @@
 import { ref, computed } from 'vue'
 import { useSessionStore } from '@/store/useSessionStore'
 import { useChatStore } from '@/store/useChatStore'
+import { useConnectionStore } from '@/store/useConnectionStore'
+import { mpLogout } from '@/api/admin'
 import Sidebar from './Sidebar.vue'
 import SessionList from '@/components/session/SessionList.vue'
 
-const emit = defineEmits<{
-  settings: []
-}>()
-
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
 
 const sidebarVisible = ref(true)
 const showDrawer = ref(false)
@@ -93,7 +92,21 @@ function handleClear() {
 }
 
 function handleSettings() {
-  emit('settings')
+  uni.showActionSheet({
+    itemList: ['Logout'],
+    success: async (res) => {
+      if (res.tapIndex === 0) {
+        // Logout
+        try {
+          await mpLogout()
+        } catch {
+          // ignore logout errors
+        }
+        connectionStore.clearAuth()
+        uni.redirectTo({ url: '/pages/setup/index' })
+      }
+    },
+  })
 }
 </script>
 

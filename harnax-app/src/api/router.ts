@@ -3,12 +3,10 @@ import type {
   CommandRequest,
   ConfirmRequest,
   ApiResponse,
-  ChatResponse,
   CommandResponse,
-  HistoryMessage,
 } from '../types/api'
 import type { ChatEvent } from '../types/chat'
-import { request } from './client'
+import { routerRequest } from './client'
 import { streamSSE, type SSEOptions } from './sse'
 import { useConnectionStore } from '../store/useConnectionStore'
 import { generateUUID } from '../utils/platform'
@@ -83,7 +81,7 @@ export async function streamConfirm(
 export async function sendCommand(
   params: CommandRequest,
 ): Promise<ApiResponse<CommandResponse>> {
-  return request<CommandResponse>('/api/router/agent/command', {
+  return routerRequest<CommandResponse>('/api/router/agent/command', {
     method: 'POST',
     data: params,
   })
@@ -92,23 +90,15 @@ export async function sendCommand(
 export async function clearSession(
   sessionId: string,
 ): Promise<ApiResponse<void>> {
-  return request<void>(`/api/router/agent/session/${sessionId}`, {
+  return routerRequest<void>(`/api/router/agent/session/${sessionId}`, {
     method: 'DELETE',
   })
-}
-
-export async function getChatHistory(
-  sessionId: string,
-): Promise<ApiResponse<HistoryMessage[]>> {
-  return request<HistoryMessage[]>(
-    `/api/router/agent/chat/history/${sessionId}`,
-  )
 }
 
 export async function getPlans(
   sessionId: string,
 ): Promise<ApiResponse<unknown[]>> {
-  return request<unknown[]>(
+  return routerRequest<unknown[]>(
     `/api/router/agent/session/${sessionId}/plans`,
   )
 }
@@ -116,14 +106,14 @@ export async function getPlans(
 export async function getCurrentPlan(
   sessionId: string,
 ): Promise<ApiResponse<unknown>> {
-  return request<unknown>(
+  return routerRequest<unknown>(
     `/api/router/agent/session/${sessionId}/current-plan`,
   )
 }
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await request('/api/router/health')
+    const res = await routerRequest('/api/router/health')
     return res.code === 200
   } catch {
     return false

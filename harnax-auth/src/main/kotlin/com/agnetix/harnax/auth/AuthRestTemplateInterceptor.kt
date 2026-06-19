@@ -7,7 +7,6 @@ import org.springframework.http.client.ClientHttpResponse
 
 class AuthRestTemplateInterceptor(
     private val tokenProvider: InternalTokenProvider,
-    private val scope: String,
 ) : ClientHttpRequestInterceptor {
 
     override fun intercept(
@@ -15,7 +14,7 @@ class AuthRestTemplateInterceptor(
         body: ByteArray,
         execution: ClientHttpRequestExecution,
     ): ClientHttpResponse {
-        val headers = tokenProvider.authHeaders(scope)
+        val headers = tokenProvider.authHeaders()
         headers.forEach { (key, value) -> request.headers.set(key, value) }
         return execution.execute(request, body)
     }

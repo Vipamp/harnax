@@ -1,5 +1,5 @@
 # Harnax Docker Compose - Personal Edition (Development)
-# Includes: MySQL + Backend + Frontend
+# Includes: MySQL + Redis + Backend + Router + Frontend
 
 version: '3.8'
 
@@ -91,6 +91,7 @@ services:
       - "80:80"
     depends_on:
       - backend
+      - router
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
@@ -99,8 +100,76 @@ services:
     networks:
       - harnax-network
 
+  # Redis (shared cache for router instances)
+  redis:
+    image: redis:7-alpine
+    container_name: harnax-redis-personal
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - harnax-network
+
+  # Router Service (session routing, health checks, SSE proxy)
+  router:
+    image: harnax-router:personal
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.router
+    container_name: harnax-router-personal
+    restart: unless-stopped
+    environment:
+      # Database (only for api_call_log)
+      DB_URL: jdbc:mysql://mysql:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      DB_USERNAME: harnax
+      DB_PASSWORD: harnax123
+      # Redis (shared cache mode for multi-instance deployments)
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Auth
+      SERVICE_ID: router-0
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # Admin service (for API key validation + session info)
+      ADMIN_SERVICE_URL: http://backend:8080
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # JVM
+      JAVA_OPTS: -Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    ports:
+      - "8081:8081"
+    volumes:
+      - router-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - harnax-network
+
 volumes:
   backend-logs:
+    driver: local
+  router-logs:
+    driver: local
+  redis-data:
     driver: local
 
 networks:

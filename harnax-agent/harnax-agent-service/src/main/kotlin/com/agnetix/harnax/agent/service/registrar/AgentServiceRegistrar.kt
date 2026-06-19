@@ -8,6 +8,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestTemplate
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.NetworkInterface
 
 /**
  * Agent Service Registrar.
@@ -30,7 +33,7 @@ class AgentServiceRegistrar(
 
     @PostConstruct
     fun init() {
-        restTemplate.interceptors.add(AuthRestTemplateInterceptor(tokenProvider, "router:register"))
+        restTemplate.interceptors.add(AuthRestTemplateInterceptor(tokenProvider))
     }
 
     /**
@@ -81,9 +84,63 @@ class AgentServiceRegistrar(
     /**
      * Get the local host address.
      * In Docker/Kubernetes environments, this should be the service name or IP.
+     * Enumerates network interfaces to find a real, non-loopback IPv4 address
+     * that will pass SSRF validation on the router side.
      */
     private fun getLocalHost(): String {
-        // In production, this could be configured via environment variable
-        return System.getenv("HOST_IP") ?: System.getenv("HOSTNAME") ?: "localhost"
+        // Allow explicit configuration via environment variable
+        System.getenv("HOST_IP")?.takeIf { it.isNotBlank() }?.let { return it }
+
+        // Try to detect the real local IP address via network interfaces
+        val detectedIp = detectLocalIpFromInterfaces()
+        if (detectedIp != null) return detectedIp
+
+        // Fallback: use InetAddress but verify it's not loopback
+        return try {
+            val addr = InetAddress.getLocalHost()
+            if (addr.isLoopbackAddress) {
+                throw IllegalStateException("Resolved to loopback address: ${addr.hostAddress}")
+            }
+            addr.hostAddress
+        } catch (e: Exception) {
+            log.error(
+                "Cannot detect a valid local IP address for registration. " +
+                    "Please set HOST_IP environment variable explicitly.",
+            )
+            throw IllegalStateException("Cannot detect a non-loopback local IP address", e)
+        }
+    }
+
+    /**
+     * Enumerate network interfaces to find a suitable non-loopback IPv4 address.
+     * Prefers site-local (private) addresses like 192.168.x.x, 10.x.x.x, 172.16-31.x.x.
+     */
+    private fun detectLocalIpFromInterfaces(): String? {
+        val interfaces = NetworkInterface.getNetworkInterfaces()
+        var fallbackIp: String? = null
+
+        for (iface in interfaces) {
+            if (!iface.isUp || iface.isLoopback || iface.isVirtual) continue
+
+            for (addr in iface.inetAddresses) {
+                if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                    val ip = addr.hostAddress
+                    // Prefer site-local (private network) addresses
+                    if (addr.isSiteLocalAddress) {
+                        log.debug("Detected site-local IP $ip from interface ${iface.displayName}")
+                        return ip
+                    }
+                    // Keep non-site-local as fallback
+                    if (fallbackIp == null) {
+                        fallbackIp = ip
+                    }
+                }
+            }
+        }
+
+        if (fallbackIp != null) {
+            log.debug("Using non-site-local IP $fallbackIp as fallback")
+        }
+        return fallbackIp
     }
 }

@@ -1,6 +1,7 @@
 package com.agnetix.harnax.router.config
 
 import com.agnetix.harnax.auth.AuthContextHolder
+import com.agnetix.harnax.router.controller.AgentProxyController
 import com.agnetix.harnax.router.service.ApiCallLogService
 import com.agnetix.harnax.router.service.SessionInfoClient
 import jakarta.servlet.FilterChain
@@ -13,6 +14,17 @@ import org.springframework.web.filter.OncePerRequestFilter
 import org.springframework.web.util.ContentCachingResponseWrapper
 import java.time.LocalDateTime
 
+/**
+ * Records API call logs for all requests under `/api/router/agent/`.
+ *
+ * For normal (non-SSE) endpoints the response is wrapped with [ContentCachingResponseWrapper]
+ * so the status code is available after the controller has written the body.
+ *
+ * SSE endpoints (`/stream` suffix or `/confirm`) must NOT be wrapped — buffering the
+ * entire response body in memory prevents SSE events from being flushed in real time.
+ * For those endpoints we record the start/end time and the HTTP status set by the
+ * controller on the raw response.
+ */
 @Order(Ordered.HIGHEST_PRECEDENCE + 5)
 class ApiCallLogFilter(
     private val apiCallLogService: ApiCallLogService,
@@ -20,8 +32,17 @@ class ApiCallLogFilter(
 ) : OncePerRequestFilter() {
 
     companion object {
-        private val SESSION_ID_PATTERN = Regex("/agent/(?:chat|session)/(?:history/)?([^/]+)")
+        // Extracts sessionId from URL paths like /agent/chat/history/{id}, /agent/session/{id}
+        private val SESSION_ID_URL_PATTERN = Regex("/agent/(?:chat|session)/(?:history/)?([^/]+)")
         private val REQUEST_TYPE_PATTERN = Regex("/agent/(chat|command|confirm)")
+
+        // Only record logs for calls under /api/router/agent/ (all sub-paths).
+        private const val LOG_PATH_PREFIX = "/api/router/agent/"
+
+        // SSE endpoints that must NOT use ContentCachingResponseWrapper,
+        // because buffering the response body breaks the event stream.
+        private const val SSE_PATH_SUFFIX = "/stream"
+        private val SSE_EXACT_PATHS = setOf("/api/router/agent/confirm")
     }
 
     public override fun doFilterInternal(
@@ -30,34 +51,55 @@ class ApiCallLogFilter(
         filterChain: FilterChain,
     ) {
         val path = request.requestURI
-        if (isExcluded(path)) {
+        if (!path.startsWith(LOG_PATH_PREFIX)) {
             filterChain.doFilter(request, response)
             return
         }
 
         val startTime = LocalDateTime.now()
-        val wrappedResponse = ContentCachingResponseWrapper(response)
-        var errorMessage: String? = null
 
-        try {
-            filterChain.doFilter(request, wrappedResponse)
-        } catch (e: Exception) {
-            errorMessage = e.message
-            throw e
-        } finally {
-            val endTime = LocalDateTime.now()
-            val statusCode = wrappedResponse.status
-            val success = statusCode in 200..299 && errorMessage == null
-
+        if (isSseEndpoint(path)) {
+            // SSE: no response wrapper, log after the stream finishes (or the client disconnects).
+            var errorMessage: String? = null
             try {
-                recordLog(request, statusCode, success, errorMessage, startTime, endTime)
+                filterChain.doFilter(request, response)
             } catch (e: Exception) {
-                // Never let logging break the request flow
+                errorMessage = e.message
+                throw e
+            } finally {
+                val endTime = LocalDateTime.now()
+                val statusCode = response.status
+                val success = statusCode in 200..299 && errorMessage == null
+                try {
+                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
+                } catch (_: Exception) {
+                    // Never let logging break the request flow
+                }
             }
-
-            wrappedResponse.copyBodyToResponse()
+        } else {
+            // Non-SSE: wrap response to capture status after controller writes the body.
+            val wrappedResponse = ContentCachingResponseWrapper(response)
+            var errorMessage: String? = null
+            try {
+                filterChain.doFilter(request, wrappedResponse)
+            } catch (e: Exception) {
+                errorMessage = e.message
+                throw e
+            } finally {
+                val endTime = LocalDateTime.now()
+                val statusCode = wrappedResponse.status
+                val success = statusCode in 200..299 && errorMessage == null
+                try {
+                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
+                } catch (_: Exception) {
+                    // Never let logging break the request flow
+                }
+                wrappedResponse.copyBodyToResponse()
+            }
         }
     }
+
+    private fun isSseEndpoint(path: String): Boolean = path in SSE_EXACT_PATHS || path.endsWith(SSE_PATH_SUFFIX)
 
     private fun recordLog(
         request: HttpServletRequest,
@@ -73,7 +115,11 @@ class ApiCallLogFilter(
         val tenantId = context?.tenantId
 
         val path = request.requestURI
-        val sessionId = extractSessionId(path)
+        // Primary: read from request attribute set by the controller (most reliable).
+        // Fallback: extract from URL path (GET/DELETE endpoints with {sessionId} in path).
+        val sessionId =
+            request.getAttribute(AgentProxyController.SESSION_ID_ATTR) as? String
+                ?: extractSessionIdFromPath(path)
         val requestType = extractRequestType(path)
 
         var agentId: Long? = null
@@ -118,20 +164,10 @@ class ApiCallLogFilter(
         apiCallLogService.record(entry)
     }
 
-    private fun extractSessionId(path: String): String? {
-        // Match patterns like /agent/chat/{sessionId}, /agent/session/{sessionId}, /agent/chat/history/{sessionId}
-        return SESSION_ID_PATTERN.find(path)?.groupValues?.get(1)
-    }
+    /**
+     * Extract sessionId from URL path (e.g. /agent/chat/history/{id}, /agent/session/{id}).
+     */
+    private fun extractSessionIdFromPath(path: String): String? = SESSION_ID_URL_PATTERN.find(path)?.groupValues?.get(1)
 
-    private fun extractRequestType(path: String): String? {
-        return REQUEST_TYPE_PATTERN.find(path)?.groupValues?.get(1)?.uppercase()
-    }
-
-    private fun isExcluded(path: String): Boolean {
-        return path.startsWith("/health") ||
-            path.startsWith("/actuator") ||
-            path.startsWith("/ai") ||
-            path == "/api/router/health" ||
-            path == "/api/router/metrics/cache"
-    }
+    private fun extractRequestType(path: String): String? = REQUEST_TYPE_PATTERN.find(path)?.groupValues?.get(1)?.uppercase()
 }

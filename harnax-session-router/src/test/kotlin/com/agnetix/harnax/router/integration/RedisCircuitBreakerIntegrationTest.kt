@@ -1,5 +1,6 @@
 package com.agnetix.harnax.router.integration
 
+import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.impl.RedisCircuitBreaker
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -18,7 +19,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
     @Test
     fun `initial state is CLOSED and not open`() {
         assertFalse(breaker.isOpen("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
         assertEquals(0, breaker.getFailureCount("inst-1"))
     }
 
@@ -26,7 +27,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
     fun `single failure does not open circuit`() {
         breaker.recordFailure("inst-1")
         assertFalse(breaker.isOpen("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
         assertEquals(1, breaker.getFailureCount("inst-1"))
     }
 
@@ -38,7 +39,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
         breaker.recordFailure("inst-1")
         assertTrue(breaker.isOpen("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.OPEN, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.OPEN, breaker.getState("inst-1"))
     }
 
     @Test
@@ -49,7 +50,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
         assertTrue(breaker.isOpen("inst-1"))
         assertFalse(breaker.isOpen("inst-2"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-2"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-2"))
     }
 
     @Test
@@ -90,7 +91,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
         breaker.recordSuccess("inst-1")
         assertFalse(breaker.isOpen("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
         assertEquals(0, breaker.getFailureCount("inst-1"))
     }
 
@@ -102,7 +103,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
         breaker.recordSuccess("inst-1")
         assertEquals(0, breaker.getFailureCount("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
     }
 
     @Test
@@ -114,7 +115,7 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
         breaker.reset("inst-1")
         assertFalse(breaker.isOpen("inst-1"))
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
         assertEquals(0, breaker.getFailureCount("inst-1"))
     }
 
@@ -137,19 +138,19 @@ class RedisCircuitBreakerIntegrationTest : RedisIntegrationTestBase() {
 
     @Test
     fun `full lifecycle CLOSED to OPEN to HALF_OPEN to CLOSED`() {
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
 
         breaker.recordFailure("inst-1")
         breaker.recordFailure("inst-1")
         breaker.recordFailure("inst-1")
-        assertEquals(RedisCircuitBreaker.State.OPEN, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.OPEN, breaker.getState("inst-1"))
         assertTrue(breaker.isOpen("inst-1"))
 
         Thread.sleep(600)
         assertFalse(breaker.isOpen("inst-1"))
 
         breaker.recordSuccess("inst-1")
-        assertEquals(RedisCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
+        assertEquals(InstanceCircuitBreaker.State.CLOSED, breaker.getState("inst-1"))
         assertEquals(0, breaker.getFailureCount("inst-1"))
         assertFalse(breaker.isOpen("inst-1"))
 

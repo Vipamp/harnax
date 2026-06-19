@@ -14,6 +14,7 @@ import tools.jackson.databind.ObjectMapper
 class AuthAutoConfiguration {
 
     @Bean
+    @ConditionalOnProperty(prefix = "harnax.auth", name = ["enabled"], havingValue = "true", matchIfMissing = true)
     fun internalTokenProvider(properties: AuthProperties): InternalTokenProvider {
         val secret = properties.internal.sharedSecret
         require(secret.length >= 32) {
@@ -27,6 +28,7 @@ class AuthAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "harnax.auth", name = ["enabled"], havingValue = "true", matchIfMissing = true)
     fun externalApiKeyValidator(
         properties: AuthProperties,
         apiKeyStoreProvider: ObjectProvider<ApiKeyStore>,
@@ -52,9 +54,11 @@ class AuthAutoConfiguration {
     )
 
     @Bean
-    fun scopeAuthorizationInterceptor(objectMapper: ObjectMapper): ScopeAuthorizationInterceptor = ScopeAuthorizationInterceptor(objectMapper)
+    @ConditionalOnProperty(prefix = "harnax.auth", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+    fun internalAuthorizationInterceptor(objectMapper: ObjectMapper): InternalAuthorizationInterceptor = InternalAuthorizationInterceptor(objectMapper)
 
     @Bean
+    @ConditionalOnProperty(prefix = "harnax.auth", name = ["enabled"], havingValue = "true", matchIfMissing = true)
     fun rateLimitInterceptor(
         rateLimitCheckerProvider: ObjectProvider<RateLimitChecker>,
         objectMapper: ObjectMapper,
@@ -64,12 +68,13 @@ class AuthAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "harnax.auth", name = ["enabled"], havingValue = "true", matchIfMissing = true)
     fun authWebMvcConfigurer(
-        scopeInterceptor: ScopeAuthorizationInterceptor,
+        internalInterceptor: InternalAuthorizationInterceptor,
         rateLimitInterceptor: RateLimitInterceptor?,
     ): WebMvcConfigurer = object : WebMvcConfigurer {
         override fun addInterceptors(registry: InterceptorRegistry) {
-            registry.addInterceptor(scopeInterceptor)
+            registry.addInterceptor(internalInterceptor)
             if (rateLimitInterceptor != null) {
                 registry.addInterceptor(rateLimitInterceptor)
             }

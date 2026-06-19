@@ -7,7 +7,8 @@ import type {
   PendingCallTool,
   TokenUsage,
 } from '@/types/chat'
-import { streamChat, streamConfirm, sendCommand, getChatHistory, clearSession } from '@/api/router'
+import { streamChat, streamConfirm, sendCommand, clearSession } from '@/api/router'
+import { mpGetChatHistory, mpSaveChatMessages, mpDeleteChatHistory } from '@/api/admin'
 import { useSessionStore } from './useSessionStore'
 import { getStorage, setStorage } from '@/utils/storage'
 import { generateUUID } from '@/utils/platform'
@@ -39,6 +40,28 @@ export const useChatStore = defineStore('chat', () => {
   function triggerScroll() {
     nextTick(() => {
       scrollToBottom.value = true
+    })
+  }
+
+  /** Sync current messages to admin server (fire-and-forget) */
+  function syncToServer(sessionId: string) {
+    const sessionStore = useSessionStore()
+    const session = sessionStore.sessions.find((s) => s.id === sessionId)
+    if (!session?.serverId) return
+
+    const dtos = messages.value.map((msg) => ({
+      role: msg.role,
+      content: msg.segments
+        .filter((s) => s.type === 'text' || s.type === 'thinking')
+        .map((s) => s.content)
+        .join('\n'),
+      segmentsJson: JSON.stringify(msg.segments),
+      tokenUsageJson: msg.tokenUsage ? JSON.stringify(msg.tokenUsage) : undefined,
+      imageUrlsJson: msg.imageUrls ? JSON.stringify(msg.imageUrls) : undefined,
+    }))
+
+    mpSaveChatMessages(session.serverId, dtos).catch((e) => {
+      console.warn('[Chat] Failed to sync messages to server', e)
     })
   }
 
@@ -154,7 +177,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendMessage(text: string, imageUrls?: string[]) {
     const sessionStore = useSessionStore()
-    const sessionId = sessionStore.ensureSession()
+    const sessionId = await sessionStore.ensureSession()
 
     const userMessage: ChatMessage = {
       id: generateUUID(),
@@ -191,6 +214,8 @@ export const useChatStore = defineStore('chat', () => {
       sessionStore.touchSession(sessionId)
       persistMessages(sessionId)
       triggerScroll()
+      // Sync latest messages to server
+      syncToServer(sessionId)
     }
   }
 
@@ -258,7 +283,16 @@ export const useChatStore = defineStore('chat', () => {
   async function clearCurrentSession() {
     const sessionStore = useSessionStore()
     const sessionId = sessionStore.currentSessionId
-    await clearSession(sessionId)
+    const session = sessionStore.currentSession
+
+    // Clear on router side
+    await clearSession(sessionId).catch(() => {})
+
+    // Clear on admin side
+    if (session?.serverId) {
+      await mpDeleteChatHistory(session.serverId).catch(() => {})
+    }
+
     messages.value = []
     assistantMessage = null
     lastTokenUsage.value = null
@@ -266,21 +300,30 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadHistoryFromServer(sessionId: string) {
-    try {
-      const res = await getChatHistory(sessionId)
-      if (res.code === 200 && res.data) {
-        messages.value = res.data.map((msg, i) => ({
-          id: `history_${i}_${generateUUID()}`,
-          role: msg.role as 'user' | 'assistant',
-          segments: [{ type: 'text' as const, content: msg.content }],
-          timestamp: msg.timestamp || Date.now(),
-        }))
-        persistMessages(sessionId)
+    const sessionStore = useSessionStore()
+    const session = sessionStore.sessions.find((s) => s.id === sessionId)
+
+    // Try admin API first if session has a serverId
+    if (session?.serverId) {
+      try {
+        const res = await mpGetChatHistory(session.serverId)
+        if (res.code === 200 && res.data) {
+          messages.value = res.data.map((msg, i) => ({
+            id: `history_${i}_${generateUUID()}`,
+            role: msg.role as 'user' | 'assistant',
+            segments: [{ type: 'text' as const, content: msg.content }],
+            timestamp: Date.now(),
+          }))
+          persistMessages(sessionId)
+          return
+        }
+      } catch {
+        // fall through to local storage
       }
-    } catch {
-      // fall back to local storage
-      loadMessages(sessionId)
     }
+
+    // Fallback to local storage
+    loadMessages(sessionId)
   }
 
   function switchSession(sessionId: string) {

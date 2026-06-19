@@ -1,5 +1,5 @@
 # Harnax Docker Compose - Production Environment
-# Includes: Backend + Frontend (uses external database)
+# Includes: Backend + Router + Redis + Frontend (uses external database)
 
 version: '3.8'
 
@@ -66,6 +66,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - backend
+      - router
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
@@ -79,6 +80,75 @@ services:
         reservations:
           cpus: '0.5'
           memory: 128M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+  # Redis (shared cache for router instances)
+  redis:
+    image: redis:7-alpine
+    container_name: harnax-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - harnax-network
+
+  # Router Service (session routing, health checks, SSE proxy)
+  router:
+    image: harnax-router:personal
+    container_name: harnax-router
+    restart: always
+    environment:
+      # Database (only for api_call_log)
+      DB_URL: ${ROUTER_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/harnax_router?useSSL=true&serverTimezone=Asia/Shanghai}}
+      DB_USERNAME: ${DB_USERNAME:-harnax}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      # Redis
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Auth
+      SERVICE_ID: router-0
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:?HARNAX_AUTH_SECRET is required in production}
+      # Admin service
+      ADMIN_SERVICE_URL: http://backend:8080
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:?ADMIN_INTERNAL_API_SECRET is required in production}
+      # JVM
+      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    ports:
+      - "8081:8081"
+    volumes:
+      - /var/log/harnax-router:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - backend
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '1.0'
+          memory: 512M
       restart_policy:
         condition: on-failure
         max_attempts: 3

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HARNAX · ROUTER · CONTROL DECK</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+        rel="stylesheet"
+    />
+    <!--
+        Spring Boot exposes files under classpath:/static/ at the URL root,
+        so style.css is reachable at /style.css (not /static/style.css).
+        Using absolute paths here makes the page work no matter how the
+        operator opens it (root URL, /index.html, or a sub-path reverse-proxy).
+    -->
+    <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+    <!-- Subtle moving scanline overlay (CRT feel) -->
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <header class="masthead">
+        <div class="masthead__brand">
+            <span class="masthead__brand-mark" aria-hidden="true">▌</span>
+            <h1 class="masthead__brand-name">
+                <span class="brand-line-1">HARNAX</span>
+                <span class="brand-line-2">// ROUTER</span>
+            </h1>
+            <span class="masthead__brand-tag">CONTROL DECK · v1.0</span>
+        </div>
+
+        <div class="masthead__meta">
+            <div class="meta-block">
+                <span class="meta-label">SYSTEM CLOCK</span>
+                <span class="meta-value" id="clock">--:--:--</span>
+            </div>
+            <div class="meta-block meta-block--xl">
+                <span class="meta-label">HEALTHY INSTANCES</span>
+                <span class="meta-value meta-value--display" id="stat-healthy">0</span>
+            </div>
+            <div class="meta-block">
+                <span class="meta-label">ACTIVE SESSIONS</span>
+                <span class="meta-value" id="stat-sessions">0</span>
+            </div>
+            <div class="meta-block">
+                <span class="meta-label">POLL</span>
+                <span class="meta-value" id="stat-poll">5s</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="grid">
+        <!-- ===================== LEFT COLUMN: INSTANCES ===================== -->
+        <section class="panel panel--left" aria-labelledby="h-instances">
+            <header class="panel__header">
+                <h2 id="h-instances" class="panel__title">
+                    <span class="panel__title-num">01</span>
+                    REGISTERED NODES
+                </h2>
+                <span class="panel__hint" id="instance-count">0 nodes</span>
+            </header>
+
+            <div class="instances" id="instances">
+                <!-- Skeleton placeholders replaced by app.js -->
+                <div class="instance instance--skeleton"></div>
+                <div class="instance instance--skeleton"></div>
+                <div class="instance instance--skeleton"></div>
+            </div>
+        </section>
+
+        <!-- ===================== RIGHT COLUMN: CALL LOGS ===================== -->
+        <section class="panel panel--right" aria-labelledby="h-logs">
+            <header class="panel__header">
+                <h2 id="h-logs" class="panel__title">
+                    <span class="panel__title-num">02</span>
+                    CALL DETAILS · TRAIL
+                </h2>
+                <span class="panel__hint" id="logs-count">0 entries</span>
+            </header>
+
+            <form class="filters" id="filters" autocomplete="off">
+                <label class="field">
+                    <span class="field__label">SESSION ID</span>
+                    <input class="field__input" type="text" name="sessionId" placeholder="any" />
+                </label>
+                <label class="field">
+                    <span class="field__label">AGENT NAME</span>
+                    <input class="field__input" type="text" name="agentName" placeholder="any" />
+                </label>
+                <label class="field">
+                    <span class="field__label">INSTANCE</span>
+                    <input class="field__input" type="text" name="instanceId" placeholder="any" />
+                </label>
+                <label class="field field--status">
+                    <span class="field__label">STATUS</span>
+                    <select class="field__input" name="success">
+                        <option value="">any</option>
+                        <option value="1">ok</option>
+                        <option value="0">failed</option>
+                    </select>
+                </label>
+                <label class="field field--num">
+                    <span class="field__label">MIN ms</span>
+                    <input class="field__input" type="number" min="0" name="minDurationMs" placeholder="0" />
+                </label>
+                <div class="filters__actions">
+                    <button type="submit" class="btn btn--primary">QUERY</button>
+                    <button type="reset" class="btn btn--ghost">RESET</button>
+                </div>
+            </form>
+
+            <div class="table-wrap">
+                <table class="logs" id="logs">
+                    <thead>
+                        <tr>
+                            <th class="col-time">START</th>
+                            <th class="col-dur">DURATION</th>
+                            <th class="col-status">STATUS</th>
+                            <th class="col-instance">INSTANCE</th>
+                            <th class="col-session">SESSION</th>
+                            <th class="col-agent">AGENT</th>
+                            <th class="col-endpoint">ENDPOINT</th>
+                            <th class="col-error">ERROR</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body">
+                        <tr class="logs__placeholder">
+                            <td colspan="8">awaiting first query…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <footer class="panel__footer">
+                <button class="btn btn--ghost" id="btn-prev" type="button" disabled>&lt; PREV</button>
+                <span class="footer__page" id="page-info">page 1</span>
+                <button class="btn btn--ghost" id="btn-next" type="button" disabled>NEXT &gt;</button>
+            </footer>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <span class="footer__left">
+            <span class="dot dot--alive"></span>
+            LIVE · auto-refresh every <span id="footer-interval">5s</span>
+        </span>
+        <span class="footer__center">
+            <span class="footer__sigil" aria-hidden="true">⌬ ⌬ ⌬</span>
+        </span>
+        <span class="footer__right" id="footer-updated">never synced</span>
+    </footer>
+
+    <script src="/app.js" defer></script>
+</body>
+</html>

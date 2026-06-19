@@ -1,3 +1,5 @@
+// ========== Router API Types (AI 对话) ==========
+
 export interface ChatRequest {
   sessionId: string
   message: string
@@ -17,13 +19,6 @@ export interface ConfirmRequest {
     toolId: string
     toolName: string
   }>
-}
-
-export interface ApiResponse<T = unknown> {
-  code: number
-  message: string
-  data?: T
-  timestamp: number
 }
 
 export interface ChatResponse {
@@ -46,17 +41,89 @@ export interface CommandResponse {
   message?: string
 }
 
-export interface SessionInfo {
-  sessionId: string
-  name: string
-  description?: string
-  lastMessage?: string
-  lastActiveTime: number
-  messageCount: number
+// ========== Admin API Types (MP 接口) ==========
+
+/** 统一响应格式，匹配后端 ResultVo */
+export interface ApiResponse<T = unknown> {
+  code: number
+  message: string
+  data?: T
+  timestamp: number
 }
 
-export interface HistoryMessage {
+/** 登录请求 */
+export interface LoginRequest {
+  username: string
+  password?: string
+  captcha?: string
+  captchaKey?: string
+}
+
+/** 用户信息 */
+export interface UserInfo {
+  userId: number
+  username: string
+  nickname?: string
+  avatar?: string
+  email?: string
+  phone?: string
+  gender?: number
+  isAdmin?: number
+}
+
+/** 登录响应 */
+export interface LoginResponse {
+  accessToken?: string
+  tokenType?: string
+  expiresIn?: number
+  expiresAt?: number
+  userInfo?: UserInfo
+}
+
+/** 验证码响应 */
+export interface CaptchaResponse {
+  imageBase64?: string
+  captchaKey?: string
+  expiresIn?: number
+}
+
+/** MP 会话响应 */
+export interface MpSessionResponse {
+  id: number
+  sessionName: string
+  routerSessionId: string
+  status: number
+  messageCount: number
+  lastMessage?: string
+  createTime: string
+  updateTime: string
+}
+
+/** MP 创建会话请求 */
+export interface MpCreateSessionRequest {
+  sessionName: string
+  routerSessionId?: string
+}
+
+/** MP 更新会话请求 */
+export interface MpUpdateSessionRequest {
+  sessionName: string
+}
+
+/** MP 聊天消息 DTO */
+export interface MpChatMessageDto {
   role: 'user' | 'assistant' | 'system'
   content: string
-  timestamp?: number
+  segmentsJson?: string
+  tokenUsageJson?: string
+  imageUrlsJson?: string
+}
+
+/** 连接配置 */
+export interface ConnectionConfig {
+  adminUrl: string
+  routerUrl: string
+  apiKey: string
+  token: string
+  username: string
 }

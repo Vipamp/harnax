@@ -5,9 +5,12 @@ import io.jsonwebtoken.security.Keys
 import org.slf4j.LoggerFactory
 import java.nio.charset.StandardCharsets
 import java.util.*
-import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.SecretKey
 
+/**
+ * Provides JWT generation and verification for internal service-to-service authentication.
+ * Tokens no longer carry scope information — only caller identity is encoded.
+ */
 class InternalTokenProvider(
     private val serviceId: String,
     sharedSecret: String,
@@ -17,28 +20,27 @@ class InternalTokenProvider(
     private val log = LoggerFactory.getLogger(InternalTokenProvider::class.java)
     private val signingKey: SecretKey = Keys.hmacShaKeyFor(sharedSecret.toByteArray(StandardCharsets.UTF_8))
 
-    private data class CachedToken(val token: String, val expiresAt: Long)
+    private var cachedToken: String? = null
+    private var cachedExpiresAt: Long = 0L
 
-    private val tokenCache = ConcurrentHashMap<String, CachedToken>()
-
-    fun generateToken(scope: String): String {
+    fun generateToken(): String {
         val now = System.currentTimeMillis()
-        val cached = tokenCache[scope]
-        if (cached != null && (cached.expiresAt - now) > REFRESH_THRESHOLD_MS) {
-            return cached.token
+        val cached = cachedToken
+        if (cached != null && (cachedExpiresAt - now) > REFRESH_THRESHOLD_MS) {
+            return cached
         }
 
         val expiresAt = now + tokenTtlSeconds * 1000
         val token = Jwts.builder()
             .subject(serviceId)
-            .claim("scp", scope)
             .issuedAt(Date(now))
             .expiration(Date(expiresAt))
             .id(UUID.randomUUID().toString())
             .signWith(signingKey)
             .compact()
 
-        tokenCache[scope] = CachedToken(token, expiresAt)
+        cachedToken = token
+        cachedExpiresAt = expiresAt
         return token
     }
 
@@ -51,12 +53,12 @@ class InternalTokenProvider(
 
         return AuthContext(
             callerId = claims.subject,
-            scope = claims["scp", String::class.java],
+            callerType = CallerType.INTERNAL_SERVICE,
         )
     }
 
-    fun authHeaders(scope: String): Map<String, String> = mapOf(
-        "Authorization" to "Bearer ${generateToken(scope)}",
+    fun authHeaders(): Map<String, String> = mapOf(
+        "Authorization" to "Bearer ${generateToken()}",
         "X-Caller-Id" to serviceId,
     )
 

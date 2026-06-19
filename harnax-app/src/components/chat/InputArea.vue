@@ -5,7 +5,7 @@
         <textarea
           v-model="inputText"
           class="input-field"
-          :placeholder="t('chat.inputPlaceholder')"
+          placeholder="输入消息..."
           :auto-height="true"
           :maxlength="10000"
           :disabled="isStreaming"
@@ -24,7 +24,6 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   isStreaming: boolean
@@ -35,7 +34,6 @@ const emit = defineEmits<{
   stop: []
 }>()
 
-const { t } = useI18n()
 const inputText = ref('')
 
 const canSend = computed(() => inputText.value.trim().length > 0)

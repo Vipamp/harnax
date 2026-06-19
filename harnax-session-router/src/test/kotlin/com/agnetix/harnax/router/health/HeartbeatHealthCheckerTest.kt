@@ -7,6 +7,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import java.time.LocalDateTime
 
 class HeartbeatHealthCheckerTest {
@@ -57,7 +59,7 @@ class HeartbeatHealthCheckerTest {
         `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy, down))
         `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
         `when`(sessionMappingService.rebindAllSessions("inst-2", "inst-1")).thenReturn(3)
-        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(mapOf("inst-1" to 5))
+        `when`(sessionMappingService.getSessionCountsByInstances(any<List<String>>())).thenReturn(mapOf("inst-1" to 5))
 
         checker.checkInstanceHealth()
 
@@ -112,7 +114,7 @@ class HeartbeatHealthCheckerTest {
         `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy, draining))
         `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
         `when`(sessionMappingService.rebindAllSessions("inst-2", "inst-1")).thenReturn(0)
-        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(mapOf("inst-1" to 3))
+        `when`(sessionMappingService.getSessionCountsByInstances(any<List<String>>())).thenReturn(mapOf("inst-1" to 3))
 
         checker.checkInstanceHealth()
 
@@ -128,7 +130,7 @@ class HeartbeatHealthCheckerTest {
         `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
         `when`(instanceRegistry.markInstanceDown("inst-3")).thenReturn(1)
         `when`(sessionMappingService.rebindAllSessions(anyString(), eq("inst-1"))).thenReturn(2)
-        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(mapOf("inst-1" to 5))
+        `when`(sessionMappingService.getSessionCountsByInstances(any<List<String>>())).thenReturn(mapOf("inst-1" to 5))
 
         checker.checkInstanceHealth()
 
@@ -144,7 +146,7 @@ class HeartbeatHealthCheckerTest {
         `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy, down))
         `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
         `when`(sessionMappingService.rebindAllSessions("inst-2", "inst-1")).thenReturn(2)
-        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(mapOf("inst-1" to 3))
+        `when`(sessionMappingService.getSessionCountsByInstances(any<List<String>>())).thenReturn(mapOf("inst-1" to 3))
 
         checker.checkInstanceHealth()
 
@@ -159,11 +161,12 @@ class HeartbeatHealthCheckerTest {
     fun `checkInstanceHealth selects less loaded alternative when primary target is overloaded`() {
         val healthy1 = healthyInstance("inst-1")
         val healthy2 = healthyInstance("inst-3")
+        val healthy3 = healthyInstance("inst-4")
         val down = staleInstance("inst-2")
-        `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy1, healthy2, down))
+        `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(healthy1, healthy2, healthy3, down))
         `when`(instanceRegistry.markInstanceDown("inst-2")).thenReturn(1)
-        `when`(sessionMappingService.getSessionCountsByInstances(anyList())).thenReturn(
-            mapOf("inst-1" to 20, "inst-3" to 3),
+        `when`(sessionMappingService.getSessionCountsByInstances(any<List<String>>())).thenReturn(
+            mapOf("inst-1" to 30, "inst-3" to 3, "inst-4" to 5),
         )
         `when`(sessionMappingService.rebindAllSessions(eq("inst-2"), anyString())).thenReturn(2)
 

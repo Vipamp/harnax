@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argThat
 import java.time.LocalDateTime
 
 class ApiCallLogServiceTest {
@@ -63,7 +65,7 @@ class ApiCallLogServiceTest {
 
         service.scheduledFlush()
 
-        verify(mapper, times(1)).batchInsert(argThat { it.size == 5 })
+        verify(mapper, times(1)).batchInsert(argThat { size == 5 })
     }
 
     @Test
@@ -79,11 +81,11 @@ class ApiCallLogServiceTest {
             service.record(dummyLog(i))
         }
         // 50 auto-flushed at record #50
-        verify(mapper, times(1)).batchInsert(argThat { it.size == 50 })
+        verify(mapper, times(1)).batchInsert(argThat { size == 50 })
 
         // Remaining 25 still in buffer
         service.scheduledFlush()
-        verify(mapper, times(1)).batchInsert(argThat { it.size == 25 })
+        verify(mapper, times(1)).batchInsert(argThat { size == 25 })
     }
 
     @Test
@@ -95,7 +97,7 @@ class ApiCallLogServiceTest {
 
         service.onShutdown()
 
-        verify(mapper, times(1)).batchInsert(argThat { it.size == 3 })
+        verify(mapper, times(1)).batchInsert(argThat { size == 3 })
     }
 
     @Test
@@ -112,7 +114,7 @@ class ApiCallLogServiceTest {
         `when`(mapper.batchInsert(any())).thenReturn(5)
         service.scheduledFlush()
 
-        verify(mapper, times(1)).batchInsert(argThat { it.size == 5 })
+        verify(mapper, times(1)).batchInsert(argThat { size == 5 })
     }
 
     @Test
@@ -192,5 +194,33 @@ class ApiCallLogServiceTest {
         for (i in 4..8) service.record(dummyLog(i))
         service.scheduledFlush()
         verify(mapper, times(2)).batchInsert(any())
+    }
+
+    @Test
+    fun `record beyond MAX_BUFFER_SIZE drops new entries`() {
+        // 让 mapper 抛异常，这样每 50 条都会重新入队，bufferSize 会持续上涨
+        `when`(mapper.batchInsert(any())).thenThrow(RuntimeException("DB down"))
+
+        // 连续 record 远超 10_000 条
+        repeat(10_500) { service.record(dummyLog(it)) }
+
+        // bufferSize 应被钳在 10_000 上限
+        assertTrue(service.currentBufferSize() <= 10_000)
+        // 有丢弃发生
+        assertTrue(service.droppedCount() > 0)
+    }
+
+    @Test
+    fun `flush failure does not overflow buffer on re-enqueue`() {
+        `when`(mapper.batchInsert(any())).thenThrow(RuntimeException("DB down"))
+
+        // 让 buffer 接近上限
+        repeat(9_990) { service.record(dummyLog(it)) }
+
+        // 这次 flush 会失败，需要把 50 条重新入队，导致超限
+        service.scheduledFlush()
+
+        // 仍然在上限内
+        assertTrue(service.currentBufferSize() <= 10_000)
     }
 }

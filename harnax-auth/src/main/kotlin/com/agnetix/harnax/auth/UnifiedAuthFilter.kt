@@ -44,8 +44,10 @@ class UnifiedAuthFilter(
         }
 
         val authHeader = request.getHeader("Authorization")
+        val callerId = request.getHeader("X-Caller-Id") ?: "unknown"
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             val token = authHeader.removePrefix("Bearer ").trim()
+            val tokenPreview = token.take(20) + "..."
             try {
                 val context = tokenProvider.verifyToken(token)
                 AuthContextHolder.set(context)
@@ -56,8 +58,16 @@ class UnifiedAuthFilter(
                 }
                 return
             } catch (e: Exception) {
-                log.warn("Invalid internal JWT for $path from ${request.remoteAddr}: ${e.message}")
-                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired internal token")
+                log.warn(
+                    "JWT validation failed for $path from ${request.remoteAddr} " +
+                        "(caller=$callerId, token=$tokenPreview): ${e.javaClass.simpleName}: ${e.message}",
+                )
+                writeError(
+                    response,
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "[UnifiedAuthFilter] JWT validation failed for $path: ${e.message}. " +
+                        "Check that both services use the same harnax.auth.internal.shared-secret.",
+                )
                 return
             }
         }
@@ -75,18 +85,37 @@ class UnifiedAuthFilter(
                 return
             } catch (e: SecurityException) {
                 log.warn("Invalid API key for $path from ${request.remoteAddr}: ${e.message}")
-                writeError(response, HttpServletResponse.SC_UNAUTHORIZED, e.message ?: "Invalid API key")
+                writeError(
+                    response,
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    "[UnifiedAuthFilter] API key validation failed for $path: ${e.message}",
+                )
                 return
             }
         }
 
-        log.warn("Missing credentials for $path from ${request.remoteAddr}")
-        writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Missing or invalid credentials")
+        val hasAuthHeader = authHeader != null
+        val hasApiKey = apiKey != null
+        log.warn("Missing credentials for $path from ${request.remoteAddr} (authHeader=$hasAuthHeader, apiKey=$hasApiKey)")
+        writeError(
+            response,
+            HttpServletResponse.SC_UNAUTHORIZED,
+            "[UnifiedAuthFilter] No valid credentials for $path. " +
+                "Provide a Bearer JWT (Authorization header) or X-Api-Key header.",
+        )
     }
 
     private fun writeError(response: HttpServletResponse, status: Int, message: String) {
+        if (response.isCommitted) {
+            log.warn("[UnifiedAuthFilter] Cannot write error: response already committed")
+            return
+        }
         response.status = status
         response.contentType = "application/json"
-        response.writer.write(objectMapper.writeValueAsString(ResultVo.error<String>(status, message)))
+        try {
+            response.outputStream.write(objectMapper.writeValueAsString(ResultVo.error<String>(status, message)).toByteArray())
+        } catch (e: IllegalStateException) {
+            response.writer.write(objectMapper.writeValueAsString(ResultVo.error<String>(status, message)))
+        }
     }
 }

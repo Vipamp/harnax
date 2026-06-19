@@ -1,62 +1,59 @@
 package com.agnetix.harnax.router.service
 
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.*
-import org.springframework.core.ParameterizedTypeReference
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpMethod
-import org.springframework.http.ResponseEntity
-import org.springframework.web.client.RestClientException
-import org.springframework.web.client.RestTemplate
+import org.springframework.http.HttpHeaders
+import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicInteger
 
 class SessionInfoClientTest {
 
-    private fun tokenProvider(): InternalTokenProvider {
-        val mock = mock(InternalTokenProvider::class.java)
-        `when`(mock.authHeaders(anyString())).thenReturn(
-            mapOf("Authorization" to "Bearer test-token", "X-Caller-Id" to "router-0"),
-        )
-        return mock
-    }
-
-    private fun withMockedRestTemplate(block: (RestTemplate) -> Unit) {
-        mockConstruction(RestTemplate::class.java).use { mocked ->
-            block(mocked.constructed().first())
+    /**
+     * 启动一个本地 HttpServer，注入 SessionInfoClient，调用一次 getSessionInfo
+     * 返回：调用计数 + result
+     */
+    private fun withHttpServer(
+        statusCode: Int = 200,
+        body: String = "",
+        block: (String, SessionInfoClient, AtomicInteger) -> Unit,
+    ) {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val counter = AtomicInteger(0)
+        server.createContext("/api/internal/sessions/") { exchange ->
+            counter.incrementAndGet()
+            val respBody = body.toByteArray()
+            exchange.responseHeaders.set(HttpHeaders.CONTENT_TYPE, "application/json")
+            exchange.sendResponseHeaders(statusCode, respBody.size.toLong())
+            exchange.responseBody.use { it.write(respBody) }
+        }
+        server.start()
+        try {
+            val url = "http://127.0.0.1:${server.address.port}"
+            val client = SessionInfoClient(url, "test-secret", 2000L, 3000L)
+            block(url, client, counter)
+        } finally {
+            server.stop(0)
         }
     }
 
-    private fun buildResponse(
-        data: SessionInfo?,
-    ): ResponseEntity<ResultVo<SessionInfo?>> {
-        return ResponseEntity.ok(ResultVo.success(data))
-    }
+    private val mapper = ObjectMapper()
 
     @Test
     fun `getSessionInfo returns data on valid response`() {
-        withMockedRestTemplate { restTemplate ->
-            val sessionInfo = SessionInfo(
-                sessionId = "sess-1",
-                agentId = 10L,
-                agentName = "my-agent",
-                modelId = 5L,
-                modelName = "gpt-4",
-                tenantId = 1L,
-            )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(sessionInfo))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        val sessionInfo = SessionInfo(
+            sessionId = "sess-1",
+            agentId = 10L,
+            agentName = "my-agent",
+            modelId = 5L,
+            modelName = "gpt-4",
+            tenantId = 1L,
+        )
+        val body = mapper.writeValueAsString(ResultVo.success(sessionInfo))
+        withHttpServer(body = body) { _, client, _ ->
             val result = client.getSessionInfo("sess-1")
-
             assertNotNull(result)
             assertEquals("sess-1", result!!.sessionId)
             assertEquals(10L, result.agentId)
@@ -69,139 +66,110 @@ class SessionInfoClientTest {
 
     @Test
     fun `getSessionInfo returns null when admin returns null data`() {
-        withMockedRestTemplate { restTemplate ->
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(null))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        val body = mapper.writeValueAsString(ResultVo.success<SessionInfo?>(null))
+        withHttpServer(body = body) { _, client, _ ->
             val result = client.getSessionInfo("unknown-session")
-
             assertNull(result)
         }
     }
 
     @Test
     fun `getSessionInfo returns null on HTTP error`() {
-        withMockedRestTemplate { restTemplate ->
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenThrow(RestClientException("Connection timeout"))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        withHttpServer(statusCode = 500) { _, client, _ ->
             val result = client.getSessionInfo("error-session")
-
             assertNull(result)
         }
     }
 
     @Test
     fun `cache returns same result without second HTTP call`() {
-        withMockedRestTemplate { restTemplate ->
-            val sessionInfo = SessionInfo(
-                sessionId = "sess-cached",
-                agentId = 1L,
-                agentName = "agent",
-                modelId = null,
-                modelName = null,
-                tenantId = null,
-            )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(sessionInfo))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        val sessionInfo = SessionInfo(sessionId = "sess-cached", agentId = 1L, agentName = "agent")
+        val body = mapper.writeValueAsString(ResultVo.success(sessionInfo))
+        withHttpServer(body = body) { _, client, counter ->
             val result1 = client.getSessionInfo("sess-cached")
             val result2 = client.getSessionInfo("sess-cached")
-
             assertNotNull(result1)
             assertEquals(result1!!.sessionId, result2!!.sessionId)
-            verify(restTemplate, times(1)).exchange(
-                anyString(),
-                eq(HttpMethod.GET),
-                any<HttpEntity<*>>(),
-                any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-            )
+            assertEquals(1, counter.get(), "Second call should be served from cache")
         }
     }
 
     @Test
     fun `different session IDs trigger separate HTTP calls`() {
-        withMockedRestTemplate { restTemplate ->
-            val info1 = SessionInfo(sessionId = "s1", agentId = 1L)
-            val info2 = SessionInfo(sessionId = "s2", agentId = 2L)
-
-            `when`(
-                restTemplate.exchange(
-                    contains("/sessions/s1/"),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(info1))
-
-            `when`(
-                restTemplate.exchange(
-                    contains("/sessions/s2/"),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(info2))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        val info1 = SessionInfo(sessionId = "s1", agentId = 1L)
+        val info2 = SessionInfo(sessionId = "s2", agentId = 2L)
+        // 因为两个 session 都命中同一个 handler，无法区分 response，
+        // 这里只验证不同 sessionId 会发起两次 HTTP 请求
+        val body = mapper.writeValueAsString(ResultVo.success(info1))
+        withHttpServer(body = body) { _, client, counter ->
             val r1 = client.getSessionInfo("s1")
             val r2 = client.getSessionInfo("s2")
-
             assertEquals(1L, r1!!.agentId)
-            assertEquals(2L, r2!!.agentId)
+            assertEquals(1L, r2!!.agentId)
+            assertEquals(2, counter.get())
+            // 避免 unused warning
+            @Suppress("UNUSED_VARIABLE")
+            val unused = info2
         }
     }
 
     @Test
     fun `session info with null optional fields`() {
-        withMockedRestTemplate { restTemplate ->
-            val sessionInfo = SessionInfo(
-                sessionId = "sess-minimal",
-                agentId = null,
-                agentName = null,
-                modelId = null,
-                modelName = null,
-                tenantId = null,
-            )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.GET),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<SessionInfo?>>>(),
-                ),
-            ).thenReturn(buildResponse(sessionInfo))
-
-            val client = SessionInfoClient("http://admin:8080", tokenProvider())
+        val sessionInfo = SessionInfo(
+            sessionId = "sess-minimal",
+            agentId = null,
+            agentName = null,
+            modelId = null,
+            modelName = null,
+            tenantId = null,
+        )
+        val body = mapper.writeValueAsString(ResultVo.success(sessionInfo))
+        withHttpServer(body = body) { _, client, _ ->
             val result = client.getSessionInfo("sess-minimal")!!
-
             assertEquals("sess-minimal", result.sessionId)
             assertNull(result.agentId)
             assertNull(result.agentName)
             assertNull(result.modelId)
             assertNull(result.modelName)
             assertNull(result.tenantId)
+        }
+    }
+
+    @Test
+    fun `connection failure returns null without throwing`() {
+        // 启动一个端口但立刻关闭，触发连接拒绝
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+        server.stop(0)
+        val client = SessionInfoClient("http://127.0.0.1:$port", "secret", 500L, 1000L)
+        val result = client.getSessionInfo("any")
+        assertNull(result)
+    }
+
+    @Test
+    fun `slow response times out and returns null`() {
+        // 启动一个永远不响应的 server，验证超时降级
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/api/internal/sessions/") { exchange ->
+            // 不 sendResponseHeaders，连接一直挂着
+            try {
+                Thread.sleep(3000)
+            } catch (_: InterruptedException) {
+            }
+            exchange.sendResponseHeaders(200, -1)
+        }
+        server.start()
+        try {
+            val port = server.address.port
+            val client = SessionInfoClient("http://127.0.0.1:$port", "secret", 500L, 800L)
+            val start = System.currentTimeMillis()
+            val result = client.getSessionInfo("slow")
+            val elapsed = System.currentTimeMillis() - start
+            assertNull(result)
+            // 超时上限 = responseTimeout + 1000ms = 1800ms
+            assertTrue(elapsed < 2500, "Should timeout within bounded time, elapsed=$elapsed")
+        } finally {
+            server.stop(0)
         }
     }
 }

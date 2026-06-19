@@ -1,6 +1,5 @@
 package com.agnetix.harnax.router.service
 
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -14,29 +13,20 @@ import org.springframework.web.client.RestTemplate
 
 class RemoteApiKeyStoreTest {
 
-    private fun tokenProvider(): InternalTokenProvider {
-        val mock = mock(InternalTokenProvider::class.java)
-        `when`(mock.authHeaders(anyString())).thenReturn(
-            mapOf("Authorization" to "Bearer test-token", "X-Caller-Id" to "router-0"),
-        )
-        return mock
-    }
-
-    private fun withMockedRestTemplate(block: (RestTemplate) -> Unit) {
+    private fun withMockedRestTemplate(block: (RestTemplate, RemoteApiKeyStore) -> Unit) {
         mockConstruction(RestTemplate::class.java).use { mocked ->
-            block(mocked.constructed().first())
+            val store = RemoteApiKeyStore("http://admin:8080", "test-secret")
+            block(mocked.constructed().first(), store)
         }
     }
 
     private fun buildResponse(
         data: RemoteApiKeyStore.ApiKeyValidateResponse?,
-    ): ResponseEntity<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>> {
-        return ResponseEntity.ok(ResultVo.success(data))
-    }
+    ): ResponseEntity<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>> = ResponseEntity.ok(ResultVo.success(data))
 
     @Test
     fun `findByKeyHash returns ApiKeyInfo on valid response`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
                 name = "test-key",
                 keyHash = "abc123",
@@ -55,7 +45,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(responseData))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("abc123")
 
             assertNotNull(result)
@@ -72,7 +61,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `findByKeyHash returns null when admin returns null data`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             `when`(
                 restTemplate.exchange(
                     anyString(),
@@ -82,7 +71,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(null))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("unknown-hash")
 
             assertNull(result)
@@ -91,7 +79,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `findByKeyHash returns null on HTTP error`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             `when`(
                 restTemplate.exchange(
                     anyString(),
@@ -101,7 +89,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenThrow(RestClientException("Connection refused"))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("error-hash")
 
             assertNull(result)
@@ -110,7 +97,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `scopes are correctly parsed from comma-separated string`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
                 name = "scoped-key",
                 keyHash = "hash1",
@@ -128,7 +115,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(responseData))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("hash1")!!
 
             assertEquals(3, result.scopes.size)
@@ -140,7 +126,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `expiresAt is parsed from ISO string`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
                 name = "expiring-key",
                 keyHash = "hash2",
@@ -159,7 +145,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(responseData))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("hash2")!!
 
             assertNotNull(result.expiresAt)
@@ -168,7 +153,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `cache returns same result without second HTTP call`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
                 name = "cached-key",
                 keyHash = "hash-cached",
@@ -186,7 +171,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(responseData))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result1 = store.findByKeyHash("hash-cached")
             val result2 = store.findByKeyHash("hash-cached")
 
@@ -203,7 +187,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `findByKeyHash does NOT cache null result — second call hits HTTP again`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             `when`(
                 restTemplate.exchange(
                     anyString(),
@@ -213,7 +197,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(null))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result1 = store.findByKeyHash("not-found-hash")
             val result2 = store.findByKeyHash("not-found-hash")
 
@@ -230,7 +213,7 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `disabled key is returned with enabled=false`() {
-        withMockedRestTemplate { restTemplate ->
+        withMockedRestTemplate { restTemplate, store ->
             val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
                 name = "disabled-key",
                 keyHash = "hash-dis",
@@ -248,7 +231,6 @@ class RemoteApiKeyStoreTest {
                 ),
             ).thenReturn(buildResponse(responseData))
 
-            val store = RemoteApiKeyStore("http://admin:8080", tokenProvider())
             val result = store.findByKeyHash("hash-dis")!!
 
             assertFalse(result.enabled)

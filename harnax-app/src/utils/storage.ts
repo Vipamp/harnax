@@ -1,5 +1,13 @@
 const STORAGE_PREFIX = 'harnax_chat_'
 
+export function getStorage<T>(key: string, defaultValue?: T): T | undefined {
+  return storage.get<T>(key, defaultValue)
+}
+
+export function setStorage(key: string, value: unknown): void {
+  storage.set(key, value)
+}
+
 export const storage = {
   get<T>(key: string, defaultValue?: T): T | undefined {
     try {

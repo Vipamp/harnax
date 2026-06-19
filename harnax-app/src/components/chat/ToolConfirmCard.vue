@@ -2,7 +2,7 @@
   <view class="confirm-card">
     <view class="confirm-header">
       <text class="confirm-icon">⚠️</text>
-      <text class="confirm-title">{{ t('chat.toolConfirmTitle') }}</text>
+      <view class="confirm-title">工具执行确认</view>
       <view :class="['confirm-badge', statusClass]">
         <text class="confirm-badge-text">{{ statusText }}</text>
       </view>
@@ -17,7 +17,7 @@
         <view class="confirm-tool-name">
           <text>🔧 {{ tool.toolName }}</text>
           <view v-if="tool.isDangerous" class="danger-tag">
-            <text class="danger-tag-text">{{ t('chat.highRisk') }}</text>
+            <view class="danger-tag-text">高风险</view>
           </view>
         </view>
         <text class="confirm-tool-args">{{ JSON.stringify(tool.arguments, null, 2) }}</text>
@@ -26,10 +26,10 @@
 
     <view v-if="status === 'pending'" class="confirm-actions">
       <view class="btn btn-reject" @tap="$emit('confirm', false)">
-        <text class="btn-text">{{ t('common.reject') }}</text>
+        <view class="btn-text">拒绝</view>
       </view>
       <view class="btn btn-allow" @tap="$emit('confirm', true)">
-        <text class="btn-text btn-text-primary">{{ t('chat.allowExecution') }}</text>
+        <view class="btn-text btn-text-primary">允许执行</view>
       </view>
     </view>
   </view>
@@ -37,7 +37,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { PendingCallTool } from '@/types/chat'
 
 const props = defineProps<{
@@ -49,13 +48,11 @@ defineEmits<{
   confirm: [confirmed: boolean]
 }>()
 
-const { t } = useI18n()
-
 const statusText = computed(() => {
   switch (props.status) {
-    case 'confirmed': return t('chat.confirmed')
-    case 'rejected': return t('chat.rejected')
-    default: return t('chat.pendingConfirm')
+    case 'confirmed': return '已确认'
+    case 'rejected': return '已拒绝'
+    default: return '待确认'
   }
 })
 

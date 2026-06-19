@@ -8,7 +8,7 @@
     >
       <view v-if="messages.length === 0" class="chat-empty">
         <text class="empty-icon">💬</text>
-        <text class="empty-text">{{ t('chat.emptyHint') }}</text>
+        <view class="empty-text">开始新的对话</view>
       </view>
       <MessageBubble
         v-for="msg in messages"
@@ -33,13 +33,11 @@
 
 <script setup lang="ts">
 import { computed, watch, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { useChatStore } from '@/store/useChatStore'
 import MessageBubble from './MessageBubble.vue'
 import InputArea from './InputArea.vue'
 import { storeToRefs } from 'pinia'
 
-const { t } = useI18n()
 const chatStore = useChatStore()
 const { messages, isStreaming, scrollToBottom } = storeToRefs(chatStore)
 

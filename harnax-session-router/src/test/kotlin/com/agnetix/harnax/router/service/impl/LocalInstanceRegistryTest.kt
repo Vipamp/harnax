@@ -1,6 +1,5 @@
 package com.agnetix.harnax.router.service.impl
 
-import com.agnetix.harnax.router.entity.AgentInstance
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test

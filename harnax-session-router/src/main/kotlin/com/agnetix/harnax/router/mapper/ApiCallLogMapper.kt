@@ -1,10 +1,20 @@
 package com.agnetix.harnax.router.mapper
 
+import com.agnetix.harnax.router.dto.ApiCallLogQuery
 import com.agnetix.harnax.router.entity.ApiCallLog
 import org.apache.ibatis.annotations.Insert
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Options
+import org.apache.ibatis.annotations.Param
 
+/**
+ * Mapper for the `api_call_log` table.
+ *
+ * INSERT statements stay as annotations because they are straightforward.
+ * The dynamic query/count SQL lives in `mapper/ApiCallLogMapper.xml` so that
+ * the conditional WHERE clause is readable and easy to extend without Kotlin
+ * string concatenation.
+ */
 @Mapper
 interface ApiCallLogMapper {
 
@@ -36,5 +46,17 @@ interface ApiCallLogMapper {
         </script>
     """,
     )
-    fun batchInsert(@org.apache.ibatis.annotations.Param("logs") logs: List<ApiCallLog>): Int
+    fun batchInsert(@Param("logs") logs: List<ApiCallLog>): Int
+
+    /**
+     * Query call logs with optional filters. Returns rows ordered by start_time DESC.
+     * SQL defined in mapper/ApiCallLogMapper.xml (id="query").
+     */
+    fun query(@Param("q") query: ApiCallLogQuery): List<ApiCallLog>
+
+    /**
+     * Count total rows matching the same filter (for pagination metadata).
+     * SQL defined in mapper/ApiCallLogMapper.xml (id="count").
+     */
+    fun count(@Param("q") query: ApiCallLogQuery): Long
 }

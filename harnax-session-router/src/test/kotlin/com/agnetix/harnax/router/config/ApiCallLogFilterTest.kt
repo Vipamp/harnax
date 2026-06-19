@@ -18,6 +18,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.eq
 
 class ApiCallLogFilterTest {
 
@@ -93,15 +96,55 @@ class ApiCallLogFilterTest {
     }
 
     @Test
+    fun `agent chat stream path is recorded without response wrapper (SSE)`() {
+        AuthContextHolder.set(AuthContext("user-1"))
+        `when`(request.requestURI).thenReturn("/api/router/agent/chat/stream")
+        `when`(request.method).thenReturn("POST")
+        `when`(response.status).thenReturn(200)
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+
+        // SSE endpoints are now logged (without response wrapping).
+        verify(apiCallLogService).record(any())
+    }
+
+    @Test
+    fun `agent confirm path is recorded without response wrapper (SSE)`() {
+        AuthContextHolder.set(AuthContext("user-1"))
+        `when`(request.requestURI).thenReturn("/api/router/agent/confirm")
+        `when`(request.method).thenReturn("POST")
+        `when`(response.status).thenReturn(200)
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+
+        // SSE endpoints are now logged (without response wrapping).
+        verify(apiCallLogService).record(any())
+    }
+
+    @Test
     fun `agent chat path is not excluded and records log`() {
-        AuthContextHolder.set(AuthContext("user-1", "router:invoke"))
+        AuthContextHolder.set(AuthContext("user-1"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(ApiCallLog())
 
@@ -117,7 +160,6 @@ class ApiCallLogFilterTest {
     fun `log records caller info from AuthContext`() {
         val context = AuthContext(
             callerId = "api-key-1",
-            scopes = setOf("router:invoke"),
             callerType = CallerType.EXTERNAL_API,
             tenantId = 42L,
         )
@@ -130,9 +172,9 @@ class ApiCallLogFilterTest {
         val entry = ApiCallLog().apply { callerId = "api-key-1" }
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(entry)
 
@@ -142,16 +184,16 @@ class ApiCallLogFilterTest {
             eq("api-key-1"),
             eq("EXTERNAL_API"),
             eq(42L),
-            any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(),
-            eq(200), eq(true), any(),
-            any(), any(), any(), any(),
+            anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(),
+            eq(200), eq(true), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
         )
     }
 
     @Test
-    fun `session info is fetched when sessionId is extracted`() {
-        AuthContextHolder.set(AuthContext("user", "router:invoke"))
+    fun `session info is fetched when sessionId is extracted from URL path`() {
+        AuthContextHolder.set(AuthContext("user"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat/sess-123")
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(200)
@@ -177,50 +219,87 @@ class ApiCallLogFilterTest {
 
         verify(sessionInfoClient).getSessionInfo("sess-123")
         verify(apiCallLogService).buildLogEntry(
-            anyString(), anyString(), any(),
+            any(), any(), anyOrNull(),
             eq("sess-123"),
             eq(10L), eq("my-agent"), eq(5L), eq("gpt-4"),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
+            any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
+        )
+    }
+
+    @Test
+    fun `sessionId from request attribute takes priority over URL path`() {
+        AuthContextHolder.set(AuthContext("user"))
+        `when`(request.requestURI).thenReturn("/api/router/agent/chat")
+        `when`(request.method).thenReturn("POST")
+        `when`(request.getAttribute("router.sessionId")).thenReturn("attr-sess-456")
+        `when`(response.status).thenReturn(200)
+
+        val sessionInfo = SessionInfo(
+            sessionId = "attr-sess-456",
+            agentId = 20L,
+            agentName = "attr-agent",
+            modelId = 8L,
+            modelName = "claude-3",
+            tenantId = 2L,
+        )
+        `when`(sessionInfoClient.getSessionInfo("attr-sess-456")).thenReturn(sessionInfo)
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+
+        verify(sessionInfoClient).getSessionInfo("attr-sess-456")
+        verify(apiCallLogService).buildLogEntry(
+            any(), any(), anyOrNull(),
+            eq("attr-sess-456"),
+            eq(20L), eq("attr-agent"), eq(8L), eq("claude-3"),
+            any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
         )
     }
 
     @Test
     fun `500 status code marks success as false`() {
-        AuthContextHolder.set(AuthContext("user", "router:invoke"))
+        AuthContextHolder.set(AuthContext("user"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(500)
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
         verify(apiCallLogService).buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(),
-            eq(500), eq(false), any(),
-            any(), any(), any(), any(),
+            any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(),
+            eq(500), eq(false), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
         )
     }
 
     @Test
     fun `filter does not throw when sessionInfoClient fails`() {
-        AuthContextHolder.set(AuthContext("user", "router:invoke"))
+        AuthContextHolder.set(AuthContext("user"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat/sess-err")
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(200)
         `when`(sessionInfoClient.getSessionInfo(anyString())).thenThrow(RuntimeException("Admin down"))
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(ApiCallLog())
 
@@ -237,9 +316,9 @@ class ApiCallLogFilterTest {
         `when`(response.status).thenReturn(200)
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(ApiCallLog())
 
@@ -248,33 +327,33 @@ class ApiCallLogFilterTest {
         verify(apiCallLogService).buildLogEntry(
             eq("unknown"),
             eq("UNKNOWN"),
-            any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), any(),
+            anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
         )
     }
 
     @Test
     fun `X-Request-Id header is used as requestId fallback`() {
-        AuthContextHolder.set(AuthContext("user", "router:invoke"))
+        AuthContextHolder.set(AuthContext("user"))
         `when`(request.requestURI).thenReturn("/api/router/agent/chat")
         `when`(request.method).thenReturn("POST")
         `when`(request.getHeader("X-Request-Id")).thenReturn("header-req-id")
         `when`(response.status).thenReturn(200)
         `when`(
             apiCallLogService.buildLogEntry(
-                anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-                anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-                any(), any(), any(), any(),
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
             ),
         ).thenReturn(ApiCallLog())
 
         filter.doFilterInternal(request, response, chain)
 
         verify(apiCallLogService).buildLogEntry(
-            anyString(), anyString(), any(), any(), any(), any(), any(), any(),
-            anyString(), anyString(), any(), anyInt(), anyBoolean(), any(),
-            any(), any(), any(), eq("header-req-id"),
+            any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+            any(), any(), anyOrNull(), eq("header-req-id"),
         )
     }
 }

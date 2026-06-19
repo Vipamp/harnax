@@ -1,5 +1,7 @@
 package com.agnetix.harnax.router.service
 
+import com.agnetix.harnax.router.dto.ApiCallLogPage
+import com.agnetix.harnax.router.dto.ApiCallLogQuery
 import com.agnetix.harnax.router.entity.ApiCallLog
 import com.agnetix.harnax.router.mapper.ApiCallLogMapper
 import jakarta.annotation.PreDestroy
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicLong
 
 @Service
 class ApiCallLogService(
@@ -18,14 +21,41 @@ class ApiCallLogService(
     private val log = LoggerFactory.getLogger(ApiCallLogService::class.java)
     private val buffer = ConcurrentLinkedQueue<ApiCallLog>()
 
+    // Track buffer size with AtomicLong to avoid O(n) traversal.
+    // ConcurrentLinkedQueue.size() is O(1) but still contended; an external counter is more stable.
+    private val bufferSize = AtomicLong(0)
+
+    // Cumulative dropped entry count (for monitoring).
+    private val droppedCount = AtomicLong(0)
+
     companion object {
         private const val BATCH_SIZE = 50
-        private val FLUSH_INTERVAL: Duration = Duration.ofSeconds(5)
+
+        // Hard upper bound for the buffer: drop new entries when exceeded to prevent OOM
+        // if MySQL becomes unavailable. ~10MB for 10_000 entries, well below the heap warning threshold.
+        private const val MAX_BUFFER_SIZE = 10_000
     }
 
     fun record(entry: ApiCallLog) {
+        val current = bufferSize.incrementAndGet()
+        if (current > MAX_BUFFER_SIZE) {
+            // Over the limit: drop the new entry to avoid OOM.
+            bufferSize.decrementAndGet()
+            val dropped = droppedCount.incrementAndGet()
+            // Log a warning every 100 drops to avoid log flooding.
+            if (dropped % 100 == 1L) {
+                log.warn(
+                    "ApiCallLog buffer full (size={} > {}), dropping new entry. " +
+                        "Total dropped so far: {}. Check MySQL connectivity.",
+                    current,
+                    MAX_BUFFER_SIZE,
+                    dropped,
+                )
+            }
+            return
+        }
         buffer.add(entry)
-        if (buffer.size >= BATCH_SIZE) {
+        if (current >= BATCH_SIZE) {
             flush()
         }
     }
@@ -45,6 +75,7 @@ class ApiCallLogService(
         while (batch.size < BATCH_SIZE) {
             val item = buffer.poll() ?: break
             batch.add(item)
+            bufferSize.decrementAndGet()
         }
         if (batch.isEmpty()) return
 
@@ -52,10 +83,50 @@ class ApiCallLogService(
             apiCallLogMapper.batchInsert(batch)
             log.debug("Flushed {} API call log entries", batch.size)
         } catch (e: Exception) {
+            // On failure, re-enqueue the batch at the tail (addAll preserves insertion order).
+            // If the buffer is already full at this point, subsequent record() calls will hit
+            // the drop logic; we simply re-add here and rely on the next record() to trigger flush.
             log.error("Failed to flush {} API call log entries: {}", batch.size, e.message, e)
-            // Re-enqueue failed entries (best effort)
+            // Before re-enqueue, check the limit and evict the oldest entries if it would overflow.
+            val reAddSize = batch.size.toLong()
+            val newSize = bufferSize.addAndGet(reAddSize)
+            if (newSize > MAX_BUFFER_SIZE) {
+                // Drop the overflow (newer entries are kept).
+                val overflow = newSize - MAX_BUFFER_SIZE
+                var dropped = 0
+                while (dropped < overflow && buffer.poll() != null) {
+                    bufferSize.decrementAndGet()
+                    dropped++
+                }
+                log.warn(
+                    "Re-enqueue would overflow buffer, dropped {} oldest entries. " +
+                        "Current size: {}",
+                    dropped,
+                    bufferSize.get(),
+                )
+            }
             buffer.addAll(batch)
         }
+    }
+
+    /**
+     * Current buffer size (for monitoring/testing only).
+     */
+    fun currentBufferSize(): Long = bufferSize.get()
+
+    /**
+     * Cumulative dropped entry count (for monitoring/testing only).
+     */
+    fun droppedCount(): Long = droppedCount.get()
+
+    /**
+     * Query call logs with the given filters, paginated.
+     * Used by the monitor UI; queries are unbuffered and read directly from MySQL.
+     */
+    fun query(query: ApiCallLogQuery): ApiCallLogPage {
+        val items = apiCallLogMapper.query(query)
+        val total = apiCallLogMapper.count(query)
+        return ApiCallLogPage(items = items, total = total, limit = query.limit, offset = query.offset)
     }
 
     fun buildLogEntry(

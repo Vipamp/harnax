@@ -71,6 +71,8 @@ open class ChannelChatService(
         // Generate short request ID for error tracing: req-xxxxxxxx
         val requestId = "req-${UUID.randomUUID().toString().take(8)}"
 
+        logger.info("[Chat] Received message for session=${message.sessionId}, channel=${channel.id}, content='${message.content.take(50)}', requestId=$requestId")
+
         try {
             // 1. Read history BEFORE saving current message to avoid duplication
             val history = sessionManager.getHistory(channel.id, message.sessionId)
@@ -175,24 +177,32 @@ open class ChannelChatService(
         channelAdaptor.sendTypingIndicator(channel, message.sessionId)
 
         val fullContent = StringBuilder()
+        var eventCount = 0
+
+        logger.info("[Batch] Starting batch collection for session=${message.sessionId}")
 
         try {
             agentAdaptor.streamProcess(context).collect { event ->
+                eventCount++
                 when (event) {
                     is AgentStreamEvent.TextStreamEvent -> {
+                        logger.info("[Batch] Event #$eventCount TextStream for session=${message.sessionId}, content length=${event.content.length}, isLast=${event.isLast}")
                         fullContent.append(event.content)
                     }
                     is AgentStreamEvent.ThinkingStreamEvent -> {
                         // Continue showing typing indicator during thinking
                         channelAdaptor.sendTypingIndicator(channel, message.sessionId)
-                        logger.debug("AI thinking: ${event.content.take(50)}...")
+                        logger.info("[Batch] Event #$eventCount Thinking for session=${message.sessionId}, content length=${event.content.length}")
                     }
                     is AgentStreamEvent.EndStreamEvent -> {
+                        logger.info("[Batch] Event #$eventCount EndStream for session=${message.sessionId}, full content length=${fullContent.length}")
                         // Send merged complete response
                         val responseText = fullContent.toString()
                         if (responseText.isNotBlank()) {
                             channelAdaptor.sendMessage(channel, message.sessionId, responseText)
-                            logger.info("Batch response sent for session ${message.sessionId}")
+                            logger.info("[Batch] Response sent to Feishu for session=${message.sessionId}, text length=${responseText.length}")
+                        } else {
+                            logger.warn("[Batch] Empty response, nothing sent to Feishu for session=${message.sessionId}")
                         }
                         // Save AI reply to session
                         saveAssistantMessage(message, responseText, channel)
@@ -214,13 +224,14 @@ open class ChannelChatService(
                 }
             }
         } catch (e: Exception) {
-            logger.error("Batch send failed for session ${message.sessionId}: ${e.message}", e)
+            logger.error("[Batch] Send failed for session=${message.sessionId}: ${e.message}", e)
             // Try to send whatever we've accumulated so far
             if (fullContent.isNotEmpty()) {
                 channelAdaptor.sendMessage(channel, message.sessionId, fullContent.toString())
                 saveAssistantMessage(message, fullContent.toString(), channel)
             }
         }
+        logger.info("[Batch] Batch collection finished for session=${message.sessionId}, total events=$eventCount, content length=${fullContent.length}")
     }
 
     /**

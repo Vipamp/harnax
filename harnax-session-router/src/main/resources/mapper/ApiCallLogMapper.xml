@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.router.mapper.ApiCallLogMapper">
+
+    <!-- Result Map: explicit column-to-property mapping with underscore conversion. -->
+    <resultMap id="ApiCallLogResultMap" type="com.agnetix.harnax.router.entity.ApiCallLog">
+        <id column="id" property="id"/>
+        <result column="caller_id" property="callerId"/>
+        <result column="caller_type" property="callerType"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="model_id" property="modelId"/>
+        <result column="model_name" property="modelName"/>
+        <result column="endpoint" property="endpoint"/>
+        <result column="method" property="method"/>
+        <result column="request_type" property="requestType"/>
+        <result column="status_code" property="statusCode"/>
+        <result column="success" property="success"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="duration_ms" property="durationMs"/>
+        <result column="instance_id" property="instanceId"/>
+        <result column="request_id" property="requestId"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- Reusable WHERE fragment: only emits conditions for non-null/non-blank filters. -->
+    <sql id="queryWhere">
+        <where>
+            <if test="q.sessionId != null and q.sessionId != ''">
+                AND session_id = #{q.sessionId}
+            </if>
+            <if test="q.instanceId != null and q.instanceId != ''">
+                AND instance_id = #{q.instanceId}
+            </if>
+            <if test="q.agentName != null and q.agentName != ''">
+                AND agent_name = #{q.agentName}
+            </if>
+            <if test="q.statusCode != null">
+                AND status_code = #{q.statusCode}
+            </if>
+            <if test="q.success != null">
+                AND success = #{q.success}
+            </if>
+            <if test="q.minDurationMs != null">
+                AND duration_ms &gt;= #{q.minDurationMs}
+            </if>
+        </where>
+    </sql>
+
+    <!-- Paginated query returning full rows ordered by start_time DESC. -->
+    <select id="query" resultMap="ApiCallLogResultMap">
+        SELECT id, caller_id, caller_type, tenant_id, session_id,
+               agent_id, agent_name, model_id, model_name,
+               endpoint, method, request_type, status_code, success, error_message,
+               start_time, end_time, duration_ms, instance_id, request_id, create_time
+        FROM api_call_log
+        <include refid="queryWhere"/>
+        ORDER BY start_time DESC
+        LIMIT #{q.limit} OFFSET #{q.offset}
+    </select>
+
+    <!-- Count total rows matching the same filter (for pagination metadata). -->
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM api_call_log
+        <include refid="queryWhere"/>
+    </select>
+
+</mapper>

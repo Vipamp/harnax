@@ -90,6 +90,8 @@ class HeartbeatHealthChecker(
     private fun selectFailoverTarget(healthyInstances: List<AgentInstance>, excludeInstanceId: String): AgentInstance {
         val candidates = healthyInstances.filter { it.instanceId != excludeInstanceId }
             .ifEmpty { healthyInstances }
-        return candidates.minByOrNull { it.instanceId } ?: candidates.first()
+        // Pick the least-loaded instance by session count to avoid concentrating load on one node.
+        val countMap = sessionMappingService.getSessionCountsByInstances(candidates.map { it.instanceId })
+        return candidates.minByOrNull { countMap[it.instanceId] ?: 0 } ?: candidates.first()
     }
 }

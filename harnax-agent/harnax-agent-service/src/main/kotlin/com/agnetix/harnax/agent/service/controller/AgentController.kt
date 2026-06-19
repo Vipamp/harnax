@@ -11,7 +11,7 @@ import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.service.runner.AgentRunner
-import com.agnetix.harnax.auth.RequireScope
+import com.agnetix.harnax.auth.InternalOnly
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import io.swagger.v3.oas.annotations.Operation
@@ -28,7 +28,7 @@ import reactor.core.publisher.Flux
  */
 @RestController
 @RequestMapping("/api/agent")
-@RequireScope("agent:invoke", internalOnly = true)
+@InternalOnly
 @Tag(name = "Agent Processing", description = "Agent message processing APIs")
 class AgentController(
     private val agentRunner: AgentRunner,

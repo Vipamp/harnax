@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.MpChatMessageMapper">
+
+    <!-- Result Map -->
+    <resultMap id="MpChatMessageResultMap" type="com.agnetix.harnax.entity.MpChatMessage">
+        <id column="id" property="id"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="role" property="role"/>
+        <result column="content" property="content"/>
+        <result column="segments_json" property="segmentsJson"/>
+        <result column="token_usage_json" property="tokenUsageJson"/>
+        <result column="image_urls_json" property="imageUrlsJson"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <!-- selectBySessionId -->
+    <select id="selectBySessionId" resultMap="MpChatMessageResultMap">
+        SELECT * FROM mp_chat_message
+        WHERE session_id = #{sessionId}
+        ORDER BY create_time ASC
+    </select>
+
+    <!-- batchInsert -->
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO mp_chat_message (session_id, role, content, segments_json, token_usage_json, image_urls_json, create_time)
+        VALUES
+        <foreach collection="list" item="msg" separator=",">
+            (#{msg.sessionId}, #{msg.role}, #{msg.content}, #{msg.segmentsJson},
+             #{msg.tokenUsageJson}, #{msg.imageUrlsJson}, #{msg.createTime})
+        </foreach>
+    </insert>
+
+    <!-- deleteBySessionId -->
+    <delete id="deleteBySessionId">
+        DELETE FROM mp_chat_message WHERE session_id = #{sessionId}
+    </delete>
+
+    <!-- countBySessionId -->
+    <select id="countBySessionId" resultType="int">
+        SELECT COUNT(*) FROM mp_chat_message WHERE session_id = #{sessionId}
+    </select>
+
+</mapper>

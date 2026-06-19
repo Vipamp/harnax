@@ -60,9 +60,15 @@ class InstanceRegistrationValidationFilter(
                 return
             }
 
-            if (port < 1024) {
-                log.warn("Registration rejected: privileged port $port for instance $instanceId")
-                writeError(response, HttpServletResponse.SC_FORBIDDEN, "Privileged ports not allowed")
+            // Use the port range defined on AgentInstance (8000-9999) to stay aligned with entity validation.
+            if (!AgentInstance.isValidPort(port)) {
+                val reason = when {
+                    port < 1024 -> "Privileged ports not allowed"
+                    else -> "Port must be in range ${AgentInstance.MIN_PORT}-${AgentInstance.MAX_PORT}"
+                }
+                val status = if (port < 1024) HttpServletResponse.SC_FORBIDDEN else HttpServletResponse.SC_BAD_REQUEST
+                log.warn("Registration rejected: port $port for instance $instanceId ($reason)")
+                writeError(response, status, reason)
                 return
             }
 

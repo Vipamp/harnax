@@ -7,7 +7,7 @@ spring:
   
   # Database Configuration
   datasource:
-    url: jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://172.20.10.5:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -26,10 +26,10 @@ mybatis:
 
 # Session Configuration
 session:
-  jdbc-url: jdbc:mysql://localhost:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  jdbc-url: jdbc:mysql://172.20.10.5:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
   username: root
   password: 123456
-  database-name: harnax
+  database-name: agentscope
 
 # Local Configuration
 local:
@@ -42,7 +42,7 @@ harness:
   enable-session-persistence: true
   minio:
     enabled: true
-    endpoint: http://localhost:9000
+    endpoint: http://172.20.10.5:9000
     access-key: minioadmin
     secret-key: minioadmin
     snapshot-bucket: harnax-snapshots
@@ -79,7 +79,7 @@ jwt:
 
 router:
   service:
-    url: http://localhost:8081
+    url: http://172.20.10.5:8081
 
 agent:
   service:

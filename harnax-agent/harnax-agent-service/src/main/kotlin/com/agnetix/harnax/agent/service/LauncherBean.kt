@@ -29,7 +29,7 @@ class LauncherConfig {
         password = password,
         databaseName = databaseName,
         tableName = "session_record",
-        createIfNotExist = false,
+        createIfNotExist = true,
     )
 
     // AscopeAgentLauncher bean disabled — HarnessAgentLauncher is now provided by

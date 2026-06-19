@@ -16,6 +16,13 @@ interface AuthService {
     fun login(request: LoginRequest): LoginResponse
 
     /**
+     * Mobile login (no captcha required)
+     * @param request Login request with SHA-256 hashed password
+     * @return Login response
+     */
+    fun mobileLogin(request: LoginRequest): LoginResponse
+
+    /**
      * Logout
      */
     fun logout()

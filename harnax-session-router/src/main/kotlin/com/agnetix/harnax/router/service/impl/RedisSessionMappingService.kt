@@ -172,8 +172,7 @@ class RedisSessionMappingService(
         return redisTemplate.opsForSet().size(instanceSessionsKey)?.toInt() ?: 0
     }
 
-    override fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int> =
-        instanceIds.associateWith { getSessionCountByInstance(it) }
+    override fun getSessionCountsByInstances(instanceIds: List<String>): Map<String, Int> = instanceIds.associateWith { getSessionCountByInstance(it) }
 
     private fun tryAcquireLockWithRetry(lockKey: String, lockValue: String, maxRetries: Int): Boolean {
         for (attempt in 1..maxRetries) {

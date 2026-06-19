@@ -8,7 +8,7 @@
 
 - **零侵入接入**：通过 Spring Boot AutoConfiguration 自动装配，业务服务只需引入 Maven 依赖 + 添加 YAML 配置即可启用
 - **双通道认证**：内部服务间用 JWT，外部第三方用 API Key，共用一套 Filter 链路
-- **声明式鉴权**：通过 `@RequireScope` 注解 + `HandlerInterceptor` 实现方法级权限控制
+- **二元鉴权**：通过 `@InternalOnly` 注解 + `HandlerInterceptor` 区分内部/外部调用，不做 scope 粒度控制
 - **无状态**：JWT 自包含所有鉴权信息，无需会话存储
 
 ## 2. 整体架构
@@ -18,9 +18,9 @@
 │                         harnax-auth                             │
 │                                                                 │
 │  ┌──────────────────┐  ┌─────────────────┐  ┌───────────────┐  │
-│  │UnifiedAuthFilter │  │ScopeAuthorization│  │InternalToken  │  │
-│  │ (请求入口拦截)    │  │Interceptor      │  │Provider       │  │
-│  │                  │  │ (方法级鉴权)      │  │ (令牌生成/验证)│  │
+│  │UnifiedAuthFilter │  │InternalAuthor-  │  │InternalToken  │  │
+│  │ (请求入口拦截)    │  │izationInter-    │  │Provider       │  │
+│  │                  │  │ceptor(内外鉴权) │  │ (令牌生成/验证)│  │
 │  └────────┬─────────┘  └────────┬────────┘  └───────────────┘  │
 │           │                     │                                │
 │  ┌────────▼─────────┐  ┌───────▼──────────┐                     │
@@ -51,14 +51,13 @@
 
 1. 调用方通过 `InternalTokenProvider` 生成 JWT，放入 `Authorization: Bearer <token>` 头
 2. 接收方的 `UnifiedAuthFilter` 解析 JWT，验证签名和过期时间
-3. 验证通过后构建 `AuthContext` 放入 `ThreadLocal`，供后续 `ScopeAuthorizationInterceptor` 使用
+3. 验证通过后构建 `AuthContext` 放入 `ThreadLocal`，供后续 `InternalAuthorizationInterceptor` 使用
 
 **JWT Payload 结构：**
 
 ```json
 {
   "sub": "channel-0",
-  "scp": "router:invoke",
   "iat": 1718611200,
   "exp": 1718611500,
   "jti": "uuid-xxx"
@@ -67,7 +66,7 @@
 
 **令牌缓存：**
 
-`InternalTokenProvider` 内部按 scope 缓存令牌，在令牌过期前 60 秒自动刷新。
+`InternalTokenProvider` 内部缓存单个令牌，在令牌过期前 60 秒自动刷新。
 
 **调用方使用方式：**
 
@@ -115,7 +114,7 @@ Admin 创建/管理 → admin MySQL 存储（唯一数据源）
                                                   → admin MySQL 查询 → 返回 ApiKeyInfo
 ```
 
-## 4. 鉴权 - Scope 权限控制
+## 4. 鉴权 - Internal/External 二元控制
 
 ### 4.1 AuthContext
 
@@ -124,43 +123,40 @@ Admin 创建/管理 → admin MySQL 存储（唯一数据源）
 ```kotlin
 data class AuthContext(
     val callerId: String,
-    val scopes: Set<String>,
     val callerType: CallerType,        // INTERNAL_SERVICE 或 EXTERNAL_API
     val tenantId: Long? = null,
     val rateLimitPerMinute: Int? = null, // 每分钟限流次数（仅 EXTERNAL_API）
+    val scopes: Set<String> = emptySet(), // 仅用于日志/可观测性，不参与访问控制
 )
 ```
 
-### 4.2 @RequireScope 注解
+### 4.2 @InternalOnly 注解
 
 ```kotlin
-// 方法级
-@RequireScope("router:invoke")
-@PostMapping("/agent/chat")
-fun proxyChat(...)
+// 类级 —— 整个 Controller 仅允许内部服务访问
+@InternalOnly
+class InstanceRegistryController
 
-// 类级 + internalOnly
-@RequireScope("agent:invoke", internalOnly = true)
-class AgentController
+// 方法级 —— 单个端点仅允许内部服务访问
+@InternalOnly
+@PostMapping("/instance/register")
+fun registerInstance(...)
 ```
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `value` | `vararg String` | 所需的 scope，满足任一一个即可（OR 关系） |
-| `internalOnly` | `Boolean` | 为 true 时，仅允许 `INTERNAL_SERVICE` 类型访问 |
+未标注 `@InternalOnly` 的端点，内部服务和外部 API Key 均可访问（只要通过认证）。
 
-### 4.3 ScopeAuthorizationInterceptor
+### 4.3 InternalAuthorizationInterceptor
 
-在 Controller 方法执行前校验 `@RequireScope`：
+在 Controller 方法执行前检查 `@InternalOnly`：
 
-1. 从 `AuthContextHolder` 获取 `AuthContext`
-2. 若为 null → 401 Unauthorized
-3. 若 `internalOnly = true` 且 `callerType != INTERNAL_SERVICE` → 403 Forbidden
-4. 若调用方的 scopes 不包含任何要求的 scope → 403 Forbidden
+1. 若无 `@InternalOnly` 注解 → 直接放行
+2. 从 `AuthContextHolder` 获取 `AuthContext`
+3. 若为 null → 401 Unauthorized
+4. 若 `callerType != INTERNAL_SERVICE` → 403 Forbidden
 
 ### 4.4 限流 - RateLimitInterceptor
 
-在 `ScopeAuthorizationInterceptor` 之后执行，仅对 `callerType = EXTERNAL_API` 且 `rateLimitPerMinute != null` 的请求生效。
+在 `InternalAuthorizationInterceptor` 之后执行，仅对 `callerType = EXTERNAL_API` 且 `rateLimitPerMinute != null` 的请求生效。
 
 ```kotlin
 interface RateLimitChecker {
@@ -170,15 +166,14 @@ interface RateLimitChecker {
 
 router 模块提供 `RateLimiter` 实现（ConcurrentHashMap + 滑动窗口，每 60 秒自动清理）。
 
-## 5. Scope 权限矩阵
+## 5. 访问控制矩阵
 
-| Scope | 持有方 | 可访问端点 | 限制 |
-|-------|--------|-----------|------|
-| `router:invoke` | channel-service、外部 API Key | Router: `/api/router/agent/*`（代理转发） | 无 |
-| `router:register` | agent-service | Router: `/api/router/instance/*`（注册/心跳/列表） | internalOnly |
-| `admin:apikey` | router（内部调用 admin） | Admin: `/api/internal/api-keys/validate` | internalOnly |
-| `admin:session` | router（内部调用 admin） | Admin: `/api/internal/sessions/{id}/info` | internalOnly |
-| `agent:invoke` | router | Agent: `/api/agent/*`（推理/对话） | internalOnly |
+| 端点 | Controller | 内部服务 (JWT) | 外部 API Key |
+|-------|------------|--------------|-------------|
+| `/api/router/agent/*` | AgentProxyController | ✅ | ✅ |
+| `/api/router/instance/*` | InstanceRegistryController | ✅ | ❌ 403 |
+| `/api/router/health` | InstanceRegistryController | ✅ | ❌ 403 |
+| `/api/agent/*` | AgentController | ✅ | ❌ 403 |
 
 ## 6. 请求认证鉴权完整流程
 
@@ -194,9 +189,9 @@ router 模块提供 `RateLimiter` 实现（ConcurrentHashMap + 滑动窗口，�
 
 #### 第二段：channel-service → router
 
-**发送方：** WebClient 注册 `authFilter("router:invoke")`，自动注入：
+**发送方：** WebClient 注册 `authFilter()`，自动注入：
 ```
-Authorization: Bearer <JWT>      ← JWT: sub="channel-0", scp="router:invoke"
+Authorization: Bearer <JWT>      ← JWT: sub="channel-0"
 X-Caller-Id: channel-0
 ```
 
@@ -208,23 +203,23 @@ X-Caller-Id: channel-0
 
 ② InternalTokenProvider.verifyToken()
    → 验证 HMAC 签名 + 过期时间
-   → 构建 AuthContext(callerId="channel-0", scopes={"router:invoke"}, INTERNAL_SERVICE)
+   → 构建 AuthContext(callerId="channel-0", INTERNAL_SERVICE)
 
 ③ AuthContextHolder.set(context)
 
-④ ScopeAuthorizationInterceptor
-   → @RequireScope("router:invoke") → 放行 ✅
+④ InternalAuthorizationInterceptor
+   → AgentProxyController 无 @InternalOnly → 放行 ✅
 
 ⑤ RateLimitInterceptor
    → callerType=INTERNAL_SERVICE → 跳过
 
-⑥ SessionRouterController.proxyChat() 执行
+⑥ AgentProxyController.proxyChat() 执行
 ```
 
 #### 第三段：router → agent-service
 
-WebClient 注册 `authFilter("agent:invoke")`，注入 JWT: sub="router-0", scp="agent:invoke"。
-agent-service 端 `@RequireScope("agent:invoke", internalOnly = true)` 校验通过。
+WebClient 注册 `authFilter()`，注入 JWT: sub="router-0"。
+agent-service 端 `@InternalOnly` 校验通过。
 
 ### 6.2 场景二：外部 HTTP 直接调用 Router
 
@@ -248,16 +243,17 @@ curl -X POST http://router:8081/api/router/agent/chat/stream \
               Body: { "keyHash": "a1b2c3d4..." }
               → admin 查询 harnax.api_key 表 → 返回 ApiKeyInfo
    → 校验 enabled / expiresAt
-   → 构建 AuthContext(callerId="third-party-app", scopes={"router:invoke"},
+   → 构建 AuthContext(callerId="third-party-app",
                       EXTERNAL_API, tenantId=1001, rateLimitPerMinute=60)
 
-③ ScopeAuthorizationInterceptor → 放行 ✅
+③ InternalAuthorizationInterceptor
+   → AgentProxyController 无 @InternalOnly → 放行 ✅
 
 ④ RateLimitInterceptor
    → RateLimitChecker.tryAcquire("third-party-app", 60)
    → 滑动窗口检查 → 放行 ✅ 或 429
 
-⑤ SessionRouterController.proxyChat() 执行
+⑤ AgentProxyController.proxyChat() 执行
 ```
 
 #### 外部 API Key 被拒绝的场景
@@ -267,23 +263,22 @@ curl -X POST http://router:8081/api/router/agent/chat/stream \
 | Key 不存在 | ExternalApiKeyValidator | 401 |
 | Key 被禁用 | ExternalApiKeyValidator | 401 |
 | Key 已过期 | ExternalApiKeyValidator | 401 |
-| 访问 internalOnly 接口 | ScopeAuthorizationInterceptor | 403 |
-| Scope 不匹配 | ScopeAuthorizationInterceptor | 403 |
+| 访问 internalOnly 接口 | InternalAuthorizationInterceptor | 403 |
 | 超过限流上限 | RateLimitInterceptor | 429 |
 
 ### 6.3 场景三：Agent-service 注册/心跳
 
-RestTemplate 添加 `AuthRestTemplateInterceptor(tokenProvider, "router:register")`，自动注入 JWT。
-Router 端 `@RequireScope("router:register", internalOnly = true)` 校验通过。
+RestTemplate 添加 `AuthRestTemplateInterceptor(tokenProvider)`，自动注入 JWT。
+Router 端 `InstanceRegistryController` 标注 `@InternalOnly`，校验通过。
 
 ### 6.4 场景四：Router 调用 Admin 内部接口
 
-| 场景 | 接口 | Scope |
-|------|------|-------|
-| API Key 校验 | POST /api/internal/api-keys/validate | admin:apikey |
-| Session 信息查询 | GET /api/internal/sessions/{sessionId}/info | admin:session |
+| 场景 | 接口 |
+|------|------|
+| API Key 校验 | POST /api/internal/api-keys/validate |
+| Session 信息查询 | GET /api/internal/sessions/{sessionId}/info |
 
-请求自动注入 JWT，Admin 端由 harnax-auth 的 Filter + Interceptor 校验。
+请求自动注入 JWT，Admin 端由独立的 `InternalApiAuthFilter` 校验共享密钥。
 
 ## 7. 信任模型
 
@@ -298,7 +293,7 @@ admin           ─┘
 
 - **没有服务注册中心**——服务身份由 `service-id` 自声明
 - **没有证书分发**——所有服务部署时注入同一个密钥
-- **没有动态授权**——scope 直接写死在每个服务的客户端代码里
+- **没有动态授权**——`@InternalOnly` 直接标注在每个 Controller/方法上
 
 ### 外部 API Key 信任链
 
@@ -320,11 +315,10 @@ Router RemoteApiKeyStore（Caffeine 缓存，5 分钟）
 ┌──────────────┐         ┌──────────────────┐         ┌──────────────────┐
 │   Channel     │  JWT    │  Session Router   │  JWT    │  Agent Service    │
 │   :8083       │────────>│  :8081            │────────>│  :8082            │
-│               │router:  │                   │agent:   │                   │
-│               │invoke   │                   │invoke   │                   │
+│               │         │                   │         │                   │
 └──────────────┘         └────────┬──────────┘         └──────────────────┘
                                 ▲                            ▲
-                                │ router:register            │
+                                │ JWT                       │
                          ┌──────┴──────────┐                 │
                          │  Agent Service   │                 │
                          │  (Registrar)     │                 │
@@ -334,8 +328,7 @@ Router RemoteApiKeyStore（Caffeine 缓存，5 分钟）
 │  外部客户端    │────────────────>│  Session Router   │        │
 └──────────────┘                 └────────┬──────────┘        │
                                           │ HTTP (JWT)        │
-                                          │ admin:apikey      │
-                                          │ admin:session     │
+                                          │ 内部共享密钥     │
                                           ▼                   │
                                  ┌──────────────────┐         │
                                  │   Admin Service   │◄────────┘
@@ -375,9 +368,8 @@ router:
 |------|---------|-------------|
 | **请求头** | `Authorization: Bearer <jwt>` | `X-Api-Key: hnx_xxx` |
 | **凭证来源** | 服务启动时自动生成 | Admin 后台手动创建 |
-| **scope 来源** | 代码写死在客户端配置中 | 数据库按 Key 粒度配置 |
 | **callerType** | INTERNAL_SERVICE | EXTERNAL_API |
-| **能否访问 internalOnly** | 能 | 不能 |
+| **能否访问 @InternalOnly** | 能 | 不能 |
 | **过期机制** | 自动续期（token 缓存刷新） | 管理员设过期时间 |
 | **吊销方式** | 改共享密钥（影响所有服务） | 禁用/删除单个 Key |
 | **多租户** | 不支持 | 支持（Key 绑定 tenantId） |
@@ -426,7 +418,7 @@ harnax:
 | `internalTokenProvider` | `InternalTokenProvider` | 始终 | JWT 生成与验证 |
 | `externalApiKeyValidator` | `ExternalApiKeyValidator?` | `external.enabled=true` 且存在 `ApiKeyStore` | API Key 校验 |
 | `unifiedAuthFilter` | `UnifiedAuthFilter` | `enabled=true` | 统一认证过滤器 |
-| `scopeAuthorizationInterceptor` | `ScopeAuthorizationInterceptor` | 始终 | Scope 拦截器 |
+| `internalAuthorizationInterceptor` | `InternalAuthorizationInterceptor` | 始终 | Internal/External 拦截器 |
 | `rateLimitInterceptor` | `RateLimitInterceptor?` | 存在 `RateLimitChecker` Bean | 限流拦截器 |
 
 ### 12.4 如需支持 API Key 认证
@@ -440,11 +432,12 @@ harnax:
 ### 12.6 Controller 标注权限
 
 ```kotlin
-@RequireScope("my:read")
+// 无标注 —— 内部和外部均可访问（需通过认证）
 @GetMapping("/data")
 fun getData() { ... }
 
-@RequireScope("my:admin", internalOnly = true)
+// 仅内部服务可访问
+@InternalOnly
 @PostMapping("/internal-op")
 fun internalOp() { ... }
 ```
@@ -453,7 +446,7 @@ fun internalOp() { ... }
 
 ```kotlin
 val context = AuthContextHolder.get()
-// context.callerId / scopes / callerType / tenantId / rateLimitPerMinute
+// context.callerId / callerType / tenantId / rateLimitPerMinute
 ```
 
 ## 13. 模块文件清单
@@ -464,10 +457,10 @@ harnax-auth/src/main/kotlin/com/agnetix/harnax/auth/
 ├── AuthContext.kt
 ├── InternalTokenProvider.kt
 ├── UnifiedAuthFilter.kt
-├── ScopeAuthorizationInterceptor.kt
+├── InternalAuthorizationInterceptor.kt
+├── InternalOnly.kt
 ├── RateLimitInterceptor.kt
 ├── RateLimitChecker.kt
-├── RequireScope.kt
 ├── ExternalApiKeyValidator.kt
 ├── ApiKeyStore.kt
 ├── ApiKeyInfo.kt

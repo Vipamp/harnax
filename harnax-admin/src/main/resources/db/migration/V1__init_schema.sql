@@ -1,12 +1,11 @@
 -- Harnax Database Initialization Script
--- This script creates all necessary tables for the Harnax platform
+-- All tables for the Harnax platform (merged from V1/V2/V3)
 
 -- ============================================
 -- System Tables
 -- ============================================
 
--- Drop and create User table
-DROP TABLE IF EXISTS `sys_user`;
+-- User table
 CREATE TABLE `sys_user`
 (
     `id`              bigint       NOT NULL AUTO_INCREMENT COMMENT 'User ID',
@@ -28,8 +27,7 @@ CREATE TABLE `sys_user`
     KEY               `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User table';
 
--- Drop and create Token blacklist table
-DROP TABLE IF EXISTS `sys_token_blacklist`;
+-- Token blacklist table
 CREATE TABLE `sys_token_blacklist`
 (
     `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Blacklist ID',
@@ -48,8 +46,7 @@ CREATE TABLE `sys_token_blacklist`
     KEY           `idx_token_lookup` (`token_hash`,`expire_time`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token blacklist table';
 
--- Drop and create Tenant table
-DROP TABLE IF EXISTS `tenant`;
+-- Tenant table
 CREATE TABLE `tenant`
 (
     `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Tenant ID',
@@ -62,27 +59,25 @@ CREATE TABLE `tenant`
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tenant table';
 
--- Drop and create User-Tenant relationship table
-DROP TABLE IF EXISTS `user_tenant`;
+-- User-Tenant relationship table
 CREATE TABLE `user_tenant`
 (
-    `id`        bigint NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
-    `user_id`   bigint NOT NULL COMMENT 'User ID',
-    `tenant_id` bigint NOT NULL COMMENT 'Tenant ID',
-    `role`      varchar(50) DEFAULT 'member' COMMENT 'Role (admin/member)',
-    `status`    tinyint(1) DEFAULT '1' COMMENT 'Status (0: Disabled, 1: Enabled)',
-    `joined_at` datetime    DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
+    `id`        BIGINT      NOT NULL AUTO_INCREMENT COMMENT 'Relationship ID',
+    `user_id`   BIGINT      NOT NULL COMMENT 'User ID',
+    `tenant_id` BIGINT      NOT NULL COMMENT 'Tenant ID',
+    `role`      VARCHAR(50) NOT NULL DEFAULT 'member' COMMENT 'Role (admin/member)',
+    `status`    TINYINT(1)  NOT NULL DEFAULT 1 COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `joined_at` DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Join time',
     PRIMARY KEY (`id`),
-    KEY         `idx_tenant_id` (`tenant_id`),
-    KEY         `idx_user_id` (`user_id`)
+    KEY `idx_tenant_id` (`tenant_id`),
+    KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='User-Tenant relationship table';
 
 -- ============================================
 -- Business Tables
 -- ============================================
 
--- Drop and create MCP Server table
-DROP TABLE IF EXISTS `mcp_server`;
+-- MCP Server table
 CREATE TABLE `mcp_server`
 (
     `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'MCP Server ID',
@@ -102,8 +97,7 @@ CREATE TABLE `mcp_server`
     KEY           `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='MCP Server table';
 
--- Drop and create Skill Repository table
-DROP TABLE IF EXISTS `skill_repository`;
+-- Skill Repository table
 CREATE TABLE `skill_repository`
 (
     `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Repository ID',
@@ -122,8 +116,7 @@ CREATE TABLE `skill_repository`
     KEY           `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill Repository table';
 
--- Drop and create Skill table
-DROP TABLE IF EXISTS `skill`;
+-- Skill table
 CREATE TABLE `skill`
 (
     `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Skill ID',
@@ -143,8 +136,7 @@ CREATE TABLE `skill`
     KEY             `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Skill table';
 
--- Drop and create Model Provider table
-DROP TABLE IF EXISTS `model_provider`;
+-- Model Provider table
 CREATE TABLE `model_provider`
 (
     `id`          bigint       NOT NULL AUTO_INCREMENT COMMENT 'Provider ID',
@@ -164,8 +156,7 @@ CREATE TABLE `model_provider`
     KEY           `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model Provider table';
 
--- Drop and create Model table
-DROP TABLE IF EXISTS `model`;
+-- Model table
 CREATE TABLE `model`
 (
     `id`                bigint       NOT NULL AUTO_INCREMENT COMMENT 'Model ID',
@@ -192,8 +183,7 @@ CREATE TABLE `model`
     KEY                 `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Model table';
 
--- Drop and create Agent table
-DROP TABLE IF EXISTS `agent`;
+-- Agent table
 CREATE TABLE `agent`
 (
     `id`            bigint       NOT NULL AUTO_INCREMENT COMMENT 'Agent ID',
@@ -215,8 +205,7 @@ CREATE TABLE `agent`
     KEY             `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Agent table';
 
--- Drop and create Session table
-DROP TABLE IF EXISTS `session`;
+-- Session table
 CREATE TABLE `session`
 (
     `id`                  bigint       NOT NULL AUTO_INCREMENT COMMENT 'Session ID',
@@ -246,8 +235,7 @@ CREATE TABLE `session`
     KEY                   `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Session table';
 
--- Drop and create Plan Note table
-DROP TABLE IF EXISTS `plan_note`;
+-- Plan Note table
 CREATE TABLE `plan_note`
 (
     `id`               bigint       NOT NULL AUTO_INCREMENT COMMENT 'Plan ID',
@@ -266,8 +254,7 @@ CREATE TABLE `plan_note`
     KEY                `idx_plan_id` (`plan_id`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Plan Note table';
 
--- Drop and create Process Log table
-DROP TABLE IF EXISTS `process_log`;
+-- Process Log table
 CREATE TABLE `process_log`
 (
     `id`          bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
@@ -285,8 +272,7 @@ CREATE TABLE `process_log`
     KEY           `idx_ts` (`ts`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Process Log table';
 
--- Drop and create Token Stats table
-DROP TABLE IF EXISTS `token_stats`;
+-- Token Statistics table
 CREATE TABLE `token_stats`
 (
     `id`            bigint NOT NULL AUTO_INCREMENT COMMENT 'Stats ID',
@@ -305,8 +291,7 @@ CREATE TABLE `token_stats`
     KEY             `idx_ts` (`ts`)
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Token Statistics table';
 
--- Drop and create Tool Call Log table
-DROP TABLE IF EXISTS `tool_call_log`;
+-- Tool Call Log table
 CREATE TABLE `tool_call_log`
 (
     `id`         bigint NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
@@ -328,22 +313,117 @@ CREATE TABLE `tool_call_log`
 ) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Tool Call Log table';
 
 -- ============================================
+-- Scheduled Job Tables
+-- ============================================
+
+CREATE TABLE `sys_job`
+(
+    `id`              bigint       NOT NULL AUTO_INCREMENT COMMENT 'Job ID',
+    `job_name`        varchar(128) NOT NULL COMMENT 'Job name',
+    `job_group`       varchar(64)  NOT NULL DEFAULT 'DEFAULT' COMMENT 'Job group',
+    `job_class`       varchar(256) NOT NULL COMMENT 'Fully qualified class name',
+    `cron_expression` varchar(128) NOT NULL COMMENT 'Cron expression',
+    `job_status`      tinyint      NOT NULL DEFAULT 1 COMMENT 'Status (0-paused, 1-running)',
+    `concurrent`      tinyint      NOT NULL DEFAULT 1 COMMENT 'Concurrent execution allowed (0-no, 1-yes)',
+    `description`     varchar(512) NOT NULL DEFAULT '' COMMENT 'Job description',
+    `is_public`       tinyint      NOT NULL DEFAULT 1 COMMENT 'Public status (0:no, 1:yes)',
+    `creator`         varchar(64)  NOT NULL DEFAULT 'system' COMMENT 'Creator',
+    `active`          tinyint      NOT NULL DEFAULT 1 COMMENT 'Active status (0-deleted, 1-active)',
+    `create_time`     datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time`     datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_job_name_group` (`job_name`, `job_group`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Scheduled Job table';
+
+CREATE TABLE `sys_job_log`
+(
+    `id`             bigint       NOT NULL AUTO_INCREMENT COMMENT 'Log ID',
+    `job_id`         bigint       NOT NULL COMMENT 'Job ID',
+    `job_name`       varchar(128) NOT NULL COMMENT 'Job name',
+    `job_group`      varchar(64)  NOT NULL DEFAULT 'DEFAULT' COMMENT 'Job group',
+    `invoke_target`  varchar(512) NOT NULL DEFAULT '' COMMENT 'Invocation target',
+    `job_message`    varchar(512) NOT NULL DEFAULT '' COMMENT 'Execution message',
+    `status`         tinyint      NOT NULL DEFAULT 1 COMMENT 'Execution status (0-failure, 1-success)',
+    `exception_info` text         DEFAULT NULL COMMENT 'Exception information',
+    `start_time`     datetime     DEFAULT NULL COMMENT 'Start time',
+    `end_time`       datetime     DEFAULT NULL COMMENT 'End time',
+    `creator`        varchar(64)  NOT NULL DEFAULT 'system' COMMENT 'Creator',
+    `create_time`    datetime     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    PRIMARY KEY (`id`),
+    KEY `idx_job_id` (`job_id`)
+) ENGINE=InnoDB CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='Scheduled Job Log table';
+
+-- ============================================
+-- Channel Table
+-- ============================================
+
+CREATE TABLE `channel` (
+    `id`                 BIGINT(20)   NOT NULL AUTO_INCREMENT                       COMMENT 'ID',
+    `tenant_id`          BIGINT(20)   NOT NULL DEFAULT 1                             COMMENT '租户ID',
+    `name`               VARCHAR(100) NOT NULL                                       COMMENT '通道名称',
+    `type`               VARCHAR(20)  NOT NULL                                       COMMENT '渠道类型 wecom/wechat/feishu/dingtalk/http',
+    `agent_id`           BIGINT(20)   NOT NULL                                       COMMENT '关联的智能体 ID',
+    `callback_key`       VARCHAR(100) NOT NULL                                       COMMENT '回调标识(用于生成回调URL)',
+    `session_id`         VARCHAR(64)  NOT NULL                                       COMMENT '不可变的会话ID(UUID), 创建时生成',
+    `communication_mode` VARCHAR(20)  NOT NULL DEFAULT 'webhook'                     COMMENT '通信模式 webhook/websocket/long_polling',
+    `enabled`            TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '是否随服务启动自动监听 (0:否,1:是)',
+    `config_json`        TEXT         DEFAULT NULL                                   COMMENT '渠道差异化配置 JSON',
+    `description`        TEXT         DEFAULT NULL                                   COMMENT '描述',
+    `creator`            VARCHAR(100) NOT NULL DEFAULT 'system'                      COMMENT '创建人',
+    `status`             TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '是否启用 (0:禁用,1:启用)',
+    `active`             TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '逻辑删除 (0:已删除,1:正常)',
+    `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP             COMMENT '创建时间',
+    `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_callback_key` (`callback_key`),
+    KEY `idx_agent_id` (`agent_id`),
+    KEY `idx_type_enabled_status_active` (`type`, `enabled`, `status`, `active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel 通道配置表';
+
+-- ============================================
+-- API Key Table
+-- ============================================
+
+CREATE TABLE `api_key` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `name`            VARCHAR(128) NOT NULL UNIQUE COMMENT 'API Key name',
+    `key_hash`        VARCHAR(64)  NOT NULL UNIQUE COMMENT 'SHA-256 hash of the raw key',
+    `key_prefix`      VARCHAR(32)  NOT NULL COMMENT 'Key prefix for display (e.g. hnx_sk_live_xxxx)',
+    `scopes`          VARCHAR(512) NOT NULL COMMENT 'Comma-separated scopes (e.g. api:chat,api:session)',
+    `tenant_id`       BIGINT       NULL COMMENT 'Tenant ID',
+    `rate_limit`      INT          NULL DEFAULT 60 COMMENT 'Rate limit per minute',
+    `enabled`         TINYINT(1)   NOT NULL DEFAULT 1 COMMENT 'Whether enabled (0:disabled, 1:enabled)',
+    `expires_at`      DATETIME     NULL COMMENT 'Expiration time',
+    `creator`         VARCHAR(64)  NULL COMMENT 'Creator',
+    `active`          INT          NOT NULL DEFAULT 1 COMMENT 'Active status (0:deleted, 1:active)',
+    `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_key_hash (`key_hash`),
+    INDEX idx_enabled (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='External API Key table';
+
+-- ============================================
 -- Initial Data
 -- ============================================
 
--- Insert default admin user
--- Password: admin123 (BCrypt encrypted)
+-- Default admin user (password: admin123, BCrypt encrypted)
 INSERT INTO `sys_user` (`id`, `tenant_id`, `username`, `password`, `nickname`, `email`, `phone`, `gender`, `avatar`,
                         `status`, `is_admin`, `active`, `last_login_time`, `create_time`, `update_time`)
 VALUES (1, NULL, 'admin', '$2a$10$esqm4yYiXlpoCQsUOcjGIubYyUU0irYEcLJpCQBpkAtP/Pmm6XphS', 'System Admin',
         'admin@harnax.com', '', 1, '', 1, 1, 1, '2026-05-13 22:48:44', '2026-04-22 16:35:55', '2026-05-13 22:48:44');
 
--- Insert default tenant
+-- Default tenant
 INSERT INTO `tenant` (`id`, `name`, `status`, `creator`, `active`, `create_time`, `update_time`)
 VALUES (1, 'Default Organization', 1, 'system', 1, '2026-05-01 11:10:40', '2026-05-07 15:32:08');
 
--- Insert admin-tenant relationship
+-- Admin user-tenant relationship
 INSERT INTO `user_tenant` (`id`, `user_id`, `tenant_id`, `role`, `status`, `joined_at`)
 VALUES (1, 1, 1, 'admin', 1, '2026-05-01 11:10:42');
 
-
+-- Default feishu channel
+INSERT INTO `channel`
+(`tenant_id`, `name`, `type`, `agent_id`, `callback_key`, `session_id`, `communication_mode`, `enabled`, `config_json`, `description`, `creator`, `status`, `active`)
+VALUES
+    (1, '飞书助手', 'feishu', 1, 'feishu-ws-20260605', 'ch-feishu-ws-001', 'websocket', 1,
+     '{"appId": "cli_a978496aac395cbd", "appSecret": "4HwsyncAKtIttiEIvcRIqhMlGvNtpTFg"}',
+     '飞书 WebSocket 长连接渠道', 'system', 1, 1);

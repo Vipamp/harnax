@@ -19,6 +19,7 @@ import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.reactive.function.client.WebClient
+import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
 
 /**
@@ -125,6 +126,10 @@ class RouterClient(
                 }
             }
         }
+
+        else -> {
+            TODO()
+        }
     }
 
     /**
@@ -146,7 +151,7 @@ class RouterClient(
             imageUrls = imageUrls,
         )
 
-        log.debug("Sending stream request to router for session={}, imageUrls={}", sessionId, imageUrls.size)
+        log.info("[Channel] Sending stream request to router for session={}, imageUrls={}", sessionId, imageUrls.size)
 
         return webClient.post()
             .uri("$routerUrl/api/router/agent/chat/stream")
@@ -154,16 +159,44 @@ class RouterClient(
             .bodyValue(request)
             .retrieve()
             .bodyToFlux(ChatEvent::class.java)
+            .doOnNext { event ->
+                log.info("[Channel←Router] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
+            }
+            .doOnComplete {
+                log.info("[Channel←Router] Stream completed for session=$sessionId")
+            }
             .onErrorResume { e ->
-                log.error("Stream connection to router failed for session=$sessionId", e)
+                val errorMsg = describeRouterError(e, sessionId)
+                log.error("Stream connection to router failed for session=$sessionId: $errorMsg", e)
                 Flux.just(
                     ErrorChatEvent(
                         code = HarnaxErrorCode.ROUTER_CONNECTION_ERROR.code,
-                        message = e.message ?: "Connection failed",
+                        message = errorMsg,
                     ),
                     EndEventChatEvent(),
                 )
             }
             .asFlow()
+    }
+
+    /**
+     * Build a descriptive error message for router call failures.
+     */
+    private fun describeRouterError(e: Throwable, sessionId: String): String {
+        if (e is WebClientResponseException) {
+            val status = e.statusCode.value()
+            val target = "$routerUrl/api/router/agent/chat/stream"
+            val body = e.responseBodyAsString.take(200)
+            return when (status) {
+                401 ->
+                    "[Channel→Router] Authentication failed (401) calling $target for session=$sessionId. " +
+                        "JWT may be invalid or expired. Response: $body"
+                403 ->
+                    "[Channel→Router] Forbidden (403) calling $target for session=$sessionId. " +
+                        "Access denied. Response: $body"
+                else -> "[Channel→Router] HTTP $status calling $target for session=$sessionId. Response: $body"
+            }
+        }
+        return "[Channel→Router] Failed to reach router for session=$sessionId: ${e.message}"
     }
 }

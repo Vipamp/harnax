@@ -1,5 +1,6 @@
 package com.agnetix.harnax.router.service
 
+import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -10,7 +11,7 @@ class InstanceCircuitBreakerTest {
 
     @BeforeEach
     fun setUp() {
-        breaker = InstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 500)
+        breaker = LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 500)
     }
 
     @Test

@@ -1,5 +1,9 @@
 server:
   port: 8081
+  # Trust X-Forwarded-For / X-Real-IP / X-Forwarded-Proto headers from nginx.
+  # Without this, request.getRemoteAddr() returns the nginx IP instead of the real client IP,
+  # and request.getScheme() returns "http" even if the client used HTTPS.
+  forward-headers-strategy: native
 
 spring:
   application:
@@ -7,7 +11,7 @@ spring:
   codec:
     max-in-memory-size: 16MB  # Support large payloads (e.g., base64 image data)
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    url: ${DB_URL:jdbc:mysql://172.20.10.5:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -26,7 +30,7 @@ spring:
     baseline-on-migrate: true
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
+      host: ${REDIS_HOST:172.20.10.5}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
@@ -74,11 +78,28 @@ harnax:
       token-ttl-seconds: 300
     external:
       enabled: true
+    # The bundled monitor UI is designed to be reached from a browser without
+    # service-to-service credentials. Restrict by network boundary (nginx / VPC)
+    # instead of by JWT.
+    # IMPORTANT: Do NOT add `/api/router/` here — internal APIs like heartbeat
+    # and instance registration rely on UnifiedAuthFilter to validate Bearer JWT
+    # tokens and set AuthContext, which InternalAuthorizationInterceptor depends on.
+    skip-paths:
+      - /ui
+      - /ui/
+      - /index.html
+      - /static/
+      - /favicon.ico
+      - /style.css  
+      - /app.js
+      - /api/router/monitor/
 
 # Admin service URL for internal API calls (API key validation, session info)
 admin:
   service:
-    url: ${ADMIN_SERVICE_URL:http://localhost:8080}
+    url: ${ADMIN_SERVICE_URL:http://172.20.10.5:8080}
+  internal-api:
+    secret: ${ADMIN_INTERNAL_API_SECRET:change-me-in-production-min-32-chars!!}
 
 # Actuator / Metrics
 management:

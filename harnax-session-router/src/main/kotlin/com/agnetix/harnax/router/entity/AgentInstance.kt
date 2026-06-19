@@ -99,6 +99,9 @@ class AgentInstance : Serializable {
                 }
             }
 
+            // If it looks like an IP but doesn't match the pattern (e.g. non-numeric), block it
+            if (trimmed.matches(Regex("^[^.]+\\.[^.]+\\.[^.]+\\.[^.]+$"))) return true
+
             return false
         }
     }

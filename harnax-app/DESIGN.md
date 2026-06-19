@@ -748,7 +748,7 @@ harnax-webui (管理后台)          harnax-app (对话应用)
                                 Agent Service :8082
 ```
 
-两个前端共享同一个后端基础设施，但通过不同的 API 入口和认证方式访问。Chat App 使用 Router 的 `router:invoke` scope，管理后台使用 Spring Security JWT。
+两个前端共享同一个后端基础设施，但通过不同的 API 入口和认证方式访问。Chat App 使用 Router 的外部 API Key 认证（`X-Api-Key`），管理后台使用 Spring Security JWT。
 
 ---
 
