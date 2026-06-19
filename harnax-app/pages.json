@@ -1,0 +1,28 @@
+{
+  "pages": [
+    {
+      "path": "pages/chat/index",
+      "style": {
+        "navigationBarTitleText": "Harnax Chat",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/setup/index",
+      "style": {
+        "navigationBarTitleText": "Connection Setup",
+        "navigationStyle": "custom"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "Harnax Chat",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f5f5",
+    "backgroundTextStyle": "dark",
+    "app-plus": {
+      "titleNView": false
+    }
+  }
+}

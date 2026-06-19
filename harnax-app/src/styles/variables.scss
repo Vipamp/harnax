@@ -1,0 +1,81 @@
+:root {
+  /* Primary */
+  --chat-primary: #4f6ef7;
+  --chat-primary-light: #e8edff;
+  --chat-primary-dark: #3a56d4;
+  --chat-primary-rgb: 79, 110, 247;
+
+  /* Background */
+  --chat-bg: #f5f7fa;
+  --chat-bg-container: #ffffff;
+  --chat-bg-elevated: #f8f9fc;
+  --chat-bg-input: #ffffff;
+
+  /* Text */
+  --chat-text-primary: #1a1a2e;
+  --chat-text-secondary: #5c5c6f;
+  --chat-text-tertiary: #9e9eab;
+  --chat-text-inverse: #ffffff;
+
+  /* Border */
+  --chat-border: #e8eaf2;
+  --chat-border-light: #f0f2f8;
+
+  /* Status */
+  --chat-success: #52c41a;
+  --chat-warning: #faad14;
+  --chat-error: #ff4d4f;
+  --chat-info: #1890ff;
+
+  /* Shadow */
+  --chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --chat-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --chat-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* Bubble */
+  --chat-bubble-user: #4f6ef7;
+  --chat-bubble-assistant: #ffffff;
+  --chat-bubble-user-text: #ffffff;
+  --chat-bubble-assistant-text: #1a1a2e;
+
+  /* Sidebar */
+  --chat-sidebar-width: 280px;
+  --chat-sidebar-bg: #ffffff;
+
+  /* Radius */
+  --chat-radius-sm: 6px;
+  --chat-radius-md: 12px;
+  --chat-radius-lg: 16px;
+  --chat-radius-xl: 20px;
+}
+
+html.dark {
+  --chat-primary: #6b8aff;
+  --chat-primary-light: #1e2a4a;
+  --chat-primary-dark: #8da4ff;
+  --chat-primary-rgb: 107, 138, 255;
+
+  --chat-bg: #0d1117;
+  --chat-bg-container: #161b22;
+  --chat-bg-elevated: #1c2128;
+  --chat-bg-input: #1c2128;
+
+  --chat-text-primary: #e6edf3;
+  --chat-text-secondary: #8b949e;
+  --chat-text-tertiary: #6e7681;
+  --chat-text-inverse: #0d1117;
+
+  --chat-border: #30363d;
+  --chat-border-light: #21262d;
+
+  --chat-bubble-user: #4f6ef7;
+  --chat-bubble-assistant: #1c2128;
+  --chat-bubble-user-text: #ffffff;
+  --chat-bubble-assistant-text: #e6edf3;
+
+  --chat-sidebar-bg: #161b22;
+
+  --chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --chat-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --chat-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
