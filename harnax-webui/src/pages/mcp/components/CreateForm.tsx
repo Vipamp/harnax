@@ -7,7 +7,6 @@ import {
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
-import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
 
 export interface CreateFormProps {
@@ -19,19 +18,19 @@ export interface CreateFormProps {
 
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
-  const [mcpType, setMcpType] = useState<string>(isPersonal() ? 'stdio' : 'sse');
+  const [mcpType, setMcpType] = useState<string>('sse');
   const [form] = Form.useForm();
   const [testing, setTesting] = useState(false);
   const { isAdmin } = getCurrentUserInfo();
   const [isPublic, setIsPublic] = useState(false);
   const [status, setStatus] = useState<number>(1);
 
-  // MCP 类型选项 - 根据版本动态生成
+  // MCP 类型选项 - stdio 仅个人版可用
   const mcpTypeOptions = [
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
-  ].filter(opt => isPersonal() || opt.value !== 'stdio');
+  ].filter(opt => opt.value !== 'stdio');
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
@@ -107,7 +106,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.mcp.typePlaceholder', defaultMessage: 'Please select MCP type' })}
-            defaultValue={isPersonal() ? 'stdio' : 'sse'}
+            defaultValue="sse"
             onChange={(val: string) => setMcpType(val)}
             options={mcpTypeOptions}
             style={{ fontSize: '12px' }}

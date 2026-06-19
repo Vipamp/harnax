@@ -56,8 +56,6 @@ export default [
         icon: 'robot',
         path: '/context/model',
         component: './model',
-        // 仅公有云版可用(模型市场)
-        edition: ['public'],
       },
       {
         name: 'mcp',
@@ -75,8 +73,6 @@ export default [
         icon: 'thunderbolt',
         path: '/context/skill',
         component: './skill',
-        // 仅公有云版可用(技能市场)
-        edition: ['public'],
       },
       {
         path: '/context/skill/detail/:id',
@@ -112,8 +108,6 @@ export default [
     name: 'system',
     icon: 'setting',
     path: '/system',
-    // 仅企业版和公有云版可用
-    edition: ['enterprise', 'public'],
     routes: [
       {
         name: 'user.management',
@@ -126,8 +120,6 @@ export default [
         path: '/system/tenant',
         component: './tenant/management',
         access: 'canAccessUserManagement',
-        // 仅公有云版可用
-        edition: ['public'],
       },
       {
         name: 'token.monitor',

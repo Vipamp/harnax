@@ -7,7 +7,6 @@ import {
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
-import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
 
 export interface UpdateFormProps {
@@ -54,12 +53,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     }
   }, [values]);
 
-  // MCP 类型选项 - 根据版本动态生成
   const mcpTypeOptions = [
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
-  ].filter(opt => isPersonal() || opt.value !== 'stdio');
+  ].filter(opt => opt.value !== 'stdio');
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {

@@ -1,11 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { message } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import * as CryptoJS from 'crypto-js';
 import { checkUsername, checkPhone, checkEmail } from '@/services/ant-design-pro/user';
-import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
 
 export interface CreateFormProps {
@@ -17,9 +16,6 @@ export interface CreateFormProps {
 const CreateForm: React.FC<CreateFormProps> = (props) => {
   const { onCancel, onSubmit, visible } = props;
   const intl = useIntl();
-  
-  // 判断是否是个人版
-  const personalMode = useMemo(() => isPersonal(), []);
 
   const handleFinish = async (values: API.SysUserCreateRequest) => {
     // 对密码进行前端加密（SHA-256）
@@ -233,7 +229,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           }}
           rules={[
             {
-              required: !personalMode,
+              required: true,
               message: intl.formatMessage({
                 id: 'pages.user.management.email.required',
                 defaultMessage: '请输入邮箱',
@@ -278,7 +274,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
           }}
           rules={[
             {
-              required: !personalMode,
+              required: true,
               message: intl.formatMessage({
                 id: 'pages.user.management.phone.required',
                 defaultMessage: '请输入手机号',

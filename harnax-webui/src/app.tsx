@@ -11,7 +11,6 @@ import { ThemeProvider } from '@/contexts/ThemeProvider';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
-import { filterRoutesByEdition } from '@/utils/edition';
 
 const isDev = process.env.NODE_ENV === 'development';
 const loginPath = '/login';
@@ -185,15 +184,4 @@ export const request: RequestConfig = {
  */
 export function rootContainer(container: React.ReactNode) {
   return <ThemeProvider>{container}</ThemeProvider>;
-}
-
-/**
- * 路由补丁,根据当前版本过滤路由
- * @doc https://umijs.org/docs/api/runtime-config#patchroutes
- */
-export function patchRoutes(routes: any) {
-  // 过滤不支持版本的路由
-  if (routes && routes.routeList) {
-    routes.routeList = filterRoutesByEdition(routes.routeList);
-  }
 }

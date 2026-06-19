@@ -19,7 +19,6 @@ import { Footer } from '@/components';
 import { login as loginApi, getCaptcha } from '@/services/ant-design-pro/login';
 import Settings from '../../../../config/defaultSettings';
 import CryptoJS from 'crypto-js';
-import { isPersonal, isPublic, FEATURES } from '@/utils/edition';
 
 const useStyles = createStyles(({ token }) => {
   return {
@@ -577,10 +576,10 @@ const Login: React.FC = () => {
                   key: 'account',
                   label: '账号密码登录',
                 },
-                ...(FEATURES.phoneLogin ? [{
+                {
                   key: 'mobile',
                   label: '验证码登录',
-                }] : []),
+                },
               ]}
             />
 
@@ -732,17 +731,7 @@ const Login: React.FC = () => {
             <span className={styles.featureTag}>⚡ 高效协同</span>
           </div>
 
-          {/* 注册跳转 - 仅公网版显示 */}
-          {isPublic() && (
-            <div style={{ textAlign: 'center', marginTop: 24 }}>
-              <span style={{ color: '#6b7280', fontSize: '14px' }}>
-                还没有 OpenDuck 账号？
-              </span>
-              <a style={{ color: '#1677ff', fontWeight: 500, marginLeft: 8 }}>
-                立即注册
-              </a>
-            </div>
-          )}
+          {/* 注册跳转 */}
 
           {/* 第三方登录 */}
           <div className={styles.thirdPartyLogin}>

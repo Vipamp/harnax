@@ -3,7 +3,6 @@ import { Switch } from 'antd';
 import { UserOutlined } from '@ant-design/icons';
 import { ProForm, ProFormSelect, ProFormText, ProFormTextArea } from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
-import { isPersonal } from '@/utils/edition';
 import { FormModal } from '@/components/FormModal';
 
 export interface UpdateFormProps {
@@ -16,11 +15,16 @@ export interface UpdateFormProps {
 const UpdateForm: React.FC<UpdateFormProps> = (props) => {
   const { onCancel, onSubmit, visible, values } = props;
   const intl = useIntl();
-  
-  // 根据版本设置校验规则：企业版和公开版必填，个人版不强制
-  const isPersonalEdition = isPersonal();
-  
+
+  // Email 必填
   const emailRules: any[] = [
+    {
+      required: true,
+      message: intl.formatMessage({
+        id: 'pages.user.management.email.required',
+        defaultMessage: '邮箱不能为空',
+      }),
+    },
     {
       type: 'email',
       message: intl.formatMessage({
@@ -29,19 +33,16 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
       }),
     },
   ];
-  
-  // 企业版和公开版：email 必填
-  if (!isPersonalEdition) {
-    emailRules.unshift({
+
+  // Phone 必填
+  const phoneRules: any[] = [
+    {
       required: true,
       message: intl.formatMessage({
-        id: 'pages.user.management.email.required',
-        defaultMessage: '邮箱不能为空',
+        id: 'pages.user.management.phone.required',
+        defaultMessage: '手机号不能为空',
       }),
-    });
-  }
-  
-  const phoneRules: any[] = [
+    },
     {
       pattern: /^1[3-9]\d{9}$/,
       message: intl.formatMessage({
@@ -50,17 +51,6 @@ const UpdateForm: React.FC<UpdateFormProps> = (props) => {
       }),
     },
   ];
-  
-  // 企业版和公开版：phone 必填
-  if (!isPersonalEdition) {
-    phoneRules.unshift({
-      required: true,
-      message: intl.formatMessage({
-        id: 'pages.user.management.phone.required',
-        defaultMessage: '手机号不能为空',
-      }),
-    });
-  }
 
   return (
     <FormModal
