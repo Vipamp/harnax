@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.TokenStatsAggregationResponse
 import com.agnetix.harnax.admin.service.TokenStatsService
 import com.agnetix.harnax.common.dto.ResultVo
@@ -20,7 +19,6 @@ import java.time.format.DateTimeFormatter
 @RestController
 @RequestMapping("/api/token-stats")
 @Tag(name = "Token Statistics", description = "Token consumption statistics APIs")
-@RequiresEdition("enterprise", "public")
 class TokenStatsController(
     private val tokenStatsService: TokenStatsService,
 ) {

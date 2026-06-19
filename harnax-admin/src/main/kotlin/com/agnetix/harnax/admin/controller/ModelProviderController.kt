@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.ModelProviderCreateRequest
 import com.agnetix.harnax.admin.dto.ModelProviderResponse
 import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
@@ -22,7 +21,6 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/model-providers")
 @Tag(name = "Model Provider Management", description = "Model provider CRUD APIs")
-@RequiresEdition("public")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService,
 ) {

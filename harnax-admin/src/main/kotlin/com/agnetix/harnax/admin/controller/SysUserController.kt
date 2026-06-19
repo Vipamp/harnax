@@ -1,7 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.EditionUtil
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserResponse
@@ -23,10 +21,8 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/users")
 @Tag(name = "User Management", description = "User related APIs")
-@RequiresEdition("enterprise", "public")
 class SysUserController(
     private val sysUserService: SysUserService,
-    private val editionUtil: EditionUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(SysUserController::class.java)
@@ -76,8 +72,7 @@ class SysUserController(
     fun createUser(
         @Valid @RequestBody request: SysUserCreateRequest,
     ): ResultVo<Void> = try {
-        // Pass edition information, personal edition does not require email and phone
-        if (sysUserService.createUser(request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("Failed to create user")
+        if (sysUserService.createUser(request)) ResultVo.success() else ResultVo.error("Failed to create user")
     } catch (e: Exception) {
         log.error("Failed to create user", e)
         ResultVo.error(e.message ?: "Failed to create user")
@@ -89,8 +84,7 @@ class SysUserController(
         @Parameter(description = "User ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: SysUserUpdateRequest,
     ): ResultVo<Void> = try {
-        // Pass edition information, personal edition does not perform required field validation
-        if (sysUserService.updateUser(id, request, editionUtil.isPersonal())) ResultVo.success() else ResultVo.error("Failed to update user")
+        if (sysUserService.updateUser(id, request)) ResultVo.success() else ResultVo.error("Failed to update user")
     } catch (e: Exception) {
         log.error("Failed to update user", e)
         ResultVo.error(e.message ?: "Failed to update user")

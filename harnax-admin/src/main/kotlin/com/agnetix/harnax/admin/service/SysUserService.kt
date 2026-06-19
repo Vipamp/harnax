@@ -34,21 +34,23 @@ interface SysUserService {
     /**
      * Create user
      *
+     * Email and phone are required and must be in valid format.
+     *
      * @param request User create request object
-     * @param isPersonal Whether it is personal edition
      * @return Create result
      */
-    fun createUser(request: SysUserCreateRequest, isPersonal: Boolean = false): Boolean
+    fun createUser(request: SysUserCreateRequest): Boolean
 
     /**
      * Update user
      *
+     * Email and phone are required and must be in valid format.
+     *
      * @param id      User ID
      * @param request User update request object
-     * @param isPersonal Whether it is personal edition
      * @return Update result
      */
-    fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean = false): Boolean
+    fun updateUser(id: Long, request: SysUserUpdateRequest): Boolean
 
     /**
      * Toggle user enable status

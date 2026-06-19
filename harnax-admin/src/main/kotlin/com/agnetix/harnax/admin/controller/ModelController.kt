@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.ModelCreateRequest
 import com.agnetix.harnax.admin.dto.ModelResponse
 import com.agnetix.harnax.admin.dto.ModelUpdateRequest
@@ -21,7 +20,6 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/models")
 @Tag(name = "Model Management", description = "Model CRUD APIs")
-@RequiresEdition("public")
 class ModelController(
     private val modelService: ModelService,
 ) {

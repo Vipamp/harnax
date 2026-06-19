@@ -1,10 +1,8 @@
 package com.agnetix.harnax.admin.common
 
-import com.agnetix.harnax.admin.config.EditionUtil
-
 /**
  * System information class
- * Used to manage system version, edition type and other system-related information
+ * Used to expose system version and build information
  */
 data class SystemInfo(
     /**
@@ -25,14 +23,5 @@ data class SystemInfo(
     /**
      * Environment info (e.g., dev, test, prod)
      */
-    val edition: String = "",
-) {
-    companion object {
-        /**
-         * Get default system info instance
-         */
-        fun from(editionUtil: EditionUtil): SystemInfo = SystemInfo(
-            edition = editionUtil.getCurrentEdition(),
-        )
-    }
-}
+    val environment: String = "",
+)

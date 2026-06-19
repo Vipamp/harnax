@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
@@ -22,7 +21,6 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/agents")
 @Tag(name = "Agent Management", description = "Agent related APIs")
-@RequiresEdition("enterprise", "public")
 class AgentController(
     private val agentService: AgentService,
 ) {

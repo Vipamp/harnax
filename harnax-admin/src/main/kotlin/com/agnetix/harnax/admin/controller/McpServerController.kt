@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
@@ -21,7 +20,6 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "MCP Server Management", description = "MCP server related APIs")
 class McpServerController(
     private val mcpServerService: McpServerService,
-    private val editionUtil: EditionUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(McpServerController::class.java)
@@ -76,9 +74,7 @@ class McpServerController(
     ): ResultVo<Void> {
         return try {
             // Enterprise and public editions do not support stdio mode
-            if ((editionUtil.isEnterprise() || editionUtil.isPublic()) &&
-                request.type == "stdio"
-            ) {
+            if (request.type == "stdio") {
                 return ResultVo.error("stdio mode is not supported in current edition")
             }
 

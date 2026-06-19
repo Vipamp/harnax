@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.request.AddUserToTenantRequest
 import com.agnetix.harnax.admin.dto.request.CreateTenantRequest
@@ -25,7 +24,6 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/tenant")
 @Tag(name = "Tenant Management", description = "Tenant related APIs")
-@RequiresEdition("public")
 class TenantController(
     private val tenantService: TenantService,
     private val jwtUtil: JwtUtil,

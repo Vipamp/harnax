@@ -208,20 +208,10 @@
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <includes>
-                    <include>**/edition.properties</include>
-                </includes>
-            </resource>
-            <resource>
-                <directory>src/main/resources</directory>
                 <filtering>false</filtering>
-                <excludes>
-                    <exclude>**/edition.properties</exclude>
-                </excludes>
             </resource>
         </resources>
-        
+
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -295,26 +285,6 @@
                     <target>21</target>
                 </configuration>
             </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <version>3.4.0</version>
-                <executions>
-                    <execution>
-                        <id>add-edition-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${edition.source.dir}</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <!-- Native Maven Plugin - Temporarily Disabled -->
             <plugin>
                 <groupId>org.graalvm.buildtools</groupId>
@@ -329,36 +299,6 @@
     </build>
 
     <profiles>
-        <!-- 个人版(默认) -->
-        <profile>
-            <id>personal</id>
-            <properties>
-                <edition.current>personal</edition.current>
-                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/personal</edition.source.dir>
-            </properties>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-        </profile>
-        
-        <!-- 企业版 -->
-        <profile>
-            <id>enterprise</id>
-            <properties>
-                <edition.current>enterprise</edition.current>
-                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/enterprise</edition.source.dir>
-            </properties>
-        </profile>
-        
-        <!-- 公网版 -->
-        <profile>
-            <id>public</id>
-            <properties>
-                <edition.current>public</edition.current>
-                <edition.source.dir>${project.basedir}/src/main/kotlin-edition/public</edition.source.dir>
-            </properties>
-        </profile>
-        
         <!-- Native 构建 Profile - Temporarily Disabled -->
         <profile>
             <id>native</id>

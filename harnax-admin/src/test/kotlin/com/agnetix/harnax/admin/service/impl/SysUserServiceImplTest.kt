@@ -241,7 +241,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request, isPersonal = false)
+            val result = sysUserService.createUser(request)
 
             // Then
             assertTrue(result)
@@ -277,7 +277,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.user.username_exists", exception.message)
             // Use nullable version of any
@@ -301,7 +301,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request, isPersonal = false)
+            val result = sysUserService.createUser(request)
 
             // Then
             assertTrue(result)
@@ -329,7 +329,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.createUser(request, isPersonal = false)
+            val result = sysUserService.createUser(request)
 
             // Then
             assertTrue(result)
@@ -358,7 +358,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.user.phone_exists", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -383,7 +383,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.user.email_exists", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -405,7 +405,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.validation.required", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -427,7 +427,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.validation.required", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -449,7 +449,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.validation.email_invalid", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
@@ -471,41 +471,10 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.createUser(request, isPersonal = false)
+                sysUserService.createUser(request)
             }
             assertEquals("error.validation.phone_invalid", exception.message)
             verify(sysUserMapper, never()).insert(any<SysUser>())
-        }
-
-        @Test
-        @DisplayName("createUser - Allow empty email and phone in personal mode")
-        fun `createUser should allow empty email and phone in personal mode`() {
-            // Given
-            val request = SysUserCreateRequest(
-                username = "newuser9",
-                password = "password123",
-                nickname = "新用户9",
-                email = null,
-                phone = null,
-                gender = 1,
-                avatar = "",
-            )
-            `when`(sysUserMapper.selectByUsername("newuser9")).thenReturn(null)
-            `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
-
-            // When
-            val result = sysUserService.createUser(request, isPersonal = true)
-
-            // Then
-            assertTrue(result)
-            verify(sysUserMapper).insert(
-                argThat { user ->
-                    user!!.username == "newuser9" &&
-                        user.email == "" &&
-                        // In personal mode, null is converted to empty string
-                        user.phone == ""
-                },
-            )
         }
     }
 
@@ -526,7 +495,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.updateUser(1L, request, isPersonal = true)
+            val result = sysUserService.updateUser(1L, request)
 
             // Then
             assertTrue(result)
@@ -562,7 +531,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.updateUser(1L, request, isPersonal = false)
+                sysUserService.updateUser(1L, request)
             }
             assertEquals("error.user.phone_exists", exception.message)
             verify(sysUserMapper, never()).updateById(any<SysUser>())
@@ -581,7 +550,7 @@ class SysUserServiceImplTest {
 
             // When & Then
             val exception = assertThrows<BizException> {
-                sysUserService.updateUser(1L, request, isPersonal = false)
+                sysUserService.updateUser(1L, request)
             }
             assertEquals("error.user.email_exists", exception.message)
             verify(sysUserMapper, never()).updateById(any<SysUser>())
@@ -596,7 +565,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.updateUser(1L, request, isPersonal = true)
+            val result = sysUserService.updateUser(1L, request)
 
             // Then
             assertTrue(result)
@@ -618,7 +587,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.updateUser(1L, request, isPersonal = true)
+            val result = sysUserService.updateUser(1L, request)
 
             // Then
             assertTrue(result)
@@ -644,7 +613,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.updateUser(1L, request, isPersonal = true)
+            val result = sysUserService.updateUser(1L, request)
 
             // Then
             assertTrue(result)
@@ -670,7 +639,7 @@ class SysUserServiceImplTest {
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 
             // When
-            val result = sysUserService.updateUser(1L, request, isPersonal = true)
+            val result = sysUserService.updateUser(1L, request)
 
             // Then
             assertTrue(result)

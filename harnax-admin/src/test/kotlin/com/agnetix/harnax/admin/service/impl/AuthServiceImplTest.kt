@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.response.TenantResponse
 import com.agnetix.harnax.admin.exception.BizException
@@ -62,9 +61,6 @@ class AuthServiceImplTest {
     private lateinit var userTenantService: UserTenantService
 
     @Mock
-    private lateinit var editionUtil: EditionUtil
-
-    @Mock
     private lateinit var tenantMapper: TenantMapper
 
     @Mock
@@ -117,9 +113,6 @@ class AuthServiceImplTest {
 
         // Mock userTenantService.addUserToTenant
         `when`(userTenantService.addUserToTenant(anyLong(), anyLong(), anyString(), anyString())).thenReturn(true)
-
-        // Mock editionUtil to return true (personal mode)
-        `when`(editionUtil.isPersonal()).thenReturn(true)
 
         // Mock tenantMapper to return default tenant
         `when`(tenantMapper.selectById(1)).thenReturn(

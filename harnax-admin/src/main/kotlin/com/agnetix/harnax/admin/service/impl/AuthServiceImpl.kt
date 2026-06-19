@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.LoginResponse
 import com.agnetix.harnax.admin.dto.LoginResponse.UserInfo
@@ -37,7 +36,6 @@ class AuthServiceImpl(
     private val tokenBlacklistService: SysTokenBlacklistService,
     private val sysUserMapper: SysUserMapper,
     private val userTenantService: UserTenantService,
-    private val editionUtil: EditionUtil,
     private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil,
 ) : AuthService {
@@ -75,25 +73,7 @@ class AuthServiceImpl(
         }
 
         // 4. Check if user belongs to any tenant
-        var userTenants = userTenantService.getUserTenants(user.id)
-
-        // Personal edition: If user has no tenant, automatically associate with default tenant (id=1)
-        if (userTenants.isEmpty() && editionUtil.isPersonal()) {
-            log.info("[Personal Edition] User {} has no tenant, automatically associating with default tenant", user.username)
-
-            // Check if default tenant exists
-            val defaultTenant = tenantMapper.selectById(1)
-            if (defaultTenant != null) {
-                // Automatically add user to default tenant
-                userTenantService.addUserToTenant(1, user.id, "member", "system")
-                log.info("[Personal Edition] User {} has been automatically added to default tenant", user.username)
-
-                // Re-fetch tenant list
-                userTenants = userTenantService.getUserTenants(user.id)
-            } else {
-                log.warn("[Personal Edition] Default tenant does not exist, cannot auto-associate")
-            }
-        }
+        val userTenants = userTenantService.getUserTenants(user.id)
 
         if (userTenants.isEmpty() && user.isAdmin != 1) {
             throw BizException(messageUtil.getMessage("error.user.no_tenant"))
@@ -159,14 +139,7 @@ class AuthServiceImpl(
         }
 
         // 3. Check tenant
-        var userTenants = userTenantService.getUserTenants(user.id)
-        if (userTenants.isEmpty() && editionUtil.isPersonal()) {
-            val defaultTenant = tenantMapper.selectById(1)
-            if (defaultTenant != null) {
-                userTenantService.addUserToTenant(1, user.id, "member", "system")
-                userTenants = userTenantService.getUserTenants(user.id)
-            }
-        }
+        val userTenants = userTenantService.getUserTenants(user.id)
         if (userTenants.isEmpty() && user.isAdmin != 1) {
             throw BizException(messageUtil.getMessage("error.user.no_tenant"))
         }

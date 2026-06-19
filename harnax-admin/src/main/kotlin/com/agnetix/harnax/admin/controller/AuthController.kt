@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.EditionUtil
 import com.agnetix.harnax.admin.dto.CaptchaResponse
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.LoginResponse
@@ -27,7 +26,6 @@ import org.springframework.web.bind.annotation.*
 class AuthController(
     private val authService: AuthService,
     private val captchaService: CaptchaService,
-    private val editionUtil: EditionUtil,
     private val userTenantService: UserTenantService,
     private val jwtUtil: JwtUtil,
 ) {
@@ -70,13 +68,7 @@ class AuthController(
     @GetMapping("/login-methods")
     @Operation(summary = "Get login methods", description = "Get supported login methods by current edition")
     fun getLoginMethods(): ResultVo<Map<String, Any>> {
-        val methods = mutableListOf("username") // All editions support username login
-
-        // Enterprise and public editions support phone and email login
-        if (editionUtil.isEnterprise() || editionUtil.isPublic()) {
-            methods.add("phone")
-            methods.add("email")
-        }
+        val methods = mutableListOf("username", "phone", "email")
 
         return ResultVo.success(
             mapOf(

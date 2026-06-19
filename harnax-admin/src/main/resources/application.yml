@@ -4,11 +4,7 @@ server:
 spring:
   application:
     name: harnax-admin
-  
-  # Active version profile (injected via Maven during compilation)
-  profiles:
-    active: ${edition.current:personal}
-  
+
   # Datasource configuration
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://172.20.10.5:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
@@ -94,9 +90,6 @@ session:
 
 local:
   tmp-dir: ${LOCAL_TMP_DIR:/tmp/harnax}
-
-edition:
-  current: public
 
 # Admin internal API authentication
 # Other harnax services (channel, router, agent-service) use this secret

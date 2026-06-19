@@ -12,7 +12,6 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 @Configuration
 class TenantWebMvcConfig(
     private val tenantInterceptor: TenantInterceptor,
-    private val editionInterceptor: EditionInterceptor,
 ) : WebMvcConfigurer {
 
     override fun addInterceptors(registry: InterceptorRegistry) {
@@ -24,9 +23,5 @@ class TenantWebMvcConfig(
                 "/api/auth/captcha",
                 "/api/auth/logout",
             )
-
-        // Register edition control interceptor
-        registry.addInterceptor(editionInterceptor)
-            .addPathPatterns("/api/**")
     }
 }

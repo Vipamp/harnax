@@ -53,32 +53,30 @@ class SysUserServiceImpl(
     override fun getSysUser(id: Long): SysUser? = sysUserMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createUser(request: SysUserCreateRequest, isPersonal: Boolean): Boolean {
-        log.info("Creating user, username: {}, isPersonal: {}", request.username, isPersonal)
+    override fun createUser(request: SysUserCreateRequest): Boolean {
+        log.info("Creating user, username: {}", request.username)
 
-        // Enterprise and public editions: email and phone are required and validated
-        if (!isPersonal) {
-            // Validate email is required
-            if (request.email.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
-            }
+        // Email and phone are required and validated
+        // Validate email is required
+        if (request.email.isNullOrBlank()) {
+            throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
+        }
 
-            // Validate phone is required
-            if (request.phone.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
-            }
+        // Validate phone is required
+        if (request.phone.isNullOrBlank()) {
+            throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
+        }
 
-            // Validate email format
-            val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-            if (!emailRegex.matches(request.email)) {
-                throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
-            }
+        // Validate email format
+        val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+        if (!emailRegex.matches(request.email)) {
+            throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
+        }
 
-            // Validate phone format
-            val phoneRegex = Regex("^1[3-9]\\d{9}$")
-            if (!phoneRegex.matches(request.phone)) {
-                throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
-            }
+        // Validate phone format
+        val phoneRegex = Regex("^1[3-9]\\d{9}$")
+        if (!phoneRegex.matches(request.phone)) {
+            throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
         }
 
         // Check if username exists (need to validate active field)
@@ -123,73 +121,48 @@ class SysUserServiceImpl(
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun updateUser(id: Long, request: SysUserUpdateRequest, isPersonal: Boolean): Boolean {
-        log.info("Updating user, id: {}, isPersonal: {}", id, isPersonal)
+    override fun updateUser(id: Long, request: SysUserUpdateRequest): Boolean {
+        log.info("Updating user, id: {}", id)
 
         val user = sysUserMapper.selectById(id)
             ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
 
-        // Enterprise and public editions: email and phone are required and validated
-        if (!isPersonal) {
-            // Validate email is required
-            if (request.email.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
-            }
+        // Email and phone are required and validated
+        // Validate email is required
+        if (request.email.isNullOrBlank()) {
+            throw BizException(messageUtil.getMessage("error.validation.required", "Email"))
+        }
 
-            // Validate phone is required
-            if (request.phone.isNullOrBlank()) {
-                throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
-            }
+        // Validate phone is required
+        if (request.phone.isNullOrBlank()) {
+            throw BizException(messageUtil.getMessage("error.validation.required", "Phone"))
+        }
 
-            // Validate email format
-            val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-            if (!emailRegex.matches(request.email)) {
-                throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
-            }
+        // Validate email format
+        val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+        if (!emailRegex.matches(request.email)) {
+            throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
+        }
 
-            // Validate phone format
-            val phoneRegex = Regex("^1[3-9]\\d{9}$")
-            if (!phoneRegex.matches(request.phone)) {
-                throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
-            }
+        // Validate phone format
+        val phoneRegex = Regex("^1[3-9]\\d{9}$")
+        if (!phoneRegex.matches(request.phone)) {
+            throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
+        }
 
-            // Check if email is already used by other users
-            if (request.email != user.email) {
-                val existEmail = sysUserMapper.selectByEmail(request.email)
-                if (existEmail != null) {
-                    throw BizException(messageUtil.getMessage("error.user.email_exists"))
-                }
+        // Check if email is already used by other users
+        if (request.email != user.email) {
+            val existEmail = sysUserMapper.selectByEmail(request.email)
+            if (existEmail != null) {
+                throw BizException(messageUtil.getMessage("error.user.email_exists"))
             }
+        }
 
-            // Check if phone is already used by other users
-            if (request.phone != user.phone) {
-                val existPhone = sysUserMapper.selectByPhone(request.phone)
-                if (existPhone != null) {
-                    throw BizException(messageUtil.getMessage("error.user.phone_exists"))
-                }
-            }
-        } else {
-            // Personal edition: if email or phone is modified, validate format and uniqueness
-            if (!request.email.isNullOrBlank() && request.email != user.email) {
-                val emailRegex = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-                if (!emailRegex.matches(request.email)) {
-                    throw BizException(messageUtil.getMessage("error.validation.email_invalid"))
-                }
-                val existEmail = sysUserMapper.selectByEmail(request.email)
-                if (existEmail != null) {
-                    throw BizException(messageUtil.getMessage("error.user.email_exists"))
-                }
-            }
-
-            if (!request.phone.isNullOrBlank() && request.phone != user.phone) {
-                val phoneRegex = Regex("^1[3-9]\\d{9}$")
-                if (!phoneRegex.matches(request.phone)) {
-                    throw BizException(messageUtil.getMessage("error.validation.phone_invalid"))
-                }
-                val existPhone = sysUserMapper.selectByPhone(request.phone)
-                if (existPhone != null) {
-                    throw BizException(messageUtil.getMessage("error.user.phone_exists"))
-                }
+        // Check if phone is already used by other users
+        if (request.phone != user.phone) {
+            val existPhone = sysUserMapper.selectByPhone(request.phone)
+            if (existPhone != null) {
+                throw BizException(messageUtil.getMessage("error.user.phone_exists"))
             }
         }
 

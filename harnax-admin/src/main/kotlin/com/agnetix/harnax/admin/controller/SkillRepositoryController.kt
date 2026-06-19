@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.controller
 
-import com.agnetix.harnax.admin.config.RequiresEdition
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/skill-repositories")
 @Tag(name = "Skill Repository Management", description = "Skill repository related APIs")
-@RequiresEdition("public")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService,
 ) {
