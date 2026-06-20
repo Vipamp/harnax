@@ -65,9 +65,22 @@ class DefaultAgentRunner(
 
     override fun process(request: ChatAgentRequest): ChatResponse {
         val sessionId = request.sessionId
-        log.info("Processing direct chat request for session=$sessionId")
-        val events = streamProcess(request).collectList().block() ?: emptyList()
-        return ChatResponse.fromEvents(sessionId, events)
+        val message = request.message
+        val imageUrls = request.imageUrls
+        log.info("Processing direct (non-streaming) chat request for session=$sessionId")
+        try {
+            val userIdentifier = UserIdentifier(0)
+            val agent = getOrCreateAgent(sessionId, userIdentifier)
+            return agent.call(message, imageUrls)
+        } catch (e: Exception) {
+            log.error("Error creating agent or calling for session=$sessionId: ${e.message}", e)
+            throw e as? HarnaxException
+                ?: HarnaxException(
+                    HarnaxErrorCode.AGENT_INIT_FAILED.code,
+                    e.message ?: "Agent call failed",
+                    e,
+                )
+        }
     }
 
     override fun streamProcess(request: ChatAgentRequest): Flux<ChatEvent> {

@@ -91,8 +91,8 @@ open class ChannelChatService(
             // 3. Call pre-processing hook
             agentAdaptor.onBeforeProcess(context)
 
-            // 4. Determine output strategy based on channel and agent capabilities
-            if (channelAdaptor.supportsStreamingOutput() && agentAdaptor.supportsStreaming()) {
+            // 4. Determine output strategy - delegated to channel adaptor
+            if (channelAdaptor.shouldUseStreaming(agentAdaptor)) {
                 streamAndSend(context, channel, message, channelAdaptor, agentAdaptor)
             } else {
                 batchSend(context, channel, message, channelAdaptor, agentAdaptor)
@@ -158,13 +158,13 @@ open class ChannelChatService(
     /**
      * Batch output strategy
      *
-     * For channels that do NOT support real-time streaming output:
-     * - Send typing indicator to show AI is processing
-     * - Buffer all TextStreamEvent content
-     * - On EndStreamEvent, send the merged complete response via sendMessage()
+     * Calls process() directly (non-streaming endpoint) to get the complete response,
+     * then sends it as a single message via sendMessage().
      *
-     * This provides a good user experience even for non-streaming channels:
-     * the user sees a "typing" indicator while waiting for the complete reply.
+     * This is simpler and more efficient than streaming + buffering:
+     * - Uses standard HTTP request instead of SSE connection
+     * - No need to maintain a long-lived connection while waiting
+     * - Sends typing indicator while AI is processing
      */
     protected suspend fun batchSend(
         context: AgentContext,
@@ -176,62 +176,23 @@ open class ChannelChatService(
         // Send typing indicator to show AI is processing
         channelAdaptor.sendTypingIndicator(channel, message.sessionId)
 
-        val fullContent = StringBuilder()
-        var eventCount = 0
+        logger.info("[Batch] Calling process() for session=${message.sessionId}")
 
-        logger.info("[Batch] Starting batch collection for session=${message.sessionId}")
+        val response = agentAdaptor.process(context)
+        val responseText = response.content
 
-        try {
-            agentAdaptor.streamProcess(context).collect { event ->
-                eventCount++
-                when (event) {
-                    is AgentStreamEvent.TextStreamEvent -> {
-                        logger.info("[Batch] Event #$eventCount TextStream for session=${message.sessionId}, content length=${event.content.length}, isLast=${event.isLast}")
-                        fullContent.append(event.content)
-                    }
-                    is AgentStreamEvent.ThinkingStreamEvent -> {
-                        // Continue showing typing indicator during thinking
-                        channelAdaptor.sendTypingIndicator(channel, message.sessionId)
-                        logger.info("[Batch] Event #$eventCount Thinking for session=${message.sessionId}, content length=${event.content.length}")
-                    }
-                    is AgentStreamEvent.EndStreamEvent -> {
-                        logger.info("[Batch] Event #$eventCount EndStream for session=${message.sessionId}, full content length=${fullContent.length}")
-                        // Send merged complete response
-                        val responseText = fullContent.toString()
-                        if (responseText.isNotBlank()) {
-                            channelAdaptor.sendMessage(channel, message.sessionId, responseText)
-                            logger.info("[Batch] Response sent to Feishu for session=${message.sessionId}, text length=${responseText.length}")
-                        } else {
-                            logger.warn("[Batch] Empty response, nothing sent to Feishu for session=${message.sessionId}")
-                        }
-                        // Save AI reply to session
-                        saveAssistantMessage(message, responseText, channel)
-                        // Call post-processing hook
-                        val response = AgentResponse(
-                            content = responseText,
-                            shouldReply = true,
-                        )
-                        agentAdaptor.onAfterProcess(context, response)
-                    }
-                    is AgentStreamEvent.ErrorStreamEvent -> {
-                        logger.error("[${event.code}][${event.requestId}] Agent error for session ${message.sessionId}: ${event.message}", event.cause)
-                        channelAdaptor.sendMessage(
-                            channel,
-                            message.sessionId,
-                            formatErrorMessage(event.code, event.requestId, event.message),
-                        )
-                    }
-                }
+        if (response.shouldReply) {
+            if (responseText.isNotBlank()) {
+                channelAdaptor.sendMessage(channel, message.sessionId, responseText)
+                logger.info("[Batch] Response sent for session=${message.sessionId}, text length=${responseText.length}")
+            } else {
+                logger.warn("[Batch] Empty response, nothing sent for session=${message.sessionId}")
             }
-        } catch (e: Exception) {
-            logger.error("[Batch] Send failed for session=${message.sessionId}: ${e.message}", e)
-            // Try to send whatever we've accumulated so far
-            if (fullContent.isNotEmpty()) {
-                channelAdaptor.sendMessage(channel, message.sessionId, fullContent.toString())
-                saveAssistantMessage(message, fullContent.toString(), channel)
-            }
+            // Save AI reply to session
+            saveAssistantMessage(message, responseText, channel)
+            // Call post-processing hook
+            agentAdaptor.onAfterProcess(context, response)
         }
-        logger.info("[Batch] Batch collection finished for session=${message.sessionId}, total events=$eventCount, content length=${fullContent.length}")
     }
 
     /**

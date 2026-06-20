@@ -4,10 +4,10 @@ import com.zaxxer.hikari.HikariDataSource
 import javax.sql.DataSource
 
 /**
- * @Author: heqingsong
- * @Date: 2026/3/25
- * @Description: SessionConfig
- * @Project: harnax
+ * Configuration for [io.agentscope.core.state.AgentStateStore] backends.
+ *
+ * In agentscope 2.0.0, the `Session` interface was replaced by `AgentStateStore`.
+ * The key model changed from a single `SessionKey` to a `(userId, sessionId)` pair.
  */
 sealed interface SessionConfig
 

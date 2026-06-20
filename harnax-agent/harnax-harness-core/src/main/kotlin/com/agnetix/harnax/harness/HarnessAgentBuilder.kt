@@ -1,21 +1,19 @@
 package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.provider.tool.ToolBox
-import io.agentscope.core.hook.Hook
+import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
-import io.agentscope.core.model.StructuredOutputReminder
-import io.agentscope.core.plan.PlanNotebook
-import io.agentscope.core.session.Session
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.skill.repository.AgentSkillRepository
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo
+import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.ToolExecutionContext
 import io.agentscope.core.tool.Toolkit
 import io.agentscope.core.tool.mcp.McpClientWrapper
+import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -24,12 +22,14 @@ import java.util.concurrent.TimeUnit
  * Kotlin-fluent wrapper around [HarnessAgent.Builder].
  *
  * Mirrors the API of [com.agnetix.harnax.agent.AscopeAgentBuilder] while exposing the full
- * harness capability set: workspace, session, sandbox, distributed filesystem, etc.
+ * harness capability set: workspace, stateStore, sandbox, distributed filesystem, etc.
  *
- * Key differences from [com.agnetix.harnax.agent.AscopeAgentBuilder]:
- * - No `memory()` — HarnessAgent always uses InMemoryMemory internally.
- * - Skills are registered via an in-memory [AgentSkillRepository] passed to
- *   `HarnessAgent.Builder.skillRepository()` instead of directly via SkillBox.
+ * Key changes from 1.x to 2.0.0:
+ * - `Session` → `AgentStateStore` (via `.stateStore()`)
+ * - `Hook` → `MiddlewareBase` (via `.middleware()`)
+ * - `SandboxDistributedOptions` → `DistributedStore` (via `.distributedStore()`)
+ * - `structuredOutputReminder` → removed (model layer handles natively)
+ * - `PlanNotebook` → `enablePlanMode()` (v2 plan mode is markdown-based)
  */
 class HarnessAgentBuilder {
 
@@ -48,10 +48,6 @@ class HarnessAgentBuilder {
     fun systemPrompt(systemPrompt: String): HarnessAgentBuilder = apply { builder.sysPrompt(systemPrompt) }
 
     fun model(model: ChatModelBase): HarnessAgentBuilder = apply { builder.model(model) }
-
-    fun reminder(reminder: StructuredOutputReminder): HarnessAgentBuilder = apply {
-        builder.structuredOutputReminder(reminder)
-    }
 
     fun agentWorkspace(workspace: Path): HarnessAgentBuilder = apply {
         builder.workspace(workspace)
@@ -88,14 +84,13 @@ class HarnessAgentBuilder {
         this.skills.add(agentSkill)
     }
 
-    fun addHook(hook: Hook): HarnessAgentBuilder = apply { builder.hook(hook) }
+    /**
+     * Adds a middleware (replaces addHook in agentscope 2.0.0).
+     */
+    fun addMiddleware(middleware: MiddlewareBase): HarnessAgentBuilder = apply { builder.middleware(middleware) }
 
     fun enablePlan(enable: Boolean): HarnessAgentBuilder = apply {
-        if (enable) builder.enablePlan()
-    }
-
-    fun addPlanNotebook(planNotebook: PlanNotebook): HarnessAgentBuilder = apply {
-        builder.planNotebook(planNotebook)
+        if (enable) builder.enablePlanMode()
     }
 
     // ===== Harness-specific API =====
@@ -104,14 +99,20 @@ class HarnessAgentBuilder {
         builder.workspace(path)
     }
 
-    fun session(session: Session): HarnessAgentBuilder = apply { builder.session(session) }
+    /**
+     * Sets the AgentStateStore (replaces session() in agentscope 2.0.0).
+     */
+    fun stateStore(stateStore: AgentStateStore): HarnessAgentBuilder = apply { builder.stateStore(stateStore) }
 
     fun filesystem(spec: SandboxFilesystemSpec): HarnessAgentBuilder = apply { builder.filesystem(spec) }
 
     fun filesystem(spec: RemoteFilesystemSpec): HarnessAgentBuilder = apply { builder.filesystem(spec) }
 
-    fun sandboxDistributed(opts: SandboxDistributedOptions): HarnessAgentBuilder = apply {
-        builder.sandboxDistributed(opts)
+    /**
+     * Sets the DistributedStore (replaces sandboxDistributed() in agentscope 2.0.0).
+     */
+    fun distributedStore(store: DistributedStore): HarnessAgentBuilder = apply {
+        builder.distributedStore(store)
     }
 
     // ===== Disable built-in features =====

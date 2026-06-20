@@ -1,19 +1,19 @@
 package com.agnetix.harnax.agent.provider
 
-import com.agnetix.harnax.agent.provider.hook.ConfirmToolsHook
-import com.agnetix.harnax.agent.provider.hook.ProcessLogHook
+import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
+import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.provider.tool.TimeToolBox
+import io.agentscope.core.middleware.MiddlewareBase
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/11
- * @Description: ProviderConsts
- * @Project: harnax
+ * Provider constants for agentscope 2.0.0.
+ *
+ * In 2.0.0, Hook → MiddlewareBase. HOOK_SET → MIDDLEWARE_SET.
  */
 
-val HOOK_SET = setOf(
-    ProcessLogHook(),
-    ConfirmToolsHook(),
+val MIDDLEWARE_SET: Set<MiddlewareBase> = setOf(
+    ProcessLogMiddleware(),
+    ConfirmToolsMiddleware(),
 )
 
 val TOOL_SET = setOf(

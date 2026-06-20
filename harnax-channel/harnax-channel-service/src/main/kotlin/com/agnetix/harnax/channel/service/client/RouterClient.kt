@@ -36,16 +36,28 @@ class RouterClient(
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
     /**
-     * Send a message synchronously to the agent via the session-router.
+     * Send a chat message synchronously to the agent via the session-router.
+     * Supports imageUrls for multimodal input.
+     *
      * @param sessionId Session identifier
      * @param agentId Agent ID (unused, kept for API compatibility)
      * @param message User message content
+     * @param imageUrls Image URLs or base64 data URLs for multimodal input
      * @return ChatResponse with aggregated content
      */
-    suspend fun sendToAgent(sessionId: String, agentId: Long, message: String): ChatResponse {
-        val request = ChatAgentRequest(sessionId = sessionId, message = message)
+    suspend fun sendToAgent(
+        sessionId: String,
+        agentId: Long,
+        message: String,
+        imageUrls: List<String> = emptyList(),
+    ): ChatResponse {
+        val request = ChatAgentRequest(
+            sessionId = sessionId,
+            message = message,
+            imageUrls = imageUrls,
+        )
 
-        log.debug("Sending sync request to router for session=$sessionId")
+        log.debug("Sending sync request to router for session={}, images={}", sessionId, imageUrls.size)
 
         val resultVo = webClient.post()
             .uri("$routerUrl/api/router/agent/chat")

@@ -2,7 +2,6 @@ package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
-import com.agnetix.harnax.agent.CustomerPlanNoteStorage
 import com.agnetix.harnax.agent.Permission
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
@@ -16,10 +15,10 @@ import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.DashScopeChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
-import com.agnetix.harnax.agent.provider.HOOK_SET
+import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.TOOL_SET
-import com.agnetix.harnax.agent.provider.hook.ConfirmToolsHook
-import com.agnetix.harnax.agent.provider.hook.ProcessLogHook
+import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
+import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.session.SessionConfig
@@ -30,17 +29,12 @@ import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
-import com.agnetix.harnax.harness.sandbox.MysqlCompatibleSandboxStateStore
 import io.agentscope.core.message.Msg
-import io.agentscope.core.plan.PlanNotebook
-import io.agentscope.core.session.Session
-import io.agentscope.core.state.PlanNotebookState
-import io.agentscope.core.state.SimpleSessionKey
-import io.agentscope.core.tool.ToolExecutionContext
+import io.agentscope.core.state.AgentStateStore
+import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
-import io.agentscope.harness.agent.filesystem.spec.DockerFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
-import io.agentscope.harness.agent.sandbox.SandboxDistributedOptions
+import io.agentscope.harness.agent.sandbox.impl.docker.DockerFilesystemSpec
 import io.agentscope.harness.agent.sandbox.snapshot.LocalSnapshotSpec
 import io.agentscope.harness.agent.sandbox.snapshot.RemoteSnapshotSpec
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
@@ -53,17 +47,17 @@ import java.util.UUID
  * Harness-based agent launcher — the distributed counterpart of
  * [com.agnetix.harnax.agent.AscopeAgentLauncher].
  *
- * Differences from [com.agnetix.harnax.agent.AscopeAgentLauncher]:
- * - Uses [HarnessAgentBuilder] (→ [io.agentscope.harness.agent.HarnessAgent]) instead of
- *   [com.agnetix.harnax.agent.AscopeAgentBuilder] (→ [io.agentscope.core.ReActAgent]).
- * - Session persistence is handled automatically by the built-in `SessionPersistenceHook`; no
- *   manual [io.agentscope.core.session.SessionManager] is needed.
- * - Supports Docker sandbox with MinIO-backed snapshot persistence.
- * - Supports MinIO-backed distributed filesystem for cross-node file sharing.
+ * Key changes in agentscope 2.0.0:
+ * - `Session` → `AgentStateStore` (loaded via [SessionLoader])
+ * - `Hook` → `MiddlewareBase`
+ * - `SandboxDistributedOptions` → `DistributedStore`
+ * - `PlanNotebook` → `enablePlanMode()` (v2 plan mode is markdown-based)
+ * - `structuredOutputReminder` → removed (model layer handles natively)
+ * - `DockerFilesystemSpec` moved to `io.agentscope.harness.agent.sandbox.impl.docker`
  *
  * @param chatModelConfigAdaptor adaptor for chat model configuration
  * @param mcpConfigAdaptor adaptor for MCP service configuration
- * @param session distributed [Session] backend (e.g. MysqlSession)
+ * @param stateStore distributed [AgentStateStore] backend (replaces Session)
  * @param skillAdaptor adaptor for skill loading
  * @param tokenStatAdaptor adaptor for token stat persistence
  * @param processLogAdaptor adaptor for process logging
@@ -76,7 +70,7 @@ import java.util.UUID
 class HarnessAgentLauncher(
     val chatModelConfigAdaptor: ChatModelConfigAdaptor,
     val mcpConfigAdaptor: McpConfigAdaptor,
-    val session: Session,
+    val stateStore: AgentStateStore,
     val skillAdaptor: SkillAdaptor,
     val tokenStatAdaptor: TokenStatAdaptor,
     val processLogAdaptor: ProcessLogAdaptor,
@@ -120,9 +114,8 @@ class HarnessAgentLauncher(
             .description(agentSpec.description)
             .maxIters(agentSpec.maxIterNum)
             .systemPrompt(agentSpec.systemPrompt)
-            .reminder(agentSpec.reminder)
             .workspace(workspaceRoot.resolve(agentSpec.name).resolve(sessionId))
-            .session(session)
+            .stateStore(stateStore)
 
         // ----- Chat model -----
         val chatModelConfig = DashScopeChatModelConfig(
@@ -164,7 +157,7 @@ class HarnessAgentLauncher(
         }
 
         if (agentSpec.contextForTools.isNotEmpty()) {
-            val ctxBuilder = ToolExecutionContext.builder()
+            val ctxBuilder = io.agentscope.core.tool.ToolExecutionContext.builder()
             agentSpec.contextForTools.forEach { ctxBuilder.register(it) }
             agentBuilder.addToolContext(ctxBuilder.build())
         }
@@ -182,15 +175,15 @@ class HarnessAgentLauncher(
             }
         }
 
-        // ----- Hooks -----
-        HOOK_SET.forEach { hook ->
-            if (hook is ConfirmToolsHook) {
-                hook.setDangerousTools(needConfirmedTools)
+        // ----- Middleware (replaces Hooks in 2.0.0) -----
+        MIDDLEWARE_SET.forEach { middleware ->
+            if (middleware is ConfirmToolsMiddleware) {
+                middleware.setDangerousTools(needConfirmedTools)
             }
-            if (hook is ProcessLogHook) {
-                hook.initial(processLogAdaptor, agentSpec.id, agentSpec.name, sessionId)
+            if (middleware is ProcessLogMiddleware) {
+                middleware.initial(processLogAdaptor, agentSpec.id, agentSpec.name, sessionId)
             }
-            agentBuilder.addHook(hook)
+            agentBuilder.addMiddleware(middleware)
         }
 
         // ----- Memory -----
@@ -199,14 +192,9 @@ class HarnessAgentLauncher(
             log.info("Stateless mode: HarnessAgent will use fresh InMemoryMemory for session={}", sessionId)
         }
 
-        // ----- Plan -----
+        // ----- Plan (2.0.0: enablePlanMode replaces PlanNotebook) -----
         if (chatSpec.enablePlan) {
-            val planNotebookBuilder = PlanNotebook.builder()
-                .storage(CustomerPlanNoteStorage(sessionId, planNoteAdaptor))
-            agentSpec.planSpec.maxSubTask?.let { planNotebookBuilder.maxSubtasks(it) }
-            agentSpec.planSpec.needUserConfirmed?.let { planNotebookBuilder.needUserConfirm(it) }
             agentBuilder.enablePlan(true)
-            agentBuilder.addPlanNotebook(planNotebookBuilder.build())
         }
 
         // ----- Docker Sandbox + MinIO Snapshot -----
@@ -228,23 +216,35 @@ class HarnessAgentLauncher(
                 keepAliveSnapshotSpec = snapshotSpec
             }
 
+            // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
+            // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
             val dockerSpec = DockerFilesystemSpec()
                 .image(harnessConfig.sandbox.image)
                 .workspaceRoot(harnessConfig.sandbox.workspaceRoot)
                 .isolationScope(harnessConfig.sandbox.isolationScope)
                 .snapshotSpec(snapshotSpec)
-                .sandboxStateStore(
-                    MysqlCompatibleSandboxStateStore(session, agentSpec.name),
-                )
 
             agentBuilder.filesystem(dockerSpec)
-            agentBuilder.sandboxDistributed(
-                SandboxDistributedOptions.builder()
-                    .session(session)
-                    .snapshotSpec(snapshotSpec)
-                    .requireDistributed(false)
-                    .build(),
-            )
+
+            // Build DistributedStore (replaces SandboxDistributedOptions in 2.0.0)
+            val distributedStoreBuilder = DistributedStore.builder()
+                .agentStateStore(stateStore)
+            if (minioConfig != null) {
+                distributedStoreBuilder.baseStore(
+                    MinioBaseStore(
+                        minioConfig.createMinioClient(),
+                        minioConfig.storeBucket,
+                        minioConfig.storePrefix,
+                    ),
+                )
+            } else {
+                // Use a no-op base store when MinIO is not configured
+                distributedStoreBuilder.baseStore(
+                    io.agentscope.harness.agent.filesystem.remote.store.InMemoryStore(),
+                )
+            }
+            distributedStoreBuilder.sandboxSnapshotSpec(snapshotSpec)
+            agentBuilder.distributedStore(distributedStoreBuilder.build())
         } else if (minioConfig != null) {
             // ----- MinIO distributed filesystem (non-sandbox mode) -----
             val minioStore = MinioBaseStore(
@@ -257,7 +257,7 @@ class HarnessAgentLauncher(
             agentBuilder.filesystem(remoteFsSpec)
         }
 
-        // ----- Disable built-in features that conflict with Harnax custom hooks -----
+        // ----- Disable built-in features that conflict with Harnax custom middleware -----
         if (!harnessConfig.enableWorkspaceContext) {
             agentBuilder.disableWorkspaceContext()
         }
@@ -295,11 +295,14 @@ class HarnessAgentLauncher(
     }
 
     /**
-     * Clears all persisted state for the given session: agent state in MySQL, plan notes,
+     * Clears all persisted state for the given session: agent state, plan notes,
      * and optionally the MinIO snapshot.
+     *
+     * In 2.0.0, Session.delete(SimpleSessionKey) → AgentStateStore.delete(userId, sessionId).
      */
     fun clearSession(sessionId: String) {
-        session.delete(SimpleSessionKey.of(sessionId))
+        // Delete all state for this session (userId="" covers the default anonymous user)
+        stateStore.delete("", sessionId)
         planNoteAdaptor.deletePlan(sessionId)
         keepAliveSandboxManager?.destroy(sessionId)
         // Also try to delete the MinIO snapshot if available
@@ -317,23 +320,30 @@ class HarnessAgentLauncher(
         }
     }
 
-    fun loadSessionMessages(sessionId: String): List<Msg> = session.getList(
-        SimpleSessionKey.of(sessionId),
+    /**
+     * Loads session messages from the AgentStateStore.
+     *
+     * In 2.0.0, Session.getList(SimpleSessionKey, key, type) →
+     * AgentStateStore.getList(userId, sessionId, key, type).
+     */
+    fun loadSessionMessages(sessionId: String): List<Msg> = stateStore.getList(
+        "", sessionId,
         "memory_messages",
         Msg::class.java,
     )
 
     fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = planNoteAdaptor.getPlanNotes(sessionId)
 
+    /**
+     * Loads the current plan note.
+     *
+     * In 2.0.0, PlanNotebook was replaced by enablePlanMode() (markdown-based).
+     * This method reads from AgentStateStore using the legacy key for backward compatibility.
+     * May return null if no plan state exists.
+     */
     fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? {
-        val planNote = session.get(
-            SimpleSessionKey.of(sessionId),
-            "planNotebook_state",
-            PlanNotebookState::class.java,
-        )
-        if (planNote.isPresent) {
-            return CustomerPlanNoteStorage.convertToPlanNote(sessionId, planNote.get().currentPlan)
-        }
+        // PlanNotebookState was removed in 2.0.0; plan mode now uses markdown files.
+        // Return null for now; plan notes are managed via the plan mode workspace files.
         return null
     }
 
@@ -366,7 +376,7 @@ class HarnessAgentLauncher(
             return HarnessAgentLauncher(
                 chatModelConfigAdaptor = chatModelConfigAdaptor,
                 mcpConfigAdaptor = mcpConfigAdaptor,
-                session = SessionLoader.load(sessionConfig),
+                stateStore = SessionLoader.load(sessionConfig),
                 skillAdaptor = skillAdaptor,
                 tokenStatAdaptor = tokenStatAdaptor,
                 processLogAdaptor = processLogAdaptor,

@@ -30,12 +30,44 @@ class RouterAgentAdaptor(
     override suspend fun process(context: AgentContext): AgentResponse {
         val agentId = context.channelSpec.agentId
         val sessionId = context.channelSpec.sessionId
-        val chatResponse = routerClient.sendToAgent(
+
+        // Use parsed AgentRequest if available, otherwise build from message content
+        val request = context.agentRequest ?: ChatAgentRequest(
             sessionId = sessionId,
-            agentId = agentId,
             message = context.message.content,
         )
-        return AgentResponse(content = chatResponse.content, shouldReply = true)
+
+        return when (request) {
+            is ChatAgentRequest -> {
+                val chatResponse = routerClient.sendToAgent(
+                    sessionId = sessionId,
+                    agentId = agentId,
+                    message = request.message,
+                    imageUrls = request.imageUrls,
+                )
+                AgentResponse(content = chatResponse.content, shouldReply = true)
+            }
+            is CommandAgentRequest -> {
+                val commandResponse = routerClient.sendCommand(
+                    sessionId = sessionId,
+                    agentId = agentId,
+                    command = request.command,
+                )
+                AgentResponse(
+                    content = commandResponse.message ?: "Command executed",
+                    shouldReply = true,
+                )
+            }
+            else -> {
+                log.warn("Unknown request type: ${request.javaClass.simpleName}, treating as chat")
+                val chatResponse = routerClient.sendToAgent(
+                    sessionId = sessionId,
+                    agentId = agentId,
+                    message = context.message.content,
+                )
+                AgentResponse(content = chatResponse.content, shouldReply = true)
+            }
+        }
     }
 
     override fun supportsStreaming(): Boolean = true

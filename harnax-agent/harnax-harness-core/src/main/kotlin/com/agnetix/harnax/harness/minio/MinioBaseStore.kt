@@ -1,7 +1,7 @@
 package com.agnetix.harnax.harness.minio
 
-import io.agentscope.harness.agent.store.BaseStore
-import io.agentscope.harness.agent.store.StoreItem
+import io.agentscope.harness.agent.filesystem.remote.store.BaseStore
+import io.agentscope.harness.agent.filesystem.remote.store.StoreItem
 import io.minio.GetObjectArgs
 import io.minio.ListObjectsArgs
 import io.minio.MinioClient

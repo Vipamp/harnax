@@ -1,14 +1,13 @@
 package com.agnetix.harnax.agent
 
 import com.agnetix.harnax.agent.provider.tool.ToolBox
-import io.agentscope.core.memory.autocontext.AutoContextConfig
-import io.agentscope.core.model.StructuredOutputReminder
 
 /**
- * @Author: heqingsong
- * @Date: 2026/4/1
- * @Description: AgentSpec
- * @Project: harnax
+ * Agent specification for harness-based agents.
+ *
+ * Key changes in agentscope 2.0.0:
+ * - `StructuredOutputReminder` removed (model layer handles natively)
+ * - `AutoContextConfig` removed (workspace context is now built-in)
  */
 data class AgentSpec(
     val id: Long,
@@ -16,7 +15,6 @@ data class AgentSpec(
     val description: String,
     val maxIterNum: Int,
     val systemPrompt: String,
-    val reminder: StructuredOutputReminder,
 
     val chatModelId: Long,
     val enableMetaTool: Boolean?,
@@ -24,8 +22,6 @@ data class AgentSpec(
     val externalTools: List<ToolBox>,
     val mcpServices: List<McpSpec>,
 
-    val useAutoContextMemory: Boolean,
-    val autoContextConfig: AutoContextConfig?,
     val skills: List<SkillSpec>,
     val planSpec: PlanSpec,
 ) {
@@ -42,7 +38,6 @@ class AgentSpecBuilder {
     private var description: String = "I am a AI assistant, I can help you to do anything you want."
     private var maxIterNum: Int = 10
     private var systemPrompt: String = "I am a AI assistant, I can help you to do anything you want."
-    private var reminder: StructuredOutputReminder = StructuredOutputReminder.PROMPT
 
     private var chatModelId: Long = -1
     private var enableMetaTool: Boolean? = null
@@ -50,8 +45,6 @@ class AgentSpecBuilder {
     private var contextForTools: MutableList<Any> = mutableListOf()
     private var mcpServices: MutableList<McpSpec> = mutableListOf()
 
-    private var useAutoContextMemory: Boolean = false
-    private var autoContextConfig: AutoContextConfig? = null
     private var skills: MutableList<SkillSpec> = mutableListOf()
     private var planSpec: PlanSpec = PlanSpec(false)
 
@@ -60,7 +53,6 @@ class AgentSpecBuilder {
     fun description(description: String) = apply { this.description = description }
     fun maxIterNum(maxIterNum: Int) = apply { this.maxIterNum = maxIterNum }
     fun systemPrompt(systemPrompt: String) = apply { this.systemPrompt = systemPrompt }
-    fun reminder(reminder: StructuredOutputReminder) = apply { this.reminder = reminder }
 
     fun chatModelId(chatModelId: Long) = apply { this.chatModelId = chatModelId }
     fun enableMetaTool(enableMetaTool: Boolean?) = apply { this.enableMetaTool = enableMetaTool }
@@ -68,8 +60,6 @@ class AgentSpecBuilder {
     fun addExternalTool(externalTool: ToolBox) = apply { this.externalTools.add(externalTool) }
     fun addMcpService(mcpService: McpSpec) = apply { this.mcpServices.add(mcpService) }
 
-    fun useAutoContextMemory(useAutoContextMemory: Boolean) = apply { this.useAutoContextMemory = useAutoContextMemory }
-    fun autoContextConfig(autoContextConfig: AutoContextConfig?) = apply { this.autoContextConfig = autoContextConfig }
     fun addSkill(skill: SkillSpec) = apply { this.skills.add(skill) }
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
 
@@ -83,14 +73,11 @@ class AgentSpecBuilder {
             description = description,
             maxIterNum = maxIterNum,
             systemPrompt = systemPrompt,
-            reminder = reminder,
             chatModelId = chatModelId,
             enableMetaTool = enableMetaTool,
             contextForTools = contextForTools,
             externalTools = externalTools,
             mcpServices = mcpServices,
-            useAutoContextMemory = useAutoContextMemory,
-            autoContextConfig = autoContextConfig,
             skills = skills,
             planSpec = planSpec,
         )

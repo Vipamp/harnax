@@ -2,15 +2,17 @@ package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
+import com.agnetix.harnax.agent.chat.MsgExtractHelper
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatEventConverter
+import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.core.agent.RuntimeContext
-import io.agentscope.core.agent.StreamOptions
+import io.agentscope.core.event.AgentEvent
 import io.agentscope.core.message.Base64Source
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.ImageBlock
@@ -30,25 +32,12 @@ import java.nio.file.Paths
 import java.util.Base64
 
 /**
- * Wraps a [HarnessAgent] and exposes a streaming call API similar to
- * [com.agnetix.harnax.agent.ReActAgentWrapper].
+ * Wraps a [HarnessAgent] and exposes a streaming call API.
  *
- * Key differences from [com.agnetix.harnax.agent.ReActAgentWrapper]:
- * - Uses the three-argument [HarnessAgent.stream] overload with [RuntimeContext] so that the
- *   same sessionId always binds to the same sandbox and workspace.
- * - Does NOT manually call `sessionManager.saveSession()` — session persistence is handled
- *   automatically by the built-in `SessionPersistenceHook` inside [HarnessAgent].
- *
- * @param harnessAgent the built HarnessAgent
- * @param dangerousTools set of tool names that require user confirmation
- * @param tokenStatBuilder builder for token stat recording
- * @param tokenStatAdaptor adaptor to persist token stats
- * @param sessionId session identifier, passed via RuntimeContext to bind sandbox + workspace
- * @param userId optional user identifier, passed via RuntimeContext
- * @param keepAliveSandboxManager optional manager for persistent sandbox containers
- * @param keepAliveSnapshotSpec optional snapshot spec for keepAlive sandbox workspace persistence
- * @param sandboxImage Docker image for sandbox containers (used when keepAlive is enabled)
- * @param sandboxWorkspaceRoot workspace root path inside container (used when keepAlive is enabled)
+ * Key changes in agentscope 2.0.0:
+ * - `stream()` → `streamEvents()` (returns `Flux<AgentEvent>` instead of `Flux<Event>`)
+ * - `call()` now requires `RuntimeContext` (the old overload without ctx is deprecated)
+ * - Event → AgentEvent with fine-grained subtypes
  */
 class HarnessAgentWrapper(
     val harnessAgent: HarnessAgent,
@@ -68,59 +57,53 @@ class HarnessAgentWrapper(
     fun callStream(
         prompt: String,
         imageUrls: List<String> = listOf(),
-        options: StreamOptions = StreamOptions.builder().build(),
     ): Flux<ChatEvent> {
         val list: MutableList<ContentBlock> = mutableListOf()
         list.add(TextBlock.builder().text(prompt).build())
         imageUrls.forEach { list.add(imageBlock(it)) }
         val msg = Msg.builder().name("user").role(MsgRole.USER).content(list).build()
-        return callStreamInternal(options, msg)
+        return callStreamInternal(msg)
     }
 
     fun callStream(
-        options: StreamOptions = StreamOptions.builder().build(),
         msg: Msg? = null,
-    ): Flux<ChatEvent> = callStreamInternal(options, *if (msg != null) arrayOf(msg) else emptyArray())
+    ): Flux<ChatEvent> = callStreamInternal(*if (msg != null) arrayOf(msg) else emptyArray())
+
+    /**
+     * Non-streaming call — returns a [ChatResponse] directly.
+     */
+    fun call(
+        prompt: String,
+        imageUrls: List<String> = listOf(),
+    ): ChatResponse {
+        val list: MutableList<ContentBlock> = mutableListOf()
+        list.add(TextBlock.builder().text(prompt).build())
+        imageUrls.forEach { list.add(imageBlock(it)) }
+        val userMsg = Msg.builder().name("user").role(MsgRole.USER).content(list).build()
+        return call(listOf(userMsg))
+    }
+
+    fun call(msgs: List<Msg>): ChatResponse {
+        val ctxResult = buildRuntimeContext()
+        val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext).block()
+        val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
+        val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
+        return ChatResponse(
+            sessionId = sessionId,
+            content = content,
+            thinking = thinking?.ifEmpty { null },
+        )
+    }
 
     private fun callStreamInternal(
-        options: StreamOptions,
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
-        val ctxBuilder = RuntimeContext.builder()
-            .sessionId(sessionId)
-            .userId(userId ?: "")
-
-        // Inject external sandbox for keepAlive mode (Priority 1 user-managed)
-        var keepAliveSandbox: io.agentscope.harness.agent.sandbox.Sandbox? = null
-        if (keepAliveSandboxManager != null) {
-            val sandbox = keepAliveSandboxManager.getOrCreate(
-                sessionId,
-                WorkspaceSpec(),
-                keepAliveSnapshotSpec,
-            )
-            keepAliveSandbox = sandbox
-            val clientOptions = DockerSandboxClientOptions()
-                .image(sandboxImage)
-                .workspaceRoot(sandboxWorkspaceRoot)
-            val sandboxContext = SandboxContext.builder()
-                .client(DockerSandboxClient())
-                .clientOptions(clientOptions)
-                .externalSandbox(sandbox)
-                .build()
-            ctxBuilder.put(SandboxContext::class.java, sandboxContext)
-            log.debug("[keepAlive] Injected external sandbox for session={}", sessionId)
-        }
-
-        val runtimeCtx = ctxBuilder.build()
-
-        return harnessAgent.stream(msg.toList(), options, runtimeCtx)
-            // No sessionManager.saveSession() — SessionPersistenceHook handles this automatically
-            .flatMap { ChatEventConverter.convert(it, dangerousTools) }
+        val ctxResult = buildRuntimeContext()
+        return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
+            .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
             .doOnNext { extracted(it) }
             .doFinally {
-                // Persist workspace snapshot for keepAlive sandbox.
-                // Only trigger snapshot upload — do NOT call stop() which would
-                // set running=false and workspaceRootReady=true, changing sandbox state.
+                val keepAliveSandbox = ctxResult.keepAliveSandbox
                 if (keepAliveSandbox != null) {
                     try {
                         val snapshot = keepAliveSandbox.state.snapshot
@@ -176,4 +159,37 @@ class HarnessAgentWrapper(
             )
         }
     }
+
+    private fun buildRuntimeContext(): RuntimeContextResult {
+        val ctxBuilder = RuntimeContext.builder()
+            .sessionId(sessionId)
+            .userId(userId ?: "")
+
+        var keepAliveSandbox: io.agentscope.harness.agent.sandbox.Sandbox? = null
+        if (keepAliveSandboxManager != null) {
+            val sandbox = keepAliveSandboxManager.getOrCreate(
+                sessionId,
+                WorkspaceSpec(),
+                keepAliveSnapshotSpec,
+            )
+            keepAliveSandbox = sandbox
+            val clientOptions = DockerSandboxClientOptions()
+                .image(sandboxImage)
+                .workspaceRoot(sandboxWorkspaceRoot)
+            val sandboxContext = SandboxContext.builder()
+                .client(DockerSandboxClient())
+                .clientOptions(clientOptions)
+                .externalSandbox(sandbox)
+                .build()
+            ctxBuilder.put(SandboxContext::class.java, sandboxContext)
+            log.debug("[keepAlive] Injected external sandbox for session={}", sessionId)
+        }
+
+        return RuntimeContextResult(ctxBuilder.build(), keepAliveSandbox)
+    }
+
+    private data class RuntimeContextResult(
+        val runtimeContext: RuntimeContext,
+        val keepAliveSandbox: io.agentscope.harness.agent.sandbox.Sandbox?,
+    )
 }
