@@ -103,3 +103,5 @@ admin:
 harnax:
   auth:
     enabled: false
+  router:
+    url: ${HARNAX_ROUTER_URL:http://localhost:8081}

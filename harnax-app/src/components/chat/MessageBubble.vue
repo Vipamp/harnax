@@ -91,7 +91,7 @@ function handleConfirm(confirmed: boolean) {
   padding: 10px 14px;
 
   :deep(.markdown-body) {
-    color: #fff;
+    color: var(--chat-bubble-user-text);
   }
 }
 

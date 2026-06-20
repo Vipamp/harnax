@@ -43,7 +43,6 @@ export interface CommandResponse {
 
 // ========== Admin API Types (MP 接口) ==========
 
-/** 统一响应格式，匹配后端 ResultVo */
 export interface ApiResponse<T = unknown> {
   code: number
   message: string
@@ -51,7 +50,6 @@ export interface ApiResponse<T = unknown> {
   timestamp: number
 }
 
-/** 登录请求 */
 export interface LoginRequest {
   username: string
   password?: string
@@ -59,7 +57,20 @@ export interface LoginRequest {
   captchaKey?: string
 }
 
-/** 用户信息 */
+export interface MpLoginUserInfo {
+  userId: number
+  username: string
+  nickname?: string
+}
+
+export interface MpLoginResponse {
+  accessToken: string
+  routerApiKey: string
+  routerUrl: string
+  expiresIn: number
+  userInfo: MpLoginUserInfo
+}
+
 export interface UserInfo {
   userId: number
   username: string
@@ -71,7 +82,6 @@ export interface UserInfo {
   isAdmin?: number
 }
 
-/** 登录响应 */
 export interface LoginResponse {
   accessToken?: string
   tokenType?: string
@@ -80,18 +90,18 @@ export interface LoginResponse {
   userInfo?: UserInfo
 }
 
-/** 验证码响应 */
 export interface CaptchaResponse {
   imageBase64?: string
   captchaKey?: string
   expiresIn?: number
 }
 
-/** MP 会话响应 */
 export interface MpSessionResponse {
   id: number
   sessionName: string
   routerSessionId: string
+  agentId: number
+  agentName: string
   status: number
   messageCount: number
   lastMessage?: string
@@ -99,18 +109,15 @@ export interface MpSessionResponse {
   updateTime: string
 }
 
-/** MP 创建会话请求 */
 export interface MpCreateSessionRequest {
   sessionName: string
-  routerSessionId?: string
+  agentId: number
 }
 
-/** MP 更新会话请求 */
 export interface MpUpdateSessionRequest {
   sessionName: string
 }
 
-/** MP 聊天消息 DTO */
 export interface MpChatMessageDto {
   role: 'user' | 'assistant' | 'system'
   content: string
@@ -119,11 +126,61 @@ export interface MpChatMessageDto {
   imageUrlsJson?: string
 }
 
-/** 连接配置 */
+export interface MpAgentResponse {
+  id: number
+  name: string
+  description: string
+  modelName: string
+  status: number
+  sessionCount: number
+}
+
+export interface MpAgentDetailResponse {
+  id: number
+  name: string
+  description: string
+  modelName: string
+  modelProvider: string
+  mcpList: MpAgentMcpInfo[]
+  skillList: MpAgentSkillInfo[]
+  enableThink: boolean
+  enableSearch: boolean
+  enablePlan: boolean
+}
+
+export interface MpAgentMcpInfo {
+  id: number
+  name: string
+  description: string
+}
+
+export interface MpAgentSkillInfo {
+  id: number
+  name: string
+  description: string
+}
+
+export interface MpUserProfileResponse {
+  userId: number
+  username: string
+  nickname?: string
+  avatar?: string
+  email?: string
+  phone?: string
+  createTime?: string
+}
+
+export interface MpChangePasswordRequest {
+  oldPassword: string
+  newPassword: string
+}
+
 export interface ConnectionConfig {
   adminUrl: string
   routerUrl: string
-  apiKey: string
+  routerApiKey: string
   token: string
   username: string
+  userId: number | null
+  nickname: string
 }

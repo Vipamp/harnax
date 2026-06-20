@@ -8,7 +8,7 @@
 import ConnectionSetup from '@/components/connection/ConnectionSetup.vue'
 
 function onConnected() {
-  uni.redirectTo({ url: '/pages/chat/index' })
+  uni.redirectTo({ url: '/pages/agents/index' })
 }
 </script>
 

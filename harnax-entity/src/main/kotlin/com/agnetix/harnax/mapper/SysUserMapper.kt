@@ -107,4 +107,9 @@ interface SysUserMapper {
         @Param("id") id: Long,
         @Param("lastLoginTime") lastLoginTime: LocalDateTime,
     ): Int
+
+    fun updatePassword(
+        @Param("id") id: Long,
+        @Param("password") password: String,
+    ): Int
 }

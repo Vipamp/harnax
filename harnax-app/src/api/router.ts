@@ -21,7 +21,7 @@ function getStreamHeaders(): Record<string, string> {
   const connection = useConnectionStore()
   return {
     'Content-Type': 'application/json',
-    'X-Api-Key': connection.apiKey,
+    'X-Api-Key': connection.routerApiKey,
   }
 }
 

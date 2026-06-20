@@ -22,6 +22,9 @@ class MpSession : Serializable {
     @Schema(description = "Corresponding router session ID")
     var routerSessionId: String = ""
 
+    @Schema(description = "Associated agent ID")
+    var agentId: Long = 0
+
     @Schema(description = "Status (0:archived, 1:active)")
     var status: Int = 1
 

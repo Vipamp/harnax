@@ -5,7 +5,7 @@
         <textarea
           v-model="inputText"
           class="input-field"
-          placeholder="输入消息..."
+          :placeholder="t('chat.inputPlaceholder')"
           :auto-height="true"
           :maxlength="10000"
           :disabled="isStreaming"
@@ -24,6 +24,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   isStreaming: boolean
@@ -50,8 +53,8 @@ function handleSend() {
 .input-area {
   padding: 8px 12px;
   padding-bottom: calc(8px + env(safe-area-inset-bottom));
-  background: var(--chat-bg-base, #fff);
-  border-top: 1px solid var(--chat-border, #e5e5e5);
+  background: var(--chat-bg-container);
+  border-top: 1px solid var(--chat-border);
 }
 
 .input-row {
@@ -62,7 +65,7 @@ function handleSend() {
 
 .input-wrap {
   flex: 1;
-  background: var(--chat-bg-elevated, rgba(0, 0, 0, 0.04));
+  background: var(--chat-bg-elevated);
   border-radius: var(--chat-radius-lg, 12px);
   padding: 8px 14px;
 }
@@ -71,7 +74,7 @@ function handleSend() {
   width: 100%;
   font-size: 15px;
   line-height: 1.5;
-  color: var(--chat-text-primary, #1a1a2e);
+  color: var(--chat-text-primary);
   min-height: 24px;
   max-height: 120px;
 }
@@ -80,7 +83,7 @@ function handleSend() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--chat-primary, #4f6ef7);
+  background: var(--chat-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,7 +95,7 @@ function handleSend() {
 }
 
 .btn-send-text {
-  color: #fff;
+  color: var(--chat-text-on-primary);
   font-size: 18px;
   font-weight: 700;
 }
@@ -101,7 +104,7 @@ function handleSend() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--chat-error, #ef4444);
+  background: var(--chat-error);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -109,7 +112,7 @@ function handleSend() {
 }
 
 .btn-stop-text {
-  color: #fff;
+  color: var(--chat-text-on-primary);
   font-size: 14px;
 }
 </style>

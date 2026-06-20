@@ -5,6 +5,7 @@
     <!-- Result Map -->
     <resultMap id="SessionResultMap" type="com.agnetix.harnax.entity.Session">
         <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="title" property="title"/>
         <result column="session_description" property="sessionDescription"/>
         <result column="session_id" property="sessionId"/>
@@ -61,13 +62,13 @@
             name, description, system_prompt, model_id,
             enable_think, enable_search, enable_plan,
             mcp_list, skill_list, owner,
-            status, is_public, creator, active, create_time, update_time
+            tenant_id, status, is_public, creator, active, create_time, update_time
         ) VALUES (
             #{sessionId}, #{title}, #{sessionDescription}, #{agentId},
             #{name}, #{description}, #{systemPrompt}, #{modelId},
             #{enableThink}, #{enableSearch}, #{enablePlan},
             #{mcpList}, #{skillList}, #{owner},
-            #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+            #{tenantId}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 

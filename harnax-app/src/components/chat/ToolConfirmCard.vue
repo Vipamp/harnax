@@ -2,7 +2,7 @@
   <view class="confirm-card">
     <view class="confirm-header">
       <text class="confirm-icon">⚠️</text>
-      <view class="confirm-title">工具执行确认</view>
+      <view class="confirm-title">{{ t('chat.toolConfirmTitle') }}</view>
       <view :class="['confirm-badge', statusClass]">
         <text class="confirm-badge-text">{{ statusText }}</text>
       </view>
@@ -17,7 +17,7 @@
         <view class="confirm-tool-name">
           <text>🔧 {{ tool.toolName }}</text>
           <view v-if="tool.isDangerous" class="danger-tag">
-            <view class="danger-tag-text">高风险</view>
+            <view class="danger-tag-text">{{ t('chat.highRisk') }}</view>
           </view>
         </view>
         <text class="confirm-tool-args">{{ JSON.stringify(tool.arguments, null, 2) }}</text>
@@ -26,10 +26,10 @@
 
     <view v-if="status === 'pending'" class="confirm-actions">
       <view class="btn btn-reject" @tap="$emit('confirm', false)">
-        <view class="btn-text">拒绝</view>
+        <view class="btn-text">{{ t('common.reject') }}</view>
       </view>
       <view class="btn btn-allow" @tap="$emit('confirm', true)">
-        <view class="btn-text btn-text-primary">允许执行</view>
+        <view class="btn-text btn-text-primary">{{ t('chat.allowExecution') }}</view>
       </view>
     </view>
   </view>
@@ -37,7 +37,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { PendingCallTool } from '@/types/chat'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   pendingCallTools: PendingCallTool[]
@@ -50,9 +53,9 @@ defineEmits<{
 
 const statusText = computed(() => {
   switch (props.status) {
-    case 'confirmed': return '已确认'
-    case 'rejected': return '已拒绝'
-    default: return '待确认'
+    case 'confirmed': return t('chat.confirmed')
+    case 'rejected': return t('chat.rejected')
+    default: return t('chat.pendingConfirm')
   }
 })
 
@@ -90,7 +93,7 @@ const statusClass = computed(() => {
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: var(--chat-text-primary, #1a1a2e);
+  color: var(--chat-text-primary);
 }
 
 .confirm-badge {
@@ -112,7 +115,7 @@ const statusClass = computed(() => {
 
 .confirm-badge-text {
   font-size: 11px;
-  color: var(--chat-text-secondary, #666);
+  color: var(--chat-text-secondary);
 }
 
 .confirm-tools {
@@ -123,8 +126,8 @@ const statusClass = computed(() => {
   padding: 8px;
   margin-bottom: 6px;
   border-radius: 4px;
-  background: var(--chat-bg-base, #fff);
-  border: 1px solid var(--chat-border, #e5e5e5);
+  background: var(--chat-bg-container);
+  border: 1px solid var(--chat-border);
 
   &:last-child {
     margin-bottom: 0;
@@ -138,7 +141,7 @@ const statusClass = computed(() => {
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 4px;
-  color: var(--chat-text-primary, #1a1a2e);
+  color: var(--chat-text-primary);
 }
 
 .danger-tag {
@@ -149,7 +152,7 @@ const statusClass = computed(() => {
 
 .danger-tag-text {
   font-size: 10px;
-  color: var(--chat-error, #ef4444);
+  color: var(--chat-error);
   font-weight: 500;
 }
 
@@ -157,7 +160,7 @@ const statusClass = computed(() => {
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.4;
-  color: var(--chat-text-secondary, #666);
+  color: var(--chat-text-secondary);
   white-space: pre-wrap;
   max-height: 100px;
   overflow: hidden;
@@ -167,7 +170,7 @@ const statusClass = computed(() => {
   display: flex;
   gap: 8px;
   padding: 8px 12px;
-  border-top: 1px solid var(--chat-border, #e5e5e5);
+  border-top: 1px solid var(--chat-border);
 }
 
 .btn {
@@ -180,21 +183,21 @@ const statusClass = computed(() => {
 }
 
 .btn-reject {
-  background: var(--chat-bg-base, #fff);
-  border: 1px solid var(--chat-error, #ef4444);
+  background: var(--chat-bg-container);
+  border: 1px solid var(--chat-error);
 }
 
 .btn-allow {
-  background: var(--chat-primary, #4f6ef7);
+  background: var(--chat-primary);
 }
 
 .btn-text {
   font-size: 13px;
   font-weight: 500;
-  color: var(--chat-error, #ef4444);
+  color: var(--chat-error);
 }
 
 .btn-text-primary {
-  color: #fff;
+  color: var(--chat-text-on-primary);
 }
 </style>

@@ -2,9 +2,10 @@ package com.agnetix.harnax.admin.controller.mp
 
 import com.agnetix.harnax.admin.dto.CaptchaResponse
 import com.agnetix.harnax.admin.dto.LoginRequest
-import com.agnetix.harnax.admin.dto.LoginResponse
+import com.agnetix.harnax.admin.dto.mp.MpLoginResponse
 import com.agnetix.harnax.admin.service.AuthService
 import com.agnetix.harnax.admin.service.CaptchaService
+import com.agnetix.harnax.admin.service.mp.MpAuthService
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -12,22 +13,19 @@ import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
-/**
- * Mobile authentication controller.
- * Reuses existing AuthService and CaptchaService.
- */
 @Tag(name = "MP Auth", description = "Mobile authentication APIs")
 @RestController
 @RequestMapping("/api/mp/auth")
 class MpAuthController(
     private val authService: AuthService,
     private val captchaService: CaptchaService,
+    private val mpAuthService: MpAuthService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     @PostMapping("/login")
-    @Operation(summary = "Mobile login", description = "Username and password login for mobile app (no captcha)")
-    fun login(@Valid @RequestBody request: LoginRequest): ResultVo<LoginResponse> = ResultVo.success(authService.mobileLogin(request))
+    @Operation(summary = "Mobile login", description = "Username/password login returning JWT + auto-generated routerApiKey")
+    fun login(@Valid @RequestBody request: LoginRequest): ResultVo<MpLoginResponse> = ResultVo.success(mpAuthService.login(request))
 
     @PostMapping("/logout")
     @Operation(summary = "Mobile logout", description = "User logout for mobile app")

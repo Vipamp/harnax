@@ -1,6 +1,5 @@
 <template>
   <view class="app-layout">
-    <!-- Desktop: side-by-side -->
     <!-- #ifdef H5 -->
     <view class="layout-desktop">
       <Sidebar :visible="sidebarVisible">
@@ -10,6 +9,9 @@
         <view class="main-header">
           <view class="header-toggle" @tap="sidebarVisible = !sidebarVisible">
             <text class="toggle-icon">☰</text>
+          </view>
+          <view class="header-back" @tap="goToAgents">
+            <text class="back-icon">&lt;</text>
           </view>
           <text class="header-title">{{ currentSessionName }}</text>
           <view class="header-actions">
@@ -28,7 +30,6 @@
     </view>
     <!-- #endif -->
 
-    <!-- App: full-screen with drawer -->
     <!-- #ifdef APP-PLUS -->
     <view class="layout-mobile">
       <view v-if="showDrawer" class="drawer-overlay" @tap="showDrawer = false" />
@@ -37,6 +38,9 @@
       </view>
       <view class="layout-main">
         <view class="main-header">
+          <view class="header-back" @tap="goToAgents">
+            <text class="back-icon">&lt;</text>
+          </view>
           <view class="header-toggle" @tap="showDrawer = !showDrawer">
             <text class="toggle-icon">☰</text>
           </view>
@@ -61,6 +65,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '@/store/useSessionStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useConnectionStore } from '@/store/useConnectionStore'
@@ -68,6 +73,7 @@ import { mpLogout } from '@/api/admin'
 import Sidebar from './Sidebar.vue'
 import SessionList from '@/components/session/SessionList.vue'
 
+const { t } = useI18n()
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
 const connectionStore = useConnectionStore()
@@ -76,13 +82,13 @@ const sidebarVisible = ref(true)
 const showDrawer = ref(false)
 
 const currentSessionName = computed(() =>
-  sessionStore.currentSession?.name || 'Chat',
+  sessionStore.currentSession?.name || t('app.title'),
 )
 
 function handleClear() {
   uni.showModal({
-    title: 'Confirm',
-    content: 'Clear all messages in this session?',
+    title: t('common.confirm'),
+    content: t('session.clearConfirm'),
     success: (res) => {
       if (res.confirm) {
         chatStore.clearCurrentSession()
@@ -93,20 +99,23 @@ function handleClear() {
 
 function handleSettings() {
   uni.showActionSheet({
-    itemList: ['Logout'],
+    itemList: [t('profile.logout')],
     success: async (res) => {
       if (res.tapIndex === 0) {
-        // Logout
         try {
           await mpLogout()
         } catch {
-          // ignore logout errors
+          // ignore
         }
         connectionStore.clearAuth()
         uni.redirectTo({ url: '/pages/setup/index' })
       }
     },
   })
+}
+
+function goToAgents() {
+  uni.redirectTo({ url: '/pages/agents/index' })
 }
 </script>
 
@@ -136,8 +145,17 @@ function handleSettings() {
   border-bottom: 1px solid var(--chat-border, #e5e5e5);
   background: var(--chat-bg-base, #fff);
   gap: 10px;
-  /* Safe area for status bar */
   padding-top: calc(10px + var(--status-bar-height, 0px));
+}
+
+.header-back {
+  padding: 4px 8px;
+}
+
+.back-icon {
+  font-size: 18px;
+  color: var(--chat-text-primary, #1a1a2e);
+  font-weight: 600;
 }
 
 .header-toggle {
@@ -178,7 +196,6 @@ function handleSettings() {
   overflow: hidden;
 }
 
-/* Drawer for mobile */
 .drawer-overlay {
   position: fixed;
   top: 0;

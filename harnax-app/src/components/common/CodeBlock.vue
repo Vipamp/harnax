@@ -3,7 +3,7 @@
     <view class="code-header">
       <text class="code-lang">{{ language }}</text>
       <view class="code-copy" @tap="copyCode">
-        <view class="code-copy-text">{{ copied ? '已复制' : '复制' }}</view>
+        <view class="code-copy-text">{{ copied ? t('common.copied') : t('common.copy') }}</view>
       </view>
     </view>
     <scroll-view scroll-x class="code-scroll">
@@ -14,6 +14,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   code: string
@@ -35,7 +38,7 @@ async function copyCode() {
       copied.value = false
     }, 2000)
   } catch {
-    uni.showToast({ title: '复制失败', icon: 'none' })
+    uni.showToast({ title: t('common.copyFailed'), icon: 'none' })
   }
 }
 </script>

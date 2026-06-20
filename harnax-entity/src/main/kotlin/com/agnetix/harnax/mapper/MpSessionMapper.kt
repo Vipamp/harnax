@@ -24,4 +24,11 @@ interface MpSessionMapper {
         @Param("id") id: Long,
         @Param("userId") userId: Long,
     ): MpSession?
+
+    fun countByUserIdAndAgentId(
+        @Param("userId") userId: Long,
+        @Param("agentId") agentId: Long,
+    ): Int
+
+    fun selectByRouterSessionId(@Param("routerSessionId") routerSessionId: String): MpSession?
 }

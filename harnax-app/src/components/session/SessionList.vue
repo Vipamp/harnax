@@ -1,7 +1,7 @@
 <template>
   <view class="session-list">
     <view class="session-list-header">
-      <view class="list-title">会话</view>
+      <view class="list-title">{{ t('session.title') }}</view>
       <view class="btn-new" @tap="handleNew">
         <text class="btn-new-text">+</text>
       </view>
@@ -16,25 +16,26 @@
         @delete="handleDelete(session.id)"
       />
       <view v-if="sortedSessions.length === 0" class="no-sessions">
-        <view class="no-sessions-text">暂无会话</view>
+        <view class="no-sessions-text">{{ t('session.noSessions') }}</view>
       </view>
     </scroll-view>
   </view>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '@/store/useSessionStore'
 import { useChatStore } from '@/store/useChatStore'
 import { storeToRefs } from 'pinia'
 import SessionItem from './SessionItem.vue'
 
+const { t } = useI18n()
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
 const { sortedSessions, currentSessionId } = storeToRefs(sessionStore)
 
-async function handleNew() {
-  const id = await sessionStore.createSession()
-  chatStore.switchSession(id)
+function handleNew() {
+  uni.navigateTo({ url: '/pages/agents/index' })
 }
 
 function handleSelect(id: string) {
@@ -44,8 +45,8 @@ function handleSelect(id: string) {
 
 function handleDelete(id: string) {
   uni.showModal({
-    title: '确认',
-    content: '确定要删除这个会话吗？',
+    title: t('common.confirm'),
+    content: t('session.deleteConfirm'),
     success: async (res) => {
       if (res.confirm) {
         await sessionStore.deleteSession(id)
@@ -89,7 +90,7 @@ function handleDelete(id: string) {
 }
 
 .btn-new-text {
-  color: #fff;
+  color: var(--chat-text-on-primary);
   font-size: 18px;
   font-weight: 300;
 }

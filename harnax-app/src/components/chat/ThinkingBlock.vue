@@ -2,7 +2,7 @@
   <view class="thinking-block" @tap="toggle">
     <view class="thinking-header">
       <text class="thinking-icon">💡</text>
-      <view class="thinking-label">思考过程</view>
+      <view class="thinking-label">{{ t('chat.thinkingProcess') }}</view>
       <text class="thinking-arrow">{{ expanded ? '▾' : '▸' }}</text>
     </view>
     <view v-if="expanded" class="thinking-content">
@@ -13,6 +13,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   content: string
@@ -61,7 +64,7 @@ function toggle() {
   padding: 0 12px 10px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--chat-text-secondary, #666);
+  color: var(--chat-text-secondary);
   white-space: pre-wrap;
 }
 </style>

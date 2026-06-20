@@ -39,7 +39,7 @@ class MpSessionController(
     ): ResultVo<MpSessionResponse> {
         val user = SecurityUtils.getCurrentUser()
             ?: return ResultVo.error("User not logged in")
-        return ResultVo.success(mpSessionService.createSession(user.id, request))
+        return ResultVo.success(mpSessionService.createSession(user.id, user.tenantId, request))
     }
 
     @PutMapping("/{id}")

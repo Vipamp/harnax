@@ -9,6 +9,10 @@ onLaunch(() => {
 
   const sessionStore = useSessionStore()
   sessionStore.loadFromStorage()
+
+  if (connectionStore.isLoggedIn) {
+    connectionStore.startTokenRefreshTimer()
+  }
 })
 </script>
 

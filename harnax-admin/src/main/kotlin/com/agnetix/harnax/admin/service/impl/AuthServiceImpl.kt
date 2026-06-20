@@ -12,6 +12,7 @@ import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.SysUser
+import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import com.agnetix.harnax.mapper.TenantMapper
 import org.mindrot.jbcrypt.BCrypt
@@ -38,6 +39,7 @@ class AuthServiceImpl(
     private val userTenantService: UserTenantService,
     private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil,
+    private val apiKeyMapper: ApiKeyMapper,
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -185,6 +187,25 @@ class AuthServiceImpl(
 
                 // Add Token to MySQL blacklist
                 tokenBlacklistService.addToBlacklist(token, username, userId, expireTime, "logout")
+
+                // Invalidate MP router API keys
+                try {
+                    val apiKeys = apiKeyMapper.selectApiKeyList(
+                        keyword = null,
+                        enabled = 1,
+                        creator = username,
+                        tenantId = null,
+                    )
+                    for (key in apiKeys) {
+                        if (key.name.startsWith("mp_router_")) {
+                            apiKeyMapper.updateEnabled(key.id, 0)
+                            log.info("Disabled MP router API key: id={}, name={}", key.id, key.name)
+                        }
+                    }
+                } catch (e: Exception) {
+                    log.warn("Failed to invalidate MP router API keys: {}", e.message)
+                }
+
                 log.info("User logged out, userId: {}, username: {}", userId, username)
             } catch (e: Exception) {
                 // Token is invalid or expired, log out directly

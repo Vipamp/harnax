@@ -46,7 +46,7 @@ class TenantInterceptor(
 
         // Verify if user belongs to this tenant
         val userTenant = userTenantMapper.selectByUserIdAndTenantId(currentUser.id, tenantId) ?: throw BizException(
-            messageUtil.getMessage("error.tenant.access_denied")
+            messageUtil.getMessage("error.tenant.access_denied"),
         )
 
         if (userTenant.status == 0) {

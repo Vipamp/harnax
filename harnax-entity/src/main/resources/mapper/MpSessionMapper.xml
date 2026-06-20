@@ -8,6 +8,7 @@
         <result column="user_id" property="userId"/>
         <result column="session_name" property="sessionName"/>
         <result column="router_session_id" property="routerSessionId"/>
+        <result column="agent_id" property="agentId"/>
         <result column="status" property="status"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
@@ -32,8 +33,8 @@
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO mp_session (user_id, session_name, router_session_id, status, create_time, update_time)
-        VALUES (#{userId}, #{sessionName}, #{routerSessionId}, #{status}, #{createTime}, #{updateTime})
+        INSERT INTO mp_session (user_id, session_name, router_session_id, agent_id, status, create_time, update_time)
+        VALUES (#{userId}, #{sessionName}, #{routerSessionId}, #{agentId}, #{status}, #{createTime}, #{updateTime})
     </insert>
 
     <!-- updateById -->
@@ -48,5 +49,16 @@
     <update id="deleteById">
         UPDATE mp_session SET status = 0, update_time = NOW() WHERE id = #{id}
     </update>
+
+    <!-- countByUserIdAndAgentId -->
+    <select id="countByUserIdAndAgentId" resultType="int">
+        SELECT COUNT(*) FROM mp_session
+        WHERE user_id = #{userId} AND agent_id = #{agentId} AND status = 1
+    </select>
+
+    <!-- selectByRouterSessionId -->
+    <select id="selectByRouterSessionId" resultMap="MpSessionResultMap">
+        SELECT * FROM mp_session WHERE router_session_id = #{routerSessionId} AND status = 1 LIMIT 1
+    </select>
 
 </mapper>

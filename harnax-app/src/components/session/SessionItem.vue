@@ -5,6 +5,7 @@
   >
     <view class="session-info">
       <text class="session-name">{{ session.name }}</text>
+      <text v-if="session.agentName" class="session-agent">{{ session.agentName }}</text>
       <text class="session-time">{{ formatTime(session.updatedAt) }}</text>
     </view>
     <view class="session-actions" @tap.stop>
@@ -66,6 +67,16 @@ function formatTime(ts: number): string {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
+}
+
+.session-agent {
+  font-size: 11px;
+  color: var(--chat-primary, #4f6ef7);
+  margin-top: 1px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-time {

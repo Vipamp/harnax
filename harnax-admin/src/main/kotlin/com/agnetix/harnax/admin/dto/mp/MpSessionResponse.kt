@@ -14,6 +14,12 @@ data class MpSessionResponse(
     @Schema(description = "Corresponding router session ID")
     val routerSessionId: String,
 
+    @Schema(description = "Associated agent ID")
+    val agentId: Long = 0,
+
+    @Schema(description = "Associated agent name")
+    val agentName: String = "",
+
     @Schema(description = "Status (0:archived, 1:active)")
     val status: Int,
 

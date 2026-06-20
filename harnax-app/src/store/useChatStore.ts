@@ -24,7 +24,6 @@ export const useChatStore = defineStore('chat', () => {
   const pendingConfirmTools = ref<PendingCallTool[]>([])
   const currentAbortController = ref<AbortController | null>(null)
   const scrollToBottom = ref(false)
-  const lastTokenUsage = ref<TokenUsage | null>(null)
 
   let assistantMessage: ChatMessage | null = null
 
@@ -78,11 +77,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function updateTokenUsage(usage?: TokenUsage) {
-    if (usage) {
-      lastTokenUsage.value = usage
-      if (assistantMessage) {
-        assistantMessage.tokenUsage = usage
-      }
+    if (usage && assistantMessage) {
+      assistantMessage.tokenUsage = usage
     }
   }
 
@@ -179,6 +175,12 @@ export const useChatStore = defineStore('chat', () => {
     const sessionStore = useSessionStore()
     const sessionId = await sessionStore.ensureSession()
 
+    if (!sessionId) {
+      // No session available, redirect to agent selection
+      uni.redirectTo({ url: '/pages/agents/index' })
+      return
+    }
+
     const userMessage: ChatMessage = {
       id: generateUUID(),
       role: 'user',
@@ -190,7 +192,6 @@ export const useChatStore = defineStore('chat', () => {
 
     assistantMessage = null
     isStreaming.value = true
-    lastTokenUsage.value = null
     triggerScroll()
 
     const abortController = new AbortController()
@@ -295,7 +296,6 @@ export const useChatStore = defineStore('chat', () => {
 
     messages.value = []
     assistantMessage = null
-    lastTokenUsage.value = null
     persistMessages(sessionId)
   }
 
@@ -308,12 +308,45 @@ export const useChatStore = defineStore('chat', () => {
       try {
         const res = await mpGetChatHistory(session.serverId)
         if (res.code === 200 && res.data) {
-          messages.value = res.data.map((msg, i) => ({
-            id: `history_${i}_${generateUUID()}`,
-            role: msg.role as 'user' | 'assistant',
-            segments: [{ type: 'text' as const, content: msg.content }],
-            timestamp: Date.now(),
-          }))
+          messages.value = res.data.map((msg, i) => {
+            let segments: MessageSegment[] = []
+            if (msg.segmentsJson) {
+              try {
+                segments = JSON.parse(msg.segmentsJson)
+              } catch {
+                segments = [{ type: 'text' as const, content: msg.content }]
+              }
+            } else {
+              segments = [{ type: 'text' as const, content: msg.content }]
+            }
+
+            let tokenUsage: TokenUsage | undefined
+            if (msg.tokenUsageJson) {
+              try {
+                tokenUsage = JSON.parse(msg.tokenUsageJson)
+              } catch {
+                // ignore
+              }
+            }
+
+            let imageUrls: string[] | undefined
+            if (msg.imageUrlsJson) {
+              try {
+                imageUrls = JSON.parse(msg.imageUrlsJson)
+              } catch {
+                // ignore
+              }
+            }
+
+            return {
+              id: `history_${i}_${generateUUID()}`,
+              role: msg.role as 'user' | 'assistant',
+              segments,
+              timestamp: Date.now(),
+              tokenUsage,
+              imageUrls,
+            }
+          })
           persistMessages(sessionId)
           return
         }
@@ -326,13 +359,12 @@ export const useChatStore = defineStore('chat', () => {
     loadMessages(sessionId)
   }
 
-  function switchSession(sessionId: string) {
+  async function switchSession(sessionId: string) {
     stopStreaming()
     assistantMessage = null
     isWaitingConfirm.value = false
     pendingConfirmTools.value = []
-    lastTokenUsage.value = null
-    loadMessages(sessionId)
+    await loadHistoryFromServer(sessionId)
   }
 
   return {
@@ -341,7 +373,6 @@ export const useChatStore = defineStore('chat', () => {
     isWaitingConfirm,
     pendingConfirmTools,
     scrollToBottom,
-    lastTokenUsage,
     sendMessage,
     confirmTools,
     stopStreaming,

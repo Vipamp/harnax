@@ -8,13 +8,13 @@
     </view>
     <view v-if="expanded" class="tool-body">
       <view v-if="args" class="tool-section">
-        <view class="tool-section-label">参数</view>
+        <view class="tool-section-label">{{ t('chat.toolArguments') }}</view>
         <scroll-view scroll-x class="tool-code-scroll">
           <text class="tool-code">{{ args }}</text>
         </scroll-view>
       </view>
       <view v-if="result" class="tool-section">
-        <view class="tool-section-label">结果</view>
+        <view class="tool-section-label">{{ t('chat.toolResult') }}</view>
         <scroll-view scroll-x class="tool-code-scroll">
           <text class="tool-code" :class="{ 'tool-error': !success }">{{ result }}</text>
         </scroll-view>
@@ -25,6 +25,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   toolName: string
@@ -37,16 +40,16 @@ const expanded = ref(false)
 
 const statusText = computed(() => {
   if (props.result !== undefined) {
-    return props.success ? '已完成' : '失败'
+    return props.success ? t('chat.toolCompleted') : t('chat.toolFailed')
   }
-  return '调用中'
+  return t('chat.toolCalling')
 })
 
 const statusColor = computed(() => {
   if (props.result !== undefined) {
-    return props.success ? 'var(--chat-success, #22c55e)' : 'var(--chat-error, #ef4444)'
+    return props.success ? 'var(--chat-success)' : 'var(--chat-error)'
   }
-  return 'var(--chat-primary, #4f6ef7)'
+  return 'var(--chat-primary)'
 })
 
 function toggle() {
@@ -58,8 +61,8 @@ function toggle() {
 .tool-card {
   margin: 6px 0;
   border-radius: var(--chat-radius-sm, 6px);
-  background: var(--chat-bg-elevated, rgba(0, 0, 0, 0.03));
-  border: 1px solid var(--chat-border, #e5e5e5);
+  background: var(--chat-bg-elevated);
+  border: 1px solid var(--chat-border);
   overflow: hidden;
 }
 
@@ -78,7 +81,7 @@ function toggle() {
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: var(--chat-text-primary, #1a1a2e);
+  color: var(--chat-text-primary);
 }
 
 .tool-status {
@@ -87,11 +90,11 @@ function toggle() {
 
 .tool-arrow {
   font-size: 11px;
-  color: var(--chat-text-secondary, #666);
+  color: var(--chat-text-secondary);
 }
 
 .tool-body {
-  border-top: 1px solid var(--chat-border, #e5e5e5);
+  border-top: 1px solid var(--chat-border);
   padding: 8px 12px;
 }
 
@@ -105,7 +108,7 @@ function toggle() {
 
 .tool-section-label {
   font-size: 11px;
-  color: var(--chat-text-secondary, #666);
+  color: var(--chat-text-secondary);
   margin-bottom: 4px;
   display: block;
 }
@@ -118,11 +121,11 @@ function toggle() {
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--chat-text-primary, #1a1a2e);
+  color: var(--chat-text-primary);
   white-space: pre;
 }
 
 .tool-error {
-  color: var(--chat-error, #ef4444);
+  color: var(--chat-error);
 }
 </style>

@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getStorage, setStorage } from '@/utils/storage'
-import { generateUUID } from '@/utils/platform'
+import { getStorage, setStorage, ensureCacheSpace } from '@/utils/storage'
 import {
   mpListSessions,
   mpCreateSession,
@@ -13,11 +12,11 @@ import type { MpSessionResponse } from '@/types/api'
 const STORAGE_KEY = 'sessions'
 
 export interface SessionItem {
-  /** Local ID (same as routerSessionId) */
   id: string
-  /** Server-side mp_session.id */
   serverId: number | null
   name: string
+  agentId: number
+  agentName: string
   createdAt: number
   updatedAt: number
 }
@@ -35,7 +34,6 @@ export const useSessionStore = defineStore('session', () => {
     [...sessions.value].sort((a, b) => b.updatedAt - a.updatedAt),
   )
 
-  /** Load sessions from local storage as initial state */
   function loadFromStorage() {
     const data = getStorage<SessionItem[]>(STORAGE_KEY)
     if (data) {
@@ -52,18 +50,17 @@ export const useSessionStore = defineStore('session', () => {
     setStorage('current_session_id', currentSessionId.value)
   }
 
-  /** Fetch session list from admin server and merge with local */
   async function fetchSessions() {
     isLoading.value = true
     try {
       const res = await mpListSessions()
       if (res.code === 200 && res.data) {
         sessions.value = res.data.map(toSessionItem)
-        // Ensure current session is still valid
         if (currentSessionId.value && !sessions.value.some((s) => s.id === currentSessionId.value)) {
           currentSessionId.value = sessions.value[0]?.id || ''
         }
         persist()
+        ensureCacheSpace()
       }
     } catch (e) {
       console.warn('[Session] Failed to fetch from server, using local data', e)
@@ -72,16 +69,11 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  /** Create a new session, sync to server */
-  async function createSession(name?: string): Promise<string> {
-    const routerSessionId = generateUUID()
-    const sessionName = name || `New Chat ${sessions.value.length + 1}`
+  async function createSession(agentId: number, agentName: string, name?: string): Promise<string> {
+    const sessionName = name || `${agentName} ${new Date().toLocaleString()}`
 
     try {
-      const res = await mpCreateSession({
-        sessionName,
-        routerSessionId,
-      })
+      const res = await mpCreateSession({ sessionName, agentId })
       if (res.code === 200 && res.data) {
         const item = toSessionItem(res.data)
         sessions.value.push(item)
@@ -90,15 +82,17 @@ export const useSessionStore = defineStore('session', () => {
         return item.id
       }
     } catch (e) {
-      console.warn('[Session] Server create failed, creating locally', e)
+      console.warn('[Session] Server create failed', e)
     }
 
-    // Fallback: create locally
     const now = Date.now()
+    const fallbackId = `local_${now}`
     const item: SessionItem = {
-      id: routerSessionId,
+      id: fallbackId,
       serverId: null,
       name: sessionName,
+      agentId,
+      agentName,
       createdAt: now,
       updatedAt: now,
     }
@@ -165,7 +159,7 @@ export const useSessionStore = defineStore('session', () => {
       persist()
       return currentSessionId.value
     }
-    return createSession()
+    return ''
   }
 
   function toSessionItem(mp: MpSessionResponse): SessionItem {
@@ -173,9 +167,17 @@ export const useSessionStore = defineStore('session', () => {
       id: mp.routerSessionId,
       serverId: mp.id,
       name: mp.sessionName,
-      createdAt: new Date(mp.createTime).getTime(),
-      updatedAt: new Date(mp.updateTime).getTime(),
+      agentId: mp.agentId,
+      agentName: mp.agentName,
+      createdAt: parseDateTime(mp.createTime),
+      updatedAt: parseDateTime(mp.updateTime),
     }
+  }
+
+  function parseDateTime(dt: string): number {
+    const normalized = dt.includes('T') ? dt : dt.replace(' ', 'T')
+    const ts = new Date(normalized).getTime()
+    return isNaN(ts) ? Date.now() : ts
   }
 
   return {
@@ -195,4 +197,3 @@ export const useSessionStore = defineStore('session', () => {
     ensureSession,
   }
 })
-

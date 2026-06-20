@@ -1,76 +1,80 @@
 <template>
   <view class="setup-page">
     <view class="setup-card">
-      <view class="setup-title">登录</view>
-      <view class="setup-desc">配置服务地址并登录以开始对话</view>
+      <!-- Step 1: Server URL -->
+      <template v-if="step === 'server'">
+        <view class="setup-title">{{ t('setup.serverTitle') }}</view>
+        <view class="setup-desc">{{ t('setup.serverDesc') }}</view>
 
-      <view class="form-group">
-        <view class="form-label">管理后台地址</view>
-        <input
-          v-model="adminUrlInput"
-          class="form-input"
-          placeholder="请输入管理后台服务地址"
-          type="text"
-        />
-      </view>
+        <view class="form-group">
+          <view class="form-label">{{ t('setup.serverUrl') }}</view>
+          <input
+            v-model="serverUrl"
+            class="form-input"
+            :placeholder="t('setup.serverUrlPlaceholder')"
+            type="text"
+          />
+        </view>
 
-      <view class="form-group">
-        <view class="form-label">Router 地址</view>
-        <input
-          v-model="routerUrl"
-          class="form-input"
-          placeholder="请输入 Router 服务地址"
-          type="text"
-        />
-      </view>
+        <view class="btn-connect" :class="{ 'btn-loading': isTesting }" @tap="handleTestServer">
+          <view class="btn-connect-text">{{ isTesting ? t('setup.testing') : t('setup.next') }}</view>
+        </view>
 
-      <view class="form-group">
-        <view class="form-label">API Key</view>
-        <input
-          v-model="apiKeyInput"
-          class="form-input"
-          placeholder="请输入 API Key"
-          :password="true"
-          type="text"
-        />
-      </view>
+        <view v-if="error" class="error-msg">
+          <view class="error-text">{{ error }}</view>
+        </view>
+      </template>
 
-      <view class="form-group">
-        <view class="form-label">用户名</view>
-        <input
-          v-model="username"
-          class="form-input"
-          placeholder="请输入用户名"
-          type="text"
-        />
-      </view>
+      <!-- Step 2: Login -->
+      <template v-if="step === 'login'">
+        <view class="setup-title">{{ t('setup.title') }}</view>
+        <view class="setup-desc">{{ serverUrl }}</view>
 
-      <view class="form-group">
-        <view class="form-label">密码</view>
-        <input
-          v-model="password"
-          class="form-input"
-          placeholder="请输入密码"
-          :password="true"
-          type="text"
-        />
-      </view>
+        <view class="form-group">
+          <view class="form-label">{{ t('setup.username') }}</view>
+          <input
+            v-model="username"
+            class="form-input"
+            :placeholder="t('setup.usernamePlaceholder')"
+            type="text"
+          />
+        </view>
 
-      <view class="btn-connect" :class="{ 'btn-loading': isTesting }" @tap="handleLogin">
-        <view class="btn-connect-text">{{ isTesting ? '登录中...' : '登录' }}</view>
-      </view>
+        <view class="form-group">
+          <view class="form-label">{{ t('setup.password') }}</view>
+          <input
+            v-model="password"
+            class="form-input"
+            :placeholder="t('setup.passwordPlaceholder')"
+            :password="true"
+            type="text"
+          />
+        </view>
 
-      <view v-if="error" class="error-msg">
-        <view class="error-text">{{ error }}</view>
-      </view>
+        <view class="btn-connect" :class="{ 'btn-loading': isTesting }" @tap="handleLogin">
+          <view class="btn-connect-text">{{ isTesting ? t('setup.logging') : t('setup.login') }}</view>
+        </view>
+
+        <view v-if="error" class="error-msg">
+          <view class="error-text">{{ error }}</view>
+        </view>
+
+        <view class="back-link" @tap="step = 'server'">
+          <text class="back-link-text">{{ t('setup.changeServer') }}</text>
+        </view>
+      </template>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useConnectionStore } from '@/store/useConnectionStore'
 import { mpLogin } from '@/api/admin'
+import { sha256 } from '@/utils/crypto'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{
   connected: []
@@ -78,63 +82,92 @@ const emit = defineEmits<{
 
 const connection = useConnectionStore()
 
-const adminUrlInput = ref(connection.adminUrl)
-const routerUrl = ref(connection.routerUrl)
-const apiKeyInput = ref(connection.apiKey)
-const username = ref(connection.username)
+const step = ref<'server' | 'login'>('server')
+const serverUrl = ref(connection.adminUrl || '')
+const username = ref(connection.username || '')
 const password = ref('')
 const isTesting = ref(false)
 const error = ref('')
 
-async function handleLogin() {
-  if (!adminUrlInput.value.trim() || !routerUrl.value.trim()) {
-    error.value = '请填写服务地址'
-    return
+onMounted(() => {
+  if (connection.adminUrl) {
+    step.value = 'login'
   }
-  if (!username.value.trim() || !password.value.trim()) {
-    error.value = '请填写所有必填项'
+})
+
+async function handleTestServer() {
+  const url = serverUrl.value.trim()
+  if (!url) {
+    error.value = t('setup.requiredServerUrl')
     return
   }
 
   error.value = ''
   isTesting.value = true
 
-  // Save connection config first
-  connection.adminUrl = adminUrlInput.value.trim()
-  connection.routerUrl = routerUrl.value.trim()
-  connection.apiKey = apiKeyInput.value.trim()
-  connection.username = username.value.trim()
-
   try {
-    // SHA-256 hash the password (backend stores BCrypt(SHA-256(plain)))
-    const hashedPassword = await sha256(password.value)
-
-    // Login via admin API
-    const res = await mpLogin({
-      username: username.value.trim(),
-      password: hashedPassword,
+    const healthUrl = `${url.replace(/\/+$/, '')}/api/mp/auth/captcha`
+    await new Promise<void>((resolve, reject) => {
+      uni.request({
+        url: healthUrl,
+        method: 'GET',
+        timeout: 10000,
+        success: (res) => {
+          if (res.statusCode >= 200 && res.statusCode < 500) {
+            resolve()
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`))
+          }
+        },
+        fail: (err) => reject(new Error(err.errMsg || 'Connection failed')),
+      })
     })
 
-    if (res.code === 200 && res.data?.accessToken) {
-      connection.setToken(res.data.accessToken)
-      connection.setConnected(true)
-      connection.save()
-      emit('connected')
-    } else {
-      error.value = res.message || '登录失败，请检查用户名和密码'
-    }
+    connection.setServerUrl(url)
+    step.value = 'login'
+    error.value = ''
   } catch (e) {
-    error.value = (e as Error).message || '登录失败，请检查用户名和密码'
+    error.value = (e as Error).message || t('setup.serverUnreachable')
   } finally {
     isTesting.value = false
   }
 }
 
-async function sha256(message: string): Promise<string> {
-  const msgBuffer = new TextEncoder().encode(message)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+async function handleLogin() {
+  if (!username.value.trim() || !password.value.trim()) {
+    error.value = t('setup.requiredFields')
+    return
+  }
+
+  error.value = ''
+  isTesting.value = true
+
+  try {
+    const hashedPassword = await sha256(password.value)
+    const res = await mpLogin({
+      username: username.value.trim(),
+      password: hashedPassword,
+    })
+
+    if (res.code === 200 && res.data) {
+      connection.setLoginResult(
+        res.data.accessToken,
+        res.data.routerUrl,
+        res.data.routerApiKey,
+        username.value.trim(),
+        res.data.userInfo.userId,
+        res.data.userInfo.nickname || '',
+        res.data.expiresIn,
+      )
+      emit('connected')
+    } else {
+      error.value = res.message || t('setup.loginFailed')
+    }
+  } catch (e) {
+    error.value = (e as Error).message || t('setup.loginFailed')
+  } finally {
+    isTesting.value = false
+  }
 }
 </script>
 
@@ -154,7 +187,7 @@ async function sha256(message: string): Promise<string> {
   background: var(--chat-bg-base, #fff);
   border-radius: var(--chat-radius-lg, 12px);
   padding: 32px 24px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--chat-shadow-lg);
 }
 
 .setup-title {
@@ -171,6 +204,9 @@ async function sha256(message: string): Promise<string> {
   line-height: 1.5;
   display: block;
   margin-bottom: 28px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .form-group {
@@ -212,7 +248,7 @@ async function sha256(message: string): Promise<string> {
 }
 
 .btn-connect-text {
-  color: #fff;
+  color: var(--chat-text-on-primary);
   font-size: 15px;
   font-weight: 500;
 }
@@ -227,5 +263,16 @@ async function sha256(message: string): Promise<string> {
 .error-text {
   font-size: 13px;
   color: var(--chat-error, #ef4444);
+}
+
+.back-link {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.back-link-text {
+  font-size: 13px;
+  color: var(--chat-primary, #4f6ef7);
 }
 </style>

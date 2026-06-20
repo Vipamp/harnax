@@ -2,18 +2,23 @@ import type {
   ApiResponse,
   LoginRequest,
   LoginResponse,
+  MpLoginResponse,
   CaptchaResponse,
   MpSessionResponse,
   MpCreateSessionRequest,
   MpUpdateSessionRequest,
   MpChatMessageDto,
+  MpAgentResponse,
+  MpAgentDetailResponse,
+  MpUserProfileResponse,
+  MpChangePasswordRequest,
 } from '../types/api'
 import { adminRequest } from './client'
 
 // ========== Auth APIs ==========
 
-export async function mpLogin(request: LoginRequest): Promise<ApiResponse<LoginResponse>> {
-  return adminRequest<LoginResponse>('/api/mp/auth/login', {
+export async function mpLogin(request: LoginRequest): Promise<ApiResponse<MpLoginResponse>> {
+  return adminRequest<MpLoginResponse>('/api/mp/auth/login', {
     method: 'POST',
     data: request,
   })
@@ -27,6 +32,16 @@ export async function mpLogout(): Promise<ApiResponse<void>> {
 
 export async function mpGetCaptcha(): Promise<ApiResponse<CaptchaResponse>> {
   return adminRequest<CaptchaResponse>('/api/mp/auth/captcha')
+}
+
+// ========== Agent APIs ==========
+
+export async function mpListAgents(): Promise<ApiResponse<MpAgentResponse[]>> {
+  return adminRequest<MpAgentResponse[]>('/api/mp/agents')
+}
+
+export async function mpGetAgent(agentId: number): Promise<ApiResponse<MpAgentDetailResponse>> {
+  return adminRequest<MpAgentDetailResponse>(`/api/mp/agents/${agentId}`)
 }
 
 // ========== Session APIs ==========
@@ -83,5 +98,20 @@ export async function mpDeleteChatHistory(
 ): Promise<ApiResponse<void>> {
   return adminRequest<void>(`/api/mp/chat/history/${sessionId}`, {
     method: 'DELETE',
+  })
+}
+
+// ========== User APIs ==========
+
+export async function mpGetProfile(): Promise<ApiResponse<MpUserProfileResponse>> {
+  return adminRequest<MpUserProfileResponse>('/api/mp/user/profile')
+}
+
+export async function mpChangePassword(
+  request: MpChangePasswordRequest,
+): Promise<ApiResponse<void>> {
+  return adminRequest<void>('/api/mp/user/password', {
+    method: 'PUT',
+    data: request,
   })
 }

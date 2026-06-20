@@ -27,6 +27,10 @@
   --chat-error: #ff4d4f;
   --chat-info: #1890ff;
 
+  /* On-primary text (buttons) */
+  --chat-text-on-primary: #ffffff;
+  --chat-shadow: rgba(0, 0, 0, 0.06);
+
   /* Shadow */
   --chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
   --chat-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -74,6 +78,9 @@ html.dark {
   --chat-bubble-assistant-text: #e6edf3;
 
   --chat-sidebar-bg: #161b22;
+
+  --chat-text-on-primary: #ffffff;
+  --chat-shadow: rgba(0, 0, 0, 0.3);
 
   --chat-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --chat-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
