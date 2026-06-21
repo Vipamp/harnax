@@ -26,8 +26,10 @@ import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOption
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
+import reactor.core.scheduler.Schedulers
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.time.Duration
 import java.util.Base64
 
 /**
@@ -56,13 +58,13 @@ class HarnessAgentWrapper(
     fun callStream(
         prompt: String,
         imageUrls: List<String> = listOf(),
-    ): Flux<ChatEvent> {
+    ): Flux<ChatEvent> = Flux.defer {
         val list: MutableList<ContentBlock> = mutableListOf()
         list.add(TextBlock.builder().text(prompt).build())
         imageUrls.forEach { list.add(imageBlock(it)) }
         val msg = Msg.builder().name("user").role(MsgRole.USER).content(list).build()
-        return callStreamInternal(msg)
-    }
+        callStreamInternal(msg)
+    }.subscribeOn(Schedulers.boundedElastic())
 
     fun callStream(
         msg: Msg? = null,
@@ -84,7 +86,8 @@ class HarnessAgentWrapper(
 
     fun call(msgs: List<Msg>): ChatResponse {
         val ctxResult = buildRuntimeContext()
-        val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext).block()
+        val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext)
+            .block(Duration.ofMinutes(5))
         val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
         val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
         return ChatResponse(
@@ -97,39 +100,41 @@ class HarnessAgentWrapper(
     private fun callStreamInternal(
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
-        val ctxResult = buildRuntimeContext()
-        return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
-            .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
-            .doOnNext { extracted(it) }
-            .doFinally {
-                val keepAliveSandbox = ctxResult.keepAliveSandbox
-                if (keepAliveSandbox != null) {
-                    try {
-                        val snapshot = keepAliveSandbox.state.snapshot
-                        if (snapshot != null && snapshot.isPersistenceEnabled) {
-                            keepAliveSandbox.persistWorkspace().use { archive ->
-                                snapshot.persist(archive)
+        return Flux.defer {
+            val ctxResult = buildRuntimeContext()
+            harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
+                .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
+                .doOnNext { extracted(it) }
+                .doFinally {
+                    val keepAliveSandbox = ctxResult.keepAliveSandbox
+                    if (keepAliveSandbox != null) {
+                        try {
+                            val snapshot = keepAliveSandbox.state.snapshot
+                            if (snapshot != null && snapshot.isPersistenceEnabled) {
+                                keepAliveSandbox.persistWorkspace().use { archive ->
+                                    snapshot.persist(archive)
+                                }
+                                log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
                             }
-                            log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+                        } catch (e: Exception) {
+                            log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
                         }
-                    } catch (e: Exception) {
-                        log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
                     }
                 }
-            }
-            .concatWith(Flux.just(EndEventChatEvent()))
-            .onErrorResume { e ->
-                log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
-                val errorEvent = if (e is HarnaxException) {
-                    ErrorChatEvent.from(e)
-                } else {
-                    ErrorChatEvent(
-                        code = HarnaxErrorCode.SYSTEM_ERROR.code,
-                        message = e.message ?: "Unknown error",
-                    )
+                .concatWith(Flux.just(EndEventChatEvent()))
+                .onErrorResume { e ->
+                    log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
+                    val errorEvent = if (e is HarnaxException) {
+                        ErrorChatEvent.from(e)
+                    } else {
+                        ErrorChatEvent(
+                            code = HarnaxErrorCode.SYSTEM_ERROR.code,
+                            message = e.message ?: "Unknown error",
+                        )
+                    }
+                    Flux.just(errorEvent, EndEventChatEvent())
                 }
-                Flux.just(errorEvent, EndEventChatEvent())
-            }
+        }.subscribeOn(Schedulers.boundedElastic())
     }
 
     private fun imageBlock(url: String): ImageBlock = if (url.startsWith("data:image")) {

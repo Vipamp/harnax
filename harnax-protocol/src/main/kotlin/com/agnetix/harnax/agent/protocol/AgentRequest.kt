@@ -1,7 +1,7 @@
 package com.agnetix.harnax.agent.protocol
 
-import com.fasterxml.jackson.annotation.JsonSubTypes
-import com.fasterxml.jackson.annotation.JsonTypeInfo
+import tools.jackson.annotation.JsonSubTypes
+import tools.jackson.annotation.JsonTypeInfo
 
 /**
  * AgentRequest - unified request type for all agent interactions.

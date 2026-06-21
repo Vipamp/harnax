@@ -2,8 +2,8 @@ package com.agnetix.harnax.agent.protocol
 
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
-import com.fasterxml.jackson.annotation.JsonSubTypes
-import com.fasterxml.jackson.annotation.JsonTypeInfo
+import tools.jackson.annotation.JsonSubTypes
+import tools.jackson.annotation.JsonTypeInfo
 import io.agentscope.core.model.ChatUsage
 
 /**

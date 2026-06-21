@@ -117,7 +117,8 @@ class HarnessAgentLauncher(
             .workspace(workspaceRoot.resolve(agentSpec.name).resolve(sessionId))
             .stateStore(stateStore)
 
-        // ----- Chat model -----
+        // TODO [P0] Hardcoded API key and model name — must be replaced with chatModelConfigAdaptor
+        //   lookup from DB/config. Current key is committed to Git and model is not configurable.
         val chatModelConfig = DashScopeChatModelConfig(
             "qwen3-vl-flash-2026-01-22",
             "sk-b6e5de9b14a947f5b9e9c7065c1fc0ec",

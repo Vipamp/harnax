@@ -61,6 +61,9 @@ class SessionRouterService(
 
     private val mdcKeys = setOf("sessionId", "requestId", "instanceId")
 
+    // TODO [P0] buildCurl() includes JWT auth headers and request body in INFO-level log output.
+    //   This leaks credentials and user data to production log aggregators.
+    //   Fix: remove auth headers from log output, or mask them; redact sensitive body fields.
     private fun buildCurl(url: String, body: String): String {
         val headers = tokenProvider.authHeaders()
         val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
@@ -167,16 +170,16 @@ class SessionRouterService(
     fun proxyStreamRequest(request: ChatAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
         val requestId = getOrGenerateRequestId(request)
-        setMDC(sessionId, requestId)
+        // Note: MDC is not set here because the returned Flux is subscribed to and executed
+        // on a Netty event loop thread, where the servlet thread's MDC is not visible.
+        // Context (sessionId, requestId) is logged directly in each operator's messages.
         try {
             val instance = resolveInstanceBlocking(sessionId)
-            MDC.put("instanceId", instance.instanceId)
+            log.info("Stream proxy for session=$sessionId, requestId=$requestId -> instance=${instance.instanceId}")
 
             return buildStreamFlux(sessionId, requestId, instance, request)
-                .doFinally { clearMDC() }
         } catch (e: Exception) {
-            clearMDC()
-            log.error("Failed to resolve instance for stream session $sessionId: ${e.message}", e)
+            log.error("Failed to resolve instance for stream session=$sessionId, requestId=$requestId: ${e.message}", e)
             return Flux.just(
                 ErrorChatEvent(
                     code = HarnaxErrorCode.ROUTER_NO_INSTANCE.code,
@@ -216,10 +219,10 @@ class SessionRouterService(
 
     fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        setMDC(sessionId, null)
+        // Note: MDC is not set here for the same thread-safety reasons as proxyStreamRequest.
         try {
             val instance = resolveInstanceBlocking(sessionId)
-            MDC.put("instanceId", instance.instanceId)
+            log.info("Confirm stream proxy for session=$sessionId -> instance=${instance.instanceId}")
             val url = "${instance.getBaseUrl()}/api/agent/confirm"
 
             return webClient.post()
@@ -231,11 +234,10 @@ class SessionRouterService(
                 .limitRate(10)
                 .timeout(Duration.ofMinutes(streamTimeoutMinutes))
                 .doOnCancel {
-                    log.info("Confirm stream cancelled by client for session $sessionId")
+                    log.info("Confirm stream cancelled by client for session=$sessionId")
                 }
-                .doFinally { clearMDC() }
                 .onErrorResume { e ->
-                    log.error("Confirm stream proxy error for session $sessionId: ${e.message}", e)
+                    log.error("Confirm stream proxy error for session=$sessionId: ${e.message}", e)
                     Flux.just(
                         ErrorChatEvent(
                             code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
@@ -245,8 +247,7 @@ class SessionRouterService(
                     )
                 }
         } catch (e: Exception) {
-            clearMDC()
-            log.error("Failed to resolve instance for confirm stream session $sessionId: ${e.message}", e)
+            log.error("Failed to resolve instance for confirm stream session=$sessionId: ${e.message}", e)
             return Flux.just(
                 ErrorChatEvent(
                     code = HarnaxErrorCode.ROUTER_NO_INSTANCE.code,

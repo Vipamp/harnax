@@ -38,6 +38,7 @@ import reactor.core.publisher.Flux
 import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
 import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Default implementation of AgentRunner.
@@ -57,6 +58,7 @@ class DefaultAgentRunner(
     private val log = LoggerFactory.getLogger(DefaultAgentRunner::class.java)
     private val agentCache = Caffeine.newBuilder()
         .maximumSize(cacheMaxSize)
+        .expireAfterWrite(30, TimeUnit.MINUTES)
         .removalListener<String, HarnessAgentWrapper> { key, _, cause ->
             log.info("Agent evicted from cache: session=$key, cause=$cause")
         }
@@ -69,6 +71,8 @@ class DefaultAgentRunner(
         val imageUrls = request.imageUrls
         log.info("Processing direct (non-streaming) chat request for session=$sessionId")
         try {
+            // TODO [P1] UserIdentifier(0) is hardcoded — all requests share userId=0.
+            //   Should extract real user ID from request context (e.g. SecurityContext or request header).
             val userIdentifier = UserIdentifier(0)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
             return agent.call(message, imageUrls)
@@ -89,6 +93,7 @@ class DefaultAgentRunner(
         val imageUrls = request.imageUrls
         log.info("Streaming message for session=$sessionId: $message, images=${imageUrls.size}")
         try {
+            // TODO [P1] UserIdentifier(0) is hardcoded — see process() for details.
             val userIdentifier = UserIdentifier(0)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
             return agent.callStream(message, imageUrls)
@@ -173,7 +178,7 @@ class DefaultAgentRunner(
                 log.warn("Agent not in cache for confirm, rebuilding: session=$sessionId")
                 getOrCreateAgent(sessionId, UserIdentifier(0))
             }
-        return if (request.isConfirmed) {
+        val stream = if (request.isConfirmed) {
             agent.callStream()
         } else {
             val results = request.toolInfoList.map { tool ->
@@ -189,6 +194,15 @@ class DefaultAgentRunner(
                 .build()
             agent.callStream(msg = cancelResult)
         }
+        return stream
+            .doOnSubscribe { subscription ->
+                activeStreams[sessionId] = subscription
+                log.debug("Confirm stream started for session=$sessionId")
+            }
+            .doFinally {
+                activeStreams.remove(sessionId)
+                log.debug("Confirm stream ended for session=$sessionId")
+            }
     }
 
     override fun clearSession(sessionId: String) {

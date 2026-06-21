@@ -14,6 +14,7 @@ import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.auth.InternalOnly
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
+import com.agnetix.harnax.common.error.HarnaxException
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
@@ -46,6 +47,8 @@ class AgentController(
         log.info("Processing direct request for session=${request.sessionId}, type=${request.type}")
         return try {
             ResultVo.success(agentRunner.process(request))
+        } catch (e: HarnaxException) {
+            ResultVo.error(code = e.code.toIntOrNull() ?: 500, message = e.message ?: "Failed to process chat")
         } catch (e: Exception) {
             ResultVo.error(e.message ?: "Failed to process chat")
         }
@@ -60,14 +63,10 @@ class AgentController(
     @Operation(summary = "Process chat message with streaming", description = "Send an AgentRequest and receive streaming ChatEvent response via SSE")
     fun chatStream(@RequestBody request: ChatAgentRequest): Flux<ChatEvent> {
         log.info("Processing stream request for session=${request.sessionId}, type=${request.type}")
+        // Error handling is done inside DefaultAgentRunner.streamProcess() and
+        // HarnessAgentWrapper.callStreamInternal() which always emit ErrorChatEvent + EndEventChatEvent.
+        // No additional onErrorResume here to avoid double EndEvent risk.
         return agentRunner.streamProcess(request)
-            .onErrorResume { e ->
-                log.error("Unhandled stream error for session=${request.sessionId}", e)
-                Flux.just(
-                    ErrorChatEvent(code = HarnaxErrorCode.SYSTEM_ERROR.code, message = e.message ?: "Internal error"),
-                    EndEventChatEvent(),
-                )
-            }
     }
 
     /**

@@ -43,10 +43,15 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Jackson annotations (shared between 2.x and 3.x, package: com.fasterxml.jackson.annotation) -->
+        <!-- Jackson 3.x annotations (for polymorphic JSON serialization of ChatEvent/AgentRequest) -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>3.0.0</version>
         </dependency>
 
         <!-- Kotlin -->

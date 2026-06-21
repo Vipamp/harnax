@@ -42,6 +42,9 @@ class RouterClient(
 
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
+    // TODO [P0] buildCurl() includes JWT auth headers and request body in INFO-level log output.
+    //   This leaks credentials and user data to production log aggregators.
+    //   Fix: remove auth headers from log output, or mask them; redact sensitive body fields.
     private fun buildCurl(url: String, body: String): String {
         val headers = tokenProvider.authHeaders()
         val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
