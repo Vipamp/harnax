@@ -9,8 +9,8 @@ import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.ToolCallStartEvent
 import io.agentscope.core.event.ToolResultEndEvent
 import io.agentscope.core.event.ToolResultTextDeltaEvent
-import io.agentscope.core.middleware.AgentInput
 import io.agentscope.core.middleware.ActingInput
+import io.agentscope.core.middleware.AgentInput
 import io.agentscope.core.middleware.MiddlewareBase
 import reactor.core.publisher.Flux
 import java.util.function.Function

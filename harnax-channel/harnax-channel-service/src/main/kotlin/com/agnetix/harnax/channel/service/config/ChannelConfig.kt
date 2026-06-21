@@ -6,12 +6,19 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
+import io.netty.channel.ChannelOption
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.client.SimpleClientHttpRequestFactory
+import org.springframework.http.client.reactive.ReactorClientHttpConnector
+import org.springframework.web.client.RestClient
 import org.springframework.web.reactive.function.client.ClientRequest
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction
 import org.springframework.web.reactive.function.client.WebClient
+import reactor.netty.http.client.HttpClient
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -20,15 +27,48 @@ import java.util.concurrent.ConcurrentHashMap
 @Configuration
 class ChannelConfig(
     private val tokenProvider: InternalTokenProvider,
+    @Value("\${channel.proxy.connect-timeout-ms:5000}")
+    private val connectTimeoutMs: Int,
+    @Value("\${channel.proxy.response-timeout-ms:120000}")
+    private val responseTimeoutMs: Int,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelConfig::class.java)
 
     @Bean
-    fun webClient(): WebClient = WebClient.builder()
-        .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
-        .filter(authFilter())
-        .build()
+    fun webClient(): WebClient {
+        val httpClient = HttpClient.create()
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMs)
+            .responseTimeout(Duration.ofMillis(responseTimeoutMs.toLong()))
+
+        log.info("Creating WebClient with connectTimeout={}ms, responseTimeout={}ms", connectTimeoutMs, responseTimeoutMs)
+
+        return WebClient.builder()
+            .clientConnector(ReactorClientHttpConnector(httpClient))
+            .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
+            .filter(authFilter())
+            .build()
+    }
+
+    /**
+     * RestClient for batch (non-streaming) requests to router.
+     * Uses synchronous HTTP with JWT auth interceptor.
+     */
+    @Bean
+    fun restClient(): RestClient {
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(Duration.ofMillis(connectTimeoutMs.toLong()))
+            setReadTimeout(Duration.ofMillis(responseTimeoutMs.toLong()))
+        }
+        log.info("Creating RestClient with connectTimeout={}ms, readTimeout={}ms", connectTimeoutMs, responseTimeoutMs)
+        return RestClient.builder()
+            .requestFactory(factory)
+            .requestInterceptor { request, body, execution ->
+                tokenProvider.authHeaders().forEach { (key, value) -> request.headers.add(key, value) }
+                execution.execute(request, body)
+            }
+            .build()
+    }
 
     private fun authFilter(): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
         val headers = tokenProvider.authHeaders()

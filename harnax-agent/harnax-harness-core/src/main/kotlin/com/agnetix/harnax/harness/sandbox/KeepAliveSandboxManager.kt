@@ -23,6 +23,15 @@ class KeepAliveSandboxManager(
     private val workspaceRoot: String,
 ) {
 
+    init {
+        require(image.isNotBlank()) {
+            "Sandbox image must not be blank. Check harness.sandbox.image configuration."
+        }
+        require(workspaceRoot.isNotBlank()) {
+            "Sandbox workspaceRoot must not be blank. Check harness.sandbox.workspace-root configuration."
+        }
+    }
+
     private val log = LoggerFactory.getLogger(KeepAliveSandboxManager::class.java)
     private val sandboxes = ConcurrentHashMap<String, DockerSandbox>()
 
@@ -39,23 +48,39 @@ class KeepAliveSandboxManager(
         workspaceSpec: WorkspaceSpec?,
         snapshotSpec: SandboxSnapshotSpec?,
     ): DockerSandbox = sandboxes.computeIfAbsent(sessionId) { sid ->
-        val state = DockerSandboxState().apply {
-            setSessionId(sid)
-            setImage(image)
-            setWorkspaceRoot(workspaceRoot)
-            setContainerOwned(true)
-            setWorkspaceRootReady(false)
-            if (workspaceSpec != null) {
-                setWorkspaceSpec(workspaceSpec)
-            }
-            if (snapshotSpec != null) {
-                setSnapshot(snapshotSpec.build(sid))
+        log.info("[keepAlive] Creating sandbox for session={}, image={}, workspaceRoot={}", sid, image, workspaceRoot)
+        val state = DockerSandboxState()
+        state.setSessionId(sid)
+        state.setImage(image)
+        state.setWorkspaceRoot(workspaceRoot)
+        state.setContainerOwned(true)
+        state.setWorkspaceRootReady(false)
+        if (workspaceSpec != null) {
+            state.setWorkspaceSpec(workspaceSpec)
+        }
+        if (snapshotSpec != null) {
+            state.setSnapshot(snapshotSpec.build(sid))
+        }
+
+        // Diagnostic + reflection fallback for image field
+        val imageViaGetter = state.getImage()
+        if (imageViaGetter == null) {
+            log.warn("[keepAlive] getImage() returned null after setImage('{}'), using reflection fallback", image)
+            try {
+                val field = DockerSandboxState::class.java.getDeclaredField("image")
+                field.isAccessible = true
+                field.set(state, image)
+                log.info("[keepAlive] Reflection set image={}, getImage()={}", image, state.getImage())
+            } catch (e: Exception) {
+                log.error("[keepAlive] Reflection fallback failed", e)
+                throw RuntimeException("Cannot set DockerSandboxState.image", e)
             }
         }
+
         val sandbox = DockerSandbox(state)
         try {
             sandbox.start()
-            log.info("[keepAlive] Sandbox started for session={}, containerId={}", sid, state.containerId)
+            log.info("[keepAlive] Sandbox started for session={}, containerId={}", sid, state.getContainerId())
         } catch (e: Exception) {
             log.error("[keepAlive] Failed to start sandbox for session={}", sid, e)
             throw RuntimeException("Failed to start keepAlive sandbox for session=$sid", e)

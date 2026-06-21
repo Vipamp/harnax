@@ -43,6 +43,12 @@ class ApiCallLogFilter(
         // because buffering the response body breaks the event stream.
         private const val SSE_PATH_SUFFIX = "/stream"
         private val SSE_EXACT_PATHS = setOf("/api/router/agent/confirm")
+
+        // Suspend-fun batch endpoints — incompatible with ContentCachingResponseWrapper.
+        private val SUSPEND_ENDPOINTS = setOf(
+            "/api/router/agent/chat",
+            "/api/router/agent/command",
+        )
     }
 
     public override fun doFilterInternal(
@@ -60,6 +66,27 @@ class ApiCallLogFilter(
 
         if (isSseEndpoint(path)) {
             // SSE: no response wrapper, log after the stream finishes (or the client disconnects).
+            var errorMessage: String? = null
+            try {
+                filterChain.doFilter(request, response)
+            } catch (e: Exception) {
+                errorMessage = e.message
+                throw e
+            } finally {
+                val endTime = LocalDateTime.now()
+                val statusCode = response.status
+                val success = statusCode in 200..299 && errorMessage == null
+                try {
+                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
+                } catch (_: Exception) {
+                    // Never let logging break the request flow
+                }
+            }
+        } else if (isSuspendEndpoint(path)) {
+            // Suspend-fun (batch) endpoints: ContentCachingResponseWrapper is incompatible
+            // with Spring MVC's async dispatch for Kotlin suspend controllers — the filter
+            // chain returns before the coroutine writes the body, so copyBodyToResponse()
+            // flushes an empty buffer.  Skip the wrapper; read status directly from response.
             var errorMessage: String? = null
             try {
                 filterChain.doFilter(request, response)
@@ -100,6 +127,13 @@ class ApiCallLogFilter(
     }
 
     private fun isSseEndpoint(path: String): Boolean = path in SSE_EXACT_PATHS || path.endsWith(SSE_PATH_SUFFIX)
+
+    /**
+     * Suspend-fun batch endpoints that must NOT use ContentCachingResponseWrapper.
+     * Spring MVC async dispatch for Kotlin suspend controllers returns from the filter
+     * chain before the coroutine writes the response body, making the wrapper incompatible.
+     */
+    private fun isSuspendEndpoint(path: String): Boolean = path in SUSPEND_ENDPOINTS
 
     private fun recordLog(
         request: HttpServletRequest,

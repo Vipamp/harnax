@@ -24,8 +24,10 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
 import org.springframework.core.Ordered
 import org.springframework.data.redis.core.RedisTemplate
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.scheduling.annotation.EnableScheduling
+import org.springframework.web.client.RestClient
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.filter.CorsFilter
@@ -81,6 +83,24 @@ class RouterConfig(
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .codecs { config -> config.defaultCodecs().maxInMemorySize(maxInMemorySizeMb * 1024 * 1024) }
             .filter(authFilter())
+            .build()
+    }
+
+    /**
+     * RestClient for batch (non-streaming) requests to agent-service.
+     */
+    @Bean
+    fun restClient(): RestClient {
+        val factory = SimpleClientHttpRequestFactory().apply {
+            setConnectTimeout(Duration.ofMillis(connectTimeoutMs.toLong()))
+            setReadTimeout(Duration.ofMillis(readTimeoutMs.toLong()))
+        }
+        return RestClient.builder()
+            .requestFactory(factory)
+            .requestInterceptor { request, body, execution ->
+                tokenProvider.authHeaders().forEach { (key, value) -> request.headers.add(key, value) }
+                execution.execute(request, body)
+            }
             .build()
     }
 

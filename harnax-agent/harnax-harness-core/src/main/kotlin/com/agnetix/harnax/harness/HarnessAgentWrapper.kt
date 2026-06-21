@@ -12,7 +12,6 @@ import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.core.agent.RuntimeContext
-import io.agentscope.core.event.AgentEvent
 import io.agentscope.core.message.Base64Source
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.ImageBlock

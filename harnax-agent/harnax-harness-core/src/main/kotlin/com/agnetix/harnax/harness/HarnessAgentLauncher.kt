@@ -327,7 +327,8 @@ class HarnessAgentLauncher(
      * AgentStateStore.getList(userId, sessionId, key, type).
      */
     fun loadSessionMessages(sessionId: String): List<Msg> = stateStore.getList(
-        "", sessionId,
+        "",
+        sessionId,
         "memory_messages",
         Msg::class.java,
     )

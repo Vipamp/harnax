@@ -24,9 +24,12 @@ router:
   service:
     url: ${ROUTER_URL:http://172.20.10.5:8081}
 
-# Channel configuration
+# Channel WebClient proxy configuration
 channel:
   auto-start: true  # Auto-start all enabled channels on startup
+  proxy:
+    connect-timeout-ms: 5000       # TCP connect timeout
+    response-timeout-ms: 600000    # HTTP response timeout: 10min for AI processing
 
 # Unified internal authentication
 harnax:

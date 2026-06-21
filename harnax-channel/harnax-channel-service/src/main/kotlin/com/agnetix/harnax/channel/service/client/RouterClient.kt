@@ -9,18 +9,22 @@ import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactor.awaitSingleOrNull
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import org.springframework.web.client.RestClient
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
+import tools.jackson.databind.ObjectMapper
 
 /**
  * Router Client.
@@ -30,20 +34,23 @@ import reactor.core.publisher.Flux
 @Service
 class RouterClient(
     private val webClient: WebClient,
+    private val restClient: RestClient,
+    private val objectMapper: ObjectMapper,
+    private val tokenProvider: InternalTokenProvider,
     @Value("\${router.service.url}") private val routerUrl: String,
 ) {
 
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
+    private fun buildCurl(url: String, body: String): String {
+        val headers = tokenProvider.authHeaders()
+        val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
+        return "curl -X POST '$url' -H 'Content-Type: application/json' $headerArgs -d '$body'"
+    }
+
     /**
-     * Send a chat message synchronously to the agent via the session-router.
-     * Supports imageUrls for multimodal input.
-     *
-     * @param sessionId Session identifier
-     * @param agentId Agent ID (unused, kept for API compatibility)
-     * @param message User message content
-     * @param imageUrls Image URLs or base64 data URLs for multimodal input
-     * @return ChatResponse with aggregated content
+     * Send a chat message to the agent via the session-router (batch/non-streaming).
+     * Uses RestClient (synchronous HTTP) wrapped in withContext(Dispatchers.IO).
      */
     suspend fun sendToAgent(
         sessionId: String,
@@ -57,40 +64,75 @@ class RouterClient(
             imageUrls = imageUrls,
         )
 
-        log.debug("Sending sync request to router for session={}, images={}", sessionId, imageUrls.size)
+        val url = "$routerUrl/api/router/agent/chat"
+        val json = objectMapper.writeValueAsString(request)
+        log.info("[Channel→Router] {}", buildCurl(url, json))
+        val startTime = System.currentTimeMillis()
 
-        val resultVo = webClient.post()
-            .uri("$routerUrl/api/router/agent/chat")
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(request)
-            .retrieve()
-            .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
-            .awaitSingleOrNull()
+        val resultVo: ResultVo<ChatResponse>? = try {
+            withContext(Dispatchers.IO) {
+                restClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
+            }
+        } catch (e: Exception) {
+            val elapsed = System.currentTimeMillis() - startTime
+            log.error("[Channel←Router] Exception for session={}, elapsed={}ms: {}", sessionId, elapsed, e.message, e)
+            null
+        }
 
-        return resultVo?.data ?: ChatResponse(sessionId = sessionId, content = "")
+        val elapsed = System.currentTimeMillis() - startTime
+        log.info("[Channel←Router] Response for session={}, isNull={}, elapsed={}ms", sessionId, resultVo == null, elapsed)
+
+        if (resultVo == null) {
+            return ChatResponse(sessionId = sessionId, content = "")
+        }
+        if (!resultVo.isSuccess()) {
+            val errorMsg = resultVo.message ?: "Unknown router error"
+            log.error("[Channel←Router] Router error for session={}: {}", sessionId, errorMsg)
+            return ChatResponse(sessionId = sessionId, content = "[Router Error] $errorMsg")
+        }
+        val data = resultVo.data
+        log.info("[Channel←Router] Chat response for session={}, contentLength={}", sessionId, data?.content?.length ?: 0)
+        return data ?: ChatResponse(sessionId = sessionId, content = "")
     }
 
     /**
-     * Send a command to the agent via the session-router.
-     * @param sessionId Session identifier
-     * @param agentId Agent ID (unused, kept for API compatibility)
-     * @param command Command payload
-     * @return CommandResponse with execution result
+     * Send a command to the agent via the session-router (batch/non-streaming).
      */
-    suspend fun sendCommand(sessionId: String, agentId: Long, command: CommandType): CommandResponse {
-        val request = CommandAgentRequest(sessionId = sessionId, command = command)
+    suspend fun sendCommand(sessionId: String, agentId: Long, command: CommandType, args: String = ""): CommandResponse {
+        val request = CommandAgentRequest(sessionId = sessionId, command = command, args = args)
 
-        log.debug("Sending command request to router for session=$sessionId")
+        val url = "$routerUrl/api/router/agent/command"
+        val json = objectMapper.writeValueAsString(request)
+        log.info("[Channel→Router] {}", buildCurl(url, json))
 
-        val resultVo = webClient.post()
-            .uri("$routerUrl/api/router/agent/command")
-            .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(request)
-            .retrieve()
-            .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-            .awaitSingleOrNull()
+        val resultVo: ResultVo<CommandResponse>? = try {
+            withContext(Dispatchers.IO) {
+                restClient.post()
+                    .uri(url)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+            }
+        } catch (e: Exception) {
+            log.error("[Channel←Router] Command exception for session={}: {}", sessionId, e.message, e)
+            null
+        }
 
-        return resultVo?.data ?: CommandResponse.failure(sessionId, "No response from agent-service")
+        if (resultVo == null) {
+            return CommandResponse.failure(sessionId, "No response from agent-service")
+        }
+        if (!resultVo.isSuccess()) {
+            val errorMsg = resultVo.message ?: "Unknown router error"
+            log.error("[Channel←Router] Router error for command session={}: {}", sessionId, errorMsg)
+            return CommandResponse.failure(sessionId, "[Router Error] $errorMsg")
+        }
+        return resultVo.data ?: CommandResponse.failure(sessionId, "No response from agent-service")
     }
 
     /**

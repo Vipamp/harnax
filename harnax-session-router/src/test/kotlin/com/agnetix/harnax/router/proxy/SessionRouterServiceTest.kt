@@ -5,6 +5,7 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.IdempotencyService
@@ -19,12 +20,14 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
+import org.mockito.Mockito.RETURNS_DEEP_STUBS
 import org.mockito.kotlin.argThat
 import org.slf4j.MDC
 import org.springframework.core.ParameterizedTypeReference
+import org.springframework.web.client.RestClient
 import org.springframework.web.reactive.function.client.WebClient
-import reactor.core.publisher.Mono
 import reactor.test.StepVerifier
+import tools.jackson.databind.ObjectMapper
 import java.net.ConnectException
 import java.time.LocalDateTime
 
@@ -35,6 +38,9 @@ class SessionRouterServiceTest {
     private lateinit var idempotencyService: IdempotencyService
     private lateinit var circuitBreaker: InstanceCircuitBreaker
     private lateinit var webClient: WebClient
+    private lateinit var restClient: RestClient
+    private lateinit var objectMapper: ObjectMapper
+    private lateinit var tokenProvider: InternalTokenProvider
     private lateinit var meterRegistry: MeterRegistry
     private lateinit var service: SessionRouterService
 
@@ -49,29 +55,28 @@ class SessionRouterServiceTest {
         idempotencyService = mock(IdempotencyService::class.java)
         circuitBreaker = LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 30000)
         webClient = mock(WebClient::class.java)
+        restClient = mock(RestClient::class.java)
+        objectMapper = ObjectMapper()
+        tokenProvider = mock(InternalTokenProvider::class.java)
+        `when`(tokenProvider.authHeaders()).thenReturn(mapOf("Authorization" to "Bearer test-token", "X-Caller-Id" to "test"))
         meterRegistry = SimpleMeterRegistry()
         service = SessionRouterService(
             instanceRegistry, sessionMappingService, idempotencyService,
-            circuitBreaker, webClient, meterRegistry,
-            heartbeatTimeoutMs, streamTimeoutMinutes, failoverMaxRetries,
+            circuitBreaker, webClient, restClient, objectMapper, tokenProvider,
+            meterRegistry, heartbeatTimeoutMs, streamTimeoutMinutes, failoverMaxRetries,
         )
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun stubWebClientChat() {
-        val requestBuilder = mock(WebClient.RequestBodyUriSpec::class.java)
-        val requestHeadersBuilder = mock(WebClient.RequestBodySpec::class.java)
-        val responseSpec = mock(WebClient.ResponseSpec::class.java)
-        `when`(webClient.post()).thenReturn(requestBuilder)
-        `when`(requestBuilder.uri(anyString())).thenReturn(requestBuilder)
-        `when`(requestBuilder.contentType(any())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.header(anyString(), anyString())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.bodyValue(any())).thenReturn(requestBuilder)
-        `when`(requestBuilder.retrieve()).thenReturn(responseSpec)
+    private fun stubRestClientChat() {
         val dummyResponse = ResultVo.success(ChatResponse(sessionId = "test", content = "ok"))
-        `when`(responseSpec.bodyToMono(any<ParameterizedTypeReference<*>>())).thenReturn(
-            Mono.just(dummyResponse as Any),
-        )
+        val responseSpec = mock(RestClient.ResponseSpec::class.java)
+        `when`(responseSpec.body(any<ParameterizedTypeReference<*>>())).thenReturn(dummyResponse)
+
+        // Use deep stubs to avoid chaining complexity with RestClient generics
+        val postSpec = mock(RestClient.RequestBodyUriSpec::class.java, RETURNS_DEEP_STUBS)
+        `when`(postSpec.uri(anyString()).contentType(any()).body(any<Any>()).retrieve()).thenReturn(responseSpec)
+        `when`(restClient.post()).thenReturn(postSpec)
     }
 
     private fun healthyInstance(id: String = "inst-1"): AgentInstance = AgentInstance().apply {
@@ -124,7 +129,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire("req-1")).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -145,7 +150,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -212,7 +217,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(staleInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -233,7 +238,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -255,7 +260,7 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn(null)
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -280,7 +285,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(drainingInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -305,7 +310,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubWebClientChat()
+        stubRestClientChat()
 
         circuitBreaker.recordFailure("inst-1")
         circuitBreaker.recordFailure("inst-1")

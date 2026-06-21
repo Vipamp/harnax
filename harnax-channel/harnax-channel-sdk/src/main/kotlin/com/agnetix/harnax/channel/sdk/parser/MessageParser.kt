@@ -10,14 +10,15 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
  * into an [AgentRequest] (either ChatAgentRequest or CommandAgentRequest).
  *
  * Implementations define channel-specific parsing rules:
- * - Text starting with "/" may be parsed as command requests
+ * - Text starting with "/" may be parsed as command requests.
+ *   Use [CommandAgentRequest.parse] as the shared slash-command parser.
  * - Other text is parsed as chat requests
  *
  * Usage:
  * ```
  * class FeishuMessageParser : MessageParser {
  *     override fun parse(message: ChannelMessage): AgentRequest {
- *         // parse "/" prefix as commands, otherwise as chat
+ *         // delegate to CommandAgentRequest.parse() for "/" commands, otherwise as chat
  *     }
  * }
  * ```

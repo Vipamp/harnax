@@ -40,9 +40,9 @@
     </select>
 
     <!-- deleteBySessionId -->
-    <select id="deleteBySessionId" resultMap="PlanNoteEntityResultMap">
+    <delete id="deleteBySessionId">
         DELETE FROM plan_note WHERE session_id = #{sessionId}
-    </select>
+    </delete>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">

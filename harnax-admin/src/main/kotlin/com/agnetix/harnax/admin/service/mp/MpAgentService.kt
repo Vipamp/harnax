@@ -9,8 +9,8 @@ import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.MpSessionMapper
-import com.fasterxml.jackson.core.type.TypeReference
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 

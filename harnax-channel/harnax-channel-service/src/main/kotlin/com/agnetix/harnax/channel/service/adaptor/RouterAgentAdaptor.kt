@@ -31,11 +31,14 @@ class RouterAgentAdaptor(
         val agentId = context.channelSpec.agentId
         val sessionId = context.channelSpec.sessionId
 
+        log.info("[Adaptor] Starting batch process() for session=$sessionId, agentId=$agentId")
+
         // Use parsed AgentRequest if available, otherwise build from message content
         val request = context.agentRequest ?: ChatAgentRequest(
             sessionId = sessionId,
             message = context.message.content,
         )
+        log.info("[Adaptor] Request type=${request.javaClass.simpleName} for session=$sessionId")
 
         return when (request) {
             is ChatAgentRequest -> {
@@ -45,6 +48,7 @@ class RouterAgentAdaptor(
                     message = request.message,
                     imageUrls = request.imageUrls,
                 )
+                log.info("[Adaptor] Batch process completed for session=$sessionId, responseLength={}", chatResponse.content.length)
                 AgentResponse(content = chatResponse.content, shouldReply = true)
             }
             is CommandAgentRequest -> {
@@ -52,6 +56,7 @@ class RouterAgentAdaptor(
                     sessionId = sessionId,
                     agentId = agentId,
                     command = request.command,
+                    args = request.args,
                 )
                 AgentResponse(
                     content = commandResponse.message ?: "Command executed",

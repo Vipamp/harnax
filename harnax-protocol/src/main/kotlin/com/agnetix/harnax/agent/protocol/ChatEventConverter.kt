@@ -4,12 +4,9 @@ import io.agentscope.core.event.AgentEvent
 import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.ModelCallEndEvent
 import io.agentscope.core.event.TextBlockDeltaEvent
-import io.agentscope.core.event.TextBlockEndEvent
 import io.agentscope.core.event.ThinkingBlockDeltaEvent
-import io.agentscope.core.event.ThinkingBlockEndEvent
 import io.agentscope.core.event.ToolCallStartEvent
 import io.agentscope.core.event.ToolResultEndEvent
-import io.agentscope.core.model.ChatUsage
 import reactor.core.publisher.Flux
 
 /**
@@ -29,81 +26,77 @@ object ChatEventConverter {
      * Convert an agentscope AgentEvent to a Flux of ChatEvents.
      * A single AgentEvent may produce zero or one ChatEvent.
      */
-    fun convert(event: AgentEvent, dangerousTools: Set<String>): Flux<ChatEvent> {
-        return when (event.type) {
-            AgentEventType.TEXT_BLOCK_DELTA -> {
-                val textEvent = event as TextBlockDeltaEvent
-                val tokenUsage = extractTokenUsageFromEvent(event)
-                Flux.just(
-                    StreamTextChatEvent(
-                        message = textEvent.delta ?: "",
-                        isLast = false,
-                        tokenUsage = tokenUsage,
-                    ),
-                )
-            }
-            AgentEventType.TEXT_BLOCK_END -> {
-                Flux.just(
-                    StreamTextChatEvent(message = "", isLast = true, tokenUsage = null),
-                )
-            }
-            AgentEventType.THINKING_BLOCK_DELTA -> {
-                val thinkingEvent = event as ThinkingBlockDeltaEvent
-                Flux.just(
-                    StreamThinkingChatEvent(
-                        message = thinkingEvent.delta ?: "",
-                        isLast = false,
-                        tokenUsage = null,
-                    ),
-                )
-            }
-            AgentEventType.THINKING_BLOCK_END -> {
-                Flux.just(
-                    StreamThinkingChatEvent(message = "", isLast = true, tokenUsage = null),
-                )
-            }
-            AgentEventType.TOOL_CALL_START -> {
-                val toolEvent = event as ToolCallStartEvent
-                val tokenUsage = extractTokenUsageFromEvent(event)
-                Flux.just(
-                    CallToolChatEvent(
-                        toolId = toolEvent.toolCallId,
-                        toolName = toolEvent.toolCallName,
-                        arguments = emptyMap(),
-                        tokenUsage = tokenUsage,
-                    ),
-                )
-            }
-            AgentEventType.TOOL_RESULT_END -> {
-                val resultEvent = event as ToolResultEndEvent
-                Flux.just(
-                    ToolResultChatEvent(
-                        toolId = resultEvent.toolCallId,
-                        toolName = resultEvent.toolCallName,
-                        message = "",
-                        success = true,
-                        tokenUsage = null,
-                    ),
-                )
-            }
-            AgentEventType.MODEL_CALL_END -> {
-                val modelEnd = event as ModelCallEndEvent
-                val tokenUsage = extractTokenUsageFromModelEnd(modelEnd)
-                if (tokenUsage != null) {
-                    Flux.just(
-                        StreamTextChatEvent(message = "", isLast = false, tokenUsage = tokenUsage),
-                    )
-                } else {
-                    Flux.empty()
-                }
-            }
-            else -> Flux.empty()
+    fun convert(event: AgentEvent, dangerousTools: Set<String>): Flux<ChatEvent> = when (event.type) {
+        AgentEventType.TEXT_BLOCK_DELTA -> {
+            val textEvent = event as TextBlockDeltaEvent
+            val tokenUsage = extractTokenUsageFromEvent(event)
+            Flux.just(
+                StreamTextChatEvent(
+                    message = textEvent.delta ?: "",
+                    isLast = false,
+                    tokenUsage = tokenUsage,
+                ),
+            )
         }
+        AgentEventType.TEXT_BLOCK_END -> {
+            Flux.just(
+                StreamTextChatEvent(message = "", isLast = true, tokenUsage = null),
+            )
+        }
+        AgentEventType.THINKING_BLOCK_DELTA -> {
+            val thinkingEvent = event as ThinkingBlockDeltaEvent
+            Flux.just(
+                StreamThinkingChatEvent(
+                    message = thinkingEvent.delta ?: "",
+                    isLast = false,
+                    tokenUsage = null,
+                ),
+            )
+        }
+        AgentEventType.THINKING_BLOCK_END -> {
+            Flux.just(
+                StreamThinkingChatEvent(message = "", isLast = true, tokenUsage = null),
+            )
+        }
+        AgentEventType.TOOL_CALL_START -> {
+            val toolEvent = event as ToolCallStartEvent
+            val tokenUsage = extractTokenUsageFromEvent(event)
+            Flux.just(
+                CallToolChatEvent(
+                    toolId = toolEvent.toolCallId,
+                    toolName = toolEvent.toolCallName,
+                    arguments = emptyMap(),
+                    tokenUsage = tokenUsage,
+                ),
+            )
+        }
+        AgentEventType.TOOL_RESULT_END -> {
+            val resultEvent = event as ToolResultEndEvent
+            Flux.just(
+                ToolResultChatEvent(
+                    toolId = resultEvent.toolCallId,
+                    toolName = resultEvent.toolCallName,
+                    message = "",
+                    success = true,
+                    tokenUsage = null,
+                ),
+            )
+        }
+        AgentEventType.MODEL_CALL_END -> {
+            val modelEnd = event as ModelCallEndEvent
+            val tokenUsage = extractTokenUsageFromModelEnd(modelEnd)
+            if (tokenUsage != null) {
+                Flux.just(
+                    StreamTextChatEvent(message = "", isLast = false, tokenUsage = tokenUsage),
+                )
+            } else {
+                Flux.empty()
+            }
+        }
+        else -> Flux.empty()
     }
 
-    private fun extractTokenUsageFromEvent(event: AgentEvent): TokenUsage? {
-        return null
-    }
+    private fun extractTokenUsageFromEvent(event: AgentEvent): TokenUsage? = null
 
     private fun extractTokenUsageFromModelEnd(event: ModelCallEndEvent): TokenUsage? {
         val chatUsage = try {

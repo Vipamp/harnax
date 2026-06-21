@@ -8,6 +8,9 @@ server:
 spring:
   application:
     name: harnax-session-router
+  mvc:
+    async:
+      request-timeout: 600000  # 10min — must exceed agent-service processing time + snapshot upload
   codec:
     max-in-memory-size: 16MB  # Support large payloads (e.g., base64 image data)
   datasource:
@@ -58,9 +61,9 @@ router:
     check-interval-ms: 5000       # Health check interval: 5 seconds
   proxy:
     connect-timeout-ms: 5000      # Proxy connect timeout
-    read-timeout-ms: 60000        # Proxy read timeout (long for AI processing)
+    read-timeout-ms: 600000       # Proxy read timeout: 10min for AI processing
     max-in-memory-size-mb: 16     # Max in-memory buffer size for WebClient
-    stream-timeout-minutes: 15    # SSE stream overall timeout (increased for long AI tasks)
+    stream-timeout-minutes: 10    # SSE stream overall timeout: 10min for long AI tasks
     failover-max-retries: 2       # Max failover retry attempts
   idempotency:
     ttl-seconds: 60               # Request deduplication TTL

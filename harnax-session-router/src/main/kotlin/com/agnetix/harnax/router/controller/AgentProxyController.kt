@@ -42,7 +42,7 @@ class AgentProxyController(
         httpRequest: HttpServletRequest,
     ): ResultVo<ChatResponse> {
         httpRequest.setAttribute(SESSION_ID_ATTR, request.sessionId)
-        log.debug("[Router] Received chat proxy request for session: ${request.sessionId}")
+        log.info("[Router] Received chat proxy request for session: ${request.sessionId}, message='${request.message.take(50)}'")
         return sessionRouterService.proxyChatRequest(request)
     }
 

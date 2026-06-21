@@ -176,10 +176,14 @@ open class ChannelChatService(
         // Send typing indicator to show AI is processing
         channelAdaptor.sendTypingIndicator(channel, message.sessionId)
 
-        logger.info("[Batch] Calling process() for session=${message.sessionId}")
+        logger.info("[Batch] Calling process() for session=${message.sessionId}, channel=${channel.id}")
 
+        val startTime = System.currentTimeMillis()
         val response = agentAdaptor.process(context)
+        val elapsed = System.currentTimeMillis() - startTime
         val responseText = response.content
+
+        logger.info("[Batch] process() returned for session=${message.sessionId}, shouldReply=${response.shouldReply}, contentLength=${responseText.length}, elapsed=${elapsed}ms")
 
         if (response.shouldReply) {
             if (responseText.isNotBlank()) {

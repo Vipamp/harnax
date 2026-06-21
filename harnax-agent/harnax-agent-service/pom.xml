@@ -23,13 +23,6 @@
             <artifactId>harnax-entity</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- harnax-agent-core disabled: replaced by harnax-harness-core
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-agent-core</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        -->
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-agent-utils</artifactId>

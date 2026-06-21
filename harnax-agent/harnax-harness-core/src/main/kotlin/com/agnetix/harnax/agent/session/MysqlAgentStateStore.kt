@@ -65,8 +65,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun save(userId: String, sessionId: String, key: String, value: State) {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun save(userId: String?, sessionId: String?, key: String?, value: State) {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val json = JsonUtils.getJsonCodec().toJson(value)
         val sql = """
             INSERT INTO $tableName (user_id, session_id, state_key, state_type, json_value)
@@ -84,8 +84,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun save(userId: String, sessionId: String, key: String, values: List<out State>) {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun save(userId: String?, sessionId: String?, key: String?, values: List<out State>) {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         // Serialize as a wrapper object to distinguish from single state
         val json = JsonUtils.getJsonCodec().toJson(ListStateWrapper(values.map { JsonUtils.getJsonCodec().toJson(it) }))
         val sql = """
@@ -105,12 +105,12 @@ class MysqlAgentStateStore(
     }
 
     override fun <T : State> get(
-        userId: String,
-        sessionId: String,
-        key: String,
+        userId: String?,
+        sessionId: String?,
+        key: String?,
         type: Class<T>,
     ): Optional<T> {
-        val uid = userId.ifBlank { ANON_USER }
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "SELECT json_value FROM $tableName WHERE user_id = ? AND session_id = ? AND state_key = ?"
         return dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -131,12 +131,12 @@ class MysqlAgentStateStore(
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : State> getList(
-        userId: String,
-        sessionId: String,
-        key: String,
+        userId: String?,
+        sessionId: String?,
+        key: String?,
         itemType: Class<T>,
     ): List<T> {
-        val uid = userId.ifBlank { ANON_USER }
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "SELECT json_value, state_type FROM $tableName WHERE user_id = ? AND session_id = ? AND state_key = ?"
         return dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -163,8 +163,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun exists(userId: String, sessionId: String): Boolean {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun exists(userId: String?, sessionId: String?): Boolean {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "SELECT COUNT(*) FROM $tableName WHERE user_id = ? AND session_id = ? LIMIT 1"
         return dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -177,8 +177,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun delete(userId: String, sessionId: String) {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun delete(userId: String?, sessionId: String?) {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "DELETE FROM $tableName WHERE user_id = ? AND session_id = ?"
         dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -189,8 +189,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun delete(userId: String, sessionId: String, key: String) {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun delete(userId: String?, sessionId: String?, key: String?) {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "DELETE FROM $tableName WHERE user_id = ? AND session_id = ? AND state_key = ?"
         dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->
@@ -202,8 +202,8 @@ class MysqlAgentStateStore(
         }
     }
 
-    override fun listSessionIds(userId: String): Set<String> {
-        val uid = userId.ifBlank { ANON_USER }
+    override fun listSessionIds(userId: String?): Set<String> {
+        val uid = userId?.ifBlank { ANON_USER } ?: ANON_USER
         val sql = "SELECT DISTINCT session_id FROM $tableName WHERE user_id = ?"
         return dataSource.connection.use { conn ->
             conn.prepareStatement(sql).use { ps ->

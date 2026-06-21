@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
@@ -19,16 +20,20 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import jakarta.annotation.PostConstruct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.reactor.awaitSingleOrNull
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import org.springframework.web.client.RestClient
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
+import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -40,6 +45,9 @@ class SessionRouterService(
     private val idempotencyService: IdempotencyService,
     private val circuitBreaker: InstanceCircuitBreaker,
     private val webClient: WebClient,
+    private val restClient: RestClient,
+    private val objectMapper: ObjectMapper,
+    private val tokenProvider: InternalTokenProvider,
     private val meterRegistry: MeterRegistry,
     @Value($$"${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
@@ -52,6 +60,12 @@ class SessionRouterService(
     private val log = LoggerFactory.getLogger(SessionRouterService::class.java)
 
     private val mdcKeys = setOf("sessionId", "requestId", "instanceId")
+
+    private fun buildCurl(url: String, body: String): String {
+        val headers = tokenProvider.authHeaders()
+        val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
+        return "curl -X POST '$url' -H 'Content-Type: application/json' $headerArgs -d '$body'"
+    }
 
     // Pre-cache hot Timer / Counter instances to avoid MeterRegistry lookups on every request.
     private lateinit var chatTimer: Timer
@@ -124,19 +138,25 @@ class SessionRouterService(
 
             val result = executeWithRetry(sessionId, "chat") { targetInstance ->
                 val url = "${targetInstance.getBaseUrl()}/api/agent/chat"
-                webClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .header("X-Request-Id", requestId)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                val json = objectMapper.writeValueAsString(request)
+                log.info("[Router→Agent] {}", buildCurl(url, json))
+                val startTime = System.currentTimeMillis()
+                val agentResult = withContext(Dispatchers.IO) {
+                    restClient.post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
+                } ?: ResultVo.error("No response from agent-service")
+                val elapsed = System.currentTimeMillis() - startTime
+                log.info("[Router←Agent] Received agent response for session=$sessionId, code=${agentResult.code}, success=${agentResult.isSuccess()}, contentLength=${agentResult.data?.content?.length ?: 0}, elapsed=${elapsed}ms")
+                agentResult
             }
 
             sample.stop(chatTimer)
             if (result.isSuccess()) chatOkCounter.increment() else chatErrorCounter.increment()
+            log.info("[Router] proxyChatRequest final result for session=$sessionId, code=${result.code}, success=${result.isSuccess()}, contentLength=${result.data?.content?.length ?: 0}")
             sessionMappingService.refreshActiveTime(sessionId)
             return result
         } finally {
@@ -176,14 +196,16 @@ class SessionRouterService(
 
             return executeWithRetry(sessionId, "command") { targetInstance ->
                 val url = "${targetInstance.getBaseUrl()}/api/agent/command"
-                webClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(request)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                val json = objectMapper.writeValueAsString(request)
+                log.info("[Router→Agent] {}", buildCurl(url, json))
+                withContext(Dispatchers.IO) {
+                    restClient.post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve()
+                        .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+                } ?: ResultVo.error("No response from agent-service")
             }.also {
                 sessionMappingService.refreshActiveTime(sessionId)
             }

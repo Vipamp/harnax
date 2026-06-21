@@ -117,7 +117,8 @@ class DefaultAgentRunner(
     override fun executeCommand(request: CommandAgentRequest): CommandResponse {
         val sessionId = request.sessionId
         val command = request.command
-        log.info("Executing command for session=$sessionId, command=$command")
+        val args = request.args
+        log.info("Executing command for session=$sessionId, command=$command, args='$args'")
         return when (command) {
             CommandType.INTERRUPT -> {
                 interrupt(sessionId)
@@ -128,14 +129,25 @@ class DefaultAgentRunner(
                 CommandResponse.success(sessionId, message = "Session cleared")
             }
             CommandType.COMPACT -> {
-                // TODO: implement memory compaction/summarization
-                log.info("Compact command received for session=$sessionId (not yet implemented)")
+                // TODO: implement memory compaction/summarization (args may carry token limit etc.)
+                log.info("Compact command received for session=$sessionId, args='$args' (not yet implemented)")
                 CommandResponse.success(sessionId, message = "Compact not yet implemented")
             }
             CommandType.APPROVE -> {
-                // TODO: implement memory compaction/summarization
-                log.info("Approve command received for session=$sessionId (not yet implemented)")
+                // TODO: implement approve with optional args
+                log.info("Approve command received for session=$sessionId, args='$args' (not yet implemented)")
                 CommandResponse.success(sessionId, message = "Approve not yet implemented")
+            }
+            CommandType.STOP_SANDBOX -> {
+                val sandboxManager = launcher.keepAliveSandboxManager
+                if (sandboxManager != null) {
+                    sandboxManager.destroy(sessionId)
+                    log.info("Sandbox stopped for session=$sessionId")
+                    CommandResponse.success(sessionId, message = "Sandbox stopped")
+                } else {
+                    log.warn("Stop-sandbox command received but keepAliveSandboxManager is null for session=$sessionId")
+                    CommandResponse.failure(sessionId, "Sandbox manager not available")
+                }
             }
         }
     }
