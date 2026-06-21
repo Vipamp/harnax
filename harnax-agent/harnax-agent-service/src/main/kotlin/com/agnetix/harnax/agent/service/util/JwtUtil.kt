@@ -24,6 +24,15 @@ class JwtUtil {
     @Value($$"${jwt.expiration}")
     private var expiration: Long = 7200000
 
+    @jakarta.annotation.PostConstruct
+    fun validateSecret() {
+        val keyBytes = secret.toByteArray(StandardCharsets.UTF_8)
+        require(keyBytes.size >= 32) {
+            "JWT secret must be at least 32 bytes (256-bit) for HMAC-SHA256, current length: ${keyBytes.size}. " +
+                "Please configure jwt.secret in application.yml with a sufficiently long value."
+        }
+    }
+
     /**
      * Get signing key
      */
@@ -70,7 +79,7 @@ class JwtUtil {
      */
     fun getUserIdFromToken(token: String): Long {
         val claims = getClaimsFromToken(token)
-        return claims["userId", Integer::class.java].toLong()
+        return claims["userId", Long::class.java]
     }
 
     /**

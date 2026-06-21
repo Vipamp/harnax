@@ -481,10 +481,10 @@ class SessionRouterService(
             .timeout(Duration.ofMinutes(streamTimeoutMinutes))
             .doOnNext { event ->
                 log.info("[Router←Agent] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
-                circuitBreaker.recordSuccess(instance.instanceId)
             }
             .doOnComplete {
                 log.info("[Router←Agent] Stream completed for session=$sessionId")
+                circuitBreaker.recordSuccess(instance.instanceId)
                 streamOkCounter.increment()
                 sessionMappingService.refreshActiveTime(sessionId)
             }
@@ -548,6 +548,8 @@ class SessionRouterService(
     }
 
     private fun isConnectivityError(e: Throwable): Boolean = e is java.net.ConnectException ||
+        e is java.net.SocketTimeoutException ||
+        e is java.net.NoRouteToHostException ||
         e is java.net.UnknownHostException ||
         e is io.netty.channel.ConnectTimeoutException ||
         e.cause is java.net.ConnectException

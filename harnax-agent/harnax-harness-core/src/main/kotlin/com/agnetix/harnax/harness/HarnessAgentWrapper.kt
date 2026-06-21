@@ -68,7 +68,9 @@ class HarnessAgentWrapper(
 
     fun callStream(
         msg: Msg? = null,
-    ): Flux<ChatEvent> = callStreamInternal(*if (msg != null) arrayOf(msg) else emptyArray())
+    ): Flux<ChatEvent> = Flux.defer {
+        callStreamInternal(*if (msg != null) arrayOf(msg) else emptyArray())
+    }.subscribeOn(Schedulers.boundedElastic())
 
     /**
      * Non-streaming call — returns a [ChatResponse] directly.
@@ -100,41 +102,39 @@ class HarnessAgentWrapper(
     private fun callStreamInternal(
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
-        return Flux.defer {
-            val ctxResult = buildRuntimeContext()
-            harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
-                .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
-                .doOnNext { extracted(it) }
-                .doFinally {
-                    val keepAliveSandbox = ctxResult.keepAliveSandbox
-                    if (keepAliveSandbox != null) {
-                        try {
-                            val snapshot = keepAliveSandbox.state.snapshot
-                            if (snapshot != null && snapshot.isPersistenceEnabled) {
-                                keepAliveSandbox.persistWorkspace().use { archive ->
-                                    snapshot.persist(archive)
-                                }
-                                log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+        val ctxResult = buildRuntimeContext()
+        return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
+            .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
+            .doOnNext { extracted(it) }
+            .doFinally {
+                val keepAliveSandbox = ctxResult.keepAliveSandbox
+                if (keepAliveSandbox != null) {
+                    try {
+                        val snapshot = keepAliveSandbox.state.snapshot
+                        if (snapshot != null && snapshot.isPersistenceEnabled) {
+                            keepAliveSandbox.persistWorkspace().use { archive ->
+                                snapshot.persist(archive)
                             }
-                        } catch (e: Exception) {
-                            log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
+                            log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
                         }
+                    } catch (e: Exception) {
+                        log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
                     }
                 }
-                .concatWith(Flux.just(EndEventChatEvent()))
-                .onErrorResume { e ->
-                    log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
-                    val errorEvent = if (e is HarnaxException) {
-                        ErrorChatEvent.from(e)
-                    } else {
-                        ErrorChatEvent(
-                            code = HarnaxErrorCode.SYSTEM_ERROR.code,
-                            message = e.message ?: "Unknown error",
-                        )
-                    }
-                    Flux.just(errorEvent, EndEventChatEvent())
+            }
+            .concatWith(Flux.just(EndEventChatEvent()))
+            .onErrorResume { e ->
+                log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
+                val errorEvent = if (e is HarnaxException) {
+                    ErrorChatEvent.from(e)
+                } else {
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.SYSTEM_ERROR.code,
+                        message = e.message ?: "Unknown error",
+                    )
                 }
-        }.subscribeOn(Schedulers.boundedElastic())
+                Flux.just(errorEvent, EndEventChatEvent())
+            }
     }
 
     private fun imageBlock(url: String): ImageBlock = if (url.startsWith("data:image")) {

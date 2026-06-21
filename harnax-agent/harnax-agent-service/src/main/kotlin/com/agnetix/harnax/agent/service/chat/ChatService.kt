@@ -39,13 +39,18 @@ class ChatService(
     private val log = LoggerFactory.getLogger(ChatService::class.java)
     private val agentCache = Caffeine.newBuilder()
         .maximumSize(cacheMaxSize)
+        .expireAfterWrite(30, TimeUnit.MINUTES)
         .removalListener<String, HarnessAgentWrapper> { key, _, cause ->
             log.info("Agent evicted from cache: session=$key, cause=$cause")
         }
         .build<String, HarnessAgentWrapper>()
 
+    private val activeStreams = ConcurrentHashMap<String, Subscription>()
+
     fun chat(request: ChatRequest): Flux<ChatEvent> {
         try {
+            // TODO [P1] UserIdentifier(0) is hardcoded — all requests share userId=0.
+            //   Should extract real user ID from request context (e.g. SecurityContext or request header).
             val userIdentifier = UserIdentifier(0)
             val chatSpec = ChatSpecBuilder()
                 .enableThinking(request.enableThink)
@@ -55,19 +60,27 @@ class ChatService(
             return getOrCreateAgent(request.sessionId, chatSpec, userIdentifier)
                 .callStream(request.message, request.imageUrl)
         } catch (e: Exception) {
-            log.error("Error creating agent or streaming text: ${e.message}")
-            return Flux.error { e }
+            log.error("Error creating agent or streaming text for session=${request.sessionId}: ${e.message}", e)
+            return Flux.just(
+                ErrorChatEvent(
+                    code = HarnaxErrorCode.AGENT_INIT_FAILED.code,
+                    message = e.message ?: "Agent call failed",
+                ),
+                EndEventChatEvent(),
+            )
         }
     }
 
     fun confirm(confirmRequest: ConfirmRequest): Flux<ChatEvent> {
+        val sessionId = confirmRequest.sessionId
         val chatSpec =
             ChatSpec.builder().enableThinking(confirmRequest.enableThink).enableSearch(confirmRequest.enableSearch)
                 .build()
+        // TODO [P1] UserIdentifier(0) is hardcoded — see chat() for details.
         val userIdentifier = UserIdentifier(0)
-        val agent = getOrCreateAgent(confirmRequest.sessionId, chatSpec, userIdentifier)
-        if (confirmRequest.isConfirmed) {
-            return agent.callStream()
+        val agent = getOrCreateAgent(sessionId, chatSpec, userIdentifier)
+        val stream = if (confirmRequest.isConfirmed) {
+            agent.callStream()
         } else {
             val results: MutableList<ToolResultBlock?> = ArrayList()
             val cancelMessage = "Operation cancelled by user"
@@ -84,8 +97,15 @@ class ChatService(
                 Msg.builder()
                     .name("Assistant").role(MsgRole.TOOL)
                     .content(*results.toTypedArray<ToolResultBlock?>()).build()
-            return agent.callStream(msg = cancelResult)
+            agent.callStream(msg = cancelResult)
         }
+        return stream
+            .doOnSubscribe { subscription ->
+                activeStreams[sessionId] = subscription
+            }
+            .doFinally {
+                activeStreams.remove(sessionId)
+            }
     }
 
     /**

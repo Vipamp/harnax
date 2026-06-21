@@ -303,8 +303,9 @@ class FeishuAdaptor(
         if (content.isNullOrBlank()) return ""
         return try {
             val contentMap = objectMapper.readValue(content, Map::class.java)
-            contentMap["text"] as? String ?: content
+            contentMap["text"] as? String ?: ""
         } catch (e: Exception) {
+            // If content is not a JSON object, return as-is (might be plain text)
             content
         }
     }
