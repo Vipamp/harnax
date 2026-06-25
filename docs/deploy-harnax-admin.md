@@ -53,7 +53,19 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `SWAGGER_ENABLED` | `true` | 是否启用 Swagger 文档 (生产建议关闭) |
 | `HARNAX_ROUTER_URL` | `http://localhost:8081` | Router 服务地址 |
 
-> **安全提醒**: `ADMIN_INTERNAL_API_SECRET` 是其他服务 (channel/router/agent-service) 调用 admin 内部 API 的凭证，生产环境必须修改，且长度不少于 32 字符。此密钥需与 router 和 channel 的配置保持一致。
+> **安全提醒**: `ADMIN_INTERNAL_API_SECRET` 是其他服务 (channel/router/agent-service) 调用 admin 内部 API 的凭证，生产环境必须修改，且长度不少于 32 字符。此密钥需与 router 的配置保持一致。
+
+### 未列为环境变量但需要关注的配置
+
+以下配置项在 `application.yml` 中为硬编码值，不支持环境变量覆盖，生产部署时需注意：
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `jwt.secret` | `harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication` | JWT 签名密钥，**必须与 agent-service 保持一致**。需直接修改 `application.yml` |
+| `jwt.expiration` | `7200000`（2 小时） | Token 有效期（毫秒） |
+| `app.base-url` | `http://localhost:8080` | 服务外部访问地址，用于生成通道回调 URL。生产环境**必须修改**，否则回调地址会指向 localhost |
+| `mybatis.configuration.log-impl` | `StdOutImpl` | MyBatis SQL 日志输出到 stdout，生产环境建议关闭或改为 `Slf4jImpl` |
+| `spring.datasource.hikari.maximum-pool-size` | `20` | 数据库连接池上限，不支持环境变量覆盖 |
 
 ---
 
@@ -107,6 +119,10 @@ java -Xms256m -Xmx512m -jar harnax-admin/target/harnax-admin-*.jar
 ```
 
 admin 是无状态服务（Quartz 使用内存 JobStore，不持久化），可水平扩展，不需要 sticky session。
+
+> **注意**：admin 的 Quartz 定时任务使用 `RAMJobStore`（内存存储），服务重启后所有定时任务调度信息会丢失，需要重新创建。如果需要持久化定时任务，需要修改 `application.yml` 中的 Quartz 配置为 JDBC JobStore。
+
+> **会话数据库**：admin 的会话数据（`session.*` 配置）默认使用 `harnax_admin` 数据库，与业务数据在同一个库中。这与 agent-service 不同（agent-service 使用独立的 `agentscope` 数据库）。
 
 ### nginx 配置
 

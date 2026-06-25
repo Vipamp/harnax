@@ -290,6 +290,109 @@ curl http://localhost:8081/api/router/health
 
 ---
 
+## 代理调优参数
+
+以下参数在 `application.yml` 中配置，一般无需调整，但在高并发场景下可能需要关注：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `router.proxy.connect-timeout-ms` | `5000` | 连接 agent-service 超时（5 秒） |
+| `router.proxy.read-timeout-ms` | `600000` | 代理读超时（10 分钟，AI 推理较长） |
+| `router.proxy.stream-timeout-minutes` | `10` | SSE 流总超时 |
+| `router.proxy.failover-max-retries` | `2` | 故障转移重试次数 |
+| `router.proxy.max-connections` | `200` | WebClient 连接池上限（代码默认值，不在 yml 中） |
+| `router.proxy.max-in-memory-size-mb` | `16` | 响应体内存缓冲上限 |
+| `router.proxy.pending-acquire-timeout-ms` | `10000` | 连接池等待获取超时（代码默认值） |
+| `spring.mvc.async.request-timeout` | `600000` | Spring MVC 异步请求超时（10 分钟） |
+| `spring.codec.max-in-memory-size` | `16MB` | WebFlux 编解码器内存上限 |
+| `server.forward-headers-strategy` | `native` | 转发头策略，nginx 后置时必须为 `native` |
+
+### Admin 客户端超时
+
+Router 调用 admin 内部 API（API Key 校验、Session 信息查询）的超时参数：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `admin.internal-api.timeout-connect-ms` | `2000` | HTTP 连接超时（2 秒） |
+| `admin.internal-api.timeout-response-ms` | `3000` | HTTP 响应超时（3 秒） |
+
+---
+
+## 认证与安全
+
+### Auth Skip Paths
+
+以下路径前缀被 `UnifiedAuthFilter` 跳过，不需要认证：
+
+```yaml
+harnax:
+  auth:
+    skip-paths:
+      - /ui                    # 监控 UI 静态页面
+      - /ui/
+      - /index.html
+      - /static/
+      - /favicon.ico
+      - /style.css
+      - /app.js
+      - /api/router/monitor/   # 监控面板 API
+```
+
+> **安全警告**：不要把 `/api/router/` 整体加入 skip-paths，否则 heartbeat / register 等 `@InternalOnly` 接口的 JWT 不会被解析，导致所有内部接口返回 401。
+
+### 外部 API Key 认证
+
+```yaml
+harnax:
+  auth:
+    external:
+      enabled: true            # 启用外部 API Key 认证（默认开启）
+```
+
+外部调用通过 `X-Api-Key` 请求头认证，Router 通过 HTTP 调用 admin 的 `POST /api/internal/api-keys/validate` 校验。支持滑动窗口限流（`RateLimitInterceptor`）。
+
+---
+
+## 监控与可观测性
+
+### 内置监控面板
+
+访问 `http://<host>:8081/ui` 查看：
+- 已注册实例列表（IP、端口、状态、session 数、心跳延迟）
+- API 调用明细（支持按 sessionId / instanceId / agentName 查询，含耗时）
+
+### 监控 API 端点
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| GET | `/api/router/monitor/instances` | 无 | 实例列表（含 session 数、心跳延迟） |
+| GET | `/api/router/monitor/call-logs` | 无 | 调用日志分页查询 |
+| GET | `/api/router/metrics/cache` | 无 | 缓存统计（实例数、命中率） |
+
+### Spring Boot Actuator
+
+Router 暴露了以下 Actuator 端点：
+
+| 端点 | 说明 |
+|------|------|
+| `/actuator/health` | 服务健康状态 |
+| `/actuator/info` | 应用信息 |
+| `/actuator/prometheus` | Prometheus 指标 |
+| `/actuator/metrics` | 全部指标列表 |
+
+> **安全提示**：Actuator 端点默认暴露且无需认证。生产环境建议通过 nginx 限制访问，或修改 `management.endpoints.web.exposure.include` 配置。
+
+### 关键 Prometheus 指标
+
+| 指标 | 说明 |
+|------|------|
+| `router_proxy_duration_seconds` | 代理请求延迟 |
+| `router_proxy_requests_total` | 请求总数（按 status / endpoint） |
+| `router_failover_count_total` | 故障转移次数 |
+| `hikaricp_connections_active` | 数据库连接数 |
+
+---
+
 ## 集群模式下的已知限制
 
 | 项目 | 说明 | 影响 |
