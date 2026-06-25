@@ -119,6 +119,7 @@ services:
       - harnax-network
 
   # Router Service (session routing, health checks, SSE proxy)
+  # 个人版使用 SQLite + local 缓存模式，无需 MySQL 和 Redis 依赖
   router:
     image: harnax-router:personal
     build:
@@ -127,14 +128,10 @@ services:
     container_name: harnax-router-personal
     restart: unless-stopped
     environment:
-      # Database (only for api_call_log)
-      DB_URL: jdbc:mysql://mysql:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
-      DB_USERNAME: harnax
-      DB_PASSWORD: harnax123
-      # Redis (shared cache mode for multi-instance deployments)
-      CACHE_TYPE: redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      # 本地模式：使用 SQLite 存储调用日志
+      ROUTER_SQLITE_PATH: /var/lib/harnax-router/call-log.db
+      # 本地模式：使用内存缓存（单实例无需 Redis）
+      CACHE_TYPE: local
       # Auth
       SERVICE_ID: router-0
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
@@ -147,12 +144,9 @@ services:
       - "8081:8081"
     volumes:
       - router-logs:/app/logs
+      - router-data:/var/lib/harnax-router  # SQLite 数据库持久化
       - /etc/localtime:/etc/localtime:ro
     depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       backend:
         condition: service_started
     healthcheck:
@@ -168,6 +162,8 @@ volumes:
   backend-logs:
     driver: local
   router-logs:
+    driver: local
+  router-data:
     driver: local
   redis-data:
     driver: local

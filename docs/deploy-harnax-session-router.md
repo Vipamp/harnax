@@ -10,7 +10,9 @@ harnax-session-router 是会话路由器，负责：
 - API 调用日志记录
 
 - **端口**: 8081
-- **数据库**: harnax_router (MySQL, 仅用于 api_call_log)
+- **数据库**: 
+  - 本地模式：SQLite（嵌入式，无需外部数据库）
+  - 集群模式：MySQL（harnax_router 库，用于 api_call_log）
 - **缓存模式**: `local`（单机）或 `redis`（集群），由 `CACHE_TYPE` 控制
 - **认证方式**: UnifiedAuthFilter (内部 JWT)
 
@@ -21,7 +23,8 @@ harnax-session-router 是会话路由器，负责：
 | 组件 | 本地模式 | 集群模式 | 说明 |
 |------|---------|---------|------|
 | JDK 21 | 必须 | 必须 | 运行时 |
-| MySQL 8.0 | 必须 | 必须 | api_call_log 存储 |
+| SQLite | 内置 | 不需要 | 本地模式使用嵌入式 SQLite，无需额外安装 |
+| MySQL 8.0 | 不需要 | 必须 | 集群模式的 api_call_log 存储 |
 | Redis 7 | 不需要 | 必须 | 共享实例注册表 + 会话映射 |
 | nginx | 不需要 | 必须 | 多 Router 实例负载均衡 |
 | harnax-admin | 必须 | 必须 | API Key 校验、会话信息查询 |
@@ -43,7 +46,25 @@ Router 通过 `CACHE_TYPE` 环境变量切换两种存储后端：
 
 ---
 
-## 数据库初始化
+## 数据库说明
+
+### 本地模式（SQLite）
+
+本地模式使用嵌入式 SQLite，**无需安装或配置外部数据库**：
+
+- 数据库文件位置：`/var/lib/harnax-router/call-log.db`（默认）
+- 可通过环境变量 `ROUTER_SQLITE_PATH` 自定义路径
+- 应用启动时自动创建数据库和表结构
+- 监控面板的调用日志查询功能完全可用
+
+```bash
+# 自定义 SQLite 文件路径
+export ROUTER_SQLITE_PATH="/data/harnax-router/call-log.db"
+```
+
+### 集群模式（MySQL）
+
+集群模式使用 MySQL 存储调用日志：
 
 ```sql
 CREATE DATABASE IF NOT EXISTS harnax_router
@@ -61,11 +82,32 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
+| `CACHE_TYPE` | `local` | 缓存模式: `local` 或 `redis` |
+| `SERVICE_ID` | `router-0` | 本实例在 UnifiedAuth 中的标识 |
+
+### 数据库配置（本地模式 - SQLite）
+
+本地模式默认使用 SQLite，无需外部数据库：
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `ROUTER_SQLITE_PATH` | `/var/lib/harnax-router/call-log.db` | SQLite 数据库文件路径 |
+| `ROUTER_DB_POOL_SIZE` | `10` | 连接池大小（SQLite 并发有限，通常无需调大） |
+
+> **注意**：确保 SQLite 文件所在目录存在且有写权限。首次启动前需创建目录：
+> ```bash
+> mkdir -p /var/lib/harnax-router
+> ```
+
+### 数据库配置（集群模式 - MySQL）
+
+集群模式使用 MySQL，需要激活 `cluster` profile：
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
 | `DB_URL` | `jdbc:mysql://172.20.10.5:3306/harnax_router?...` | MySQL 连接串 |
 | `DB_USERNAME` | `root` | 数据库用户名 |
 | `DB_PASSWORD` | `123456` | 数据库密码 |
-| `CACHE_TYPE` | `local` | 缓存模式: `local` 或 `redis` |
-| `SERVICE_ID` | `router-0` | 本实例在 UnifiedAuth 中的标识 |
 
 ### Redis 配置 (仅 `redis` 模式)
 
@@ -114,24 +156,33 @@ harnax-session-router (×1)    CACHE_TYPE=local
     ├──► agent-service-1
     └──► agent-service-2
 
-          MySQL (api_call_log)
+    SQLite (call-log.db)      ← 嵌入式，无需外部数据库
 ```
+
+### 特点
+
+- **零外部数据库依赖**：使用内置 SQLite 存储调用日志
+- **启动即用**：自动创建数据库文件和表结构
+- **监控面板完整可用**：调用日志查询功能与 MySQL 模式一致
 
 ### 单机启动
 
 ```bash
-# 构建
+# 1. 创建 SQLite 文件目录
+mkdir -p /var/lib/harnax-router
+
+# 2. 构建
 cd /path/to/harnax
 mvn clean package -DskipTests -pl harnax-session-router -am
 
-# 启动
+# 3. 启动（默认使用 SQLite）
 export CACHE_TYPE=local
-export DB_URL="jdbc:mysql://YOUR_DB_HOST:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-export DB_USERNAME="your_db_user"
-export DB_PASSWORD="your_db_password"
 export HARNAX_AUTH_SECRET="your-secret-at-least-32-chars-long"
 export ADMIN_SERVICE_URL="http://YOUR_ADMIN_HOST:8080"
 export ADMIN_INTERNAL_API_SECRET="your-admin-secret-at-least-32-chars"
+
+# 可选：自定义 SQLite 文件路径
+# export ROUTER_SQLITE_PATH="/data/harnax-router/call-log.db"
 
 java -Xms256m -Xmx512m -jar harnax-session-router/target/harnax-session-router-*.jar
 ```
@@ -156,9 +207,21 @@ nginx (ip_hash)
                    ├──► agent-service-1
                    └──► agent-service-2
                    │
-                   ├── MySQL (api_call_log)
+                   ├── MySQL (api_call_log)    ← 集群模式使用 MySQL
                    └── Redis (共享状态)
 ```
+
+### 前置条件
+
+集群模式需要预先创建 MySQL 数据库：
+
+```sql
+CREATE DATABASE IF NOT EXISTS harnax_router
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_unicode_ci;
+```
+
+Flyway 会在启动时自动创建 `api_call_log` 表。
 
 ### nginx 配置
 
@@ -228,10 +291,14 @@ server {
 
 ### 多实例启动
 
+集群模式需要激活 `cluster` profile 以使用 MySQL：
+
 ```bash
 # Router-1 (机器 A)
 export CACHE_TYPE=redis
 export DB_URL="jdbc:mysql://DB_HOST:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+export DB_USERNAME="harnax"
+export DB_PASSWORD="your_password"
 export REDIS_HOST=REDIS_HOST
 export REDIS_PORT=6379
 export HARNAX_AUTH_SECRET="your-secret-at-least-32-chars-long"
@@ -239,16 +306,23 @@ export ADMIN_SERVICE_URL="http://ADMIN_HOST:8080"
 export ADMIN_INTERNAL_API_SECRET="your-admin-secret-at-least-32-chars"
 export SERVICE_ID=router-1
 
-java -Xms512m -Xmx1024m -jar harnax-session-router-*.jar
+# 激活 cluster profile 使用 MySQL
+java -Xms512m -Xmx1024m \
+  -jar harnax-session-router-*.jar \
+  --spring.profiles.active=cluster
 
 # Router-2 (机器 B) — 配置相同，仅 SERVICE_ID 不同
 export CACHE_TYPE=redis
 export DB_URL="jdbc:mysql://DB_HOST:3306/harnax_router?..."
+export DB_USERNAME="harnax"
+export DB_PASSWORD="your_password"
 export REDIS_HOST=REDIS_HOST
 export HARNAX_AUTH_SECRET="your-secret-at-least-32-chars-long"  # 必须一致
 export SERVICE_ID=router-2
 
-java -Xms512m -Xmx1024m -jar harnax-session-router-*.jar
+java -Xms512m -Xmx1024m \
+  -jar harnax-session-router-*.jar \
+  --spring.profiles.active=cluster
 ```
 
 > **Redis 数据说明**: Router 使用以下 Redis Key 前缀，不要与其他应用冲突:

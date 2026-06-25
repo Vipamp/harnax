@@ -106,12 +106,15 @@ services:
       - harnax-network
 
   # Router Service (session routing, health checks, SSE proxy)
+  # 生产环境使用 MySQL + Redis 集群模式
   router:
     image: harnax-router:personal
     container_name: harnax-router
     restart: always
     environment:
-      # Database (only for api_call_log)
+      # 激活 cluster profile 使用 MySQL
+      SPRING_PROFILES_ACTIVE: cluster
+      # Database (MySQL for api_call_log)
       DB_URL: ${ROUTER_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/harnax_router?useSSL=true&serverTimezone=Asia/Shanghai}}
       DB_USERNAME: ${DB_USERNAME:-harnax}
       DB_PASSWORD: ${DB_PASSWORD:-}

@@ -25,7 +25,7 @@
 | MinIO | 不需要 | 必须 | 分布式文件存储 + 快照归档 |
 | Redis | 不需要 | 不需要 | harness-core 不使用 Redis |
 | harnax-admin | 必须 | 必须 | 模型配置、MCP 配置、Skill 加载等 |
-| harnax-session-router | 必须 | 必须 | 会话路由 |
+| harnax-session-router | 必须 | 必须 | 会话路由（本地模式使用 SQLite，集群模式使用 MySQL + Redis） |
 
 ---
 
