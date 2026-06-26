@@ -1,4 +1,4 @@
-# Harnax Docker Compose - Personal Edition (Development)
+# Harnax Docker Compose - Local Mode (Development)
 # Includes: MySQL + MinIO + Backend + Router + Agent-Service + Frontend
 
 version: '3.8'
