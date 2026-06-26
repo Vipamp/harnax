@@ -1,0 +1,41 @@
+# Harnax Router Dockerfile - Single Stage Build
+# Uses locally built JAR package, no compilation inside Docker
+# Session routing service with cluster mode support (MySQL + Redis)
+
+FROM eclipse-temurin:21-jre
+
+# Set timezone
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Create non-root user
+RUN groupadd -r harnax && useradd -r -g harnax harnax
+
+WORKDIR /app
+
+# Copy JAR file from docker-new/dist/router/
+COPY docker-new/dist/router/harnax-session-router-*.jar app.jar
+
+# Create log directory and set permissions
+RUN mkdir -p /app/logs && chown -R harnax:harnax /app
+
+# Switch to non-root user
+USER harnax
+
+# Expose port
+EXPOSE 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
+  CMD wget -qO- http://localhost:8081/api/router/health || exit 1
+
+# JVM options optimization
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
+
+# Start application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+
+# Metadata
+LABEL maintainer="agnetix"
+LABEL version="1.0.0"
+LABEL description="Harnax Session Router"

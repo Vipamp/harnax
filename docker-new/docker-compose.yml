@@ -1,0 +1,396 @@
+# Harnax Docker Compose - Cluster Mode Deployment
+# Includes: MySQL + Redis + MinIO + Backend + Router + Agent-Service + Channel-Service + Frontend
+#
+# Usage:
+#   Build images first: ./build.sh
+#   Start services:     docker-compose up -d
+#   View logs:          docker-compose logs -f
+#   Stop services:      docker-compose down
+
+services:
+  # ==========================================
+  # Infrastructure Services
+  # ==========================================
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: harnax-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      MYSQL_DATABASE: harnax
+      MYSQL_USER: ${DB_USERNAME:-harnax}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-harnax123}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      # MySQL data directory
+      - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
+      # Database initialization scripts
+      - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max_connections=500
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+    networks:
+      - harnax-network
+
+  # Redis (shared cache for router instances in cluster mode)
+  redis:
+    image: redis:7-alpine
+    container_name: harnax-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - harnax-network
+
+  # MinIO Object Storage (for agent sandbox snapshots and distributed storage)
+  minio:
+    image: minio/minio:latest
+    container_name: harnax-minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+    networks:
+      - harnax-network
+
+  # ==========================================
+  # Application Services
+  # ==========================================
+
+  # Backend Service (harnax-admin)
+  backend:
+    image: harnax-backend:latest
+    container_name: harnax-backend
+    restart: always
+    environment:
+      # Spring Boot Configuration
+      SPRING_PROFILES_ACTIVE: prod
+      # Database Configuration
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Session Database Configuration
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax}
+      SESSION_USERNAME: ${DB_USERNAME:-harnax}
+      SESSION_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Flyway Configuration
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+      # Internal API Secret
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # Auth Secret
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # Router URL
+      HARNAX_ROUTER_URL: http://router:8081
+      # JVM Configuration
+      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      # Log Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8080:8080"
+    volumes:
+      - backend-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+  # Router Service (session routing, health checks, SSE proxy)
+  # Cluster mode: MySQL + Redis (not SQLite + local cache)
+  router:
+    image: harnax-router:latest
+    container_name: harnax-router
+    restart: always
+    environment:
+      # Activate cluster profile: MySQL + Redis
+      SPRING_PROFILES_ACTIVE: cluster
+      # Database (MySQL for api_call_log)
+      DB_URL: jdbc:mysql://mysql:3306/harnax_router?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      DB_USERNAME: ${DB_USERNAME:-harnax}
+      DB_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Redis (cluster mode cache)
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # Auth
+      SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # Admin service (for API key validation + session info)
+      ADMIN_SERVICE_URL: http://backend:8080
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # JVM
+      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    ports:
+      - "8081:8081"
+    volumes:
+      - router-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+  # Agent Service (distributed agent runtime with sandbox)
+  agent-service:
+    image: harnax-agent-service:latest
+    container_name: harnax-agent-service
+    restart: always
+    environment:
+      # Database Configuration (business data)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Session Database Configuration (agent state, separate database)
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_USERNAME: ${DB_USERNAME:-harnax}
+      SESSION_PASSWORD: ${DB_PASSWORD:-harnax123}
+      SESSION_DATABASE_NAME: agentscope
+      # MinIO Configuration
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # Sandbox Configuration
+      SANDBOX_ENABLED: "true"
+      SANDBOX_IMAGE: python:3.11-slim
+      SANDBOX_KEEP_ALIVE: "true"
+      # Router Configuration
+      ROUTER_SERVICE_URL: http://router:8081
+      AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}
+      # Auth Configuration
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+      # Local temp directory
+      LOCAL_TMP_DIR: /tmp/harnax-agent
+      # JVM Configuration
+      JAVA_OPTS: -Xms1g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError
+      # Log Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8082:8082"
+    volumes:
+      - agent-service-logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for sandbox management
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      router:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 2048M
+        reservations:
+          cpus: '2.0'
+          memory: 1024M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+  # Channel Service (multi-channel integration: Feishu, WeChat, etc.)
+  channel-service:
+    image: harnax-channel-service:latest
+    container_name: harnax-channel-service
+    restart: always
+    environment:
+      # Database Configuration
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Flyway Configuration
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # Router Configuration
+      ROUTER_URL: http://router:8081
+      # Auth Configuration
+      SERVICE_ID: ${CHANNEL_SERVICE_ID:-channel-0}
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # JVM Configuration
+      JAVA_OPTS: -Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      # Log Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8083:8083"
+    volumes:
+      - channel-service-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      router:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8083 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+  # Frontend Service (Nginx serving React SPA + API reverse proxy)
+  frontend:
+    image: harnax-frontend:latest
+    container_name: harnax-frontend
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - backend
+      - router
+      - agent-service
+      - channel-service
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
+# ==========================================
+# Volumes
+# ==========================================
+volumes:
+  redis-data:
+    driver: local
+  minio-data:
+    driver: local
+  backend-logs:
+    driver: local
+  router-logs:
+    driver: local
+  agent-service-logs:
+    driver: local
+  channel-service-logs:
+    driver: local
+
+# ==========================================
+# Networks
+# ==========================================
+networks:
+  harnax-network:
+    driver: bridge

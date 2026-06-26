@@ -1,0 +1,46 @@
+# Harnax Channel Service Dockerfile - Single Stage Build
+# Uses locally built JAR package, no compilation inside Docker
+# Multi-channel integration service (Feishu, WeChat, etc.)
+
+FROM eclipse-temurin:21-jre
+
+# Set timezone
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Install netcat for TCP health check (channel-service has no HTTP health endpoint)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r harnax && useradd -r -g harnax harnax
+
+WORKDIR /app
+
+# Copy JAR file from docker-new/dist/channel-service/
+COPY docker-new/dist/channel-service/harnax-channel-service-*.jar app.jar
+
+# Create log directory and set permissions
+RUN mkdir -p /app/logs && chown -R harnax:harnax /app
+
+# Switch to non-root user
+USER harnax
+
+# Expose port
+EXPOSE 8083
+
+# Health check using TCP port probe (no HTTP health endpoint available)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD nc -z localhost 8083 || exit 1
+
+# JVM options optimization
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
+
+# Start application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+
+# Metadata
+LABEL maintainer="agnetix"
+LABEL version="1.0.0"
+LABEL description="Harnax Channel Service - Multi-Channel Integration (Feishu, WeChat)"
