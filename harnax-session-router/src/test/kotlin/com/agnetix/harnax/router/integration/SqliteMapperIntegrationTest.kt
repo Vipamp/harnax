@@ -71,7 +71,7 @@ class SqliteMapperIntegrationTest {
         id: Int = 1,
         sessionId: String = "sess-$id",
         statusCode: Int = 200,
-        durationMs: Long = 100
+        durationMs: Long = 100,
     ): ApiCallLog = ApiCallLog().apply {
         callerId = "caller-$id"
         callerType = "EXTERNAL_API"
@@ -250,8 +250,8 @@ class SqliteMapperIntegrationTest {
         for (i in 0 until results.size - 1) {
             assertTrue(
                 results[i].startTime.isAfter(results[i + 1].startTime) ||
-                results[i].startTime.isEqual(results[i + 1].startTime),
-                "Results should be ordered by start_time DESC"
+                    results[i].startTime.isEqual(results[i + 1].startTime),
+                "Results should be ordered by start_time DESC",
             )
         }
     }
@@ -269,7 +269,7 @@ class SqliteMapperIntegrationTest {
 
         val query = ApiCallLogQuery(
             sessionId = "sess-a",
-            statusCode = 200
+            statusCode = 200,
         )
         val results = mapper.query(query)
 

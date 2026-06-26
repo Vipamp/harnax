@@ -1,12 +1,9 @@
 package com.agnetix.harnax.router.controller
 
-import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
-import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
@@ -94,7 +91,8 @@ class SessionRouterControllerIntegrationTest {
                 .param("port", "8082"),
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.code").isNotEmpty)
+            .andExpect(jsonPath("$.code").value(500))
+            .andExpect(jsonPath("$.message").isNotEmpty)
 
         verify(instanceRegistry, never()).registerInstance(anyString(), anyString(), anyInt())
     }
@@ -108,6 +106,8 @@ class SessionRouterControllerIntegrationTest {
                 .param("port", "8082"),
         )
             .andExpect(status().isOk)
+            .andExpect(jsonPath("$.code").value(500))
+            .andExpect(jsonPath("$.data").doesNotExist())
 
         verify(instanceRegistry, never()).registerInstance(anyString(), anyString(), anyInt())
     }
@@ -179,45 +179,9 @@ class SessionRouterControllerIntegrationTest {
             .andExpect(jsonPath("$.data[0].port").value(8082))
     }
 
-    // ==================== Proxy endpoints (suspend) ====================
-
-    @Test
-    fun `proxy clear session delegates to service`(): Unit = runBlocking {
-        `when`(sessionRouterService.proxyClearSession("session-1"))
-            .thenReturn(ResultVo.success("cleared"))
-
-        sessionRouterService.proxyClearSession("session-1")
-
-        verify(sessionRouterService).proxyClearSession("session-1")
-    }
-
-    @Test
-    fun `proxy load history delegates to service`(): Unit = runBlocking {
-        `when`(sessionRouterService.proxyLoadHistory("session-1"))
-            .thenReturn(ResultVo.success(emptyList()))
-
-        sessionRouterService.proxyLoadHistory("session-1")
-
-        verify(sessionRouterService).proxyLoadHistory("session-1")
-    }
-
-    @Test
-    fun `proxy load plans delegates to service`(): Unit = runBlocking {
-        `when`(sessionRouterService.proxyLoadPlans("session-1"))
-            .thenReturn(ResultVo.success(emptyList()))
-
-        sessionRouterService.proxyLoadPlans("session-1")
-
-        verify(sessionRouterService).proxyLoadPlans("session-1")
-    }
-
-    @Test
-    fun `proxy load current plan delegates to service`(): Unit = runBlocking {
-        `when`(sessionRouterService.proxyLoadCurrentPlan("session-1"))
-            .thenReturn(ResultVo.success(null))
-
-        sessionRouterService.proxyLoadCurrentPlan("session-1")
-
-        verify(sessionRouterService).proxyLoadCurrentPlan("session-1")
-    }
+    // ==================== Proxy endpoints ====================
+    // NOTE: AgentProxyController proxy endpoints (chat, stream, command, confirm, session management)
+    // use suspend functions and return ResultVo / Flux. Proper HTTP-level testing requires WebTestClient
+    // with coroutine support. Service-layer logic is thoroughly tested in SessionRouterServiceTest
+    // with 657 lines of comprehensive tests covering routing, failover, circuit breaker, and MDC.
 }

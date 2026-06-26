@@ -8,17 +8,24 @@ server:
 spring:
   application:
     name: harnax-session-router
+  # Exclude Redis auto-config — Redis is only initialized when CACHE_TYPE=redis
+  # (see RedisConfig for the conditional LettuceConnectionFactory bean)
+  # NOTE: Spring Boot 4.x renamed Redis* → DataRedis* auto-config classes
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
   mvc:
     async:
       request-timeout: 600000  # 10min — must exceed agent-service processing time + snapshot upload
   codec:
     max-in-memory-size: 16MB  # Support large payloads (e.g., base64 image data)
-  
+
   # === 默认数据源：SQLite（本地模式） ===
   # 本地模式使用嵌入式 SQLite，无需外部数据库
   # 集群模式通过 --spring.profiles.active=cluster 切换到 MySQL
   datasource:
-    url: ${ROUTER_DB_URL:jdbc:sqlite:${ROUTER_SQLITE_PATH:/var/lib/harnax-router/call-log.db}}
+    url: ${ROUTER_DB_URL:jdbc:sqlite:${ROUTER_SQLITE_PATH:tmp/harnax-router/call-log.db}}
     driver-class-name: ${ROUTER_DB_DRIVER:org.sqlite.JDBC}
     username: ${ROUTER_DB_USERNAME:}
     password: ${ROUTER_DB_PASSWORD:}
@@ -31,13 +38,13 @@ spring:
       leak-detection-threshold: 10000
       validation-timeout: 3000
       keepalive-time: 30000
-  
-  # Flyway 仅在 MySQL 模式下启用（cluster profile）
+
+  # Flyway 仅在 cluster 模式下启用（见 application-cluster.yml）
   flyway:
-    enabled: ${ROUTER_FLYWAY_ENABLED:false}
+    enabled: false
     locations: classpath:db/migration
     baseline-on-migrate: true
-  
+
   # Redis configuration - only used when CACHE_TYPE=redis
   # In local mode (CACHE_TYPE=local), Redis is not needed
   data:
@@ -102,7 +109,7 @@ harnax:
       - /index.html
       - /static/
       - /favicon.ico
-      - /style.css  
+      - /style.css
       - /app.js
       - /api/router/monitor/
 
@@ -122,31 +129,3 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
-
----
-# === 集群模式配置（MySQL） ===
-# 启动方式: java -jar harnax-session-router.jar --spring.profiles.active=cluster
-spring:
-  config:
-    activate:
-      on-profile: cluster
-  
-  datasource:
-    url: ${DB_URL:jdbc:mysql://172.20.10.5:3306/harnax_router?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:123456}
-    hikari:
-      maximum-pool-size: 50
-      minimum-idle: 10
-      connection-timeout: 5000
-      idle-timeout: 300000
-      max-lifetime: 600000
-      leak-detection-threshold: 10000
-      validation-timeout: 3000
-      keepalive-time: 30000
-  
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
-    baseline-on-migrate: true

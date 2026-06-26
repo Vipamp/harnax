@@ -4,10 +4,13 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect
 import com.fasterxml.jackson.annotation.PropertyAccessor
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.data.redis.connection.RedisConnectionFactory
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
 import org.springframework.data.redis.serializer.StringRedisSerializer
@@ -16,6 +19,21 @@ import java.time.Duration
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
 class RedisConfig {
+
+    @Bean
+    fun redisConnectionFactory(
+        @Value("\${spring.data.redis.host}") host: String,
+        @Value("\${spring.data.redis.port:6379}") port: Int,
+        @Value("\${spring.data.redis.password:}") password: String,
+        @Value("\${spring.data.redis.database:0}") database: Int,
+    ): RedisConnectionFactory {
+        val config = RedisStandaloneConfiguration(host, port)
+        config.database = database
+        if (password.isNotBlank()) {
+            config.setPassword(password)
+        }
+        return LettuceConnectionFactory(config)
+    }
 
     @Bean
     fun redisTemplate(connectionFactory: RedisConnectionFactory): RedisTemplate<String, Any> {

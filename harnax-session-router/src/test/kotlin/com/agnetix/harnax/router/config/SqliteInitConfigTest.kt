@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import javax.sql.DataSource
 
 /**
  * SQLite 初始化配置测试
@@ -44,7 +43,7 @@ class SqliteInitConfigTest {
         // 验证表存在
         dataSource.connection.use { conn ->
             val rs = conn.prepareStatement(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_call_log'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_call_log'",
             ).executeQuery()
             assertTrue(rs.next(), "api_call_log table should exist")
         }
@@ -56,14 +55,14 @@ class SqliteInitConfigTest {
 
         dataSource.connection.use { conn ->
             val rs = conn.prepareStatement(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+                "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'",
             ).executeQuery()
-            
+
             val indexes = mutableListOf<String>()
             while (rs.next()) {
                 indexes.add(rs.getString("name"))
             }
-            
+
             assertTrue(indexes.contains("idx_caller_id"), "idx_caller_id should exist")
             assertTrue(indexes.contains("idx_session_id"), "idx_session_id should exist")
             assertTrue(indexes.contains("idx_start_time"), "idx_start_time should exist")
@@ -80,7 +79,7 @@ class SqliteInitConfigTest {
         // 表仍然存在
         dataSource.connection.use { conn ->
             val rs = conn.prepareStatement(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_call_log'"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='api_call_log'",
             ).executeQuery()
             assertTrue(rs.next())
         }
@@ -92,7 +91,7 @@ class SqliteInitConfigTest {
 
         dataSource.connection.use { conn ->
             val rs = conn.prepareStatement("PRAGMA table_info(api_call_log)").executeQuery()
-            
+
             val columns = mutableMapOf<String, String>()
             while (rs.next()) {
                 columns[rs.getString("name")] = rs.getString("type")
@@ -127,7 +126,7 @@ class SqliteInitConfigTest {
                 INSERT INTO api_call_log 
                 (caller_id, caller_type, endpoint, method, status_code, success, start_time, end_time, duration_ms)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """.trimIndent()
+                """.trimIndent(),
             ).apply {
                 setString(1, "test-caller")
                 setString(2, "EXTERNAL_API")

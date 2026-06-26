@@ -6,7 +6,7 @@ Session Router 是 harnax 分布式 Agent 平台的核心网关层，负责将�
 
 ### 单机部署（local 模式，默认）
 
-适合开发、测试、小规模生产环境。单 Router 实例，纯内存状态，无需 Redis。
+适合开发、测试、小规模生产环境。单 Router 实例，纯内存状态，零外部依赖。
 
 ```
 Channel / 外部 HTTP ──JWT/API Key──> Router :8081 ──JWT──> Agent-service :8082
@@ -16,11 +16,11 @@ Channel / 外部 HTTP ──JWT/API Key──> Router :8081 ──JWT──> Age
                                      │   ├ 幂等性去重
                                      │   └ 熔断器状态
                                      ├── admin :8080 (API Key 校验 + Session 信息查询)
-                                     └── MySQL (仅 api_call_log 调用日志)
+                                     └── SQLite (仅 api_call_log 调用日志，嵌入式)
 ```
 
 **特点：**
-- 零外部依赖（Redis），启动即用
+- 零外部依赖（SQLite 嵌入式 + Caffeine 内存缓存），启动即用
 - 状态仅存于本进程内存，重启后丢失（实例需重新注册）
 - 只能部署一个 Router 实例（多实例间状态不共享，会话粘性失效）
 
@@ -50,9 +50,11 @@ Channel / 外部 HTTP ── LB ──>      ├─ Router :8081 (节点 B)  ─
 
 ### 部署模式对比
 
-| 能力 | local（单机） | redis（分布式） |
+| 能力 | local（单机） | cluster（分布式） |
 |------|------------|----------------|
-| 外部依赖 | 仅 MySQL | MySQL + Redis |
+| 数据库 | SQLite（嵌入式） | MySQL |
+| 缓存 | Caffeine（进程内存） | Redis |
+| 外部依赖 | 无 | MySQL + Redis |
 | 水平扩展 | 不支持 | 支持 |
 | 状态持久化 | 进程内存，重启丢失 | Redis，重启不丢失 |
 | 熔断一致性 | 仅本节点 | 全节点共享 |
@@ -60,17 +62,20 @@ Channel / 外部 HTTP ── LB ──>      ├─ Router :8081 (节点 B)  ─
 | 会话粘性 | 仅本节点可见 | 全节点可见，任意节点可路由 |
 | 适用场景 | 开发 / 测试 / 个人版 | 生产 / 多节点集群 |
 
-通过 `CACHE_TYPE` 环境变量切换：
+通过 Spring Profile 切换部署模式：
 
 ```bash
-# 单机模式（默认）
-CACHE_TYPE=local java -jar harnax-session-router.jar
+# 单机模式（默认，无需任何参数）
+java -jar harnax-session-router.jar
 
-# 分布式模式
-CACHE_TYPE=redis REDIS_HOST=redis.internal java -jar harnax-session-router.jar
+# 分布式模式（激活 cluster profile → MySQL + Redis）
+java -jar harnax-session-router.jar --spring.profiles.active=cluster
 ```
 
-**MySQL 仅用于调用日志**（`api_call_log` 表），实例注册、会话绑定、API Key 校验均不依赖 MySQL。
+**`application.yml`（默认 / local 模式）**：SQLite 嵌入式数据库 + Caffeine 内存缓存，零外部依赖。  
+**`application-cluster.yml`（cluster 模式）**：MySQL + Flyway 自动迁移 + Redis 共享缓存，由 `spring.profiles.active=cluster` 激活。
+
+MySQL 仅用于调用日志（`api_call_log` 表），实例注册、会话绑定、API Key 校验均不依赖 MySQL。
 
 ### Redis Key 设计
 
@@ -99,32 +104,45 @@ router:circuit:{instanceId}:last_failure Long  最后一次失败的时间戳 (m
 
 ## 快速开始
 
-### 本地开发
+### 本地开发（local 模式，默认）
 
 ```bash
-# 1. 确保 MySQL 和 Redis 已启动（redis 仅 CACHE_TYPE=redis 时需要）
+# 1. 无需任何外部依赖（SQLite 嵌入式 + Caffeine 内存缓存）
 
 # 2. 编译
 mvn clean package -pl harnax-session-router -am -DskipTests
 
-# 3. 启动（local 缓存模式，无需 Redis）
+# 3. 直接启动（默认 local 模式）
 java -jar harnax-session-router/target/harnax-session-router.jar
 
 # 4. 打开监控面板
 open http://localhost:8081/ui
 ```
 
+### 集群模式启动（MySQL + Redis）
+
+```bash
+# 激活 cluster profile，自动加载 application-cluster.yml
+java -jar harnax-session-router.jar --spring.profiles.active=cluster
+
+# 或通过环境变量指定
+SPRING_PROFILES_ACTIVE=cluster \
+  DB_URL=jdbc:mysql://your-host:3306/harnax_router \
+  REDIS_HOST=your-redis-host \
+  java -jar harnax-session-router.jar
+```
+
 ### Docker 部署
 
 ```bash
-# 一键构建并启动（personal 版）
+# 一键构建并启动（生产环境，自动激活 cluster profile）
 cd docker && bash build.sh personal
 
 # 或手动启动
-docker compose -f docker/docker-compose.personal.yml up -d
+docker compose -f docker/docker-compose.prod.yml up -d
 ```
 
-Docker 编排包含：MySQL、Redis、admin backend、router、nginx frontend 五个服务，详见 [docker/README.md](../docker/README.md)。
+Docker 编排包含：Backend、Agent-Service、Router、Redis、Frontend 五个服务，详见 [docker/README.md](../docker/README.md)。
 
 ### agent-service 接入
 
@@ -394,7 +412,8 @@ src/main/kotlin/com/agnetix/harnax/router/
         └── RedisCircuitBreaker.kt       # Redis 熔断器（可选）
 
 src/main/resources/
-├── application.yml                      # 主配置
+├── application.yml                      # 默认配置（local 模式：SQLite + Caffeine）
+├── application-cluster.yml              # 集群模式（MySQL + Redis，profile 激活）
 ├── db/migration/
 │   └── V1__create_session_router_tables.sql  # Flyway: api_call_log 表
 ├── mapper/
@@ -415,6 +434,35 @@ java -Xms2g -Xmx4g \
   -XX:+HeapDumpOnOutOfMemoryError \
   -jar harnax-session-router.jar
 ```
+
+### 环境变量
+
+#### 通用（local + cluster）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `SERVICE_ID` | 本 Router 实例标识 | `router-0` |
+| `HARNAX_AUTH_SECRET` | JWT 共享密钥（最少 32 字符） | - |
+| `ADMIN_SERVICE_URL` | admin 服务地址 | `http://localhost:8080` |
+| `ADMIN_INTERNAL_API_SECRET` | admin 内部 API 密钥 | - |
+
+#### 仅 local 模式
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `ROUTER_SQLITE_PATH` | SQLite 数据库文件路径 | `tmp/harnax-router/call-log.db` |
+
+#### 仅 cluster 模式（`--spring.profiles.active=cluster`）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DB_URL` | MySQL 连接串 | `jdbc:mysql://172.20.10.5:3306/harnax_router?...` |
+| `DB_USERNAME` | MySQL 用户名 | `root` |
+| `DB_PASSWORD` | MySQL 密码 | `123456` |
+| `REDIS_HOST` | Redis 地址 | `172.20.10.5` |
+| `REDIS_PORT` | Redis 端口 | `6379` |
+| `REDIS_PASSWORD` | Redis 密码 | 空 |
+| `REDIS_DATABASE` | Redis 数据库索引 | `0` |
 
 ### Kubernetes
 
@@ -479,7 +527,10 @@ Flyway 管理，位于 `src/main/resources/db/migration/`：
 |------|------|
 | V1 | 建表 `api_call_log`（调用日志） |
 
-实例注册、会话绑定等状态全部存储在内存或 Redis 中，不依赖 MySQL。
+**local 模式**：Flyway 禁用，SQLite 由 MyBatis 按需建表。  
+**cluster 模式**：Flyway 启用，启动时自动执行迁移脚本。  
+
+实例注册、会话绑定等状态全部存储在内存（local）或 Redis（cluster）中，不依赖 MySQL。
 
 ## 实例生命周期
 

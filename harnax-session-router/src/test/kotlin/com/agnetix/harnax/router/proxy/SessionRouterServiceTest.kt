@@ -5,6 +5,8 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.entity.AgentInstance
@@ -137,11 +139,10 @@ class SessionRouterServiceTest {
             requestId = "req-1",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
+        assertNotNull(result.data)
         verify(idempotencyService).tryAcquire("req-1")
     }
 
@@ -158,11 +159,9 @@ class SessionRouterServiceTest {
             requestId = "",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(idempotencyService).tryAcquire(argThat { isNotBlank() })
     }
 
@@ -225,11 +224,9 @@ class SessionRouterServiceTest {
             requestId = "req-1",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(sessionMappingService).rerouteSession("session-1")
     }
 
@@ -246,11 +243,9 @@ class SessionRouterServiceTest {
             requestId = "req-1",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(sessionMappingService, never()).rerouteSession("session-1")
     }
 
@@ -268,11 +263,9 @@ class SessionRouterServiceTest {
             requestId = "req-1",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(sessionMappingService).rerouteSession("session-1")
     }
 
@@ -293,11 +286,9 @@ class SessionRouterServiceTest {
             requestId = "req-1",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(sessionMappingService).rerouteSession("session-1")
     }
 
@@ -322,11 +313,9 @@ class SessionRouterServiceTest {
             requestId = "req-cb",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
 
+        assertTrue(result.isSuccess())
         verify(sessionMappingService).rerouteSession("session-1")
     }
 
@@ -377,7 +366,16 @@ class SessionRouterServiceTest {
         )
 
         val result = service.proxyStreamRequest(request)
-        assertNotNull(result)
+
+        StepVerifier.create(result)
+            .assertNext { event ->
+                assertTrue(event is ErrorChatEvent, "First event should be ErrorChatEvent")
+                assertTrue((event as ErrorChatEvent).message.contains("No healthy instances"))
+            }
+            .assertNext { event ->
+                assertTrue(event is EndEventChatEvent, "Second event should be EndEventChatEvent")
+            }
+            .verifyComplete()
     }
 
     // ==================== proxyConfirmStreamRequest ====================
@@ -408,7 +406,15 @@ class SessionRouterServiceTest {
         )
 
         val result = service.proxyConfirmStreamRequest(request)
-        assertNotNull(result)
+
+        StepVerifier.create(result)
+            .assertNext { event ->
+                assertTrue(event is ErrorChatEvent, "First event should be ErrorChatEvent")
+            }
+            .assertNext { event ->
+                assertTrue(event is EndEventChatEvent, "Second event should be EndEventChatEvent")
+            }
+            .verifyComplete()
     }
 
     // ==================== proxyCommandRequest ====================
@@ -548,7 +554,7 @@ class SessionRouterServiceTest {
     }
 
     @Test
-    fun `retryFailover skips instances with open circuit breaker and tries next`() = runBlocking {
+    fun `retryFailover skips instances with open circuit breaker and tries next`(): Unit = runBlocking {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
@@ -613,7 +619,12 @@ class SessionRouterServiceTest {
         val result = service.proxyStreamRequest(request)
 
         StepVerifier.create(result)
-            .expectNextCount(2)
+            .assertNext { event ->
+                assertTrue(event is ErrorChatEvent, "First event should be ErrorChatEvent")
+            }
+            .assertNext { event ->
+                assertTrue(event is EndEventChatEvent, "Second event should be EndEventChatEvent")
+            }
             .verifyComplete()
     }
 
@@ -650,7 +661,12 @@ class SessionRouterServiceTest {
         val result = service.proxyStreamRequest(request)
 
         StepVerifier.create(result)
-            .expectNextCount(2)
+            .assertNext { event ->
+                assertTrue(event is ErrorChatEvent, "First event should be ErrorChatEvent")
+            }
+            .assertNext { event ->
+                assertTrue(event is EndEventChatEvent, "Second event should be EndEventChatEvent")
+            }
             .verifyComplete()
     }
 }

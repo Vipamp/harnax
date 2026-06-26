@@ -112,6 +112,7 @@ class ApiCallLogFilterTest {
         filter.doFilterInternal(request, response, chain)
 
         // SSE endpoints are now logged (without response wrapping).
+        verify(chain).doFilter(request, response)
         verify(apiCallLogService).record(any())
     }
 
@@ -132,6 +133,7 @@ class ApiCallLogFilterTest {
         filter.doFilterInternal(request, response, chain)
 
         // SSE endpoints are now logged (without response wrapping).
+        verify(chain).doFilter(request, response)
         verify(apiCallLogService).record(any())
     }
 
