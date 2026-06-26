@@ -1,12 +1,12 @@
 package com.agnetix.harnax.agent.session
 
 import io.agentscope.core.state.State
+import org.h2.jdbcx.JdbcDataSource
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.h2.jdbcx.JdbcDataSource
 
 /**
  * Integration test for MysqlAgentStateStore using H2 in-memory database.
@@ -329,8 +329,10 @@ class MysqlAgentStateStoreH2IntegrationTest {
 
         @Test
         fun `save and retrieve state with JSON special characters`() {
-            val state = TestState("""value with "quotes" and \backslash and newlines
-multiline""")
+            val state = TestState(
+                """value with "quotes" and \backslash and newlines
+multiline""",
+            )
             store.save("user1", "session1", "key1", state)
 
             val result = store.get("user1", "session1", "key1", TestState::class.java)

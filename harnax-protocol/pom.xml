@@ -43,15 +43,10 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- Jackson 3.x annotations (for polymorphic JSON serialization of ChatEvent/AgentRequest) -->
+        <!-- Jackson annotations (kept at 2.x for Jackson 3.x compatibility) -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>tools.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>3.0.0</version>
         </dependency>
 
         <!-- Kotlin -->
@@ -120,6 +115,11 @@
                         <goals>
                             <goal>test-compile</goal>
                         </goals>
+                        <configuration>
+                            <sourceDirs>
+                                <sourceDir>src/test/kotlin</sourceDir>
+                            </sourceDirs>
+                        </configuration>
                     </execution>
                 </executions>
                 <configuration>

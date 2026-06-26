@@ -7,11 +7,14 @@ import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatEvent
+import com.agnetix.harnax.agent.protocol.EndEventChatEvent
+import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigResponse
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigUpdateRequest
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -20,10 +23,13 @@ import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
+import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * @Description: ChatService

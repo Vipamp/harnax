@@ -90,7 +90,10 @@ class ConfirmToolsMiddlewareTest {
         val input = mock(ReasoningInput::class.java)
         val capturedInput = mutableListOf<ReasoningInput>()
 
-        val next = Function<ReasoningInput, Flux<AgentEvent>> { capturedInput.add(it); Flux.empty() }
+        val next = Function<ReasoningInput, Flux<AgentEvent>> {
+            capturedInput.add(it)
+            Flux.empty()
+        }
 
         middleware.onReasoning(agent, runtimeContext, input, next)
 

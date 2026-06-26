@@ -1,9 +1,6 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
-import com.agnetix.harnax.agent.chat.MessageLog
-import com.agnetix.harnax.agent.chat.UserMessageLog
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
-import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
@@ -12,7 +9,6 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.ToolInfo
-import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.harness.HarnessAgentLauncher

@@ -19,6 +19,7 @@ import org.mockito.Mockito.*
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
 import java.util.function.Function
+import kotlin.jvm.java
 
 class ProcessLogMiddlewareTest {
 
@@ -100,9 +101,11 @@ class ProcessLogMiddlewareTest {
                 .expectNextCount(1)
                 .verifyComplete()
 
-            assertTrue(capturedLogs.any {
-                it.message.contains("Tool 'search_web' completed") && it.message.contains("state=SUCCESS")
-            })
+            assertTrue(
+                capturedLogs.any {
+                    it.message.contains("Tool 'search_web' completed") && it.message.contains("state=SUCCESS")
+                },
+            )
         }
 
         @Test
@@ -119,9 +122,11 @@ class ProcessLogMiddlewareTest {
                 .expectNextCount(1)
                 .verifyComplete()
 
-            assertTrue(capturedLogs.any {
-                it.message.contains("Tool 'code_exec' output: 'Hello World'")
-            })
+            assertTrue(
+                capturedLogs.any {
+                    it.message.contains("Tool 'code_exec' output: 'Hello World'")
+                },
+            )
         }
 
         @Test
@@ -190,12 +195,16 @@ class ProcessLogMiddlewareTest {
             StepVerifier.create(middleware.onActing(agent, runtimeContext, input, next))
                 .verifyComplete()
 
-            assertTrue(capturedLogs.any {
-                it.message.contains("Call tool: 'search' with input 'query=test'")
-            })
-            assertTrue(capturedLogs.any {
-                it.message.contains("Call tool: 'calculate' with input 'expr=1+1'")
-            })
+            assertTrue(
+                capturedLogs.any {
+                    it.message.contains("Call tool: 'search' with input 'query=test'")
+                },
+            )
+            assertTrue(
+                capturedLogs.any {
+                    it.message.contains("Call tool: 'calculate' with input 'expr=1+1'")
+                },
+            )
         }
 
         @Test

@@ -6,8 +6,8 @@ import com.agnetix.harnax.agent.chat.UserMessageLog
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
-import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -19,7 +19,6 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import reactor.core.publisher.Flux
 import tools.jackson.databind.ObjectMapper
 
 /**

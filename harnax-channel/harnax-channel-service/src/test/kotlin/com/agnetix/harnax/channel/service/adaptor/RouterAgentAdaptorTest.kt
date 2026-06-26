@@ -7,9 +7,9 @@ import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.service.client.RouterClient
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.flow.flow
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -75,12 +75,14 @@ class RouterAgentAdaptorTest {
         @Test
         fun `process sends ChatAgentRequest to router and returns response`() = runBlocking {
             val chatResponse = ChatResponse(sessionId = "session-1", content = "AI reply")
-            `when`(routerClient.sendToAgent(
-                sessionId = "session-1",
-                agentId = 1L,
-                message = "hello",
-                imageUrls = emptyList(),
-            )).thenReturn(chatResponse)
+            `when`(
+                routerClient.sendToAgent(
+                    sessionId = "session-1",
+                    agentId = 1L,
+                    message = "hello",
+                    imageUrls = emptyList(),
+                ),
+            ).thenReturn(chatResponse)
 
             val context = buildContext(
                 agentRequest = ChatAgentRequest(sessionId = "session-1", message = "hello"),
@@ -95,12 +97,14 @@ class RouterAgentAdaptorTest {
         @Test
         fun `process sends CommandAgentRequest to router`() = runBlocking {
             val commandResponse = CommandResponse.success("session-1", message = "Cleared")
-            `when`(routerClient.sendCommand(
-                sessionId = "session-1",
-                agentId = 1L,
-                command = CommandType.CLEAR,
-                args = "",
-            )).thenReturn(commandResponse)
+            `when`(
+                routerClient.sendCommand(
+                    sessionId = "session-1",
+                    agentId = 1L,
+                    command = CommandType.CLEAR,
+                    args = "",
+                ),
+            ).thenReturn(commandResponse)
 
             val context = buildContext(
                 agentRequest = CommandAgentRequest(
@@ -118,12 +122,14 @@ class RouterAgentAdaptorTest {
         @Test
         fun `process falls back to message content when no agentRequest`() = runBlocking {
             val chatResponse = ChatResponse(sessionId = "session-1", content = "Fallback reply")
-            `when`(routerClient.sendToAgent(
-                sessionId = "session-1",
-                agentId = 1L,
-                message = "hello from channel",
-                imageUrls = emptyList(),
-            )).thenReturn(chatResponse)
+            `when`(
+                routerClient.sendToAgent(
+                    sessionId = "session-1",
+                    agentId = 1L,
+                    message = "hello from channel",
+                    imageUrls = emptyList(),
+                ),
+            ).thenReturn(chatResponse)
 
             val context = buildContext(content = "hello from channel")
 
@@ -135,12 +141,14 @@ class RouterAgentAdaptorTest {
         @Test
         fun `process handles CommandResponse with null message`() = runBlocking {
             val commandResponse = CommandResponse.success("session-1", message = null)
-            `when`(routerClient.sendCommand(
-                sessionId = "session-1",
-                agentId = 1L,
-                command = CommandType.INTERRUPT,
-                args = "",
-            )).thenReturn(commandResponse)
+            `when`(
+                routerClient.sendCommand(
+                    sessionId = "session-1",
+                    agentId = 1L,
+                    command = CommandType.INTERRUPT,
+                    args = "",
+                ),
+            ).thenReturn(commandResponse)
 
             val context = buildContext(
                 agentRequest = CommandAgentRequest(
@@ -248,10 +256,12 @@ class RouterAgentAdaptorTest {
 
         @Test
         fun `streamProcess falls back to message content when no agentRequest`() = runBlocking {
-            `when`(routerClient.streamRequest(any(), any())).thenReturn(flow {
-                emit(StreamTextChatEvent("ok", true, null))
-                emit(EndEventChatEvent())
-            })
+            `when`(routerClient.streamRequest(any(), any())).thenReturn(
+                flow {
+                    emit(StreamTextChatEvent("ok", true, null))
+                    emit(EndEventChatEvent())
+                },
+            )
 
             val context = buildContext(content = "raw message")
 
@@ -306,9 +316,11 @@ class RouterAgentAdaptorTest {
 
         @Test
         fun `streamProcess handles only EndEvent`() = runBlocking {
-            `when`(routerClient.streamRequest(any(), any())).thenReturn(flow {
-                emit(EndEventChatEvent())
-            })
+            `when`(routerClient.streamRequest(any(), any())).thenReturn(
+                flow {
+                    emit(EndEventChatEvent())
+                },
+            )
 
             val context = buildContext(
                 agentRequest = ChatAgentRequest(sessionId = "session-1", message = "end-only"),

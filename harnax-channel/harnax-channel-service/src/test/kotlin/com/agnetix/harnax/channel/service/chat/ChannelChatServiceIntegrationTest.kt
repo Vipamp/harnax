@@ -162,11 +162,13 @@ class ChannelChatServiceIntegrationTest {
 
         @Test
         fun `streaming mode sends each text fragment`() = runBlocking {
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(AgentStreamEvent.TextStreamEvent("Hello ", false))
-                emit(AgentStreamEvent.TextStreamEvent("World", true))
-                emit(AgentStreamEvent.EndStreamEvent(fullContent = "Hello World"))
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(AgentStreamEvent.TextStreamEvent("Hello ", false))
+                    emit(AgentStreamEvent.TextStreamEvent("World", true))
+                    emit(AgentStreamEvent.EndStreamEvent(fullContent = "Hello World"))
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
@@ -176,11 +178,13 @@ class ChannelChatServiceIntegrationTest {
 
         @Test
         fun `streaming mode sends typing indicator on thinking event`() = runBlocking {
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(AgentStreamEvent.ThinkingStreamEvent("Let me think...", false))
-                emit(AgentStreamEvent.TextStreamEvent("The answer is 42.", true))
-                emit(AgentStreamEvent.EndStreamEvent())
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(AgentStreamEvent.ThinkingStreamEvent("Let me think...", false))
+                    emit(AgentStreamEvent.TextStreamEvent("The answer is 42.", true))
+                    emit(AgentStreamEvent.EndStreamEvent())
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
@@ -190,15 +194,17 @@ class ChannelChatServiceIntegrationTest {
 
         @Test
         fun `streaming mode sends error message on error event`() = runBlocking {
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(
-                    AgentStreamEvent.ErrorStreamEvent(
-                        code = "6001",
-                        message = "Agent failed",
-                        requestId = "req-abc",
-                    ),
-                )
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(
+                        AgentStreamEvent.ErrorStreamEvent(
+                            code = "6001",
+                            message = "Agent failed",
+                            requestId = "req-abc",
+                        ),
+                    )
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
@@ -211,11 +217,13 @@ class ChannelChatServiceIntegrationTest {
 
         @Test
         fun `streaming mode saves assistant reply after stream completes`() = runBlocking {
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(AgentStreamEvent.TextStreamEvent("Part1", false))
-                emit(AgentStreamEvent.TextStreamEvent("Part2", true))
-                emit(AgentStreamEvent.EndStreamEvent())
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(AgentStreamEvent.TextStreamEvent("Part1", false))
+                    emit(AgentStreamEvent.TextStreamEvent("Part2", true))
+                    emit(AgentStreamEvent.EndStreamEvent())
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
@@ -286,7 +294,10 @@ class ChannelChatServiceIntegrationTest {
             )
 
             chatService.chat(
-                buildMessage(), channel, agentAdaptor, channelAdaptor,
+                buildMessage(),
+                channel,
+                agentAdaptor,
+                channelAdaptor,
                 agentRequest = chatRequest,
             )
 
@@ -307,7 +318,10 @@ class ChannelChatServiceIntegrationTest {
             )
 
             chatService.chat(
-                buildMessage("/clear"), channel, agentAdaptor, channelAdaptor,
+                buildMessage("/clear"),
+                channel,
+                agentAdaptor,
+                channelAdaptor,
                 agentRequest = cmdRequest,
             )
 
@@ -350,10 +364,12 @@ class ChannelChatServiceIntegrationTest {
         @Test
         fun `streaming mode calls onAfterProcess after stream ends`() = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(true)
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(AgentStreamEvent.TextStreamEvent("Done", true))
-                emit(AgentStreamEvent.EndStreamEvent())
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(AgentStreamEvent.TextStreamEvent("Done", true))
+                    emit(AgentStreamEvent.EndStreamEvent())
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
@@ -408,12 +424,14 @@ class ChannelChatServiceIntegrationTest {
         @Test
         fun `streaming mode merges fragments into fullContent for session save`() = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(true)
-            `when`(agentAdaptor.streamProcess(any())).thenReturn(flow {
-                emit(AgentStreamEvent.TextStreamEvent("Hello ", false))
-                emit(AgentStreamEvent.TextStreamEvent("World", false))
-                emit(AgentStreamEvent.TextStreamEvent("!", true))
-                emit(AgentStreamEvent.EndStreamEvent())
-            })
+            `when`(agentAdaptor.streamProcess(any())).thenReturn(
+                flow {
+                    emit(AgentStreamEvent.TextStreamEvent("Hello ", false))
+                    emit(AgentStreamEvent.TextStreamEvent("World", false))
+                    emit(AgentStreamEvent.TextStreamEvent("!", true))
+                    emit(AgentStreamEvent.EndStreamEvent())
+                },
+            )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
