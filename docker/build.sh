@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # Harnax Docker Build Script
-# Usage: ./docker/build.sh [personal|enterprise|public]
+# Usage: ./docker/build.sh
 
 set -e
 
-EDITION=${1:-personal}
-
-echo "🚀 Starting build for $EDITION edition..."
+echo "🚀 Starting build..."
 
 # Check if Maven is installed
 if ! command -v mvn &> /dev/null; then
@@ -33,7 +31,7 @@ echo "✅ All dependencies are installed."
 echo ""
 echo "📦 Step 1: Building backend JAR..."
 mvn spotless:apply
-mvn clean package -pl harnax-admin -am -P$EDITION -DskipTests
+mvn clean package -pl harnax-admin -am -DskipTests
 
 # Copy JAR to docker/dist/backend/
 echo "📋 Copying JAR to docker/dist/backend/..."
@@ -44,7 +42,7 @@ echo "✅ Backend JAR built successfully."
 # Step 1.5: Build router JAR
 echo ""
 echo "📦 Step 1.5: Building router JAR..."
-mvn clean package -pl harnax-session-router -am -P$EDITION -DskipTests
+mvn clean package -pl harnax-session-router -am -DskipTests
 
 # Copy JAR to docker/dist/router/
 echo "📋 Copying JAR to docker/dist/router/..."
@@ -55,7 +53,7 @@ echo "✅ Router JAR built successfully."
 # Step 1.6: Build agent-service JAR
 echo ""
 echo "📦 Step 1.6: Building agent-service JAR..."
-mvn clean package -pl harnax-agent/harnax-agent-service -am -P$EDITION -DskipTests
+mvn clean package -pl harnax-agent/harnax-agent-service -am -DskipTests
 
 # Copy JAR to docker/dist/agent-service/
 echo "📋 Copying JAR to docker/dist/agent-service/..."
@@ -68,7 +66,7 @@ echo ""
 echo "🎨 Step 2: Building frontend..."
 cd harnax-webui
 npm install
-npm run build:$EDITION
+npm run build
 
 # Copy frontend files to docker/dist/frontend/
 echo "📋 Copying frontend files to docker/dist/frontend/..."
@@ -80,20 +78,23 @@ echo "✅ Frontend built successfully."
 # Step 3: Build Docker images
 echo ""
 echo "🐳 Step 3: Building Docker images..."
-docker build -f docker/Dockerfile.backend -t harnax-backend:$EDITION .
-docker build -f docker/Dockerfile.router -t harnax-router:$EDITION .
-docker build -f docker/Dockerfile.agent-service -t harnax-agent-service:$EDITION .
-docker build -f docker/Dockerfile.frontend -t harnax-frontend:$EDITION .
+docker build -f docker/Dockerfile.backend -t harnax-backend:latest .
+docker build -f docker/Dockerfile.router -t harnax-router:latest .
+docker build -f docker/Dockerfile.agent-service -t harnax-agent-service:latest .
+docker build -f docker/Dockerfile.frontend -t harnax-frontend:latest .
 echo "✅ Docker images built successfully."
 
 echo ""
 echo "🎉 Build complete!"
 echo ""
-echo "To start the services, run:"
-echo "  docker-compose -f docker/docker-compose.$EDITION.yml up -d"
+echo "To start the services (local mode), run:"
+echo "  docker-compose -f docker/docker-compose.personal.yml up -d"
+echo ""
+echo "To start the services (production mode), run:"
+echo "  docker-compose -f docker/docker-compose.prod.yml up -d"
 echo ""
 echo "To view logs:"
-echo "  docker-compose -f docker/docker-compose.$EDITION.yml logs -f"
+echo "  docker-compose -f docker/docker-compose.personal.yml logs -f"
 echo ""
 echo "To stop the services:"
-echo "  docker-compose -f docker/docker-compose.$EDITION.yml down"
+echo "  docker-compose -f docker/docker-compose.personal.yml down"

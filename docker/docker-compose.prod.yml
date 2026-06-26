@@ -6,12 +6,12 @@ version: '3.8'
 services:
   # Backend Service (harnax-admin)
   backend:
-    image: harnax-backend:${EDITION:-prod}
+    image: harnax-backend:latest
     container_name: harnax-backend
     restart: always
     environment:
       # Spring Boot Configuration
-      SPRING_PROFILES_ACTIVE: ${EDITION:-prod}
+      SPRING_PROFILES_ACTIVE: prod
       # Database Configuration (external database)
       SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
@@ -63,7 +63,7 @@ services:
 
   # Agent Service (distributed agent runtime with sandbox)
   agent-service:
-    image: harnax-agent-service:${EDITION:-prod}
+    image: harnax-agent-service:latest
     container_name: harnax-agent-service
     restart: always
     environment:
@@ -125,7 +125,7 @@ services:
 
   # Frontend Service
   frontend:
-    image: harnax-frontend:${EDITION:-prod}
+    image: harnax-frontend:latest
     container_name: harnax-frontend
     restart: always
     ports:
@@ -179,7 +179,7 @@ services:
   # Router Service (session routing, health checks, SSE proxy)
   # 生产环境使用 MySQL + Redis 集群模式
   router:
-    image: harnax-router:${EDITION:-prod}
+    image: harnax-router:latest
     container_name: harnax-router
     restart: always
     environment:

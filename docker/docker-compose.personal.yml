@@ -59,15 +59,15 @@ services:
 
   # Backend Service (harnax-admin)
   backend:
-    image: harnax-backend:personal
+    image: harnax-backend:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: harnax-backend-personal
+    container_name: harnax-backend
     restart: unless-stopped
     environment:
       # Spring Boot Configuration
-      SPRING_PROFILES_ACTIVE: personal
+      SPRING_PROFILES_ACTIVE: default
       # Database Configuration
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: harnax
@@ -111,11 +111,11 @@ services:
 
   # Agent Service (distributed agent runtime with sandbox)
   agent-service:
-    image: harnax-agent-service:personal
+    image: harnax-agent-service:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile.agent-service
-    container_name: harnax-agent-service-personal
+    container_name: harnax-agent-service
     restart: unless-stopped
     environment:
       # Database Configuration (business data)
@@ -169,13 +169,13 @@ services:
       - harnax-network
 
   # Router Service (session routing, health checks, SSE proxy)
-  # 个人版使用 SQLite + local 缓存模式
+  # 本地模式使用 SQLite + local 缓存
   router:
-    image: harnax-router:personal
+    image: harnax-router:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile.router
-    container_name: harnax-router-personal
+    container_name: harnax-router
     restart: unless-stopped
     environment:
       # 本地模式：使用 SQLite 存储调用日志
@@ -210,11 +210,11 @@ services:
 
   # Frontend Service
   frontend:
-    image: harnax-frontend:personal
+    image: harnax-frontend:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile.frontend
-    container_name: harnax-frontend-personal
+    container_name: harnax-frontend
     restart: unless-stopped
     ports:
       - "80:80"
