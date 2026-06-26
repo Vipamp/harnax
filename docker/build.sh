@@ -52,19 +52,28 @@ mkdir -p docker/dist/router
 cp harnax-session-router/target/harnax-session-router-*.jar docker/dist/router/
 echo "✅ Router JAR built successfully."
 
+# Step 1.6: Build agent-service JAR
+echo ""
+echo "📦 Step 1.6: Building agent-service JAR..."
+mvn clean package -pl harnax-agent/harnax-agent-service -am -P$EDITION -DskipTests
+
+# Copy JAR to docker/dist/agent-service/
+echo "📋 Copying JAR to docker/dist/agent-service/..."
+mkdir -p docker/dist/agent-service
+cp harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar docker/dist/agent-service/
+echo "✅ Agent-service JAR built successfully."
+
 # Step 2: Build frontend
 echo ""
 echo "🎨 Step 2: Building frontend..."
 cd harnax-webui
+npm install
 npm run build:$EDITION
 
 # Copy frontend files to docker/dist/frontend/
 echo "📋 Copying frontend files to docker/dist/frontend/..."
 cd ..
 mkdir -p docker/dist/frontend
-cd harnax-webui
-npm install
-cd ..
 cp -r harnax-webui/dist/* docker/dist/frontend/
 echo "✅ Frontend built successfully."
 
@@ -73,6 +82,7 @@ echo ""
 echo "🐳 Step 3: Building Docker images..."
 docker build -f docker/Dockerfile.backend -t harnax-backend:$EDITION .
 docker build -f docker/Dockerfile.router -t harnax-router:$EDITION .
+docker build -f docker/Dockerfile.agent-service -t harnax-agent-service:$EDITION .
 docker build -f docker/Dockerfile.frontend -t harnax-frontend:$EDITION .
 echo "✅ Docker images built successfully."
 

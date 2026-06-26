@@ -1,29 +1,37 @@
 # Harnax Docker Compose - Production Environment
-# Includes: Backend + Router + Redis + Frontend (uses external database)
+# Includes: Backend + Router + Agent-Service + Redis + Frontend (uses external database and MinIO)
 
 version: '3.8'
 
 services:
-  # Backend Service
+  # Backend Service (harnax-admin)
   backend:
-    image: harnax-backend:personal
+    image: harnax-backend:${EDITION:-prod}
     container_name: harnax-backend
     restart: always
     environment:
       # Spring Boot Configuration
-      SPRING_PROFILES_ACTIVE: ${EDITION:-personal}
+      SPRING_PROFILES_ACTIVE: ${EDITION:-prod}
       # Database Configuration (external database)
       SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required in production}
       # Session Database Configuration
       SESSION_JDBC_URL: ${SESSION_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}}
       SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax}
       SESSION_USERNAME: ${SESSION_DB_USERNAME:-${DB_USERNAME:-harnax}}
-      SESSION_PASSWORD: ${SESSION_DB_PASSWORD:-${DB_PASSWORD:-}}
+      SESSION_PASSWORD: ${SESSION_DB_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required in production}}
       # Flyway Configuration
       SPRING_FLYWAY_ENABLED: "true"
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required in production}
+      # Internal API Secret
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:?ADMIN_INTERNAL_API_SECRET is required in production}
+      # Auth Secret
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:?HARNAX_AUTH_SECRET is required in production}
+      # Router URL
+      HARNAX_ROUTER_URL: http://router:8081
       # JVM Configuration
       JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
       # Log Configuration
@@ -53,9 +61,71 @@ services:
     networks:
       - harnax-network
 
+  # Agent Service (distributed agent runtime with sandbox)
+  agent-service:
+    image: harnax-agent-service:${EDITION:-prod}
+    container_name: harnax-agent-service
+    restart: always
+    environment:
+      # Database Configuration (business data)
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://db-host:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required in production}
+      # Session Database Configuration (agent state, separate database)
+      SESSION_JDBC_URL: ${SESSION_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai}}
+      SESSION_USERNAME: ${SESSION_DB_USERNAME:-${DB_USERNAME:-harnax}}
+      SESSION_PASSWORD: ${SESSION_DB_PASSWORD:-${DB_PASSWORD:?DB_PASSWORD is required in production}}
+      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-agentscope}
+      # MinIO Configuration (external MinIO)
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:?MINIO_ENDPOINT is required in production}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?MINIO_ACCESS_KEY is required in production}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required in production}
+      # Sandbox Configuration
+      SANDBOX_ENABLED: "true"
+      SANDBOX_IMAGE: python:3.11-slim
+      SANDBOX_KEEP_ALIVE: "true"
+      # Router Configuration
+      ROUTER_SERVICE_URL: http://router:8081
+      AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}
+      # Auth Configuration
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:?HARNAX_AUTH_SECRET is required in production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required in production}
+      # Local temp directory
+      LOCAL_TMP_DIR: /tmp/harnax-agent
+      # JVM Configuration
+      JAVA_OPTS: -Xms1g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError
+      # Log Configuration
+      LOG_LEVEL: INFO
+    ports:
+      - "8082:8082"
+    volumes:
+      - /var/log/harnax-agent:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for sandbox management
+      - /etc/localtime:/etc/localtime:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 2048M
+        reservations:
+          cpus: '2.0'
+          memory: 1024M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
   # Frontend Service
   frontend:
-    image: harnax-frontend:personal
+    image: harnax-frontend:${EDITION:-prod}
     container_name: harnax-frontend
     restart: always
     ports:
@@ -67,6 +137,7 @@ services:
     depends_on:
       - backend
       - router
+      - agent-service
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
@@ -108,7 +179,7 @@ services:
   # Router Service (session routing, health checks, SSE proxy)
   # 生产环境使用 MySQL + Redis 集群模式
   router:
-    image: harnax-router:personal
+    image: harnax-router:${EDITION:-prod}
     container_name: harnax-router
     restart: always
     environment:
@@ -117,13 +188,13 @@ services:
       # Database (MySQL for api_call_log)
       DB_URL: ${ROUTER_DB_URL:-${DB_URL:-jdbc:mysql://db-host:3306/harnax_router?useSSL=true&serverTimezone=Asia/Shanghai}}
       DB_USERNAME: ${DB_USERNAME:-harnax}
-      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required in production}
       # Redis
       CACHE_TYPE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
       # Auth
-      SERVICE_ID: router-0
+      SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:?HARNAX_AUTH_SECRET is required in production}
       # Admin service
       ADMIN_SERVICE_URL: http://backend:8080

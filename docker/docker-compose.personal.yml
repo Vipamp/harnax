@@ -1,5 +1,5 @@
 # Harnax Docker Compose - Personal Edition (Development)
-# Includes: MySQL + Redis + Backend + Router + Frontend
+# Includes: MySQL + MinIO + Backend + Router + Agent-Service + Frontend
 
 version: '3.8'
 
@@ -18,7 +18,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      # MySQL data directory - can be configured via environment variable
+      # MySQL data directory
       - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
       # Database initialization scripts
       - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
@@ -35,7 +35,29 @@ services:
     networks:
       - harnax-network
 
-  # Backend Service
+  # MinIO Object Storage (for agent sandbox snapshots and distributed storage)
+  minio:
+    image: minio/minio:latest
+    container_name: harnax-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - harnax-network
+
+  # Backend Service (harnax-admin)
   backend:
     image: harnax-backend:personal
     build:
@@ -60,6 +82,14 @@ services:
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
       LOCAL_TIME_ZONE: Asia/Shanghai
       LOCAL_TMP_DIR: ${LOCAL_TMP_DIR:-/tmp/harnax}
+      # JWT Configuration
+      JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+      # Internal API Secret
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # Auth Secret
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # Router URL
+      HARNAX_ROUTER_URL: http://router:8081
       # Log Configuration
       LOG_LEVEL: DEBUG
     ports:
@@ -79,47 +109,67 @@ services:
     networks:
       - harnax-network
 
-  # Frontend Service
-  frontend:
-    image: harnax-frontend:personal
+  # Agent Service (distributed agent runtime with sandbox)
+  agent-service:
+    image: harnax-agent-service:personal
     build:
       context: ..
-      dockerfile: docker/Dockerfile.frontend
-    container_name: harnax-frontend-personal
+      dockerfile: docker/Dockerfile.agent-service
+    container_name: harnax-agent-service-personal
     restart: unless-stopped
+    environment:
+      # Database Configuration (business data)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: harnax
+      SPRING_DATASOURCE_PASSWORD: harnax123
+      # Session Database Configuration (agent state, separate database)
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_USERNAME: harnax
+      SESSION_PASSWORD: harnax123
+      SESSION_DATABASE_NAME: agentscope
+      # MinIO Configuration
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # Sandbox Configuration
+      SANDBOX_ENABLED: "true"
+      SANDBOX_IMAGE: python:3.11-slim
+      SANDBOX_KEEP_ALIVE: "true"
+      # Router Configuration
+      ROUTER_SERVICE_URL: http://router:8081
+      AGENT_INSTANCE_ID: agent-service-1
+      # Auth Configuration
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+      # Local temp directory
+      LOCAL_TMP_DIR: /tmp/harnax-agent
+      # Log Configuration
+      LOG_LEVEL: DEBUG
     ports:
-      - "80:80"
-    depends_on:
-      - backend
-      - router
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-    networks:
-      - harnax-network
-
-  # Redis (shared cache for router instances)
-  redis:
-    image: redis:7-alpine
-    container_name: harnax-redis-personal
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
+      - "8082:8082"
     volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+      - agent-service-logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for sandbox management
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      router:
+        condition: service_started
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
       retries: 3
+      start_period: 90s
     networks:
       - harnax-network
 
   # Router Service (session routing, health checks, SSE proxy)
-  # 个人版使用 SQLite + local 缓存模式，无需 MySQL 和 Redis 依赖
+  # 个人版使用 SQLite + local 缓存模式
   router:
     image: harnax-router:personal
     build:
@@ -158,14 +208,38 @@ services:
     networks:
       - harnax-network
 
+  # Frontend Service
+  frontend:
+    image: harnax-frontend:personal
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    container_name: harnax-frontend-personal
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - router
+      - agent-service
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - harnax-network
+
 volumes:
   backend-logs:
+    driver: local
+  agent-service-logs:
     driver: local
   router-logs:
     driver: local
   router-data:
     driver: local
-  redis-data:
+  minio-data:
     driver: local
 
 networks:

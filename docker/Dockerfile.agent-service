@@ -1,0 +1,48 @@
+# Harnax Agent Service Dockerfile - Single Stage Build
+# Uses locally built JAR package, no compilation inside Docker
+
+FROM eclipse-temurin:21-jre
+
+# Set timezone
+ENV TZ=Asia/Shanghai
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Install Docker CLI for sandbox management
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (but keep root for Docker access)
+RUN groupadd -r harnax && useradd -r -g harnax harnax
+
+WORKDIR /app
+
+# Copy JAR file from docker/dist/agent-service/
+COPY docker/dist/agent-service/harnax-agent-service-*.jar app.jar
+
+# Create log and temp directories
+RUN mkdir -p /app/logs /tmp/harnax-agent && chown -R harnax:harnax /app
+
+# Add docker group to harnax user for Docker socket access
+RUN usermod -aG docker harnax || true
+
+# Switch to non-root user
+USER harnax
+
+# Expose port
+EXPOSE 8082
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+  CMD wget -qO- http://localhost:8082/actuator/health || exit 1
+
+# JVM options optimization
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
+
+# Start application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+
+# Metadata
+LABEL maintainer="agnetix"
+LABEL version="1.0.0"
+LABEL description="Harnax Agent Service - Distributed Agent Runtime"

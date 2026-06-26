@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${ADMIN_PORT:8080}
 
 spring:
   application:
@@ -7,13 +7,13 @@ spring:
 
   # Datasource configuration
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://172.20.10.5:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      minimum-idle: 5
-      maximum-pool-size: 20
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      maximum-pool-size: ${DB_POOL_SIZE:20}
       idle-timeout: 30000
       pool-name: HarnaxHikariCP
       max-lifetime: 1800000
@@ -36,8 +36,10 @@ spring:
     sql-migration-prefixes: V
     repeatable-sql-migration-prefixes: R
 
+  # Quartz Configuration
+  # 注意：多实例部署时需要改为 jdbc 模式或使用分布式锁防止重复执行
   quartz:
-    job-store-type: memory
+    job-store-type: ${QUARTZ_JOB_STORE:memory}
     properties:
       org:
         quartz:
@@ -48,7 +50,7 @@ spring:
             class: org.quartz.simpl.RAMJobStore
           threadPool:
             class: org.quartz.simpl.SimpleThreadPool
-            threadCount: 10
+            threadCount: ${QUARTZ_THREAD_COUNT:10}
             threadPriority: 5
 
 
@@ -58,7 +60,7 @@ mybatis:
   type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
 # Springdoc OpenAPI (Swagger) configuration
 springdoc:
@@ -74,16 +76,17 @@ springdoc:
 
 logging:
   level:
-    root: INFO
-  com.example.harnax.admin: DEBUG
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.agnetix.harnax: ${LOG_LEVEL:INFO}
 
-# JWT configuration
+# JWT configuration (must match agent-service)
 jwt:
-  secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
-  expiration: 7200000 # 2 hours (milliseconds)
+  secret: ${JWT_SECRET:harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+  expiration: ${JWT_EXPIRATION:7200000}
 
+# Session database configuration (for admin's own session storage)
 session:
-  jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://172.20.10.5:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+  jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
   database-name: ${SESSION_DATABASE_NAME:harnax_admin}
   username: ${SESSION_USERNAME:root}
   password: ${SESSION_PASSWORD:123456}
@@ -97,11 +100,15 @@ local:
 admin:
   internal-api:
     secret: ${ADMIN_INTERNAL_API_SECRET:change-me-in-production-min-32-chars!!}
+  # Base URL for generating callback URLs (used by channel service)
+  base-url: ${APP_BASE_URL:http://localhost:8080}
 
 # UnifiedAuthFilter disabled in admin - admin uses its own JWT auth (JwtAuthenticationFilter)
 # Only channel/router/agent-service use harnax-auth's UnifiedAuthFilter
 harnax:
   auth:
     enabled: false
+    internal:
+      shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
   router:
     url: ${HARNAX_ROUTER_URL:http://localhost:8081}

@@ -1,5 +1,5 @@
 server:
-  port: 8082
+  port: ${AGENT_SERVICE_PORT:8082}
 
 spring:
   application:
@@ -7,13 +7,13 @@ spring:
   
   # Database Configuration
   datasource:
-    url: jdbc:mysql://172.20.10.5:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
       connection-timeout: 30000
 
 # MyBatis Configuration
@@ -22,45 +22,45 @@ mybatis:
   type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
-# Session Configuration
+# Session Configuration (separate database for agent state)
 session:
-  jdbc-url: jdbc:mysql://172.20.10.5:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-  username: root
-  password: 123456
-  database-name: agentscope
+  jdbc-url: ${SESSION_JDBC_URL:jdbc:mysql://localhost:3306/agentscope?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+  username: ${SESSION_USERNAME:root}
+  password: ${SESSION_PASSWORD:123456}
+  database-name: ${SESSION_DATABASE_NAME:agentscope}
 
 # Local Configuration
 local:
-  tmp-dir: /tmp/harnax-agent
+  tmp-dir: ${LOCAL_TMP_DIR:/tmp/harnax-agent}
 
 # Harness Configuration (distributed agent runtime)
 harness:
-  enable-workspace-context: true
-  enable-memory-hooks: false
-  enable-session-persistence: true
+  enable-workspace-context: ${HARNESS_ENABLE_WORKSPACE_CONTEXT:true}
+  enable-memory-hooks: ${HARNESS_ENABLE_MEMORY_HOOKS:false}
+  enable-session-persistence: ${HARNESS_ENABLE_SESSION_PERSISTENCE:true}
   minio:
-    enabled: true
-    endpoint: http://172.20.10.5:9000
-    access-key: minioadmin
-    secret-key: minioadmin
-    snapshot-bucket: harnax-snapshots
-    store-bucket: harnax-store
-    snapshot-prefix: snapshots/
-    store-prefix: store/
+    enabled: ${MINIO_ENABLED:false}
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    snapshot-bucket: ${MINIO_SNAPSHOT_BUCKET:harnax-snapshots}
+    store-bucket: ${MINIO_STORE_BUCKET:harnax-store}
+    snapshot-prefix: ${MINIO_SNAPSHOT_PREFIX:snapshots/}
+    store-prefix: ${MINIO_STORE_PREFIX:store/}
   sandbox:
-    enabled: true
-    image: python:3.11-slim
-    workspace-root: /workspace
-    isolation-scope: SESSION
-    keep-alive: true
+    enabled: ${SANDBOX_ENABLED:false}
+    image: ${SANDBOX_IMAGE:python:3.11-slim}
+    workspace-root: ${SANDBOX_WORKSPACE_ROOT:/workspace}
+    isolation-scope: ${SANDBOX_ISOLATION_SCOPE:SESSION}
+    keep-alive: ${SANDBOX_KEEP_ALIVE:true}
 
 # Logging Configuration
 logging:
   level:
-    com.agnetix.harnax: DEBUG
-    org.mybatis: DEBUG
+    com.agnetix.harnax: ${LOG_LEVEL:INFO}
+    org.mybatis: ${MYBATIS_LOG_LEVEL:INFO}
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
@@ -73,14 +73,18 @@ harnax:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
       token-ttl-seconds: 300
 
+# JWT configuration (must match admin service)
 jwt:
-  secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
-  expiration: 7200000 # 2 hours (milliseconds)
+  secret: ${JWT_SECRET:harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
+  expiration: ${JWT_EXPIRATION:7200000}
 
+# Router configuration
 router:
   service:
-    url: http://172.20.10.5:8081
+    url: ${ROUTER_SERVICE_URL:http://localhost:8081}
 
+# Agent service configuration
 agent:
   service:
-    instance-id: agent-service-1
+    instance-id: ${AGENT_INSTANCE_ID:agent-service-1}
+    heartbeat-interval-ms: ${AGENT_HEARTBEAT_INTERVAL:10000}
