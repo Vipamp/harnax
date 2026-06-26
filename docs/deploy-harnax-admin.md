@@ -11,6 +11,17 @@ harnax-admin 是管理后台服务，提供用户管理、API Key 管理、会�
 
 ---
 
+## 系统部署总览
+
+| 服务 | 本地模式外部依赖 | 集群模式外部依赖 | 多实例就绪 |
+|------|----------------|----------------|-----------|
+| harnax-admin | MySQL | MySQL | 否（有状态组件） |
+| harnax-session-router | 无（SQLite + 内存） | MySQL + Redis | 是 |
+| harnax-agent-service | MySQL + Docker | MySQL + Docker + MinIO | 是 |
+| harnax-webui | 无（静态文件） | 无 | 是 |
+
+---
+
 ## 环境依赖
 
 | 组件 | 本地模式 | 集群模式 | 说明 |
