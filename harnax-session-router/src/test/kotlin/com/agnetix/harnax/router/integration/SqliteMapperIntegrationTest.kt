@@ -47,13 +47,18 @@ class SqliteMapperIntegrationTest {
         val configuration = Configuration().apply {
             isMapUnderscoreToCamelCase = true
             environment = Environment("test", JdbcTransactionFactory(), dataSource)
-            addMapper(ApiCallLogMapper::class.java)
         }
 
-        // 加载 XML mapper
-        val resource = this::class.java.classLoader.getResourceAsStream("mapper/ApiCallLogMapper.xml")
-        if (resource != null) {
-            configuration.addMapper(ApiCallLogMapper::class.java)
+        // Load XML mapper — parse() auto-registers the interface via the XML namespace
+        val xmlResource = this::class.java.classLoader.getResourceAsStream("mapper/ApiCallLogMapper.xml")
+        if (xmlResource != null) {
+            val xmlParser = org.apache.ibatis.builder.xml.XMLMapperBuilder(
+                xmlResource,
+                configuration,
+                "mapper/ApiCallLogMapper.xml",
+                configuration.sqlFragments,
+            )
+            xmlParser.parse()
         }
 
         val sqlSessionFactory = SqlSessionFactoryBuilder().build(configuration)
