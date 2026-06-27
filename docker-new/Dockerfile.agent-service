@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user (but keep root for Docker access)
+# Create non-root user for file ownership, but run as root for Docker socket access
+# (Required for sandbox container management via Docker-in-Docker)
 RUN groupadd -r harnax && useradd -r -g harnax harnax
 
 WORKDIR /app
@@ -22,13 +23,10 @@ WORKDIR /app
 COPY docker-new/dist/agent-service/harnax-agent-service-*.jar app.jar
 
 # Create log and temp directories
-RUN mkdir -p /app/logs /tmp/harnax-agent && chown -R harnax:harnax /app
+RUN mkdir -p /app/logs /tmp/harnax-agent && chown -R harnax:harnax /app /tmp/harnax-agent
 
-# Add docker group to harnax user for Docker socket access
-RUN usermod -aG docker harnax || true
-
-# Switch to non-root user
-USER harnax
+# NOTE: Agent-service runs as root to access Docker socket for sandbox management.
+# On Docker Desktop (macOS), /var/run/docker.sock is owned by root:root inside containers.
 
 # Expose port
 EXPOSE 8082

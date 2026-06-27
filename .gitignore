@@ -37,6 +37,7 @@ logs/
 # Docker MySQL data
 docker/data/
 docker/init/
+docker-new/data/
 
 # Environment
 .env

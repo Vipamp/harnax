@@ -110,13 +110,13 @@ services:
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
-      # Database Configuration
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      # Database Configuration (harnax_admin: business data, shared with channel-service)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Session Database Configuration
-      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax}
+      # Session Database Configuration (same as main datasource)
+      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax_admin}
       SESSION_USERNAME: ${DB_USERNAME:-harnax}
       SESSION_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Flyway Configuration
@@ -143,9 +143,9 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 60s
     deploy:
@@ -198,7 +198,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/monitor/instances"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -223,8 +223,8 @@ services:
     container_name: harnax-agent-service
     restart: always
     environment:
-      # Database Configuration (business data)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      # Database Configuration (business data, shared with admin/channel-service)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Session Database Configuration (agent state, separate database)
@@ -267,11 +267,11 @@ services:
       router:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8082' || exit 1"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 90s
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -292,8 +292,8 @@ services:
     container_name: harnax-channel-service
     restart: always
     environment:
-      # Database Configuration
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      # Database Configuration (harnax_admin: shared with admin service)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Flyway Configuration
