@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ModelMapper
@@ -13,11 +14,12 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/api/internal")
+@RequestMapping("/api/admin/internal")
 class InternalApiController(
     private val apiKeyMapper: ApiKeyMapper,
     private val sessionMapper: SessionMapper,
     private val modelMapper: ModelMapper,
+    private val aesUtil: AesUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -42,6 +44,10 @@ class InternalApiController(
         val modelName: String?,
         val tenantId: Long?,
     )
+
+    data class SystemKeyRequest(val serviceName: String)
+
+    data class SystemKeyResponse(val rawKey: String, val keyPrefix: String)
 
     @PostMapping("/api-keys/validate")
     fun validateApiKey(@RequestBody request: ApiKeyValidateRequest): ResultVo<ApiKeyValidateResponse?> {
@@ -86,5 +92,16 @@ class InternalApiController(
             tenantId = session.tenantId,
         )
         return ResultVo.success(response)
+    }
+
+    @PostMapping("/api-keys/system-key")
+    fun getSystemKey(@RequestBody request: SystemKeyRequest): ResultVo<SystemKeyResponse?> {
+        val entity = apiKeyMapper.selectSystemKeyByServiceName(request.serviceName)
+        if (entity == null) {
+            log.warn("System key not found for service: ${request.serviceName}")
+            return ResultVo.success(null)
+        }
+        val rawKey = aesUtil.decrypt(entity.rawKeyEncrypted!!)
+        return ResultVo.success(SystemKeyResponse(rawKey = rawKey, keyPrefix = entity.keyPrefix))
     }
 }

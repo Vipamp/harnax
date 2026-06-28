@@ -2,10 +2,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
 import {
+  Button,
   message,
   Modal,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -17,8 +19,12 @@ import {
   getAgentList,
 } from '@/services/ant-design-pro/channel';
 import {
+  batchGetWorkspaceStatus,
+} from '@/services/ant-design-pro/workspace';
+import {
   PlusOutlined,
   LinkOutlined,
+  CloudServerOutlined,
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
@@ -28,6 +34,7 @@ import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
 import StatusSwitch from '@/components/StatusSwitch';
 import StyledProTable from '@/components/StyledProTable';
+import WorkspaceDrawer from '@/pages/session/components/WorkspaceDrawer';
 
 const { Text, Paragraph } = Typography;
 
@@ -52,6 +59,9 @@ const ChannelManagement: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<number | undefined>(undefined);
   const [agents, setAgents] = useState<API.AgentItem[]>([]);
+  const [workspaceVisible, setWorkspaceVisible] = useState(false);
+  const [workspaceSessionId, setWorkspaceSessionId] = useState<string>();
+  const [sandboxStatusMap, setSandboxStatusMap] = useState<Record<string, boolean>>({});
   
   // 防抖定时器引用
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -93,6 +103,24 @@ const ChannelManagement: React.FC = () => {
       });
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
+      // Batch fetch sandbox status for channels with sessionId
+      const sessionsWithId = (res.data?.records || [])
+        .filter((r: API.ChannelItem) => r.sessionId)
+        .map((r: API.ChannelItem) => r.sessionId as string);
+      if (sessionsWithId.length > 0) {
+        try {
+          const statusRes = await batchGetWorkspaceStatus(sessionsWithId);
+          if (statusRes.code === 200 && statusRes.data) {
+            const map: Record<string, boolean> = {};
+            Object.entries(statusRes.data).forEach(([sid, info]) => {
+              map[sid] = info.active;
+            });
+            setSandboxStatusMap(map);
+          }
+        } catch {
+          // ignore sandbox status fetch errors
+        }
+      }
     } catch (error) {
       messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
@@ -259,6 +287,55 @@ const ChannelManagement: React.FC = () => {
       render: (text: string) => text || '-',
     },
     {
+      title: intl.formatMessage({ id: 'pages.channel.table.sessionId', defaultMessage: 'Session ID' }),
+      dataIndex: 'sessionId',
+      key: 'sessionId',
+      width: 200,
+      align: 'center' as const,
+      render: (sessionId: string) => sessionId ? (
+        <Paragraph
+          copyable={{ text: sessionId }}
+          style={{ margin: 0, maxWidth: 180, fontSize: 12, fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace' }}
+          ellipsis
+        >
+          {sessionId}
+        </Paragraph>
+      ) : '-',
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.channel.table.sandbox', defaultMessage: 'Sandbox' }),
+      dataIndex: 'sessionId',
+      key: 'sandbox',
+      width: 160,
+      align: 'center' as const,
+      render: (sessionId: string) => {
+        if (!sessionId) return '-';
+        const active = sandboxStatusMap[sessionId];
+        if (active === undefined) return <Tag>-</Tag>;
+        return (
+          <Space size={4}>
+            <Tag color={active ? 'green' : 'default'}>
+              {active
+                ? intl.formatMessage({ id: 'pages.channel.sandbox.running', defaultMessage: 'Running' })
+                : intl.formatMessage({ id: 'pages.channel.sandbox.inactive', defaultMessage: 'Inactive' })}
+            </Tag>
+            <Tooltip title={active ? 'Workspace' : 'Sandbox not running'}>
+              <Button
+                type="text"
+                size="small"
+                icon={<CloudServerOutlined />}
+                disabled={!active}
+                onClick={() => {
+                  setWorkspaceSessionId(sessionId);
+                  setWorkspaceVisible(true);
+                }}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
+    {
       title: intl.formatMessage({ id: 'pages.channel.table.callbackUrl', defaultMessage: 'Callback URL' }),
       dataIndex: 'callbackUrl',
       key: 'callbackUrl',
@@ -289,7 +366,7 @@ const ChannelManagement: React.FC = () => {
     {
       title: intl.formatMessage({ id: 'pages.common.operation', defaultMessage: 'Action' }),
       key: 'action',
-      width: 200,
+      width: 180,
       align: 'center' as const,
       render: (_: any, record: API.ChannelItem) => {
         const canOperate = hasOperationPermission(isAdmin, currentUser, record.creator);
@@ -393,7 +470,7 @@ const ChannelManagement: React.FC = () => {
         search={false}
         toolBarRender={false}
         columns={columns}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1500 }}
       />
 
       {/* 新建 Channel 弹窗 */}
@@ -444,6 +521,12 @@ const ChannelManagement: React.FC = () => {
           }}
         />
       )}
+      {/* Workspace Drawer */}
+      <WorkspaceDrawer
+        visible={workspaceVisible}
+        sessionId={workspaceSessionId}
+        onClose={() => setWorkspaceVisible(false)}
+      />
     </PageContainer>
   );
 };

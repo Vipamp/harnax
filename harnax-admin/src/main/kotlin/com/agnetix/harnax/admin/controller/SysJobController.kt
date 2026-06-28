@@ -19,7 +19,7 @@ import java.time.LocalDateTime
  * Scheduled job management controller
  */
 @RestController
-@RequestMapping("/api/jobs")
+@RequestMapping("/api/admin/jobs")
 @Tag(name = "Scheduled Job Management", description = "Scheduled job related APIs")
 class SysJobController(
     private val sysJobService: SysJobService,

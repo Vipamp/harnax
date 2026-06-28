@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.LoginResponse
 import com.agnetix.harnax.admin.dto.LoginResponse.UserInfo
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.service.AuthService
 import com.agnetix.harnax.admin.service.CaptchaService
 import com.agnetix.harnax.admin.service.SysTokenBlacklistService
@@ -12,7 +13,6 @@ import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.SysUser
-import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import com.agnetix.harnax.mapper.TenantMapper
 import org.mindrot.jbcrypt.BCrypt
@@ -39,7 +39,7 @@ class AuthServiceImpl(
     private val userTenantService: UserTenantService,
     private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil,
-    private val apiKeyMapper: ApiKeyMapper,
+    private val apiKeyService: ApiKeyService,
 ) : AuthService {
 
     private val log: Logger = LoggerFactory.getLogger(AuthServiceImpl::class.java)
@@ -101,6 +101,10 @@ class AuthServiceImpl(
             .isAdmin(user.isAdmin)
             .build()
 
+        // 7. Get the user's permanent router API key (no longer creates new key per login)
+        val rawKey = apiKeyService.getPermanentRawKey(user.id)
+            ?: throw BizException("Permanent API Key not found for user: ${user.username}")
+
         val response = LoginResponse.builder()
             .accessToken(accessToken)
             .tokenType("Bearer")
@@ -109,9 +113,10 @@ class AuthServiceImpl(
             .userInfo(userInfo)
             .tenants(userTenants)
             .currentTenantId(defaultTenantId)
+            .routerApiKey(rawKey)
             .build()
 
-        // 7. Update user's last login time
+        // 8. Update user's last login time
         try {
             val now = LocalDateTime.now()
             sysUserMapper.updateLastLoginTime(user.id, now)
@@ -188,23 +193,8 @@ class AuthServiceImpl(
                 // Add Token to MySQL blacklist
                 tokenBlacklistService.addToBlacklist(token, username, userId, expireTime, "logout")
 
-                // Invalidate MP router API keys
-                try {
-                    val apiKeys = apiKeyMapper.selectApiKeyList(
-                        keyword = null,
-                        enabled = 1,
-                        creator = username,
-                        tenantId = null,
-                    )
-                    for (key in apiKeys) {
-                        if (key.name.startsWith("mp_router_")) {
-                            apiKeyMapper.updateEnabled(key.id, 0)
-                            log.info("Disabled MP router API key: id={}, name={}", key.id, key.name)
-                        }
-                    }
-                } catch (e: Exception) {
-                    log.warn("Failed to invalidate MP router API keys: {}", e.message)
-                }
+                // Invalidate MP router API keys (legacy cleanup - no longer needed with permanent keys)
+                // Permanent keys are never disabled on logout
 
                 log.info("User logged out, userId: {}, username: {}", userId, username)
             } catch (e: Exception) {

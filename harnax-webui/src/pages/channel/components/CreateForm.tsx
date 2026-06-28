@@ -1,7 +1,7 @@
-import { Form, Input, Select, message, Typography, Tooltip, Button } from 'antd';
+import { Form, Input, Select, Typography, Button } from 'antd';
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { LinkOutlined, CopyOutlined } from '@ant-design/icons';
+import { LinkOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
@@ -41,7 +41,22 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
     try {
       const values = await form.validateFields();
       setLoading(true);
-      await onSubmit(values);
+
+      // Extract type-specific config fields and serialize into configJson
+      const { token, encodingAesKey, appId, appSecret, webhookUrl, ...restValues } = values;
+      const config: Record<string, string> = {};
+      if (token) config.token = token;
+      if (encodingAesKey) config.encodingAesKey = encodingAesKey;
+      if (appId) config.appId = appId;
+      if (appSecret) config.appSecret = appSecret;
+      if (webhookUrl) config.webhookUrl = webhookUrl;
+
+      const submitData: API.ChannelCreateRequest = {
+        ...restValues,
+        configJson: Object.keys(config).length > 0 ? JSON.stringify(config) : undefined,
+      };
+
+      await onSubmit(submitData);
       form.resetFields();
       setSelectedType('');
     } catch (error) {

@@ -24,4 +24,16 @@ interface ApiKeyService {
     fun regenerateApiKey(id: Long): ApiKeyCreatedResponse
 
     fun convertToResponse(entity: ApiKeyEntity): ApiKeyResponse
+
+    /** Create a permanent API key for a new user (called during user creation) */
+    fun createPermanentKeyForUser(userId: Long, username: String, tenantId: Long?): ApiKeyCreatedResponse
+
+    /** Get the decrypted rawKey of a user's permanent key (called during login) */
+    fun getPermanentRawKey(userId: Long): String?
+
+    /** Regenerate a user's permanent API key */
+    fun regeneratePermanentKey(userId: Long): ApiKeyCreatedResponse
+
+    /** Initialize SYSTEM keys for internal services (e.g. channel-service) */
+    fun initSystemKeys()
 }

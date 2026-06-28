@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*
 
 @Tag(name = "MP Agents", description = "Mobile agent browsing APIs")
 @RestController
-@RequestMapping("/api/mp/agents")
+@RequestMapping("/api/admin/mp/agents")
 class MpAgentController(
     private val mpAgentService: MpAgentService,
 ) {

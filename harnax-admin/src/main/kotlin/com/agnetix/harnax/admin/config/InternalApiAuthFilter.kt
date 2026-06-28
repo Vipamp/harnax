@@ -11,7 +11,7 @@ import org.springframework.web.filter.OncePerRequestFilter
 import tools.jackson.databind.ObjectMapper
 
 /**
- * Simple authentication filter for internal API endpoints (/api/internal/).
+ * Simple authentication filter for internal API endpoints (/api/admin/internal/).
  *
  * Validates requests from other harnax services (channel, router, agent-service)
  * using a shared secret via `Authorization: Bearer <secret>` header.
@@ -87,6 +87,6 @@ class InternalApiAuthFilter(
     }
 
     companion object {
-        private const val INTERNAL_API_PREFIX = "/api/internal"
+        private const val INTERNAL_API_PREFIX = "/api/admin/internal"
     }
 }

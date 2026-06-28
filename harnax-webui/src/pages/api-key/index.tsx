@@ -188,22 +188,20 @@ const ApiKeyManagement: React.FC = () => {
       render: (text: string) => <Text strong>{text}</Text>,
     },
     {
-      title: intl.formatMessage({ id: 'pages.apiKey.table.keyPrefix', defaultMessage: 'Key 前缀' }),
+      title: intl.formatMessage({ id: 'pages.apiKey.table.keyPrefix', defaultMessage: 'Key' }),
       dataIndex: 'keyPrefix',
       key: 'keyPrefix',
       width: 220,
       align: 'center' as const,
       render: (text: string) => (
-        <Paragraph
-          copyable={{ text }}
+        <Text
           style={{
-            margin: 0,
             fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
             fontSize: 12,
           }}
         >
           {text}
-        </Paragraph>
+        </Text>
       ),
     },
     {
@@ -316,6 +314,11 @@ const ApiKeyManagement: React.FC = () => {
           <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
             <KeyOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
             {intl.formatMessage({ id: 'pages.apiKey.title', defaultMessage: 'API Key 管理' })}
+          </span>
+        ),
+        subTitle: (
+          <span style={{ fontSize: 13, color: 'var(--vip-text-tertiary)' }}>
+            {intl.formatMessage({ id: 'pages.apiKey.subtitle', defaultMessage: '管理用于外部系统接入的 API Key' })}
           </span>
         ),
       }}

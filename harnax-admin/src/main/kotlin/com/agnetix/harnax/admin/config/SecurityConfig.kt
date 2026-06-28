@@ -30,10 +30,10 @@ class SecurityConfig(
             .httpBasic { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/api/auth/login", "/api/auth/logout", "/api/auth/captcha", "/api/auth/login-methods")
+                auth.requestMatchers("/api/admin/auth/login", "/api/admin/auth/logout", "/api/admin/auth/captcha", "/api/admin/auth/login-methods")
                     .permitAll()
                     // Mobile auth endpoints (login/logout/captcha) do not require JWT
-                    .requestMatchers("/api/mp/auth/**")
+                    .requestMatchers("/api/admin/mp/auth/**")
                     .permitAll()
                     .requestMatchers(
                         "/swagger-ui.html",
@@ -48,7 +48,7 @@ class SecurityConfig(
                     .requestMatchers("/ai/**")
                     .permitAll()
                     // 内部服务调用端点使用 InternalApiAuthFilter 认证
-                    .requestMatchers("/api/internal/**")
+                    .requestMatchers("/api/admin/internal/**")
                     .permitAll()
                     .anyRequest()
                     .authenticated()

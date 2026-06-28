@@ -31,7 +31,7 @@ export interface UserTenantItem {
  * 创建租户
  */
 export async function createTenant(data: { name: string; adminUserId: number }) {
-  return request('/api/tenant', {
+  return request('/api/admin/tenant', {
     method: 'POST',
     data,
   });
@@ -46,7 +46,7 @@ export async function getTenantList(params: {
   name?: string;
   status?: number;
 }) {
-  return request('/api/tenant', {
+  return request('/api/admin/tenant', {
     method: 'GET',
     params,
   });
@@ -56,7 +56,7 @@ export async function getTenantList(params: {
  * 获取租户详情
  */
 export async function getTenantById(id: number) {
-  return request(`/api/tenant/${id}`, {
+  return request(`/api/admin/tenant/${id}`, {
     method: 'GET',
   });
 }
@@ -67,7 +67,7 @@ export async function getTenantById(id: number) {
  * 切换租户状态
  */
 export async function toggleTenantStatus(id: number) {
-  return request(`/api/tenant/${id}/status`, {
+  return request(`/api/admin/tenant/${id}/status`, {
     method: 'PUT',
   });
 }
@@ -76,7 +76,7 @@ export async function toggleTenantStatus(id: number) {
  * 删除租户
  */
 export async function deleteTenant(id: number) {
-  return request(`/api/tenant/${id}`, {
+  return request(`/api/admin/tenant/${id}`, {
     method: 'DELETE',
   });
 }
@@ -85,7 +85,7 @@ export async function deleteTenant(id: number) {
  * 查询租户下用户
  */
 export async function getTenantUsers(tenantId: number, params: { pageNum: number; pageSize: number }) {
-  return request(`/api/tenant/${tenantId}/users`, {
+  return request(`/api/admin/tenant/${tenantId}/users`, {
     method: 'GET',
     params,
   });
@@ -95,7 +95,7 @@ export async function getTenantUsers(tenantId: number, params: { pageNum: number
  * 添加用户到租户
  */
 export async function addUserToTenant(tenantId: number, data: { userId: number; role: string }) {
-  return request(`/api/tenant/${tenantId}/users`, {
+  return request(`/api/admin/tenant/${tenantId}/users`, {
     method: 'POST',
     data,
   });
@@ -105,7 +105,7 @@ export async function addUserToTenant(tenantId: number, data: { userId: number; 
  * 从租户移除用户
  */
 export async function removeUserFromTenant(tenantId: number, userId: number) {
-  return request(`/api/tenant/${tenantId}/users/${userId}`, {
+  return request(`/api/admin/tenant/${tenantId}/users/${userId}`, {
     method: 'DELETE',
   });
 }
@@ -114,7 +114,7 @@ export async function removeUserFromTenant(tenantId: number, userId: number) {
  * 更新用户在租户中的角色
  */
 export async function updateUserRole(tenantId: number, userId: number, role: string) {
-  return request(`/api/tenant/${tenantId}/users/${userId}/role`, {
+  return request(`/api/admin/tenant/${tenantId}/users/${userId}/role`, {
     method: 'PUT',
     data: { role },
   });

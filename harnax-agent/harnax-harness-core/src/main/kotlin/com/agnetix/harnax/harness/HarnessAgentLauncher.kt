@@ -80,10 +80,23 @@ class HarnessAgentLauncher(
     val harnessConfig: HarnessConfig = HarnessConfig(),
     val minioConfig: MinioConfig? = null,
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
+    val snapshotSpec: SandboxSnapshotSpec? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
     private val needConfirmedTools: MutableSet<String> = mutableSetOf()
+
+    /**
+     * Graceful shutdown hook — called by Spring when the application context closes.
+     *
+     * Persists workspace snapshots for all managed sandboxes before the process exits,
+     * ensuring workspace state survives service restarts.
+     */
+    fun shutdown() {
+        log.info("[harness] Shutdown hook triggered, persisting all sandbox snapshots...")
+        keepAliveSandboxManager?.persistAll()
+        log.info("[harness] Shutdown hook complete")
+    }
 
     /**
      * Creates a single [HarnessAgentWrapper] for the given session.
@@ -198,25 +211,8 @@ class HarnessAgentLauncher(
             agentBuilder.enablePlan(true)
         }
 
-        // ----- Docker Sandbox + MinIO Snapshot -----
-        var keepAliveSnapshotSpec: SandboxSnapshotSpec? = null
-        if (harnessConfig.sandbox.enabled) {
-            val snapshotSpec = if (minioConfig != null) {
-                RemoteSnapshotSpec(
-                    MinioSnapshotClient(
-                        minioConfig.createMinioClient(),
-                        minioConfig.snapshotBucket,
-                        minioConfig.snapshotPrefix,
-                    ),
-                )
-            } else {
-                LocalSnapshotSpec(workspaceRoot.resolve("snapshots"))
-            }
-
-            if (harnessConfig.sandbox.keepAlive) {
-                keepAliveSnapshotSpec = snapshotSpec
-            }
-
+        // ----- Docker Sandbox + Snapshot (snapshotSpec pre-created in initLauncher) -----
+        if (harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
             val dockerSpec = DockerFilesystemSpec()
@@ -289,15 +285,18 @@ class HarnessAgentLauncher(
             tokenStatAdaptor = tokenStatAdaptor,
             sessionId = sessionId,
             keepAliveSandboxManager = keepAliveSandboxManager,
-            keepAliveSnapshotSpec = keepAliveSnapshotSpec,
+            keepAliveSnapshotSpec = snapshotSpec,
             sandboxImage = harnessConfig.sandbox.image,
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
         )
     }
 
     /**
-     * Clears all persisted state for the given session: agent state, plan notes,
-     * and optionally the MinIO snapshot.
+     * Clears chat history and plan notes for the given session.
+     *
+     * The sandbox container is destroyed (after persisting its workspace snapshot),
+     * but the snapshot itself is preserved so that workspace files are restored
+     * when the session is resumed.
      *
      * In 2.0.0, Session.delete(SimpleSessionKey) → AgentStateStore.delete(userId, sessionId).
      */
@@ -305,20 +304,9 @@ class HarnessAgentLauncher(
         // Delete all state for this session (userId="" covers the default anonymous user)
         stateStore.delete("", sessionId)
         planNoteAdaptor.deletePlan(sessionId)
+        // Destroy the sandbox container; destroy() persists the workspace snapshot first,
+        // so workspace state survives and will be restored on next container creation.
         keepAliveSandboxManager?.destroy(sessionId)
-        // Also try to delete the MinIO snapshot if available
-        if (minioConfig != null) {
-            try {
-                val snapshotClient = MinioSnapshotClient(
-                    minioConfig.createMinioClient(),
-                    minioConfig.snapshotBucket,
-                    minioConfig.snapshotPrefix,
-                )
-                snapshotClient.delete(sessionId)
-            } catch (e: Exception) {
-                log.warn("Failed to delete MinIO snapshot for session {}: {}", sessionId, e.message)
-            }
-        }
     }
 
     /**
@@ -367,10 +355,32 @@ class HarnessAgentLauncher(
             minioConfig: MinioConfig? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
+
+            // Pre-create snapshotSpec so it can be shared between KeepAliveSandboxManager
+            // and HarnessAgentWrapper. For LocalSnapshotSpec, ensure the directory exists.
+            val snapshotSpec: SandboxSnapshotSpec? = if (harnessConfig.sandbox.enabled) {
+                if (minioConfig != null) {
+                    RemoteSnapshotSpec(
+                        MinioSnapshotClient(
+                            minioConfig.createMinioClient(),
+                            minioConfig.snapshotBucket,
+                            minioConfig.snapshotPrefix,
+                        ),
+                    )
+                } else {
+                    val snapshotsDir = workspaceRoot.resolve("snapshots")
+                    Files.createDirectories(snapshotsDir)
+                    LocalSnapshotSpec(snapshotsDir)
+                }
+            } else {
+                null
+            }
+
             val keepAliveManager = if (harnessConfig.sandbox.enabled && harnessConfig.sandbox.keepAlive) {
                 KeepAliveSandboxManager(
                     image = harnessConfig.sandbox.image,
                     workspaceRoot = harnessConfig.sandbox.workspaceRoot,
+                    snapshotSpec = snapshotSpec,
                 )
             } else {
                 null
@@ -388,6 +398,7 @@ class HarnessAgentLauncher(
                 harnessConfig = harnessConfig,
                 minioConfig = minioConfig,
                 keepAliveSandboxManager = keepAliveManager,
+                snapshotSpec = snapshotSpec,
             )
         }
     }

@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*
  * MCP server management controller
  */
 @RestController
-@RequestMapping("/api/mcp")
+@RequestMapping("/api/admin/mcp")
 @Tag(name = "MCP Server Management", description = "MCP server related APIs")
 class McpServerController(
     private val mcpServerService: McpServerService,

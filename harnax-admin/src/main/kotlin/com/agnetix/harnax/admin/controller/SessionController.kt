@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*
  * Session management controller
  */
 @RestController
-@RequestMapping("/api/sessions")
+@RequestMapping("/api/admin/sessions")
 @Tag(name = "Session Management", description = "Session related APIs")
 class SessionController(
     private val sessionService: SessionService,

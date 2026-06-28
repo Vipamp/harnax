@@ -226,6 +226,38 @@ INSERT INTO `channel` (`name`, `type`, `agent_id`, `webhook_url`, `token`, `enco
 ('Deleted Channel', 'wecom', 1, 'http://localhost:8080/webhook/deleted', 'deleted-token', NULL, NULL, NULL, 'test-deleted', '已删除通道', 1, 0);
 
 -- ============================================
+-- 8b. Channel Session 会话关联表
+-- ============================================
+CREATE TABLE IF NOT EXISTS `channel_session` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户ID',
+    `name` VARCHAR(100) NOT NULL COMMENT '通道名称',
+    `type` VARCHAR(20) NOT NULL COMMENT '渠道类型',
+    `agent_id` BIGINT(20) NOT NULL COMMENT '关联的智能体ID',
+    `callback_key` VARCHAR(100) NOT NULL COMMENT '回调标识',
+    `session_id` VARCHAR(64) NOT NULL COMMENT '关联的会话ID',
+    `communication_mode` VARCHAR(20) NOT NULL DEFAULT 'webhook' COMMENT '通信模式',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+    `config_json` TEXT DEFAULT NULL COMMENT '渠道配置JSON',
+    `description` TEXT DEFAULT NULL COMMENT '描述',
+    `creator` VARCHAR(100) NOT NULL DEFAULT 'system' COMMENT '创建人',
+    `status` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+    `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '逻辑删除',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_cs_callback_key` (`callback_key`),
+    KEY `idx_cs_session_id` (`session_id`),
+    KEY `idx_cs_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel 会话关联表';
+
+INSERT INTO `channel_session` (`tenant_id`, `name`, `type`, `agent_id`, `callback_key`, `session_id`, `communication_mode`, `enabled`, `config_json`, `description`, `creator`, `status`, `active`) VALUES
+(1, 'Test WeCom Channel', 'wecom', 1, 'test-wecom', 'cs-session-001', 'webhook', 1, NULL, '企业微信测试通道会话', 'system', 1, 1),
+(1, 'Test HTTP Channel', 'http', 2, 'test-http', 'cs-session-002', 'webhook', 1, NULL, 'HTTP测试通道会话', 'system', 1, 1),
+(1, 'Test Feishu Channel', 'feishu', 1, 'test-feishu', 'cs-session-003', 'websocket', 1, '{"appId":"app-id-123","appSecret":"app-secret-123"}', '飞书测试通道会话', 'system', 1, 1),
+(1, 'Deleted Channel Session', 'wecom', 1, 'test-deleted-cs', 'cs-session-deleted', 'webhook', 1, NULL, '已删除通道会话', 'system', 1, 0);
+
+-- ============================================
 -- 9. 会话表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `session` (

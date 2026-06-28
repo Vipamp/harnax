@@ -28,6 +28,9 @@ data class LoginResponse(
 
     @Schema(description = "Current tenant ID")
     val currentTenantId: Long? = null,
+
+    @Schema(description = "Router API Key for calling router service via X-Api-Key header")
+    val routerApiKey: String? = null,
 ) {
     companion object {
         @JvmStatic
@@ -42,6 +45,7 @@ data class LoginResponse(
         private var userInfo: UserInfo? = null
         private var tenants: List<TenantResponse>? = null
         private var currentTenantId: Long? = null
+        private var routerApiKey: String? = null
 
         fun accessToken(accessToken: String?) = apply { this.accessToken = accessToken }
         fun tokenType(tokenType: String?) = apply { this.tokenType = tokenType }
@@ -50,6 +54,7 @@ data class LoginResponse(
         fun userInfo(userInfo: UserInfo?) = apply { this.userInfo = userInfo }
         fun tenants(tenants: List<TenantResponse>?) = apply { this.tenants = tenants }
         fun currentTenantId(currentTenantId: Long?) = apply { this.currentTenantId = currentTenantId }
+        fun routerApiKey(routerApiKey: String?) = apply { this.routerApiKey = routerApiKey }
 
         fun build() = LoginResponse(
             accessToken = accessToken,
@@ -59,6 +64,7 @@ data class LoginResponse(
             userInfo = userInfo,
             tenants = tenants,
             currentTenantId = currentTenantId,
+            routerApiKey = routerApiKey,
         )
     }
 

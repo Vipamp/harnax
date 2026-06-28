@@ -12,7 +12,7 @@ export async function getSkillRepositoryPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/api/skill-repositories/page', {
+  return request('/api/admin/skill-repositories/page', {
     method: 'GET',
     params: {
       ...params,
@@ -23,7 +23,7 @@ export async function getSkillRepositoryPage(
 
 /** 获取所有启用的仓库列表 GET /api/skill-repositories/active */
 export async function getActiveRepositories(options?: { [key: string]: any }) {
-  return request('/api/skill-repositories/active', {
+  return request('/api/admin/skill-repositories/active', {
     method: 'GET',
     ...(options || {}),
   });
@@ -31,7 +31,7 @@ export async function getActiveRepositories(options?: { [key: string]: any }) {
 
 /** 获取技能仓库详情 GET /api/skill-repositories/${id} */
 export async function getSkillRepositoryById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/skill-repositories/${id}`, {
+  return request(`/api/admin/skill-repositories/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -39,7 +39,7 @@ export async function getSkillRepositoryById(id: number, options?: { [key: strin
 
 /** 创建技能仓库 POST /api/skill-repositories */
 export async function createSkillRepository(data: API.SkillRepositoryCreateRequest, options?: { [key: string]: any }) {
-  return request('/api/skill-repositories', {
+  return request('/api/admin/skill-repositories', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -55,7 +55,7 @@ export async function updateSkillRepository(
   data: API.SkillRepositoryUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skill-repositories/update/${repositoryId}`, {
+  return request(`/api/admin/skill-repositories/update/${repositoryId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -71,7 +71,7 @@ export async function toggleSkillRepositoryStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skill-repositories/toggle/${repositoryId}`, {
+  return request(`/api/admin/skill-repositories/toggle/${repositoryId}`, {
     method: 'PUT',
     params: {
       status,
@@ -82,7 +82,7 @@ export async function toggleSkillRepositoryStatus(
 
 /** 删除技能仓库 DELETE /api/skill-repositories/${repositoryId} */
 export async function deleteSkillRepository(repositoryId: number, options?: { [key: string]: any }) {
-  return request(`/api/skill-repositories/${repositoryId}`, {
+  return request(`/api/admin/skill-repositories/${repositoryId}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -90,7 +90,7 @@ export async function deleteSkillRepository(repositoryId: number, options?: { [k
 
 /** 获取远程技能列表 GET /api/skill-repositories/fetch/${repositoryId} */
 export async function fetchRemoteSkills(repositoryId: number, options?: { [key: string]: any }) {
-  return request(`/api/skill-repositories/fetch/${repositoryId}`, {
+  return request(`/api/admin/skill-repositories/fetch/${repositoryId}`, {
     method: 'GET',
     ...(options || {}),
   });

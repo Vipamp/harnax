@@ -36,11 +36,15 @@ class MessageUtil(
 
     /**
      * 获取国际化消息
+     * @param code 消息代码
+     * @param args 消息参数，用于替换 {0}, {1} 等占位符
+     * @return 格式化后的消息，如果消息不存在则返回 code 本身
      */
     fun getMessage(code: String, vararg args: Any): String {
         val locale = resolveLocale()
+        val javaArgs = Array(args.size) { args[it] }
         return try {
-            messageSource.getMessage(code, args, locale)
+            messageSource.getMessage(code, javaArgs, locale)
         } catch (e: Exception) {
             code
         }
@@ -48,11 +52,16 @@ class MessageUtil(
 
     /**
      * 获取国际化消息（带默认值）
+     * @param code 消息代码
+     * @param defaultMessage 消息不存在时的默认值
+     * @param args 消息参数，用于替换 {0}, {1} 等占位符
+     * @return 格式化后的消息，如果消息不存在则返回 defaultMessage
      */
-    fun getMessage(code: String, defaultMessage: String, vararg args: Any): String {
+    fun getMessageOrDefault(code: String, defaultMessage: String, vararg args: Any): String {
         val locale = resolveLocale()
+        val javaArgs = Array(args.size) { args[it] }
         return try {
-            messageSource.getMessage(code, args, locale)
+            messageSource.getMessage(code, javaArgs, defaultMessage, locale) ?: defaultMessage
         } catch (e: Exception) {
             defaultMessage
         }

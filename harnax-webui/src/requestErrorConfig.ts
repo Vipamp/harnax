@@ -46,7 +46,7 @@ export const errorConfig: RequestConfig = {
   try {
  const tokenInfo = JSON.parse(tokenInfoStr);
  
-  if (tokenInfo.accessToken) {
+  if (tokenInfo.accessToken && !(options as any)?.skipAuthorization) {
    // 在请求头中添加 Authorization
    headers['Authorization'] = `Bearer ${tokenInfo.accessToken}`;
    

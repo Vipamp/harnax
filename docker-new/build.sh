@@ -37,16 +37,16 @@ echo "All prerequisites satisfied."
 echo ""
 
 # ==========================================
-# Step 1: Build Backend JAR (harnax-admin)
+# Step 1: Build Admin JAR (harnax-admin)
 # ==========================================
-echo "Step 1/7: Building backend JAR (harnax-admin)..."
+echo "Step 1/7: Building admin JAR (harnax-admin)..."
 mvn spotless:apply
 mvn clean package -pl harnax-admin -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/backend/..."
-mkdir -p docker-new/dist/backend
-cp harnax-admin/target/harnax-admin-*.jar docker-new/dist/backend/
-echo "Backend JAR built successfully."
+echo "Copying JAR to docker-new/dist/harnax-admin/..."
+mkdir -p docker-new/dist/harnax-admin
+cp harnax-admin/target/harnax-admin-*.jar docker-new/dist/harnax-admin/
+echo "Admin JAR built successfully."
 echo ""
 
 # ==========================================
@@ -104,7 +104,7 @@ echo ""
 # Step 6: Build Docker Images
 # ==========================================
 echo "Step 6/7: Building Docker images..."
-docker build -f docker-new/Dockerfile.backend -t harnax-backend:latest .
+docker build -f docker-new/Dockerfile.admin -t harnax-admin:latest .
 docker build -f docker-new/Dockerfile.router -t harnax-router:latest .
 docker build -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest .
 docker build -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest .
@@ -133,7 +133,7 @@ echo "  docker-compose -f docker-new/docker-compose.yml down"
 echo ""
 echo "Service ports:"
 echo "  Frontend:        http://localhost:80"
-echo "  Backend (Admin): http://localhost:8080"
+echo "  Admin:           http://localhost:8080"
 echo "  Router:          http://localhost:8081"
 echo "  Agent-Service:   http://localhost:8082"
 echo "  Channel-Service: http://localhost:8083"

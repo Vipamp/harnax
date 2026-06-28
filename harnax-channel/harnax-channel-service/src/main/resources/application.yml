@@ -27,6 +27,10 @@ router:
 # Channel WebClient proxy configuration
 channel:
   auto-start: true  # Auto-start all enabled channels on startup
+  router-api-key: ${CHANNEL_API_KEY:}  # If empty, auto-fetch from admin
+  auto-fetch-system-key: true  # Auto-fetch system key from admin if router-api-key is empty
+  admin:
+    url: ${ADMIN_SERVICE_URL:http://localhost:8080}
   proxy:
     connect-timeout-ms: 5000       # TCP connect timeout
     response-timeout-ms: 600000    # HTTP response timeout: 10min for AI processing

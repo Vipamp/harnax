@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for public edition (skill marketplace feature)
  */
 @RestController
-@RequestMapping("/api/skills")
+@RequestMapping("/api/admin/skills")
 @Tag(name = "Skill Management", description = "Skill related APIs")
 class SkillController(
     private val skillService: SkillService,

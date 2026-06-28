@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*
  */
 @Tag(name = "MP Chat", description = "Mobile chat message history APIs")
 @RestController
-@RequestMapping("/api/mp/chat")
+@RequestMapping("/api/admin/mp/chat")
 class MpChatController(
     private val mpMessageService: MpMessageService,
 ) {

@@ -1,6 +1,5 @@
 package com.agnetix.harnax.channel.service.config
 
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
@@ -26,7 +25,6 @@ import java.util.concurrent.ConcurrentHashMap
  */
 @Configuration
 class ChannelConfig(
-    private val tokenProvider: InternalTokenProvider,
     @Value("\${channel.proxy.connect-timeout-ms:5000}")
     private val connectTimeoutMs: Int,
     @Value("\${channel.proxy.response-timeout-ms:120000}")
@@ -36,7 +34,7 @@ class ChannelConfig(
     private val log = LoggerFactory.getLogger(ChannelConfig::class.java)
 
     @Bean
-    fun webClient(): WebClient {
+    fun webClient(channelRouterApiKey: ChannelRouterApiKey): WebClient {
         val httpClient = HttpClient.create()
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMs)
             .responseTimeout(Duration.ofMillis(responseTimeoutMs.toLong()))
@@ -46,7 +44,7 @@ class ChannelConfig(
         return WebClient.builder()
             .clientConnector(ReactorClientHttpConnector(httpClient))
             .codecs { config -> config.defaultCodecs().maxInMemorySize(16 * 1024 * 1024) } // 16MB for image payloads
-            .filter(authFilter())
+            .filter(apiKeyFilter(channelRouterApiKey.rawKey))
             .build()
     }
 
@@ -55,7 +53,7 @@ class ChannelConfig(
      * Uses synchronous HTTP with JWT auth interceptor.
      */
     @Bean
-    fun restClient(): RestClient {
+    fun restClient(channelRouterApiKey: ChannelRouterApiKey): RestClient {
         val factory = SimpleClientHttpRequestFactory().apply {
             setConnectTimeout(Duration.ofMillis(connectTimeoutMs.toLong()))
             setReadTimeout(Duration.ofMillis(responseTimeoutMs.toLong()))
@@ -64,16 +62,15 @@ class ChannelConfig(
         return RestClient.builder()
             .requestFactory(factory)
             .requestInterceptor { request, body, execution ->
-                tokenProvider.authHeaders().forEach { (key, value) -> request.headers.add(key, value) }
+                request.headers.add("X-Api-Key", channelRouterApiKey.rawKey)
                 execution.execute(request, body)
             }
             .build()
     }
 
-    private fun authFilter(): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
-        val headers = tokenProvider.authHeaders()
+    private fun apiKeyFilter(apiKey: String): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
         val mutated = ClientRequest.from(request)
-        headers.forEach { (key, value) -> mutated.header(key, value) }
+        mutated.header("X-Api-Key", apiKey)
         next.exchange(mutated.build())
     }
 

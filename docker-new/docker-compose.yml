@@ -1,5 +1,5 @@
 # Harnax Docker Compose - Cluster Mode Deployment
-# Includes: MySQL + Redis + MinIO + Backend + Router + Agent-Service + Channel-Service + Frontend
+# Includes: MySQL + Redis + MinIO + Admin + Router + Agent-Service + Channel-Service + Frontend
 #
 # Usage:
 #   Build images first: ./build.sh
@@ -31,10 +31,11 @@ services:
       # Database initialization scripts
       - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
     command: >
-      --default-authentication-plugin=mysql_native_password
+      --authentication-policy=mysql_native_password
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
-      --max_connections=500
+      --max_connections=200
+      --skip-name-resolve
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
@@ -43,8 +44,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 2048M
+          cpus: '1.0'
+          memory: 1024M
     networks:
       - harnax-network
 
@@ -53,7 +54,7 @@ services:
     image: redis:7-alpine
     container_name: harnax-redis
     restart: always
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -67,7 +68,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 256M
     networks:
       - harnax-network
 
@@ -94,7 +95,7 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 1024M
+          memory: 512M
     networks:
       - harnax-network
 
@@ -102,10 +103,10 @@ services:
   # Application Services
   # ==========================================
 
-  # Backend Service (harnax-admin)
-  backend:
-    image: harnax-backend:latest
-    container_name: harnax-backend
+  # Admin Service (harnax-admin)
+  admin:
+    image: harnax-admin:latest
+    container_name: harnax-admin
     restart: always
     environment:
       # Spring Boot Configuration
@@ -128,16 +129,18 @@ services:
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Auth Secret
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
-      # Router URL
+      # Router URL (for internal service communication)
       HARNAX_ROUTER_URL: http://router:8081
+      # Router External URL (returned to frontend/mobile apps)
+      HARNAX_ROUTER_EXTERNAL_URL: http://localhost:8081
       # JVM Configuration
-      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8080:8080"
     volumes:
-      - backend-logs:/app/logs
+      - admin-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       mysql:
@@ -183,17 +186,17 @@ services:
       SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # Admin service (for API key validation + session info)
-      ADMIN_SERVICE_URL: http://backend:8080
+      ADMIN_SERVICE_URL: http://admin:8080
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # JVM
-      JAVA_OPTS: -Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
       - "8081:8081"
     volumes:
       - router-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
     depends_on:
-      backend:
+      admin:
         condition: service_started
       redis:
         condition: service_healthy
@@ -250,7 +253,7 @@ services:
       # Local temp directory
       LOCAL_TMP_DIR: /tmp/harnax-agent
       # JVM Configuration
-      JAVA_OPTS: -Xms1g -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError
+      JAVA_OPTS: -Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
@@ -301,11 +304,14 @@ services:
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
       # Router Configuration
       ROUTER_URL: http://router:8081
+      # Admin Service (for API key auto-fetch)
+      ADMIN_SERVICE_URL: http://admin:8080
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Auth Configuration
       SERVICE_ID: ${CHANNEL_SERVICE_ID:-channel-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # JVM Configuration
-      JAVA_OPTS: -Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
@@ -328,7 +334,7 @@ services:
       resources:
         limits:
           cpus: '1.0'
-          memory: 512M
+          memory: 768M
         reservations:
           cpus: '0.5'
           memory: 256M
@@ -348,7 +354,7 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
     depends_on:
-      - backend
+      - admin
       - router
       - agent-service
       - channel-service
@@ -379,7 +385,7 @@ volumes:
     driver: local
   minio-data:
     driver: local
-  backend-logs:
+  admin-logs:
     driver: local
   router-logs:
     driver: local

@@ -10,6 +10,7 @@ import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.mapper.ApiKeyMapper
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -18,10 +19,11 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping("/api/api-keys")
+@RequestMapping("/api/admin/api-keys")
 @Tag(name = "API Key Management", description = "External API Key management APIs")
 class ApiKeyController(
     private val apiKeyService: ApiKeyService,
+    private val apiKeyMapper: ApiKeyMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(ApiKeyController::class.java)
@@ -114,5 +116,31 @@ class ApiKeyController(
     } catch (e: Exception) {
         log.error("Failed to regenerate API Key", e)
         ResultVo.error(e.message ?: "Failed to regenerate API Key")
+    }
+
+    // ==================== Permanent Key Endpoints ====================
+
+    @GetMapping("/my-permanent-key")
+    @Operation(summary = "Get my permanent API Key info")
+    fun getMyPermanentKey(): ResultVo<ApiKeyResponse?> = try {
+        val userId = SecurityUtils.getCurrentUser()?.id
+            ?: throw RuntimeException("Not authenticated")
+        val entity = apiKeyMapper.selectPermanentKeyByUserId(userId)
+        ResultVo.success(entity?.let { apiKeyService.convertToResponse(it) })
+    } catch (e: Exception) {
+        log.error("Failed to get permanent API Key", e)
+        ResultVo.error(e.message ?: "Failed to get permanent API Key")
+    }
+
+    @PostMapping("/regenerate-permanent")
+    @Operation(summary = "Regenerate my permanent API Key", description = "Generates a new raw key. All existing connections using the old key will be invalidated.")
+    fun regenerateMyPermanentKey(): ResultVo<ApiKeyCreatedResponse> = try {
+        val userId = SecurityUtils.getCurrentUser()?.id
+            ?: throw RuntimeException("Not authenticated")
+        val result = apiKeyService.regeneratePermanentKey(userId)
+        ResultVo.success(result)
+    } catch (e: Exception) {
+        log.error("Failed to regenerate permanent API Key", e)
+        ResultVo.error(e.message ?: "Failed to regenerate permanent API Key")
     }
 }

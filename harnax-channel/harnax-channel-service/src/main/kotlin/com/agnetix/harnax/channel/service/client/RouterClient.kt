@@ -9,7 +9,6 @@ import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import kotlinx.coroutines.Dispatchers
@@ -36,20 +35,12 @@ class RouterClient(
     private val webClient: WebClient,
     private val restClient: RestClient,
     private val objectMapper: ObjectMapper,
-    private val tokenProvider: InternalTokenProvider,
     @Value("\${router.service.url}") private val routerUrl: String,
 ) {
 
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
-    // TODO [P0] buildCurl() includes JWT auth headers and request body in INFO-level log output.
-    //   This leaks credentials and user data to production log aggregators.
-    //   Fix: remove auth headers from log output, or mask them; redact sensitive body fields.
-    private fun buildCurl(url: String, body: String): String {
-        val headers = tokenProvider.authHeaders()
-        val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
-        return "curl -X POST '$url' -H 'Content-Type: application/json' $headerArgs -d '$body'"
-    }
+    private fun buildCurl(url: String, body: String): String = "curl -X POST '$url' -H 'Content-Type: application/json' -H 'X-Api-Key: ***' -d '$body'"
 
     /**
      * Send a chat message to the agent via the session-router (batch/non-streaming).

@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RestController
  * @Description: Health check controller
  */
 @RestController
-@RequestMapping("/api/")
+@RequestMapping("/api/admin/")
 @Tag(name = "Health Check", description = "Health monitoring")
 class HealthController {
 

@@ -3,23 +3,28 @@
 <mapper namespace="com.agnetix.harnax.mapper.ApiKeyMapper">
 
     <resultMap id="ApiKeyResultMap" type="com.agnetix.harnax.entity.ApiKeyEntity">
-        <id     column="id"          property="id"/>
-        <result column="name"        property="name"/>
-        <result column="key_hash"    property="keyHash"/>
-        <result column="key_prefix"  property="keyPrefix"/>
-        <result column="scopes"      property="scopes"/>
-        <result column="tenant_id"   property="tenantId"/>
-        <result column="rate_limit"  property="rateLimit"/>
-        <result column="enabled"     property="enabled"/>
-        <result column="expires_at"  property="expiresAt"/>
-        <result column="creator"     property="creator"/>
-        <result column="active"      property="active"/>
-        <result column="create_time" property="createTime"/>
-        <result column="update_time" property="updateTime"/>
+        <id     column="id"                 property="id"/>
+        <result column="name"               property="name"/>
+        <result column="key_type"           property="keyType"/>
+        <result column="user_id"            property="userId"/>
+        <result column="raw_key_encrypted"  property="rawKeyEncrypted"/>
+        <result column="service_name"       property="serviceName"/>
+        <result column="key_hash"           property="keyHash"/>
+        <result column="key_prefix"         property="keyPrefix"/>
+        <result column="scopes"             property="scopes"/>
+        <result column="tenant_id"          property="tenantId"/>
+        <result column="rate_limit"         property="rateLimit"/>
+        <result column="enabled"            property="enabled"/>
+        <result column="expires_at"         property="expiresAt"/>
+        <result column="creator"            property="creator"/>
+        <result column="active"             property="active"/>
+        <result column="create_time"        property="createTime"/>
+        <result column="update_time"        property="updateTime"/>
     </resultMap>
 
     <sql id="BaseColumnList">
-        id, name, key_hash, key_prefix, scopes, tenant_id,
+        id, name, key_type, user_id, raw_key_encrypted, service_name,
+        key_hash, key_prefix, scopes, tenant_id,
         rate_limit, enabled, expires_at, creator, active, create_time, update_time
     </sql>
 
@@ -46,25 +51,31 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO api_key (
-            name, key_hash, key_prefix, scopes, tenant_id,
+            name, key_type, user_id, raw_key_encrypted, service_name,
+            key_hash, key_prefix, scopes, tenant_id,
             rate_limit, enabled, expires_at, creator, active, create_time, update_time
         ) VALUES (
-            #{name}, #{keyHash}, #{keyPrefix}, #{scopes}, #{tenantId},
+            #{name}, #{keyType}, #{userId}, #{rawKeyEncrypted}, #{serviceName},
+            #{keyHash}, #{keyPrefix}, #{scopes}, #{tenantId},
             #{rateLimit}, #{enabled}, #{expiresAt}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
     <update id="updateById">
         UPDATE api_key SET
-            name        = #{name},
-            key_hash    = #{keyHash},
-            key_prefix  = #{keyPrefix},
-            scopes      = #{scopes},
-            tenant_id   = #{tenantId},
-            rate_limit  = #{rateLimit},
-            enabled     = #{enabled},
-            expires_at  = #{expiresAt},
-            update_time = #{updateTime}
+            name               = #{name},
+            key_type           = #{keyType},
+            user_id            = #{userId},
+            raw_key_encrypted  = #{rawKeyEncrypted},
+            service_name       = #{serviceName},
+            key_hash           = #{keyHash},
+            key_prefix         = #{keyPrefix},
+            scopes             = #{scopes},
+            tenant_id          = #{tenantId},
+            rate_limit         = #{rateLimit},
+            enabled            = #{enabled},
+            expires_at         = #{expiresAt},
+            update_time        = #{updateTime}
         WHERE id = #{id} AND active = 1
     </update>
 
@@ -101,6 +112,48 @@
         FROM api_key
         WHERE enabled = 1 AND active = 1
         ORDER BY id ASC
+    </select>
+
+    <!-- Query user's permanent key -->
+    <select id="selectPermanentKeyByUserId" resultMap="ApiKeyResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM api_key
+        WHERE user_id = #{userId}
+          AND key_type = 'PERMANENT'
+          AND active = 1
+        LIMIT 1
+    </select>
+
+    <!-- Query temporary keys only (for management page) -->
+    <select id="selectTemporaryKeys" resultMap="ApiKeyResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM api_key
+        WHERE active = 1
+          AND key_type = 'TEMPORARY'
+        <if test='keyword != null and keyword != ""'>
+            AND (name LIKE CONCAT('%', #{keyword}, '%')
+                 OR key_prefix LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test='enabled != null'>
+            AND enabled = #{enabled}
+        </if>
+        <if test='creator != null'>
+            AND creator = #{creator}
+        </if>
+        <if test='tenantId != null'>
+            AND tenant_id = #{tenantId}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <!-- Query SYSTEM key by service name -->
+    <select id="selectSystemKeyByServiceName" resultMap="ApiKeyResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM api_key
+        WHERE service_name = #{serviceName}
+          AND key_type = 'SYSTEM'
+          AND active = 1
+        LIMIT 1
     </select>
 
 </mapper>

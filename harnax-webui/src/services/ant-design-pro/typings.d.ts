@@ -366,14 +366,14 @@ declare namespace API {
     typeDisplayName?: string;
     agentId: number;
     agentName?: string;
-    webhookUrl?: string;
-    token?: string;
-    encodingAesKey?: string;
-    appId?: string;
-    appSecret?: string;
     callbackKey?: string;
+    sessionId?: string;
+    communicationMode?: string;
+    enabled?: number;
+    configJson?: string;
     callbackUrl?: string;
     description?: string;
+    creator?: string;
     status: number;
     createTime?: string;
     updateTime?: string;
@@ -383,11 +383,9 @@ declare namespace API {
     name: string;
     type: string;
     agentId: number;
-    webhookUrl?: string;
-    token?: string;
-    encodingAesKey?: string;
-    appId?: string;
-    appSecret?: string;
+    communicationMode?: string;
+    enabled?: number;
+    configJson?: string;
     description?: string;
     status?: number;
   };
@@ -397,11 +395,9 @@ declare namespace API {
     name?: string;
     type?: string;
     agentId?: number;
-    webhookUrl?: string;
-    token?: string;
-    encodingAesKey?: string;
-    appId?: string;
-    appSecret?: string;
+    communicationMode?: string;
+    enabled?: number;
+    configJson?: string;
     description?: string;
     status?: number;
   };
@@ -449,5 +445,28 @@ declare namespace API {
     rateLimit: number;
     expiresAt?: string;
     createTime?: string;
+  };
+
+  // Workspace file browser types
+  type WorkspaceFile = {
+    type: 'file' | 'directory' | 'symlink' | 'unknown';
+    name: string;
+    size: number;
+    modified: string;
+  };
+
+  type WorkspaceFileContent = {
+    content: string;
+    truncated: boolean;
+    size: number;
+  };
+
+  type WorkspaceStatus = {
+    active: boolean;
+    sessionId: string;
+    containerId?: string;
+    containerName?: string;
+    image?: string;
+    workspaceRoot?: string;
   };
 }

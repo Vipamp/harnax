@@ -13,7 +13,7 @@ export async function getSkillPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/api/skills/page', {
+  return request('/api/admin/skills/page', {
     method: 'GET',
     params: {
       ...params,
@@ -24,7 +24,7 @@ export async function getSkillPage(
 
 /** 获取技能详情 GET /api/skills/${id} */
 export async function getSkillById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/skills/${id}`, {
+  return request(`/api/admin/skills/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -32,7 +32,7 @@ export async function getSkillById(id: number, options?: { [key: string]: any })
 
 /** 创建技能 POST /api/skills */
 export async function createSkill(data: API.SkillCreateRequest, options?: { [key: string]: any }) {
-  return request('/api/skills', {
+  return request('/api/admin/skills', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -48,7 +48,7 @@ export async function updateSkill(
   data: API.SkillUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skills/update/${skillId}`, {
+  return request(`/api/admin/skills/update/${skillId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -64,7 +64,7 @@ export async function toggleSkillStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skills/toggle/${skillId}`, {
+  return request(`/api/admin/skills/toggle/${skillId}`, {
     method: 'PUT',
     params: {
       status,
@@ -75,7 +75,7 @@ export async function toggleSkillStatus(
 
 /** 删除技能 DELETE /api/skills/${skillId} */
 export async function deleteSkill(skillId: number, options?: { [key: string]: any }) {
-  return request(`/api/skills/${skillId}`, {
+  return request(`/api/admin/skills/${skillId}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -87,7 +87,7 @@ export async function batchSaveSkills(
   data: string[],
   options?: { [key: string]: any },
 ) {
-  return request('/api/skills/batch', {
+  return request('/api/admin/skills/batch', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.SysUserResponse
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.service.SysUserService
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.SysUser
@@ -27,6 +28,7 @@ class SysUserServiceImpl(
     private val userTenantMapper: UserTenantMapper,
     private val tenantMapper: TenantMapper,
     private val messageUtil: MessageUtil,
+    private val apiKeyService: ApiKeyService,
 ) : SysUserService {
 
     private val log = LoggerFactory.getLogger(SysUserServiceImpl::class.java)
@@ -117,6 +119,16 @@ class SysUserServiceImpl(
 
         val success = this.sysUserMapper.insert(user) > 0
         log.info("User creation {}, userId: {}", if (success) "successful" else "failed", user.id)
+
+        if (success) {
+            // Auto-generate permanent API key for the new user
+            try {
+                apiKeyService.createPermanentKeyForUser(user.id, user.username, user.tenantId)
+            } catch (e: Exception) {
+                log.error("Failed to create permanent API key for user: {}", user.username, e)
+            }
+        }
+
         return success
     }
 

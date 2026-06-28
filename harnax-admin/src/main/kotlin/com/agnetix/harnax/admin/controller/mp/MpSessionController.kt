@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*
  */
 @Tag(name = "MP Sessions", description = "Mobile session management APIs")
 @RestController
-@RequestMapping("/api/mp/sessions")
+@RequestMapping("/api/admin/mp/sessions")
 class MpSessionController(
     private val mpSessionService: MpSessionService,
 ) {

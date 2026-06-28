@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for public edition (skill marketplace feature)
  */
 @RestController
-@RequestMapping("/api/skill-repositories")
+@RequestMapping("/api/admin/skill-repositories")
 @Tag(name = "Skill Repository Management", description = "Skill repository related APIs")
 class SkillRepositoryController(
     private val skillRepositoryService: SkillRepositoryService,

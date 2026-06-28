@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.dto.ModelProviderCreateRequest
 import com.agnetix.harnax.admin.dto.ModelProviderUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.i18n.MessageUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.ModelProvider
 import com.agnetix.harnax.mapper.ModelMapper
@@ -45,6 +46,9 @@ class ModelProviderServiceImplTest {
     private lateinit var modelMapper: ModelMapper
 
     @Mock
+    private lateinit var messageUtil: MessageUtil
+
+    @Mock
     private lateinit var jwtUtil: JwtUtil
 
     @InjectMocks
@@ -75,6 +79,9 @@ class ModelProviderServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // Mock MessageUtil - return the message code as the message
+        `when`(messageUtil.getMessage(anyString())).thenAnswer { invocation -> invocation.arguments[0] as String }
     }
 
     @Nested
@@ -192,7 +199,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.createModelProvider(request)
             }
-            assertEquals("Provider name already exists", exception.message)
+            assertEquals("error.model.provider.name_exists", exception.message)
             verify(modelProviderMapper, never()).insert(any())
         }
 
@@ -259,7 +266,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.updateModelProvider(999L, request)
             }
-            assertEquals("Provider not found", exception.message)
+            assertEquals("error.model.provider.notfound", exception.message)
         }
 
         @Test
@@ -274,7 +281,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.updateModelProvider(1L, request)
             }
-            assertEquals("Provider name already exists", exception.message)
+            assertEquals("error.model.provider.name_exists", exception.message)
         }
 
         @Test
@@ -373,7 +380,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.updateStatus(1L, 0)
             }
-            assertEquals("Cannot disable: there are enabled models under this provider", exception.message)
+            assertEquals("error.model.provider.cannot_disable", exception.message)
             verify(modelProviderMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
@@ -387,7 +394,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.updateStatus(999L, 0)
             }
-            assertEquals("Model provider not found", exception.message)
+            assertEquals("error.model.provider.notfound", exception.message)
         }
 
         @Test
@@ -435,7 +442,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.deleteModelProvider(1L)
             }
-            assertEquals("Cannot delete: there are enabled models under this provider", exception.message)
+            assertEquals("error.model.provider.cannot_delete", exception.message)
             verify(modelProviderMapper, never()).deleteById(anyLong())
         }
 
@@ -522,7 +529,7 @@ class ModelProviderServiceImplTest {
             val exception = assertThrows<BizException> {
                 modelProviderService.connectivityTest(999L)
             }
-            assertEquals("Model provider not found", exception.message)
+            assertEquals("error.model.provider.notfound", exception.message)
         }
     }
 }

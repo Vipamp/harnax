@@ -16,6 +16,7 @@ import com.agnetix.harnax.router.service.impl.RedisIdempotencyService
 import com.agnetix.harnax.router.service.impl.RedisInstanceRegistry
 import com.agnetix.harnax.router.service.impl.RedisSessionMappingService
 import io.netty.channel.ChannelOption
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.web.servlet.FilterRegistrationBean
@@ -55,6 +56,8 @@ class RouterConfig(
     private val writeTimeoutSeconds: Int,
     private val tokenProvider: InternalTokenProvider,
 ) {
+
+    private val log = LoggerFactory.getLogger(RouterConfig::class.java)
 
     @Bean
     fun webClient(): WebClient {
@@ -106,6 +109,7 @@ class RouterConfig(
 
     private fun authFilter(): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
         val headers = tokenProvider.authHeaders()
+        log.info("[authFilter] Adding auth headers for request: {} {} headers={}", request.method(), request.url(), headers.keys)
         val mutated = ClientRequest.from(request)
         headers.forEach { (key, value) -> mutated.header(key, value) }
         next.exchange(mutated.build())

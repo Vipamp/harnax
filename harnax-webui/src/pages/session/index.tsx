@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
-import { PlusOutlined, BulbOutlined } from '@ant-design/icons';
+import { PlusOutlined, BulbOutlined, CloudServerOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
+import WorkspaceDrawer from './components/WorkspaceDrawer';
 import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
 // @ts-ignore
@@ -22,6 +23,7 @@ const SessionPage: React.FC = () => {
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailSession, setDetailSession] = useState<API.SessionItem | null>(null);
+  const [workspaceDrawerVisible, setWorkspaceDrawerVisible] = useState(false);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
 
@@ -233,6 +235,15 @@ const SessionPage: React.FC = () => {
                 <Title level={5} style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
                   {selectedSession.title}
                 </Title>
+                <div style={{ flex: 1 }} />
+                <Button
+                  type="text"
+                  icon={<CloudServerOutlined />}
+                  size="small"
+                  onClick={() => setWorkspaceDrawerVisible(true)}
+                >
+                  Workspace
+                </Button>
               </div>
               
               {/* 聊天窗口 */}
@@ -276,6 +287,13 @@ const SessionPage: React.FC = () => {
         visible={detailModalVisible}
         session={detailSession}
         onCancel={() => setDetailModalVisible(false)}
+      />
+
+      {/* Workspace 文件浏览器 */}
+      <WorkspaceDrawer
+        visible={workspaceDrawerVisible}
+        sessionId={selectedSession?.sessionId}
+        onClose={() => setWorkspaceDrawerVisible(false)}
       />
     </PageContainer>
   );

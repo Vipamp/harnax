@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * Available for enterprise and public editions (Agent sharing feature)
  */
 @RestController
-@RequestMapping("/api/agents")
+@RequestMapping("/api/admin/agents")
 @Tag(name = "Agent Management", description = "Agent related APIs")
 class AgentController(
     private val agentService: AgentService,

@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.session
 
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.agentscope.core.state.State
 import io.agentscope.core.util.JsonUtils
 import org.junit.jupiter.api.Assertions.*
@@ -345,5 +347,7 @@ class MysqlAgentStateStoreTest {
 
     // ==================== Test State class ====================
 
-    data class TestState(val value: String) : State
+    data class TestState @JsonCreator constructor(
+        @JsonProperty("value") val value: String,
+    ) : State
 }

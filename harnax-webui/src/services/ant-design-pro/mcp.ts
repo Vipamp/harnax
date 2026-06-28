@@ -13,7 +13,7 @@ export async function getMcpServerPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/api/mcp/page', {
+  return request('/api/admin/mcp/page', {
     method: 'GET',
     params: {
       ...params,
@@ -24,7 +24,7 @@ export async function getMcpServerPage(
 
 /** 获取 MCP 服务详情 GET /api/mcp/${id} */
 export async function getMcpServerById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/mcp/${id}`, {
+  return request(`/api/admin/mcp/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -35,7 +35,7 @@ export async function createMcpServer(
   data: API.McpServerCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/api/mcp', {
+  return request('/api/admin/mcp', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -51,7 +51,7 @@ export async function updateMcpServer(
   data: API.McpServerUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/mcp/update/${id}`, {
+  return request(`/api/admin/mcp/update/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -67,7 +67,7 @@ export async function toggleMcpServerStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/mcp/toggle/${id}`, {
+  return request(`/api/admin/mcp/toggle/${id}`, {
     method: 'PUT',
     params: {
       status,
@@ -78,7 +78,7 @@ export async function toggleMcpServerStatus(
 
 /** 删除 MCP 服务 DELETE /api/mcp/${id} */
 export async function deleteMcpServer(id: number, options?: { [key: string]: any }) {
-  return request(`/api/mcp/${id}`, {
+  return request(`/api/admin/mcp/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -86,7 +86,7 @@ export async function deleteMcpServer(id: number, options?: { [key: string]: any
 
 /** MCP 服务连通性测试 POST /api/mcp/${id}/connectivity-test */
 export async function connectivityTestMcpServer(id: number, options?: { [key: string]: any }) {
-  return request(`/api/mcp/${id}/connectivity-test`, {
+  return request(`/api/admin/mcp/${id}/connectivity-test`, {
     method: 'POST',
     ...(options || {}),
   });
@@ -94,7 +94,7 @@ export async function connectivityTestMcpServer(id: number, options?: { [key: st
 
 /** 获取 MCP 工具列表 GET /api/mcp/${id}/list_tools */
 export async function getMcpTools(id: number, options?: { [key: string]: any }) {
-  return request(`/api/mcp/${id}/list_tools`, {
+  return request(`/api/admin/mcp/${id}/list_tools`, {
     method: 'GET',
     ...(options || {}),
   });

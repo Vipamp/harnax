@@ -70,7 +70,7 @@ class SessionInfoClient(
             runBlocking {
                 withTimeoutOrNull(overallTimeoutMs) {
                     webClient.get()
-                        .uri("/api/internal/sessions/$sid/info")
+                        .uri("/api/admin/internal/sessions/$sid/info")
                         .retrieve()
                         .bodyToMono(object : ParameterizedTypeReference<ResultVo<SessionInfo?>>() {})
                         .awaitSingleOrNull()
@@ -81,11 +81,11 @@ class SessionInfoClient(
             val body = e.responseBodyAsString.take(200)
             if (status == 401) {
                 log.error(
-                    "[Router→Admin] Authentication failed (401) calling $adminUrl/api/internal/sessions/$sid/info. " +
+                    "[Router→Admin] Authentication failed (401) calling $adminUrl/api/admin/internal/sessions/$sid/info. " +
                         "Check admin.internal-api.secret matches admin's config. Response: $body",
                 )
             } else {
-                log.warn("[Router→Admin] HTTP $status calling $adminUrl/api/internal/sessions/$sid/info. Response: $body")
+                log.warn("[Router→Admin] HTTP $status calling $adminUrl/api/admin/internal/sessions/$sid/info. Response: $body")
             }
             null
         } catch (e: Exception) {

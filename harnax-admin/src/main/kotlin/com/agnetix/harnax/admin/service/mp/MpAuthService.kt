@@ -4,34 +4,32 @@ import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.mp.MpLoginResponse
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.service.UserTenantService
 import com.agnetix.harnax.admin.util.JwtUtil
-import com.agnetix.harnax.entity.ApiKeyEntity
-import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import org.mindrot.jbcrypt.BCrypt
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
-import java.security.MessageDigest
-import java.security.SecureRandom
 import java.time.LocalDateTime
-import java.util.Base64
 
 @Service
 class MpAuthService(
     private val sysUserMapper: SysUserMapper,
     private val userTenantService: UserTenantService,
     private val jwtUtil: JwtUtil,
-    private val apiKeyMapper: ApiKeyMapper,
+    private val apiKeyService: ApiKeyService,
     private val messageUtil: MessageUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(MpAuthService::class.java)
-    private val secureRandom = SecureRandom()
 
     @Value("\${harnax.router.url:http://localhost:8081}")
     private var routerUrl: String = "http://localhost:8081"
+
+    @Value("\${harnax.router.external-url:}")
+    private var routerExternalUrl: String = ""
 
     fun login(request: LoginRequest): MpLoginResponse {
         log.info("MP login, username: {}", request.username)
@@ -59,26 +57,9 @@ class MpAuthService(
         val defaultTenantId = if (userTenants.isNotEmpty()) userTenants[0].id else null
         val accessToken = jwtUtil.generateToken(user.id, user.username, defaultTenantId, user.isAdmin)
 
-        val rawKey = generateRawKey()
-        val keyHash = sha256(rawKey)
-        val keyPrefix = rawKey.substring(0, 12) + "..." + rawKey.substring(rawKey.length - 4)
-        val expiresAt = LocalDateTime.now().plusSeconds(jwtUtil.getExpirationTime() / 1000)
-
-        val apiKey = ApiKeyEntity().apply {
-            name = "mp_router_${user.username}_${System.currentTimeMillis()}"
-            this.keyHash = keyHash
-            this.keyPrefix = keyPrefix
-            scopes = "api:chat"
-            tenantId = defaultTenantId
-            rateLimit = 120
-            enabled = 1
-            this.expiresAt = expiresAt
-            creator = user.username
-            active = 1
-            createTime = LocalDateTime.now()
-            updateTime = LocalDateTime.now()
-        }
-        apiKeyMapper.insert(apiKey)
+        // Get user's permanent API key (no longer creates new key per login)
+        val rawKey = apiKeyService.getPermanentRawKey(user.id)
+            ?: throw BizException("Permanent API Key not found for user: ${user.username}")
 
         try {
             sysUserMapper.updateLastLoginTime(user.id, LocalDateTime.now())
@@ -87,10 +68,14 @@ class MpAuthService(
         }
 
         log.info("MP login successful, userId: {}, username: {}", user.id, user.username)
+
+        // Use external URL if configured (for frontend/mobile), otherwise use internal URL
+        val actualRouterUrl = if (routerExternalUrl.isNotBlank()) routerExternalUrl else routerUrl
+
         return MpLoginResponse(
             accessToken = accessToken,
             routerApiKey = rawKey,
-            routerUrl = routerUrl,
+            routerUrl = actualRouterUrl,
             expiresIn = jwtUtil.getExpirationTime() / 1000,
             userInfo = MpLoginResponse.UserInfo(
                 userId = user.id,
@@ -98,16 +83,5 @@ class MpAuthService(
                 nickname = user.nickname,
             ),
         )
-    }
-
-    private fun generateRawKey(): String {
-        val bytes = ByteArray(32)
-        secureRandom.nextBytes(bytes)
-        return "hnx_sk_live_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    }
-
-    private fun sha256(input: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
     }
 }

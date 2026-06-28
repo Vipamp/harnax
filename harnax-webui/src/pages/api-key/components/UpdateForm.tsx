@@ -12,9 +12,8 @@ interface UpdateFormProps {
 }
 
 const SCOPE_OPTIONS = [
-  { label: '路由调用 (router:invoke)', value: 'router:invoke' },
-  { label: '对话 API (api:chat)', value: 'api:chat' },
-  { label: '会话 API (api:session)', value: 'api:session' },
+  { label: '对话 (chat)', value: 'chat' },
+  { label: '管理 (manager)', value: 'manager' },
 ];
 
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSubmit }) => {

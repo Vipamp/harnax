@@ -14,7 +14,7 @@ export async function getAgentPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/agents/page`, {
+  return request(`/api/admin/agents/page`, {
     method: 'GET',
     params: {
       ...params,
@@ -27,7 +27,7 @@ export async function getAgentPage(
  * 获取智能体详情
  */
 export async function getAgentById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/agents/${id}`, {
+  return request(`/api/admin/agents/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -40,7 +40,7 @@ export async function createAgent(
   data: API.AgentCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/api/agents', {
+  return request('/api/admin/agents', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,7 +58,7 @@ export async function updateAgent(
   data: API.AgentUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/agents/update/${id}`, {
+  return request(`/api/admin/agents/update/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -76,7 +76,7 @@ export async function toggleAgentStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/agents/toggle/${id}`, {
+  return request(`/api/admin/agents/toggle/${id}`, {
     method: 'PUT',
     params: { status },
     ...(options || {}),
@@ -87,7 +87,7 @@ export async function toggleAgentStatus(
  * 删除智能体
  */
 export async function deleteAgent(id: number, options?: { [key: string]: any }) {
-  return request(`/api/agents/${id}`, {
+  return request(`/api/admin/agents/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -104,7 +104,7 @@ export async function getMcpServerList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/mcp/page`, {
+  return request(`/api/admin/mcp/page`, {
     method: 'GET',
     params: {
       pageNum: 1,
@@ -126,7 +126,7 @@ export async function getSkillRepositoryList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skill-repositories/page`, {
+  return request(`/api/admin/skill-repositories/page`, {
     method: 'GET',
     params: {
       pageNum: 1,
@@ -149,7 +149,7 @@ export async function getSkillListByRepository(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/skills/page`, {
+  return request(`/api/admin/skills/page`, {
     method: 'GET',
     params: {
       repositoryId,
@@ -171,7 +171,7 @@ export async function getModelList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/models/page`, {
+  return request(`/api/admin/models/page`, {
     method: 'GET',
     params: {
       pageNum: 1,

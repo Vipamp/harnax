@@ -17,7 +17,7 @@ import java.time.format.DateTimeFormatter
  * Available only for enterprise and public editions
  */
 @RestController
-@RequestMapping("/api/token-stats")
+@RequestMapping("/api/admin/token-stats")
 @Tag(name = "Token Statistics", description = "Token consumption statistics APIs")
 class TokenStatsController(
     private val tokenStatsService: TokenStatsService,

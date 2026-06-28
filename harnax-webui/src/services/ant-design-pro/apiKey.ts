@@ -9,7 +9,7 @@ export async function getApiKeyPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request('/api/api-keys/page', {
+  return request('/api/admin/api-keys/page', {
     method: 'GET',
     params: { ...params },
     ...(options || {}),
@@ -17,7 +17,7 @@ export async function getApiKeyPage(
 }
 
 export async function getApiKeyById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/api-keys/${id}`, {
+  return request(`/api/admin/api-keys/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -27,7 +27,7 @@ export async function createApiKey(
   data: API.ApiKeyCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/api/api-keys', {
+  return request('/api/admin/api-keys', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     data,
@@ -40,7 +40,7 @@ export async function updateApiKey(
   data: API.ApiKeyUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/api-keys/update/${id}`, {
+  return request(`/api/admin/api-keys/update/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     data,
@@ -53,7 +53,7 @@ export async function toggleApiKeyStatus(
   enabled: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/api-keys/toggle/${id}`, {
+  return request(`/api/admin/api-keys/toggle/${id}`, {
     method: 'PUT',
     params: { enabled },
     ...(options || {}),
@@ -61,14 +61,14 @@ export async function toggleApiKeyStatus(
 }
 
 export async function deleteApiKey(id: number, options?: { [key: string]: any }) {
-  return request(`/api/api-keys/${id}`, {
+  return request(`/api/admin/api-keys/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });
 }
 
 export async function regenerateApiKey(id: number, options?: { [key: string]: any }) {
-  return request(`/api/api-keys/${id}/regenerate`, {
+  return request(`/api/admin/api-keys/${id}/regenerate`, {
     method: 'POST',
     ...(options || {}),
   });

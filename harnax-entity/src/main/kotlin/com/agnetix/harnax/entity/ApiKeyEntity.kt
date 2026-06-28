@@ -17,6 +17,18 @@ class ApiKeyEntity : Serializable {
     @Schema(description = "API Key name")
     var name: String = ""
 
+    @Schema(description = "Key type: PERMANENT, TEMPORARY or SYSTEM")
+    var keyType: String = "TEMPORARY"
+
+    @Schema(description = "Associated user ID (for PERMANENT keys)")
+    var userId: Long? = null
+
+    @Schema(description = "AES-encrypted raw key (for PERMANENT/SYSTEM keys only)")
+    var rawKeyEncrypted: String? = null
+
+    @Schema(description = "Service name (for SYSTEM keys, e.g. channel-service)")
+    var serviceName: String? = null
+
     @Schema(description = "SHA-256 hash of the raw key")
     var keyHash: String = ""
 

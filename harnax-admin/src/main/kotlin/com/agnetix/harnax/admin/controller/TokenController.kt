@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController
  */
 @Tag(name = "Token Management", description = "Token refresh and other APIs")
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/admin/auth")
 class TokenController(
     private val jwtUtil: JwtUtil,
     private val userTenantService: UserTenantService,

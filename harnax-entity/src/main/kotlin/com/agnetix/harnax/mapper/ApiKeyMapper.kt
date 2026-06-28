@@ -29,4 +29,18 @@ interface ApiKeyMapper {
     ): List<ApiKeyEntity>
 
     fun selectAllEnabled(): List<ApiKeyEntity>
+
+    /** Query user's permanent key by user ID */
+    fun selectPermanentKeyByUserId(@Param("userId") userId: Long): ApiKeyEntity?
+
+    /** Query temporary keys only (for management page) */
+    fun selectTemporaryKeys(
+        @Param("keyword") keyword: String?,
+        @Param("enabled") enabled: Int?,
+        @Param("creator") creator: String?,
+        @Param("tenantId") tenantId: Long?,
+    ): List<ApiKeyEntity>
+
+    /** Query SYSTEM key by service name */
+    fun selectSystemKeyByServiceName(@Param("serviceName") serviceName: String): ApiKeyEntity?
 }

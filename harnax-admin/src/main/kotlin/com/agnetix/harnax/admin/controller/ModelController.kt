@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for public edition (model marketplace feature)
  */
 @RestController
-@RequestMapping("/api/models")
+@RequestMapping("/api/admin/models")
 @Tag(name = "Model Management", description = "Model CRUD APIs")
 class ModelController(
     private val modelService: ModelService,

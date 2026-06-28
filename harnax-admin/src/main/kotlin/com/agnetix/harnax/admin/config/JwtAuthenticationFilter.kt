@@ -27,12 +27,18 @@ class JwtAuthenticationFilter(
     private val log = LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
 
     /**
-     * Skip JWT validation for internal API endpoints.
-     * These endpoints use their own authentication via InternalApiAuthFilter.
+     * Skip JWT validation for internal API endpoints and public auth endpoints.
+     * Internal endpoints use their own authentication via InternalApiAuthFilter.
+     * Public auth endpoints (login, captcha, etc.) do not require JWT.
      */
     override fun shouldNotFilter(request: HttpServletRequest): Boolean {
         val path = request.requestURI
-        return path.startsWith("/api/internal")
+        return path.startsWith("/api/admin/internal") ||
+            path.startsWith("/api/admin/auth/login") ||
+            path.startsWith("/api/admin/auth/logout") ||
+            path.startsWith("/api/admin/auth/captcha") ||
+            path.startsWith("/api/admin/auth/login-methods") ||
+            path.startsWith("/api/admin/mp/auth/")
     }
 
     @Throws(ServletException::class, IOException::class)

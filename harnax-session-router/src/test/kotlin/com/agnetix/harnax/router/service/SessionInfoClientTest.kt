@@ -22,7 +22,7 @@ class SessionInfoClientTest {
     ) {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val counter = AtomicInteger(0)
-        server.createContext("/api/internal/sessions/") { exchange ->
+        server.createContext("/api/admin/internal/sessions/") { exchange ->
             counter.incrementAndGet()
             val respBody = body.toByteArray()
             exchange.responseHeaders.set(HttpHeaders.CONTENT_TYPE, "application/json")
@@ -150,7 +150,7 @@ class SessionInfoClientTest {
     fun `slow response times out and returns null`() {
         // 启动一个永远不响应的 server，验证超时降级
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/api/internal/sessions/") { exchange ->
+        server.createContext("/api/admin/internal/sessions/") { exchange ->
             // 不 sendResponseHeaders，连接一直挂着
             try {
                 Thread.sleep(3000)

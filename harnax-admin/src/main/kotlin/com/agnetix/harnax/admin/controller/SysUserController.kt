@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for enterprise and public editions
  */
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/admin/users")
 @Tag(name = "User Management", description = "User related APIs")
 class SysUserController(
     private val sysUserService: SysUserService,

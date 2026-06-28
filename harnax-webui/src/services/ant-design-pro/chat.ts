@@ -45,7 +45,7 @@ export async function getSessionConfig(
   sessionId: string,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/sessions/${sessionId}/config`, {
+  return request(`/api/admin/sessions/${sessionId}/config`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -63,7 +63,7 @@ export async function updateSessionConfig(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/sessions/${sessionId}/config`, {
+  return request(`/api/admin/sessions/${sessionId}/config`, {
     method: 'PUT',
     data,
     ...(options || {}),

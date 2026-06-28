@@ -115,7 +115,7 @@ class HarnessAutoConfiguration {
      * This bean replaces [com.agnetix.harnax.agent.AscopeAgentLauncher] when the harness
      * module is on the classpath. Inject all required adaptors via Spring DI.
      */
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     fun harnessAgentLauncher(
         chatModelConfigAdaptor: ChatModelConfigAdaptor,
         mcpConfigAdaptor: McpConfigAdaptor,

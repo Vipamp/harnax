@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.*
 
 @Tag(name = "MP Auth", description = "Mobile authentication APIs")
 @RestController
-@RequestMapping("/api/mp/auth")
+@RequestMapping("/api/admin/mp/auth")
 class MpAuthController(
     private val authService: AuthService,
     private val captchaService: CaptchaService,

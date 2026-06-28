@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*
  * Channel management controller
  */
 @RestController
-@RequestMapping("/api/channels")
+@RequestMapping("/api/admin/channels")
 @Tag(name = "Channel Management", description = "Channel related APIs")
 class ChannelController(
     private val channelService: ChannelService,

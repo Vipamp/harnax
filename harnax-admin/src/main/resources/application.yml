@@ -112,3 +112,6 @@ harnax:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
   router:
     url: ${HARNAX_ROUTER_URL:http://localhost:8081}
+    external-url: ${HARNAX_ROUTER_EXTERNAL_URL:}
+  aes:
+    secret-key: ${HARNAX_AES_SECRET_KEY:change-me-32-chars-secret-key!!}

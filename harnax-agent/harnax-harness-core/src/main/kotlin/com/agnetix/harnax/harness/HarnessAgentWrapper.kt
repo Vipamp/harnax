@@ -88,15 +88,19 @@ class HarnessAgentWrapper(
 
     fun call(msgs: List<Msg>): ChatResponse {
         val ctxResult = buildRuntimeContext()
-        val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext)
-            .block(Duration.ofMinutes(5))
-        val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
-        val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
-        return ChatResponse(
-            sessionId = sessionId,
-            content = content,
-            thinking = thinking?.ifEmpty { null },
-        )
+        try {
+            val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext)
+                .block(Duration.ofMinutes(5))
+            val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
+            val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
+            return ChatResponse(
+                sessionId = sessionId,
+                content = content,
+                thinking = thinking?.ifEmpty { null },
+            )
+        } finally {
+            persistKeepAliveSnapshot(ctxResult)
+        }
     }
 
     private fun callStreamInternal(
@@ -106,22 +110,7 @@ class HarnessAgentWrapper(
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
             .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
             .doOnNext { extracted(it) }
-            .doFinally {
-                val keepAliveSandbox = ctxResult.keepAliveSandbox
-                if (keepAliveSandbox != null) {
-                    try {
-                        val snapshot = keepAliveSandbox.state.snapshot
-                        if (snapshot != null && snapshot.isPersistenceEnabled) {
-                            keepAliveSandbox.persistWorkspace().use { archive ->
-                                snapshot.persist(archive)
-                            }
-                            log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
-                        }
-                    } catch (e: Exception) {
-                        log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
-                    }
-                }
-            }
+            .doFinally { persistKeepAliveSnapshot(ctxResult) }
             .concatWith(Flux.just(EndEventChatEvent()))
             .onErrorResume { e ->
                 log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
@@ -161,6 +150,28 @@ class HarnessAgentWrapper(
                     .totalToken(it.tokenUsage!!.totalTokens)
                     .build(),
             )
+        }
+    }
+
+    /**
+     * Persists the workspace snapshot for the keep-alive sandbox (if any).
+     *
+     * Called after both streaming ([callStreamInternal]) and non-streaming ([call])
+     * requests complete, ensuring workspace state is saved regardless of the call path.
+     * Exceptions are caught and logged so they never propagate to the caller.
+     */
+    private fun persistKeepAliveSnapshot(ctxResult: RuntimeContextResult) {
+        val keepAliveSandbox = ctxResult.keepAliveSandbox ?: return
+        try {
+            val snapshot = keepAliveSandbox.state.snapshot
+            if (snapshot != null && snapshot.isPersistenceEnabled) {
+                keepAliveSandbox.persistWorkspace().use { archive ->
+                    snapshot.persist(archive)
+                }
+                log.debug("[keepAlive] Workspace snapshot persisted for session={}", sessionId)
+            }
+        } catch (e: Exception) {
+            log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
         }
     }
 

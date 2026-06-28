@@ -15,7 +15,7 @@ export async function getChannelPage(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/channels/page`, {
+  return request(`/api/admin/channels/page`, {
     method: 'GET',
     params: {
       ...params,
@@ -28,7 +28,7 @@ export async function getChannelPage(
  * 获取 Channel 详情
  */
 export async function getChannelById(id: number, options?: { [key: string]: any }) {
-  return request(`/api/channels/${id}`, {
+  return request(`/api/admin/channels/${id}`, {
     method: 'GET',
     ...(options || {}),
   });
@@ -41,7 +41,7 @@ export async function createChannel(
   data: API.ChannelCreateRequest,
   options?: { [key: string]: any },
 ) {
-  return request('/api/channels', {
+  return request('/api/admin/channels', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -59,7 +59,7 @@ export async function updateChannel(
   data: API.ChannelUpdateRequest,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/channels/update/${id}`, {
+  return request(`/api/admin/channels/update/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ export async function toggleChannelStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
-  return request(`/api/channels/toggle/${id}`, {
+  return request(`/api/admin/channels/toggle/${id}`, {
     method: 'PUT',
     params: { status },
     ...(options || {}),
@@ -88,7 +88,7 @@ export async function toggleChannelStatus(
  * 删除 Channel
  */
 export async function deleteChannel(id: number, options?: { [key: string]: any }) {
-  return request(`/api/channels/${id}`, {
+  return request(`/api/admin/channels/${id}`, {
     method: 'DELETE',
     ...(options || {}),
   });
@@ -104,7 +104,7 @@ export async function getAgentList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/agents/page`, {
+  return request(`/api/admin/agents/page`, {
     method: 'GET',
     params: {
       pageNum: 1,

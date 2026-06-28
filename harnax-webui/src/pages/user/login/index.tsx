@@ -369,6 +369,7 @@ const Login: React.FC = () => {
             tokenType: msg.data.tokenType || 'Bearer',
             expiresIn: msg.data.expiresIn,
             expiresAt: msg.data.expiresAt,
+            routerApiKey: msg.data.routerApiKey || null,
             // 保存用户信息和租户信息，供请求拦截器使用
             currentUser: msg.data.userInfo ? {
               userId: msg.data.userInfo.userId,

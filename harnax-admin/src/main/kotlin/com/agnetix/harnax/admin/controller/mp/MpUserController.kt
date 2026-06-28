@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*
 
 @Tag(name = "MP User", description = "Mobile user profile APIs")
 @RestController
-@RequestMapping("/api/mp/user")
+@RequestMapping("/api/admin/mp/user")
 class MpUserController(
     private val mpUserService: MpUserService,
 ) {

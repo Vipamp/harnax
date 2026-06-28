@@ -1,7 +1,6 @@
 package com.agnetix.harnax.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
-import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
 /**
@@ -9,10 +8,6 @@ import jakarta.validation.constraints.Size
  */
 @Schema(description = "Channel update request object")
 data class ChannelUpdateRequest(
-    @Schema(description = "ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "ID cannot be empty")
-    var id: Long? = null,
-
     @Schema(description = "Channel name", example = "Enterprise WeChat Customer Service")
     @Size(max = 100, message = "Channel name length cannot exceed 100 characters")
     val name: String? = null,

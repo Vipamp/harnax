@@ -1,5 +1,7 @@
 package com.agnetix.harnax.agent.session
 
+import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonProperty
 import io.agentscope.core.state.State
 import org.h2.jdbcx.JdbcDataSource
 import org.junit.jupiter.api.AfterEach
@@ -384,5 +386,7 @@ multiline""",
         }
     }
 
-    data class TestState(val value: String) : State
+    data class TestState @JsonCreator constructor(
+        @JsonProperty("value") val value: String,
+    ) : State
 }

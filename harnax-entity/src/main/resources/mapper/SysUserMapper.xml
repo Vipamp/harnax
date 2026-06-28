@@ -163,4 +163,11 @@
         AND active = 1
     </update>
 
+    <!-- Select all active users -->
+    <select id="selectAllActive" resultMap="SysUserResultMap">
+        SELECT * FROM sys_user
+        WHERE active = 1 AND status = 1
+        ORDER BY id ASC
+    </select>
+
 </mapper>

@@ -12,9 +12,19 @@
 export default {
   // 如果需要自定义本地开发服务器  请取消注释按需调整
   dev: {
-    // localhost:8000/api/** -> http://localhost:8080/api/**
-    '/api/': {
+    // localhost:8000/api/admin/** -> http://localhost:8080/api/admin/**
+    '/api/admin/': {
       target: 'http://localhost:8080',
+      changeOrigin: true,
+    },
+    // localhost:8000/api/router/** -> http://localhost:8081/api/router/**
+    '/api/router/': {
+      target: 'http://localhost:8081',
+      changeOrigin: true,
+    },
+    // localhost:8000/api/agent/** -> http://localhost:8082/api/agent/**
+    '/api/agent/': {
+      target: 'http://localhost:8082',
       changeOrigin: true,
     },
     // localhost:8000/ai/** -> http://localhost:8080/ai/**

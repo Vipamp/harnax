@@ -12,7 +12,7 @@ export async function getUserPage(
   },
   options?: { [key: string]: any },
 ) {
- return request('/api/users/page', {
+ return request('/api/admin/users/page', {
    method: 'GET',
    params: {
       ...params,
@@ -23,7 +23,7 @@ export async function getUserPage(
 
 /** 获取用户详情 GET /api/users/${id} */
 export async function getUserById(id: number, options?: { [key: string]: any }) {
- return request(`/api/users/${id}`, {
+ return request(`/api/admin/users/${id}`, {
    method: 'GET',
     ...(options || {}),
   });
@@ -31,7 +31,7 @@ export async function getUserById(id: number, options?: { [key: string]: any }) 
 
 /**创建用户 POST /api/users */
 export async function createUser(data: API.SysUserCreateRequest, options?: { [key: string]: any }) {
- return request('/api/users', {
+ return request('/api/admin/users', {
    method: 'POST',
    headers: {
       'Content-Type': 'application/json',
@@ -47,7 +47,7 @@ export async function updateUser(
   data: API.SysUserUpdateRequest,
   options?: { [key: string]: any },
 ) {
- return request(`/api/users/update/${userId}`, {
+ return request(`/api/admin/users/update/${userId}`, {
    method: 'PUT',
    headers: {
       'Content-Type': 'application/json',
@@ -63,7 +63,7 @@ export async function toggleUserStatus(
   status: number,
   options?: { [key: string]: any },
 ) {
- return request(`/api/users/toggle/${userId}`, {
+ return request(`/api/admin/users/toggle/${userId}`, {
    method: 'PUT',
    params: {
      status,
@@ -74,7 +74,7 @@ export async function toggleUserStatus(
 
 /** 删除用户 DELETE /api/users/${userId} */
 export async function deleteUser(userId: number, options?: { [key: string]: any }) {
- return request(`/api/users/${userId}`, {
+ return request(`/api/admin/users/${userId}`, {
    method: 'DELETE',
     ...(options || {}),
   });
@@ -85,7 +85,7 @@ export async function checkUsername(
   username: string,
   options?: { [key: string]: any },
 ) {
- return request('/api/users/check/username', {
+ return request('/api/admin/users/check/username', {
    method: 'GET',
    params: { username },
     ...(options || {}),
@@ -97,7 +97,7 @@ export async function checkPhone(
   phone: string,
   options?: { [key: string]: any },
 ) {
- return request('/api/users/check/phone', {
+ return request('/api/admin/users/check/phone', {
    method: 'GET',
    params: { phone },
     ...(options || {}),
@@ -109,7 +109,7 @@ export async function checkEmail(
   email: string,
   options?: { [key: string]: any },
 ) {
- return request('/api/users/check/email', {
+ return request('/api/admin/users/check/email', {
    method: 'GET',
    params: { email },
     ...(options || {}),

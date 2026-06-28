@@ -1,7 +1,7 @@
-import { Form, Input, Select, message, Typography, Tooltip, Button } from 'antd';
+import { Form, Input, Select, Typography, Tooltip, Button, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
-import { LinkOutlined, CopyOutlined, EditOutlined } from '@ant-design/icons';
+import { LinkOutlined, CopyOutlined, KeyOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 
 const { TextArea } = Input;
@@ -32,15 +32,24 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
   // 初始化表单数据
   useEffect(() => {
     if (visible && values) {
+      // Parse configJson to populate individual config fields
+      let config: Record<string, any> = {};
+      try {
+        config = values.configJson ? JSON.parse(values.configJson) : {};
+      } catch {
+        config = {};
+      }
       form.setFieldsValue({
         name: values.name,
         type: values.type,
         agentId: values.agentId,
-        webhookUrl: values.webhookUrl,
-        token: values.token,
-        encodingAesKey: values.encodingAesKey,
-        appId: values.appId,
-        appSecret: values.appSecret,
+        communicationMode: values.communicationMode || 'webhook',
+        enabled: values.enabled === 1,
+        token: config.token,
+        encodingAesKey: config.encodingAesKey,
+        appId: config.appId,
+        appSecret: config.appSecret,
+        webhookUrl: config.webhookUrl,
         description: values.description,
       });
       setSelectedType(values.type);
@@ -60,7 +69,23 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
     try {
       const formValues = await form.validateFields();
       setLoading(true);
-      await onSubmit(formValues);
+
+      // Extract type-specific config fields and serialize into configJson
+      const { token, encodingAesKey, appId, appSecret, webhookUrl, enabled, ...restValues } = formValues;
+      const config: Record<string, string> = {};
+      if (token) config.token = token;
+      if (encodingAesKey) config.encodingAesKey = encodingAesKey;
+      if (appId) config.appId = appId;
+      if (appSecret) config.appSecret = appSecret;
+      if (webhookUrl) config.webhookUrl = webhookUrl;
+
+      const submitData: API.ChannelUpdateRequest = {
+        ...restValues,
+        enabled: enabled ? 1 : 0,
+        configJson: Object.keys(config).length > 0 ? JSON.stringify(config) : undefined,
+      };
+
+      await onSubmit(submitData);
       form.resetFields();
       setSelectedType('');
     } catch (error) {
@@ -196,6 +221,28 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           />
         </Form.Item>
 
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
+          name="communicationMode"
+        >
+          <Select
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
+            options={[
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
+            ]}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.enabled', defaultMessage: 'Auto Listen' })}
+          name="enabled"
+          valuePropName="checked"
+        >
+          <Switch />
+        </Form.Item>
+
         {renderTypeSpecificFields()}
 
         <Form.Item
@@ -204,6 +251,78 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         >
           <TextArea rows={3} placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.description', defaultMessage: 'Please enter channel description' })} />
         </Form.Item>
+
+        {/* Session ID - 只读显示 */}
+        {values?.sessionId && (
+          <Form.Item
+            label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <KeyOutlined style={{ color: 'var(--vip-primary)', fontSize: 13 }} />
+                {intl.formatMessage({ id: 'pages.channel.form.label.sessionId', defaultMessage: 'Session ID' })}
+              </span>
+            }
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 14px',
+                background: 'var(--vip-bg-component)',
+                border: '1px solid var(--vip-border)',
+                borderRadius: 8,
+                transition: 'border-color 0.2s, box-shadow 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'var(--vip-primary)';
+                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(99, 102, 241, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'var(--vip-border)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <Text
+                copyable={{
+                  text: values.sessionId,
+                  icon: [
+                    <CopyOutlined key="copy" style={{ color: 'var(--vip-text-tertiary)', fontSize: 14 }} />,
+                    <CopyOutlined key="copied" style={{ color: 'var(--vip-primary)', fontSize: 14 }} />,
+                  ],
+                }}
+                style={{
+                  flex: 1,
+                  color: 'var(--vip-text-secondary)',
+                  fontSize: 13,
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                  wordBreak: 'break-all',
+                  lineHeight: 1.6,
+                }}
+              >
+                {values.sessionId}
+              </Text>
+              <Tooltip title={intl.formatMessage({ id: 'pages.channel.tooltip.immutable', defaultMessage: 'Immutable, auto-generated at creation' })}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    color: 'var(--vip-primary)',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  {intl.formatMessage({ id: 'pages.channel.label.immutable', defaultMessage: 'IMMUTABLE' })}
+                </span>
+              </Tooltip>
+            </div>
+          </Form.Item>
+        )}
 
         {/* 回调 URL - 使用 Form.Item 标签在外显示 */}
         {values?.callbackUrl && (

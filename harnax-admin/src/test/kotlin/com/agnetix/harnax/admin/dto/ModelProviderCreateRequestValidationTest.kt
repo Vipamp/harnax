@@ -145,7 +145,7 @@ class ModelProviderCreateRequestValidationTest {
             assertFalse(violations.isEmpty(), "baseUrl 格式不正确时应该验证失败")
             val baseUrlViolation = violations.find { it.propertyPath.toString() == "baseUrl" }
             assertNotNull(baseUrlViolation, "应该包含 baseUrl 的验证错误")
-            assertEquals("API 地址格式不正确", baseUrlViolation.message)
+            assertEquals("Invalid API URL format", baseUrlViolation.message)
         }
 
         @Test
@@ -184,11 +184,15 @@ class ModelProviderCreateRequestValidationTest {
             assertFalse(violations.isEmpty(), "type 为空时应该验证失败")
             val typeViolation = violations.find { it.propertyPath.toString() == "type" }
             assertNotNull(typeViolation, "应该包含 type 的验证错误")
-            // 空字符串会同时触发 @NotBlank 和 @Size 验证，消息可能是其中之一
+            // 空字符串可能触发 @NotBlank、@Size 或 @Pattern 验证，消息可能是其中之一
+            val allMessages = violations.filter { it.propertyPath.toString() == "type" }.map { it.message }
             assertTrue(
-                typeViolation.message == "供应商类型不能为空" ||
-                    typeViolation.message == "供应商类型长度必须在 1-50 个字符之间",
-                "验证错误消息应该是 type 相关的验证失败",
+                allMessages.any {
+                    it == "Provider type cannot be empty" ||
+                        it == "Provider type length must be between 1-50 characters" ||
+                        it == "Provider type can only contain lowercase letters, numbers and underscores"
+                },
+                "验证错误消息应该是 type 相关的验证失败，实际消息: $allMessages",
             )
         }
 

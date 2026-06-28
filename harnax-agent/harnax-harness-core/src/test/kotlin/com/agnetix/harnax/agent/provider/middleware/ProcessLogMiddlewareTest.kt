@@ -9,6 +9,8 @@ import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.ToolCallStartEvent
 import io.agentscope.core.event.ToolResultEndEvent
 import io.agentscope.core.event.ToolResultTextDeltaEvent
+import io.agentscope.core.message.ToolResultState
+import io.agentscope.core.message.ToolUseBlock
 import io.agentscope.core.middleware.ActingInput
 import io.agentscope.core.middleware.AgentInput
 import org.junit.jupiter.api.Assertions.*
@@ -19,7 +21,6 @@ import org.mockito.Mockito.*
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
 import java.util.function.Function
-import kotlin.jvm.java
 
 class ProcessLogMiddlewareTest {
 
@@ -93,7 +94,7 @@ class ProcessLogMiddlewareTest {
             val toolResultEvent = mock(ToolResultEndEvent::class.java)
             `when`(toolResultEvent.type).thenReturn(AgentEventType.TOOL_RESULT_END)
             `when`(toolResultEvent.toolCallName).thenReturn("search_web")
-            `when`(toolResultEvent.state).thenReturn("SUCCESS")
+            `when`(toolResultEvent.state).thenReturn(ToolResultState.SUCCESS)
 
             val next = Function<AgentInput, Flux<AgentEvent>> { Flux.just(toolResultEvent) }
 
@@ -164,8 +165,8 @@ class ProcessLogMiddlewareTest {
             val input = mock(AgentInput::class.java)
             val event1 = mock(AgentEvent::class.java)
             val event2 = mock(AgentEvent::class.java)
-            `when`(event1.type).thenReturn(AgentEventType.TEXT_DELTA)
-            `when`(event2.type).thenReturn(AgentEventType.TEXT_DELTA)
+            `when`(event1.type).thenReturn(AgentEventType.TEXT_BLOCK_DELTA)
+            `when`(event2.type).thenReturn(AgentEventType.TEXT_BLOCK_DELTA)
 
             val next = Function<AgentInput, Flux<AgentEvent>> { Flux.just(event1, event2) }
 
@@ -182,12 +183,8 @@ class ProcessLogMiddlewareTest {
         @Test
         fun `onActing logs each tool call with name and input`() {
             val input = mock(ActingInput::class.java)
-            val toolCall1 = mock(io.agentscope.core.tool.ToolCall::class.java)
-            val toolCall2 = mock(io.agentscope.core.tool.ToolCall::class.java)
-            `when`(toolCall1.name).thenReturn("search")
-            `when`(toolCall1.input).thenReturn("query=test")
-            `when`(toolCall2.name).thenReturn("calculate")
-            `when`(toolCall2.input).thenReturn("expr=1+1")
+            val toolCall1 = ToolUseBlock("t1", "search", mapOf("query" to "test"))
+            val toolCall2 = ToolUseBlock("t2", "calculate", mapOf("expr" to "1+1"))
             `when`(input.toolCalls).thenReturn(listOf(toolCall1, toolCall2))
 
             val next = Function<ActingInput, Flux<AgentEvent>> { Flux.empty() }
@@ -197,12 +194,12 @@ class ProcessLogMiddlewareTest {
 
             assertTrue(
                 capturedLogs.any {
-                    it.message.contains("Call tool: 'search' with input 'query=test'")
+                    it.message.contains("Call tool: 'search'") && it.message.contains("{query=test}")
                 },
             )
             assertTrue(
                 capturedLogs.any {
-                    it.message.contains("Call tool: 'calculate' with input 'expr=1+1'")
+                    it.message.contains("Call tool: 'calculate'") && it.message.contains("{expr=1+1}")
                 },
             )
         }

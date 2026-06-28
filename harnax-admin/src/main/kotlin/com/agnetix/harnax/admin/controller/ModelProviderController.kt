@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for public edition (model marketplace feature)
  */
 @RestController
-@RequestMapping("/api/model-providers")
+@RequestMapping("/api/admin/model-providers")
 @Tag(name = "Model Provider Management", description = "Model provider CRUD APIs")
 class ModelProviderController(
     private val modelProviderService: ModelProviderService,

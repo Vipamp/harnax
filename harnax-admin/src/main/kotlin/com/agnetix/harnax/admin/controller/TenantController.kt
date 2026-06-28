@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*
  * Available only for public edition
  */
 @RestController
-@RequestMapping("/api/tenant")
+@RequestMapping("/api/admin/tenant")
 @Tag(name = "Tenant Management", description = "Tenant related APIs")
 class TenantController(
     private val tenantService: TenantService,

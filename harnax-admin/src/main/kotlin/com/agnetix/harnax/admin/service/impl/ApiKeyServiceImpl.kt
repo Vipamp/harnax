@@ -6,8 +6,10 @@ import com.agnetix.harnax.admin.dto.ApiKeyCreatedResponse
 import com.agnetix.harnax.admin.dto.ApiKeyResponse
 import com.agnetix.harnax.admin.dto.ApiKeyUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.ApiKeyService
+import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.ApiKeyEntity
@@ -26,11 +28,14 @@ import java.util.Base64
 class ApiKeyServiceImpl(
     private val apiKeyMapper: ApiKeyMapper,
     private val jwtUtil: JwtUtil,
+    private val aesUtil: AesUtil,
 ) : ApiKeyService {
 
     private val log = LoggerFactory.getLogger(ApiKeyServiceImpl::class.java)
     private val secureRandom = SecureRandom()
     private val isoFormatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+
+    private val protectedKeyTypes = setOf("PERMANENT", "SYSTEM")
 
     override fun page(
         keyword: String?,
@@ -41,7 +46,7 @@ class ApiKeyServiceImpl(
         pageSize: Int,
     ): Page<ApiKeyEntity> {
         PageHelper.startPage<ApiKeyEntity>(pageNum, pageSize)
-        return Page.fromPageInfo(apiKeyMapper.selectApiKeyList(keyword, enabled, creator, tenantId))
+        return Page.fromPageInfo(apiKeyMapper.selectTemporaryKeys(keyword, enabled, creator, tenantId))
     }
 
     override fun getApiKey(id: Long): ApiKeyEntity? {
@@ -73,9 +78,12 @@ class ApiKeyServiceImpl(
 
         val entity = ApiKeyEntity().apply {
             name = request.name
+            keyType = "TEMPORARY"
+            userId = null
+            serviceName = null
             this.keyHash = keyHash
             this.keyPrefix = keyPrefix
-            scopes = request.scopes ?: "api:chat"
+            scopes = request.scopes ?: "chat"
             this.tenantId = tenantId
             rateLimit = request.rateLimit ?: 60
             enabled = 1
@@ -100,6 +108,9 @@ class ApiKeyServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun updateApiKey(id: Long, request: ApiKeyUpdateRequest): Boolean {
         val entity = loadAndCheckAccess(id)
+        if (entity.keyType in protectedKeyTypes) {
+            throw RuntimeException("${entity.keyType} API Key cannot be modified, use regenerate instead")
+        }
         val admin = isAdmin()
 
         // Non-admin users cannot change tenantId
@@ -122,7 +133,10 @@ class ApiKeyServiceImpl(
     }
 
     override fun deleteApiKey(id: Long): Boolean {
-        loadAndCheckAccess(id)
+        val entity = loadAndCheckAccess(id)
+        if (entity.keyType in protectedKeyTypes) {
+            throw RuntimeException("${entity.keyType} API Key cannot be deleted, use regenerate instead")
+        }
         val username = currentUsername()
         val result = apiKeyMapper.deleteById(id) > 0
         if (result) log.info("API Key deleted: id={}, operator={}", id, username)
@@ -130,7 +144,10 @@ class ApiKeyServiceImpl(
     }
 
     override fun toggleEnabled(id: Long, enabled: Int): Boolean {
-        loadAndCheckAccess(id)
+        val entity = loadAndCheckAccess(id)
+        if (entity.keyType in protectedKeyTypes) {
+            throw RuntimeException("${entity.keyType} API Key cannot be disabled")
+        }
         val username = currentUsername()
         val result = apiKeyMapper.updateEnabled(id, enabled) > 0
         if (result) log.info("API Key toggled: id={}, enabled={}, operator={}", id, enabled, username)
@@ -161,6 +178,114 @@ class ApiKeyServiceImpl(
     }
 
     override fun convertToResponse(entity: ApiKeyEntity): ApiKeyResponse = ApiKeyResponse.fromEntity(entity)
+
+    // ==================== Permanent Key Methods ====================
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun createPermanentKeyForUser(userId: Long, username: String, tenantId: Long?): ApiKeyCreatedResponse {
+        val rawKey = generateRawKey()
+        val keyHash = sha256(rawKey)
+        val keyPrefix = rawKey.substring(0, 12) + "..." + rawKey.takeLast(4)
+        val encrypted = aesUtil.encrypt(rawKey)
+
+        val entity = ApiKeyEntity().apply {
+            name = "permanent_$username"
+            keyType = "PERMANENT"
+            this.userId = userId
+            rawKeyEncrypted = encrypted
+            serviceName = null
+            this.keyHash = keyHash
+            this.keyPrefix = keyPrefix
+            scopes = "chat"
+            this.tenantId = tenantId
+            rateLimit = 300
+            enabled = 1
+            expiresAt = null
+            creator = "system"
+            active = 1
+            createTime = LocalDateTime.now()
+            updateTime = LocalDateTime.now()
+        }
+
+        apiKeyMapper.insert(entity)
+        log.info("Permanent API Key created for user: userId={}, username={}", userId, username)
+
+        return ApiKeyCreatedResponse(
+            id = entity.id,
+            name = entity.name,
+            rawKey = rawKey,
+            keyPrefix = keyPrefix,
+        )
+    }
+
+    override fun getPermanentRawKey(userId: Long): String? {
+        val entity = apiKeyMapper.selectPermanentKeyByUserId(userId) ?: return null
+        if (entity.enabled != 1) {
+            throw BizException("Your API Key has been disabled, please contact administrator")
+        }
+        val encrypted = entity.rawKeyEncrypted ?: return null
+        return aesUtil.decrypt(encrypted)
+    }
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun regeneratePermanentKey(userId: Long): ApiKeyCreatedResponse {
+        val entity = apiKeyMapper.selectPermanentKeyByUserId(userId)
+            ?: throw RuntimeException("Permanent API Key not found for user: $userId")
+
+        val rawKey = generateRawKey()
+        val keyHash = sha256(rawKey)
+        val keyPrefix = rawKey.substring(0, 12) + "..." + rawKey.takeLast(4)
+        val encrypted = aesUtil.encrypt(rawKey)
+
+        entity.keyHash = keyHash
+        entity.keyPrefix = keyPrefix
+        entity.rawKeyEncrypted = encrypted
+        entity.updateTime = LocalDateTime.now()
+        apiKeyMapper.updateById(entity)
+
+        log.info("Permanent API Key regenerated for userId={}", userId)
+
+        return ApiKeyCreatedResponse(
+            id = entity.id,
+            name = entity.name,
+            rawKey = rawKey,
+            keyPrefix = keyPrefix,
+        )
+    }
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun initSystemKeys() {
+        val systemServices = listOf("channel-service")
+        for (serviceName in systemServices) {
+            val existing = apiKeyMapper.selectSystemKeyByServiceName(serviceName)
+            if (existing == null) {
+                val rawKey = generateRawKey()
+                val keyHash = sha256(rawKey)
+                val keyPrefix = rawKey.substring(0, 12) + "..." + rawKey.takeLast(4)
+                val encrypted = aesUtil.encrypt(rawKey)
+
+                val entity = ApiKeyEntity().apply {
+                    name = "system_$serviceName"
+                    keyType = "SYSTEM"
+                    userId = null
+                    rawKeyEncrypted = encrypted
+                    this.serviceName = serviceName
+                    this.keyHash = keyHash
+                    this.keyPrefix = keyPrefix
+                    scopes = "chat"
+                    rateLimit = 600
+                    enabled = 1
+                    expiresAt = null
+                    creator = "system"
+                    active = 1
+                    createTime = LocalDateTime.now()
+                    updateTime = LocalDateTime.now()
+                }
+                apiKeyMapper.insert(entity)
+                log.info("System API Key created for service: {}", serviceName)
+            }
+        }
+    }
 
     private fun loadAndCheckAccess(id: Long): ApiKeyEntity {
         val entity = apiKeyMapper.selectById(id)

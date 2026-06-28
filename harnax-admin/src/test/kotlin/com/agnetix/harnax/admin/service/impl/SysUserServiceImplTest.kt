@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.SysUserCreateRequest
 import com.agnetix.harnax.admin.dto.SysUserUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.entity.SysUser
 import com.agnetix.harnax.entity.TenantEntity
 import com.agnetix.harnax.entity.UserTenantEntity
@@ -19,13 +20,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mindrot.jbcrypt.BCrypt
-import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argThat
 import org.mockito.quality.Strictness
 import java.time.LocalDateTime
@@ -52,6 +53,9 @@ class SysUserServiceImplTest {
 
     @Mock
     private lateinit var messageUtil: MessageUtil
+
+    @Mock
+    private lateinit var apiKeyService: ApiKeyService
 
     @InjectMocks
     private lateinit var sysUserService: SysUserServiceImpl
@@ -258,6 +262,37 @@ class SysUserServiceImplTest {
                         user.password.startsWith("\$2a\$10\$") // Password is encrypted
                 },
             )
+
+            // Verify permanent API key creation was attempted for the new user
+            verify(apiKeyService).createPermanentKeyForUser(any(), any(), anyOrNull())
+        }
+
+        @Test
+        @DisplayName("createUser - 永久Key创建失败不影响用户创建")
+        fun `createUser should succeed even when permanent key creation fails`() {
+            // Given
+            val request = SysUserCreateRequest(
+                username = "keyfailuser",
+                password = "password123",
+                nickname = "Key Fail User",
+                email = "keyfail@example.com",
+                phone = "13900139999",
+                gender = 1,
+                avatar = "",
+            )
+            `when`(sysUserMapper.selectByUsername("keyfailuser")).thenReturn(null)
+            `when`(sysUserMapper.insert(any<SysUser>())).thenReturn(1)
+            `when`(apiKeyService.createPermanentKeyForUser(any(), any(), anyOrNull()))
+                .thenThrow(RuntimeException("AES encryption failed"))
+
+            // When
+            val result = sysUserService.createUser(request)
+
+            // Then - user creation should still succeed
+            assertTrue(result)
+            verify(sysUserMapper).insert(any<SysUser>())
+            // Verify permanent key creation was attempted
+            verify(apiKeyService).createPermanentKeyForUser(any(), any(), anyOrNull())
         }
 
         @Test
@@ -560,7 +595,7 @@ class SysUserServiceImplTest {
         @DisplayName("updateUser - Succeed when setting own phone")
         fun `updateUser should succeed when setting own phone`() {
             // Given
-            val request = SysUserUpdateRequest(phone = "13800138000") // 用户自己的手机号
+            val request = SysUserUpdateRequest(phone = "13800138000", email = "test@example.com") // 用户自己的手机号和邮箱
             `when`(sysUserMapper.selectById(1L)).thenReturn(testUser)
             `when`(sysUserMapper.updateById(any<SysUser>())).thenReturn(1)
 

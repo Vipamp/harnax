@@ -326,6 +326,139 @@ class SessionRouterService(
         }
     }
 
+    // ---- Workspace proxy methods ----
+
+    suspend fun proxyWorkspaceListFiles(sessionId: String, path: String): ResultVo<List<Map<String, Any>>> {
+        setMDC(sessionId, null)
+        try {
+            return executeWithRetry(sessionId, "workspaceFiles") { targetInstance ->
+                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/files?path=$path")
+                webClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Map<String, Any>>>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
+    suspend fun proxyWorkspaceReadFile(sessionId: String, path: String): ResultVo<Map<String, Any>> {
+        setMDC(sessionId, null)
+        try {
+            return executeWithRetry(sessionId, "workspaceRead") { targetInstance ->
+                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/read?path=$path")
+                webClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
+    suspend fun proxyWorkspaceStatus(sessionIds: String): ResultVo<Map<String, Map<String, Any>>> {
+        log.info("[proxyWorkspaceStatus] Starting for sessions: $sessionIds")
+        // Use the first sessionId for routing; all sessions should be on the same agent-service
+        val firstId = sessionIds.split(",").firstOrNull()?.trim() ?: return ResultVo.success(emptyMap())
+        log.info("[proxyWorkspaceStatus] Using firstId for routing: $firstId")
+        setMDC(firstId, null)
+        try {
+            return executeWithRetry(firstId, "workspaceStatus") { targetInstance ->
+                val encodedIds = java.net.URLEncoder.encode(sessionIds, "UTF-8")
+                val url = "${targetInstance.getBaseUrl()}/api/agent/workspace/status?sessionIds=$encodedIds"
+                log.info("[proxyWorkspaceStatus] Forwarding to agent-service: $url")
+
+                val response = webClient.get()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Map<String, Any>>>>() {})
+                    .awaitSingleOrNull()
+
+                log.info("[proxyWorkspaceStatus] Response from agent-service: code=${response?.code}, message=${response?.message}, data=${response?.data}")
+                response ?: ResultVo.error("No response from agent-service")
+            }
+        } catch (e: Exception) {
+            log.error("[proxyWorkspaceStatus] Exception: ${e.javaClass.simpleName}: ${e.message}", e)
+            throw e
+        } finally {
+            clearMDC()
+        }
+    }
+
+    /**
+     * Proxy file upload request to agent-service.
+     * Returns the raw response bytes for streaming back to client.
+     */
+    suspend fun proxyWorkspaceUpload(
+        sessionId: String,
+        path: String,
+        fileName: String,
+        fileBytes: ByteArray,
+    ): ResultVo<Map<String, Any>> {
+        setMDC(sessionId, null)
+        try {
+            return executeWithRetry(sessionId, "workspaceUpload") { targetInstance ->
+                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/upload")
+
+                // Build multipart body with custom resource that has filename
+                val fileResource = object : org.springframework.core.io.ByteArrayResource(fileBytes) {
+                    override fun getFilename(): String = fileName
+                }
+                val body = org.springframework.http.client.MultipartBodyBuilder()
+                body.part("file", fileResource)
+                body.part("path", path)
+
+                webClient.post()
+                    .uri(uri)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .bodyValue(body.build())
+                    .retrieve()
+                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
+                    .awaitSingleOrNull()
+                    ?: ResultVo.error("No response from agent-service")
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
+    /**
+     * Proxy file download request to agent-service.
+     * Returns the raw response as ByteArray with content type.
+     */
+    suspend fun proxyWorkspaceDownload(
+        sessionId: String,
+        path: String,
+    ): Pair<ByteArray, String>? {
+        setMDC(sessionId, null)
+        try {
+            return executeWithRetry(sessionId, "workspaceDownload") { targetInstance ->
+                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/download?path=$path")
+
+                val response = webClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .toEntity(ByteArray::class.java)
+                    .awaitSingleOrNull()
+
+                if (response != null && response.body != null) {
+                    val contentType = response.headers.contentType?.toString() ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
+                    Pair(response.body!!, contentType)
+                } else {
+                    null
+                }
+            }
+        } finally {
+            clearMDC()
+        }
+    }
+
     private suspend fun resolveInstance(sessionId: String): AgentInstance {
         return try {
             val existingInstanceId = sessionMappingService.getInstanceId(sessionId)

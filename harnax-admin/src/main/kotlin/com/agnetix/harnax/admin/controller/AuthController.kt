@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.*
  */
 @Tag(name = "Authentication", description = "User login, logout, captcha and other APIs")
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/api/admin/auth")
 class AuthController(
     private val authService: AuthService,
     private val captchaService: CaptchaService,

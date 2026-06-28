@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.response.TenantResponse
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.i18n.MessageUtil
+import com.agnetix.harnax.admin.service.ApiKeyService
 import com.agnetix.harnax.admin.service.CaptchaService
 import com.agnetix.harnax.admin.service.SysTokenBlacklistService
 import com.agnetix.harnax.admin.service.UserTenantService
@@ -66,6 +67,9 @@ class AuthServiceImplTest {
     @Mock
     private lateinit var messageUtil: MessageUtil
 
+    @Mock
+    private lateinit var apiKeyService: ApiKeyService
+
     @InjectMocks
     private lateinit var authService: AuthServiceImpl
 
@@ -124,6 +128,9 @@ class AuthServiceImplTest {
 
         // Mock userTenantService.addUserToTenant
         `when`(userTenantService.addUserToTenant(anyLong(), anyLong(), anyString(), anyString())).thenReturn(true)
+
+        // Mock apiKeyService to return a permanent raw key
+        `when`(apiKeyService.getPermanentRawKey(anyLong())).thenReturn("hnx_sk_live_test_permanent_key_1234567890")
     }
 
     @Nested
@@ -151,8 +158,14 @@ class AuthServiceImplTest {
             assertEquals("testuser", response.userInfo?.username)
             assertEquals("测试用户", response.userInfo?.nickname)
 
+            // 验证返回了永久 API key
+            assertEquals("hnx_sk_live_test_permanent_key_1234567890", response.routerApiKey)
+
             // 验证更新了登录时间
             verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any())
+
+            // 验证查询了永久 key（不再每次登录创建新 key）
+            verify(apiKeyService, times(1)).getPermanentRawKey(1L)
         }
 
         @Test
@@ -218,6 +231,25 @@ class AuthServiceImplTest {
 
             // 验证不会更新登录时间
             verify(sysUserMapper, never()).updateLastLoginTime(anyLong(), any())
+        }
+
+        @Test
+        @DisplayName("login - 永久Key不存在抛出异常")
+        fun `login should throw exception when permanent key not found`() {
+            // Given
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+            `when`(apiKeyService.getPermanentRawKey(1L)).thenReturn(null)
+
+            // When & Then
+            assertThrows<BizException> {
+                authService.login(loginRequest)
+            }
+
+            // 验证查询了永久 key
+            verify(apiKeyService, times(1)).getPermanentRawKey(1L)
         }
 
         @Test

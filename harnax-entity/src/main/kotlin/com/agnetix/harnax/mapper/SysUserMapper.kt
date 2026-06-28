@@ -112,4 +112,9 @@ interface SysUserMapper {
         @Param("id") id: Long,
         @Param("password") password: String,
     ): Int
+
+    /**
+     * Select all active users (for permanent key initialization)
+     */
+    fun selectAllActive(): List<SysUser>
 }

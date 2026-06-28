@@ -1,0 +1,8 @@
+# Exclude everything, then include only what's needed for Docker builds
+*
+!docker-new/Dockerfile.*
+!docker-new/nginx.conf
+!docker-new/dist/
+!docker-new/dist/**
+!docker-new/sql/
+!docker-new/sql/**
