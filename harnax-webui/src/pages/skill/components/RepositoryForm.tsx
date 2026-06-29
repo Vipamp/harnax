@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Select, Switch, message, Button } from 'antd';
-import { createSkillRepository, updateSkillRepository } from '@/services/ant-design-pro/skillRepository';
+import { Form, Input, Select, Switch, Upload, message, Button } from 'antd';
+import { createSkillSource, updateSkillSource, uploadSkillSourceZip } from '@/services/ant-design-pro/skillSource';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { useIntl } from '@umijs/max';
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, UploadOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import StatusSwitch from '@/components/StatusSwitch';
 
@@ -20,24 +20,34 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
   const intl = useIntl();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [sourceType, setSourceType] = useState<string>('GIT');
+  const [zipFile, setZipFile] = useState<File | null>(null);
   const { username, isAdmin } = getCurrentUserInfo();
   const isCreate = !values;
 
   useEffect(() => {
     if (visible) {
       if (values) {
+        const type = values.sourceType || 'GIT';
+        setSourceType(type);
         form.setFieldsValue({
           ...values,
+          sourceType: type,
           branch: values.branch || 'main',
           isPublic: values.isPublic === 1,
+          packageName: values.sourceConfig?.packageName,
+          registry: values.sourceConfig?.registry,
         });
       } else {
         form.resetFields();
-        form.setFieldsValue({ 
+        form.setFieldsValue({
+          sourceType: 'GIT',
           status: 1,
           branch: 'main',
           isPublic: false,
         });
+        setSourceType('GIT');
+        setZipFile(null);
       }
     }
   }, [visible, values, form]);
@@ -46,29 +56,66 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
     try {
       const formValues = await form.validateFields();
       setLoading(true);
-      const data = {
-        ...formValues,
-        isPublic: formValues.isPublic ? 1 : 0,
-      };
-      if (values) {
-        const response = await updateSkillRepository(values.id, data);
+
+      if (sourceType === 'ZIP' && isCreate) {
+        if (!zipFile) {
+          message.error('Please select a ZIP file');
+          setLoading(false);
+          return;
+        }
+        const response = await uploadSkillSourceZip(zipFile, formValues.name);
         if (response.code === 200) {
-          message.success('更新成功');
+          message.success('Upload and install successful');
           onSuccess();
         } else {
-          message.error(response.message || '更新失败');
+          message.error(response.message || 'Upload failed');
         }
       } else {
-        const response = await createSkillRepository(data);
-        if (response.code === 200) {
-          message.success('创建成功');
-          onSuccess();
+        let sourceConfig: Record<string, any> = {};
+        if (sourceType === 'GIT') {
+          sourceConfig = { url: formValues.url || '', branch: formValues.branch || 'main' };
+        } else if (sourceType === 'NPM') {
+          sourceConfig = { packageName: formValues.packageName, registry: formValues.registry || '' };
+        }
+
+        const data = {
+          name: formValues.name,
+          sourceType,
+          sourceConfig,
+          version: formValues.version || '',
+          description: formValues.description || '',
+          isPublic: formValues.isPublic ? 1 : 0,
+          url: formValues.url || '',
+          branch: formValues.branch || '',
+        };
+
+        if (values) {
+          const response = await updateSkillSource(values.id, {
+            name: data.name,
+            sourceConfig: data.sourceConfig,
+            version: data.version,
+            description: data.description,
+            url: data.url,
+            branch: data.branch,
+          });
+          if (response.code === 200) {
+            message.success('Update successful');
+            onSuccess();
+          } else {
+            message.error(response.message || 'Update failed');
+          }
         } else {
-          message.error(response.message || '创建失败');
+          const response = await createSkillSource(data);
+          if (response.code === 200) {
+            message.success('Create successful');
+            onSuccess();
+          } else {
+            message.error(response.message || 'Create failed');
+          }
         }
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || '操作失败';
+      const errorMsg = error?.message || error?.info?.errorMessage || 'Operation failed';
       message.error(errorMsg);
     } finally {
       setLoading(false);
@@ -77,18 +124,26 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
 
   const handleReset = () => {
     if (values) {
+      const type = values.sourceType || 'GIT';
+      setSourceType(type);
       form.setFieldsValue({
         ...values,
+        sourceType: type,
         branch: values.branch || 'main',
         isPublic: values.isPublic === 1,
+        packageName: values.sourceConfig?.packageName,
+        registry: values.sourceConfig?.registry,
       });
     } else {
       form.resetFields();
-      form.setFieldsValue({ 
+      form.setFieldsValue({
+        sourceType: 'GIT',
         status: 1,
         branch: 'main',
         isPublic: false,
       });
+      setSourceType('GIT');
+      setZipFile(null);
     }
   };
 
@@ -99,62 +154,140 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
       size="md"
       titleConfig={{
         mainTitle: isCreate
-          ? intl.formatMessage({ id: 'pages.skill.repository.create', defaultMessage: 'Create Repository' })
-          : intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit Repository' }),
+          ? intl.formatMessage({ id: 'pages.skill.repository.create', defaultMessage: 'Create Skill Source' })
+          : intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit Skill Source' }),
         subtitle: isCreate
-          ? intl.formatMessage({ id: 'pages.skill.repository.create.subtitle', defaultMessage: 'Configure skill repository connection and parameters' })
-          : intl.formatMessage({ id: 'pages.skill.repository.edit.subtitle', defaultMessage: 'Modify repository configuration, changes take effect immediately' }),
+          ? intl.formatMessage({ id: 'pages.skill.repository.create.subtitle', defaultMessage: 'Configure skill source connection and parameters' })
+          : intl.formatMessage({ id: 'pages.skill.repository.edit.subtitle', defaultMessage: 'Modify source configuration, changes take effect immediately' }),
         icon: <ThunderboltOutlined />,
         iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
         iconShadowColor: 'rgba(79, 110, 247, 0.25)',
       }}
     >
-      <Form 
-        form={form} 
+      <Form
+        form={form}
         layout="horizontal"
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
       >
         <Form.Item
           name="name"
-          label={intl.formatMessage({ id: 'pages.skill.repository.name', defaultMessage: 'Repository Name' })}
-          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.skill.repository.nameRequired', defaultMessage: 'Please enter repository name' }) }]}
+          label={intl.formatMessage({ id: 'pages.skill.repository.name', defaultMessage: 'Source Name' })}
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.skill.repository.nameRequired', defaultMessage: 'Please enter source name' }) }]}
         >
-          <Input 
-            placeholder={intl.formatMessage({ id: 'pages.skill.repository.name.placeholder', defaultMessage: 'Please enter repository name' })}
+          <Input
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.name.placeholder', defaultMessage: 'Please enter source name' })}
             style={{ fontSize: '12px' }}
           />
         </Form.Item>
-        <Form.Item 
-          name="url" 
-          label={intl.formatMessage({ id: 'pages.skill.repository.url', defaultMessage: 'Repository URL' })}
+
+        <Form.Item
+          name="sourceType"
+          label={intl.formatMessage({ id: 'pages.skill.source.type', defaultMessage: 'Source Type' })}
+          rules={[{ required: true }]}
         >
-          <Input 
-            placeholder={intl.formatMessage({ id: 'pages.skill.repository.url.placeholder', defaultMessage: 'Please enter repository URL' })}
+          <Select
+            onChange={(value: string) => setSourceType(value)}
+            disabled={!isCreate}
+            style={{ fontSize: '12px' }}
+          >
+            <Select.Option value="GIT">Git Repository</Select.Option>
+            <Select.Option value="NPM">NPM Package</Select.Option>
+            <Select.Option value="ZIP">ZIP Upload</Select.Option>
+          </Select>
+        </Form.Item>
+
+        {sourceType === 'GIT' && (
+          <>
+            <Form.Item
+              name="url"
+              label={intl.formatMessage({ id: 'pages.skill.repository.url', defaultMessage: 'Repository URL' })}
+              rules={[{ required: true, message: 'Please enter Git URL' }]}
+            >
+              <Input
+                placeholder="https://github.com/example/skills"
+                style={{ fontSize: '12px' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="branch"
+              label={intl.formatMessage({ id: 'pages.skill.repository.branch', defaultMessage: 'Branch Name' })}
+              initialValue="main"
+            >
+              <Input
+                placeholder="main"
+                style={{ fontSize: '12px' }}
+              />
+            </Form.Item>
+          </>
+        )}
+
+        {sourceType === 'NPM' && (
+          <>
+            <Form.Item
+              name="packageName"
+              label={intl.formatMessage({ id: 'pages.skill.npm.package', defaultMessage: 'Package Name' })}
+              rules={[{ required: true, message: 'Please enter npm package name' }]}
+            >
+              <Input
+                placeholder="@harnax/skill-pack"
+                style={{ fontSize: '12px' }}
+              />
+            </Form.Item>
+            <Form.Item
+              name="registry"
+              label={intl.formatMessage({ id: 'pages.skill.npm.registry', defaultMessage: 'Registry' })}
+            >
+              <Input
+                placeholder="https://registry.npmmirror.com"
+                style={{ fontSize: '12px' }}
+              />
+            </Form.Item>
+          </>
+        )}
+
+        {sourceType === 'ZIP' && isCreate && (
+          <Form.Item
+            label={intl.formatMessage({ id: 'pages.skill.zip.file', defaultMessage: 'ZIP File' })}
+            required
+          >
+            <Upload
+              accept=".zip"
+              maxCount={1}
+              beforeUpload={(file) => {
+                setZipFile(file);
+                return false;
+              }}
+              onRemove={() => setZipFile(null)}
+            >
+              <Button icon={<UploadOutlined />}>
+                {intl.formatMessage({ id: 'pages.skill.zip.select', defaultMessage: 'Select ZIP File' })}
+              </Button>
+            </Upload>
+          </Form.Item>
+        )}
+
+        <Form.Item
+          name="version"
+          label={intl.formatMessage({ id: 'pages.skill.version', defaultMessage: 'Version' })}
+        >
+          <Input
+            placeholder="1.0.0"
             style={{ fontSize: '12px' }}
           />
         </Form.Item>
-        <Form.Item 
-          name="branch" 
-          label={intl.formatMessage({ id: 'pages.skill.repository.branch', defaultMessage: 'Branch Name' })}
-          initialValue="main"
-        >
-          <Input 
-            placeholder={intl.formatMessage({ id: 'pages.skill.repository.branch.placeholder', defaultMessage: 'Please enter branch name, e.g.: main' })}
-            style={{ fontSize: '12px' }}
-          />
-        </Form.Item>
-        <Form.Item 
-          name="description" 
+
+        <Form.Item
+          name="description"
           label={intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
         >
-          <TextArea 
-            rows={3} 
-            placeholder={intl.formatMessage({ id: 'pages.skill.repository.description.placeholder', defaultMessage: 'Please enter repository description' })}
+          <TextArea
+            rows={3}
+            placeholder={intl.formatMessage({ id: 'pages.skill.repository.description.placeholder', defaultMessage: 'Please enter source description' })}
             style={{ fontSize: '12px' }}
           />
         </Form.Item>
-        <Form.Item 
+        <Form.Item
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
           name="status"
           initialValue={1}
@@ -176,7 +309,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           extra={
             isPublicSwitchDisabled(isAdmin, username, values?.creator, values?.isPublic, isCreate) && !isCreate
               ? intl.formatMessage({ id: 'pages.skill.repository.noPermission', defaultMessage: 'You do not have permission to modify this setting' })
-              : intl.formatMessage({ id: 'pages.skill.repository.publicHint', defaultMessage: 'Other users can view this repository after making it public' })
+              : intl.formatMessage({ id: 'pages.skill.repository.publicHint', defaultMessage: 'Other users can view this source after making it public' })
           }
         >
           <Switch
@@ -186,18 +319,17 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           />
         </Form.Item>
 
-        {/* 按钮区域 */}
         <Form.Item wrapperCol={{ span: 24 }} style={{ marginBottom: 0 }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'flex-end', 
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
             gap: '10px',
             marginTop: '12px',
             paddingTop: '10px',
             paddingLeft: '168px',
             borderTop: '1px solid var(--vip-border)'
           }}>
-            <Button 
+            <Button
               onClick={handleReset}
               style={{
                 fontSize: '12px',
@@ -209,8 +341,8 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             >
               {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
             </Button>
-            <Button 
-              type="primary" 
+            <Button
+              type="primary"
               onClick={handleSubmit}
               loading={loading}
               style={{

@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { List, Space, Typography, Tag, message, Tooltip } from 'antd';
-import { GithubOutlined, LinkOutlined } from '@ant-design/icons';
-import { deleteSkillRepository, toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
+import { GithubOutlined, LinkOutlined, CloudOutlined, FileZipOutlined } from '@ant-design/icons';
+import { toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
+import { deleteSkillSource } from '@/services/ant-design-pro/skillSource';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import { useIntl } from '@umijs/max';
 import EditButton from '@/components/EditButton';
@@ -36,7 +37,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
 
   const handleDelete = async (id: number) => {
     try {
-      const response = await deleteSkillRepository(id);
+      const response = await deleteSkillSource(id);
       if (response.code === 200) {
         message.success(intl.formatMessage({ id: 'pages.skill.repository.delete.success', defaultMessage: 'Delete successful' }));
         onDelete(id);
@@ -100,12 +101,24 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-            <GithubOutlined style={{ fontSize: '20px', color: '#4f6ef7', marginRight: 12 }} />
+            {repository.sourceType === 'NPM' ? (
+              <CloudOutlined style={{ fontSize: '20px', color: '#cb3837', marginRight: 12 }} />
+            ) : repository.sourceType === 'ZIP' ? (
+              <FileZipOutlined style={{ fontSize: '20px', color: '#faad14', marginRight: 12 }} />
+            ) : (
+              <GithubOutlined style={{ fontSize: '20px', color: '#4f6ef7', marginRight: 12 }} />
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Text strong style={{ fontSize: '14px' }}>
-                  {repository.name}
-                </Text>
+                <Space size={4}>
+                  <Text strong style={{ fontSize: '14px' }}>
+                    {repository.name}
+                  </Text>
+                  <Tag color={repository.sourceType === 'NPM' ? 'red' : repository.sourceType === 'ZIP' ? 'orange' : 'blue'}
+                    style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}>
+                    {repository.sourceType || 'GIT'}
+                  </Tag>
+                </Space>
                 {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <StatusSwitch
                     status={repository.status}
@@ -116,7 +129,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   />
                 )}
               </div>
-              {repository.url && (
+              {(repository.sourceType === 'GIT' || !repository.sourceType) && repository.url && (
                 <div style={{ display: 'flex', alignItems: 'center', marginTop: 4 }}>
                   <a
                     href={repository.url}
@@ -137,6 +150,16 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                       {repository.url}
                     </span>
                   </a>
+                </div>
+              )}
+              {repository.sourceType === 'NPM' && repository.sourceConfig?.packageName && (
+                <div style={{ fontSize: '12px', color: '#666', marginTop: 4 }}>
+                  {repository.sourceConfig.packageName}
+                </div>
+              )}
+              {repository.sourceType === 'ZIP' && (
+                <div style={{ fontSize: '12px', color: '#666', marginTop: 4 }}>
+                  {repository.sourceConfig?.originalFilename || 'ZIP Upload'}
                 </div>
               )}
               {/* 是否公开和操作按钮 */}

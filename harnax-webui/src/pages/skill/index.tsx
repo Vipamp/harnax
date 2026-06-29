@@ -7,7 +7,8 @@ import RepositoryList from './components/RepositoryList';
 import RepositoryForm from './components/RepositoryForm';
 import SkillList from './components/SkillList';
 import SyncSkillModal from './components/SyncSkillModal';
-import { getSkillRepositoryPage, fetchRemoteSkills } from '@/services/ant-design-pro/skillRepository';
+import { getSkillRepositoryPage } from '@/services/ant-design-pro/skillRepository';
+import { fetchSkillSourceSkills } from '@/services/ant-design-pro/skillSource';
 
 const SkillManagement: React.FC = () => {
   const intl = useIntl();
@@ -106,7 +107,7 @@ const SkillManagement: React.FC = () => {
     setSyncLoading(true);
     try {
       // 调用获取远程技能列表的接口
-      const response: any = await fetchRemoteSkills(repository.id!);
+      const response: any = await fetchSkillSourceSkills(repository.id!);
       if (response.data && Array.isArray(response.data)) {
         setRemoteSkills(response.data);
         setSyncModalVisible(true);

@@ -10,6 +10,8 @@
         <result column="description" property="description"/>
         <result column="skillmd" property="skillmd"/>
         <result column="resources" property="resources"/>
+        <result column="storage_path" property="storagePath"/>
+        <result column="version" property="version"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
         <result column="creator" property="creator"/>
@@ -35,6 +37,11 @@
         SELECT * FROM skill WHERE name = #{name} AND repository_id = #{repositoryId} AND active = 1 LIMIT 1
     </select>
 
+    <!-- selectByRepositoryId -->
+    <select id="selectByRepositoryId" resultMap="SkillResultMap">
+        SELECT * FROM skill WHERE repository_id = #{repositoryId} AND active = 1
+    </select>
+
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE skill SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
@@ -43,11 +50,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill (
-        name, repository_id, description, skillmd, resources, status, is_public, creator, active, create_time,
-        update_time
+        name, repository_id, description, skillmd, resources, storage_path, version, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{status}, #{isPublic}, #{creator},
-        #{active}, #{createTime}, #{updateTime}
+        #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{storagePath}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -59,6 +64,8 @@
         description = #{description},
         skillmd = #{skillmd},
         resources = #{resources},
+        storage_path = #{storagePath},
+        version = #{version},
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},
@@ -90,6 +97,8 @@
             <if test='description != null'>description = #{description},</if>
             <if test='skillmd != null'>skillmd = #{skillmd},</if>
             <if test='resources != null'>resources = #{resources},</if>
+            <if test='storagePath != null'>storage_path = #{storagePath},</if>
+            <if test='version != null'>version = #{version},</if>
             update_time = NOW()
         </set>
         WHERE id = #{id} AND active = 1

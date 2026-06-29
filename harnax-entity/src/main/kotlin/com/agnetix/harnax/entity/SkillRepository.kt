@@ -25,6 +25,18 @@ class SkillRepository : Serializable {
     @Schema(description = "Branch name", example = "main")
     var branch: String = ""
 
+    @Schema(description = "Source type (GIT | NPM | ZIP)")
+    var sourceType: String = "GIT"
+
+    @Schema(description = "Source configuration JSON")
+    var sourceConfig: String = ""
+
+    @Schema(description = "Version identifier")
+    var version: String = ""
+
+    @Schema(description = "Content storage path")
+    var storagePath: String = ""
+
     @Schema(description = "Repository description")
     var description: String = ""
 

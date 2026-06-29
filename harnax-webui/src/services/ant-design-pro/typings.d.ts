@@ -209,8 +209,13 @@ declare namespace API {
     name: string;
     url?: string;
     branch?: string;
+    sourceType?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
     description?: string;
     status: number;
+    isPublic?: number;
+    creator?: string;
     createTime?: string;
     updateTime?: string;
   };
@@ -219,8 +224,12 @@ declare namespace API {
     name: string;
     url?: string;
     branch?: string;
+    sourceType?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
     description?: string;
     status?: number;
+    isPublic?: number;
   };
 
   type SkillRepositoryUpdateRequest = {
@@ -228,8 +237,49 @@ declare namespace API {
     name?: string;
     url?: string;
     branch?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
     description?: string;
     status?: number;
+    isPublic?: number;
+  };
+
+  // 技能来源相关类型
+  type SkillSourceCreateRequest = {
+    name: string;
+    sourceType: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
+    description?: string;
+    status?: number;
+    isPublic?: number;
+    url?: string;
+    branch?: string;
+  };
+
+  type SkillSourceUpdateRequest = {
+    name?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
+    description?: string;
+    url?: string;
+    branch?: string;
+  };
+
+  type SkillSourceItem = {
+    id: number;
+    name: string;
+    sourceType: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
+    url?: string;
+    branch?: string;
+    description?: string;
+    status: number;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
   };
 
   // 技能相关类型

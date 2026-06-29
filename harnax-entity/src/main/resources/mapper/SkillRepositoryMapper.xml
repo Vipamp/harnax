@@ -8,6 +8,10 @@
         <result column="name" property="name"/>
         <result column="url" property="url"/>
         <result column="branch" property="branch"/>
+        <result column="source_type" property="sourceType"/>
+        <result column="source_config" property="sourceConfig"/>
+        <result column="version" property="version"/>
+        <result column="storage_path" property="storagePath"/>
         <result column="description" property="description"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
@@ -47,10 +51,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill_repository (
-        name, url, branch, description, status, is_public, creator, active, create_time, update_time
+        name, url, branch, source_type, source_config, version, storage_path, description, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{name}, #{url}, #{branch}, #{description}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
-        #{updateTime}
+        #{name}, #{url}, #{branch}, #{sourceType}, #{sourceConfig}, #{version}, #{storagePath}, #{description}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -60,6 +63,10 @@
         name = #{name},
         url = #{url},
         branch = #{branch},
+        source_type = #{sourceType},
+        source_config = #{sourceConfig},
+        version = #{version},
+        storage_path = #{storagePath},
         description = #{description},
         is_public = #{isPublic},
         creator = #{creator},
