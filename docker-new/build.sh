@@ -2,7 +2,10 @@
 
 # =====================================================
 # Harnax Docker Build Script (Cluster Mode)
-# Usage: ./docker-new/build.sh
+# Usage: ./docker-new/build.sh [--native]
+#
+# Options:
+#   --native    Build router service as GraalVM native image
 #
 # This script builds all services and Docker images
 # for cluster mode deployment.
@@ -10,8 +13,22 @@
 
 set -e
 
+# Parse arguments
+NATIVE_MODE=false
+for arg in "$@"; do
+    case $arg in
+        --native)
+            NATIVE_MODE=true
+            shift
+            ;;
+    esac
+done
+
 echo "=========================================="
 echo "  Harnax Docker Build (Cluster Mode)"
+if [ "$NATIVE_MODE" = true ]; then
+    echo "  Native Image Mode: ENABLED (router)"
+fi
 echo "=========================================="
 echo ""
 
@@ -33,6 +50,15 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+if [ "$NATIVE_MODE" = true ]; then
+    if ! command -v native-image &> /dev/null; then
+        echo "ERROR: GraalVM native-image is not installed."
+        echo "Please install GraalVM JDK and set GRAALVM_HOME."
+        exit 1
+    fi
+    echo "GraalVM native-image found."
+fi
+
 echo "All prerequisites satisfied."
 echo ""
 
@@ -50,15 +76,26 @@ echo "Admin JAR built successfully."
 echo ""
 
 # ==========================================
-# Step 2: Build Router JAR (harnax-session-router)
+# Step 2: Build Router (harnax-session-router)
 # ==========================================
-echo "Step 2/7: Building router JAR (harnax-session-router)..."
-mvn clean package -pl harnax-session-router -am -Dmaven.test.skip=true
+if [ "$NATIVE_MODE" = true ]; then
+    echo "Step 2/7: Building router NATIVE IMAGE (harnax-session-router)..."
+    echo "Note: Native image build may take several minutes..."
+    mvn clean package -Pnative -pl harnax-session-router -am -Dmaven.test.skip=true
 
-echo "Copying JAR to docker-new/dist/router/..."
-mkdir -p docker-new/dist/router
-cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
-echo "Router JAR built successfully."
+    echo "Copying native executable to docker-new/dist/router/..."
+    mkdir -p docker-new/dist/router
+    cp harnax-session-router/target/harnax-session-router docker-new/dist/router/
+    echo "Router native image built successfully."
+else
+    echo "Step 2/7: Building router JAR (harnax-session-router)..."
+    mvn clean package -pl harnax-session-router -am -Dmaven.test.skip=true
+
+    echo "Copying JAR to docker-new/dist/router/..."
+    mkdir -p docker-new/dist/router
+    cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
+    echo "Router JAR built successfully."
+fi
 echo ""
 
 # ==========================================
@@ -105,7 +142,13 @@ echo ""
 # ==========================================
 echo "Step 6/7: Building Docker images..."
 docker build -f docker-new/Dockerfile.admin -t harnax-admin:latest .
-docker build -f docker-new/Dockerfile.router -t harnax-router:latest .
+
+if [ "$NATIVE_MODE" = true ]; then
+    docker build -f docker-new/Dockerfile.router-native -t harnax-router:latest .
+else
+    docker build -f docker-new/Dockerfile.router -t harnax-router:latest .
+fi
+
 docker build -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest .
 docker build -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest .
 docker build -f docker-new/Dockerfile.frontend -t harnax-frontend:latest .
@@ -117,6 +160,11 @@ echo ""
 # ==========================================
 echo "=========================================="
 echo "  Build Complete!"
+if [ "$NATIVE_MODE" = true ]; then
+    echo "  Router: Native Image"
+else
+    echo "  Router: JVM Image"
+fi
 echo "=========================================="
 echo ""
 echo "Docker images:"

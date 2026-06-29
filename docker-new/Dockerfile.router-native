@@ -1,0 +1,37 @@
+# Harnax Router Dockerfile - Native Image Build
+# Uses locally built native executable, no compilation inside Docker
+# Session routing service with cluster mode support (MySQL + Redis)
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+# Set timezone
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+
+# Copy native executable from docker-new/dist/router/
+COPY docker-new/dist/router/harnax-session-router /app/harnax-session-router
+
+# Make executable
+RUN chmod +x /app/harnax-session-router
+
+# Create log directory
+RUN mkdir -p /app/logs
+
+# Expose port
+EXPOSE 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+  CMD ["/app/harnax-session-router", "--health-check"] || exit 1
+
+# Native executable options (if needed)
+ENV ROUTER_OPTS=""
+
+# Start application
+ENTRYPOINT ["/app/harnax-session-router"]
+
+# Metadata
+LABEL maintainer="agnetix"
+LABEL version="1.0.0-native"
+LABEL description="Harnax Session Router (Native Image)"

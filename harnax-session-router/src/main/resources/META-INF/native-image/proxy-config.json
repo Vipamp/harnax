@@ -1,0 +1,11 @@
+[
+  {
+    "interfaces": ["com.agnetix.harnax.router.mapper.ApiCallLogMapper"]
+  },
+  {
+    "interfaces": ["com.agnetix.harnax.mapper.ApiKeyMapper"]
+  },
+  {
+    "interfaces": ["com.agnetix.harnax.mapper.SysUserMapper"]
+  }
+]

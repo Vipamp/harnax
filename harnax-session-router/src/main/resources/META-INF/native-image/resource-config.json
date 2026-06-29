@@ -1,0 +1,17 @@
+{
+  "resources": [
+    {
+      "pattern": "application.*\\.yml"
+    },
+    {
+      "pattern": "mapper/.*\\.xml"
+    },
+    {
+      "pattern": "META-INF/native-image/.*"
+    },
+    {
+      "pattern": "db/migration/.*\\.sql"
+    }
+  ],
+  "bundles": []
+}
