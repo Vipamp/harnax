@@ -44,6 +44,12 @@ export default [
         path: '/agent/session',
         component: './session',
       },
+      {
+        name: 'task',
+        icon: 'schedule',
+        path: '/agent/task',
+        component: './agent-task',
+      },
     ],
   },
   {

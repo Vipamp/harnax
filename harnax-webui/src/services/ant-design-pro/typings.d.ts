@@ -519,4 +519,68 @@ declare namespace API {
     image?: string;
     workspaceRoot?: string;
   };
+
+  // Agent Task 相关类型
+  type AgentTaskItem = {
+    id: number;
+    tenantId?: number;
+    name: string;
+    agentId: number;
+    agentName?: string;
+    prompt: string;
+    cronExpression: string;
+    taskStatus: number;
+    concurrent: number;
+    timeoutSeconds: number;
+    description?: string;
+    isPublic?: number;
+    creator?: string;
+    active?: number;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type AgentTaskCreateRequest = {
+    name: string;
+    agentId: number;
+    prompt: string;
+    cronExpression: string;
+    concurrent?: number;
+    timeoutSeconds?: number;
+    description?: string;
+    isPublic?: number;
+  };
+
+  type AgentTaskUpdateRequest = {
+    name?: string;
+    agentId?: number;
+    prompt?: string;
+    cronExpression?: string;
+    concurrent?: number;
+    timeoutSeconds?: number;
+    description?: string;
+    isPublic?: number;
+  };
+
+  type AgentTaskLogItem = {
+    id: number;
+    taskId: number;
+    taskName?: string;
+    prompt?: string;
+    response?: string;
+    sessionId?: string;
+    status: number;
+    errorInfo?: string;
+    tokenUsage?: string;
+    startTime?: string;
+    endTime?: string;
+    durationMs?: number;
+    creator?: string;
+    createTime?: string;
+  };
+
+  type AgentOption = {
+    id: number;
+    name: string;
+  };
 }

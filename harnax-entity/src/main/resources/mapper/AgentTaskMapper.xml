@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.AgentTaskMapper">
+
+    <resultMap id="AgentTaskResultMap" type="com.agnetix.harnax.entity.AgentTask">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="name" property="name"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="agent_name" property="agentName"/>
+        <result column="prompt" property="prompt"/>
+        <result column="cron_expression" property="cronExpression"/>
+        <result column="task_status" property="taskStatus"/>
+        <result column="concurrent" property="concurrent"/>
+        <result column="timeout_seconds" property="timeoutSeconds"/>
+        <result column="description" property="description"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="AgentTaskResultMap">
+        SELECT * FROM agent_task WHERE id = #{id} AND active = 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_task (
+            tenant_id, name, agent_id, agent_name, prompt, cron_expression,
+            task_status, concurrent, timeout_seconds, description,
+            is_public, creator, active, create_time, update_time
+        ) VALUES (
+            #{tenantId}, #{name}, #{agentId}, #{agentName}, #{prompt}, #{cronExpression},
+            #{taskStatus}, #{concurrent}, #{timeoutSeconds}, #{description},
+            #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <update id="updateById">
+        UPDATE agent_task SET
+            name = #{name},
+            agent_id = #{agentId},
+            agent_name = #{agentName},
+            prompt = #{prompt},
+            cron_expression = #{cronExpression},
+            task_status = #{taskStatus},
+            concurrent = #{concurrent},
+            timeout_seconds = #{timeoutSeconds},
+            description = #{description},
+            is_public = #{isPublic},
+            update_time = #{updateTime}
+        WHERE id = #{id} AND active = 1
+    </update>
+
+    <update id="deleteById">
+        UPDATE agent_task SET active = 0, update_time = NOW() WHERE id = #{id}
+    </update>
+
+    <select id="selectTaskList" resultMap="AgentTaskResultMap">
+        SELECT * FROM agent_task
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test="name != null and name != ''">
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test="agentId != null">
+            AND agent_id = #{agentId}
+        </if>
+        <if test="taskStatus != null">
+            AND task_status = #{taskStatus}
+        </if>
+        ORDER BY update_time DESC
+    </select>
+
+    <select id="selectByName" resultMap="AgentTaskResultMap">
+        SELECT * FROM agent_task WHERE name = #{name} AND active = 1 LIMIT 1
+    </select>
+
+    <select id="selectRunningTasks" resultMap="AgentTaskResultMap">
+        SELECT * FROM agent_task WHERE task_status = 1 AND active = 1
+    </select>
+
+    <update id="updateStatus">
+        UPDATE agent_task SET task_status = #{taskStatus}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+</mapper>

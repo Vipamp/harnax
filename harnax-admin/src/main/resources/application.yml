@@ -122,3 +122,12 @@ skill:
     type: ${SKILL_STORAGE_TYPE:local}
     base-path: ${SKILL_STORAGE_BASE_PATH:./data/skill-store}
     bucket: ${SKILL_STORAGE_BUCKET:harnax-skills}
+
+# Agent task configuration (scheduled agent execution)
+agent-task:
+  # Enable/disable scheduler on this instance (set to false on all but one instance in multi-instance deployment)
+  scheduler-enabled: ${AGENT_TASK_SCHEDULER_ENABLED:true}
+  # Unique instance ID for execution guard (auto-generated if not set)
+  instance-id: ${AGENT_TASK_INSTANCE_ID:}
+  router-url: ${HARNAX_ROUTER_URL:http://localhost:8081}
+  timeout-seconds: ${AGENT_TASK_TIMEOUT:300}

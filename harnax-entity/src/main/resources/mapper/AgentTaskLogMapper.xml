@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.AgentTaskLogMapper">
+
+    <resultMap id="AgentTaskLogResultMap" type="com.agnetix.harnax.entity.AgentTaskLog">
+        <id column="id" property="id"/>
+        <result column="task_id" property="taskId"/>
+        <result column="task_name" property="taskName"/>
+        <result column="prompt" property="prompt"/>
+        <result column="response" property="response"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="status" property="status"/>
+        <result column="error_info" property="errorInfo"/>
+        <result column="token_usage" property="tokenUsage"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="duration_ms" property="durationMs"/>
+        <result column="creator" property="creator"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="AgentTaskLogResultMap">
+        SELECT * FROM agent_task_log WHERE id = #{id}
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_task_log (
+            task_id, task_name, prompt, response, session_id,
+            status, error_info, token_usage,
+            start_time, end_time, duration_ms,
+            creator, create_time
+        ) VALUES (
+            #{taskId}, #{taskName}, #{prompt}, #{response}, #{sessionId},
+            #{status}, #{errorInfo}, #{tokenUsage},
+            #{startTime}, #{endTime}, #{durationMs},
+            #{creator}, #{createTime}
+        )
+    </insert>
+
+    <update id="updateById">
+        UPDATE agent_task_log SET
+            response = #{response},
+            status = #{status},
+            error_info = #{errorInfo},
+            token_usage = #{tokenUsage},
+            end_time = #{endTime},
+            duration_ms = #{durationMs}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectLogList" resultMap="AgentTaskLogResultMap">
+        SELECT * FROM agent_task_log
+        WHERE 1=1
+        <if test="taskId != null">
+            AND task_id = #{taskId}
+        </if>
+        <if test="taskName != null and taskName != ''">
+            AND task_name LIKE CONCAT('%', #{taskName}, '%')
+        </if>
+        <if test="status != null">
+            AND status = #{status}
+        </if>
+        ORDER BY create_time DESC
+    </select>
+
+    <select id="selectByTaskId" resultMap="AgentTaskLogResultMap">
+        SELECT * FROM agent_task_log WHERE task_id = #{taskId} ORDER BY create_time DESC
+    </select>
+
+</mapper>

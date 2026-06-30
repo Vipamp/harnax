@@ -260,6 +260,41 @@ class SessionServiceImpl(
         return this.sessionMapper.deleteById(id) > 0
     }
 
+    @Transactional(rollbackFor = [Exception::class])
+    override fun createForAgent(agentId: Long, creator: String): Session {
+        log.info("Creating temporary session for agent task, agentId: {}, creator: {}", agentId, creator)
+
+        // Get agent information
+        val agent = agentService.getAgent(agentId)
+            ?: throw BizException("Agent not found")
+
+        val session = Session()
+        session.title = "AgentTask-${LocalDateTime.now()}"
+        session.sessionDescription = "Temporary session for agent task execution"
+        session.sessionId = UUID.randomUUID().toString()
+        session.agentId = agentId
+
+        // Copy information from agent
+        session.name = agent.name
+        session.description = agent.description
+        session.systemPrompt = agent.systemPrompt
+        session.modelId = agent.modelId
+        session.mcpList = agent.mcpList
+        session.skillList = agent.skillList
+        session.owner = agent.owner
+        session.status = 1
+        session.creator = creator
+        session.isPublic = 0
+
+        val success = sessionMapper.insert(session) > 0
+        if (!success) {
+            throw BizException("Failed to create temporary session")
+        }
+
+        log.info("Temporary session created successfully, id: {}, sessionId: {}", session.id, session.sessionId)
+        return session
+    }
+
     override fun existsByTitle(title: String): Boolean {
         val count = sessionMapper.countByTitle(title)
         return count > 0

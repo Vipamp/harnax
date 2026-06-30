@@ -65,6 +65,13 @@ interface AgentService {
     fun deleteAgent(id: Long): Boolean
 
     /**
+     * Get all active agents (enabled and not deleted)
+     *
+     * @return List of active agents
+     */
+    fun getActiveAgents(): List<Agent>
+
+    /**
      * Convert Agent entity to response DTO (including complete skill and MCP information)
      *
      * @param agent Agent entity
