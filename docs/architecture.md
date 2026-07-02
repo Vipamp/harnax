@@ -287,8 +287,6 @@ fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent>
    - ProcessLogEntity: 过程日志实体
    - TokenStats: Token 统计实体
    - ToolCallLogEntity: 工具调用日志实体
-   - SysJob: 定时任务实体
-   - SysJobLog: 任务日志实体
    - SysUser: 用户实体
    - SysTokenBlacklist: Token 黑名单实体
    - Tenant: 租户实体
@@ -340,8 +338,6 @@ com.agnetix.harnax.mapper
 - `session`: 会话表
 - `sys_user`: 用户表
 - `tenant`: 租户表
-- `sys_job`: 定时任务表
-- `sys_job_log`: 任务日志表
 - `token_stats`: Token 统计表
 - `sys_token_blacklist`: Token 黑名单表
 

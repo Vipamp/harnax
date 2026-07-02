@@ -9,7 +9,6 @@ import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Session
-import com.agnetix.harnax.entity.SysJob
 import com.agnetix.harnax.mapper.SessionMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -51,7 +50,7 @@ class SessionServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        PageHelper.startPage<Session>(pageNum, pageSize)
         return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername))
     }
 

@@ -29,12 +29,12 @@ const RunButton: React.FC<RunButtonProps> = ({
   const intl = useIntl();
 
   const tooltipText = tooltip || intl.formatMessage({
-    id: 'pages.job.runOnce',
+    id: 'components.runButton.runOnce',
     defaultMessage: 'Run Once',
   });
 
   const buttonText = text || intl.formatMessage({
-    id: 'pages.job.runOnce',
+    id: 'components.runButton.runOnce',
     defaultMessage: 'Run Once',
   });
 

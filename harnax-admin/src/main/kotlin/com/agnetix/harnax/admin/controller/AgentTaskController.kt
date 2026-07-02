@@ -36,7 +36,7 @@ class AgentTaskController(
             ResultVo.success(agentTaskService.page(name, agentId, taskStatus, pageNum, pageSize))
         } catch (e: Exception) {
             log.error("Failed to query agent task list", e)
-            ResultVo.error("Failed to query agent task list: ${e.message}")
+            ResultVo.error("Failed to query agent task list")
         }
     }
 
@@ -49,7 +49,7 @@ class AgentTaskController(
             ResultVo.success(agentTaskService.convertToResponse(task))
         } catch (e: Exception) {
             log.error("Failed to get agent task", e)
-            ResultVo.error("Failed to get agent task: ${e.message}")
+            ResultVo.error("Failed to get agent task")
         }
     }
 
@@ -62,7 +62,7 @@ class AgentTaskController(
             else ResultVo.error("Create failed")
         } catch (e: Exception) {
             log.error("Failed to create agent task", e)
-            ResultVo.error("Failed to create agent task: ${e.message}")
+            ResultVo.error("Failed to create agent task")
         }
     }
 
@@ -75,7 +75,7 @@ class AgentTaskController(
             else ResultVo.error("Update failed")
         } catch (e: Exception) {
             log.error("Failed to update agent task", e)
-            ResultVo.error("Failed to update agent task: ${e.message}")
+            ResultVo.error("Failed to update agent task")
         }
     }
 
@@ -88,7 +88,7 @@ class AgentTaskController(
             else ResultVo.error("Delete failed")
         } catch (e: Exception) {
             log.error("Failed to delete agent task", e)
-            ResultVo.error("Failed to delete agent task: ${e.message}")
+            ResultVo.error("Failed to delete agent task")
         }
     }
 
@@ -101,7 +101,7 @@ class AgentTaskController(
             else ResultVo.error("Start failed")
         } catch (e: Exception) {
             log.error("Failed to start agent task", e)
-            ResultVo.error("Failed to start agent task: ${e.message}")
+            ResultVo.error("Failed to start agent task")
         }
     }
 
@@ -114,7 +114,7 @@ class AgentTaskController(
             else ResultVo.error("Pause failed")
         } catch (e: Exception) {
             log.error("Failed to pause agent task", e)
-            ResultVo.error("Failed to pause agent task: ${e.message}")
+            ResultVo.error("Failed to pause agent task")
         }
     }
 
@@ -127,7 +127,7 @@ class AgentTaskController(
             else ResultVo.error("Run once failed")
         } catch (e: Exception) {
             log.error("Failed to run agent task once", e)
-            ResultVo.error("Failed to run agent task once: ${e.message}")
+            ResultVo.error("Failed to run agent task once")
         }
     }
 
@@ -144,7 +144,7 @@ class AgentTaskController(
             ResultVo.success(agentTaskLogService.page(id, taskName, status, pageNum, pageSize))
         } catch (e: Exception) {
             log.error("Failed to query agent task logs", e)
-            ResultVo.error("Failed to query agent task logs: ${e.message}")
+            ResultVo.error("Failed to query agent task logs")
         }
     }
 
@@ -156,7 +156,7 @@ class AgentTaskController(
             ResultVo.success(agents.map { mapOf("id" to it.id, "name" to it.name) })
         } catch (e: Exception) {
             log.error("Failed to query agents list", e)
-            ResultVo.error("Failed to query agents list: ${e.message}")
+            ResultVo.error("Failed to query agents list")
         }
     }
 }

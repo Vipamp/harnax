@@ -32,13 +32,13 @@ const StartPauseButton: React.FC<StartPauseButtonProps> = ({
   const isRunning = status === 1;
 
   const tooltipText = tooltip || (isRunning
-    ? intl.formatMessage({ id: 'pages.job.pause', defaultMessage: 'Pause' })
-    : intl.formatMessage({ id: 'pages.job.start', defaultMessage: 'Start' })
+    ? intl.formatMessage({ id: 'components.startPauseButton.pause', defaultMessage: 'Pause' })
+    : intl.formatMessage({ id: 'components.startPauseButton.start', defaultMessage: 'Start' })
   );
 
   const buttonText = isRunning
-    ? intl.formatMessage({ id: 'pages.job.pause', defaultMessage: 'Pause' })
-    : intl.formatMessage({ id: 'pages.job.start', defaultMessage: 'Start' });
+    ? intl.formatMessage({ id: 'components.startPauseButton.pause', defaultMessage: 'Pause' })
+    : intl.formatMessage({ id: 'components.startPauseButton.start', defaultMessage: 'Start' });
 
   const handleClick = (e: React.MouseEvent) => {
     if (stopPropagation) {

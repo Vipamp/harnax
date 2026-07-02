@@ -446,24 +446,6 @@ message?: string;
   };
 
   /**
-   * @zh-CN 定时任务对象
-   */
-  export type SysJobItem = {
-    id?: number;
-    jobName: string;
-    jobGroup?: string;
-    jobClass: string;
-    cronExpression: string;
-    jobStatus?: number;
-    concurrent?: number;
-    description?: string;
-    isPublic?: number;
-    creator?: string;
-    createTime?: string;
-    updateTime?: string;
-  };
-
-  /**
    * @zh-CN MCP 工具参数
    */
   export type McpToolParameter = {

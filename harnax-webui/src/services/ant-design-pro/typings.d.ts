@@ -314,57 +314,6 @@ declare namespace API {
     status?: number;
   };
 
-  // 定时任务相关类型
-  type JobItem = {
-    id?: number;
-    jobName?: string;
-    jobGroup?: string;
-    jobClass?: string;
-    cronExpression?: string;
-    jobStatus?: number;
-    concurrent?: number;
-    description?: string;
-    createTime?: string;
-    updateTime?: string;
-    isPublic?: number;
-    creator?: string;
-  };
-
-  type SysJobCreateRequest = {
-    jobName: string;
-    jobGroup?: string;
-    jobClass: string;
-    cronExpression: string;
-    concurrent?: number;
-    description?: string;
-  };
-
-  type SysJobUpdateRequest = {
-    id?: number;
-    jobName: string;
-    jobGroup?: string;
-    jobClass: string;
-    cronExpression: string;
-    concurrent?: number;
-    description?: string;
-  };
-
-  // 定时任务日志相关类型
-  type JobLogItem = {
-    id?: number;
-    jobId?: number;
-    jobName?: string;
-    jobGroup?: string;
-    invokeTarget?: string;
-    jobMessage?: string;
-    status?: number;
-    exceptionInfo?: string;
-    startTime?: string;
-    endTime?: string;
-    duration?: number;
-    createTime?: string;
-  };
-
   // 会话相关类型
   type SessionItem = {
     id: number;

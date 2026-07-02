@@ -12,7 +12,6 @@ import com.agnetix.harnax.admin.util.GitSkillLoader.loadSkillsFromGit
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
-import com.agnetix.harnax.entity.SysJob
 import com.agnetix.harnax.mapper.SkillMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -51,7 +50,7 @@ class SkillServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        PageHelper.startPage<Skill>(pageNum, pageSize)
         return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername))
     }
 

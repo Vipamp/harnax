@@ -11,7 +11,6 @@ import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Model
-import com.agnetix.harnax.entity.SysJob
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.github.pagehelper.PageHelper
@@ -54,7 +53,7 @@ class ModelServiceImpl(
             null
         }
 
-        PageHelper.startPage<SysJob>(pageNum, pageSize)
+        PageHelper.startPage<Model>(pageNum, pageSize)
         return Page.fromPageInfo(
             modelMapper.selectModelList(
                 name,

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIntl } from '@umijs/max';
-import { Row, Col, Card, Button, message, Spin, Empty, Tag, Input, Select, Table, Tooltip } from 'antd';
+import { Row, Col, Card, Button, message, Modal, Empty, Tag, Input, Select, Table, Tooltip } from 'antd';
 import { ScheduleOutlined, SearchOutlined, ReloadOutlined, ThunderboltOutlined, PlayCircleOutlined, PauseCircleOutlined, CaretRightOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ColumnsType } from 'antd/es/table';
@@ -52,6 +52,8 @@ const AgentTaskManagement: React.FC = () => {
       if (response.code === 200 && response.data) {
         setTasks(response.data.records || []);
         setTotal(response.data.total || 0);
+      } else {
+        message.error(response.message || 'Failed to load tasks');
       }
     } catch (error) {
       message.error('Failed to load tasks');
@@ -70,6 +72,8 @@ const AgentTaskManagement: React.FC = () => {
       if (response.code === 200 && response.data) {
         setLogs(response.data.records || []);
         setLogsTotal(response.data.total || 0);
+      } else {
+        message.error(response.message || 'Failed to load logs');
       }
     } catch (error) {
       message.error('Failed to load logs');
@@ -77,6 +81,8 @@ const AgentTaskManagement: React.FC = () => {
       setLogsLoading(false);
     }
   };
+
+  const runOnceTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     loadTasks();
@@ -87,7 +93,18 @@ const AgentTaskManagement: React.FC = () => {
       setLogsPageNum(1);
       loadLogs(selectedTask.id);
     }
-  }, [selectedTask, logsPageNum]);
+    return () => {
+      if (runOnceTimerRef.current) {
+        clearTimeout(runOnceTimerRef.current);
+      }
+    };
+  }, [selectedTask]);
+
+  useEffect(() => {
+    if (selectedTask && logsPageNum > 1) {
+      loadLogs(selectedTask.id);
+    }
+  }, [logsPageNum]);
 
   const handleStart = async (id: number) => {
     try {
@@ -123,7 +140,10 @@ const AgentTaskManagement: React.FC = () => {
       if (response.code === 200) {
         message.success('Task triggered');
         if (selectedTask?.id === id) {
-          setTimeout(() => loadLogs(id), 2000);
+          if (runOnceTimerRef.current) {
+            clearTimeout(runOnceTimerRef.current);
+          }
+          runOnceTimerRef.current = setTimeout(() => loadLogs(id), 2000);
         }
       } else {
         message.error(response.message || 'Failed to trigger task');
@@ -133,22 +153,29 @@ const AgentTaskManagement: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    try {
-      const response = await deleteAgentTask(id);
-      if (response.code === 200) {
-        message.success('Task deleted');
-        if (selectedTask?.id === id) {
-          setSelectedTask(null);
-          setLogs([]);
+  const handleDelete = (id: number) => {
+    Modal.confirm({
+      title: intl.formatMessage({ id: 'pages.common.deleteConfirm', defaultMessage: 'Are you sure to delete?' }),
+      onOk: async () => {
+        try {
+          const response = await deleteAgentTask(id);
+          if (response.code === 200) {
+            message.success('Task deleted');
+            if (selectedTask?.id === id) {
+              setSelectedTask(null);
+              setLogs([]);
+              setLogsTotal(0);
+              setLogsPageNum(1);
+            }
+            loadTasks();
+          } else {
+            message.error(response.message || 'Failed to delete task');
+          }
+        } catch (error) {
+          message.error('Failed to delete task');
         }
-        loadTasks();
-      } else {
-        message.error(response.message || 'Failed to delete task');
-      }
-    } catch (error) {
-      message.error('Failed to delete task');
-    }
+      },
+    });
   };
 
   const taskColumns: ColumnsType<API.AgentTaskItem> = [
@@ -303,7 +330,7 @@ const AgentTaskManagement: React.FC = () => {
                       { label: intl.formatMessage({ id: 'pages.common.paused', defaultMessage: 'Paused' }), value: 0 },
                     ]}
                   />
-                  <Button icon={<ReloadOutlined />} onClick={loadTasks} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
+                  <Button icon={<ReloadOutlined />} onClick={() => { setFilters({ name: '', taskStatus: undefined }); setPageNum(1); }} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
                     {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                   </Button>
                   <Button type="primary" icon={<ScheduleOutlined />} onClick={() => { setEditingTask(null); setFormVisible(true); }}>

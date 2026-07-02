@@ -220,14 +220,15 @@ class AgentTaskServiceImpl(
             throw BizException("Scheduler is disabled on this instance")
         }
 
-        val jobKey = JobKey("AgentTask_${task.id}_ONCE", "AgentTaskGroup_ONCE")
+        val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
+        val jobKey = JobKey("AgentTask_${task.id}_ONCE_$uniqueId", "AgentTaskGroup_ONCE")
         val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
             .withIdentity(jobKey)
             .usingJobData("agentTask", task)
             .build()
 
         val trigger = TriggerBuilder.newTrigger()
-            .withIdentity(TriggerKey("AgentTask_${task.id}_ONCE_trigger", "AgentTaskGroup_ONCE"))
+            .withIdentity(TriggerKey("AgentTask_${task.id}_ONCE_${uniqueId}_trigger", "AgentTaskGroup_ONCE"))
             .startNow()
             .build()
 
@@ -277,7 +278,13 @@ class AgentTaskServiceImpl(
             )
 
         val trigger = triggerBuilder.build()
-        scheduler.scheduleJob(jobDetail, trigger)
+
+        if (scheduler.checkExists(jobKey)) {
+            scheduler.rescheduleJob(TriggerKey("AgentTask_${task.id}_trigger", "AgentTaskGroup"), trigger)
+            scheduler.addJob(jobDetail, true)
+        } else {
+            scheduler.scheduleJob(jobDetail, trigger)
+        }
         log.info("Scheduled agent task: id={}, name={}, cron={}", task.id, task.name, task.cronExpression)
     }
 

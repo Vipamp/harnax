@@ -62,7 +62,7 @@ class UserContextUtil {
                 throw RuntimeException("Not logged in")
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            LoggerFactory.getLogger(UserContextUtil::class.java).warn("Failed to get current username: {}", e.message)
             throw RuntimeException("Not logged in")
         }
 
@@ -74,8 +74,8 @@ class UserContextUtil {
          */
         fun getCurrentUserId(jwtUtil: JwtUtil): Long? = try {
             val token = getToken()
-            val valid = jwtUtil.validateToken(token!!)
-            if (token != null && valid) {
+            val valid = token?.let { jwtUtil.validateToken(it) } ?: false
+            if (valid && token != null) {
                 jwtUtil.getUserIdFromToken(token)
             } else {
                 null

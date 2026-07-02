@@ -94,23 +94,6 @@ export default [
     ],
   },
   {
-    name: 'job',
-    icon: 'schedule',
-    path: '/job',
-    routes: [
-      {
-        name: 'management',
-        path: '/job/manager',
-        component: './job',
-      },
-      {
-        name: 'log',
-        path: '/job/log',
-        component: './job/log',
-      },
-    ],
-  },
-  {
     name: 'system',
     icon: 'setting',
     path: '/system',
