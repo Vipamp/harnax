@@ -14,12 +14,12 @@ interface AgentTaskExecutionMapper {
         @Param("id") id: Long,
         @Param("status") status: Int,
         @Param("startTime") startTime: LocalDateTime?,
-        @Param("endTime") endTime: LocalDateTime?
+        @Param("endTime") endTime: LocalDateTime?,
     ): Int
 
     fun selectByTaskIdAndTriggerTime(
         @Param("taskId") taskId: Long,
-        @Param("triggerTime") triggerTime: LocalDateTime
+        @Param("triggerTime") triggerTime: LocalDateTime,
     ): AgentTaskExecution?
 
     fun deleteOldExecutions(@Param("beforeTime") beforeTime: LocalDateTime): Int

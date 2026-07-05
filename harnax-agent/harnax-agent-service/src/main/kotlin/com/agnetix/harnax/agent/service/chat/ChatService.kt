@@ -1,6 +1,5 @@
 package com.agnetix.harnax.agent.service.chat
 
-import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.adaptor.PlanNote
@@ -14,6 +13,7 @@ import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigResponse
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigUpdateRequest
+import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
@@ -38,6 +38,7 @@ import java.util.concurrent.TimeUnit
 class ChatService(
     private val launcher: HarnessAgentLauncher,
     private val sessionMapper: SessionMapper,
+    private val agentSpecResolver: AgentSpecResolver,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
 ) {
@@ -115,23 +116,12 @@ class ChatService(
     }
 
     /**
-     * Get or create an agent for the given sessionId.
-     * Caches the agent so subsequent calls reuse the same instance.
+     * Route agent creation based on sessionId prefix.
+     * Delegates spec resolution to AgentSpecResolver (which calls Admin).
      */
     private fun getOrCreateAgent(sessionId: String, chatSpec: ChatSpec, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.get(sessionId) { sid ->
-        val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
-            ?: throw IllegalArgumentException("Session not found: $sid")
-
-        log.info("Creating agent for session: ${session.sessionId}, agentId: ${session.agentId}")
-
-        val agentSpec = AgentSpec.builder()
-            .id(session.agentId ?: throw IllegalArgumentException("Session.agentId cannot be null"))
-            .name(session.name ?: "Agent-${session.sessionId}")
-            .description(session.description ?: "")
-            .systemPrompt(session.systemPrompt ?: "")
-            .chatModelId(session.modelId ?: throw IllegalArgumentException("Session.modelId cannot be null"))
-            .build()
-
+        log.info("Resolving agent spec for sessionId=$sid")
+        val (agentSpec, _) = agentSpecResolver.resolve(sid)
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sid,
@@ -139,8 +129,7 @@ class ChatService(
             chatSpec,
             userIdentifier,
         )
-
-        log.info("Agent for session $sid created and cached successfully")
+        log.info("Agent for session=$sid created and cached successfully")
         agent
     }
 
@@ -157,12 +146,21 @@ class ChatService(
     fun loadSessionCurrentPlanNote(sessionId: String): PlanNote? = launcher.loadSessionCurrentPlanNote(sessionId)
 
     /**
-     * Get chat configuration for session
+     * Get chat configuration for session.
+     * Only web/mp sessions have per-session config in the session table.
+     * For chn-/task- sessions, return defaults (all disabled).
      */
     fun getSessionConfig(sessionId: String): SessionConfigResponse {
+        if (sessionId.startsWith("chn-") || sessionId.startsWith("task-")) {
+            return SessionConfigResponse(
+                sessionId = sessionId,
+                enableThink = false,
+                enableSearch = false,
+                enablePlan = false,
+            )
+        }
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
-
         return SessionConfigResponse(
             sessionId = sessionId,
             enableThink = session.enableThink == 1,
@@ -172,9 +170,15 @@ class ChatService(
     }
 
     /**
-     * Update chat configuration for session
+     * Update chat configuration for session.
+     * Only web/mp sessions have per-session config in the session table.
+     * For chn-/task- sessions, this is a no-op.
      */
     fun updateSessionConfig(sessionId: String, request: SessionConfigUpdateRequest) {
+        if (sessionId.startsWith("chn-") || sessionId.startsWith("task-")) {
+            log.info("Skipping session config update for non-session-table sessionId: $sessionId")
+            return
+        }
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
 

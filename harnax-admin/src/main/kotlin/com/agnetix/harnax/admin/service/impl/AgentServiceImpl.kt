@@ -147,9 +147,7 @@ class AgentServiceImpl(
 
     override fun deleteAgent(id: Long): Boolean = agentMapper.deleteById(id) > 0
 
-    override fun getActiveAgents(): List<Agent> {
-        return agentMapper.selectAgentList(null, 1, null)
-    }
+    override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, "")
 
     /**
      * Convert Agent entity to response DTO (with complete skill and MCP information)

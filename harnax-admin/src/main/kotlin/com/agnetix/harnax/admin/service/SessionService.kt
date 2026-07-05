@@ -81,15 +81,6 @@ interface SessionService {
     fun deleteSession(id: Long): Boolean
 
     /**
-     * Create a temporary session for an agent (used by agent tasks)
-     *
-     * @param agentId Agent ID
-     * @param creator Creator username
-     * @return Created session entity
-     */
-    fun createForAgent(agentId: Long, creator: String): Session
-
-    /**
      * Check if session name exists
      *
      * @param title Session name

@@ -48,6 +48,13 @@
         LIMIT 1
     </select>
 
+    <select id="selectBySessionId" resultMap="ChannelResultMap">
+        SELECT <include refid="BaseColumnList"/>
+        FROM channel
+        WHERE session_id = #{sessionId} AND active = 1
+        LIMIT 1
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO channel (
             tenant_id, name, type, agent_id, callback_key, session_id,

@@ -17,6 +17,9 @@ interface AgentTaskLogMapper {
         @Param("taskId") taskId: Long?,
         @Param("taskName") taskName: String?,
         @Param("status") status: Int?,
+        @Param("startTimeFrom") startTimeFrom: String?,
+        @Param("startTimeTo") startTimeTo: String?,
+        @Param("keyword") keyword: String?,
     ): List<AgentTaskLog>
 
     fun selectByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>

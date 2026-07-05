@@ -75,10 +75,10 @@ class LocalRoutingWorkflowTest {
         // 4. Health checker detects and performs failover (rebinds to inst-2)
         healthChecker.checkInstanceHealth()
 
-        // 5. Verify instance-1 is marked DOWN
-        val downInst1 = instanceRegistry.getInstance("inst-1")
-        assertNotNull(downInst1)
-        assertEquals("DOWN", downInst1!!.status)
+        // 5. Verify instance-1 is marked DOWN and removed from active instances
+        assertNull(instanceRegistry.getInstance("inst-1"))
+        val activeInstances = instanceRegistry.getAllActiveInstances()
+        assertTrue(activeInstances.none { it.instanceId == "inst-1" })
 
         // 6. Sessions from inst-1 are now rebound to inst-2
         assertEquals("inst-2", sessionMappingService.getInstanceId("sess-1"))

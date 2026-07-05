@@ -132,5 +132,5 @@ class ChannelServiceImpl(
     /**
      * Generate immutable session ID (UUID)
      */
-    private fun generateSessionId(): String = UUID.randomUUID().toString()
+    private fun generateSessionId(): String = "chn-${UUID.randomUUID()}"
 }

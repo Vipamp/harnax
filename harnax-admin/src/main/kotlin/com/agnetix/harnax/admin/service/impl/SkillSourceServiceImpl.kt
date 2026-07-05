@@ -45,7 +45,7 @@ class SkillSourceServiceImpl(
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         PageHelper.startPage<SkillRepository>(pageNum, pageSize)
         return Page.fromPageInfo(
-            skillRepositoryMapper.selectRepositoryList(name, status, currentUsername)
+            skillRepositoryMapper.selectRepositoryList(name, status, currentUsername),
         )
     }
 
@@ -193,8 +193,7 @@ class SkillSourceServiceImpl(
         return repository
     }
 
-    override fun convertToResponse(entity: SkillRepository): SkillSourceResponse =
-        SkillSourceResponse.fromEntity(entity)
+    override fun convertToResponse(entity: SkillRepository): SkillSourceResponse = SkillSourceResponse.fromEntity(entity)
 
     private fun installSkills(repository: SkillRepository, config: Map<String, Any>) {
         val loader = skillLoaderRegistry.getLoader(repository.sourceType)
@@ -268,7 +267,7 @@ class SkillSourceServiceImpl(
             return try {
                 objectMapper.readValue(
                     repository.sourceConfig,
-                    object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {}
+                    object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {},
                 )
             } catch (e: Exception) {
                 log.warn("Failed to parse sourceConfig, falling back to url/branch", e)

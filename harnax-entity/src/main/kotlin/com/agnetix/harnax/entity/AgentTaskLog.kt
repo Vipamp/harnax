@@ -28,8 +28,8 @@ class AgentTaskLog : Serializable {
     @Schema(description = "Session ID")
     var sessionId: String = ""
 
-    @Schema(description = "Status (0:failed, 1:success, 2:timeout)")
-    var status: Int = 1
+    @Schema(description = "Status (0:failed, 1:success, 2:timeout, 3:running)")
+    var status: Int = 3
 
     @Schema(description = "Error info")
     var errorInfo: String = ""

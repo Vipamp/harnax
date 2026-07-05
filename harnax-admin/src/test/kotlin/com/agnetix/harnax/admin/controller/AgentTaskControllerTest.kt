@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.AgentTaskLogService
 import com.agnetix.harnax.admin.service.AgentTaskService
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
 import org.junit.jupiter.api.Assertions.*
@@ -396,97 +397,6 @@ class AgentTaskControllerTest {
         }
     }
 
-    // ==================== POST /api/admin/agent-tasks/{id}/start ====================
-
-    @Nested
-    @DisplayName("POST /api/admin/agent-tasks/{id}/start")
-    inner class StartEndpoint {
-
-        @Test
-        fun `start should return success`() {
-            `when`(agentTaskService.startTask(1L)).thenReturn(true)
-
-            mockMvc.perform(post("/api/admin/agent-tasks/1/start"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(200))
-        }
-
-        @Test
-        fun `start should return error when already running`() {
-            `when`(agentTaskService.startTask(1L))
-                .thenThrow(BizException("Task is already running"))
-
-            mockMvc.perform(post("/api/admin/agent-tasks/1/start"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("Failed to start agent task: Task is already running"))
-        }
-
-        @Test
-        fun `start should return error when task not found`() {
-            `when`(agentTaskService.startTask(999L))
-                .thenThrow(BizException("Agent task not found"))
-
-            mockMvc.perform(post("/api/admin/agent-tasks/999/start"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("Failed to start agent task: Agent task not found"))
-        }
-    }
-
-    // ==================== POST /api/admin/agent-tasks/{id}/pause ====================
-
-    @Nested
-    @DisplayName("POST /api/admin/agent-tasks/{id}/pause")
-    inner class PauseEndpoint {
-
-        @Test
-        fun `pause should return success`() {
-            `when`(agentTaskService.pauseTask(1L)).thenReturn(true)
-
-            mockMvc.perform(post("/api/admin/agent-tasks/1/pause"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(200))
-        }
-
-        @Test
-        fun `pause should return error when task not found`() {
-            `when`(agentTaskService.pauseTask(999L))
-                .thenThrow(BizException("Agent task not found"))
-
-            mockMvc.perform(post("/api/admin/agent-tasks/999/pause"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("Failed to pause agent task: Agent task not found"))
-        }
-    }
-
-    // ==================== POST /api/admin/agent-tasks/{id}/run ====================
-
-    @Nested
-    @DisplayName("POST /api/admin/agent-tasks/{id}/run")
-    inner class RunOnceEndpoint {
-
-        @Test
-        fun `runOnce should return success`() {
-            `when`(agentTaskService.runTaskOnce(1L)).thenReturn(true)
-
-            mockMvc.perform(post("/api/admin/agent-tasks/1/run"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(200))
-        }
-
-        @Test
-        fun `runOnce should return error when task not found`() {
-            `when`(agentTaskService.runTaskOnce(999L))
-                .thenThrow(BizException("Agent task not found"))
-
-            mockMvc.perform(post("/api/admin/agent-tasks/999/run"))
-                .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-        }
-    }
-
     // ==================== GET /api/admin/agent-tasks/{id}/logs ====================
 
     @Nested
@@ -501,7 +411,7 @@ class AgentTaskControllerTest {
                 pageSize = 10L,
                 records = emptyList(),
             )
-            `when`(agentTaskLogService.page(1L, null, null, 1, 10)).thenReturn(page)
+            `when`(agentTaskLogService.page(1L, null, null, null, null, null, 1, 10)).thenReturn(page)
 
             mockMvc.perform(
                 get("/api/admin/agent-tasks/1/logs")
@@ -520,7 +430,7 @@ class AgentTaskControllerTest {
                 pageSize = 10L,
                 records = emptyList(),
             )
-            `when`(agentTaskLogService.page(1L, "Daily", 1, 1, 10)).thenReturn(page)
+            `when`(agentTaskLogService.page(1L, "Daily", 1, null, null, null, 1, 10)).thenReturn(page)
 
             mockMvc.perform(
                 get("/api/admin/agent-tasks/1/logs")
@@ -535,12 +445,77 @@ class AgentTaskControllerTest {
 
         @Test
         fun `logs should handle service error`() {
-            `when`(agentTaskLogService.page(any(), any(), any(), any(), any()))
+            `when`(agentTaskLogService.page(any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(RuntimeException("DB error"))
 
             mockMvc.perform(get("/api/admin/agent-tasks/1/logs"))
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(500))
+        }
+
+        @Test
+        fun `logs should pass time range filters`() {
+            val page = Page<com.agnetix.harnax.entity.AgentTaskLog>(
+                total = 0L,
+                pageNum = 1L,
+                pageSize = 10L,
+                records = emptyList(),
+            )
+            `when`(agentTaskLogService.page(1L, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, 1, 10)).thenReturn(page)
+
+            mockMvc.perform(
+                get("/api/admin/agent-tasks/1/logs")
+                    .param("startTimeFrom", "2026-07-01 00:00:00")
+                    .param("startTimeTo", "2026-07-31 23:59:59")
+                    .param("pageNum", "1")
+                    .param("pageSize", "10"),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+        }
+
+        @Test
+        fun `logs should pass keyword filter`() {
+            val page = Page<com.agnetix.harnax.entity.AgentTaskLog>(
+                total = 0L,
+                pageNum = 1L,
+                pageSize = 10L,
+                records = emptyList(),
+            )
+            `when`(agentTaskLogService.page(1L, null, null, null, null, "error", 1, 10)).thenReturn(page)
+
+            mockMvc.perform(
+                get("/api/admin/agent-tasks/1/logs")
+                    .param("keyword", "error")
+                    .param("pageNum", "1")
+                    .param("pageSize", "10"),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+        }
+
+        @Test
+        fun `logs should pass all filters combined`() {
+            val page = Page<com.agnetix.harnax.entity.AgentTaskLog>(
+                total = 0L,
+                pageNum = 1L,
+                pageSize = 10L,
+                records = emptyList(),
+            )
+            `when`(agentTaskLogService.page(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "news", 1, 10)).thenReturn(page)
+
+            mockMvc.perform(
+                get("/api/admin/agent-tasks/1/logs")
+                    .param("taskName", "Daily")
+                    .param("status", "1")
+                    .param("startTimeFrom", "2026-07-01 00:00:00")
+                    .param("startTimeTo", "2026-07-31 23:59:59")
+                    .param("keyword", "news")
+                    .param("pageNum", "1")
+                    .param("pageSize", "10"),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
         }
     }
 
@@ -553,8 +528,14 @@ class AgentTaskControllerTest {
         @Test
         fun `agents should return list of available agents`() {
             val agents = listOf(
-                Agent().apply { id = 1L; name = "Agent A" },
-                Agent().apply { id = 2L; name = "Agent B" },
+                Agent().apply {
+                    id = 1L
+                    name = "Agent A"
+                },
+                Agent().apply {
+                    id = 2L
+                    name = "Agent B"
+                },
             )
             `when`(agentService.getActiveAgents()).thenReturn(agents)
 
@@ -583,6 +564,89 @@ class AgentTaskControllerTest {
                 .thenThrow(RuntimeException("DB error"))
 
             mockMvc.perform(get("/api/admin/agent-tasks/agents"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+        }
+    }
+
+    // ==================== POST /api/admin/agent-tasks/toggle/{id} ====================
+
+    @Nested
+    @DisplayName("POST /api/admin/agent-tasks/toggle/{id}")
+    inner class ToggleEndpoint {
+
+        @Test
+        fun `toggle should update status and return success`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 1)).thenReturn(true)
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+
+            verify(agentTaskService).toggleTaskStatus(1L, 1)
+        }
+
+        @Test
+        fun `toggle should return error when update fails`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 0)).thenReturn(false)
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "0"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+        }
+    }
+
+    // ==================== POST /api/admin/agent-tasks/{id}/start ====================
+
+    @Nested
+    @DisplayName("POST /api/admin/agent-tasks/{id}/start")
+    inner class StartEndpoint {
+
+        @Test
+        fun `start should delegate to service and return success`() {
+            `when`(agentTaskService.startTask(1L)).thenReturn(ResultVo.success())
+
+            mockMvc.perform(post("/api/admin/agent-tasks/1/start"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+
+            verify(agentTaskService).startTask(1L)
+        }
+
+        @Test
+        fun `start should return error when scheduler unavailable`() {
+            `when`(agentTaskService.startTask(1L))
+                .thenReturn(ResultVo.error("Scheduler service unavailable"))
+
+            mockMvc.perform(post("/api/admin/agent-tasks/1/start"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+        }
+    }
+
+    // ==================== POST /api/admin/agent-tasks/{id}/pause ====================
+
+    @Nested
+    @DisplayName("POST /api/admin/agent-tasks/{id}/pause")
+    inner class PauseEndpoint {
+
+        @Test
+        fun `pause should delegate to service and return success`() {
+            `when`(agentTaskService.pauseTask(1L)).thenReturn(ResultVo.success())
+
+            mockMvc.perform(post("/api/admin/agent-tasks/1/pause"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+
+            verify(agentTaskService).pauseTask(1L)
+        }
+
+        @Test
+        fun `pause should return error when scheduler unavailable`() {
+            `when`(agentTaskService.pauseTask(1L))
+                .thenReturn(ResultVo.error("Scheduler service unavailable"))
+
+            mockMvc.perform(post("/api/admin/agent-tasks/1/pause"))
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(500))
         }

@@ -22,17 +22,23 @@ class HeartbeatHealthChecker(
     private val recentFailovers = ConcurrentHashMap<String, Long>()
     private val failoverCooldownMs = 10000L
 
+    // Entries older than this are considered stale and eligible for cleanup.
+    private val failoverEntryTtlMs = 300_000L // 5 minutes
+
     @Scheduled(fixedDelayString = "\${router.health.check-interval-ms:5000}")
     fun checkInstanceHealth() {
         val allActiveInstances = instanceRegistry.getAllActiveInstances()
-        val healthyInstances = allActiveInstances.filter { it.isHealthy(heartbeatTimeoutMs) }
         val downInstances = allActiveInstances.filter { !it.isHealthy(heartbeatTimeoutMs) }
 
         if (downInstances.isNotEmpty()) {
             log.warn("Detected ${downInstances.size} unhealthy instances: ${downInstances.map { it.instanceId }}")
 
             for (downInstance in downInstances) {
-                handleInstanceDown(downInstance.instanceId, healthyInstances)
+                // Re-fetch healthy instances for each down instance to avoid stale snapshot:
+                // if multiple instances go down in the same cycle, sessions from the first
+                // should not be rebound to the second (which is also down).
+                val currentHealthy = instanceRegistry.getAllActiveInstances().filter { it.isHealthy(heartbeatTimeoutMs) }
+                handleInstanceDown(downInstance.instanceId, currentHealthy)
             }
         }
     }
@@ -60,7 +66,7 @@ class HeartbeatHealthChecker(
         val targetInstance = selectFailoverTarget(healthyInstances, downInstanceId)
         val countMap = sessionMappingService.getSessionCountsByInstances(healthyInstances.map { it.instanceId })
         val currentLoad = countMap[targetInstance.instanceId] ?: 0
-        val avgLoad = if (healthyInstances.isEmpty()) 0.0 else countMap.values.sum().toDouble() / healthyInstances.size
+        val avgLoad = countMap.values.sum().toDouble() / healthyInstances.size
 
         if (currentLoad > avgLoad * 2) {
             log.warn("Target instance ${targetInstance.instanceId} is overloaded ($currentLoad sessions, avg: $avgLoad), selecting alternative")
@@ -85,6 +91,22 @@ class HeartbeatHealthChecker(
     private fun rebindSessions(downInstanceId: String, targetInstance: AgentInstance) {
         val rebinding = sessionMappingService.rebindAllSessions(downInstanceId, targetInstance.instanceId)
         log.info("Failover: moved $rebinding sessions from $downInstanceId to ${targetInstance.instanceId}")
+    }
+
+    /**
+     * Periodically clean up stale entries from [recentFailovers] to prevent
+     * unbounded growth when instances are permanently removed.
+     */
+    @Scheduled(fixedDelay = 60_000)
+    fun cleanupStaleFailovers() {
+        val now = System.currentTimeMillis()
+        val staleEntries = recentFailovers.entries.filter { now - it.value > failoverEntryTtlMs }.map { it.key }
+        for (key in staleEntries) {
+            recentFailovers.remove(key)
+        }
+        if (staleEntries.isNotEmpty()) {
+            log.debug("Cleaned up {} stale failover entries", staleEntries.size)
+        }
     }
 
     private fun selectFailoverTarget(healthyInstances: List<AgentInstance>, excludeInstanceId: String): AgentInstance {

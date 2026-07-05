@@ -25,13 +25,17 @@ class SkillAdaptorImpl(
             return null
         }
 
-        val skill = skillMapper.selectById(skillId)
-        if (skill == null) {
-            log.warn("Skill not found: $skillId")
-            return null
+        return try {
+            val skill = skillMapper.selectById(skillId)
+            if (skill == null) {
+                log.warn("Skill not found: $skillId")
+                return null
+            }
+            buildAgentSkill(skill)
+        } catch (e: Exception) {
+            log.error("Failed to load skill: $skillId", e)
+            null
         }
-
-        return buildAgentSkill(skill)
     }
 
     private fun buildAgentSkill(skill: Skill): AgentSkill? = try {

@@ -51,43 +51,39 @@ class ChatModelConfigAdaptorImpl(
     /**
      * Build ChatModelConfig based on provider type
      */
-    private fun buildChatModelConfig(model: Model, provider: ModelProvider): ChatModelConfig? {
-        val providerType = provider.name?.lowercase()
+    private fun buildChatModelConfig(model: Model, provider: ModelProvider): ChatModelConfig? = when (val providerType = provider.type.lowercase()) {
+        "dashscope" -> DashScopeChatModelConfig(
+            model.modelName,
+            provider.apiKey!!,
+            provider.baseUrl,
+            stream = true,
+            enableThinking = true,
+            enableSearch = false,
+            httpTransport = null,
+            options = null,
+            encrypt = false,
+        )
 
-        return when (providerType) {
-            "dashscope" -> DashScopeChatModelConfig(
-                model.modelName,
-                provider.apiKey!!,
-                provider.baseUrl,
-                stream = true,
-                enableThinking = true,
-                enableSearch = false,
-                httpTransport = null,
-                options = null,
-                encrypt = false,
-            )
+        "openai" -> OpenAIChatModelConfig(
+            model.modelName,
+            provider.apiKey!!,
+            provider.baseUrl,
+            true,
+            null,
+            null,
+            null,
+        )
 
-            "openai" -> OpenAIChatModelConfig(
-                model.modelName,
-                provider.apiKey!!,
-                provider.baseUrl,
-                true,
-                null,
-                null,
-                null,
-            )
+        "ollama" -> OllamaChatModelConfig(
+            model.modelName,
+            provider.baseUrl ?: "http://localhost:11434",
+            null,
+            null,
+        )
 
-            "ollama" -> OllamaChatModelConfig(
-                model.modelName,
-                provider.baseUrl ?: "http://localhost:11434",
-                null,
-                null,
-            )
-
-            else -> {
-                log.warn("Unsupported provider type: $providerType")
-                null
-            }
+        else -> {
+            log.warn("Unsupported provider type: $providerType")
+            null
         }
     }
 }

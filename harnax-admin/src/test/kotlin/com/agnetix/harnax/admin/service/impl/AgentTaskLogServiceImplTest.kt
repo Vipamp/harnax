@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.dto.AgentTaskLogResponse
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import org.junit.jupiter.api.Assertions.*
@@ -148,7 +147,6 @@ class AgentTaskLogServiceImplTest {
     @Nested
     @DisplayName("Convert To Response Tests")
     inner class ConvertToResponseTests {
-
         @Test
         fun `convertToResponse should map all fields correctly`() {
             val response = agentTaskLogService.convertToResponse(testLog)
@@ -227,6 +225,47 @@ class AgentTaskLogServiceImplTest {
             val response = agentTaskLogService.convertToResponse(testLog)
 
             assertEquals(3600000, response.durationMs)
+        }
+    }
+
+    @Nested
+    @DisplayName("Page Query Tests")
+    inner class PageTests {
+
+        @Test
+        fun `page should pass all parameters to mapper`() {
+            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+
+            agentTaskLogService.page(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", 1, 10)
+
+            verify(agentTaskLogMapper).selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword")
+        }
+
+        @Test
+        fun `page should pass null filters correctly`() {
+            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+
+            agentTaskLogService.page(1L, null, null, null, null, null, 1, 10)
+
+            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null)
+        }
+
+        @Test
+        fun `page should pass only time range filter`() {
+            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+
+            agentTaskLogService.page(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, 1, 10)
+
+            verify(agentTaskLogMapper).selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null)
+        }
+
+        @Test
+        fun `page should pass only keyword filter`() {
+            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+
+            agentTaskLogService.page(null, null, null, null, null, "error", 1, 10)
+
+            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error")
         }
     }
 }

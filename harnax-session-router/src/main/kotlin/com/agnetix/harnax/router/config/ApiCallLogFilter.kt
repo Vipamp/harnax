@@ -45,9 +45,14 @@ class ApiCallLogFilter(
         private val SSE_EXACT_PATHS = setOf("/api/router/agent/confirm")
 
         // Suspend-fun batch endpoints — incompatible with ContentCachingResponseWrapper.
+        // Spring MVC async dispatch for Kotlin suspend controllers returns from the filter
+        // chain before the coroutine writes the response body, making the wrapper buffer
+        // an empty body and flush it prematurely.
         private val SUSPEND_ENDPOINTS = setOf(
             "/api/router/agent/chat",
             "/api/router/agent/command",
+            "/api/router/agent/session",
+            "/api/router/agent/chat/history",
         )
     }
 
@@ -133,7 +138,7 @@ class ApiCallLogFilter(
      * Spring MVC async dispatch for Kotlin suspend controllers returns from the filter
      * chain before the coroutine writes the response body, making the wrapper incompatible.
      */
-    private fun isSuspendEndpoint(path: String): Boolean = path in SUSPEND_ENDPOINTS
+    private fun isSuspendEndpoint(path: String): Boolean = SUSPEND_ENDPOINTS.any { path == it || path.startsWith("$it/") }
 
     private fun recordLog(
         request: HttpServletRequest,

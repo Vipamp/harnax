@@ -96,7 +96,7 @@ class RedisCircuitBreakerTest {
 
             breaker.recordFailure("inst-1")
 
-            verify(valueOps).set(eq(lastFailureKey), any<Long>())
+            verify(valueOps).set(eq(lastFailureKey), any<Long>(), eq(90000L), eq(TimeUnit.MILLISECONDS))
             verify(valueOps).increment(failuresKey)
         }
 
@@ -141,6 +141,7 @@ class RedisCircuitBreakerTest {
         @Test
         fun `updates TTL when already OPEN`() {
             val lastFailureKey = "router:circuit:inst-1:last_failure"
+            val failuresKey = "router:circuit:inst-1:failures"
             val stateKey = "router:circuit:inst-1:state"
 
             `when`(valueOps.increment(any<String>())).thenReturn(1L)
@@ -148,7 +149,9 @@ class RedisCircuitBreakerTest {
 
             breaker.recordFailure("inst-1")
 
-            verify(redisTemplate).expire(lastFailureKey, 30000L, TimeUnit.MILLISECONDS)
+            // TTL is now set unconditionally at the top of recordFailure via set() with TTL
+            verify(valueOps).set(eq(lastFailureKey), any<Long>(), eq(90000L), eq(TimeUnit.MILLISECONDS))
+            verify(redisTemplate).expire(eq(failuresKey), eq(90000L), eq(TimeUnit.MILLISECONDS))
         }
     }
 

@@ -1,9 +1,5 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
-import com.agnetix.harnax.agent.AgentSpec
-import com.agnetix.harnax.agent.ChatSpecBuilder
-import com.agnetix.harnax.agent.McpSpec
-import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
@@ -18,13 +14,11 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.runner.AgentRunner
+import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
-import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
-import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
@@ -35,8 +29,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
-import tools.jackson.core.type.TypeReference
-import tools.jackson.databind.ObjectMapper
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 
@@ -48,9 +40,7 @@ import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 @Service
 class DefaultAgentRunner(
     private val launcher: HarnessAgentLauncher,
-    private val sessionMapper: SessionMapper,
-    private val skillMapper: SkillMapper,
-    private val objectMapper: ObjectMapper,
+    private val agentSpecResolver: AgentSpecResolver,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
 ) : AgentRunner {
@@ -228,69 +218,12 @@ class DefaultAgentRunner(
     }
 
     /**
-     * Get or create an agent for the given sessionId.
-     * Retrieves session configuration from DB and builds the agent via HarnessAgentLauncher.
+     * Route agent creation based on sessionId prefix.
+     * Delegates spec resolution to AgentSpecResolver (which calls Admin).
      */
     private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.get(sessionId) { sid ->
-        val session = sessionMapper.selectBySessionIdAndStatus(sid, 1)
-            ?: throw IllegalArgumentException("Session not found: $sid")
-
-        log.info("Creating agent for session=$sid, agentId=${session.agentId}")
-
-        val chatSpec = ChatSpecBuilder()
-            .enableThinking(session.enableThink == 1)
-            .enableSearch(session.enableSearch == 1)
-            .enablePlan(session.enablePlan == 1)
-            .build()
-
-        val agentSpecBuilder = AgentSpec.builder()
-            .id(session.agentId)
-            .name(session.name)
-            .description(session.description)
-            .systemPrompt(session.systemPrompt)
-            .chatModelId(session.modelId)
-
-        // Parse MCP list (JSON format: [{"id":1,"enable_skip":"true"}])
-        if (session.mcpList.isNotEmpty() && session.mcpList != "[]") {
-            try {
-                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    session.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {},
-                )
-                for (config in mcpConfigs) {
-                    val mcpId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as? String
-                    agentSpecBuilder.addMcpService(
-                        McpSpec(mcpId = mcpId, skipIfMissing = enableSkip == "true"),
-                    )
-                }
-            } catch (e: Exception) {
-                log.warn("Failed to parse MCP list for session=$sid: ${e.message}", e)
-            }
-        }
-
-        // Parse skill list (comma-separated IDs)
-        if (session.skillList.isNotEmpty() && session.skillList != "[]") {
-            val skillIds = session.skillList.split(",")
-            for (skillIdStr in skillIds) {
-                try {
-                    val skillId = skillIdStr.trim().toLong()
-                    val skill: Skill? = skillMapper.selectById(skillId)
-                    if (skill != null) {
-                        agentSpecBuilder.addSkill(
-                            SkillSpec(skillId = skill.id, skillName = skill.name),
-                        )
-                    } else {
-                        log.warn("Skill not found: $skillId")
-                    }
-                } catch (e: NumberFormatException) {
-                    log.warn("Invalid skill ID: $skillIdStr")
-                }
-            }
-        }
-
-        val agentSpec = agentSpecBuilder.build()
-
+        log.info("Resolving agent spec for sessionId=$sid")
+        val (agentSpec, chatSpec) = agentSpecResolver.resolve(sid)
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sid,
@@ -298,7 +231,6 @@ class DefaultAgentRunner(
             chatSpec = chatSpec,
             userIdentifier = userIdentifier,
         )
-
         log.info("Agent for session=$sid created and cached successfully")
         agent
     }

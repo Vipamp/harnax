@@ -1,8 +1,15 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.ApiKeyEntity
+import com.agnetix.harnax.entity.Channel
+import com.agnetix.harnax.entity.Session
+import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
+import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import org.junit.jupiter.api.Assertions.*
@@ -39,6 +46,15 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var aesUtil: AesUtil
+
+    @Mock
+    private lateinit var agentTaskMapper: AgentTaskMapper
+
+    @Mock
+    private lateinit var agentMapper: AgentMapper
+
+    @Mock
+    private lateinit var channelMapper: ChannelMapper
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -196,6 +212,161 @@ class InternalApiControllerTest {
                     InternalApiController.SystemKeyRequest(serviceName = "channel-service"),
                 )
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("Agent Task Spec 接口")
+    inner class GetAgentTaskSpecTests {
+
+        @Test
+        @DisplayName("getAgentTaskSpec - 任务存在时返回 AgentSpec")
+        fun `getAgentTaskSpec should return spec when task and agent exist`() {
+            val task = AgentTask().apply {
+                id = 1L
+                agentId = 100L
+                name = "Daily News"
+            }
+            val agent = Agent().apply {
+                id = 100L
+                name = "News Agent"
+                description = "News agent desc"
+                systemPrompt = "You are a news agent"
+                modelId = 5L
+                mcpList = "[]"
+                skillList = ""
+            }
+            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
+            `when`(agentMapper.selectById(100L)).thenReturn(agent)
+
+            val result = controller.getAgentTaskSpec(1L)
+
+            assertTrue(result.isSuccess())
+            assertNotNull(result.data)
+            assertEquals(100L, result.data?.agentId)
+            assertEquals("News Agent", result.data?.agentName)
+            assertEquals("You are a news agent", result.data?.systemPrompt)
+            assertEquals(5L, result.data?.modelId)
+        }
+
+        @Test
+        @DisplayName("getAgentTaskSpec - 任务不存在时返回错误")
+        fun `getAgentTaskSpec should return error when task not found`() {
+            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
+
+            val result = controller.getAgentTaskSpec(999L)
+
+            assertFalse(result.isSuccess())
+            assertTrue(result.message.contains("Agent task not found"))
+        }
+
+        @Test
+        @DisplayName("getAgentTaskSpec - Agent不存在时返回错误")
+        fun `getAgentTaskSpec should return error when agent not found`() {
+            val task = AgentTask().apply {
+                id = 1L
+                agentId = 999L
+            }
+            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
+            `when`(agentMapper.selectById(999L)).thenReturn(null)
+
+            val result = controller.getAgentTaskSpec(1L)
+
+            assertFalse(result.isSuccess())
+            assertTrue(result.message.contains("Agent not found"))
+        }
+    }
+
+    @Nested
+    @DisplayName("统一 Agent Spec 接口")
+    inner class GetAgentSpecTests {
+
+        private fun stubAgent() = Agent().apply {
+            id = 100L
+            name = "Test Agent"
+            description = "Test agent desc"
+            systemPrompt = "You are a test agent"
+            modelId = 5L
+            mcpList = "[]"
+            skillList = ""
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - web session 返回 AgentSpec")
+        fun `getAgentSpec should resolve from session for web prefix`() {
+            val session = Session().apply {
+                sessionId = "web-abc123"
+                agentId = 100L
+                enableThink = 1
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-abc123", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(stubAgent())
+
+            val result = controller.getAgentSpec("web-abc123")
+
+            assertTrue(result.isSuccess())
+            assertNotNull(result.data)
+            assertEquals(100L, result.data?.agentId)
+            assertEquals("Test Agent", result.data?.agentName)
+            assertEquals(1, result.data?.enableThink)
+            assertEquals(0, result.data?.enableSearch)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - chn session 返回 AgentSpec")
+        fun `getAgentSpec should resolve from channel for chn prefix`() {
+            val channel = Channel().apply {
+                id = 1L
+                agentId = 100L
+                sessionId = "chn-xyz"
+            }
+            `when`(channelMapper.selectBySessionId("chn-xyz")).thenReturn(channel)
+            `when`(agentMapper.selectById(100L)).thenReturn(stubAgent())
+
+            val result = controller.getAgentSpec("chn-xyz")
+
+            assertTrue(result.isSuccess())
+            assertNotNull(result.data)
+            assertEquals(100L, result.data?.agentId)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - task session 返回 AgentSpec")
+        fun `getAgentSpec should resolve from task for task prefix`() {
+            val task = AgentTask().apply {
+                id = 42L
+                agentId = 100L
+            }
+            `when`(agentTaskMapper.selectById(42L)).thenReturn(task)
+            `when`(agentMapper.selectById(100L)).thenReturn(stubAgent())
+
+            val result = controller.getAgentSpec("task-42-uuid123")
+
+            assertTrue(result.isSuccess())
+            assertNotNull(result.data)
+            assertEquals(100L, result.data?.agentId)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 未知前缀返回错误")
+        fun `getAgentSpec should return error for unknown prefix`() {
+            val result = controller.getAgentSpec("unknown-123")
+
+            assertFalse(result.isSuccess())
+            assertTrue(result.message.contains("Unknown sessionId prefix"))
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - session不存在时返回错误")
+        fun `getAgentSpec should return error when session not found`() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-notfound", 1)).thenReturn(null)
+
+            val result = controller.getAgentSpec("web-notfound")
+
+            assertFalse(result.isSuccess())
+            assertTrue(result.message.contains("Session not found"))
         }
     }
 }

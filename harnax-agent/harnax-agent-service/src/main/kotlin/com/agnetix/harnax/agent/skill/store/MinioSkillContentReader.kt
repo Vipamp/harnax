@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component
 @ConditionalOnProperty(name = ["skill.storage.type"], havingValue = "minio")
 class MinioSkillContentReader(
     private val minioClient: MinioClient,
-    @Value("\${skill.storage.bucket:harnax-skills}") private val bucket: String
+    @Value($$"${skill.storage.bucket:harnax-skills}") private val bucket: String,
 ) : SkillContentReader {
 
     private val log = LoggerFactory.getLogger(MinioSkillContentReader::class.java)
@@ -22,26 +22,24 @@ class MinioSkillContentReader(
         val skillmd = minioClient.getObject(
             GetObjectArgs.builder()
                 .bucket(bucket)
-                .object("$storagePath/SKILL.md")
-                .build()
+                .`object`("$storagePath/SKILL.md")
+                .build(),
         ).use { it.readBytes() }.toString(Charsets.UTF_8)
 
         val resources = loadResources("$storagePath/resources/")
         return SkillContentData(skillmd, resources)
     }
 
-    override fun exists(storagePath: String): Boolean {
-        return try {
-            minioClient.statObject(
-                StatObjectArgs.builder()
-                    .bucket(bucket)
-                    .object("$storagePath/SKILL.md")
-                    .build()
-            )
-            true
-        } catch (e: Exception) {
-            false
-        }
+    override fun exists(storagePath: String): Boolean = try {
+        minioClient.statObject(
+            StatObjectArgs.builder()
+                .bucket(bucket)
+                .`object`("$storagePath/SKILL.md")
+                .build(),
+        )
+        true
+    } catch (e: Exception) {
+        false
     }
 
     private fun loadResources(prefix: String): Map<String, String> {
@@ -51,7 +49,7 @@ class MinioSkillContentReader(
                 .bucket(bucket)
                 .prefix(prefix)
                 .recursive(true)
-                .build()
+                .build(),
         )
 
         objects.forEach { result ->
@@ -63,7 +61,7 @@ class MinioSkillContentReader(
                     GetObjectArgs.builder()
                         .bucket(bucket)
                         .`object`(objectName)
-                        .build()
+                        .build(),
                 ).use { it.readBytes() }.toString(Charsets.UTF_8)
                 resources[relativePath] = content
             }

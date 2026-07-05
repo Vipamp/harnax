@@ -68,6 +68,10 @@ class ZipSkillLoader : SkillLoader {
                 if (Files.exists(skillMd)) {
                     try {
                         val content = Files.readString(skillMd)
+                        if (content.isBlank()) {
+                            log.warn("Skipping skill {} with empty SKILL.md", entry.name)
+                            return@forEach
+                        }
                         val description = extractDescription(content)
                         val resources = loadResources(entry.resolve("resources"))
 
@@ -90,17 +94,19 @@ class ZipSkillLoader : SkillLoader {
             val topLevelMd = searchRoot.resolve("SKILL.md")
             if (Files.exists(topLevelMd)) {
                 val content = Files.readString(topLevelMd)
-                val description = extractDescription(content)
-                val resources = loadResources(searchRoot.resolve("resources"))
+                if (content.isNotBlank()) {
+                    val description = extractDescription(content)
+                    val resources = loadResources(searchRoot.resolve("resources"))
 
-                val builder = AgentSkill.builder()
-                    .name(searchRoot.name)
-                    .skillContent(content)
-                    .description(description)
-                if (resources.isNotEmpty()) {
-                    builder.resources(resources)
+                    val builder = AgentSkill.builder()
+                        .name(searchRoot.name)
+                        .skillContent(content)
+                        .description(description)
+                    if (resources.isNotEmpty()) {
+                        builder.resources(resources)
+                    }
+                    skills.add(builder.build())
                 }
-                skills.add(builder.build())
             }
         }
 

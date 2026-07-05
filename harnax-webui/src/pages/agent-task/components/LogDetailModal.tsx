@@ -32,16 +32,16 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
       width={800}
     >
       <Descriptions bordered column={2} size="small">
-        <Descriptions.Item label="Task Name">{log.taskName}</Descriptions.Item>
-        <Descriptions.Item label="Status">
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.agentTask.taskName', defaultMessage: 'Task Name' })}>{log.taskName}</Descriptions.Item>
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}>
           <Tag color={statusInfo.color}>{statusInfo.text}</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="Start Time">{log.startTime || '-'}</Descriptions.Item>
-        <Descriptions.Item label="End Time">{log.endTime || '-'}</Descriptions.Item>
-        <Descriptions.Item label="Duration">
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.agentTask.startTime', defaultMessage: 'Start Time' })}>{log.startTime || '-'}</Descriptions.Item>
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.agentTask.endTime', defaultMessage: 'End Time' })}>{log.endTime || '-'}</Descriptions.Item>
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.agentTask.duration', defaultMessage: 'Duration' })}>
           {log.durationMs ? `${(log.durationMs / 1000).toFixed(1)}s` : '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="Session ID">{log.sessionId || '-'}</Descriptions.Item>
+        <Descriptions.Item label={intl.formatMessage({ id: 'pages.agentTask.sessionId', defaultMessage: 'Session ID' })}>{log.sessionId || '-'}</Descriptions.Item>
       </Descriptions>
 
       <div style={{ marginTop: 16 }}>

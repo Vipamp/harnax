@@ -39,7 +39,7 @@ class MpSessionService(
             throw BizException("Agent is not available")
         }
 
-        val routerSessionId = UUID.randomUUID().toString()
+        val routerSessionId = "mp-${UUID.randomUUID()}"
 
         val session = Session().apply {
             this.sessionId = routerSessionId

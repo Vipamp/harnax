@@ -4,7 +4,9 @@ import com.agnetix.harnax.admin.dto.AgentTaskCreateRequest
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
+import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskMapper
@@ -39,6 +41,9 @@ class AgentTaskServiceImplTest {
 
     @Mock
     private lateinit var jwtUtil: JwtUtil
+
+    @Mock
+    private lateinit var schedulerClient: SchedulerClient
 
     private lateinit var testTask: AgentTask
     private lateinit var testAgent: Agent
@@ -315,7 +320,7 @@ class AgentTaskServiceImplTest {
         }
 
         @Test
-        fun `updateAgentTask should unschedule running task before update`() {
+        fun `updateAgentTask should reset status to paused when running`() {
             testTask.taskStatus = 1 // running
             `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
             `when`(agentTaskMapper.updateById(any())).thenReturn(1)
@@ -325,13 +330,9 @@ class AgentTaskServiceImplTest {
             val service = createService()
             service.updateAgentTask(1L, request)
 
-            // Verify scheduler.deleteJob was called (via unscheduleTask)
-            val schedulerFactory = mock(org.springframework.scheduling.quartz.SchedulerFactoryBean::class.java)
-            // The service already created in createService() has its own scheduler mock
-            // We just verify the task status was reset
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
             verify(agentTaskMapper).updateById(taskCaptor.capture())
-            assertEquals(0, taskCaptor.firstValue.taskStatus)
+            assertEquals(0, taskCaptor.firstValue.taskStatus) // reset to paused
         }
 
         @Test
@@ -495,192 +496,6 @@ class AgentTaskServiceImplTest {
         }
     }
 
-    // ==================== Start/Pause Task ====================
-
-    @Nested
-    @DisplayName("Start/Pause Task Tests")
-    inner class StartPauseTests {
-
-        @Test
-        fun `startTask should throw when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
-
-            val service = createService()
-            val exception = assertThrows<BizException> {
-                service.startTask(999L)
-            }
-            assertTrue(exception.message!!.contains("not found"))
-        }
-
-        @Test
-        fun `startTask should throw when task already running`() {
-            testTask.taskStatus = 1
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-
-            val service = createService()
-            val exception = assertThrows<BizException> {
-                service.startTask(1L)
-            }
-            assertTrue(exception.message!!.contains("already running"))
-        }
-
-        @Test
-        fun `startTask should schedule task and update status to running`() {
-            testTask.taskStatus = 0
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateStatus(1L, 1)).thenReturn(1)
-
-            val service = createService()
-            val result = service.startTask(1L)
-
-            assertTrue(result)
-            verify(agentTaskMapper).updateStatus(1L, 1)
-        }
-
-        @Test
-        fun `pauseTask should throw when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
-
-            val service = createService()
-            val exception = assertThrows<BizException> {
-                service.pauseTask(999L)
-            }
-            assertTrue(exception.message!!.contains("not found"))
-        }
-
-        @Test
-        fun `pauseTask should return true when already paused`() {
-            testTask.taskStatus = 0
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-
-            val service = createService()
-            val result = service.pauseTask(1L)
-
-            assertTrue(result)
-            verify(agentTaskMapper, never()).updateStatus(any(), any())
-        }
-
-        @Test
-        fun `pauseTask should unschedule running task and update status`() {
-            testTask.taskStatus = 1
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateStatus(1L, 0)).thenReturn(1)
-
-            val service = createService()
-            val result = service.pauseTask(1L)
-
-            assertTrue(result)
-            verify(agentTaskMapper).updateStatus(1L, 0)
-        }
-    }
-
-    // ==================== Run Once ====================
-
-    @Nested
-    @DisplayName("Run Once Tests")
-    inner class RunOnceTests {
-
-        @Test
-        fun `runTaskOnce should throw when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
-
-            val service = createService()
-            val exception = assertThrows<BizException> {
-                service.runTaskOnce(999L)
-            }
-            assertTrue(exception.message!!.contains("not found"))
-        }
-
-        @Test
-        fun `runTaskOnce should schedule job and return true`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-
-            val service = createService()
-            val result = service.runTaskOnce(1L)
-
-            assertTrue(result)
-        }
-
-        @Test
-        fun `runTaskOnce should use ONCE group name`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-
-            val service = createService()
-            service.runTaskOnce(1L)
-
-            // Verify scheduler.scheduleJob was called (job is created with ONCE group)
-            // The method always returns true if no exception
-        }
-    }
-
-    // ==================== Load Tasks To Scheduler ====================
-
-    @Nested
-    @DisplayName("Load Tasks To Scheduler Tests")
-    inner class LoadTasksTests {
-
-        @Test
-        fun `loadTasksToScheduler should schedule all running tasks`() {
-            val task1 = AgentTask().apply {
-                id = 1L
-                name = "Task 1"
-                cronExpression = "0 0 9 * * ?"
-                taskStatus = 1
-                concurrent = 0
-            }
-            val task2 = AgentTask().apply {
-                id = 2L
-                name = "Task 2"
-                cronExpression = "0 0 10 * * ?"
-                taskStatus = 1
-                concurrent = 1
-            }
-            `when`(agentTaskMapper.selectRunningTasks()).thenReturn(listOf(task1, task2))
-
-            val service = createService()
-            service.loadTasksToScheduler()
-
-            // Should not throw, both tasks scheduled
-            verify(agentTaskMapper).selectRunningTasks()
-        }
-
-        @Test
-        fun `loadTasksToScheduler should handle empty list`() {
-            `when`(agentTaskMapper.selectRunningTasks()).thenReturn(emptyList())
-
-            val service = createService()
-            service.loadTasksToScheduler()
-
-            verify(agentTaskMapper).selectRunningTasks()
-        }
-
-        @Test
-        fun `loadTasksToScheduler should continue when one task fails`() {
-            val task1 = AgentTask().apply {
-                id = 1L
-                name = "Task 1"
-                cronExpression = "0 0 9 * * ?"
-                taskStatus = 1
-                concurrent = 0
-            }
-            val task2 = AgentTask().apply {
-                id = 2L
-                name = "Task 2"
-                cronExpression = "0 0 10 * * ?"
-                taskStatus = 1
-                concurrent = 0
-            }
-            `when`(agentTaskMapper.selectRunningTasks()).thenReturn(listOf(task1, task2))
-
-            val service = createService()
-            // Should not throw even if scheduler.scheduleJob fails for one task
-            service.loadTasksToScheduler()
-
-            // Both tasks were attempted
-            verify(agentTaskMapper).selectRunningTasks()
-        }
-    }
-
     // ==================== Convert To Response ====================
 
     @Nested
@@ -721,49 +536,66 @@ class AgentTaskServiceImplTest {
         }
     }
 
-    // ==================== Get Running Tasks ====================
+    // ==================== Scheduler Proxy Tests ====================
 
     @Nested
-    @DisplayName("Get Running Tasks Tests")
-    inner class RunningTasksTests {
+    @DisplayName("Scheduler Proxy Methods")
+    inner class SchedulerProxyTests {
 
         @Test
-        fun `getRunningTasks should return running tasks`() {
-            val runningTask = testTask.apply { taskStatus = 1 }
-            `when`(agentTaskMapper.selectRunningTasks()).thenReturn(listOf(runningTask))
-
+        fun `toggleTaskStatus should update status via mapper`() {
             val service = createService()
-            val result = service.getRunningTasks()
+            val task = AgentTask().apply { id = 1L }
+            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
+            `when`(agentTaskMapper.updateStatus(1L, 1)).thenReturn(1)
 
-            assertEquals(1, result.size)
-            assertEquals("Daily News", result[0].name)
+            val result = service.toggleTaskStatus(1L, 1)
+
+            assertTrue(result)
+            verify(agentTaskMapper).updateStatus(1L, 1)
         }
 
         @Test
-        fun `getRunningTasks should return empty list when no running tasks`() {
-            `when`(agentTaskMapper.selectRunningTasks()).thenReturn(emptyList())
-
+        fun `startTask should delegate to schedulerClient`() {
             val service = createService()
-            val result = service.getRunningTasks()
+            val expected = ResultVo.success<Void>()
+            `when`(schedulerClient.startTask(1L)).thenReturn(expected)
 
-            assertTrue(result.isEmpty())
+            val result = service.startTask(1L)
+
+            assertEquals(200, result.code)
+            verify(schedulerClient).startTask(1L)
+        }
+
+        @Test
+        fun `pauseTask should delegate to schedulerClient`() {
+            val service = createService()
+            val expected = ResultVo.success<Void>()
+            `when`(schedulerClient.pauseTask(1L)).thenReturn(expected)
+
+            val result = service.pauseTask(1L)
+
+            assertEquals(200, result.code)
+            verify(schedulerClient).pauseTask(1L)
+        }
+
+        @Test
+        fun `toggleTaskStatus should throw when task not found`() {
+            val service = createService()
+            `when`(agentTaskMapper.selectById(1L)).thenReturn(null)
+
+            assertThrows<Exception> {
+                service.toggleTaskStatus(1L, 1)
+            }
         }
     }
 
     // ==================== Helper ====================
 
-    private fun createService(schedulerEnabled: Boolean = true): AgentTaskServiceImpl {
-        // Create a mock SchedulerFactoryBean
-        val schedulerFactory = mock(org.springframework.scheduling.quartz.SchedulerFactoryBean::class.java)
-        val scheduler = mock(org.quartz.Scheduler::class.java)
-        `when`(schedulerFactory.scheduler).thenReturn(scheduler)
-
-        return AgentTaskServiceImpl(
-            agentTaskMapper = agentTaskMapper,
-            agentService = agentService,
-            jwtUtil = jwtUtil,
-            schedulerFactory = schedulerFactory,
-            schedulerEnabled = schedulerEnabled,
-        )
-    }
+    private fun createService(): AgentTaskServiceImpl = AgentTaskServiceImpl(
+        agentTaskMapper = agentTaskMapper,
+        agentService = agentService,
+        jwtUtil = jwtUtil,
+        schedulerClient = schedulerClient,
+    )
 }

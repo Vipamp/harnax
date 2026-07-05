@@ -1,13 +1,11 @@
 package com.agnetix.harnax.agent.service.registrar
 
-import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
-import com.agnetix.harnax.auth.InternalTokenProvider
+import com.agnetix.harnax.agent.service.client.RouterServiceClient
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import org.springframework.web.client.RestTemplate
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -17,24 +15,19 @@ import java.net.NetworkInterface
  * Handles registration and heartbeat with the session-router service.
  * On startup, registers this instance with the router.
  * Periodically sends heartbeat to maintain the registration.
+ *
+ * All HTTP communication with the router is delegated to [RouterServiceClient].
  */
 @Component
 class AgentServiceRegistrar(
-    @Value("\${agent.service.instance-id}") private val instanceId: String,
-    @Value("\${server.port:8082}") private val port: Int,
-    @Value("\${router.service.url}") private val routerUrl: String,
-    @Value("\${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
-    private val tokenProvider: InternalTokenProvider,
+    @Value($$"${agent.service.instance-id}") private val instanceId: String,
+    @Value($$"${server.port:8082}") private val port: Int,
+    @Value($$"${agent.service.heartbeat-interval-ms:10000}") private val heartbeatIntervalMs: Long,
+    private val routerServiceClient: RouterServiceClient,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentServiceRegistrar::class.java)
-    private val restTemplate = RestTemplate()
     private var registered = false
-
-    @PostConstruct
-    fun init() {
-        restTemplate.interceptors.add(AuthRestTemplateInterceptor(tokenProvider))
-    }
 
     /**
      * Register this agent-service instance with the session-router on startup.
@@ -43,15 +36,17 @@ class AgentServiceRegistrar(
     fun registerOnStartup() {
         try {
             val host = getLocalHost()
-            log.info("Registering agent-service instance: $instanceId at $host:$port with router at $routerUrl")
-
-            restTemplate.postForObject(
-                "$routerUrl/api/router/instance/register?instanceId=$instanceId&host=$host&port=$port",
-                null,
-                Map::class.java,
+            log.info(
+                "Registering agent-service instance: $instanceId at $host:$port " +
+                    "with router at ${routerServiceClient.getRouterUrl()}",
             )
-            registered = true
-            log.info("Successfully registered with session-router")
+
+            if (routerServiceClient.registerInstance(instanceId, host, port)) {
+                registered = true
+                log.info("Successfully registered with session-router")
+            } else {
+                log.warn("Failed to register with session-router (will retry)")
+            }
         } catch (e: Exception) {
             log.warn("Failed to register with session-router (will retry): ${e.message}")
         }
@@ -69,15 +64,10 @@ class AgentServiceRegistrar(
             return
         }
 
-        try {
-            restTemplate.postForObject(
-                "$routerUrl/api/router/instance/heartbeat?instanceId=$instanceId",
-                null,
-                Map::class.java,
-            )
+        if (!routerServiceClient.sendHeartbeat(instanceId)) {
+            log.warn("Heartbeat failed for instance $instanceId")
+        } else {
             log.debug("Heartbeat sent successfully for instance: $instanceId")
-        } catch (e: Exception) {
-            log.warn("Heartbeat failed for instance $instanceId: ${e.message}")
         }
     }
 

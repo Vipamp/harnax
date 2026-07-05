@@ -4,8 +4,8 @@ import com.agnetix.harnax.auth.AuthContext
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.auth.CallerType
 import com.agnetix.harnax.router.entity.ApiCallLog
+import com.agnetix.harnax.router.service.AdminClientService
 import com.agnetix.harnax.router.service.ApiCallLogService
-import com.agnetix.harnax.router.service.SessionInfo
 import com.agnetix.harnax.router.service.SessionInfoClient
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ServletOutputStream
@@ -200,7 +200,7 @@ class ApiCallLogFilterTest {
         `when`(request.method).thenReturn("POST")
         `when`(response.status).thenReturn(200)
 
-        val sessionInfo = SessionInfo(
+        val sessionInfo = AdminClientService.SessionInfo(
             sessionId = "sess-123",
             agentId = 10L,
             agentName = "my-agent",
@@ -237,7 +237,7 @@ class ApiCallLogFilterTest {
         `when`(request.getAttribute("router.sessionId")).thenReturn("attr-sess-456")
         `when`(response.status).thenReturn(200)
 
-        val sessionInfo = SessionInfo(
+        val sessionInfo = AdminClientService.SessionInfo(
             sessionId = "attr-sess-456",
             agentId = 20L,
             agentName = "attr-agent",

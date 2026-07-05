@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.AgentTaskCreateRequest
 import com.agnetix.harnax.admin.dto.AgentTaskResponse
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.AgentTask
 
 interface AgentTaskService {
@@ -24,15 +25,14 @@ interface AgentTaskService {
 
     fun deleteAgentTask(id: Long): Boolean
 
-    fun startTask(id: Long): Boolean
-
-    fun pauseTask(id: Long): Boolean
-
-    fun runTaskOnce(id: Long): Boolean
-
-    fun loadTasksToScheduler()
-
-    fun getRunningTasks(): List<AgentTask>
-
     fun convertToResponse(task: AgentTask): AgentTaskResponse
+
+    /** Toggle task status (enable/disable) */
+    fun toggleTaskStatus(id: Long, status: Int): Boolean
+
+    /** Start a scheduled task via scheduler */
+    fun startTask(id: Long): ResultVo<Void>
+
+    /** Pause a scheduled task via scheduler */
+    fun pauseTask(id: Long): ResultVo<Void>
 }

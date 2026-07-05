@@ -220,6 +220,65 @@ services:
     networks:
       - harnax-network
 
+  # Scheduler Service (agent task scheduling and execution)
+  scheduler:
+    image: harnax-scheduler:latest
+    container_name: harnax-scheduler
+    restart: always
+    environment:
+      # Spring Boot Configuration
+      SPRING_PROFILES_ACTIVE: prod
+      # Database Configuration (harnax_admin: shared with admin, read-only for task metadata)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
+      # Flyway Configuration
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # Scheduler Configuration
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      SCHEDULER_INSTANCE_ID: ${SCHEDULER_INSTANCE_ID:-}
+      SCHEDULER_ROUTER_URL: http://router:8081
+      SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
+      SCHEDULER_ADMIN_URL: http://admin:8080
+      SCHEDULER_ADMIN_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      SCHEDULER_TIMEOUT: ${SCHEDULER_TIMEOUT:-300}
+      # Auth Configuration
+      HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # JVM Configuration
+      JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
+    ports:
+      - "8084:8084"
+    volumes:
+      - scheduler-logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      admin:
+        condition: service_started
+      router:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/api/scheduler/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 768M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    networks:
+      - harnax-network
+
   # Agent Service (distributed agent runtime with sandbox)
   agent-service:
     image: harnax-agent-service:latest
@@ -247,6 +306,9 @@ services:
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}
+      # Admin Service (for agent task spec fetching)
+      ADMIN_SERVICE_URL: http://admin:8080
+      ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Auth Configuration
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
@@ -358,6 +420,7 @@ services:
       - router
       - agent-service
       - channel-service
+      - scheduler
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
@@ -392,6 +455,8 @@ volumes:
   agent-service-logs:
     driver: local
   channel-service-logs:
+    driver: local
+  scheduler-logs:
     driver: local
 
 # ==========================================

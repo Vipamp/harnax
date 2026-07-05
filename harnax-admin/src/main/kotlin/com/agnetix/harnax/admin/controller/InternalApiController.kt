@@ -2,16 +2,16 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
+import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
+import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import org.slf4j.LoggerFactory
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/api/admin/internal")
@@ -20,6 +20,9 @@ class InternalApiController(
     private val sessionMapper: SessionMapper,
     private val modelMapper: ModelMapper,
     private val aesUtil: AesUtil,
+    private val agentTaskMapper: AgentTaskMapper,
+    private val agentMapper: AgentMapper,
+    private val channelMapper: ChannelMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -103,5 +106,115 @@ class InternalApiController(
         }
         val rawKey = aesUtil.decrypt(entity.rawKeyEncrypted!!)
         return ResultVo.success(SystemKeyResponse(rawKey = rawKey, keyPrefix = entity.keyPrefix))
+    }
+
+    // ========================================
+    // Agent Spec (unified, for agent-service)
+    // ========================================
+
+    /**
+     * Unified endpoint: resolve agent spec by sessionId prefix.
+     * - web-* / mp-*: session table → agent
+     * - chn-*: channel table → agent
+     * - task-{taskId}-*: agent_task table → agent
+     */
+    @GetMapping("/agent-spec/{sessionId}")
+    fun getAgentSpec(@PathVariable sessionId: String): ResultVo<AgentSpecInfoResponse> = try {
+        val spec = when {
+            sessionId.startsWith("web-") || sessionId.startsWith("mp-") -> resolveFromSession(sessionId)
+            sessionId.startsWith("chn-") -> resolveFromChannel(sessionId)
+            sessionId.startsWith("task-") -> resolveFromTask(sessionId)
+            else -> return ResultVo.error("Unknown sessionId prefix: $sessionId")
+        }
+        ResultVo.success(spec)
+    } catch (e: Exception) {
+        log.error("Failed to get agent spec: sessionId={}", sessionId, e)
+        ResultVo.error("Failed to get agent spec: ${e.message}")
+    }
+
+    /** web/mp: session table → agent. */
+    private fun resolveFromSession(sessionId: String): AgentSpecInfoResponse {
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw IllegalArgumentException("Session not found: $sessionId")
+        val agent = agentMapper.selectById(session.agentId)
+            ?: throw IllegalArgumentException("Agent not found: ${session.agentId}")
+        log.info("[Admin] Resolved agent spec from session: sessionId={}, agentId={}", sessionId, agent.id)
+        return AgentSpecInfoResponse(
+            agentId = agent.id,
+            agentName = agent.name,
+            description = agent.description,
+            systemPrompt = agent.systemPrompt,
+            modelId = agent.modelId,
+            mcpList = agent.mcpList,
+            skillList = agent.skillList,
+            enableThink = session.enableThink,
+            enableSearch = session.enableSearch,
+            enablePlan = session.enablePlan,
+        )
+    }
+
+    /** chn: channel table → agent. */
+    private fun resolveFromChannel(sessionId: String): AgentSpecInfoResponse {
+        val channel = channelMapper.selectBySessionId(sessionId)
+            ?: throw IllegalArgumentException("Channel not found for sessionId: $sessionId")
+        val agent = agentMapper.selectById(channel.agentId)
+            ?: throw IllegalArgumentException("Agent not found: ${channel.agentId}")
+        log.info("[Admin] Resolved agent spec from channel: sessionId={}, agentId={}", sessionId, agent.id)
+        return AgentSpecInfoResponse(
+            agentId = agent.id,
+            agentName = agent.name,
+            description = agent.description,
+            systemPrompt = agent.systemPrompt,
+            modelId = agent.modelId,
+            mcpList = agent.mcpList,
+            skillList = agent.skillList,
+        )
+    }
+
+    /** task: agent_task table → agent. */
+    private fun resolveFromTask(sessionId: String): AgentSpecInfoResponse {
+        val parts = sessionId.split("-", limit = 3)
+        val taskId = parts[1].toLongOrNull()
+            ?: throw IllegalArgumentException("Invalid task sessionId, cannot parse taskId: $sessionId")
+        val task = agentTaskMapper.selectById(taskId)
+            ?: throw IllegalArgumentException("Agent task not found: $taskId")
+        val agent = agentMapper.selectById(task.agentId)
+            ?: throw IllegalArgumentException("Agent not found: ${task.agentId}")
+        log.info("[Admin] Resolved agent spec from task: sessionId={}, taskId={}, agentId={}", sessionId, taskId, agent.id)
+        return AgentSpecInfoResponse(
+            agentId = agent.id,
+            agentName = agent.name,
+            description = agent.description,
+            systemPrompt = agent.systemPrompt,
+            modelId = agent.modelId,
+            mcpList = agent.mcpList,
+            skillList = agent.skillList,
+        )
+    }
+
+    // ========================================
+    // Agent Task Spec (legacy, kept for backward compat)
+    // ========================================
+
+    @GetMapping("/agent-tasks/{taskId}/spec")
+    fun getAgentTaskSpec(@PathVariable taskId: Long): ResultVo<TaskAgentSpecResponse> = try {
+        val task = agentTaskMapper.selectById(taskId)
+            ?: return ResultVo.error("Agent task not found: $taskId")
+        val agent = agentMapper.selectById(task.agentId)
+            ?: return ResultVo.error("Agent not found: ${task.agentId}")
+
+        val spec = TaskAgentSpecResponse(
+            agentId = agent.id,
+            agentName = agent.name,
+            description = agent.description,
+            systemPrompt = agent.systemPrompt,
+            modelId = agent.modelId,
+            mcpList = agent.mcpList,
+            skillList = agent.skillList,
+        )
+        ResultVo.success(spec)
+    } catch (e: Exception) {
+        log.error("Failed to get agent task spec: taskId={}", taskId, e)
+        ResultVo.error("Failed to get agent task spec: ${e.message}")
     }
 }

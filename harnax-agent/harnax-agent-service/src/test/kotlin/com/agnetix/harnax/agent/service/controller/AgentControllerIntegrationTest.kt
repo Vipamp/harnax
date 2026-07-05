@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent.service.controller
 
 import com.agnetix.harnax.agent.adaptor.PlanNote
+import com.agnetix.harnax.agent.adaptor.TaskState
 import com.agnetix.harnax.agent.chat.AssistantMessageLog
 import com.agnetix.harnax.agent.chat.UserMessageLog
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
@@ -66,7 +68,7 @@ class AgentControllerIntegrationTest {
         @Test
         fun `chat returns error when runner throws`() {
             val request = ChatAgentRequest(sessionId = "sess-err", message = "fail")
-            `when`(agentRunner.process(any())).thenThrow(RuntimeException("Agent crashed"))
+            `when`(agentRunner.process(any<ChatAgentRequest>())).thenThrow(RuntimeException("Agent crashed"))
 
             mockMvc.perform(
                 post("/api/agent/chat")
@@ -85,7 +87,7 @@ class AgentControllerIntegrationTest {
                 imageUrls = listOf("https://example.com/img.png"),
             )
             val response = ChatResponse(sessionId = "sess-img", content = "A cat.")
-            `when`(agentRunner.process(any())).thenReturn(response)
+            `when`(agentRunner.process(any<ChatAgentRequest>())).thenReturn(response)
 
             mockMvc.perform(
                 post("/api/agent/chat")
@@ -105,7 +107,7 @@ class AgentControllerIntegrationTest {
         fun `command INTERRUPT returns success`() {
             val request = CommandAgentRequest(sessionId = "sess-1", command = CommandType.INTERRUPT)
             val cmdResponse = CommandResponse.success("sess-1", message = "Stream interrupted")
-            `when`(agentRunner.executeCommand(any())).thenReturn(cmdResponse)
+            `when`(agentRunner.executeCommand(any<CommandAgentRequest>())).thenReturn(cmdResponse)
 
             mockMvc.perform(
                 post("/api/agent/command")
@@ -122,7 +124,7 @@ class AgentControllerIntegrationTest {
         fun `command CLEAR returns success`() {
             val request = CommandAgentRequest(sessionId = "sess-1", command = CommandType.CLEAR)
             val cmdResponse = CommandResponse.success("sess-1", message = "Session cleared")
-            `when`(agentRunner.executeCommand(any())).thenReturn(cmdResponse)
+            `when`(agentRunner.executeCommand(any<CommandAgentRequest>())).thenReturn(cmdResponse)
 
             mockMvc.perform(
                 post("/api/agent/command")
@@ -136,7 +138,7 @@ class AgentControllerIntegrationTest {
         @Test
         fun `command returns error when runner throws`() {
             val request = CommandAgentRequest(sessionId = "sess-1", command = CommandType.STOP_SANDBOX)
-            `when`(agentRunner.executeCommand(any())).thenThrow(RuntimeException("No sandbox"))
+            `when`(agentRunner.executeCommand(any<CommandAgentRequest>())).thenThrow(RuntimeException("No sandbox"))
 
             mockMvc.perform(
                 post("/api/agent/command")
@@ -237,6 +239,8 @@ class AgentControllerIntegrationTest {
                     description = "Do things",
                     createdAt = "2026-06-21T00:00:00",
                     finishedAt = null,
+                    costTimeSeconds = 0L,
+                    status = TaskState.TODO,
                 ),
             )
             `when`(agentRunner.loadPlans("sess-1")).thenReturn(plans)
@@ -279,6 +283,8 @@ class AgentControllerIntegrationTest {
                 description = "Working...",
                 createdAt = "2026-06-21T00:00:00",
                 finishedAt = null,
+                costTimeSeconds = 0L,
+                status = TaskState.IN_PROGRESS,
             )
             `when`(agentRunner.loadCurrentPlan("sess-1")).thenReturn(plan)
 

@@ -82,10 +82,11 @@ export async function pauseAgentTask(id: number, options?: { [key: string]: any 
   });
 }
 
-/** 立即执行一次智能体定时任务 POST /api/admin/agent-tasks/${id}/run */
-export async function runAgentTaskOnce(id: number, options?: { [key: string]: any }) {
-  return request(`/api/admin/agent-tasks/${id}/run`, {
+/** 切换智能体定时任务状态 POST /api/admin/agent-tasks/toggle/${id}?status=0|1 */
+export async function toggleAgentTaskStatus(id: number, status: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/agent-tasks/toggle/${id}`, {
     method: 'POST',
+    params: { status },
     ...(options || {}),
   });
 }
@@ -98,6 +99,9 @@ export async function getAgentTaskLogs(
     pageSize?: number;
     taskName?: string;
     status?: number;
+    startTimeFrom?: string;
+    startTimeTo?: string;
+    keyword?: string;
   },
   options?: { [key: string]: any },
 ) {

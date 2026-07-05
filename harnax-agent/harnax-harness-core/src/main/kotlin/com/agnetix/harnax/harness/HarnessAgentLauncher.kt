@@ -12,7 +12,7 @@ import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
-import com.agnetix.harnax.agent.adaptor.model.DashScopeChatModelConfig
+import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
@@ -130,12 +130,8 @@ class HarnessAgentLauncher(
             .workspace(workspaceRoot.resolve(agentSpec.name).resolve(sessionId))
             .stateStore(stateStore)
 
-        // TODO [P0] Hardcoded API key and model name — must be replaced with chatModelConfigAdaptor
-        //   lookup from DB/config. Current key is committed to Git and model is not configurable.
-        val chatModelConfig = DashScopeChatModelConfig(
-            "qwen3-vl-flash-2026-01-22",
-            "sk-b6e5de9b14a947f5b9e9c7065c1fc0ec",
-        )
+        val chatModelConfig = chatModelConfigAdaptor.getConfig(agentSpec.chatModelId)
+            ?: throw ModelErrorCode.MODEL_CONFIG_NOT_FOUND.format(agentSpec.chatModelId)
         val chatModel = ModelHelper.createChatModel(
             chatModelConfig,
             chatSpec.enableThinking,

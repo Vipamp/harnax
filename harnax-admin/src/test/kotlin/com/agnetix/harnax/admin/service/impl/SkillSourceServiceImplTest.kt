@@ -22,14 +22,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.any
 import org.mockito.Mockito.anyLong
 import org.mockito.Mockito.anyString
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
+import org.mockito.kotlin.any
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
@@ -629,9 +629,11 @@ class SkillSourceServiceImplTest {
             val result = skillSourceService.updateSkillSource(1L, request)
 
             assertTrue(result)
-            verify(skillRepositoryMapper).updateById(org.mockito.Mockito.argThat { repo ->
-                repo.sourceConfig.contains("develop")
-            })
+            verify(skillRepositoryMapper).updateById(
+                org.mockito.Mockito.argThat { repo ->
+                    repo.sourceConfig.contains("develop")
+                },
+            )
         }
 
         @Test

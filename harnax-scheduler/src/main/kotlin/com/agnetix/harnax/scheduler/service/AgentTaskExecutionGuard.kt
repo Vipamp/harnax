@@ -1,7 +1,7 @@
-package com.agnetix.harnax.admin.service
+package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
 import com.agnetix.harnax.entity.AgentTaskExecution
+import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -16,7 +16,7 @@ import java.util.UUID
 @Service
 class AgentTaskExecutionGuard(
     private val executionMapper: AgentTaskExecutionMapper,
-    @Value("\${agent-task.instance-id:#{null}}") private val configuredInstanceId: String?
+    @Value("\${scheduler.instance-id:#{null}}") private val configuredInstanceId: String?,
 ) {
     private val log = LoggerFactory.getLogger(AgentTaskExecutionGuard::class.java)
 
@@ -28,23 +28,21 @@ class AgentTaskExecutionGuard(
      * Try to acquire execution lock for a task at a specific trigger time.
      * Returns true if lock acquired (this instance should execute), false otherwise.
      */
-    fun tryAcquireLock(taskId: Long, triggerTime: LocalDateTime): Boolean {
-        return try {
-            val execution = AgentTaskExecution().apply {
-                this.taskId = taskId
-                this.triggerTime = triggerTime.truncatedTo(ChronoUnit.SECONDS)
-                this.instanceId = instanceId
-                this.status = 0 // running
-                this.createTime = LocalDateTime.now()
-            }
-            executionMapper.insert(execution)
-            log.debug("Acquired execution lock for task {} at {}", taskId, triggerTime)
-            true
-        } catch (e: Exception) {
-            // Unique constraint violation means another instance already has the lock
-            log.debug("Failed to acquire execution lock for task {} at {}: {}", taskId, triggerTime, e.message)
-            false
+    fun tryAcquireLock(taskId: Long, triggerTime: LocalDateTime): Boolean = try {
+        val execution = AgentTaskExecution().apply {
+            this.taskId = taskId
+            this.triggerTime = triggerTime.truncatedTo(ChronoUnit.SECONDS)
+            this.instanceId = instanceId
+            this.status = 0 // running
+            this.createTime = LocalDateTime.now()
         }
+        executionMapper.insert(execution)
+        log.debug("Acquired execution lock for task {} at {}", taskId, triggerTime)
+        true
+    } catch (e: Exception) {
+        // Unique constraint violation means another instance already has the lock
+        log.debug("Failed to acquire execution lock for task {} at {}: {}", taskId, triggerTime, e.message)
+        false
     }
 
     /**
@@ -58,7 +56,7 @@ class AgentTaskExecutionGuard(
                     execution.id,
                     if (success) 1 else 2,
                     startTime,
-                    endTime
+                    endTime,
                 )
             }
         } catch (e: Exception) {
@@ -81,11 +79,9 @@ class AgentTaskExecutionGuard(
         }
     }
 
-    private fun getHostName(): String {
-        return try {
-            java.net.InetAddress.getLocalHost().hostName
-        } catch (e: Exception) {
-            "unknown"
-        }
+    private fun getHostName(): String = try {
+        java.net.InetAddress.getLocalHost().hostName
+    } catch (e: Exception) {
+        "unknown"
     }
 }

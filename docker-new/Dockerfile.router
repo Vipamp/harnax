@@ -2,14 +2,16 @@
 # Uses locally built JAR package, no compilation inside Docker
 # Session routing service with cluster mode support (MySQL + Redis)
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-alpine
 
 # Set timezone
 ENV TZ=Asia/Shanghai
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+RUN apk add --no-cache tzdata wget \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
+    && echo $TZ > /etc/timezone
 
 # Create non-root user
-RUN groupadd -r harnax && useradd -r -g harnax harnax
+RUN addgroup -S harnax && adduser -S harnax -G harnax
 
 WORKDIR /app
 

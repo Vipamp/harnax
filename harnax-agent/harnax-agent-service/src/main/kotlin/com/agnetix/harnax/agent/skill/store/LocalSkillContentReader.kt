@@ -12,7 +12,7 @@ import kotlin.io.path.isDirectory
 @Component
 @ConditionalOnProperty(name = ["skill.storage.type"], havingValue = "local", matchIfMissing = true)
 class LocalSkillContentReader(
-    @Value("\${skill.storage.base-path:./data/skill-store}") private val basePath: String
+    @Value($$"${skill.storage.base-path:./data/skill-store}") private val basePath: String,
 ) : SkillContentReader {
 
     private val log = LoggerFactory.getLogger(LocalSkillContentReader::class.java)

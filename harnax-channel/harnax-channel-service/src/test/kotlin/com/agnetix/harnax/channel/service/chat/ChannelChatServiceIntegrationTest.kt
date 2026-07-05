@@ -10,6 +10,7 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.message.AgentMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageRole
 import com.agnetix.harnax.channel.sdk.message.MessageType
@@ -47,7 +48,7 @@ class ChannelChatServiceIntegrationTest {
     private lateinit var channel: ChannelSpec
 
     @BeforeEach
-    fun setUp() {
+    suspend fun setUp() {
         sessionManager = mock(ChannelSessionManager::class.java)
         chatService = ChannelChatService(sessionManager)
         channelAdaptor = mock(ChannelAdaptor::class.java)
@@ -286,7 +287,7 @@ class ChannelChatServiceIntegrationTest {
     @Nested
     inner class AgentRequestPassthrough {
         @Test
-        fun `chat passes ChatAgentRequest to context`() = runBlocking {
+        fun `chat passes ChatAgentRequest to context`(): Unit = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(false)
             val chatRequest = ChatAgentRequest(sessionId = "sess-1", message = "hello")
             `when`(agentAdaptor.process(any())).thenReturn(
@@ -307,7 +308,7 @@ class ChannelChatServiceIntegrationTest {
         }
 
         @Test
-        fun `chat passes CommandAgentRequest to context`() = runBlocking {
+        fun `chat passes CommandAgentRequest to context`(): Unit = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(false)
             val cmdRequest = CommandAgentRequest(
                 sessionId = "sess-1",
@@ -336,7 +337,7 @@ class ChannelChatServiceIntegrationTest {
     @Nested
     inner class Hooks {
         @Test
-        fun `chat calls onBeforeProcess before processing`() = runBlocking {
+        fun `chat calls onBeforeProcess before processing`(): Unit = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(false)
             `when`(agentAdaptor.process(any())).thenReturn(
                 AgentResponse(content = "ok", shouldReply = true),
@@ -396,7 +397,7 @@ class ChannelChatServiceIntegrationTest {
         }
 
         @Test
-        fun `chat passes history to AgentContext`() = runBlocking {
+        fun `chat passes history to AgentContext`(): Unit = runBlocking {
             `when`(channelAdaptor.shouldUseStreaming(any())).thenReturn(false)
             val historyMessages = listOf(
                 ChannelMessage(
@@ -408,7 +409,7 @@ class ChannelChatServiceIntegrationTest {
             )
             `when`(sessionManager.getHistory(eq(1L), eq("sess-1"), any())).thenReturn(historyMessages)
             `when`(sessionManager.toAgentMessages(historyMessages)).thenReturn(
-                listOf(com.agnetix.harnax.channel.sdk.message.AgentMessage(role = "user", content = "previous message")),
+                listOf(AgentMessage(role = "user", content = "previous message")),
             )
             `when`(agentAdaptor.process(any())).thenReturn(
                 AgentResponse(content = "ok", shouldReply = true),

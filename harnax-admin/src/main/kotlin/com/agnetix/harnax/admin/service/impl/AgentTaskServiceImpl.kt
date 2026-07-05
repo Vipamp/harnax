@@ -6,20 +6,16 @@ import com.agnetix.harnax.admin.dto.AgentTaskResponse
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
-import com.agnetix.harnax.admin.job.AgentTaskJob
-import com.agnetix.harnax.admin.service.AgentTaskService
 import com.agnetix.harnax.admin.service.AgentService
+import com.agnetix.harnax.admin.service.AgentTaskService
+import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
+import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.github.pagehelper.PageHelper
-import jakarta.annotation.PostConstruct
-import org.quartz.*
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Qualifier
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -29,30 +25,10 @@ class AgentTaskServiceImpl(
     private val agentTaskMapper: AgentTaskMapper,
     private val agentService: AgentService,
     private val jwtUtil: JwtUtil,
-    @Qualifier("schedulerFactoryBean") private val schedulerFactory: SchedulerFactoryBean,
-    @Value("\${agent-task.scheduler-enabled:true}") private val schedulerEnabled: Boolean,
+    private val schedulerClient: SchedulerClient,
 ) : AgentTaskService {
 
     private val log = LoggerFactory.getLogger(AgentTaskServiceImpl::class.java)
-
-    private val scheduler: Scheduler
-        get() = schedulerFactory.scheduler
-
-    @PostConstruct
-    fun init() {
-        if (!schedulerEnabled) {
-            log.info("Agent task scheduler is disabled on this instance")
-            return
-        }
-        Thread {
-            try {
-                Thread.sleep(3000)
-                loadTasksToScheduler()
-            } catch (e: Exception) {
-                log.error("Failed to load agent tasks to scheduler", e)
-            }
-        }.start()
-    }
 
     override fun page(
         name: String?,
@@ -79,7 +55,7 @@ class AgentTaskServiceImpl(
         }
 
         // Validate cron expression
-        if (!CronExpression.isValidExpression(request.cronExpression)) {
+        if (!isValidCron(request.cronExpression)) {
             throw BizException("Invalid cron expression")
         }
 
@@ -116,11 +92,6 @@ class AgentTaskServiceImpl(
         val task = agentTaskMapper.selectById(id)
             ?: throw BizException("Agent task not found")
 
-        // If task was running, stop it first
-        if (task.taskStatus == 1 && schedulerEnabled) {
-            unscheduleTask(task)
-        }
-
         // Check name uniqueness if name changed
         if (request.name != null && request.name != task.name) {
             val existing = agentTaskMapper.selectByName(request.name)
@@ -132,7 +103,7 @@ class AgentTaskServiceImpl(
 
         // Validate cron if changed
         if (request.cronExpression != null) {
-            if (!CronExpression.isValidExpression(request.cronExpression)) {
+            if (!isValidCron(request.cronExpression)) {
                 throw BizException("Invalid cron expression")
             }
             task.cronExpression = request.cronExpression
@@ -167,130 +138,30 @@ class AgentTaskServiceImpl(
         val task = agentTaskMapper.selectById(id)
             ?: throw BizException("Agent task not found")
 
-        // Stop if running
-        if (task.taskStatus == 1 && schedulerEnabled) {
-            unscheduleTask(task)
-        }
-
         return agentTaskMapper.deleteById(id) > 0
     }
 
-    @Transactional(rollbackFor = [Exception::class])
-    override fun startTask(id: Long): Boolean {
-        log.info("Starting agent task, id: {}", id)
+    override fun convertToResponse(task: AgentTask): AgentTaskResponse = AgentTaskResponse.fromEntity(task)
 
+    // ========================================
+    // Scheduler Proxy Methods
+    // ========================================
+
+    override fun toggleTaskStatus(id: Long, status: Int): Boolean {
         val task = agentTaskMapper.selectById(id)
             ?: throw BizException("Agent task not found")
-
-        if (task.taskStatus == 1) {
-            throw BizException("Task is already running")
-        }
-
-        if (schedulerEnabled) {
-            scheduleTask(task)
-        }
-        return agentTaskMapper.updateStatus(id, 1) > 0
+        return agentTaskMapper.updateStatus(id, status) > 0
     }
 
-    @Transactional(rollbackFor = [Exception::class])
-    override fun pauseTask(id: Long): Boolean {
-        log.info("Pausing agent task, id: {}", id)
+    override fun startTask(id: Long): ResultVo<Void> = schedulerClient.startTask(id)
 
-        val task = agentTaskMapper.selectById(id)
-            ?: throw BizException("Agent task not found")
+    override fun pauseTask(id: Long): ResultVo<Void> = schedulerClient.pauseTask(id)
 
-        if (task.taskStatus == 0) {
-            return true // Already paused
-        }
-
-        if (schedulerEnabled) {
-            unscheduleTask(task)
-        }
-        return agentTaskMapper.updateStatus(id, 0) > 0
-    }
-
-    @Transactional(rollbackFor = [Exception::class])
-    override fun runTaskOnce(id: Long): Boolean {
-        log.info("Running agent task once, id: {}", id)
-
-        val task = agentTaskMapper.selectById(id)
-            ?: throw BizException("Agent task not found")
-
-        if (!schedulerEnabled) {
-            throw BizException("Scheduler is disabled on this instance")
-        }
-
-        val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
-        val jobKey = JobKey("AgentTask_${task.id}_ONCE_$uniqueId", "AgentTaskGroup_ONCE")
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
-            .withIdentity(jobKey)
-            .usingJobData("agentTask", task)
-            .build()
-
-        val trigger = TriggerBuilder.newTrigger()
-            .withIdentity(TriggerKey("AgentTask_${task.id}_ONCE_${uniqueId}_trigger", "AgentTaskGroup_ONCE"))
-            .startNow()
-            .build()
-
-        scheduler.scheduleJob(jobDetail, trigger)
-        return true
-    }
-
-    override fun loadTasksToScheduler() {
-        log.info("Loading agent tasks to scheduler")
-        val runningTasks = agentTaskMapper.selectRunningTasks()
-        log.info("Found {} running agent tasks", runningTasks.size)
-
-        for (task in runningTasks) {
-            try {
-                scheduleTask(task)
-                log.info("Loaded agent task to scheduler: id={}, name={}", task.id, task.name)
-            } catch (e: Exception) {
-                log.error("Failed to load agent task: id={}, name={}, error={}", task.id, task.name, e.message, e)
-            }
-        }
-    }
-
-    override fun getRunningTasks(): List<AgentTask> = agentTaskMapper.selectRunningTasks()
-
-    override fun convertToResponse(task: AgentTask): AgentTaskResponse {
-        return AgentTaskResponse.fromEntity(task)
-    }
-
-    private fun scheduleTask(task: AgentTask) {
-        val jobKey = JobKey("AgentTask_${task.id}", "AgentTaskGroup")
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
-            .withIdentity(jobKey)
-            .usingJobData("agentTask", task)
-            .build()
-
-        val triggerBuilder = TriggerBuilder.newTrigger()
-            .withIdentity(TriggerKey("AgentTask_${task.id}_trigger", "AgentTaskGroup"))
-            .withSchedule(
-                CronScheduleBuilder.cronSchedule(task.cronExpression)
-                    .apply {
-                        if (task.concurrent == 0) {
-                            withMisfireHandlingInstructionDoNothing()
-                        } else {
-                            withMisfireHandlingInstructionFireAndProceed()
-                        }
-                    }
-            )
-
-        val trigger = triggerBuilder.build()
-
-        if (scheduler.checkExists(jobKey)) {
-            scheduler.rescheduleJob(TriggerKey("AgentTask_${task.id}_trigger", "AgentTaskGroup"), trigger)
-            scheduler.addJob(jobDetail, true)
-        } else {
-            scheduler.scheduleJob(jobDetail, trigger)
-        }
-        log.info("Scheduled agent task: id={}, name={}, cron={}", task.id, task.name, task.cronExpression)
-    }
-
-    private fun unscheduleTask(task: AgentTask) {
-        val jobKey = JobKey("AgentTask_${task.id}", "AgentTaskGroup")
-        scheduler.deleteJob(jobKey)
-        log.info("Unscheduled agent task: id={}, name={}", task.id, task.name)
+    /**
+     * Simple cron expression validation (5 or 6 fields separated by spaces)
+     */
+    private fun isValidCron(cron: String): Boolean {
+        val fields = cron.trim().split("\\s+".toRegex())
+        return fields.size in 5..6
     }
 }

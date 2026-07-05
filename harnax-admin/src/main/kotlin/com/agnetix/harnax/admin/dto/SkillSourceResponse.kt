@@ -52,7 +52,9 @@ data class SkillSourceResponse(
             val configMap: Map<String, Any>? = try {
                 if (entity.sourceConfig.isNotBlank()) {
                     objectMapper.readValue(entity.sourceConfig, object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {})
-                } else null
+                } else {
+                    null
+                }
             } catch (e: Exception) {
                 null
             }

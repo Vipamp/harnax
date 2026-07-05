@@ -60,6 +60,17 @@
         <if test="status != null">
             AND status = #{status}
         </if>
+        <if test="startTimeFrom != null and startTimeFrom != ''">
+            AND start_time &gt;= #{startTimeFrom}
+        </if>
+        <if test="startTimeTo != null and startTimeTo != ''">
+            AND start_time &lt;= #{startTimeTo}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (prompt LIKE CONCAT('%', #{keyword}, '%')
+                 OR response LIKE CONCAT('%', #{keyword}, '%')
+                 OR error_info LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
         ORDER BY create_time DESC
     </select>
 

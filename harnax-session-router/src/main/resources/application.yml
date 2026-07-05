@@ -115,7 +115,6 @@ harnax:
       - /style.css
       - /app.js
       - /api/router/monitor/
-      - /api/router/agent/workspace/status
       - /api/router/agent/workspace/
 
 # Admin service URL for internal API calls (API key validation, session info)

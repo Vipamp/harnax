@@ -15,10 +15,8 @@ class MinioContentStoreConfig {
         @Value("\${skill.storage.minio.endpoint:\${harness.minio.endpoint:http://localhost:9000}}") endpoint: String,
         @Value("\${skill.storage.minio.access-key:\${harness.minio.access-key:minioadmin}}") accessKey: String,
         @Value("\${skill.storage.minio.secret-key:\${harness.minio.secret-key:minioadmin}}") secretKey: String,
-    ): MinioClient {
-        return MinioClient.builder()
-            .endpoint(endpoint)
-            .credentials(accessKey, secretKey)
-            .build()
-    }
+    ): MinioClient = MinioClient.builder()
+        .endpoint(endpoint)
+        .credentials(accessKey, secretKey)
+        .build()
 }

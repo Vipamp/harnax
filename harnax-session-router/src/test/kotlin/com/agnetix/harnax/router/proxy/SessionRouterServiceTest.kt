@@ -7,9 +7,9 @@ import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.entity.AgentInstance
+import com.agnetix.harnax.router.service.AgentServiceClient
 import com.agnetix.harnax.router.service.IdempotencyService
 import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.InstanceRegistry
@@ -22,14 +22,10 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
-import org.mockito.Mockito.RETURNS_DEEP_STUBS
+import org.mockito.kotlin.any
 import org.mockito.kotlin.argThat
 import org.slf4j.MDC
-import org.springframework.core.ParameterizedTypeReference
-import org.springframework.web.client.RestClient
-import org.springframework.web.reactive.function.client.WebClient
 import reactor.test.StepVerifier
-import tools.jackson.databind.ObjectMapper
 import java.net.ConnectException
 import java.time.LocalDateTime
 
@@ -39,15 +35,11 @@ class SessionRouterServiceTest {
     private lateinit var sessionMappingService: SessionMappingService
     private lateinit var idempotencyService: IdempotencyService
     private lateinit var circuitBreaker: InstanceCircuitBreaker
-    private lateinit var webClient: WebClient
-    private lateinit var restClient: RestClient
-    private lateinit var objectMapper: ObjectMapper
-    private lateinit var tokenProvider: InternalTokenProvider
+    private lateinit var agentServiceClient: AgentServiceClient
     private lateinit var meterRegistry: MeterRegistry
     private lateinit var service: SessionRouterService
 
     private val heartbeatTimeoutMs = 30000L
-    private val streamTimeoutMinutes = 10L
     private val failoverMaxRetries = 2
 
     @BeforeEach
@@ -56,29 +48,25 @@ class SessionRouterServiceTest {
         sessionMappingService = mock(SessionMappingService::class.java)
         idempotencyService = mock(IdempotencyService::class.java)
         circuitBreaker = LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 30000)
-        webClient = mock(WebClient::class.java)
-        restClient = mock(RestClient::class.java)
-        objectMapper = ObjectMapper()
-        tokenProvider = mock(InternalTokenProvider::class.java)
-        `when`(tokenProvider.authHeaders()).thenReturn(mapOf("Authorization" to "Bearer test-token", "X-Caller-Id" to "test"))
+        agentServiceClient = mock(AgentServiceClient::class.java)
         meterRegistry = SimpleMeterRegistry()
         service = SessionRouterService(
-            instanceRegistry, sessionMappingService, idempotencyService,
-            circuitBreaker, webClient, restClient, objectMapper, tokenProvider,
-            meterRegistry, heartbeatTimeoutMs, streamTimeoutMinutes, failoverMaxRetries,
+            instanceRegistry,
+            sessionMappingService,
+            idempotencyService,
+            circuitBreaker,
+            agentServiceClient,
+            meterRegistry,
+            heartbeatTimeoutMs,
+            failoverMaxRetries,
         )
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun stubRestClientChat() {
+    private fun stubAgentClientChat() {
         val dummyResponse = ResultVo.success(ChatResponse(sessionId = "test", content = "ok"))
-        val responseSpec = mock(RestClient.ResponseSpec::class.java)
-        `when`(responseSpec.body(any<ParameterizedTypeReference<*>>())).thenReturn(dummyResponse)
-
-        // Use deep stubs to avoid chaining complexity with RestClient generics
-        val postSpec = mock(RestClient.RequestBodyUriSpec::class.java, RETURNS_DEEP_STUBS)
-        `when`(postSpec.uri(anyString()).contentType(any()).body(any<Any>()).retrieve()).thenReturn(responseSpec)
-        `when`(restClient.post()).thenReturn(postSpec)
+        runBlocking {
+            `when`(agentServiceClient.chat(any(), any())).thenReturn(dummyResponse)
+        }
     }
 
     private fun healthyInstance(id: String = "inst-1"): AgentInstance = AgentInstance().apply {
@@ -131,7 +119,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire("req-1")).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -151,7 +139,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -216,7 +204,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(staleInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -235,7 +223,7 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -255,7 +243,7 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn(null)
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -278,7 +266,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(drainingInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         val request = ChatAgentRequest(
             sessionId = "session-1",
@@ -301,7 +289,7 @@ class SessionRouterServiceTest {
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
-        stubRestClientChat()
+        stubAgentClientChat()
 
         circuitBreaker.recordFailure("inst-1")
         circuitBreaker.recordFailure("inst-1")
@@ -493,16 +481,19 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.rerouteSession("session-1")).thenReturn("inst-2")
         `when`(instanceRegistry.getInstance("inst-2")).thenReturn(healthyInstance("inst-2"))
 
+        val successResponse = ResultVo.success(ChatResponse(sessionId = "test", content = "ok"))
+        `when`(agentServiceClient.chat(any(), any()))
+            .thenThrow(RuntimeException("Connection refused"))
+            .thenReturn(successResponse)
+
         val request = ChatAgentRequest(
             sessionId = "session-1",
             message = "hello",
             requestId = "req-fail",
         )
 
-        try {
-            service.proxyChatRequest(request)
-        } catch (_: Exception) {
-        }
+        val result = service.proxyChatRequest(request)
+        assertTrue(result.isSuccess())
 
         val failoverCount = meterRegistry.find("router.failover.count").counter()
         assertNotNull(failoverCount)
@@ -525,6 +516,9 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+
+        // Initial call must throw to trigger failover
+        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused"))
 
         var rerouteCallCount = 0
         `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {
@@ -558,6 +552,9 @@ class SessionRouterServiceTest {
         `when`(idempotencyService.tryAcquire(anyString())).thenReturn(true)
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+
+        // Initial call must throw to trigger failover
+        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused"))
 
         var rerouteCount = 0
         `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {
@@ -597,16 +594,7 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.rerouteSession("session-1"))
             .thenThrow(IllegalStateException("No healthy instances for failover"))
 
-        val requestBuilder = mock(WebClient.RequestBodyUriSpec::class.java)
-        val requestHeadersBuilder = mock(WebClient.RequestBodySpec::class.java)
-        val responseSpec = mock(WebClient.ResponseSpec::class.java)
-        `when`(webClient.post()).thenReturn(requestBuilder)
-        `when`(requestBuilder.uri(anyString())).thenReturn(requestBuilder)
-        `when`(requestBuilder.contentType(any())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.header(anyString(), anyString())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.bodyValue(any())).thenReturn(requestBuilder)
-        `when`(requestBuilder.retrieve()).thenReturn(responseSpec)
-        `when`(responseSpec.bodyToFlux(any<Class<*>>())).thenReturn(
+        `when`(agentServiceClient.chatStream(any(), any(), any())).thenReturn(
             reactor.core.publisher.Flux.error(ConnectException("Connection refused")),
         )
 
@@ -639,16 +627,7 @@ class SessionRouterServiceTest {
         circuitBreaker.recordFailure("inst-2")
         circuitBreaker.recordFailure("inst-2")
 
-        val requestBuilder = mock(WebClient.RequestBodyUriSpec::class.java)
-        val requestHeadersBuilder = mock(WebClient.RequestBodySpec::class.java)
-        val responseSpec = mock(WebClient.ResponseSpec::class.java)
-        `when`(webClient.post()).thenReturn(requestBuilder)
-        `when`(requestBuilder.uri(anyString())).thenReturn(requestBuilder)
-        `when`(requestBuilder.contentType(any())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.header(anyString(), anyString())).thenReturn(requestHeadersBuilder)
-        `when`(requestHeadersBuilder.bodyValue(any())).thenReturn(requestBuilder)
-        `when`(requestBuilder.retrieve()).thenReturn(responseSpec)
-        `when`(responseSpec.bodyToFlux(any<Class<*>>())).thenReturn(
+        `when`(agentServiceClient.chatStream(any(), any(), any())).thenReturn(
             reactor.core.publisher.Flux.error(ConnectException("Connection refused")),
         )
 

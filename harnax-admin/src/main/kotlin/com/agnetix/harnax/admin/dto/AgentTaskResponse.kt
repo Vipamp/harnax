@@ -55,25 +55,23 @@ data class AgentTaskResponse(
     var updateTime: LocalDateTime = LocalDateTime.now(),
 ) {
     companion object {
-        fun fromEntity(entity: AgentTask): AgentTaskResponse {
-            return AgentTaskResponse(
-                id = entity.id,
-                tenantId = entity.tenantId,
-                name = entity.name,
-                agentId = entity.agentId,
-                agentName = entity.agentName,
-                prompt = entity.prompt,
-                cronExpression = entity.cronExpression,
-                taskStatus = entity.taskStatus,
-                concurrent = entity.concurrent,
-                timeoutSeconds = entity.timeoutSeconds,
-                description = entity.description,
-                isPublic = entity.isPublic,
-                creator = entity.creator,
-                active = entity.active,
-                createTime = entity.createTime,
-                updateTime = entity.updateTime,
-            )
-        }
+        fun fromEntity(entity: AgentTask): AgentTaskResponse = AgentTaskResponse(
+            id = entity.id,
+            tenantId = entity.tenantId,
+            name = entity.name,
+            agentId = entity.agentId,
+            agentName = entity.agentName,
+            prompt = entity.prompt,
+            cronExpression = entity.cronExpression,
+            taskStatus = entity.taskStatus,
+            concurrent = entity.concurrent,
+            timeoutSeconds = entity.timeoutSeconds,
+            description = entity.description,
+            isPublic = entity.isPublic,
+            creator = entity.creator,
+            active = entity.active,
+            createTime = entity.createTime,
+            updateTime = entity.updateTime,
+        )
     }
 }

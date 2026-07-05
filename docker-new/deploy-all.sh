@@ -47,6 +47,10 @@ mkdir -p docker-new/dist/router/
 cp harnax-session-router/target/harnax-session-router-*.jar docker-new/dist/router/
 echo "  ✓ harnax-session-router"
 
+mkdir -p docker-new/dist/harnax-scheduler/
+cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+echo "  ✓ harnax-scheduler"
+
 mkdir -p docker-new/dist/frontend/
 cp -r harnax-webui/dist/* docker-new/dist/frontend/
 echo "  ✓ harnax-frontend"
@@ -70,6 +74,10 @@ docker build --no-cache -f docker-new/Dockerfile.channel-service -t harnax-chann
 echo "  构建 harnax-router..."
 docker rmi -f harnax-router:latest 2>/dev/null || true
 docker build --no-cache -f docker-new/Dockerfile.router -t harnax-router:latest .
+
+echo "  构建 harnax-scheduler..."
+docker rmi -f harnax-scheduler:latest 2>/dev/null || true
+docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest .
 
 echo "  构建 harnax-frontend..."
 docker rmi -f harnax-frontend:latest 2>/dev/null || true
@@ -108,6 +116,7 @@ echo "  - Admin:    http://localhost:8080"
 echo "  - Router:   http://localhost:8081"
 echo "  - Agent:    http://localhost:8082"
 echo "  - Channel:  http://localhost:8083"
+echo "  - Scheduler: http://localhost:8084"
 echo "  - MinIO:    http://localhost:9000"
 echo "  - Redis:    localhost:6379"
 echo "  - MySQL:    localhost:3306"

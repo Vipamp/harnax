@@ -49,23 +49,21 @@ data class AgentTaskLogResponse(
     var createTime: LocalDateTime = LocalDateTime.now(),
 ) {
     companion object {
-        fun fromEntity(entity: AgentTaskLog): AgentTaskLogResponse {
-            return AgentTaskLogResponse(
-                id = entity.id,
-                taskId = entity.taskId,
-                taskName = entity.taskName,
-                prompt = entity.prompt,
-                response = entity.response,
-                sessionId = entity.sessionId,
-                status = entity.status,
-                errorInfo = entity.errorInfo,
-                tokenUsage = entity.tokenUsage,
-                startTime = entity.startTime,
-                endTime = entity.endTime,
-                durationMs = entity.durationMs,
-                creator = entity.creator,
-                createTime = entity.createTime,
-            )
-        }
+        fun fromEntity(entity: AgentTaskLog): AgentTaskLogResponse = AgentTaskLogResponse(
+            id = entity.id,
+            taskId = entity.taskId,
+            taskName = entity.taskName,
+            prompt = entity.prompt,
+            response = entity.response,
+            sessionId = entity.sessionId,
+            status = entity.status,
+            errorInfo = entity.errorInfo,
+            tokenUsage = entity.tokenUsage,
+            startTime = entity.startTime,
+            endTime = entity.endTime,
+            durationMs = entity.durationMs,
+            creator = entity.creator,
+            createTime = entity.createTime,
+        )
     }
 }

@@ -11,7 +11,7 @@ import java.io.ByteArrayInputStream
 @ConditionalOnProperty(name = ["skill.storage.type"], havingValue = "minio")
 class MinioContentStore(
     private val minioClient: MinioClient,
-    @Value("\${skill.storage.bucket:harnax-skills}") private val bucket: String
+    @Value("\${skill.storage.bucket:harnax-skills}") private val bucket: String,
 ) : SkillContentStore {
 
     private val log = LoggerFactory.getLogger(MinioContentStore::class.java)
@@ -27,19 +27,19 @@ class MinioContentStore(
         minioClient.putObject(
             PutObjectArgs.builder()
                 .bucket(bucket)
-                .object("$prefix/SKILL.md")
-                .stream(ByteArrayInputStream(skillmdBytes), skillmdBytes.size.toLong(), -1)
+                .`object`("$prefix/SKILL.md")
+                .stream(ByteArrayInputStream(skillmdBytes), skillmdBytes.size.toLong(), -1L)
                 .contentType("text/markdown")
-                .build()
+                .build(),
         )
 
         content.resources.forEach { (path, bytes) ->
             minioClient.putObject(
                 PutObjectArgs.builder()
                     .bucket(bucket)
-                    .object("$prefix/resources/$path")
-                    .stream(ByteArrayInputStream(bytes), bytes.size.toLong(), -1)
-                    .build()
+                    .`object`("$prefix/resources/$path")
+                    .stream(ByteArrayInputStream(bytes), bytes.size.toLong(), -1L)
+                    .build(),
             )
         }
 
@@ -51,9 +51,9 @@ class MinioContentStore(
         val skillmd = minioClient.getObject(
             GetObjectArgs.builder()
                 .bucket(bucket)
-                .object("$storagePath/SKILL.md")
-                .build()
-        ).use { it.readBytes() }.toString(Charsets.UTF_8)
+                .`object`("$storagePath/SKILL.md")
+                .build(),
+        ).use { String(it.readBytes(), Charsets.UTF_8) }
 
         val resources = loadResources("$storagePath/resources/")
         return SkillContent(skillmd, resources)
@@ -65,7 +65,7 @@ class MinioContentStore(
                 .bucket(bucket)
                 .prefix("$storagePath/")
                 .recursive(true)
-                .build()
+                .build(),
         )
 
         objects.forEach { result ->
@@ -74,24 +74,22 @@ class MinioContentStore(
                 RemoveObjectArgs.builder()
                     .bucket(bucket)
                     .`object`(item.objectName())
-                    .build()
+                    .build(),
             )
         }
         log.debug("Deleted skill content from MinIO: {}/{}", bucket, storagePath)
     }
 
-    override fun exists(storagePath: String): Boolean {
-        return try {
-            minioClient.statObject(
-                StatObjectArgs.builder()
-                    .bucket(bucket)
-                    .object("$storagePath/SKILL.md")
-                    .build()
-            )
-            true
-        } catch (e: Exception) {
-            false
-        }
+    override fun exists(storagePath: String): Boolean = try {
+        minioClient.statObject(
+            StatObjectArgs.builder()
+                .bucket(bucket)
+                .`object`("$storagePath/SKILL.md")
+                .build(),
+        )
+        true
+    } catch (e: Exception) {
+        false
     }
 
     private fun loadResources(prefix: String): Map<String, ByteArray> {
@@ -101,7 +99,7 @@ class MinioContentStore(
                 .bucket(bucket)
                 .prefix(prefix)
                 .recursive(true)
-                .build()
+                .build(),
         )
 
         objects.forEach { result ->
@@ -113,7 +111,7 @@ class MinioContentStore(
                     GetObjectArgs.builder()
                         .bucket(bucket)
                         .`object`(objectName)
-                        .build()
+                        .build(),
                 ).use { it.readBytes() }
                 resources[relativePath] = bytes
             }
@@ -123,7 +121,7 @@ class MinioContentStore(
 
     private fun ensureBucket() {
         val exists = minioClient.bucketExists(
-            BucketExistsArgs.builder().bucket(bucket).build()
+            BucketExistsArgs.builder().bucket(bucket).build(),
         )
         if (!exists) {
             minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build())

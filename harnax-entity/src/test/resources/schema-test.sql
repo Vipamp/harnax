@@ -412,3 +412,69 @@ CREATE TABLE IF NOT EXISTS `user_tenant` (
     KEY `idx_user_id` (`user_id`),
     KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User-Tenant Association table';
+
+-- ============================================
+-- 19. Agent Task - Scheduled agent execution
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_task` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `tenant_id`       BIGINT DEFAULT 1,
+    `name`            VARCHAR(128) NOT NULL COMMENT '任务名称',
+    `agent_id`        BIGINT NOT NULL COMMENT '关联 Agent ID',
+    `agent_name`      VARCHAR(128) COMMENT 'Agent 名称快照',
+    `prompt`          TEXT NOT NULL COMMENT '定时执行的 prompt 内容',
+    `cron_expression` VARCHAR(128) NOT NULL COMMENT 'Cron 表达式',
+    `task_status`     TINYINT NOT NULL DEFAULT 0 COMMENT '0=暂停, 1=运行中',
+    `concurrent`      TINYINT NOT NULL DEFAULT 0 COMMENT '0=不允许并发, 1=允许',
+    `timeout_seconds` INT DEFAULT 300 COMMENT '超时秒数',
+    `description`     VARCHAR(512) DEFAULT '' COMMENT '任务描述',
+    `is_public`       TINYINT DEFAULT 0,
+    `creator`         VARCHAR(64) DEFAULT '',
+    `active`          TINYINT DEFAULT 1,
+    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_tenant_id` (`tenant_id`),
+    INDEX `idx_agent_id` (`agent_id`),
+    UNIQUE KEY `uk_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体定时任务';
+
+-- ============================================
+-- 20. Agent Task Log - Execution logs
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_task_log` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `task_id`         BIGINT NOT NULL COMMENT '关联 agent_task.id',
+    `task_name`       VARCHAR(128) COMMENT '任务名称',
+    `prompt`          TEXT COMMENT '本次执行的 prompt',
+    `response`        TEXT COMMENT 'Agent 回复内容',
+    `session_id`      VARCHAR(64) COMMENT '临时 session ID',
+    `status`          TINYINT DEFAULT 1 COMMENT '0=失败, 1=成功, 2=超时',
+    `error_info`      TEXT COMMENT '异常信息',
+    `token_usage`     VARCHAR(512) COMMENT 'Token 使用 JSON',
+    `start_time`      DATETIME COMMENT '开始时间',
+    `end_time`        DATETIME COMMENT '结束时间',
+    `duration_ms`     BIGINT COMMENT '执行耗时(毫秒)',
+    `creator`         VARCHAR(64) DEFAULT '',
+    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_task_id` (`task_id`),
+    INDEX `idx_status` (`status`),
+    INDEX `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体定时任务执行日志';
+
+-- Test data for agent_task
+INSERT INTO `agent_task` (`id`, `tenant_id`, `name`, `agent_id`, `agent_name`, `prompt`, `cron_expression`, `task_status`, `concurrent`, `timeout_seconds`, `description`, `creator`)
+VALUES (1, 1, 'Daily News', 100, 'News Agent', 'Summarize today''s news', '0 0 9 * * ?', 1, 0, 300, 'Daily news summary', 'admin');
+INSERT INTO `agent_task` (`id`, `tenant_id`, `name`, `agent_id`, `agent_name`, `prompt`, `cron_expression`, `task_status`, `concurrent`, `timeout_seconds`, `description`, `creator`)
+VALUES (2, 1, 'Weekly Report', 100, 'News Agent', 'Generate weekly report', '0 0 9 ? * MON', 0, 0, 600, 'Weekly report', 'admin');
+
+-- Test data for agent_task_log
+INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
+VALUES (1, 1, 'Daily News', 'Summarize today''s news', 'Here is the summary...', 'sess-001', 1, '', '2026-07-01 09:00:00', '2026-07-01 09:00:30', 30000, 'admin');
+INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
+VALUES (2, 1, 'Daily News', 'Summarize today''s news', 'Another summary', 'sess-002', 1, '', '2026-07-02 09:00:00', '2026-07-02 09:00:25', 25000, 'admin');
+INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
+VALUES (3, 1, 'Daily News', 'Summarize today''s news', '', 'sess-003', 0, 'Connection timeout', '2026-07-03 09:00:00', '2026-07-03 09:05:00', 300000, 'admin');
+INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
+VALUES (4, 2, 'Weekly Report', 'Generate weekly report', 'Weekly report content', 'sess-004', 1, '', '2026-07-01 09:00:00', '2026-07-01 09:01:00', 60000, 'admin');
+INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
+VALUES (5, 1, 'Daily News', 'Summarize breaking news', 'Breaking news response', 'sess-005', 2, 'Execution timed out', '2026-06-30 09:00:00', '2026-06-30 09:10:00', 600000, 'admin');

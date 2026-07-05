@@ -57,6 +57,7 @@ class LocalInstanceRegistry(
         val instance = instances[instanceId]
         if (instance != null && instance.status != "DOWN") {
             instance.status = "DOWN"
+            instance.active = 0
             log.warn("Marked instance as DOWN: $instanceId")
             return 1
         }

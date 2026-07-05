@@ -1,5 +1,8 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
+import com.agnetix.harnax.agent.AgentSpec
+import com.agnetix.harnax.agent.ChatSpec
+import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
@@ -9,13 +12,11 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.ToolInfo
+import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxException
-import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
-import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -24,49 +25,38 @@ import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
-import tools.jackson.databind.ObjectMapper
 
 class DefaultAgentRunnerTest {
 
     private lateinit var launcher: HarnessAgentLauncher
-    private lateinit var sessionMapper: SessionMapper
-    private lateinit var skillMapper: SkillMapper
-    private lateinit var objectMapper: ObjectMapper
+    private lateinit var agentSpecResolver: AgentSpecResolver
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
 
     @BeforeEach
     fun setUp() {
         launcher = mock(HarnessAgentLauncher::class.java)
-        sessionMapper = mock(SessionMapper::class.java)
-        skillMapper = mock(SkillMapper::class.java)
-        objectMapper = ObjectMapper()
+        agentSpecResolver = mock(AgentSpecResolver::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
 
         runner = DefaultAgentRunner(
             launcher = launcher,
-            sessionMapper = sessionMapper,
-            skillMapper = skillMapper,
-            objectMapper = objectMapper,
+            agentSpecResolver = agentSpecResolver,
             cacheMaxSize = 100L,
         )
     }
 
-    private fun stubSession(): Session = Session().apply {
-        agentId = 1L
-        name = "TestAgent"
-        description = "A test agent"
-        systemPrompt = "You are a test assistant"
-        modelId = 100L
-        enableThink = 0
-        enableSearch = 0
-        enablePlan = 0
-        mcpList = "[]"
-        skillList = "[]"
+    private fun stubAgentSpec(agentId: Long = 1L, name: String = "TestAgent") {
+        val agentSpec = AgentSpec.builder()
+            .id(agentId).name(name).description("A test agent")
+            .systemPrompt("You are a test assistant").chatModelId(100L)
+            .build()
+        val chatSpec = ChatSpecBuilder().build()
+        `when`(agentSpecResolver.resolve(any())).thenReturn(agentSpec to chatSpec)
     }
 
     private fun stubAgentCreation() {
-        `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(stubSession())
+        stubAgentSpec()
         `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
     }
 
@@ -237,11 +227,11 @@ class DefaultAgentRunnerTest {
     @Nested
     inner class StreamProcess {
         @Test
-        fun `streamProcess returns error events when session not found`() {
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(null)
+        fun `streamProcess returns error events when agent spec resolution fails`() {
+            `when`(agentSpecResolver.resolve(any())).thenThrow(RuntimeException("Session not found"))
 
             val request = ChatAgentRequest(
-                sessionId = "invalid-session",
+                sessionId = "web-invalid",
                 message = "hello",
             )
 
@@ -294,11 +284,11 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `process throws HarnaxException when session not found`() {
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(null)
+        fun `process throws HarnaxException when agent spec resolution fails`() {
+            `when`(agentSpecResolver.resolve(any())).thenThrow(RuntimeException("Session not found"))
 
             val request = ChatAgentRequest(
-                sessionId = "invalid-session",
+                sessionId = "web-invalid",
                 message = "hello",
             )
 
@@ -332,7 +322,7 @@ class DefaultAgentRunnerTest {
         @Test
         fun `confirm with isConfirmed false sends cancel result to agent`() {
             stubAgentCreation()
-            `when`(agentWrapper.callStream(any())).thenReturn(Flux.just(EndEventChatEvent()))
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
 
             val request = ConfirmAgentRequest(
                 sessionId = "session-1",
@@ -355,7 +345,7 @@ class DefaultAgentRunnerTest {
         @Test
         fun `initAgent does not throw`() {
             kotlinx.coroutines.runBlocking {
-                assertDoesNotThrow { runner.initAgent(1L) }
+                runner.initAgent(1L)
             }
         }
 
@@ -367,95 +357,30 @@ class DefaultAgentRunnerTest {
         }
     }
 
-    // ==================== MCP list parsing edge cases ====================
+    // ==================== Agent spec resolver delegation ====================
 
     @Nested
-    inner class McpListParsing {
+    inner class AgentSpecResolverDelegation {
         @Test
-        fun `getOrCreateAgent handles invalid MCP JSON gracefully`() {
-            val session = stubSession().apply { mcpList = "{invalid json" }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
+        fun `process delegates to agentSpecResolver with correct sessionId`() {
+            stubAgentCreation()
             `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
+                ChatResponse(sessionId = "web-123", content = "ok"),
             )
 
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
-            verify(launcher).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+            runner.process(ChatAgentRequest(sessionId = "web-123", message = "hi"))
+            verify(agentSpecResolver).resolve("web-123")
         }
 
         @Test
-        fun `getOrCreateAgent skips empty MCP list`() {
-            val session = stubSession().apply { mcpList = "[]" }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
+        fun `task sessionId is passed to agentSpecResolver`() {
+            stubAgentCreation()
             `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
+                ChatResponse(sessionId = "task-1-abc", content = "ok"),
             )
 
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
-        }
-
-        @Test
-        fun `getOrCreateAgent parses valid MCP list with enable_skip`() {
-            val session = stubSession().apply {
-                mcpList = """[{"id":1,"enable_skip":"true"},{"id":2}]"""
-            }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
-            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
-            )
-
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
-        }
-    }
-
-    // ==================== Skill list parsing edge cases ====================
-
-    @Nested
-    inner class SkillListParsing {
-        @Test
-        fun `getOrCreateAgent handles non-numeric skill IDs gracefully`() {
-            val session = stubSession().apply { skillList = "abc,def" }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
-            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
-            )
-
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
-        }
-
-        @Test
-        fun `getOrCreateAgent handles skill not found in DB`() {
-            val session = stubSession().apply { skillList = "999" }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(skillMapper.selectById(999L)).thenReturn(null)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
-            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
-            )
-
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
-        }
-
-        @Test
-        fun `getOrCreateAgent skips empty skill list`() {
-            val session = stubSession().apply { skillList = "[]" }
-            `when`(sessionMapper.selectBySessionIdAndStatus(any(), any<Int>())).thenReturn(session)
-            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
-            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
-                ChatResponse(sessionId = "s", content = "ok"),
-            )
-
-            val result = runner.process(ChatAgentRequest(sessionId = "s", message = "hi"))
-            assertEquals("ok", result.content)
+            runner.process(ChatAgentRequest(sessionId = "task-1-abc", message = "hi"))
+            verify(agentSpecResolver).resolve("task-1-abc")
         }
     }
 
@@ -512,7 +437,7 @@ class DefaultAgentRunnerTest {
         @Test
         fun `confirm with empty toolInfoList and isConfirmed false`() {
             stubAgentCreation()
-            `when`(agentWrapper.callStream(any())).thenReturn(Flux.just(EndEventChatEvent()))
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
 
             val request = ConfirmAgentRequest(
                 sessionId = "session-1",

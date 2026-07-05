@@ -12,6 +12,9 @@ interface AgentTaskLogService {
         taskId: Long?,
         taskName: String?,
         status: Int?,
+        startTimeFrom: String?,
+        startTimeTo: String?,
+        keyword: String?,
         pageNum: Int,
         pageSize: Int,
     ): Page<AgentTaskLog>

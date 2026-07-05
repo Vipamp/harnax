@@ -1,7 +1,7 @@
 #!/bin/bash
 # Harnax 单服务部署脚本
 # 用法: ./deploy-service.sh <service-name>
-# 支持的服务: admin, router, agent-service, channel-service, frontend
+# 支持的服务: admin, router, agent-service, channel-service, scheduler, frontend
 
 set -e
 
@@ -19,6 +19,7 @@ if [ -z "$SERVICE" ]; then
     echo "  - router         (harnax-session-router)"
     echo "  - agent-service  (harnax-agent-service)"
     echo "  - channel-service (harnax-channel-service)"
+    echo "  - scheduler      (harnax-scheduler)"
     echo "  - frontend       (harnax-webui)"
     echo ""
     echo "示例:"
@@ -97,6 +98,22 @@ case $SERVICE in
         docker-compose -f docker-new/docker-compose.yml up -d --force-recreate channel-service
         ;;
 
+    scheduler)
+        echo "📦 步骤 1/4: 编译 harnax-scheduler..."
+        mvn clean package -Dmaven.test.skip=true -pl harnax-scheduler -am -q
+
+        echo "📋 步骤 2/4: 复制 jar 包..."
+        mkdir -p docker-new/dist/harnax-scheduler
+        cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+
+        echo "🐳 步骤 3/4: 构建 Docker 镜像..."
+        docker rmi -f harnax-scheduler:latest 2>/dev/null || true
+        docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest . -q
+
+        echo "🚀 步骤 4/4: 重启服务..."
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate scheduler
+        ;;
+
     frontend)
         echo "📦 步骤 1/3: 编译前端..."
         cd harnax-webui
@@ -117,7 +134,7 @@ case $SERVICE in
     *)
         echo "❌ 不支持的服务: $SERVICE"
         echo ""
-        echo "支持的服务: admin, router, agent-service, channel-service, frontend"
+        echo "支持的服务: admin, router, agent-service, channel-service, scheduler, frontend"
         exit 1
         ;;
 esac

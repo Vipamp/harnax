@@ -1,7 +1,6 @@
 package com.agnetix.harnax.admin.skill.loader
 
 import com.agnetix.harnax.admin.exception.BizException
-import io.agentscope.core.skill.AgentSkill
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -182,15 +181,14 @@ class SkillLoaderTest {
         }
 
         @Test
-        fun `loadSkills should handle empty SKILL md content`(
+        fun `loadSkills should skip empty SKILL md content`(
             @TempDir tmpDir: Path,
         ) {
             val zipFile = createEmptySkillMdZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
             val skills = zipLoader.loadSkills(config, tmpDir)
 
-            assertTrue(skills.isNotEmpty())
-            assertEquals("", skills[0].skillContent)
+            assertTrue(skills.isEmpty())
         }
 
         @Test

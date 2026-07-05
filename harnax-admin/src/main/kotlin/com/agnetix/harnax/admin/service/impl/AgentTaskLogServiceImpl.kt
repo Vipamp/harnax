@@ -25,26 +25,28 @@ class AgentTaskLogServiceImpl(
         taskId: Long?,
         taskName: String?,
         status: Int?,
+        startTimeFrom: String?,
+        startTimeTo: String?,
+        keyword: String?,
         pageNum: Int,
         pageSize: Int,
     ): Page<AgentTaskLog> {
         log.info(
-            "Paginated query for agent task log, pageNum: {}, pageSize: {}, taskId: {}, taskName: {}, status: {}",
+            "Paginated query for agent task log, pageNum: {}, pageSize: {}, taskId: {}, taskName: {}, status: {}, startTimeFrom: {}, startTimeTo: {}, keyword: {}",
             pageNum,
             pageSize,
             taskId,
             taskName,
             status,
+            startTimeFrom,
+            startTimeTo,
+            keyword,
         )
         PageHelper.startPage<AgentTaskLog>(pageNum, pageSize)
-        return Page.fromPageInfo(agentTaskLogMapper.selectLogList(taskId, taskName, status))
+        return Page.fromPageInfo(agentTaskLogMapper.selectLogList(taskId, taskName, status, startTimeFrom, startTimeTo, keyword))
     }
 
-    override fun getLogsByTaskId(taskId: Long): List<AgentTaskLog> {
-        return agentTaskLogMapper.selectByTaskId(taskId)
-    }
+    override fun getLogsByTaskId(taskId: Long): List<AgentTaskLog> = agentTaskLogMapper.selectByTaskId(taskId)
 
-    override fun convertToResponse(taskLog: AgentTaskLog): AgentTaskLogResponse {
-        return AgentTaskLogResponse.fromEntity(taskLog)
-    }
+    override fun convertToResponse(taskLog: AgentTaskLog): AgentTaskLogResponse = AgentTaskLogResponse.fromEntity(taskLog)
 }

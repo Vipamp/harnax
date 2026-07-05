@@ -65,7 +65,7 @@ echo ""
 # ==========================================
 # Step 1: Build Admin JAR (harnax-admin)
 # ==========================================
-echo "Step 1/7: Building admin JAR (harnax-admin)..."
+echo "Step 1/8: Building admin JAR (harnax-admin)..."
 mvn spotless:apply
 mvn clean package -pl harnax-admin -am -Dmaven.test.skip=true
 
@@ -79,7 +79,7 @@ echo ""
 # Step 2: Build Router (harnax-session-router)
 # ==========================================
 if [ "$NATIVE_MODE" = true ]; then
-    echo "Step 2/7: Building router NATIVE IMAGE (harnax-session-router)..."
+    echo "Step 2/8: Building router NATIVE IMAGE (harnax-session-router)..."
     echo "Note: Native image build may take several minutes..."
     mvn clean package -Pnative -pl harnax-session-router -am -Dmaven.test.skip=true
 
@@ -88,7 +88,7 @@ if [ "$NATIVE_MODE" = true ]; then
     cp harnax-session-router/target/harnax-session-router docker-new/dist/router/
     echo "Router native image built successfully."
 else
-    echo "Step 2/7: Building router JAR (harnax-session-router)..."
+    echo "Step 2/8: Building router JAR (harnax-session-router)..."
     mvn clean package -pl harnax-session-router -am -Dmaven.test.skip=true
 
     echo "Copying JAR to docker-new/dist/router/..."
@@ -101,7 +101,7 @@ echo ""
 # ==========================================
 # Step 3: Build Agent-Service JAR
 # ==========================================
-echo "Step 3/7: Building agent-service JAR..."
+echo "Step 3/8: Building agent-service JAR..."
 mvn clean package -pl harnax-agent/harnax-agent-service -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/agent-service/..."
@@ -113,7 +113,7 @@ echo ""
 # ==========================================
 # Step 4: Build Channel-Service JAR
 # ==========================================
-echo "Step 4/7: Building channel-service JAR..."
+echo "Step 4/8: Building channel-service JAR..."
 mvn clean package -pl harnax-channel/harnax-channel-service -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/channel-service/..."
@@ -123,9 +123,21 @@ echo "Channel-service JAR built successfully."
 echo ""
 
 # ==========================================
-# Step 5: Build Frontend
+# Step 5: Build Scheduler JAR (harnax-scheduler)
 # ==========================================
-echo "Step 5/7: Building frontend (harnax-webui)..."
+echo "Step 5/8: Building scheduler JAR (harnax-scheduler)..."
+mvn clean package -pl harnax-scheduler -am -Dmaven.test.skip=true
+
+echo "Copying JAR to docker-new/dist/harnax-scheduler/..."
+mkdir -p docker-new/dist/harnax-scheduler
+cp harnax-scheduler/target/harnax-scheduler-*.jar docker-new/dist/harnax-scheduler/
+echo "Scheduler JAR built successfully."
+echo ""
+
+# ==========================================
+# Step 6: Build Frontend
+# ==========================================
+echo "Step 6/8: Building frontend (harnax-webui)..."
 cd harnax-webui
 npm install
 npm run build
@@ -138,9 +150,9 @@ echo "Frontend built successfully."
 echo ""
 
 # ==========================================
-# Step 6: Build Docker Images
+# Step 7: Build Docker Images
 # ==========================================
-echo "Step 6/7: Building Docker images..."
+echo "Step 7/8: Building Docker images..."
 docker build -f docker-new/Dockerfile.admin -t harnax-admin:latest .
 
 if [ "$NATIVE_MODE" = true ]; then
@@ -151,12 +163,13 @@ fi
 
 docker build -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest .
 docker build -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest .
+docker build -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest .
 docker build -f docker-new/Dockerfile.frontend -t harnax-frontend:latest .
 echo "Docker images built successfully."
 echo ""
 
 # ==========================================
-# Step 7: Summary
+# Step 8: Summary
 # ==========================================
 echo "=========================================="
 echo "  Build Complete!"
@@ -185,6 +198,7 @@ echo "  Admin:           http://localhost:8080"
 echo "  Router:          http://localhost:8081"
 echo "  Agent-Service:   http://localhost:8082"
 echo "  Channel-Service: http://localhost:8083"
+echo "  Scheduler:       http://localhost:8084"
 echo "  MinIO Console:   http://localhost:9001"
 echo "  MySQL:           localhost:3306"
 echo "  Redis:           localhost:6379"

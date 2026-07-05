@@ -1,33 +1,22 @@
 package com.agnetix.harnax.router.service
 
-import com.agnetix.harnax.common.dto.ResultVo
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
-import org.springframework.core.ParameterizedTypeReference
-import org.springframework.http.HttpEntity
-import org.springframework.http.HttpMethod
-import org.springframework.http.ResponseEntity
-import org.springframework.web.client.RestClientException
-import org.springframework.web.client.RestTemplate
 
 class RemoteApiKeyStoreTest {
 
-    private fun withMockedRestTemplate(block: (RestTemplate, RemoteApiKeyStore) -> Unit) {
-        mockConstruction(RestTemplate::class.java).use { mocked ->
-            val store = RemoteApiKeyStore("http://admin:8080", "test-secret")
-            block(mocked.constructed().first(), store)
-        }
+    private fun withMockedAdminClient(block: (AdminClientService, RemoteApiKeyStore) -> Unit) {
+        val adminClient = mock(AdminClientService::class.java)
+        val store = RemoteApiKeyStore(adminClient)
+        block(adminClient, store)
     }
-
-    private fun buildResponse(
-        data: RemoteApiKeyStore.ApiKeyValidateResponse?,
-    ): ResponseEntity<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>> = ResponseEntity.ok(ResultVo.success(data))
 
     @Test
     fun `findByKeyHash returns ApiKeyInfo on valid response`() {
-        withMockedRestTemplate { restTemplate, store ->
-            val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
+        withMockedAdminClient { adminClient, store ->
+            val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "test-key",
                 keyHash = "abc123",
                 scopes = "router:invoke,api:chat",
@@ -36,14 +25,7 @@ class RemoteApiKeyStoreTest {
                 enabled = true,
                 expiresAt = null,
             )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(responseData))
+            `when`(runBlocking { adminClient.validateApiKey("abc123") }).thenReturn(responseData)
 
             val result = store.findByKeyHash("abc123")
 
@@ -61,15 +43,8 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `findByKeyHash returns null when admin returns null data`() {
-        withMockedRestTemplate { restTemplate, store ->
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(null))
+        withMockedAdminClient { adminClient, store ->
+            `when`(runBlocking { adminClient.validateApiKey("unknown-hash") }).thenReturn(null)
 
             val result = store.findByKeyHash("unknown-hash")
 
@@ -78,16 +53,9 @@ class RemoteApiKeyStoreTest {
     }
 
     @Test
-    fun `findByKeyHash returns null on HTTP error`() {
-        withMockedRestTemplate { restTemplate, store ->
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenThrow(RestClientException("Connection refused"))
+    fun `findByKeyHash returns null on exception`() {
+        withMockedAdminClient { adminClient, store ->
+            `when`(runBlocking { adminClient.validateApiKey("error-hash") }).thenThrow(RuntimeException("Connection refused"))
 
             val result = store.findByKeyHash("error-hash")
 
@@ -97,8 +65,8 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `scopes are correctly parsed from comma-separated string`() {
-        withMockedRestTemplate { restTemplate, store ->
-            val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
+        withMockedAdminClient { adminClient, store ->
+            val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "scoped-key",
                 keyHash = "hash1",
                 scopes = "router:invoke, api:chat , api:session",
@@ -106,14 +74,7 @@ class RemoteApiKeyStoreTest {
                 rateLimit = 60,
                 enabled = true,
             )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(responseData))
+            `when`(runBlocking { adminClient.validateApiKey("hash1") }).thenReturn(responseData)
 
             val result = store.findByKeyHash("hash1")!!
 
@@ -126,8 +87,8 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `expiresAt is parsed from ISO string`() {
-        withMockedRestTemplate { restTemplate, store ->
-            val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
+        withMockedAdminClient { adminClient, store ->
+            val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "expiring-key",
                 keyHash = "hash2",
                 scopes = "api:chat",
@@ -136,14 +97,7 @@ class RemoteApiKeyStoreTest {
                 enabled = true,
                 expiresAt = "2026-12-31T23:59:59Z",
             )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(responseData))
+            `when`(runBlocking { adminClient.validateApiKey("hash2") }).thenReturn(responseData)
 
             val result = store.findByKeyHash("hash2")!!
 
@@ -153,8 +107,8 @@ class RemoteApiKeyStoreTest {
 
     @Test
     fun `cache returns same result without second HTTP call`() {
-        withMockedRestTemplate { restTemplate, store ->
-            val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
+        withMockedAdminClient { adminClient, store ->
+            val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "cached-key",
                 keyHash = "hash-cached",
                 scopes = "api:chat",
@@ -162,59 +116,35 @@ class RemoteApiKeyStoreTest {
                 rateLimit = 60,
                 enabled = true,
             )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(responseData))
+            `when`(runBlocking { adminClient.validateApiKey("hash-cached") }).thenReturn(responseData)
 
             val result1 = store.findByKeyHash("hash-cached")
             val result2 = store.findByKeyHash("hash-cached")
 
             assertNotNull(result1)
             assertEquals(result1!!.name, result2!!.name)
-            verify(restTemplate, times(1)).exchange(
-                anyString(),
-                eq(HttpMethod.POST),
-                any<HttpEntity<*>>(),
-                any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-            )
+            runBlocking { verify(adminClient, times(1)).validateApiKey("hash-cached") }
         }
     }
 
     @Test
-    fun `findByKeyHash does NOT cache null result — second call hits HTTP again`() {
-        withMockedRestTemplate { restTemplate, store ->
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(null))
+    fun `findByKeyHash does NOT cache null result — second call hits admin again`() {
+        withMockedAdminClient { adminClient, store ->
+            `when`(runBlocking { adminClient.validateApiKey("not-found-hash") }).thenReturn(null)
 
             val result1 = store.findByKeyHash("not-found-hash")
             val result2 = store.findByKeyHash("not-found-hash")
 
             assertNull(result1)
             assertNull(result2)
-            verify(restTemplate, times(2)).exchange(
-                anyString(),
-                eq(HttpMethod.POST),
-                any<HttpEntity<*>>(),
-                any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-            )
+            runBlocking { verify(adminClient, times(2)).validateApiKey("not-found-hash") }
         }
     }
 
     @Test
     fun `disabled key is returned with enabled=false`() {
-        withMockedRestTemplate { restTemplate, store ->
-            val responseData = RemoteApiKeyStore.ApiKeyValidateResponse(
+        withMockedAdminClient { adminClient, store ->
+            val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "disabled-key",
                 keyHash = "hash-dis",
                 scopes = "api:chat",
@@ -222,14 +152,7 @@ class RemoteApiKeyStoreTest {
                 rateLimit = 60,
                 enabled = false,
             )
-            `when`(
-                restTemplate.exchange(
-                    anyString(),
-                    eq(HttpMethod.POST),
-                    any<HttpEntity<*>>(),
-                    any<ParameterizedTypeReference<ResultVo<RemoteApiKeyStore.ApiKeyValidateResponse?>>>(),
-                ),
-            ).thenReturn(buildResponse(responseData))
+            `when`(runBlocking { adminClient.validateApiKey("hash-dis") }).thenReturn(responseData)
 
             val result = store.findByKeyHash("hash-dis")!!
 

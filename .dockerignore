@@ -32,8 +32,9 @@ yarn-error.log*
 .npm
 .eslintcache
 
-# Build outputs
+# Build outputs (keep docker-new/dist/ for Docker COPY)
 dist/
+!docker-new/dist/
 build/
 
 # Logs
@@ -45,6 +46,7 @@ logs/
 Thumbs.db
 
 # Docker
+docker-new/data/
 Dockerfile.*
 docker-compose*.yml
 .dockerignore

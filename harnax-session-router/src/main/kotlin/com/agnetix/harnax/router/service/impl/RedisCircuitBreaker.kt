@@ -60,11 +60,14 @@ class RedisCircuitBreaker(
         val lastFailureKey = "$CIRCUIT_KEY_PREFIX$instanceId$LAST_FAILURE_SUFFIX"
         val stateKey = "$CIRCUIT_KEY_PREFIX$instanceId$STATE_SUFFIX"
 
-        // Set last failure time
-        redisTemplate.opsForValue().set(lastFailureKey, System.currentTimeMillis())
+        // Set last failure time with TTL to prevent orphaned keys in Redis
+        val lastFailureTtlMs = openDurationMs * 3
+        redisTemplate.opsForValue().set(lastFailureKey, System.currentTimeMillis(), lastFailureTtlMs, TimeUnit.MILLISECONDS)
 
         // Increment failure count
         val currentFailures = redisTemplate.opsForValue().increment(failuresKey) ?: 1
+        // Set TTL on failure counter to prevent orphaned keys
+        redisTemplate.expire(failuresKey, lastFailureTtlMs, TimeUnit.MILLISECONDS)
 
         // Check current state
         val currentState = redisTemplate.opsForValue().get(stateKey) as? String ?: "CLOSED"
@@ -82,8 +85,7 @@ class RedisCircuitBreaker(
                 }
             }
             "OPEN" -> {
-                // Already open, just update timestamp
-                redisTemplate.expire(lastFailureKey, openDurationMs, TimeUnit.MILLISECONDS)
+                // Already open, TTL already refreshed above
             }
         }
     }

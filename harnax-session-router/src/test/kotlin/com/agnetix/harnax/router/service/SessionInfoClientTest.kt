@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class SessionInfoClientTest {
 
     /**
-     * 启动一个本地 HttpServer，注入 SessionInfoClient，调用一次 getSessionInfo
+     * 启动一个本地 HttpServer，注入 SessionInfoClient (通过 AdminClientService)，调用一次 getSessionInfo
      * 返回：调用计数 + result
      */
     private fun withHttpServer(
@@ -32,7 +32,8 @@ class SessionInfoClientTest {
         server.start()
         try {
             val url = "http://127.0.0.1:${server.address.port}"
-            val client = SessionInfoClient(url, "test-secret", 2000L, 3000L)
+            val adminClientService = AdminClientService(url, "test-secret", 2000L, 3000L)
+            val client = SessionInfoClient(adminClientService, 3000L)
             block(url, client, counter)
         } finally {
             server.stop(0)
@@ -43,7 +44,7 @@ class SessionInfoClientTest {
 
     @Test
     fun `getSessionInfo returns data on valid response`() {
-        val sessionInfo = SessionInfo(
+        val sessionInfo = AdminClientService.SessionInfo(
             sessionId = "sess-1",
             agentId = 10L,
             agentName = "my-agent",
@@ -66,7 +67,7 @@ class SessionInfoClientTest {
 
     @Test
     fun `getSessionInfo returns null when admin returns null data`() {
-        val body = mapper.writeValueAsString(ResultVo.success<SessionInfo?>(null))
+        val body = mapper.writeValueAsString(ResultVo.success<AdminClientService.SessionInfo?>(null))
         withHttpServer(body = body) { _, client, _ ->
             val result = client.getSessionInfo("unknown-session")
             assertNull(result)
@@ -83,7 +84,7 @@ class SessionInfoClientTest {
 
     @Test
     fun `cache returns same result without second HTTP call`() {
-        val sessionInfo = SessionInfo(sessionId = "sess-cached", agentId = 1L, agentName = "agent")
+        val sessionInfo = AdminClientService.SessionInfo(sessionId = "sess-cached", agentId = 1L, agentName = "agent")
         val body = mapper.writeValueAsString(ResultVo.success(sessionInfo))
         withHttpServer(body = body) { _, client, counter ->
             val result1 = client.getSessionInfo("sess-cached")
@@ -96,8 +97,8 @@ class SessionInfoClientTest {
 
     @Test
     fun `different session IDs trigger separate HTTP calls`() {
-        val info1 = SessionInfo(sessionId = "s1", agentId = 1L)
-        val info2 = SessionInfo(sessionId = "s2", agentId = 2L)
+        val info1 = AdminClientService.SessionInfo(sessionId = "s1", agentId = 1L)
+        val info2 = AdminClientService.SessionInfo(sessionId = "s2", agentId = 2L)
         // 因为两个 session 都命中同一个 handler，无法区分 response，
         // 这里只验证不同 sessionId 会发起两次 HTTP 请求
         val body = mapper.writeValueAsString(ResultVo.success(info1))
@@ -115,7 +116,7 @@ class SessionInfoClientTest {
 
     @Test
     fun `session info with null optional fields`() {
-        val sessionInfo = SessionInfo(
+        val sessionInfo = AdminClientService.SessionInfo(
             sessionId = "sess-minimal",
             agentId = null,
             agentName = null,
@@ -141,7 +142,8 @@ class SessionInfoClientTest {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val port = server.address.port
         server.stop(0)
-        val client = SessionInfoClient("http://127.0.0.1:$port", "secret", 500L, 1000L)
+        val adminClientService = AdminClientService("http://127.0.0.1:$port", "secret", 500L, 1000L)
+        val client = SessionInfoClient(adminClientService, 1000L)
         val result = client.getSessionInfo("any")
         assertNull(result)
     }
@@ -161,7 +163,8 @@ class SessionInfoClientTest {
         server.start()
         try {
             val port = server.address.port
-            val client = SessionInfoClient("http://127.0.0.1:$port", "secret", 500L, 800L)
+            val adminClientService = AdminClientService("http://127.0.0.1:$port", "secret", 500L, 800L)
+            val client = SessionInfoClient(adminClientService, 800L)
             val start = System.currentTimeMillis()
             val result = client.getSessionInfo("slow")
             val elapsed = System.currentTimeMillis() - start

@@ -84,6 +84,13 @@ router:
   service:
     url: ${ROUTER_SERVICE_URL:http://localhost:8081}
 
+# Admin service configuration (for internal API calls)
+admin:
+  service:
+    url: ${ADMIN_SERVICE_URL:http://localhost:8080}
+  internal-api:
+    secret: ${ADMIN_INTERNAL_API_SECRET:change-me-in-production-min-32-chars!!}
+
 # Agent service configuration
 agent:
   service:

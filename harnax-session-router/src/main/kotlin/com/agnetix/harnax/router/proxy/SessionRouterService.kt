@@ -8,10 +8,10 @@ import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
-import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
+import com.agnetix.harnax.router.service.AgentServiceClient
 import com.agnetix.harnax.router.service.IdempotencyService
 import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.InstanceRegistry
@@ -20,21 +20,12 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import jakarta.annotation.PostConstruct
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.reactor.awaitSingleOrNull
-import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.core.ParameterizedTypeReference
-import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.web.client.RestClient
-import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
-import tools.jackson.databind.ObjectMapper
-import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -44,15 +35,10 @@ class SessionRouterService(
     private val sessionMappingService: SessionMappingService,
     private val idempotencyService: IdempotencyService,
     private val circuitBreaker: InstanceCircuitBreaker,
-    private val webClient: WebClient,
-    private val restClient: RestClient,
-    private val objectMapper: ObjectMapper,
-    private val tokenProvider: InternalTokenProvider,
+    private val agentServiceClient: AgentServiceClient,
     private val meterRegistry: MeterRegistry,
     @Value($$"${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
-    @Value($$"${router.proxy.stream-timeout-minutes:10}")
-    private val streamTimeoutMinutes: Long,
     @Value($$"${router.proxy.failover-max-retries:2}")
     private val failoverMaxRetries: Int,
 ) {
@@ -60,15 +46,6 @@ class SessionRouterService(
     private val log = LoggerFactory.getLogger(SessionRouterService::class.java)
 
     private val mdcKeys = setOf("sessionId", "requestId", "instanceId")
-
-    // TODO [P0] buildCurl() includes JWT auth headers and request body in INFO-level log output.
-    //   This leaks credentials and user data to production log aggregators.
-    //   Fix: remove auth headers from log output, or mask them; redact sensitive body fields.
-    private fun buildCurl(url: String, body: String): String {
-        val headers = tokenProvider.authHeaders()
-        val headerArgs = headers.entries.joinToString(" ") { (k, v) -> "-H '$k: $v'" }
-        return "curl -X POST '$url' -H 'Content-Type: application/json' $headerArgs -d '$body'"
-    }
 
     // Pre-cache hot Timer / Counter instances to avoid MeterRegistry lookups on every request.
     private lateinit var chatTimer: Timer
@@ -140,27 +117,17 @@ class SessionRouterService(
             val sample = Timer.start()
 
             val result = executeWithRetry(sessionId, "chat") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/chat"
-                val json = objectMapper.writeValueAsString(request)
-                log.info("[Router→Agent] {}", buildCurl(url, json))
-                val startTime = System.currentTimeMillis()
-                val agentResult = withContext(Dispatchers.IO) {
-                    restClient.post()
-                        .uri(url)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(request)
-                        .retrieve()
-                        .body(object : ParameterizedTypeReference<ResultVo<ChatResponse>>() {})
-                } ?: ResultVo.error("No response from agent-service")
-                val elapsed = System.currentTimeMillis() - startTime
-                log.info("[Router←Agent] Received agent response for session=$sessionId, code=${agentResult.code}, success=${agentResult.isSuccess()}, contentLength=${agentResult.data?.content?.length ?: 0}, elapsed=${elapsed}ms")
-                agentResult
+                agentServiceClient.chat(targetInstance.getBaseUrl(), request)
             }
 
             sample.stop(chatTimer)
-            if (result.isSuccess()) chatOkCounter.increment() else chatErrorCounter.increment()
+            if (result.isSuccess()) {
+                chatOkCounter.increment()
+                sessionMappingService.refreshActiveTime(sessionId)
+            } else {
+                chatErrorCounter.increment()
+            }
             log.info("[Router] proxyChatRequest final result for session=$sessionId, code=${result.code}, success=${result.isSuccess()}, contentLength=${result.data?.content?.length ?: 0}")
-            sessionMappingService.refreshActiveTime(sessionId)
             return result
         } finally {
             clearMDC()
@@ -177,7 +144,7 @@ class SessionRouterService(
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Stream proxy for session=$sessionId, requestId=$requestId -> instance=${instance.instanceId}")
 
-            return buildStreamFlux(sessionId, requestId, instance, request)
+            return buildStreamFlux(sessionId, requestId, instance, request, attempt = 0)
         } catch (e: Exception) {
             log.error("Failed to resolve instance for stream session=$sessionId, requestId=$requestId: ${e.message}", e)
             return Flux.just(
@@ -198,17 +165,7 @@ class SessionRouterService(
             MDC.put("instanceId", instance.instanceId)
 
             return executeWithRetry(sessionId, "command") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/command"
-                val json = objectMapper.writeValueAsString(request)
-                log.info("[Router→Agent] {}", buildCurl(url, json))
-                withContext(Dispatchers.IO) {
-                    restClient.post()
-                        .uri(url)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(request)
-                        .retrieve()
-                        .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-                } ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.command(targetInstance.getBaseUrl(), request)
             }.also {
                 sessionMappingService.refreshActiveTime(sessionId)
             }
@@ -223,20 +180,19 @@ class SessionRouterService(
         try {
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Confirm stream proxy for session=$sessionId -> instance=${instance.instanceId}")
-            val url = "${instance.getBaseUrl()}/api/agent/confirm"
 
-            return webClient.post()
-                .uri(url)
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(request)
-                .retrieve()
-                .bodyToFlux(ChatEvent::class.java)
-                .limitRate(10)
-                .timeout(Duration.ofMinutes(streamTimeoutMinutes))
+            return agentServiceClient.confirmStream(instance.getBaseUrl(), request)
+                .doOnComplete {
+                    circuitBreaker.recordSuccess(instance.instanceId)
+                    streamOkCounter.increment()
+                    sessionMappingService.refreshActiveTime(sessionId)
+                }
                 .doOnCancel {
                     log.info("Confirm stream cancelled by client for session=$sessionId")
                 }
                 .onErrorResume { e ->
+                    circuitBreaker.recordFailure(instance.instanceId)
+                    streamErrorCounter.increment()
                     log.error("Confirm stream proxy error for session=$sessionId: ${e.message}", e)
                     Flux.just(
                         ErrorChatEvent(
@@ -262,13 +218,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "clearSession") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId"
-                webClient.delete()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<String>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.clearSession(targetInstance.getBaseUrl(), sessionId)
             }
         } finally {
             clearMDC()
@@ -279,13 +229,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "loadHistory") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/chat/history/$sessionId"
-                webClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.loadHistory(targetInstance.getBaseUrl(), sessionId)
             }
         } finally {
             clearMDC()
@@ -296,13 +240,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "loadPlans") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId/plans"
-                webClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Any>>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.loadPlans(targetInstance.getBaseUrl(), sessionId)
             }
         } finally {
             clearMDC()
@@ -313,13 +251,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "loadCurrentPlan") { targetInstance ->
-                val url = "${targetInstance.getBaseUrl()}/api/agent/session/$sessionId/current-plan"
-                webClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Any?>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.loadCurrentPlan(targetInstance.getBaseUrl(), sessionId)
             }
         } finally {
             clearMDC()
@@ -332,13 +264,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "workspaceFiles") { targetInstance ->
-                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/files?path=$path")
-                webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Map<String, Any>>>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.workspaceListFiles(targetInstance.getBaseUrl(), sessionId, path)
             }
         } finally {
             clearMDC()
@@ -349,13 +275,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "workspaceRead") { targetInstance ->
-                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/read?path=$path")
-                webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.workspaceReadFile(targetInstance.getBaseUrl(), sessionId, path)
             }
         } finally {
             clearMDC()
@@ -370,18 +290,7 @@ class SessionRouterService(
         setMDC(firstId, null)
         try {
             return executeWithRetry(firstId, "workspaceStatus") { targetInstance ->
-                val encodedIds = java.net.URLEncoder.encode(sessionIds, "UTF-8")
-                val url = "${targetInstance.getBaseUrl()}/api/agent/workspace/status?sessionIds=$encodedIds"
-                log.info("[proxyWorkspaceStatus] Forwarding to agent-service: $url")
-
-                val response = webClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Map<String, Any>>>>() {})
-                    .awaitSingleOrNull()
-
-                log.info("[proxyWorkspaceStatus] Response from agent-service: code=${response?.code}, message=${response?.message}, data=${response?.data}")
-                response ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.workspaceStatus(targetInstance.getBaseUrl(), sessionIds)
             }
         } catch (e: Exception) {
             log.error("[proxyWorkspaceStatus] Exception: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -393,7 +302,6 @@ class SessionRouterService(
 
     /**
      * Proxy file upload request to agent-service.
-     * Returns the raw response bytes for streaming back to client.
      */
     suspend fun proxyWorkspaceUpload(
         sessionId: String,
@@ -404,24 +312,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "workspaceUpload") { targetInstance ->
-                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/upload")
-
-                // Build multipart body with custom resource that has filename
-                val fileResource = object : org.springframework.core.io.ByteArrayResource(fileBytes) {
-                    override fun getFilename(): String = fileName
-                }
-                val body = org.springframework.http.client.MultipartBodyBuilder()
-                body.part("file", fileResource)
-                body.part("path", path)
-
-                webClient.post()
-                    .uri(uri)
-                    .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .bodyValue(body.build())
-                    .retrieve()
-                    .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
-                    .awaitSingleOrNull()
-                    ?: ResultVo.error("No response from agent-service")
+                agentServiceClient.workspaceUpload(targetInstance.getBaseUrl(), sessionId, path, fileName, fileBytes)
             }
         } finally {
             clearMDC()
@@ -439,20 +330,7 @@ class SessionRouterService(
         setMDC(sessionId, null)
         try {
             return executeWithRetry(sessionId, "workspaceDownload") { targetInstance ->
-                val uri = java.net.URI("${targetInstance.getBaseUrl()}/api/agent/workspace/$sessionId/download?path=$path")
-
-                val response = webClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .toEntity(ByteArray::class.java)
-                    .awaitSingleOrNull()
-
-                if (response != null && response.body != null) {
-                    val contentType = response.headers.contentType?.toString() ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
-                    Pair(response.body!!, contentType)
-                } else {
-                    null
-                }
+                agentServiceClient.workspaceDownload(targetInstance.getBaseUrl(), sessionId, path)
             }
         } finally {
             clearMDC()
@@ -600,18 +478,9 @@ class SessionRouterService(
         requestId: String,
         instance: AgentInstance,
         request: ChatAgentRequest,
+        attempt: Int,
     ): Flux<ChatEvent> {
-        val url = "${instance.getBaseUrl()}/api/agent/chat/stream"
-
-        return webClient.post()
-            .uri(url)
-            .contentType(MediaType.APPLICATION_JSON)
-            .header("X-Request-Id", requestId)
-            .bodyValue(request)
-            .retrieve()
-            .bodyToFlux(ChatEvent::class.java)
-            .limitRate(10)
-            .timeout(Duration.ofMinutes(streamTimeoutMinutes))
+        return agentServiceClient.chatStream(instance.getBaseUrl(), request, requestId)
             .doOnNext { event ->
                 log.info("[Router←Agent] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
             }
@@ -630,8 +499,12 @@ class SessionRouterService(
                 log.error("Stream proxy error for session $sessionId on ${instance.instanceId}: $errorMsg", e)
                 streamErrorCounter.increment()
 
-                if (isConnectivityError(e)) {
-                    return@onErrorResume tryStreamFailover(sessionId, requestId, request)
+                if (isConnectivityError(e) && attempt < failoverMaxRetries) {
+                    return@onErrorResume tryStreamFailover(sessionId, requestId, request, attempt + 1)
+                }
+
+                if (isConnectivityError(e) && attempt >= failoverMaxRetries) {
+                    log.warn("Stream failover exhausted for session $sessionId after $attempt attempts")
                 }
 
                 Flux.just(
@@ -648,6 +521,7 @@ class SessionRouterService(
         sessionId: String,
         requestId: String,
         request: ChatAgentRequest,
+        attempt: Int,
     ): Flux<ChatEvent> {
         return Flux.defer {
             try {
@@ -664,11 +538,11 @@ class SessionRouterService(
                     )
                 }
 
-                log.info("Stream failover for session $sessionId -> ${newInstance.instanceId}")
-                failoverCounter("stream", 1).increment()
-                buildStreamFlux(sessionId, requestId, newInstance, request)
+                log.info("Stream failover attempt $attempt for session $sessionId -> ${newInstance.instanceId}")
+                failoverCounter("stream", attempt).increment()
+                buildStreamFlux(sessionId, requestId, newInstance, request, attempt)
             } catch (e: Exception) {
-                log.error("Stream failover failed for session $sessionId: ${e.message}", e)
+                log.error("Stream failover attempt $attempt failed for session $sessionId: ${e.message}", e)
                 Flux.just(
                     ErrorChatEvent(
                         code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
@@ -680,12 +554,21 @@ class SessionRouterService(
         }
     }
 
-    private fun isConnectivityError(e: Throwable): Boolean = e is java.net.ConnectException ||
-        e is java.net.SocketTimeoutException ||
-        e is java.net.NoRouteToHostException ||
-        e is java.net.UnknownHostException ||
-        e is io.netty.channel.ConnectTimeoutException ||
-        e.cause is java.net.ConnectException
+    private fun isConnectivityError(e: Throwable): Boolean {
+        val connectivityExceptions = setOf(
+            java.net.ConnectException::class.java,
+            java.net.SocketTimeoutException::class.java,
+            java.net.NoRouteToHostException::class.java,
+            java.net.UnknownHostException::class.java,
+            io.netty.channel.ConnectTimeoutException::class.java,
+        )
+        var current: Throwable? = e
+        while (current != null) {
+            if (connectivityExceptions.any { it.isInstance(current) }) return true
+            current = current.cause
+        }
+        return false
+    }
 
     /**
      * Build a descriptive error message for proxy failures, with specific context for auth errors.

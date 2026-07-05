@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
 
 class RouterAgentAdaptorTest {
 
@@ -45,6 +46,7 @@ class RouterAgentAdaptorTest {
         val message = ChannelMessage(
             content = content,
             sessionId = sessionId,
+            channelType = ChannelType.HTTP,
         )
         return AgentContext(
             message = message,
@@ -140,7 +142,7 @@ class RouterAgentAdaptorTest {
 
         @Test
         fun `process handles CommandResponse with null message`() = runBlocking {
-            val commandResponse = CommandResponse.success("session-1", message = null)
+            val commandResponse = CommandResponse(sessionId = "session-1", success = true, message = null)
             `when`(
                 routerClient.sendCommand(
                     sessionId = "session-1",

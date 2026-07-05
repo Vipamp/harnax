@@ -255,7 +255,7 @@ class ApiKeyServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun initSystemKeys() {
-        val systemServices = listOf("channel-service")
+        val systemServices = listOf("channel-service", "scheduler")
         for (serviceName in systemServices) {
             val existing = apiKeyMapper.selectSystemKeyByServiceName(serviceName)
             if (existing == null) {
