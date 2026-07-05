@@ -23,4 +23,8 @@ interface AgentTaskLogMapper {
     ): List<AgentTaskLog>
 
     fun selectByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>
+
+    fun selectRunningByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>
+
+    fun selectAllRunningLogs(): List<AgentTaskLog>
 }

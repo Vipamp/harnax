@@ -73,7 +73,7 @@ const McpCard: React.FC<{
               color: 'var(--vip-text-secondary)',
               background: 'var(--vip-bg-layout)',
               border: '1px solid var(--vip-border)',
-              borderRadius: '6px',
+              borderRadius: 'var(--vip-radius-sm)',
               padding: '4px 8px',
               wordBreak: 'break-all',
               lineHeight: 1.5,

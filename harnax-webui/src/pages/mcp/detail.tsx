@@ -152,7 +152,6 @@ const McpDetail: React.FC = () => {
                   <Tag 
                     color="blue" 
                     style={{ 
-                      borderRadius: '6px', 
                       fontWeight: 500,
                       margin: 0
                     }}
@@ -162,7 +161,6 @@ const McpDetail: React.FC = () => {
                   <Tag 
                     color="cyan" 
                     style={{ 
-                      borderRadius: '6px', 
                       fontWeight: 500,
                       margin: 0
                     }}
@@ -256,7 +254,6 @@ const McpDetail: React.FC = () => {
                       color="blue" 
                       style={{ 
                         marginLeft: 8,
-                        borderRadius: '6px',
                         fontWeight: 500
                       }}
                     >

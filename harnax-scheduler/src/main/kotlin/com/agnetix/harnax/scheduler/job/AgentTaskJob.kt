@@ -1,27 +1,30 @@
 package com.agnetix.harnax.scheduler.job
 
 import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.entity.AgentTaskLog
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
-import org.quartz.Job
+import com.agnetix.harnax.scheduler.service.SchedulerService
+import org.quartz.InterruptableJob
 import org.quartz.JobExecutionContext
 import org.slf4j.LoggerFactory
-import java.time.Duration
 import java.time.LocalDateTime
-import java.util.UUID
+import java.time.ZoneId
 
-class AgentTaskJob : Job {
+/**
+ * Quartz job for scheduled agent task execution.
+ * Delegates actual execution to [SchedulerService.executeTaskOnce].
+ * Spawns a daemon thread for each execution to avoid blocking the Quartz thread pool,
+ * since task execution (router HTTP call) can take minutes.
+ * Implements [InterruptableJob] for Quartz API compatibility; the real interrupt is handled via
+ * [SchedulerService.stopTask] which sends an INTERRUPT command to the router.
+ */
+class AgentTaskJob : InterruptableJob {
 
     private val log = LoggerFactory.getLogger(AgentTaskJob::class.java)
 
     // Quartz jobs are not Spring-managed, so we get beans from the scheduler context
-    private fun getRouterClient(context: JobExecutionContext): RouterClient = context.scheduler.context["routerClient"] as RouterClient
+    private fun getSchedulerService(context: JobExecutionContext): SchedulerService = context.scheduler.context["schedulerService"] as SchedulerService
 
     private fun getExecutionGuard(context: JobExecutionContext): AgentTaskExecutionGuard = context.scheduler.context["executionGuard"] as AgentTaskExecutionGuard
-
-    private fun getTaskLogMapper(context: JobExecutionContext): AgentTaskLogMapper = context.scheduler.context["taskLogMapper"] as AgentTaskLogMapper
 
     override fun execute(context: JobExecutionContext) {
         val task = context.jobDetail.jobDataMap["agentTask"] as? AgentTask
@@ -30,7 +33,11 @@ class AgentTaskJob : Job {
             return
         }
 
-        val triggerTime = LocalDateTime.now()
+        // Use scheduledFireTime (not wall clock) so all instances produce the same trigger time
+        val triggerTime = LocalDateTime.ofInstant(
+            context.scheduledFireTime.toInstant(),
+            ZoneId.systemDefault(),
+        )
         val executionGuard = getExecutionGuard(context)
 
         // Multi-instance guard: try to acquire execution lock
@@ -41,73 +48,29 @@ class AgentTaskJob : Job {
 
         log.info("Starting agent task execution: id={}, name={}, agentId={}", task.id, task.name, task.agentId)
 
-        val routerClient = getRouterClient(context)
-        val taskLogMapper = getTaskLogMapper(context)
+        val schedulerService = getSchedulerService(context)
 
-        val taskLog = AgentTaskLog().apply {
-            taskId = task.id
-            taskName = task.name
-            prompt = task.prompt
-            startTime = LocalDateTime.now()
-            creator = task.creator
-            createTime = LocalDateTime.now()
-            status = 3 // running
-        }
-
-        // Generate task sessionId: task-{taskId}-{uuid}
-        val sessionId = "task-${task.id}-${UUID.randomUUID()}"
-        taskLog.sessionId = sessionId
-
-        // Insert running log immediately so it's visible on the page
-        taskLogMapper.insert(taskLog)
-        log.info("Inserted running task log: id={}, taskId={}", taskLog.id, task.id)
-
-        try {
-            // 1. Call router to execute agent task
-            val response = routerClient.chat(sessionId, task.prompt)
-
-            // 2. Record success
-            taskLog.response = response.content
-            taskLog.tokenUsage = if (response.tokenUsage != null) {
-                response.tokenUsage.toString()
-            } else {
-                ""
-            }
-            taskLog.status = 1 // success
-
-            log.info("Agent task executed successfully: id={}, name={}", task.id, task.name)
-        } catch (e: Exception) {
-            log.error("Agent task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
-            taskLog.status = 0 // failed
-            taskLog.errorInfo = e.message?.take(4000) ?: "Unknown error"
-        } finally {
-            // 3. Clear agent cache on agent-service
-            routerClient.clearSession(sessionId)
-
-            val endTime = LocalDateTime.now()
-            taskLog.endTime = endTime
-            taskLog.durationMs = if (taskLog.startTime != null) {
-                Duration.between(taskLog.startTime, endTime).toMillis()
-            } else {
-                0
-            }
-
-            // 4. Update task log with final result
+        // Execute in a daemon thread to avoid blocking Quartz thread pool.
+        // The executionGuard already ensures no duplicate execution across instances.
+        Thread {
             try {
-                taskLogMapper.updateById(taskLog)
-                log.info("Updated agent task log: id={}, status={}, durationMs={}", taskLog.id, taskLog.status, taskLog.durationMs)
+                schedulerService.executeTaskOnce(task, triggerTime)
             } catch (e: Exception) {
-                log.error("Failed to update agent task log: id={}, error={}", taskLog.id, e.message, e)
+                log.error("Agent task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
             }
-
-            // Update execution guard status
-            executionGuard.updateExecutionStatus(
-                task.id,
-                triggerTime,
-                taskLog.status == 1,
-                taskLog.startTime ?: endTime,
-                endTime,
-            )
+        }.apply {
+            name = "quartz-task-${task.id}-$triggerTime"
+            isDaemon = true
+            start()
         }
+    }
+
+    /**
+     * Quartz calls this method when scheduler.interrupt(jobKey) is invoked.
+     * The real interrupt mechanism is handled by [SchedulerService.stopTask() which sends INTERRUPT command to the router.
+     * This method is here for Quartz API compatibility.
+     */
+    override fun interrupt() {
+        log.info("Quartz interrupt() called - handled via router INTERRUPT command to router")
     }
 }

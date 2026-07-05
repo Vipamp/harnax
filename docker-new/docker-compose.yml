@@ -131,6 +131,8 @@ services:
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # Router URL (for internal service communication)
       HARNAX_ROUTER_URL: http://router:8081
+      # Scheduler URL (for task trigger/start/pause)
+      HARNAX_SCHEDULER_URL: http://scheduler:8084
       # Router External URL (returned to frontend/mobile apps)
       HARNAX_ROUTER_EXTERNAL_URL: http://localhost:8081
       # JVM Configuration
@@ -146,9 +148,9 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider --timeout=5 http://localhost:8080/health 2>/dev/null || wget -q -O /dev/null --timeout=5 http://localhost:8080/health 2>/dev/null; exit 0"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
       start_period: 60s
     deploy:
@@ -188,6 +190,8 @@ services:
       # Admin service (for API key validation + session info)
       ADMIN_SERVICE_URL: http://admin:8080
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # CORS
+      ROUTER_CORS_ALLOWED_ORIGINS: ${ROUTER_CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*}
       # JVM
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
@@ -332,9 +336,9 @@ services:
       router:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8082' || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider --timeout=5 http://localhost:8082/health 2>/dev/null || wget -q -O /dev/null --timeout=5 http://localhost:8082/health 2>/dev/null; exit 0"]
       interval: 30s
-      timeout: 5s
+      timeout: 10s
       retries: 3
       start_period: 60s
     deploy:

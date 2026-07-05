@@ -12,10 +12,15 @@ import java.time.Duration
 
 @Service
 class SchedulerClientImpl(
-    @Value("\${harnax.scheduler.url:http://localhost:8084}") private val schedulerUrl: String,
+    @Value("\${harnax.scheduler.url:http://localhost:8084}") private val schedulerUrls: String,
 ) : SchedulerClient {
 
     private val log = LoggerFactory.getLogger(SchedulerClientImpl::class.java)
+
+    /** Parse comma-separated URLs for multi-instance deployment */
+    private val urls: List<String> by lazy {
+        schedulerUrls.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
 
     private val restClient: RestClient by lazy {
         val factory = org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
@@ -27,14 +32,40 @@ class SchedulerClientImpl(
             .build()
     }
 
-    override fun triggerTask(id: Long): ResultVo<Void> = proxyToScheduler("/api/scheduler/tasks/$id/trigger")
+    override fun triggerTask(id: Long): ResultVo<Void> {
+        // Send to first available instance only (execution guard handles cluster dedup)
+        val url = urls.firstOrNull() ?: return ResultVo.error("No scheduler URL configured")
+        return postToInstance(url, "/api/scheduler/tasks/$id/trigger")
+    }
 
-    override fun startTask(id: Long): ResultVo<Void> = proxyToScheduler("/api/scheduler/tasks/$id/start")
+    override fun startTask(id: Long): ResultVo<Void> = broadcast("/api/scheduler/tasks/$id/start")
 
-    override fun pauseTask(id: Long): ResultVo<Void> = proxyToScheduler("/api/scheduler/tasks/$id/pause")
+    override fun pauseTask(id: Long): ResultVo<Void> = broadcast("/api/scheduler/tasks/$id/pause")
 
-    private fun proxyToScheduler(path: String): ResultVo<Void> = try {
-        val url = "$schedulerUrl$path"
+    override fun reloadTasks(): ResultVo<Void> = broadcast("/api/scheduler/reload")
+
+    override fun stopTask(logId: Long): ResultVo<Void> = broadcast("/api/scheduler/tasks/logs/$logId/stop")
+
+    /** Broadcast to all scheduler instances; succeed if at least one succeeds */
+    private fun broadcast(path: String): ResultVo<Void> {
+        if (urls.size == 1) return postToInstance(urls[0], path)
+
+        var lastError: String? = null
+        var anySuccess = false
+        for (url in urls) {
+            val result = postToInstance(url, path)
+            if (result.code == 200) {
+                anySuccess = true
+            } else {
+                lastError = result.message
+                log.warn("Scheduler instance {} failed for {}: {}", url, path, result.message)
+            }
+        }
+        return if (anySuccess) ResultVo.success() else ResultVo.error(lastError ?: "All scheduler instances failed")
+    }
+
+    private fun postToInstance(baseUrl: String, path: String): ResultVo<Void> = try {
+        val url = "$baseUrl$path"
         log.info("Proxying request to scheduler: {}", url)
 
         val result = restClient.post()
@@ -45,7 +76,7 @@ class SchedulerClientImpl(
 
         result ?: ResultVo.error("No response from scheduler")
     } catch (e: Exception) {
-        log.error("Failed to proxy request to scheduler: {}", e.message, e)
+        log.error("Failed to proxy request to scheduler {}: {}", baseUrl, e.message, e)
         ResultVo.error("Scheduler service unavailable: ${e.message}")
     }
 }

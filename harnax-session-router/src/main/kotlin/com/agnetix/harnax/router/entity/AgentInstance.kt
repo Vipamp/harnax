@@ -107,22 +107,22 @@ class AgentInstance : Serializable {
     }
 
     /** Unique instance identifier */
-    var instanceId: String = ""
+    @Volatile var instanceId: String = ""
 
     /** Instance host address */
-    var host: String = ""
+    @Volatile var host: String = ""
 
     /** Instance port */
-    var port: Int = 0
+    @Volatile var port: Int = 0
 
     /** Instance status: UP, DOWN, DRAINING */
-    var status: String = "UP"
+    @Volatile var status: String = "UP"
 
     /** Last heartbeat timestamp */
-    var lastHeartbeat: LocalDateTime = LocalDateTime.now()
+    @Volatile var lastHeartbeat: LocalDateTime = LocalDateTime.now()
 
     /** Active flag: 0=deleted, 1=active */
-    var active: Int = 1
+    @Volatile var active: Int = 1
 
     /**
      * Check if instance is healthy based on heartbeat timeout.

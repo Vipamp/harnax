@@ -104,8 +104,7 @@ harnax:
     # and instance registration rely on UnifiedAuthFilter to validate Bearer JWT
     # tokens and set AuthContext, which InternalAuthorizationInterceptor depends on.
     #
-    # Workspace APIs use API Key authentication (X-Api-Key header), NOT JWT tokens.
-    # They must skip UnifiedAuthFilter so the API Key validation can work properly.
+    # Workspace APIs are protected by UnifiedAuthFilter (supports both JWT and X-Api-Key).
     skip-paths:
       - /ui
       - /ui/
@@ -115,7 +114,6 @@ harnax:
       - /style.css
       - /app.js
       - /api/router/monitor/
-      - /api/router/agent/workspace/
 
 # Admin service URL for internal API calls (API key validation, session info)
 admin:

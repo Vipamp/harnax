@@ -177,7 +177,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         >
           <Input
             placeholder={intl.formatMessage({ id: 'pages.skill.repository.name.placeholder', defaultMessage: 'Please enter source name' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -189,7 +188,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           <Select
             onChange={(value: string) => setSourceType(value)}
             disabled={!isCreate}
-            style={{ fontSize: '12px' }}
           >
             <Select.Option value="GIT">Git Repository</Select.Option>
             <Select.Option value="NPM">NPM Package</Select.Option>
@@ -206,7 +204,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             >
               <Input
                 placeholder="https://github.com/example/skills"
-                style={{ fontSize: '12px' }}
               />
             </Form.Item>
             <Form.Item
@@ -216,7 +213,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             >
               <Input
                 placeholder="main"
-                style={{ fontSize: '12px' }}
               />
             </Form.Item>
           </>
@@ -231,7 +227,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             >
               <Input
                 placeholder="@harnax/skill-pack"
-                style={{ fontSize: '12px' }}
               />
             </Form.Item>
             <Form.Item
@@ -240,7 +235,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             >
               <Input
                 placeholder="https://registry.npmmirror.com"
-                style={{ fontSize: '12px' }}
               />
             </Form.Item>
           </>
@@ -273,7 +267,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
         >
           <Input
             placeholder="1.0.0"
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -284,7 +277,6 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           <TextArea
             rows={3}
             placeholder={intl.formatMessage({ id: 'pages.skill.repository.description.placeholder', defaultMessage: 'Please enter source description' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
         <Form.Item
@@ -332,11 +324,8 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             <Button
               onClick={handleReset}
               style={{
-                fontSize: '12px',
                 fontWeight: 500,
-                height: '32px',
                 padding: '4px 20px',
-                borderRadius: '6px',
               }}
             >
               {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
@@ -346,11 +335,8 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
               onClick={handleSubmit}
               loading={loading}
               style={{
-                fontSize: '12px',
                 fontWeight: 500,
-                height: '32px',
                 padding: '4px 20px',
-                borderRadius: '6px',
               }}
             >
               {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}

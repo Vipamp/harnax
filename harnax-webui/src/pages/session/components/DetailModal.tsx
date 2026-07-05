@@ -132,7 +132,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
                   marginBottom: 0,
                   padding: 8,
                   background: 'var(--vip-bg-layout)',
-                  borderRadius: 6,
+                  borderRadius: 'var(--vip-radius-sm)',
                   fontFamily: 'monospace',
                   fontSize: 12,
                   whiteSpace: 'pre-wrap',

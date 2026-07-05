@@ -163,10 +163,10 @@ const EntityCard: React.FC<EntityCardProps> = ({
     <Card
       style={{
         borderRadius: '20px',
-        border: '1px solid var(--vip-border)',
+        border: isHovered ? `1px solid ${tagColor}40` : '1px solid var(--glass-border)',
         boxShadow: isHovered 
-          ? `0 20px 40px ${tagColor}25, 0 0 0 1px ${tagColor}30`
-          : '0 2px 12px rgba(0,0,0,0.04)',
+          ? `0 20px 40px ${tagColor}25, var(--glass-glow-primary)`
+          : 'var(--glass-shadow)',
         overflow: 'hidden',
         position: 'relative',
         transition: 'all 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -177,7 +177,9 @@ const EntityCard: React.FC<EntityCardProps> = ({
         minHeight: '280px',
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--vip-bg-container)',
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
       }}
       styles={{ body: { padding: 0, flex: 1, display: 'flex', flexDirection: 'column' } }}
       onClick={onClick}
@@ -510,7 +512,6 @@ const EntityCard: React.FC<EntityCardProps> = ({
                 color={isPublic === 1 ? 'green' : 'default'}
                 style={{ 
                   margin: 0,
-                  borderRadius: '6px',
                   fontSize: '11px',
                   padding: '2px 8px',
                 }}

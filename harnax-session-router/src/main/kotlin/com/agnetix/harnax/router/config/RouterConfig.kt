@@ -54,6 +54,8 @@ class RouterConfig(
     private val pendingAcquireTimeoutMs: Int,
     @Value($$"${router.proxy.write-timeout-seconds:30}")
     private val writeTimeoutSeconds: Int,
+    @Value($$"${router.cors.allowed-origins:http://localhost:*}")
+    private val corsAllowedOrigins: String,
     private val tokenProvider: InternalTokenProvider,
 ) {
 
@@ -109,7 +111,7 @@ class RouterConfig(
 
     private fun authFilter(): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
         val headers = tokenProvider.authHeaders()
-        log.info("[authFilter] Adding auth headers for request: {} {} headers={}", request.method(), request.url(), headers.keys)
+        log.debug("[authFilter] Adding auth headers for request: {} {} headers={}", request.method(), request.url(), headers.keys)
         val mutated = ClientRequest.from(request)
         headers.forEach { (key, value) -> mutated.header(key, value) }
         next.exchange(mutated.build())
@@ -178,8 +180,10 @@ class RouterConfig(
 
     @Bean
     fun corsFilter(): FilterRegistrationBean<CorsFilter> {
+        val origins = corsAllowedOrigins.split(",").map { it.trim() }
+        log.info("CORS allowed origins: {}", origins)
         val config = CorsConfiguration().apply {
-            allowedOriginPatterns = listOf("*")
+            allowedOriginPatterns = origins
             allowedMethods = listOf("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
             allowedHeaders = listOf("*")
             exposedHeaders = listOf("Content-Type", "X-Request-Id")

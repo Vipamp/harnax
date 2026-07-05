@@ -9,7 +9,6 @@ import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.proxy.SessionRouterService
 import jakarta.servlet.http.HttpServletRequest
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -35,6 +34,9 @@ class AgentProxyController(
         // Request attribute key for passing sessionId to the ApiCallLogFilter.
         // Controller sets this after @RequestBody parsing; filter reads it in the finally block.
         const val SESSION_ID_ATTR = "router.sessionId"
+
+        // Max download file size: 50 MB
+        const val MAX_DOWNLOAD_SIZE = 50L * 1024 * 1024
     }
 
     /**
@@ -63,7 +65,7 @@ class AgentProxyController(
         log.info("[Router] Received stream proxy request for session: ${request.sessionId}")
         return sessionRouterService.proxyStreamRequest(request)
             .doOnNext { event ->
-                log.info("[Router→Channel] Forwarding event to channel for session=${request.sessionId}: ${event.javaClass.simpleName}")
+                log.debug("[Router→Channel] Forwarding event to channel for session=${request.sessionId}: ${event.javaClass.simpleName}")
             }
     }
 
@@ -151,105 +153,108 @@ class AgentProxyController(
      * Proxy a workspace file listing request.
      */
     @GetMapping("/workspace/{sessionId}/files")
-    fun proxyWorkspaceListFiles(
+    suspend fun proxyWorkspaceListFiles(
         @PathVariable sessionId: String,
         @RequestParam(defaultValue = "/workspace") path: String,
         httpRequest: HttpServletRequest,
-    ): ResultVo<List<Map<String, Any>>> = runBlocking {
+    ): ResultVo<List<Map<String, Any>>> {
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
         log.debug("Received workspace list proxy request for session: $sessionId, path: $path")
-        sessionRouterService.proxyWorkspaceListFiles(sessionId, path)
+        return sessionRouterService.proxyWorkspaceListFiles(sessionId, path)
     }
 
     /**
      * Proxy a workspace file read request.
      */
     @GetMapping("/workspace/{sessionId}/read")
-    fun proxyWorkspaceReadFile(
+    suspend fun proxyWorkspaceReadFile(
         @PathVariable sessionId: String,
         @RequestParam path: String,
         httpRequest: HttpServletRequest,
-    ): ResultVo<Map<String, Any>> = runBlocking {
+    ): ResultVo<Map<String, Any>> {
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
         log.debug("Received workspace read proxy request for session: $sessionId, path: $path")
-        sessionRouterService.proxyWorkspaceReadFile(sessionId, path)
+        return sessionRouterService.proxyWorkspaceReadFile(sessionId, path)
     }
 
     /**
      * Proxy a workspace status request for one or multiple sessions.
      */
     @GetMapping("/workspace/status")
-    fun proxyWorkspaceStatus(
+    suspend fun proxyWorkspaceStatus(
         @RequestParam(required = false) sessionIds: String?,
         httpRequest: HttpServletRequest,
-    ): ResultVo<Map<String, Map<String, Any>>> = runBlocking {
-        log.info("[AgentProxyController] Received workspace status request for sessions: $sessionIds")
-        val firstId = sessionIds?.split(",")?.firstOrNull()?.trim() ?: ""
-        httpRequest.setAttribute(SESSION_ID_ATTR, firstId)
+    ): ResultVo<Map<String, Map<String, Any>>> {
         if (sessionIds.isNullOrBlank()) {
             log.warn("[AgentProxyController] sessionIds is null or blank")
-            return@runBlocking ResultVo.error("Please provide sessionIds parameter")
+            return ResultVo.error("Please provide sessionIds parameter")
         }
-        log.info("[AgentProxyController] Calling sessionRouterService.proxyWorkspaceStatus")
+        val firstId = sessionIds.split(",").firstOrNull()?.trim() ?: ""
+        httpRequest.setAttribute(SESSION_ID_ATTR, firstId)
+        log.info("[AgentProxyController] Received workspace status request for sessions: $sessionIds")
         val result = sessionRouterService.proxyWorkspaceStatus(sessionIds)
-        log.info("[AgentProxyController] Returning result: code=${result.code}, data=${result.data}")
-        result
+        log.debug("[AgentProxyController] Returning result: code=${result.code}")
+        return result
     }
 
     /**
      * Proxy a workspace status request for a single session (path-based).
      */
     @GetMapping("/workspace/{sessionId}/status")
-    fun proxyWorkspaceStatusSingle(
+    suspend fun proxyWorkspaceStatusSingle(
         @PathVariable sessionId: String,
         httpRequest: HttpServletRequest,
-    ): ResultVo<Map<String, Any>> = runBlocking {
+    ): ResultVo<Map<String, Any>> {
         log.info("[AgentProxyController] Received workspace status request for session: $sessionId")
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
         val result = sessionRouterService.proxyWorkspaceStatus(sessionId)
         val singleResult = result.data?.get(sessionId) ?: mapOf("active" to false)
-        ResultVo.success(singleResult)
+        return ResultVo.success(singleResult)
     }
 
     /**
      * Proxy a workspace file upload request.
      */
     @PostMapping("/workspace/{sessionId}/upload")
-    fun proxyWorkspaceUpload(
+    suspend fun proxyWorkspaceUpload(
         @PathVariable sessionId: String,
         @RequestParam(defaultValue = "/workspace") path: String,
         @RequestParam("file") file: MultipartFile,
         httpRequest: HttpServletRequest,
-    ): ResultVo<Map<String, Any>> = runBlocking {
+    ): ResultVo<Map<String, Any>> {
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
         log.info("[AgentProxyController] Received workspace upload request for session: $sessionId, fileName: ${file.originalFilename}")
         val fileBytes = file.bytes
         val fileName = file.originalFilename ?: "uploaded-file"
-        sessionRouterService.proxyWorkspaceUpload(sessionId, path, fileName, fileBytes)
+        return sessionRouterService.proxyWorkspaceUpload(sessionId, path, fileName, fileBytes)
     }
 
     /**
      * Proxy a workspace file download request.
      */
     @GetMapping("/workspace/{sessionId}/download")
-    fun proxyWorkspaceDownload(
+    suspend fun proxyWorkspaceDownload(
         @PathVariable sessionId: String,
         @RequestParam path: String,
         httpRequest: HttpServletRequest,
-    ): ResponseEntity<ByteArray> = runBlocking {
+    ): ResponseEntity<ByteArray> {
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
         log.info("[AgentProxyController] Received workspace download request for session: $sessionId, path: $path")
         val result = sessionRouterService.proxyWorkspaceDownload(sessionId, path)
         if (result != null) {
             val (bytes, contentType) = result
+            if (bytes.size > MAX_DOWNLOAD_SIZE) {
+                log.warn("[AgentProxyController] Download rejected: file size ${bytes.size} exceeds limit $MAX_DOWNLOAD_SIZE")
+                return ResponseEntity.status(413).build()
+            }
             val fileName = java.io.File(path).name
-            ResponseEntity.ok()
+            return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
                 .contentType(MediaType.parseMediaType(contentType))
                 .contentLength(bytes.size.toLong())
                 .body(bytes)
         } else {
-            ResponseEntity.status(404).build()
+            return ResponseEntity.status(404).build()
         }
     }
 }

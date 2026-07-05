@@ -98,11 +98,11 @@ class RouterAgentAdaptor(
         ).collect { chatEvent: ChatEvent ->
             val streamEvent = convertChatEvent(chatEvent, requestId)
             if (streamEvent != null) {
-                log.info("[Adaptor] Converting event #$eventCount for session=$sessionId: ${chatEvent.javaClass.simpleName} -> ${streamEvent.javaClass.simpleName}")
+                log.debug("[Adaptor] Converting event #$eventCount for session=$sessionId: ${chatEvent.javaClass.simpleName} -> ${streamEvent.javaClass.simpleName}")
                 eventCount++
                 collector.emit(streamEvent)
             } else {
-                log.warn("[Adaptor] Skipped null conversion for event: ${chatEvent.javaClass.simpleName}")
+                log.debug("[Adaptor] Skipped null conversion for event: ${chatEvent.javaClass.simpleName}")
             }
         }
         log.info("[Adaptor] StreamProcess completed for session=$sessionId, total events=$eventCount")

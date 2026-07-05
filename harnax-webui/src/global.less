@@ -73,6 +73,20 @@
   --vip-gradient-purple: linear-gradient(135deg, #722ed1 0%, #b37feb 100%);
   --vip-gradient-success: linear-gradient(135deg, #52c41a 0%, #73d13d 100%);
   --vip-gradient-warning: linear-gradient(135deg, #fa8c16 0%, #ffc53d 100%);
+
+  /* 毛玻璃 Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg-heavy: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.45);
+  --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.08);
+  --glass-blur: 16px;
+  --glass-blur-heavy: 24px;
+
+  /* 光晕 */
+  --glass-glow-primary: 0 0 20px rgba(79, 110, 247, 0.15);
+  --glass-glow-success: 0 0 20px rgba(82, 196, 26, 0.15);
+  --glass-glow-warning: 0 0 20px rgba(250, 140, 22, 0.15);
+  --glass-glow-error: 0 0 20px rgba(245, 34, 45, 0.15);
 }
 
 /* ===== 深色主题 CSS 变量 ===== */
@@ -117,6 +131,45 @@ html.dark {
   --vip-gradient-purple: linear-gradient(135deg, #8b3ed6 0%, #c499f5 100%);
   --vip-gradient-success: linear-gradient(135deg, #6fd836 0%, #8ae660 100%);
   --vip-gradient-warning: linear-gradient(135deg, #ffa940 0%, #ffc069 100%);
+
+  /* 毛玻璃 Glassmorphism - 深色主题 */
+  --glass-bg: rgba(26, 29, 38, 0.7);
+  --glass-bg-heavy: rgba(26, 29, 38, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+
+  /* 光晕 - 深色主题 */
+  --glass-glow-primary: 0 0 20px rgba(92, 124, 255, 0.2);
+  --glass-glow-success: 0 0 20px rgba(111, 216, 54, 0.2);
+  --glass-glow-warning: 0 0 20px rgba(255, 169, 64, 0.2);
+  --glass-glow-error: 0 0 20px rgba(255, 77, 79, 0.2);
+}
+
+/* ===== 毛玻璃工具类 ===== */
+.glass-card {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-card-heavy {
+  background: var(--glass-bg-heavy) !important;
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow);
+}
+
+/* Fallback for browsers without backdrop-filter support */
+@supports not (backdrop-filter: blur(16px)) {
+  .glass-card,
+  .glass-card-heavy {
+    background: var(--vip-bg-container) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* ===== 基础样式优化 ===== */
@@ -484,6 +537,29 @@ html.dark {
   }
 }
 
+/* ===== Modal 全局统一样式 ===== */
+.ant-modal-content {
+  border-radius: var(--vip-radius-lg) !important;
+  background: var(--glass-bg-heavy) !important;
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+.ant-modal-mask {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* ===== Drawer 全局统一样式 ===== */
+.ant-drawer-content {
+  background: var(--glass-bg-heavy) !important;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
 /* ===== 表格样式优化 ===== */
 .ant-table {
   .ant-table-thead > tr > th {
@@ -665,36 +741,41 @@ html.dark .ant-pagination {
 .ant-modal {
   .ant-modal-content {
     border-radius: var(--vip-radius-lg) !important;
-    box-shadow: var(--vip-shadow-lg) !important;
-    border: 1px solid var(--vip-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+    box-shadow: var(--glass-shadow) !important;
+    border: 1px solid var(--glass-border) !important;
   }
 
   .ant-modal-header {
-    border-bottom: 1px solid var(--vip-border);
+    border-bottom: 1px solid var(--glass-border);
     padding: 20px 24px;
-    background: var(--vip-bg-container);
+    background: transparent;
   }
 
   .ant-modal-body {
     padding: 24px;
-    background: var(--vip-bg-container);
+    background: transparent;
   }
 
   .ant-modal-footer {
-    border-top: 1px solid var(--vip-border);
+    border-top: 1px solid var(--glass-border);
     padding: 16px 24px;
-    background: var(--vip-bg-container);
+    background: transparent;
   }
 }
 
 /* 浅色主题模态框适配 */
 html:not(.dark) .ant-modal {
   .ant-modal-content {
-    background: var(--vip-bg-container) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
   }
 
   .ant-modal-header {
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
   }
 
   .ant-modal-title {
@@ -709,11 +790,13 @@ html:not(.dark) .ant-modal {
 /* 深色主题模态框适配 */
 html.dark .ant-modal {
   .ant-modal-content {
-    background: var(--vip-bg-container) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
   }
 
   .ant-modal-header {
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
   }
 
   .ant-modal-title {
@@ -729,9 +812,11 @@ html.dark .ant-modal {
 .ant-modal-confirm {
   .ant-modal-content {
     border-radius: var(--vip-radius-lg) !important;
-    box-shadow: var(--vip-shadow-lg) !important;
-    border: 1px solid var(--vip-border) !important;
-    background: var(--vip-bg-container) !important;
+    box-shadow: var(--glass-shadow) !important;
+    border: 1px solid var(--glass-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
   }
 
   .ant-modal-confirm-body-wrapper {
@@ -760,12 +845,14 @@ html.dark .ant-modal {
 /* 深色主题确认弹窗适配 */
 html.dark .ant-modal-confirm {
   .ant-modal-content {
-    background: var(--vip-bg-container) !important;
-    border-color: var(--vip-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+    border-color: var(--glass-border) !important;
   }
 
   .ant-modal-confirm-body-wrapper {
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
   }
 
   .ant-modal-confirm-title {
@@ -846,15 +933,25 @@ html.dark .ant-dropdown-menu {
   }
 }
 
+/* ===== 抽屉遮罩层 ===== */
+.ant-drawer-mask {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.25) !important;
+}
+
 /* ===== 抽屉样式优化 ===== */
 .ant-drawer {
   .ant-drawer-content {
-    border: 1px solid var(--vip-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border) !important;
   }
 
   .ant-drawer-header {
-    border-bottom: 1px solid var(--vip-border);
-    background: var(--vip-bg-container);
+    border-bottom: 1px solid var(--glass-border);
+    background: transparent;
   }
 
   .ant-drawer-title {
@@ -862,12 +959,12 @@ html.dark .ant-dropdown-menu {
   }
 
   .ant-drawer-body {
-    background: var(--vip-bg-container);
+    background: transparent;
   }
 
   .ant-drawer-footer {
-    border-top: 1px solid var(--vip-border);
-    background: var(--vip-bg-container);
+    border-top: 1px solid var(--glass-border);
+    background: transparent;
   }
 
   .ant-drawer-close {
@@ -878,11 +975,13 @@ html.dark .ant-dropdown-menu {
 /* 浅色主题抽屉适配 */
 html:not(.dark) .ant-drawer {
   .ant-drawer-content {
-    background: var(--vip-bg-container) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
   }
 
   .ant-drawer-header {
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
   }
 
   .ant-drawer-title {
@@ -897,11 +996,13 @@ html:not(.dark) .ant-drawer {
 /* 深色主题抽屉适配 */
 html.dark .ant-drawer {
   .ant-drawer-content {
-    background: var(--vip-bg-container) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
   }
 
   .ant-drawer-header {
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
   }
 
   .ant-drawer-title {
@@ -1239,6 +1340,41 @@ html.dark .ant-menu {
   }
 }
 
+/* ===== 布局框架毛玻璃化 ===== */
+
+/* 侧边栏玻璃化 */
+.ant-pro-sider,
+.ant-layout-sider {
+  background: var(--glass-bg-heavy) !important;
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border-right: 1px solid var(--glass-border) !important;
+}
+
+.ant-pro-sider-menu {
+  background: transparent !important;
+}
+
+/* 顶部导航栏玻璃化 */
+.ant-layout-header {
+  background: var(--glass-bg-heavy) !important;
+  backdrop-filter: blur(var(--glass-blur-heavy));
+  -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+  border-bottom: 1px solid var(--glass-border) !important;
+}
+
+.ant-pro-top-nav-header {
+  background: transparent !important;
+}
+
+/* 页面内容区渐变网格背景 */
+.ant-pro-layout-container {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(var(--vip-primary-rgb), 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(var(--vip-primary-rgb), 0.03) 0%, transparent 50%),
+    var(--vip-bg-layout);
+}
+
 /* ProLayout 侧边栏菜单适配 */
 .ant-pro-sider {
   .ant-menu {
@@ -1403,30 +1539,30 @@ html.dark .ant-pro-sider {
 html.dark {
   /* 侧边栏背景 */
   .ant-layout-sider {
-    background: var(--vip-bg-layout) !important;
-    border-right: 1px solid var(--vip-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    border-right: 1px solid var(--glass-border) !important;
   }
 
   /* ProLayout 侧边栏 */
   .ant-pro-sider {
-    background: var(--vip-bg-layout) !important;
+    background: var(--glass-bg-heavy) !important;
 
     .ant-pro-sider-menu {
-      background: var(--vip-bg-layout) !important;
+      background: transparent !important;
     }
   }
 
   /* 顶部导航栏 */
   .ant-layout-header {
-    background: var(--vip-bg-container) !important;
-    border-bottom: 1px solid var(--vip-border) !important;
+    background: var(--glass-bg-heavy) !important;
+    border-bottom: 1px solid var(--glass-border) !important;
     color: var(--vip-text-primary) !important;
   }
 
   /* ProLayout 头部 */
   .ant-pro-top-nav-header {
-    background: var(--vip-bg-container) !important;
-    border-bottom: 1px solid var(--vip-border) !important;
+    background: transparent !important;
+    border-bottom: 1px solid var(--glass-border) !important;
   }
 
   /* 分割线 */

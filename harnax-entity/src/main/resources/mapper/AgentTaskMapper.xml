@@ -19,6 +19,8 @@
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="last_run_status" property="lastRunStatus"/>
+        <result column="last_run_time" property="lastRunTime"/>
     </resultMap>
 
     <select id="selectById" resultMap="AgentTaskResultMap">
@@ -58,19 +60,29 @@
     </update>
 
     <select id="selectTaskList" resultMap="AgentTaskResultMap">
-        SELECT * FROM agent_task
-        WHERE active = 1
-        AND (is_public = 1 OR creator = #{currentUsername})
+        SELECT t.*, latest.status AS last_run_status, latest.start_time AS last_run_time
+        FROM agent_task t
+        LEFT JOIN (
+            SELECT l1.task_id, l1.status, l1.start_time
+            FROM agent_task_log l1
+            INNER JOIN (
+                SELECT task_id, MAX(id) AS max_id
+                FROM agent_task_log
+                GROUP BY task_id
+            ) l2 ON l1.id = l2.max_id
+        ) latest ON t.id = latest.task_id
+        WHERE t.active = 1
+        AND (t.is_public = 1 OR t.creator = #{currentUsername})
         <if test="name != null and name != ''">
-            AND name LIKE CONCAT('%', #{name}, '%')
+            AND t.name LIKE CONCAT('%', #{name}, '%')
         </if>
         <if test="agentId != null">
-            AND agent_id = #{agentId}
+            AND t.agent_id = #{agentId}
         </if>
         <if test="taskStatus != null">
-            AND task_status = #{taskStatus}
+            AND t.task_status = #{taskStatus}
         </if>
-        ORDER BY update_time DESC
+        ORDER BY t.update_time DESC
     </select>
 
     <select id="selectByName" resultMap="AgentTaskResultMap">

@@ -460,13 +460,7 @@ const ModelManagement: React.FC = () => {
                     type="primary"
                     icon={<PlusOutlined />}
                     onClick={handleCreateProvider}
-                    style={{ 
-                      borderRadius: '10px', 
-                      height: '44px',
-                      padding: '0 24px',
-                      fontWeight: 600,
-                      marginTop: 16,
-                    }}
+                    style={{ marginTop: 16 }}
                   >
                     {intl.formatMessage({ id: 'pages.model.createProvider', defaultMessage: 'Create Provider' })}
                   </Button>
@@ -565,12 +559,6 @@ const ModelManagement: React.FC = () => {
                 placeholder={intl.formatMessage({ id: 'pages.model.minPrice', defaultMessage: 'Min Price' })}
                 value={filters.minPrice}
                 onChange={(e) => setFilters({ ...filters, minPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
-                style={{
-                  width: 120,
-                  borderRadius: '6px',
-                  height: '28px',
-                  fontSize: '12px',
-                }}
                 suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
               />
               
@@ -580,12 +568,6 @@ const ModelManagement: React.FC = () => {
                 placeholder={intl.formatMessage({ id: 'pages.model.maxPrice', defaultMessage: 'Max Price' })}
                 value={filters.maxPrice}
                 onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
-                style={{
-                  width: 120,
-                  borderRadius: '6px',
-                  height: '28px',
-                  fontSize: '12px',
-                }}
                 suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
               />
             </SearchFilterBar>

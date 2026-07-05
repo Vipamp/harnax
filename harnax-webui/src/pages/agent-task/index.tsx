@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIntl } from '@umijs/max';
-import { Card, Button, message, Modal, Input, Select, Table, Tooltip } from 'antd';
-import { ScheduleOutlined, SearchOutlined, ReloadOutlined, CaretRightOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined } from '@ant-design/icons';
+import { Card, Button, message, Modal, Input, Select, Table, Tooltip, Tag } from 'antd';
+import { ScheduleOutlined, SearchOutlined, ReloadOutlined, CaretRightOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import StatusSwitch from '@/components/StatusSwitch';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ColumnsType } from 'antd/es/table';
@@ -9,6 +9,7 @@ import {
   getAgentTaskPage,
   deleteAgentTask,
   toggleAgentTaskStatus,
+  triggerAgentTask,
 } from '@/services/ant-design-pro/agentTask';
 import TaskForm from './components/TaskForm';
 import TaskLogModal from './components/TaskLogModal';
@@ -31,6 +32,8 @@ const AgentTaskManagement: React.FC = () => {
     name: '',
     taskStatus: undefined as number | undefined,
   });
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadTasksRef = useRef<() => void>();
 
   const loadTasks = async () => {
     setLoading(true);
@@ -53,19 +56,38 @@ const AgentTaskManagement: React.FC = () => {
       setLoading(false);
     }
   };
+  loadTasksRef.current = loadTasks;
 
   useEffect(() => {
     loadTasks();
   }, [pageNum, pageSize, filters]);
 
+  // Poll when there are running tasks (lastRunStatus=3)
+  useEffect(() => {
+    const hasRunning = tasks.some((t) => t.lastRunStatus === 3);
+    if (hasRunning) {
+      pollingRef.current = setInterval(() => {
+        loadTasksRef.current?.();
+      }, 3000);
+    }
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [tasks]);
+
   const handleToggleStatus = async (id: number, newStatus: number) => {
     try {
       const response = await toggleAgentTaskStatus(id, newStatus);
       if (response.code === 200) {
-        message.success(intl.formatMessage({ id: 'pages.agentTask.statusUpdated', defaultMessage: 'Status updated' }));
+        const msgId = newStatus === 1 ? 'pages.agentTask.started' : 'pages.agentTask.paused';
+        const defaultMsg = newStatus === 1 ? 'Task started' : 'Task paused';
+        message.success(intl.formatMessage({ id: msgId, defaultMessage: defaultMsg }));
         loadTasks();
       } else {
-        message.error(response.message || intl.formatMessage({ id: 'pages.agentTask.toggleFailed', defaultMessage: 'Failed to toggle status' }));
+        message.error(intl.formatMessage({ id: 'pages.agentTask.toggleFailed', defaultMessage: 'Failed to toggle status' }));
       }
     } catch (error) {
       message.error(intl.formatMessage({ id: 'pages.agentTask.toggleFailed', defaultMessage: 'Failed to toggle status' }));
@@ -73,12 +95,31 @@ const AgentTaskManagement: React.FC = () => {
   };
 
   const handleRunOnce = async (id: number) => {
+    // Prevent triggering if task is already running
+    const currentTask = tasks.find((t) => t.id === id);
+    if (currentTask?.lastRunStatus === 3) {
+      message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
+      return;
+    }
     try {
-      const response = await toggleAgentTaskStatus(id, 1);
+      const response = await triggerAgentTask(id);
       if (response.code === 200) {
         message.success(intl.formatMessage({ id: 'pages.agentTask.triggered', defaultMessage: 'Task triggered' }));
+        // Auto-open log modal to watch execution progress
+        const task = tasks.find((t) => t.id === id);
+        if (task) {
+          setLogTask(task);
+          setLogModalVisible(true);
+        }
+        // Refresh task list to update last run status
+        setTimeout(() => loadTasks(), 1500);
       } else {
-        message.error(response.message || intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
+        // Detect 'already running' error from backend and use i18n message
+        const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
+        const errorMsg = isAlreadyRunning
+          ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
+          : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
+        message.error(errorMsg);
       }
     } catch (error) {
       message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
@@ -124,8 +165,34 @@ const AgentTaskManagement: React.FC = () => {
       title: intl.formatMessage({ id: 'pages.agentTask.cron', defaultMessage: 'Cron' }),
       dataIndex: 'cronExpression',
       key: 'cronExpression',
-      width: 140,
+      width: 130,
       render: (text: string) => <code style={{ fontSize: 12 }}>{text}</code>,
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.agentTask.lastRunStatus', defaultMessage: 'Last Run Status' }),
+      key: 'lastRunStatus',
+      width: 120,
+      render: (_: any, record: API.AgentTaskItem) => {
+        if (record.lastRunStatus === undefined || record.lastRunStatus === null) {
+          return <span style={{ color: '#bfbfbf', fontSize: 12 }}>{intl.formatMessage({ id: 'pages.agentTask.neverRun', defaultMessage: 'Never' })}</span>;
+        }
+        const statusConfig: Record<number, { color: string; icon: React.ReactNode; text: string }> = {
+          0: { color: 'red', icon: <CloseCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.failed', defaultMessage: 'Failed' }) },
+          1: { color: 'green', icon: <CheckCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.success', defaultMessage: 'Success' }) },
+          2: { color: 'orange', icon: <ClockCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }) },
+          3: { color: 'blue', icon: <LoadingOutlined spin />, text: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }) },
+          4: { color: 'default', icon: <MinusCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
+        };
+        const cfg = statusConfig[record.lastRunStatus] || statusConfig[0];
+        return <Tag icon={cfg.icon} color={cfg.color} style={{ fontSize: 11 }}>{cfg.text}</Tag>;
+      },
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.agentTask.lastRunTime', defaultMessage: 'Last Run Time' }),
+      dataIndex: 'lastRunTime',
+      key: 'lastRunTime',
+      width: 160,
+      render: (text: string) => text ? <span style={{ fontSize: 12, color: '#8c8c8c' }}>{text}</span> : <span style={{ color: '#bfbfbf', fontSize: 12 }}>-</span>,
     },
     {
       title: intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' }),
@@ -185,15 +252,15 @@ const AgentTaskManagement: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <Input
                 placeholder={intl.formatMessage({ id: 'pages.agentTask.searchPlaceholder', defaultMessage: 'Search task name' })}
-                prefix={<SearchOutlined style={{ color: '#8c8c9a', fontSize: '12px' }} />}
+                prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
                 value={filters.name}
                 onChange={(e) => setFilters({ ...filters, name: e.target.value })}
                 allowClear
-                style={{ width: 200, borderRadius: '6px', height: '28px', fontSize: '12px' }}
+                style={{ width: 200 }}
               />
               <Select
                 placeholder={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-                style={{ width: 120, height: '28px', fontSize: '12px' }}
+                style={{ width: 120 }}
                 value={filters.taskStatus}
                 onChange={(value) => setFilters({ ...filters, taskStatus: value })}
                 allowClear
@@ -202,10 +269,10 @@ const AgentTaskManagement: React.FC = () => {
                   { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
                 ]}
               />
-              <Button icon={<ReloadOutlined />} onClick={() => { setFilters({ name: '', taskStatus: undefined }); setPageNum(1); }} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
+              <Button icon={<ReloadOutlined />} onClick={() => { setFilters({ name: '', taskStatus: undefined }); setPageNum(1); }}>
                 {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
               </Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingTask(null); setFormVisible(true); }} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px' }}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingTask(null); setFormVisible(true); }}>
                 {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
               </Button>
             </div>
@@ -243,6 +310,7 @@ const AgentTaskManagement: React.FC = () => {
           visible={logModalVisible}
           task={logTask}
           onCancel={() => { setLogModalVisible(false); setLogTask(null); }}
+          onRefresh={() => loadTasks()}
         />
       </div>
     </PageContainer>

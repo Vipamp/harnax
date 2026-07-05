@@ -487,6 +487,8 @@ declare namespace API {
     active?: number;
     createTime?: string;
     updateTime?: string;
+    lastRunStatus?: number;
+    lastRunTime?: string;
   };
 
   type AgentTaskCreateRequest = {

@@ -60,6 +60,7 @@ export default {
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
   'menu.agent.session': '会话',
+  'menu.agent.task': '定时任务',
   
   // 定时任务
   'menu.job': '定时任务',

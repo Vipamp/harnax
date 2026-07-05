@@ -24,7 +24,7 @@ data class AgentTaskLogResponse(
     @Schema(description = "Session ID")
     var sessionId: String = "",
 
-    @Schema(description = "Status (0:failed, 1:success, 2:timeout)")
+    @Schema(description = "Status (0:failed, 1:success, 2:timeout, 3:running)")
     var status: Int = 1,
 
     @Schema(description = "Error info")

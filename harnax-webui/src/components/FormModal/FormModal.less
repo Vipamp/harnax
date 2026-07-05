@@ -5,13 +5,17 @@
 
 /* ===== 弹窗容器样式 ===== */
 .form-modal {
-  border-radius: 12px !important;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15) !important;
+  border-radius: var(--vip-radius-lg) !important;
+  box-shadow: var(--glass-shadow) !important;
   height: auto !important;
   max-height: none !important;
   
   .ant-modal-content {
-    border-radius: 12px !important;
+    border-radius: var(--vip-radius-lg) !important;
+    background: var(--glass-bg-heavy) !important;
+    backdrop-filter: blur(var(--glass-blur-heavy));
+    -webkit-backdrop-filter: blur(var(--glass-blur-heavy));
+    border: 1px solid var(--glass-border) !important;
     /* 注意：不能设置 overflow: hidden，否则会裁剪 textarea 的 resize 手柄 */
     height: auto !important;
     overflow: visible !important;
@@ -78,16 +82,11 @@
   /* 弹窗主体 */
   .ant-modal-body {
     padding: 20px 24px !important;
-    background: var(--vip-bg-container) !important;
+    background: transparent !important;
     border-radius: 0 0 12px 12px !important;
     height: auto !important;
     overflow: visible !important;
     max-height: none !important;
-  }
-  
-  /* 遮罩层 */
-  .ant-modal-mask {
-    backdrop-filter: blur(4px);
   }
 }
 

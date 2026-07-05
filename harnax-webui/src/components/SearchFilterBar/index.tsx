@@ -56,8 +56,11 @@ const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
       style={{
         marginBottom: 24,
         borderRadius: '12px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-        border: '1px solid var(--vip-border)',
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border: '1px solid var(--glass-border)',
+        boxShadow: 'var(--glass-shadow)',
         ...style,
       }}
       styles={{ body: { padding: '12px 20px' } }}
@@ -72,26 +75,16 @@ const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             <Button
               type="primary"
               onClick={onSearch}
-              style={{
-                borderRadius: '6px',
-                height: '28px',
-                padding: '0 12px',
-                fontSize: '12px',
-              }}
             >
               {searchText}
             </Button>
           )}
-          
+            
           {/* 重置按钮 */}
           {showResetButton && (
             <Button
               onClick={onReset}
               style={{
-                borderRadius: '6px',
-                height: '28px',
-                padding: '0 12px',
-                fontSize: '12px',
                 background: 'var(--vip-bg-container)',
                 borderColor: 'var(--vip-border)',
                 color: 'var(--vip-text-primary)',
@@ -150,7 +143,7 @@ export const SearchInput: React.FC<SearchInputProps> = ({
   return (
     <Input
       placeholder={placeholder}
-      prefix={<SearchOutlined style={{ color: '#8c8c9a', fontSize: '12px' }} />}
+      prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
       value={value}
       onChange={(e) => onChange?.(e.target.value)}
       onPressEnter={onSearch}
@@ -159,9 +152,6 @@ export const SearchInput: React.FC<SearchInputProps> = ({
         width: width === 'auto' ? 'auto' : width,
         minWidth: width === 'auto' ? 200 : undefined,
         maxWidth: width === 'auto' ? 400 : undefined,
-        borderRadius: '6px',
-        height: '28px',
-        fontSize: '12px',
         ...style,
       }}
     />
@@ -216,8 +206,6 @@ export const FilterSelect: React.FC<FilterSelectProps> = ({
         width: width === 'auto' ? 'auto' : width,
         minWidth: width === 'auto' ? 100 : undefined,
         maxWidth: width === 'auto' ? 300 : undefined,
-        height: '28px',
-        fontSize: '12px',
         ...style,
       }}
       options={options}
@@ -267,11 +255,8 @@ export const ActionButton: React.FC<ActionButtonProps> = ({
       onClick={onClick}
       danger={danger}
       style={{
-        borderRadius: '6px',
-        height: '28px',
         padding: '0 16px',
         fontWeight: 500,
-        fontSize: '12px',
         ...style,
       }}
     >
@@ -337,9 +322,6 @@ export const FilterDatePicker: React.FC<FilterDatePickerProps> = ({
       className="filter-date-picker"
       style={{
         width,
-        height: '28px',
-        fontSize: '12px',
-        borderRadius: '6px',
         ...style,
       }}
       disabledDate={disabledDate}

@@ -1,1 +1,2 @@
-org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration
+org.mybatis.spring.boot.autoconfigure.MybatisLanguageDriverAutoConfiguration
+org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration

@@ -35,4 +35,10 @@ interface AgentTaskService {
 
     /** Pause a scheduled task via scheduler */
     fun pauseTask(id: Long): ResultVo<Void>
+
+    /** Manually trigger a one-time task execution via scheduler */
+    fun triggerTask(id: Long): ResultVo<Void>
+
+    /** Stop a running task execution via scheduler */
+    fun stopTask(logId: Long): ResultVo<Void>
 }

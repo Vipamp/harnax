@@ -1,8 +1,18 @@
 package com.agnetix.harnax.scheduler.service
 
 import com.agnetix.harnax.entity.AgentTask
+import java.time.LocalDateTime
 
 interface SchedulerService {
+
+    /**
+     * Data class tracking a running task execution for stop capability.
+     */
+    data class RunningTaskInfo(
+        val logId: Long,
+        val taskId: Long,
+        val sessionId: String,
+    )
 
     /**
      * Schedule a task for recurring execution based on its cron expression.
@@ -35,10 +45,23 @@ interface SchedulerService {
     fun runTaskOnce(id: Long): Boolean
 
     /**
+     * Execute a task once (shared logic for both Quartz and manual trigger).
+     * Creates task log, registers in runningTasks, calls router, handles result/cleanup.
+     * This method is synchronous and blocks until execution completes.
+     */
+    fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
+
+    /**
      * Manually trigger a task execution (bypassing Quartz scheduling).
      * Executes asynchronously and returns immediately.
      */
     fun triggerManually(id: Long): Boolean
+
+    /**
+     * Stop a running task execution by logId.
+     * Sends INTERRUPT command to router and interrupts the executing thread.
+     */
+    fun stopTask(logId: Long): Boolean
 
     /**
      * Get the list of currently scheduled tasks.

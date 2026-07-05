@@ -7,12 +7,18 @@ import com.agnetix.harnax.common.dto.ResultVo
  */
 interface SchedulerClient {
 
-    /** 触发一次性任务执行 */
+    /** Trigger a one-time task execution (sent to one instance only) */
     fun triggerTask(id: Long): ResultVo<Void>
 
-    /** 启动定时任务调度 */
+    /** Start scheduled task (broadcast to all instances) */
     fun startTask(id: Long): ResultVo<Void>
 
-    /** 暂停定时任务调度 */
+    /** Pause scheduled task (broadcast to all instances) */
     fun pauseTask(id: Long): ResultVo<Void>
+
+    /** Reload all tasks from DB into Quartz (broadcast to all instances) */
+    fun reloadTasks(): ResultVo<Void>
+
+    /** Stop a running task execution (broadcast to all instances, only the running one will act) */
+    fun stopTask(logId: Long): ResultVo<Void>
 }

@@ -23,21 +23,21 @@ const Settings: ProLayoutProps & {
   token: {
     // 头部配置
     header: {
-      colorBgHeader: '#ffffff',
+      colorBgHeader: 'rgba(255, 255, 255, 0.72)',
       colorHeaderTitle: '#1a1a2e',
       colorTextMenu: '#4a4a6a',
       colorTextMenuSelected: '#4f6ef7',
-      colorBgMenuItemSelected: '#eef1fe',
-      colorBgMenuItemHover: '#f5f7ff',
+      colorBgMenuItemSelected: 'rgba(238, 241, 254, 0.6)',
+      colorBgMenuItemHover: 'rgba(245, 247, 255, 0.6)',
       heightLayoutHeader: 64,
     },
     
     // 侧边栏配置
     sider: {
-      colorMenuBackground: '#ffffff',
+      colorMenuBackground: 'transparent',
       colorTextMenu: '#4a4a6a',
       colorTextMenuSelected: '#4f6ef7',
-      colorBgMenuItemSelected: '#eef1fe',
+      colorBgMenuItemSelected: 'rgba(238, 241, 254, 0.6)',
       colorTextMenuItemHover: '#4f6ef7',
     },
     

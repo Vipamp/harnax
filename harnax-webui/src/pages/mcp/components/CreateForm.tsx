@@ -83,7 +83,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         >
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.mcp.namePlaceholder', defaultMessage: 'Enter MCP name, e.g.: filesystem-server' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -95,7 +94,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             rows={3}
             placeholder={intl.formatMessage({ id: 'pages.mcp.descriptionPlaceholder', defaultMessage: 'Enter MCP service description (optional)' })}
             maxLength={500}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -109,7 +107,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             defaultValue="sse"
             onChange={(val: string) => setMcpType(val)}
             options={mcpTypeOptions}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -122,7 +119,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           >
             <Input 
               placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
-              style={{ fontSize: '12px' }}
             />
           </Form.Item>
         )}
@@ -139,7 +135,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           >
             <Input 
               placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
-              style={{ fontSize: '12px' }}
             />
           </Form.Item>
         )}
@@ -169,54 +164,24 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
 
         {/* 按钮区域 */}
         <Form.Item>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'flex-end', 
-            gap: '10px',
-            marginTop: '12px',
-            paddingTop: '10px',
-            borderTop: '1px solid var(--vip-border)'
-          }}>
-            <Button
-              icon={<ThunderboltOutlined />}
-              loading={testing}
-              onClick={handleConnectivityTest}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px'
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
-            </Button>
-            <Button
-              onClick={() => form.resetFields()}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-            </Button>
-            <Button 
-              type="primary" 
-              onClick={() => form.submit()}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.mcp.submit', defaultMessage: 'Submit' })}
-            </Button>
-          </div>
+          <Button
+            icon={<ThunderboltOutlined />}
+            loading={testing}
+            onClick={handleConnectivityTest}
+          >
+            {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
+          </Button>
+          <Button
+            onClick={() => form.resetFields()}
+          >
+            {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+          </Button>
+          <Button 
+            type="primary" 
+            onClick={() => form.submit()}
+          >
+            {intl.formatMessage({ id: 'pages.mcp.submit', defaultMessage: 'Submit' })}
+          </Button>
         </Form.Item>
       </Form>
     </FormModal>

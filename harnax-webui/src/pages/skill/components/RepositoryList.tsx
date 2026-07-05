@@ -77,7 +77,6 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
             padding: '16px',
             cursor: 'pointer',
             backgroundColor: selectedRepository?.id === repository.id ? 'var(--vip-primary-light)' : 'var(--vip-bg-container)',
-            borderRadius: '10px',
             marginBottom: '12px',
             border: selectedRepository?.id === repository.id ? '2px solid #1890ff' : '1.5px solid var(--vip-border)',
             boxShadow: selectedRepository?.id === repository.id 

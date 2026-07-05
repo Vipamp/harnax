@@ -25,7 +25,7 @@ import java.time.LocalDateTime
  * For those endpoints we record the start/end time and the HTTP status set by the
  * controller on the raw response.
  */
-@Order(Ordered.HIGHEST_PRECEDENCE + 5)
+@Order(Ordered.HIGHEST_PRECEDENCE + 15)
 class ApiCallLogFilter(
     private val apiCallLogService: ApiCallLogService,
     private val sessionInfoClient: SessionInfoClient,
@@ -53,6 +53,7 @@ class ApiCallLogFilter(
             "/api/router/agent/command",
             "/api/router/agent/session",
             "/api/router/agent/chat/history",
+            "/api/router/agent/workspace",
         )
     }
 

@@ -20,8 +20,9 @@ class InternalTokenProvider(
     private val log = LoggerFactory.getLogger(InternalTokenProvider::class.java)
     private val signingKey: SecretKey = Keys.hmacShaKeyFor(sharedSecret.toByteArray(StandardCharsets.UTF_8))
 
-    private var cachedToken: String? = null
-    private var cachedExpiresAt: Long = 0L
+    @Volatile private var cachedToken: String? = null
+
+    @Volatile private var cachedExpiresAt: Long = 0L
 
     fun generateToken(): String {
         val now = System.currentTimeMillis()
@@ -30,18 +31,26 @@ class InternalTokenProvider(
             return cached
         }
 
-        val expiresAt = now + tokenTtlSeconds * 1000
-        val token = Jwts.builder()
-            .subject(serviceId)
-            .issuedAt(Date(now))
-            .expiration(Date(expiresAt))
-            .id(UUID.randomUUID().toString())
-            .signWith(signingKey)
-            .compact()
+        // Double-check locking: only one thread regenerates the token
+        synchronized(this) {
+            val recheck = cachedToken
+            if (recheck != null && (cachedExpiresAt - now) > REFRESH_THRESHOLD_MS) {
+                return recheck
+            }
 
-        cachedToken = token
-        cachedExpiresAt = expiresAt
-        return token
+            val expiresAt = now + tokenTtlSeconds * 1000
+            val token = Jwts.builder()
+                .subject(serviceId)
+                .issuedAt(Date(now))
+                .expiration(Date(expiresAt))
+                .id(UUID.randomUUID().toString())
+                .signWith(signingKey)
+                .compact()
+
+            cachedToken = token
+            cachedExpiresAt = expiresAt
+            return token
+        }
     }
 
     fun verifyToken(token: String): AuthContext {

@@ -178,7 +178,7 @@ class AgentServiceClient(
     /**
      * List files in a workspace directory on agent-service.
      */
-    suspend fun workspaceListFiles(baseUrl: String, sessionId: String, path: String): ResultVo<List<Map<String, Any>>> {
+    suspend fun workspaceListFiles(baseUrl: String, sessionId: String, path: String): ResultVo<List<Map<String, Any>>> = try {
         val response = webClient.get()
             .uri { builder ->
                 builder.scheme("http")
@@ -191,13 +191,16 @@ class AgentServiceClient(
             .retrieve()
             .bodyToMono(object : ParameterizedTypeReference<ResultVo<List<Map<String, Any>>>>() {})
             .awaitSingleOrNull()
-        return response ?: ResultVo.error("No response from agent-service")
+        response ?: ResultVo.error("No response from agent-service")
+    } catch (e: Exception) {
+        log.error("[Router→Agent] workspaceListFiles failed for session=$sessionId: ${e.message}")
+        ResultVo.error("Agent workspace list failed: ${extractErrorMessage(e)}")
     }
 
     /**
      * Read a file from workspace on agent-service.
      */
-    suspend fun workspaceReadFile(baseUrl: String, sessionId: String, path: String): ResultVo<Map<String, Any>> {
+    suspend fun workspaceReadFile(baseUrl: String, sessionId: String, path: String): ResultVo<Map<String, Any>> = try {
         val response = webClient.get()
             .uri { builder ->
                 builder.scheme("http")
@@ -210,13 +213,16 @@ class AgentServiceClient(
             .retrieve()
             .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
             .awaitSingleOrNull()
-        return response ?: ResultVo.error("No response from agent-service")
+        response ?: ResultVo.error("No response from agent-service")
+    } catch (e: Exception) {
+        log.error("[Router→Agent] workspaceReadFile failed for session=$sessionId, path=$path: ${e.message}")
+        ResultVo.error("Agent workspace read failed: ${extractErrorMessage(e)}")
     }
 
     /**
      * Get workspace status for one or multiple sessions from agent-service.
      */
-    suspend fun workspaceStatus(baseUrl: String, sessionIds: String): ResultVo<Map<String, Map<String, Any>>> {
+    suspend fun workspaceStatus(baseUrl: String, sessionIds: String): ResultVo<Map<String, Map<String, Any>>> = try {
         val uri = java.net.URI.create("$baseUrl").resolve("/api/agent/workspace/status")
         log.info("[AgentServiceClient] Forwarding workspace status request for sessions: $sessionIds")
         val response = webClient.get()
@@ -232,8 +238,11 @@ class AgentServiceClient(
             .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Map<String, Any>>>>() {})
             .awaitSingleOrNull()
 
-        log.info("[AgentServiceClient] Workspace status response: code=${response?.code}, message=${response?.message}")
-        return response ?: ResultVo.error("No response from agent-service")
+        log.debug("[AgentServiceClient] Workspace status response: code=${response?.code}")
+        response ?: ResultVo.error("No response from agent-service")
+    } catch (e: Exception) {
+        log.error("[Router→Agent] workspaceStatus failed for sessions=$sessionIds: ${e.message}")
+        ResultVo.error("Agent workspace status failed: ${extractErrorMessage(e)}")
     }
 
     /**
@@ -254,14 +263,19 @@ class AgentServiceClient(
         body.part("file", fileResource)
         body.part("path", path)
 
-        return webClient.post()
-            .uri(uri)
-            .contentType(MediaType.MULTIPART_FORM_DATA)
-            .bodyValue(body.build())
-            .retrieve()
-            .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
-            .awaitSingleOrNull()
-            ?: ResultVo.error("No response from agent-service")
+        return try {
+            webClient.post()
+                .uri(uri)
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .bodyValue(body.build())
+                .retrieve()
+                .bodyToMono(object : ParameterizedTypeReference<ResultVo<Map<String, Any>>>() {})
+                .awaitSingleOrNull()
+                ?: ResultVo.error("No response from agent-service")
+        } catch (e: Exception) {
+            log.error("[Router→Agent] workspaceUpload failed for session=$sessionId, fileName=$fileName: ${e.message}")
+            ResultVo.error("Agent workspace upload failed: ${extractErrorMessage(e)}")
+        }
     }
 
     /**
@@ -269,7 +283,7 @@ class AgentServiceClient(
      *
      * @return a Pair of (file bytes, content type string), or null if the response was empty.
      */
-    suspend fun workspaceDownload(baseUrl: String, sessionId: String, path: String): Pair<ByteArray, String>? {
+    suspend fun workspaceDownload(baseUrl: String, sessionId: String, path: String): Pair<ByteArray, String>? = try {
         val response = webClient.get()
             .uri { builder ->
                 builder.scheme("http")
@@ -283,19 +297,37 @@ class AgentServiceClient(
             .toEntity(ByteArray::class.java)
             .awaitSingleOrNull()
 
-        return if (response != null && response.body != null) {
+        if (response != null && response.body != null) {
             val contentType = response.headers.contentType?.toString() ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
-            Pair(response.body!!, contentType)
+            val body = response.body ?: return null
+            Pair(body, contentType)
         } else {
             null
         }
+    } catch (e: Exception) {
+        log.error("[Router→Agent] workspaceDownload failed for session=$sessionId, path=$path: ${e.message}")
+        throw e
     }
 
     // ==================== Internal helpers ====================
 
+    /**
+     * Extract a concise error message from exceptions, including HTTP status for WebClientResponseException.
+     */
+    private fun extractErrorMessage(e: Exception): String {
+        if (e is org.springframework.web.reactive.function.client.WebClientResponseException) {
+            return "HTTP ${e.statusCode.value()}: ${e.responseBodyAsString.take(200)}"
+        }
+        return e.message ?: e.javaClass.simpleName
+    }
+
     private fun logRequest(url: String, request: Any) {
-        val json = objectMapper.writeValueAsString(request)
-        log.info("[Router→Agent] POST $url, body=$json")
+        if (log.isDebugEnabled) {
+            val json = objectMapper.writeValueAsString(request)
+            log.debug("[Router→Agent] POST $url, body=$json")
+        } else {
+            log.info("[Router→Agent] POST $url, type=${request.javaClass.simpleName}")
+        }
     }
 
     private fun extractHost(baseUrl: String): String = java.net.URI.create(baseUrl).host

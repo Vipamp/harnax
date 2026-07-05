@@ -143,7 +143,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
         >
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.session.namePlaceholder', defaultMessage: 'Please enter session name' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -155,7 +154,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
             rows={1}
             placeholder={intl.formatMessage({ id: 'pages.session.descriptionPlaceholder', defaultMessage: 'Please enter session description (optional)' })}
             maxLength={500}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -173,7 +171,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
               label: `${agent.name}${agent.description ? ` - ${agent.description}` : ''}`,
               value: agent.id,
             }))}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -191,41 +188,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
 
         {/* 按钮区域 */}
         <Form.Item>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'flex-end', 
-            gap: '10px',
-            marginTop: '12px',
-            paddingTop: '10px',
-            borderTop: '1px solid var(--vip-border)'
-          }}>
-            <Button 
-              onClick={handleClose}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
-            </Button>
-            <Button 
-              type="primary" 
-              onClick={handleCreateSubmit}
-              loading={loading}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
-            </Button>
-          </div>
+          <Button 
+            onClick={handleClose}
+          >
+            {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
+          </Button>
+          <Button 
+            type="primary" 
+            onClick={handleCreateSubmit}
+            loading={loading}
+          >
+            {intl.formatMessage({ id: 'pages.common.create', defaultMessage: 'Create' })}
+          </Button>
         </Form.Item>
       </Form>
     </FormModal>

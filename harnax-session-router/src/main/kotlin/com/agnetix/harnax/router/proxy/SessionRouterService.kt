@@ -181,27 +181,7 @@ class SessionRouterService(
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Confirm stream proxy for session=$sessionId -> instance=${instance.instanceId}")
 
-            return agentServiceClient.confirmStream(instance.getBaseUrl(), request)
-                .doOnComplete {
-                    circuitBreaker.recordSuccess(instance.instanceId)
-                    streamOkCounter.increment()
-                    sessionMappingService.refreshActiveTime(sessionId)
-                }
-                .doOnCancel {
-                    log.info("Confirm stream cancelled by client for session=$sessionId")
-                }
-                .onErrorResume { e ->
-                    circuitBreaker.recordFailure(instance.instanceId)
-                    streamErrorCounter.increment()
-                    log.error("Confirm stream proxy error for session=$sessionId: ${e.message}", e)
-                    Flux.just(
-                        ErrorChatEvent(
-                            code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
-                            message = e.message ?: "Failed to reach agent-service",
-                        ),
-                        EndEventChatEvent(),
-                    )
-                }
+            return buildConfirmStreamFlux(sessionId, instance, request, attempt = 0)
         } catch (e: Exception) {
             log.error("Failed to resolve instance for confirm stream session=$sessionId: ${e.message}", e)
             return Flux.just(
@@ -211,6 +191,76 @@ class SessionRouterService(
                 ),
                 EndEventChatEvent(),
             )
+        }
+    }
+
+    private fun buildConfirmStreamFlux(
+        sessionId: String,
+        instance: AgentInstance,
+        request: ConfirmAgentRequest,
+        attempt: Int,
+    ): Flux<ChatEvent> {
+        return agentServiceClient.confirmStream(instance.getBaseUrl(), request)
+            .doOnComplete {
+                circuitBreaker.recordSuccess(instance.instanceId)
+                streamOkCounter.increment()
+                sessionMappingService.refreshActiveTime(sessionId)
+            }
+            .doOnCancel {
+                log.info("Confirm stream cancelled by client for session=$sessionId")
+            }
+            .onErrorResume { e ->
+                circuitBreaker.recordFailure(instance.instanceId)
+                streamErrorCounter.increment()
+                log.error("Confirm stream proxy error for session=$sessionId on ${instance.instanceId}: ${e.message}", e)
+
+                if (isConnectivityError(e) && attempt < failoverMaxRetries) {
+                    return@onErrorResume tryConfirmStreamFailover(sessionId, request, attempt + 1)
+                }
+
+                Flux.just(
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                        message = e.message ?: "Failed to reach agent-service",
+                    ),
+                    EndEventChatEvent(),
+                )
+            }
+    }
+
+    private fun tryConfirmStreamFailover(
+        sessionId: String,
+        request: ConfirmAgentRequest,
+        attempt: Int,
+    ): Flux<ChatEvent> {
+        return Flux.defer {
+            try {
+                val newInstanceId = sessionMappingService.rerouteSession(sessionId)
+                val newInstance = instanceRegistry.getInstance(newInstanceId)
+
+                if (newInstance == null || circuitBreaker.isOpen(newInstance.instanceId)) {
+                    return@defer Flux.just(
+                        ErrorChatEvent(
+                            code = HarnaxErrorCode.ROUTER_NO_INSTANCE.code,
+                            message = "No available instance for confirm failover",
+                        ),
+                        EndEventChatEvent(),
+                    )
+                }
+
+                log.info("Confirm stream failover attempt $attempt for session $sessionId -> ${newInstance.instanceId}")
+                failoverCounter("confirm-stream", attempt).increment()
+                buildConfirmStreamFlux(sessionId, newInstance, request, attempt)
+            } catch (e: Exception) {
+                log.error("Confirm stream failover attempt $attempt failed for session $sessionId: ${e.message}", e)
+                Flux.just(
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.ROUTER_PROXY_ERROR.code,
+                        message = "Failover failed: ${e.message}",
+                    ),
+                    EndEventChatEvent(),
+                )
+            }
         }
     }
 
@@ -283,18 +333,13 @@ class SessionRouterService(
     }
 
     suspend fun proxyWorkspaceStatus(sessionIds: String): ResultVo<Map<String, Map<String, Any>>> {
-        log.info("[proxyWorkspaceStatus] Starting for sessions: $sessionIds")
         // Use the first sessionId for routing; all sessions should be on the same agent-service
         val firstId = sessionIds.split(",").firstOrNull()?.trim() ?: return ResultVo.success(emptyMap())
-        log.info("[proxyWorkspaceStatus] Using firstId for routing: $firstId")
         setMDC(firstId, null)
         try {
             return executeWithRetry(firstId, "workspaceStatus") { targetInstance ->
                 agentServiceClient.workspaceStatus(targetInstance.getBaseUrl(), sessionIds)
             }
-        } catch (e: Exception) {
-            log.error("[proxyWorkspaceStatus] Exception: ${e.javaClass.simpleName}: ${e.message}", e)
-            throw e
         } finally {
             clearMDC()
         }
@@ -432,6 +477,13 @@ class SessionRouterService(
             circuitBreaker.recordFailure(instance.instanceId)
             val errorMsg = describeProxyError(e, endpoint, instance)
             log.error("Failed to proxy $endpoint for session $sessionId: $errorMsg", e)
+
+            // 4xx errors are not retryable — the request itself is invalid
+            if (!isRetryableError(e)) {
+                log.warn("Non-retryable error for $endpoint, session $sessionId — skipping failover")
+                throw e
+            }
+
             // Clean up MDC before failover to avoid pollution
             restoreMdc("instanceId", oldInstanceId)
             return retryFailover(sessionId, endpoint, action)
@@ -482,7 +534,7 @@ class SessionRouterService(
     ): Flux<ChatEvent> {
         return agentServiceClient.chatStream(instance.getBaseUrl(), request, requestId)
             .doOnNext { event ->
-                log.info("[Router←Agent] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
+                log.debug("[Router←Agent] Stream event received for session=$sessionId: ${event.javaClass.simpleName}")
             }
             .doOnComplete {
                 log.info("[Router←Agent] Stream completed for session=$sessionId")
@@ -567,6 +619,25 @@ class SessionRouterService(
             if (connectivityExceptions.any { it.isInstance(current) }) return true
             current = current.cause
         }
+        return false
+    }
+
+    /**
+     * Determine if an error is retryable. 4xx HTTP errors are NOT retryable
+     * (bad request, not found, auth failures); connectivity errors and 5xx are.
+     */
+    private fun isRetryableError(e: Throwable): Boolean {
+        if (isConnectivityError(e)) return true
+        var current: Throwable? = e
+        while (current != null) {
+            if (current is WebClientResponseException) {
+                val status = current.statusCode.value()
+                // Only retry on 5xx (server errors) or 429 (rate limited)
+                return status >= 500 || status == 429
+            }
+            current = current.cause
+        }
+        // Non-HTTP, non-connectivity errors: don't retry (e.g., deserialization failures)
         return false
     }
 

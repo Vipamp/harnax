@@ -462,6 +462,10 @@ const Login: React.FC = () => {
               />
             );
           })}
+          {/* 玻璃装饰元素 */}
+          <div style={{ position: 'absolute', top: '15%', right: '10%', width: 80, height: 80, borderRadius: '50%', background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.4)' }} />
+          <div style={{ position: 'absolute', bottom: '20%', left: '8%', width: 120, height: 60, borderRadius: '30px', background: 'rgba(22,119,255,0.12)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.3)' }} />
+          <div style={{ position: 'absolute', top: '45%', left: '15%', width: 50, height: 50, borderRadius: '50%', background: 'rgba(54,203,203,0.15)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.35)' }} />
         </div>
 
         {/* 顶部 Logo 区域 */}
@@ -527,7 +531,15 @@ const Login: React.FC = () => {
 
       {/* 右侧登录操作区 */}
       <div className={styles.rightPanel}>
-        <div className={styles.loginCard}>
+        <div className={styles.loginCard} style={{
+          background: 'rgba(255,255,255,0.7)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          borderRadius: '24px',
+          padding: '40px 36px',
+          border: '1px solid rgba(255,255,255,0.5)',
+          boxShadow: '0 8px 40px rgba(31,38,135,0.1)',
+        }}>
           {/* 登录头部 */}
           <div className={styles.loginHeader}>
             <h1 className={styles.loginTitle}>欢迎登录 OpenDuck</h1>

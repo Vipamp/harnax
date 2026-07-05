@@ -45,7 +45,7 @@
             token_usage = #{tokenUsage},
             end_time = #{endTime},
             duration_ms = #{durationMs}
-        WHERE id = #{id}
+        WHERE id = #{id} AND status = 3
     </update>
 
     <select id="selectLogList" resultMap="AgentTaskLogResultMap">
@@ -76,6 +76,14 @@
 
     <select id="selectByTaskId" resultMap="AgentTaskLogResultMap">
         SELECT * FROM agent_task_log WHERE task_id = #{taskId} ORDER BY create_time DESC
+    </select>
+
+    <select id="selectRunningByTaskId" resultMap="AgentTaskLogResultMap">
+        SELECT * FROM agent_task_log WHERE task_id = #{taskId} AND status = 3 ORDER BY create_time DESC
+    </select>
+
+    <select id="selectAllRunningLogs" resultMap="AgentTaskLogResultMap">
+        SELECT * FROM agent_task_log WHERE status = 3 ORDER BY create_time DESC
     </select>
 
 </mapper>

@@ -25,6 +25,7 @@ import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClient
 import io.agentscope.harness.agent.sandbox.impl.docker.DockerSandboxClientOptions
 import io.agentscope.harness.agent.sandbox.snapshot.SandboxSnapshotSpec
 import org.slf4j.LoggerFactory
+import reactor.core.Disposable
 import reactor.core.publisher.Flux
 import reactor.core.scheduler.Schedulers
 import java.nio.file.Files
@@ -54,6 +55,13 @@ class HarnessAgentWrapper(
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
+
+    /**
+     * Holds the active [Disposable] for the blocking [call] so that [interrupt] can cancel it.
+     * Only one call per wrapper instance should be active at any time.
+     */
+    @Volatile
+    private var activeCallDisposable: Disposable? = null
 
     fun callStream(
         prompt: String,
@@ -89,18 +97,49 @@ class HarnessAgentWrapper(
     fun call(msgs: List<Msg>): ChatResponse {
         val ctxResult = buildRuntimeContext()
         try {
-            val responseMsg = harnessAgent.call(msgs, ctxResult.runtimeContext)
-                .block(Duration.ofMinutes(5))
-            val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
-            val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
-            return ChatResponse(
-                sessionId = sessionId,
-                content = content,
-                thinking = thinking?.ifEmpty { null },
-            )
+            val mono = harnessAgent.call(msgs, ctxResult.runtimeContext)
+                .timeout(Duration.ofMinutes(5))
+            // subscribe() kicks off the computation and gives us a Disposable to cancel later.
+            // block() then waits for the result on the current thread.
+            activeCallDisposable = mono.subscribe()
+            try {
+                val responseMsg = mono.block()
+                val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
+                val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
+                return ChatResponse(
+                    sessionId = sessionId,
+                    content = content,
+                    thinking = thinking?.ifEmpty { null },
+                )
+            } catch (e: java.util.concurrent.CancellationException) {
+                log.info("[harness] Call cancelled via dispose for session={}", sessionId)
+                return ChatResponse(sessionId = sessionId, content = "", thinking = null)
+            } finally {
+                activeCallDisposable = null
+            }
         } finally {
             persistKeepAliveSnapshot(ctxResult)
         }
+    }
+
+    /**
+     * Interrupt the ongoing agent execution.
+     *
+     * Two mechanisms are used:
+     * 1. Disposes the active [Disposable] from [call] — this cancels the Mono subscription chain
+     *    and causes `block()` to throw [java.util.concurrent.CancellationException].
+     * 2. Calls [HarnessAgent.interrupt] as a best-effort signal to the agent's internal loop.
+     */
+    fun interrupt() {
+        log.info("[harness] Interrupting agent for session={}", sessionId)
+        // 1. Cancel the Mono subscription (primary mechanism for blocking call())
+        val disposable = activeCallDisposable
+        if (disposable != null && !disposable.isDisposed) {
+            disposable.dispose()
+            log.info("[harness] Disposed active call subscription for session={}", sessionId)
+        }
+        // 2. Best-effort signal to agent internals (useful for streaming case)
+        harnessAgent.interrupt()
     }
 
     private fun callStreamInternal(

@@ -8,12 +8,13 @@ import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
 
 /**
- * Channel 实体 → SDK 层 [ChannelSpec] 的转换器。
+ * Converter from the Channel entity to the SDK-layer [ChannelSpec].
  *
- * 数据库表 channel 仅保留公共业务字段，渠道差异化配置（appId/appSecret/
- * encodingAesKey/webhookUrl/token 等）统一存于 [Channel.configJson]。
- * 启动时通过本工具反序列化 configJson 并填充到 ChannelSpec 中，
- * 以便适配 SDK / 各渠道适配器现有契约。
+ * The database channel table only stores common business fields. Channel-specific
+ * configuration (appId/appSecret/encodingAesKey/webhookUrl/token, etc.) is stored
+ * uniformly in [Channel.configJson]. On startup this utility deserializes configJson
+ * and populates a ChannelSpec to satisfy the contracts expected by the SDK and each
+ * channel adaptor.
  */
 object ChannelEntityConverter {
 

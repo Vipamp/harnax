@@ -170,7 +170,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         >
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.model.provider.name.placeholder', defaultMessage: 'Please enter provider name' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -182,12 +181,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
             rows={1}
             placeholder={intl.formatMessage({ id: 'pages.model.provider.description.placeholder', defaultMessage: 'Please enter provider description' })}
             maxLength={500}
-            style={{ 
-              resize: 'vertical',
-              overflow: 'auto',
-              minHeight: '32px',
-              fontSize: '12px',
-            }}
           />
         </Form.Item>
 
@@ -198,7 +191,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         >
           <Input.Password 
             placeholder={intl.formatMessage({ id: 'pages.model.apiKey.placeholder', defaultMessage: 'Please enter API Key' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -215,7 +207,6 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         >
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.model.apiUrl.placeholder', defaultMessage: 'e.g.: https://dashscope.aliyuncs.com/compatible-mode/v1' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -233,43 +224,19 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ visible, values, onCancel, 
         </Form.Item>
 
         {/* 按钮区域 */}
-        <Form.Item wrapperCol={{ span: 24 }} style={{ marginBottom: 0 }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'flex-end', 
-            gap: '10px',
-            marginTop: '12px',
-            paddingTop: '10px',
-            paddingLeft: '168px',  // 与表单项保持一致的左侧间距
-            borderTop: '1px solid var(--vip-border)'
-          }}>
-            <Button 
-              onClick={handleReset}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-            </Button>
-            <Button 
-              type="primary" 
-              onClick={handleSubmit}
-              loading={loading}
-              style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                height: '32px',
-                padding: '4px 20px',
-                borderRadius: '6px',
-              }}
-            >
-              {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
-            </Button>
-          </div>
+        <Form.Item wrapperCol={{ span: 24 }}>
+          <Button 
+            onClick={handleReset}
+          >
+            {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
+          </Button>
+          <Button 
+            type="primary" 
+            onClick={handleSubmit}
+            loading={loading}
+          >
+            {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
+          </Button>
         </Form.Item>
       </Form>
     </FormModal>

@@ -60,6 +60,7 @@ export default {
   'menu.agent': 'Agent',
   'menu.agent.management': 'Agent Management',
   'menu.agent.session': 'Session',
+  'menu.agent.task': 'Scheduled Tasks',
   
   // Job
   'menu.job': 'Scheduled Tasks',

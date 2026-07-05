@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.Optional
 import java.util.concurrent.TimeUnit
 
 @Component
@@ -20,18 +21,19 @@ class RemoteApiKeyStore(
 
     private val log = LoggerFactory.getLogger(RemoteApiKeyStore::class.java)
 
+    /**
+     * Uses Optional<ApiKeyInfo> to cache both hits and misses (null → empty Optional).
+     * Atomic loading via Caffeine.get(key) { loader } prevents cache stampede.
+     */
     private val cache = Caffeine.newBuilder()
         .maximumSize(1000)
         .expireAfterWrite(5, TimeUnit.MINUTES)
-        .build<String, ApiKeyInfo?>()
+        .build<String, Optional<ApiKeyInfo>>()
 
-    override fun findByKeyHash(keyHash: String): ApiKeyInfo? {
-        cache.asMap()[keyHash]?.let { return it }
-
-        val info = fetchFromAdmin(keyHash) ?: return null
-        cache.put(keyHash, info)
-        return info
-    }
+    override fun findByKeyHash(keyHash: String): ApiKeyInfo? = cache.get(keyHash) { hash ->
+        val info = fetchFromAdmin(hash)
+        Optional.ofNullable(info)
+    }.orElse(null)
 
     private fun fetchFromAdmin(hash: String): ApiKeyInfo? {
         return try {

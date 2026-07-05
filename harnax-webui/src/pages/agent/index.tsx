@@ -556,12 +556,6 @@ const AgentManagement: React.FC = () => {
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => setCreateModalVisible(true)}
-              style={{ 
-                borderRadius: '10px', 
-                height: '44px',
-                padding: '0 24px',
-                fontWeight: 600,
-              }}
             >
               {intl.formatMessage({ id: 'pages.agent.create', defaultMessage: 'Create Agent' })}
             </Button>

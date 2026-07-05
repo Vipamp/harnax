@@ -315,7 +315,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <TextArea 
                 rows={3} 
                 placeholder={intl.formatMessage({ id: 'pages.agent.descriptionPlaceholder', defaultMessage: 'Please enter description' })}
-                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </Form.Item>
 
@@ -326,7 +325,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <TextArea 
                 rows={8} 
                 placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt, supports Markdown syntax' })}
-                style={{ fontFamily: 'monospace', fontSize: '12px' }}
               />
             </Form.Item>
 
@@ -405,7 +403,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                   placeholder={intl.formatMessage({ id: 'pages.agent.mcpPlaceholder', defaultMessage: 'Select MCP service (optional, can be skipped)' })}
                   value={config.mcpId}
                   onChange={(value) => handleMcpConfigChange(index, 'mcpId', value)}
-                  style={{ width: '100%' }}
                   allowClear
                   options={mcpServers.map(mcp => ({
                     label: mcp.name,
@@ -475,7 +472,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                         handleSkillConfigChange(index, 'skillId', value, config.repositoryId);
                       }
                     }}
-                    style={{ flex: 1, fontSize: '14px' }}
+                    style={{ flex: 1 }}
                     disabled={!config.repositoryId}
                     allowClear
                     labelInValue
@@ -512,43 +509,18 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         )}
       </Form>
 
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        marginTop: '12px',
-        paddingTop: '10px',
-        borderTop: '1px solid var(--vip-border)'
-      }}>
         <Button 
           disabled={currentStep === 0} 
           onClick={handlePrev}
-          style={{
-            fontSize: '12px',
-            fontWeight: 500,
-            height: '32px',
-            padding: '4px 20px',
-            borderRadius: '6px',
-            background: 'var(--vip-bg-container)',
-            borderColor: 'var(--vip-border)',
-            color: 'var(--vip-text-primary)',
-          }}
         >
           {intl.formatMessage({ id: 'pages.common.previous', defaultMessage: 'Previous' })}
         </Button>
         <Button 
           type="primary" 
           onClick={handleNext}
-          style={{
-            fontSize: '12px',
-            fontWeight: 500,
-            height: '32px',
-            padding: '4px 20px',
-            borderRadius: '6px',
-          }}
         >
           {currentStep === 2 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
-      </div>
     </FormModal>
   );
 };

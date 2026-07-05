@@ -11,6 +11,7 @@ import com.agnetix.harnax.channel.sdk.message.TextRichMessage
 import com.github.wechat.ilink.sdk.core.config.ILinkConfig
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
 import org.slf4j.LoggerFactory
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * WeChat Long Polling Communication Mode
@@ -34,6 +35,9 @@ class WechatLongPollingMode(
 
     private val logger = LoggerFactory.getLogger(WechatLongPollingMode::class.java)
 
+    // Tracks channels with active login/polling threads to prevent duplicate starts
+    private val activeChannels = ConcurrentHashMap.newKeySet<Long>()
+
     override fun getModeName(): String = "long-polling"
 
     override fun isCallbackMode(): Boolean = false
@@ -52,6 +56,11 @@ class WechatLongPollingMode(
      */
     override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         val channelId = channel.id
+
+        if (!activeChannels.add(channelId)) {
+            logger.warn("Long-polling already active for channel: $channelId, skipping duplicate start")
+            return
+        }
 
         // Build iLink configuration
         val iLinkConfig = buildILinkConfig(channel)
@@ -82,6 +91,8 @@ class WechatLongPollingMode(
                 }
             } catch (e: Exception) {
                 logger.error("WeChat long-polling mode startup failed for channel $channelId: ${e.message}", e)
+            } finally {
+                activeChannels.remove(channelId)
             }
         }, "wechat-login-$channelId")
 
@@ -94,6 +105,7 @@ class WechatLongPollingMode(
      */
     override fun stop(channel: ChannelSpec) {
         val channelId = channel.id
+        activeChannels.remove(channelId)
         botService.closeClient(channelId)
         logger.info("WeChat long-polling mode stopped for channel $channelId")
     }

@@ -214,16 +214,16 @@ const SkillManagement: React.FC = () => {
                 {/* 关键词搜索 */}
                 <Input
                   placeholder={intl.formatMessage({ id: 'pages.skill.searchPlaceholder', defaultMessage: 'Search skill name' })}
-                  prefix={<SearchOutlined style={{ color: '#8c8c9a', fontSize: '12px' }} />}
+                  prefix={<SearchOutlined style={{ color: '#8c8c9a' }} />}
                   value={filters.name}
                   onChange={(e) => setFilters({ ...filters, name: e.target.value })}
                   allowClear
-                  style={{ width: 240, borderRadius: '6px', height: '28px', fontSize: '12px' }}
+                  style={{ width: 240 }}
                 />
                 {/* 状态 */}
                 <Select
                   placeholder={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-                  style={{ width: 120, height: '28px', fontSize: '12px' }}
+                  style={{ width: 120 }}
                   value={filters.status}
                   onChange={(value) => setFilters({ ...filters, status: value })}
                   allowClear
@@ -233,7 +233,7 @@ const SkillManagement: React.FC = () => {
                   ]}
                 />
                 {/* 重置按钮 */}
-                <Button icon={<ReloadOutlined />} onClick={handleResetFilters} style={{ borderRadius: '6px', height: '28px', padding: '0 12px', fontSize: '12px', color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
+                <Button icon={<ReloadOutlined />} onClick={handleResetFilters} style={{ color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
                   {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                 </Button>
               </div>

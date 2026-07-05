@@ -1,7 +1,6 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
 import com.agnetix.harnax.agent.AgentSpec
-import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatResponse

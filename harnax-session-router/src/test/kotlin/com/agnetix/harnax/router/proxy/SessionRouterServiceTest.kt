@@ -483,7 +483,7 @@ class SessionRouterServiceTest {
 
         val successResponse = ResultVo.success(ChatResponse(sessionId = "test", content = "ok"))
         `when`(agentServiceClient.chat(any(), any()))
-            .thenThrow(RuntimeException("Connection refused"))
+            .thenThrow(RuntimeException("Connection refused", java.net.ConnectException("Connection refused")))
             .thenReturn(successResponse)
 
         val request = ChatAgentRequest(
@@ -517,8 +517,8 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
 
-        // Initial call must throw to trigger failover
-        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused"))
+        // Initial call must throw a retryable error to trigger failover
+        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused", java.net.ConnectException("Connection refused")))
 
         var rerouteCallCount = 0
         `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {
@@ -553,8 +553,8 @@ class SessionRouterServiceTest {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
 
-        // Initial call must throw to trigger failover
-        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused"))
+        // Initial call must throw a retryable error to trigger failover
+        `when`(agentServiceClient.chat(any(), any())).thenThrow(RuntimeException("Connection refused", java.net.ConnectException("Connection refused")))
 
         var rerouteCount = 0
         `when`(sessionMappingService.rerouteSession("session-1")).thenAnswer {

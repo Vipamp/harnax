@@ -150,7 +150,6 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' }) }]}>
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.name', defaultMessage: 'Name' })} 
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
         
@@ -158,7 +157,6 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.modelName', defaultMessage: 'Model Name' }) }]}>
           <Input 
             placeholder={intl.formatMessage({ id: 'pages.placeholder.example', defaultMessage: 'e.g.: ' }) + 'gpt-4, qwen-max'} 
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -170,8 +168,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
               label: intl.formatMessage({ id: `pages.model.${opt.value}`, defaultMessage: opt.label }),
               value: opt.value,
             }))}
-            onChange={handleModelTypeChange}
-            style={{ fontSize: '12px' }} />
+            onChange={handleModelTypeChange} />
         </Form.Item>
         
         <Form.Item name="price" label={intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price (CNY/M tokens)' })}>
@@ -179,7 +176,6 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
             type="number" 
             step="0.0001" 
             placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.model.price', defaultMessage: 'Price' })} 
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -187,7 +183,6 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           <Input.TextArea 
             rows={2} 
             placeholder={intl.formatMessage({ id: 'pages.placeholder.input', defaultMessage: 'Please enter' }) + intl.formatMessage({ id: 'pages.common.description', defaultMessage: 'Description' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -231,7 +226,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
               { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
               { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
             ]}
-            style={{ fontSize: '12px' }} />
+          />
         </Form.Item>
 
         <Form.Item name="isPublic" label={intl.formatMessage({ id: 'pages.model.isPublic', defaultMessage: 'Is Public' })}
@@ -244,10 +239,10 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
 
         <Form.Item wrapperCol={{ span: 24 }} style={{ marginBottom: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px', paddingTop: '10px', paddingLeft: '168px', borderTop: '1px solid var(--vip-border)' }}>
-            <Button onClick={onCancel} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
+            <Button onClick={onCancel}>
               {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
             </Button>
-            <Button type="primary" onClick={handleSubmit} loading={loading} style={{ fontSize: '12px', fontWeight: 500, height: '32px', padding: '4px 20px', borderRadius: '6px' }}>
+            <Button type="primary" onClick={handleSubmit} loading={loading}>
               {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
             </Button>
           </div>

@@ -40,9 +40,15 @@ class RedisConfig {
         val template = RedisTemplate<String, Any>()
         template.connectionFactory = connectionFactory
 
-        // Spring Data Redis 4.x still uses Jackson 2.x (com.fasterxml) for serialization
+        // Spring Data Redis 4.x still uses Jackson 2.x (com.fasterxml) for serialization.
+        // Restrict allowed types to prevent deserialization RCE attacks.
         val ptv = BasicPolymorphicTypeValidator.builder()
-            .allowIfBaseType(Any::class.java)
+            .allowIfBaseType("com.agnetix.harnax.")
+            .allowIfBaseType("java.util.")
+            .allowIfBaseType("java.lang.")
+            .allowIfSubType("com.agnetix.harnax.")
+            .allowIfSubType("java.util.")
+            .allowIfSubType("java.lang.")
             .build()
         val objectMapper = ObjectMapper().apply {
             setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY)

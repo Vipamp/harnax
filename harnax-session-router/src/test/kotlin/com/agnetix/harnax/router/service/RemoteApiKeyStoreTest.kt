@@ -128,7 +128,7 @@ class RemoteApiKeyStoreTest {
     }
 
     @Test
-    fun `findByKeyHash does NOT cache null result — second call hits admin again`() {
+    fun `findByKeyHash caches null result as negative cache to prevent stampede`() {
         withMockedAdminClient { adminClient, store ->
             `when`(runBlocking { adminClient.validateApiKey("not-found-hash") }).thenReturn(null)
 
@@ -137,7 +137,8 @@ class RemoteApiKeyStoreTest {
 
             assertNull(result1)
             assertNull(result2)
-            runBlocking { verify(adminClient, times(2)).validateApiKey("not-found-hash") }
+            // Negative result is cached (Optional.empty), so admin is called only once
+            runBlocking { verify(adminClient, times(1)).validateApiKey("not-found-hash") }
         }
     }
 

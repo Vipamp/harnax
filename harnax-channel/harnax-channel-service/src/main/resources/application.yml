@@ -29,6 +29,8 @@ channel:
   auto-start: true  # Auto-start all enabled channels on startup
   router-api-key: ${CHANNEL_API_KEY:}  # If empty, auto-fetch from admin
   auto-fetch-system-key: true  # Auto-fetch system key from admin if router-api-key is empty
+  sync:
+    interval-ms: ${CHANNEL_SYNC_INTERVAL_MS:10000}  # Channel table polling interval (ms)
   admin:
     url: ${ADMIN_SERVICE_URL:http://localhost:8080}
   proxy:

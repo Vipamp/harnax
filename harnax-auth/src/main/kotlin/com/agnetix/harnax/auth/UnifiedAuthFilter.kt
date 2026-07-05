@@ -65,8 +65,7 @@ class UnifiedAuthFilter(
                 writeError(
                     response,
                     HttpServletResponse.SC_UNAUTHORIZED,
-                    "[UnifiedAuthFilter] JWT validation failed for $path: ${e.message}. " +
-                        "Check that both services use the same harnax.auth.internal.shared-secret.",
+                    "[UnifiedAuthFilter] Authentication failed for $path.",
                 )
                 return
             }

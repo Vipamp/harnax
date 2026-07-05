@@ -128,7 +128,18 @@ class AgentTaskServiceImpl(
         task.taskStatus = 0
         task.updateTime = LocalDateTime.now()
 
-        return agentTaskMapper.updateById(task) > 0
+        val success = agentTaskMapper.updateById(task) > 0
+
+        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config)
+        if (success) {
+            try {
+                schedulerClient.reloadTasks()
+            } catch (e: Exception) {
+                log.warn("Failed to notify scheduler after task update: {}", e.message)
+            }
+        }
+
+        return success
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -138,7 +149,16 @@ class AgentTaskServiceImpl(
         val task = agentTaskMapper.selectById(id)
             ?: throw BizException("Agent task not found")
 
-        return agentTaskMapper.deleteById(id) > 0
+        // Delete from DB first, then reload all scheduler instances to remove stale Quartz jobs
+        val success = agentTaskMapper.deleteById(id) > 0
+        if (success) {
+            try {
+                schedulerClient.reloadTasks()
+            } catch (e: Exception) {
+                log.warn("Failed to reload schedulers after task deletion: {}", e.message)
+            }
+        }
+        return success
     }
 
     override fun convertToResponse(task: AgentTask): AgentTaskResponse = AgentTaskResponse.fromEntity(task)
@@ -148,14 +168,23 @@ class AgentTaskServiceImpl(
     // ========================================
 
     override fun toggleTaskStatus(id: Long, status: Int): Boolean {
-        val task = agentTaskMapper.selectById(id)
+        agentTaskMapper.selectById(id)
             ?: throw BizException("Agent task not found")
-        return agentTaskMapper.updateStatus(id, status) > 0
+        val result = if (status == 1) {
+            schedulerClient.startTask(id)
+        } else {
+            schedulerClient.pauseTask(id)
+        }
+        return result.code == 200
     }
 
     override fun startTask(id: Long): ResultVo<Void> = schedulerClient.startTask(id)
 
     override fun pauseTask(id: Long): ResultVo<Void> = schedulerClient.pauseTask(id)
+
+    override fun triggerTask(id: Long): ResultVo<Void> = schedulerClient.triggerTask(id)
+
+    override fun stopTask(logId: Long): ResultVo<Void> = schedulerClient.stopTask(logId)
 
     /**
      * Simple cron expression validation (5 or 6 fields separated by spaces)

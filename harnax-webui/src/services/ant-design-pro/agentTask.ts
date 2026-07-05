@@ -91,6 +91,22 @@ export async function toggleAgentTaskStatus(id: number, status: number, options?
   });
 }
 
+/** 手动触发一次任务执行 POST /api/admin/agent-tasks/${id}/trigger */
+export async function triggerAgentTask(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/agent-tasks/${id}/trigger`, {
+    method: 'POST',
+    ...(options || {}),
+  });
+}
+
+/** 停止正在运行的任务执行 POST /api/admin/agent-tasks/logs/${logId}/stop */
+export async function stopAgentTask(logId: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/agent-tasks/logs/${logId}/stop`, {
+    method: 'POST',
+    ...(options || {}),
+  });
+}
+
 /** 获取智能体定时任务执行日志 GET /api/admin/agent-tasks/${id}/logs */
 export async function getAgentTaskLogs(
   id: number,

@@ -115,7 +115,8 @@ class InstanceRegistryController(
     @GetMapping("/health")
     fun health(): ResultVo<RouterHealthResponse> {
         val healthyCount = instanceRegistry.getHealthyInstances().size
-        return ResultVo.success(RouterHealthResponse(status = "UP", healthyInstances = healthyCount))
+        val status = if (healthyCount > 0) "UP" else "DOWN"
+        return ResultVo.success(RouterHealthResponse(status = status, healthyInstances = healthyCount))
     }
 
     /**

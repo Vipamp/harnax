@@ -14,6 +14,9 @@ import java.util.concurrent.TimeUnit
  * Delegates all HTTP calls to the shared [AdminClientService] and adds a
  * local Caffeine cache (5 min TTL) to avoid hitting the Admin service
  * on every request.
+ *
+ * Uses a sentinel value to cache negative results (Admin unreachable / session not found),
+ * preventing repeated timeouts on every cache miss when Admin is down.
  */
 @Component
 class SessionInfoClient(
@@ -24,23 +27,35 @@ class SessionInfoClient(
 
     private val log = LoggerFactory.getLogger(SessionInfoClient::class.java)
 
+    /** Sentinel value cached when Admin is unreachable or returns null, prevents repeated timeouts. */
+    private val nullSession = AdminClientService.SessionInfo(
+        sessionId = "",
+        agentId = -1L,
+        agentName = "",
+        modelId = null,
+        modelName = null,
+    )
+
     private val cache = Caffeine.newBuilder()
         .maximumSize(5000)
         .expireAfterWrite(5, TimeUnit.MINUTES)
-        .build<String, AdminClientService.SessionInfo?>()
+        .build<String, AdminClientService.SessionInfo>()
 
-    fun getSessionInfo(sessionId: String): AdminClientService.SessionInfo? = cache.get(sessionId) { sid ->
-        // Overall request budget: slightly above responseTimeoutMs to leave scheduler slack.
-        val overallTimeoutMs = responseTimeoutMs + 1000
-        try {
-            runBlocking {
-                withTimeoutOrNull(overallTimeoutMs) {
-                    adminClientService.getSessionInfo(sid)
-                }
+    fun getSessionInfo(sessionId: String): AdminClientService.SessionInfo? {
+        val cached = cache.get(sessionId) { sid ->
+            // Overall request budget: slightly above responseTimeoutMs to leave scheduler slack.
+            val overallTimeoutMs = responseTimeoutMs + 1000
+            try {
+                runBlocking {
+                    withTimeoutOrNull(overallTimeoutMs) {
+                        adminClientService.getSessionInfo(sid)
+                    }
+                } ?: nullSession
+            } catch (e: Exception) {
+                log.warn("[Router→Admin] Failed to get session info for $sid: ${e.message}")
+                nullSession
             }
-        } catch (e: Exception) {
-            log.warn("[Router→Admin] Failed to get session info for $sid: ${e.message}")
-            null
         }
+        return if (cached === nullSession) null else cached
     }
 }

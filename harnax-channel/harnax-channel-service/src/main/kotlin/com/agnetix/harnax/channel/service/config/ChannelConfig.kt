@@ -85,15 +85,15 @@ class ChannelConfig(
     }
 
     /**
-     * 注册微信适配器 Bean。
-     * WechatAdaptor 未加 Spring 注解，在这里显式创建单例。
+     * Registers the WeChat adaptor Bean.
+     * WechatAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
     fun wechatAdaptor(): WechatAdaptor = WechatAdaptor()
 
     /**
-     * 注册飞书适配器 Bean。
-     * FeishuAdaptor 未加 Spring 注解，在这里显式创建单例。
+     * Registers the Feishu adaptor Bean.
+     * FeishuAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
     fun feishuAdaptor(): FeishuAdaptor = FeishuAdaptor()
@@ -106,6 +106,14 @@ class ChannelConfig(
     class InMemoryChannelSessionManager : ChannelSessionManager {
         private val log = LoggerFactory.getLogger(InMemoryChannelSessionManager::class.java)
         private val sessions = ConcurrentHashMap<String, MutableList<ChannelMessage>>()
+
+        companion object {
+            // Max messages kept per session to prevent unbounded growth
+            private const val MAX_MESSAGES_PER_SESSION = 500
+
+            // Max total sessions tracked; oldest are evicted when exceeded
+            private const val MAX_TOTAL_SESSIONS = 10_000
+        }
 
         override suspend fun getHistory(channelId: Long, sessionId: String, limit: Int): List<ChannelMessage> {
             val key = "$channelId:$sessionId"
@@ -127,8 +135,25 @@ class ChannelConfig(
             } else {
                 message
             }
-            sessions.computeIfAbsent(key) { mutableListOf() }.add(stored)
-            log.debug("Added message to key={}, total={}", key, sessions[key]?.size)
+
+            // Evict oldest sessions if capacity is exceeded
+            if (sessions.size >= MAX_TOTAL_SESSIONS && !sessions.containsKey(key)) {
+                val oldestKey = sessions.keys.firstOrNull()
+                if (oldestKey != null) {
+                    sessions.remove(oldestKey)
+                    log.debug("Evicted oldest session to stay within limit: key={}", oldestKey)
+                }
+            }
+
+            val list = sessions.computeIfAbsent(key) { mutableListOf() }
+            synchronized(list) {
+                list.add(stored)
+                // Trim oldest messages when exceeding per-session limit
+                while (list.size > MAX_MESSAGES_PER_SESSION) {
+                    list.removeAt(0)
+                }
+            }
+            log.debug("Added message to key={}, total={}", key, list.size)
         }
 
         override suspend fun clearHistory(channelId: Long, sessionId: String) {

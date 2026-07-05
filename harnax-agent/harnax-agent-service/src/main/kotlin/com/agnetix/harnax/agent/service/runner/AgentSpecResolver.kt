@@ -42,8 +42,12 @@ class AgentSpecResolver(
      */
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
-        log.info("Resolved agent spec from admin: sessionId={}, agentId={}, agentName={}",
-            sessionId, specInfo.agentId, specInfo.agentName)
+        log.info(
+            "Resolved agent spec from admin: sessionId={}, agentId={}, agentName={}",
+            sessionId,
+            specInfo.agentId,
+            specInfo.agentName,
+        )
 
         val agentSpec = buildAgentSpec(specInfo, sessionId)
         val chatSpec = ChatSpecBuilder()

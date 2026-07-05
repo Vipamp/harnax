@@ -120,7 +120,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
           label={intl.formatMessage({ id: 'pages.agentTask.name', defaultMessage: 'Task Name' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agentTask.name.required', defaultMessage: 'Please enter task name' }) }]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.agentTask.name.placeholder', defaultMessage: 'e.g., Daily News Summary' })} style={{ fontSize: '12px' }} />
+          <Input placeholder={intl.formatMessage({ id: 'pages.agentTask.name.placeholder', defaultMessage: 'e.g., Daily News Summary' })} />
         </Form.Item>
 
         <Form.Item
@@ -132,7 +132,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
             placeholder={intl.formatMessage({ id: 'pages.agentTask.agent.placeholder', defaultMessage: 'Select an agent' })}
             showSearch
             optionFilterProp="children"
-            style={{ fontSize: '12px' }}
           >
             {agents.map((agent) => (
               <Select.Option key={agent.id} value={agent.id}>
@@ -150,7 +149,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
           <TextArea
             rows={3}
             placeholder={intl.formatMessage({ id: 'pages.agentTask.prompt.placeholder', defaultMessage: 'Enter the task to be executed by the agent...' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -159,7 +157,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
           label={intl.formatMessage({ id: 'pages.agentTask.cron', defaultMessage: 'Cron Expression' })}
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agentTask.cron.required', defaultMessage: 'Please enter cron expression' }) }]}
         >
-          <Input placeholder={intl.formatMessage({ id: 'pages.agentTask.cron.placeholder', defaultMessage: '0 0 9 * * ?' })} style={{ fontSize: '12px' }} />
+          <Input placeholder={intl.formatMessage({ id: 'pages.agentTask.cron.placeholder', defaultMessage: '0 0 9 * * ?' })} />
         </Form.Item>
 
         <Row>
@@ -190,7 +188,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
               labelCol={{ span: 12 }}
               wrapperCol={{ span: 12 }}
             >
-              <InputNumber min={30} max={3600} style={{ width: '100%', fontSize: '12px' }} />
+              <InputNumber min={30} max={3600} style={{ width: '100%' }} />
             </Form.Item>
           </Col>
           <Col span={12}>
@@ -213,7 +211,6 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
           <TextArea
             rows={2}
             placeholder={intl.formatMessage({ id: 'pages.agentTask.description.placeholder', defaultMessage: 'Optional description' })}
-            style={{ fontSize: '12px' }}
           />
         </Form.Item>
 
@@ -234,10 +231,10 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
           <Col span={6} />
           <Col span={18}>
             <Space style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button onClick={onCancel} style={{ fontSize: 12, height: 32, borderRadius: 6 }}>
+              <Button onClick={onCancel}>
                 {intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' })}
               </Button>
-              <Button type="primary" onClick={handleSubmit} loading={loading} style={{ fontSize: 12, height: 32, borderRadius: 6 }}>
+              <Button type="primary" onClick={handleSubmit} loading={loading}>
                 {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
               </Button>
             </Space>

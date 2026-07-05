@@ -136,6 +136,8 @@ class DefaultAgentRunner(
             CommandType.STOP_SANDBOX -> {
                 val sandboxManager = launcher.keepAliveSandboxManager
                 if (sandboxManager != null) {
+                    interrupt(sessionId)
+                    agentCache.invalidate(sessionId)
                     sandboxManager.destroy(sessionId)
                     log.info("Sandbox stopped for session=$sessionId")
                     CommandResponse.success(sessionId, message = "Sandbox stopped")
@@ -148,12 +150,21 @@ class DefaultAgentRunner(
     }
 
     override fun interrupt(sessionId: String) {
+        // 1. Interrupt the agent execution via HarnessAgent.interrupt() ( works both streaming and blocking calls)
+        val agent = agentCache.getIfPresent(sessionId)
+        if (agent != null) {
+            agent.interrupt()
+        }
+
+        // 2. Also cancel active stream subscription (belt-and-suspenders for streaming case)
         val subscription = activeStreams.remove(sessionId)
         if (subscription != null) {
             subscription.cancel()
             log.info("Interrupted active stream for session=$sessionId")
-        } else {
-            log.info("No active stream to interrupt for session=$sessionId")
+        }
+
+        if (agent == null && subscription == null) {
+            log.info("No active agent or stream to interrupt for session=$sessionId")
         }
     }
 

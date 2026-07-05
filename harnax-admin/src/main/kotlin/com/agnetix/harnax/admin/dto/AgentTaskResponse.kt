@@ -53,6 +53,12 @@ data class AgentTaskResponse(
 
     @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now(),
+
+    @Schema(description = "Last run status (0:failed, 1:success, 2:timeout, 3:running), null if never run")
+    var lastRunStatus: Int? = null,
+
+    @Schema(description = "Last run start time, null if never run")
+    var lastRunTime: LocalDateTime? = null,
 ) {
     companion object {
         fun fromEntity(entity: AgentTask): AgentTaskResponse = AgentTaskResponse(
@@ -72,6 +78,8 @@ data class AgentTaskResponse(
             active = entity.active,
             createTime = entity.createTime,
             updateTime = entity.updateTime,
+            lastRunStatus = entity.lastRunStatus,
+            lastRunTime = entity.lastRunTime,
         )
     }
 }

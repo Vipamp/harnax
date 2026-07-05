@@ -97,11 +97,8 @@ const FormModal: React.FC<FormModalProps> = (props) => {
         },
         body: {
           padding: '20px 24px',
-          background: 'var(--vip-bg-container)',
+          background: 'transparent',
           borderRadius: '0 0 12px 12px',
-        },
-        mask: {
-          backdropFilter: 'blur(4px)',
         },
       }}
       title={

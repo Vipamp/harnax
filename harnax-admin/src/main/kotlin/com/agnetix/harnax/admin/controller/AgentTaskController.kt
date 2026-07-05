@@ -125,6 +125,14 @@ class AgentTaskController(
     @PostMapping("/{id}/pause")
     fun pause(@PathVariable id: Long): ResultVo<Void> = agentTaskService.pauseTask(id)
 
+    @Operation(summary = "Manually trigger a one-time task execution")
+    @PostMapping("/{id}/trigger")
+    fun trigger(@PathVariable id: Long): ResultVo<Void> = agentTaskService.triggerTask(id)
+
+    @Operation(summary = "Stop a running task execution")
+    @PostMapping("/logs/{logId}/stop")
+    fun stopTask(@PathVariable logId: Long): ResultVo<Void> = agentTaskService.stopTask(logId)
+
     @Operation(summary = "Get agent task execution logs")
     @GetMapping("/{id}/logs")
     fun logs(

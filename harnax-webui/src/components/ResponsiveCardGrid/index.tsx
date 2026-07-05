@@ -127,7 +127,7 @@ const ResponsiveCardGrid: React.FC<ResponsiveCardGridProps> = ({
               marginBottom: gutter[1],
             }}
           >
-            <div style={{ height: cardHeight }}>{renderCard(item, index)}</div>
+            <div style={{ minHeight: cardHeight, overflow: 'visible' }}>{renderCard(item, index)}</div>
           </Col>
         ))}
       </Row>

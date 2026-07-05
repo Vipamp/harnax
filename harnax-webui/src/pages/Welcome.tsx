@@ -80,8 +80,10 @@ const AnimatedStatCard: React.FC<{
       className="vip-hover-lift"
       style={{
         borderRadius: '16px',
-        border: 'none',
-        background: `linear-gradient(135deg, ${color}12 0%, ${color}05 100%)`,
+        background: `linear-gradient(135deg, ${color}12 0%, ${color}05 100%), var(--glass-bg)`,
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        border: '1px solid var(--glass-border)',
         boxShadow: `0 4px 20px ${color}15`,
         overflow: 'hidden',
         position: 'relative',
@@ -171,10 +173,15 @@ const AnimatedFeatureCard: React.FC<{
       onMouseLeave={() => setIsHovered(false)}
       style={{
         borderRadius: '16px',
-        border: isHovered ? `1px solid ${color}40` : '1px solid var(--vip-border)',
+        border: isHovered ? `1px solid ${color}40` : '1px solid var(--glass-border)',
+        background: isHovered
+          ? `linear-gradient(135deg, ${color}08 0%, var(--glass-bg) 100%)`
+          : 'var(--glass-bg)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
         boxShadow: isHovered 
-          ? `0 12px 32px ${color}20` 
-          : '0 2px 12px rgba(79,110,247,0.06)',
+          ? `0 12px 32px ${color}20, var(--glass-glow-primary)` 
+          : 'var(--glass-shadow)',
         transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         cursor: 'default',
         transform: isHovered ? 'translateY(-4px)' : 'translateY(0)',
@@ -374,8 +381,11 @@ const Welcome: React.FC = () => {
       <Card
         style={{
           borderRadius: '16px',
-          border: '1px solid var(--vip-border)',
-          boxShadow: '0 2px 16px rgba(79,110,247,0.06)',
+          background: 'var(--glass-bg)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid var(--glass-border)',
+          boxShadow: 'var(--glass-shadow)',
         }}
         styles={{ body: { padding: '28px 28px 8px' } }}
       >

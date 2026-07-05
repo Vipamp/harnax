@@ -408,13 +408,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           }}>
             <Button 
               onClick={() => form.resetFields()}
-              style={{
-                fontSize: '13px',
-                fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
-                borderRadius: '6px',
-              }}
             >
               {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
             </Button>
@@ -422,13 +415,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
               type="primary" 
               onClick={handleSubmit}
               loading={loading}
-              style={{
-                fontSize: '13px',
-                fontWeight: 500,
-                height: '36px',
-                padding: '6px 24px',
-                borderRadius: '6px',
-              }}
             >
               {intl.formatMessage({ id: 'pages.common.submit', defaultMessage: 'Submit' })}
             </Button>

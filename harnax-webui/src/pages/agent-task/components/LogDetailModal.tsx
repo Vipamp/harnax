@@ -19,6 +19,8 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
     0: { color: 'red', text: intl.formatMessage({ id: 'pages.common.failed', defaultMessage: 'Failed' }) },
     1: { color: 'green', text: intl.formatMessage({ id: 'pages.common.success', defaultMessage: 'Success' }) },
     2: { color: 'orange', text: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }) },
+    3: { color: 'blue', text: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }) },
+    4: { color: 'default', text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
   };
 
   const statusInfo = statusMap[log.status] || statusMap[0];
@@ -50,7 +52,6 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
           style={{
             background: '#f5f5f5',
             padding: '12px',
-            borderRadius: '6px',
             whiteSpace: 'pre-wrap',
             fontSize: '13px',
             maxHeight: '200px',
@@ -67,7 +68,6 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
           style={{
             background: '#f0f7ff',
             padding: '12px',
-            borderRadius: '6px',
             whiteSpace: 'pre-wrap',
             fontSize: '13px',
             maxHeight: '400px',
@@ -85,7 +85,6 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
             style={{
               background: '#fff2f0',
               padding: '12px',
-              borderRadius: '6px',
               whiteSpace: 'pre-wrap',
               fontSize: '13px',
               maxHeight: '200px',

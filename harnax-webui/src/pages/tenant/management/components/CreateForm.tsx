@@ -81,11 +81,7 @@ const CreateForm: React.FC<CreateFormProps> = (props) => {
               {dom.map((item: any) => 
                 React.cloneElement(item, {
                   style: {
-                    fontSize: '12px',
                     fontWeight: 500,
-                    height: '32px',
-                    padding: '4px 20px',
-                    borderRadius: '6px',
                     ...(item.props.style || {})
                   }
                 })

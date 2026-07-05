@@ -2,6 +2,9 @@ package com.agnetix.harnax.scheduler.client
 
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatResponse
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
+import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.common.dto.ResultVo
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
@@ -116,6 +119,27 @@ class RouterClient(
 
         log.info("[Scheduler\u2190Router] Success for session={}, elapsed={}ms", sessionId, elapsed)
         return resultVo.data!!
+    }
+
+    /**
+     * Send a command (e.g. INTERRUPT) to the router for a specific session.
+     */
+    fun sendCommand(sessionId: String, command: CommandType) {
+        val request = CommandAgentRequest(sessionId = sessionId, command = command)
+        val url = "$routerUrl/api/router/agent/command"
+        log.info("[Scheduler→Router] POST {} - command: {}", url, command)
+        try {
+            restClient.post()
+                .uri(url)
+                .header("X-Api-Key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(request)
+                .retrieve()
+                .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+            log.info("[Scheduler←Router] Command {} sent for session={}", command, sessionId)
+        } catch (e: Exception) {
+            log.warn("[Scheduler←Router] Failed to send command {} for session={}: {}", command, sessionId, e.message)
+        }
     }
 
     /**

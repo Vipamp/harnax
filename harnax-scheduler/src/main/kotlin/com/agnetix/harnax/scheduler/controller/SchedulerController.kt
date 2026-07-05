@@ -97,6 +97,20 @@ class SchedulerController(
         ResultVo.error("Failed to reload tasks: ${e.message}")
     }
 
+    @Operation(summary = "Stop a running task execution")
+    @PostMapping("/tasks/logs/{logId}/stop")
+    fun stopTask(@PathVariable logId: Long): ResultVo<String> = try {
+        val success = schedulerService.stopTask(logId)
+        if (success) {
+            ResultVo.success("Task stopped")
+        } else {
+            ResultVo.error("Task is not running or already completed")
+        }
+    } catch (e: Exception) {
+        log.error("Failed to stop task: logId={}", logId, e)
+        ResultVo.error("Failed to stop task: ${e.message}")
+    }
+
     @Operation(summary = "Health check")
     @GetMapping("/health")
     fun health(): ResultVo<String> = ResultVo.success("OK")

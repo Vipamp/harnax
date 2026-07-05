@@ -131,25 +131,30 @@ class FeishuWebSocketMode(
                 .autoReconnect(true)
                 .build()
 
+            // Register handler before starting thread so it is available when events arrive
+            messageHandlers[channel.id] = messageHandler
+
             // Start in background thread (non-blocking)
             Thread {
                 try {
                     wsClient.start()
+                    // Only register client after successful start to avoid race with stop()
+                    wsClients[channel.id] = wsClient
+                    logger.info("WebSocket connection started for channel: ${channel.id}")
                 } catch (e: Exception) {
                     logger.error("WebSocket connection failed for channel: ${channel.id}", e)
-                    wsClients.remove(channel.id)
+                    messageHandlers.remove(channel.id)
+                    processedMessageIds.remove(channel.id)
                 }
             }.apply {
                 isDaemon = true
                 name = "feishu-ws-channel-${channel.id}"
                 start()
             }
-
-            wsClients[channel.id] = wsClient
-            messageHandlers[channel.id] = messageHandler
-            logger.info("WebSocket connection started for channel: ${channel.id}")
         } catch (e: Exception) {
             logger.error("Failed to start WebSocket connection for channel: ${channel.id}", e)
+            messageHandlers.remove(channel.id)
+            processedMessageIds.remove(channel.id)
             throw ChannelSendException(
                 channelType = ChannelType.FEISHU,
                 platformErrorCode = null,
@@ -166,11 +171,18 @@ class FeishuWebSocketMode(
      */
     override fun stop(channel: ChannelSpec) {
         val wsClient = wsClients.remove(channel.id)
+        messageHandlers.remove(channel.id)
+        processedMessageIds.remove(channel.id)
+
         if (wsClient != null) {
             try {
-                logger.info("WebSocket connection removed for channel: ${channel.id}")
+                // WsClient.disconnect() is protected; invoke via reflection to close the connection
+                val disconnectMethod = wsClient.javaClass.getDeclaredMethod("disconnect")
+                disconnectMethod.isAccessible = true
+                disconnectMethod.invoke(wsClient)
+                logger.info("WebSocket connection stopped for channel: ${channel.id}")
             } catch (e: Exception) {
-                logger.error("Failed to stop WebSocket connection for channel: ${channel.id}", e)
+                logger.error("Failed to disconnect WebSocket for channel: ${channel.id}", e)
             }
         } else {
             logger.warn("No WebSocket connection found for channel: ${channel.id}")
