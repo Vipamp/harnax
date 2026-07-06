@@ -36,4 +36,10 @@ data class McpServerCreateRequest(
 
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
+
+    @Schema(description = "HTTP headers configuration (for sse/streamablehttp type)")
+    val headers: List<McpConfigEntry>? = null,
+
+    @Schema(description = "Environment variables configuration (for stdio type)")
+    val envs: List<McpConfigEntry>? = null,
 )

@@ -7,6 +7,12 @@ import io.modelcontextprotocol.spec.McpSchema
 import org.slf4j.LoggerFactory
 
 /**
+ * 配置解析器函数类型：将数据库中存储的 JSON 字符串解析为明文的 Key-Value Map
+ * 实现方负责反序列化 + 解密 secret 条目
+ */
+typealias McpConfigResolver = (String?) -> Map<String, String>
+
+/**
  * MCP 客户端辅助工具类
  * 提供基于 McpConfig 创建 McpClientBuilder 的方法
  *
@@ -18,8 +24,8 @@ object McpHelper {
 
     private val log = LoggerFactory.getLogger(McpHelper::class.java)
 
-    fun listTools(mcpServer: McpServer): List<McpSchema.Tool> {
-        val mcpClient = createMcpClient(mcpServer, false)
+    fun listTools(mcpServer: McpServer, configResolver: McpConfigResolver? = null): List<McpSchema.Tool> {
+        val mcpClient = createMcpClient(mcpServer, false, configResolver)
         try {
             mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
         } catch (t: Throwable) {
@@ -36,45 +42,53 @@ object McpHelper {
 
     /**
      * Build McpConfig based on MCP type
+     *
+     * @param mcpServer MCP server entity
+     * @param configResolver optional resolver to deserialize + decrypt headers/envs JSON to plain Map
      */
-    fun buildMcpConfig(mcpServer: McpServer): McpConfig? = when (val type = mcpServer.type.lowercase()) {
-        "stdio" -> StdioMcpConfig(
-            mcpServer.name,
-            mcpServer.command,
-            emptyList(),
-            emptyMap(),
-        )
-        "sse" -> SseHttpMcpConfig(
-            mcpServer.name,
-            mcpServer.url,
-            emptyMap(),
-            emptyMap(),
-        )
-        "streamablehttp" -> StreamableHttpMcpConfig(
-            mcpServer.name,
-            mcpServer.url,
-            emptyMap(),
-            emptyMap(),
-        )
-        else -> {
-            log.warn("Unsupported MCP type: $type")
-            null
+    fun buildMcpConfig(mcpServer: McpServer, configResolver: McpConfigResolver? = null): McpConfig? {
+        val resolve: McpConfigResolver = configResolver ?: { emptyMap() }
+        return when (val type = mcpServer.type.lowercase()) {
+            "stdio" -> StdioMcpConfig(
+                mcpServer.name,
+                mcpServer.command,
+                emptyList(),
+                resolve(mcpServer.envs),
+            )
+            "sse" -> SseHttpMcpConfig(
+                mcpServer.name,
+                mcpServer.url,
+                resolve(mcpServer.headers),
+                emptyMap(),
+            )
+            "streamablehttp" -> StreamableHttpMcpConfig(
+                mcpServer.name,
+                mcpServer.url,
+                resolve(mcpServer.headers),
+                emptyMap(),
+            )
+            else -> {
+                log.warn("Unsupported MCP type: $type")
+                null
+            }
         }
     }
 
     /**
      * 根据 MCP 配置创建 MCP 客户端
      *
-     * @param mcpConfig MCP 配置，支持 StdioMcpConfig、SseHttpMcpConfig、StreamableHttpMcpConfig
+     * @param mcpServer MCP 服务实体
      * @param isAsync 是否异步创建客户端
+     * @param configResolver optional resolver to deserialize + decrypt headers/envs JSON to plain Map
      * @return McpClientWrapper 实例
      * @throws McpErrorCode.MCP_CLIENT_CREATE_FAILED 当客户端创建失败时抛出
      */
     fun createMcpClient(
         mcpServer: McpServer,
         isAsync: Boolean,
+        configResolver: McpConfigResolver? = null,
     ): McpClientWrapper {
-        val mcpConfig = buildMcpConfig(mcpServer) ?: throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format("MCP config is null")
+        val mcpConfig = buildMcpConfig(mcpServer, configResolver) ?: throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format("MCP config is null")
         val builder = when (mcpConfig) {
             is StdioMcpConfig -> buildStdioMcpClient(mcpConfig)
             is SseHttpMcpConfig -> buildSseMcpClient(mcpConfig)

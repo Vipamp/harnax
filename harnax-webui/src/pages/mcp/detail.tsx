@@ -1,10 +1,12 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message } from 'antd';
+import { Card, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message, Descriptions } from 'antd';
 import { 
   ToolOutlined, 
   ApiOutlined,
-  LinkOutlined
+  LinkOutlined,
+  SettingOutlined,
+  KeyOutlined
 } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
 // @ts-ignore
@@ -242,6 +244,69 @@ const McpDetail: React.FC = () => {
               createTime={mcpInfo.createTime}
               intl={intl}
             />
+
+            {/* 配置信息 - 仅当有 headers 或 envs 时显示 */}
+            {((mcpInfo.headers && mcpInfo.headers.length > 0) || (mcpInfo.envs && mcpInfo.envs.length > 0)) && (
+              <Card
+                title={
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <SettingOutlined style={{ color: 'var(--vip-primary)' }} />
+                    {intl.formatMessage({ id: 'pages.mcp.detail.configTitle', defaultMessage: '配置信息' })}
+                  </span>
+                }
+                style={{
+                  borderRadius: '16px',
+                  border: '1px solid var(--vip-border)',
+                  boxShadow: 'var(--vip-card-shadow)',
+                  overflow: 'hidden',
+                  marginBottom: 16,
+                }}
+              >
+                {mcpInfo.headers && mcpInfo.headers.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <KeyOutlined style={{ color: '#4f6ef7' }} />
+                      <Text strong>{intl.formatMessage({ id: 'pages.mcp.detail.headers', defaultMessage: 'HTTP Headers' })}</Text>
+                    </div>
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      styles={{ label: { width: 200, background: 'var(--vip-bg-layout)' } }}
+                    >
+                      {mcpInfo.headers.map((h, i) => (
+                        <Descriptions.Item key={i} label={h.key}>
+                          <span style={{ fontFamily: 'monospace' }}>{h.value}</span>
+                          {h.secret && <Tag color="orange" style={{ marginLeft: 8 }}>{intl.formatMessage({ id: 'pages.mcp.config.secret', defaultMessage: '敏感' })}</Tag>}
+                        </Descriptions.Item>
+                      ))}
+                    </Descriptions>
+                  </div>
+                )}
+
+                {mcpInfo.envs && mcpInfo.envs.length > 0 && (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <SettingOutlined style={{ color: '#52c41a' }} />
+                      <Text strong>{intl.formatMessage({ id: 'pages.mcp.detail.envs', defaultMessage: '环境变量' })}</Text>
+                    </div>
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      styles={{ label: { width: 200, background: 'var(--vip-bg-layout)' } }}
+                    >
+                      {mcpInfo.envs.map((e, i) => (
+                        <Descriptions.Item key={i} label={e.key}>
+                          <span style={{ fontFamily: 'monospace' }}>{e.value}</span>
+                          {e.secret && <Tag color="orange" style={{ marginLeft: 8 }}>{intl.formatMessage({ id: 'pages.mcp.config.secret', defaultMessage: '敏感' })}</Tag>}
+                        </Descriptions.Item>
+                      ))}
+                    </Descriptions>
+                  </div>
+                )}
+              </Card>
+            )}
 
             {/* 工具列表 */}
             <Card

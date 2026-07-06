@@ -82,7 +82,7 @@ const TaskLogModal: React.FC<TaskLogModalProps> = ({ visible, task, onCancel, on
     const scheduleNext = () => {
       if (stopped) return;
       // Read current logs state to decide interval: 3s if running logs exist, 5s otherwise
-      const hasRunning = logsRef.current.some((l) => l.status === 3);
+      const hasRunning = logsRef.current.some((l) => l.status === 3 || l.status === 4);
       const delay = hasRunning ? 3000 : 5000;
       timer = setTimeout(async () => {
         if (stopped) return;
@@ -176,7 +176,8 @@ const TaskLogModal: React.FC<TaskLogModalProps> = ({ visible, task, onCancel, on
     1: { color: 'green', text: intl.formatMessage({ id: 'pages.common.success', defaultMessage: 'Success' }) },
     2: { color: 'orange', text: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }) },
     3: { color: 'blue', text: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }) },
-    4: { color: 'default', text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
+    4: { color: 'gold', text: intl.formatMessage({ id: 'pages.common.stopping', defaultMessage: 'Stopping' }) },
+    5: { color: 'default', text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
   };
 
   const columns: ColumnsType<API.AgentTaskLogItem> = [
@@ -284,7 +285,8 @@ const TaskLogModal: React.FC<TaskLogModalProps> = ({ visible, task, onCancel, on
             { label: intl.formatMessage({ id: 'pages.common.failed', defaultMessage: 'Failed' }), value: 0 },
             { label: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }), value: 2 },
             { label: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }), value: 3 },
-            { label: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }), value: 4 },
+            { label: intl.formatMessage({ id: 'pages.common.stopping', defaultMessage: 'Stopping' }), value: 4 },
+            { label: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }), value: 5 },
           ]}
         />
         <Input

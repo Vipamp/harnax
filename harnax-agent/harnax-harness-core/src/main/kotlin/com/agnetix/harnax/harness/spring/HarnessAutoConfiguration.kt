@@ -8,6 +8,7 @@ import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.agent.session.SessionConfig
+import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
@@ -124,6 +125,7 @@ class HarnessAutoConfiguration {
         sessionConfig: SessionConfig,
         processLogAdaptor: ProcessLogAdaptor,
         toolCallLogAdaptorProvider: ObjectProvider<ToolCallLogAdaptor>,
+        mcpConfigDecryptorProvider: ObjectProvider<McpConfigDecryptor>,
         planNoteAdaptor: PlanNoteAdaptor,
         harnessConfig: HarnessConfig,
         @Value("\${local.tmp-dir:/tmp/harnax-agent}") tmpDir: String,
@@ -131,6 +133,7 @@ class HarnessAutoConfiguration {
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
+        val mcpConfigDecryptor = mcpConfigDecryptorProvider.ifAvailable
         return HarnessAgentLauncher.initLauncher(
             chatModelConfigAdaptor = chatModelConfigAdaptor,
             mcpConfigAdaptor = mcpConfigAdaptor,
@@ -143,6 +146,7 @@ class HarnessAutoConfiguration {
             workspaceRoot = java.nio.file.Path.of(tmpDir),
             harnessConfig = harnessConfig,
             minioConfig = minioConfig,
+            mcpConfigDecryptor = mcpConfigDecryptor,
         )
     }
 }

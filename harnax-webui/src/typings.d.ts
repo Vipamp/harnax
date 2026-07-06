@@ -167,6 +167,15 @@ message?: string;
  };
 
   /**
+   * @zh-CN MCP 配置条目（headers 和 envs 共用）
+   */
+  export type McpConfigEntry = {
+    key: string;
+    value: string;
+    secret?: boolean;
+  };
+
+  /**
    * @zh-CN MCP 服务对象
    */
   export type McpServerItem = {
@@ -181,6 +190,8 @@ message?: string;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+    headers?: McpConfigEntry[];
+    envs?: McpConfigEntry[];
   };
 
   /**
@@ -194,6 +205,8 @@ message?: string;
     url?: string;
     status?: number;
     isPublic?: number;
+    headers?: McpConfigEntry[];
+    envs?: McpConfigEntry[];
   };
 
   /**
@@ -208,6 +221,8 @@ message?: string;
     url?: string;
     status?: number;
     isPublic?: number;
+    headers?: McpConfigEntry[];
+    envs?: McpConfigEntry[];
   };
 
   /**

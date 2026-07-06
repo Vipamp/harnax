@@ -125,6 +125,42 @@ class McpServerMapperTest {
         }
 
         @Test
+        @DisplayName("insert - Insert MCP server with headers and envs")
+        fun `insert should create mcp server with headers and envs`() {
+            // Given
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val headersJson = """[{"key":"Authorization","value":"Bearer sk-test","secret":true}]"""
+            val envsJson = """[{"key":"API_KEY","value":"sk-test-key","secret":true},{"key":"DEBUG","value":"false","secret":false}]"""
+            val newMcpServer = McpServer().apply {
+                name = "MCP With Config"
+                description = "MCP with headers and envs"
+                type = "streamablehttp"
+                url = "http://localhost:8080/mcp"
+                status = 1
+                isPublic = 1
+                creator = "admin"
+                active = 1
+                headers = headersJson
+                envs = envsJson
+                createTime = now
+                updateTime = now
+            }
+
+            // When
+            val result = mcpServerMapper.insert(newMcpServer)
+
+            // Then
+            assertEquals(1, result)
+            assertTrue(newMcpServer.id > 0)
+
+            val inserted = mcpServerMapper.selectById(newMcpServer.id)
+            assertNotNull(inserted)
+            assertEquals("MCP With Config", inserted.name)
+            assertEquals(headersJson, inserted.headers)
+            assertEquals(envsJson, inserted.envs)
+        }
+
+        @Test
         @DisplayName("updateById - Update MCP server info")
         fun `updateById should update mcp server info`() {
             // Given

@@ -254,14 +254,23 @@ class SchedulerServiceImpl(
 
             taskLog.response = response.content
             taskLog.tokenUsage = response.tokenUsage?.toString() ?: ""
-            taskLog.status = 1 // success
 
-            log.info("Task execution succeeded: id={}, name={}", task.id, task.name)
+            // Check if this task was stopped during execution.
+            // After the interrupt fix, call() returns a clean empty response instead of
+            // throwing, so we need to check stoppedLogIds here (not just in the catch block).
+            if (stoppedLogIds.remove(taskLog.id)) {
+                taskLog.status = 5 // stopped by user (final)
+                taskLog.errorInfo = "Task stopped by user"
+                log.info("Task was stopped during execution: id={}, name={}", task.id, task.name)
+            } else {
+                taskLog.status = 1 // success
+                log.info("Task execution succeeded: id={}, name={}", task.id, task.name)
+            }
         } catch (e: Exception) {
             log.error("Task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
             // Check if this task was explicitly stopped by user
             if (stoppedLogIds.remove(taskLog.id)) {
-                taskLog.status = 4 // stopped by user
+                taskLog.status = 5 // stopped by user (final)
                 taskLog.errorInfo = "Task stopped by user"
             } else {
                 taskLog.status = 0 // failed
@@ -270,14 +279,13 @@ class SchedulerServiceImpl(
         } finally {
             // Clean up stoppedLogIds regardless of outcome to prevent memory leak
             stoppedLogIds.remove(taskLog.id)
-            runningTasks.remove(taskLog.id)
+            // NOTE: Do NOT remove from runningTasks here!
+            // Keep it in the map until AFTER updateById so that:
+            // - stopTask() finds it in runningTasks → INTERRUPT + stoppedLogIds → correct status
+            // - stopTaskViaDb() sees the correct DB status after updateById
+            // Removing too early causes a race: stopTaskViaDb sees stale status=3/4 → overwrites to 5
 
-            try {
-                routerClient.clearSession(sessionId)
-            } catch (e: Exception) {
-                log.warn("Failed to clear session {}: {}", sessionId, e.message)
-            }
-
+            // Compute end time and duration BEFORE any slow I/O (clearSession can take 10+ seconds)
             val endTime = LocalDateTime.now()
             taskLog.endTime = endTime
             taskLog.durationMs = if (taskLog.startTime != null) {
@@ -286,13 +294,28 @@ class SchedulerServiceImpl(
                 0
             }
 
-            // updateById uses WHERE status = 3, so if another instance already
-            // marked this log as stopped (status=4), the update is a no-op.
+            // Update DB IMMEDIATELY so the frontend sees the final status without waiting
+            // for clearSession. updateById uses WHERE status IN (3, 4), so it can transition
+            // from running (3) or stopping (4) to the final status (0/1/5).
             try {
                 agentTaskLogMapper.updateById(taskLog)
                 log.info("Updated agent task log: id={}, status={}, durationMs={}", taskLog.id, taskLog.status, taskLog.durationMs)
             } catch (e: Exception) {
                 log.error("Failed to update task log: id={}, error={}", taskLog.id, e.message, e)
+            }
+
+            // NOW safe to remove from runningTasks — DB is already in final state.
+            // Any concurrent stopTask() will either:
+            // a) find it in runningTasks (before this line) → INTERRUPT + stoppedLogIds → correct
+            // b) not find it (after this line) → stopTaskViaDb → sees correct DB status → correct
+            runningTasks.remove(taskLog.id)
+
+            // clearSession is slow (snapshot upload + container destroy) but non-critical for
+            // status reporting. Run it after the DB update to avoid blocking status visibility.
+            try {
+                routerClient.clearSession(sessionId)
+            } catch (e: Exception) {
+                log.warn("Failed to clear session {}: {}", sessionId, e.message)
             }
 
             executionGuard.updateExecutionStatus(
@@ -318,6 +341,15 @@ class SchedulerServiceImpl(
         // Mark this log as stopped so the catch block in executeTaskOnce() can detect it
         stoppedLogIds.add(logId)
 
+        // Immediately update DB to status=4 (stopping) so the frontend gets instant feedback.
+        // The final transition 4→5 (stopped) happens in executeTaskOnce()'s finally block.
+        try {
+            val rows = agentTaskLogMapper.updateStatusById(logId, 4, "Stopping...")
+            log.info("Set task log status to stopping(4): logId={}, rowsAffected={}", logId, rows)
+        } catch (e: Exception) {
+            log.warn("Failed to set stopping status for logId={}: {}", logId, e.message)
+        }
+
         // Send INTERRUPT command to router → agent-service → harnessAgent.interrupt()
         try {
             routerClient.sendCommand(runningTask.sessionId, CommandType.INTERRUPT)
@@ -334,7 +366,7 @@ class SchedulerServiceImpl(
      */
     private fun stopTaskViaDb(logId: Long): Boolean {
         val taskLog = agentTaskLogMapper.selectById(logId) ?: return false
-        if (taskLog.status != 3) return false // not running
+        if (taskLog.status != 3 && taskLog.status != 4) return false // not running or stopping
 
         // Try to interrupt via Quartz if it's a scheduled job
         try {
@@ -357,8 +389,8 @@ class SchedulerServiceImpl(
             }
         }
 
-        // Mark as stopped in DB
-        taskLog.status = 4
+        // Mark as stopped in DB (final status=5)
+        taskLog.status = 5
         taskLog.endTime = LocalDateTime.now()
         taskLog.errorInfo = "Task stopped by user"
         taskLog.durationMs = if (taskLog.startTime != null) {
@@ -378,7 +410,7 @@ class SchedulerServiceImpl(
     }
 
     /**
-     * Check if a task has an actively running log (status=3) that is NOT stale.
+     * Check if a task has an actively running log (status=3 or 4) that is NOT stale.
      * Stale logs (exceeded timeout) are automatically marked as timeout (status=2).
      */
     private fun hasActiveRunningLog(task: AgentTask): Boolean {

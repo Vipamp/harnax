@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useIntl } from '@umijs/max';
 import { Card, Button, message, Modal, Input, Select, Table, Tooltip, Tag } from 'antd';
-import { ScheduleOutlined, SearchOutlined, ReloadOutlined, CaretRightOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { ScheduleOutlined, SearchOutlined, ReloadOutlined, CaretRightOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, LoadingOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, MinusCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import StatusSwitch from '@/components/StatusSwitch';
 import { PageContainer } from '@ant-design/pro-components';
 import type { ColumnsType } from 'antd/es/table';
@@ -62,9 +62,9 @@ const AgentTaskManagement: React.FC = () => {
     loadTasks();
   }, [pageNum, pageSize, filters]);
 
-  // Poll when there are running tasks (lastRunStatus=3)
+  // Poll when there are running or stopping tasks (lastRunStatus=3 or 4)
   useEffect(() => {
-    const hasRunning = tasks.some((t) => t.lastRunStatus === 3);
+    const hasRunning = tasks.some((t) => t.lastRunStatus === 3 || t.lastRunStatus === 4);
     if (hasRunning) {
       pollingRef.current = setInterval(() => {
         loadTasksRef.current?.();
@@ -97,7 +97,7 @@ const AgentTaskManagement: React.FC = () => {
   const handleRunOnce = async (id: number) => {
     // Prevent triggering if task is already running
     const currentTask = tasks.find((t) => t.id === id);
-    if (currentTask?.lastRunStatus === 3) {
+    if (currentTask?.lastRunStatus === 3 || currentTask?.lastRunStatus === 4) {
       message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
       return;
     }
@@ -181,7 +181,8 @@ const AgentTaskManagement: React.FC = () => {
           1: { color: 'green', icon: <CheckCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.success', defaultMessage: 'Success' }) },
           2: { color: 'orange', icon: <ClockCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }) },
           3: { color: 'blue', icon: <LoadingOutlined spin />, text: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }) },
-          4: { color: 'default', icon: <MinusCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
+          4: { color: 'gold', icon: <ExclamationCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.stopping', defaultMessage: 'Stopping' }) },
+          5: { color: 'default', icon: <MinusCircleOutlined />, text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
         };
         const cfg = statusConfig[record.lastRunStatus] || statusConfig[0];
         return <Tag icon={cfg.icon} color={cfg.color} style={{ fontSize: 11 }}>{cfg.text}</Tag>;

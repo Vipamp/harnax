@@ -16,6 +16,8 @@
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+        <result column="headers" property="headers"/>
+        <result column="envs" property="envs"/>
     </resultMap>
 
     <!-- ==================== Basic CRUD Methods ==================== -->
@@ -38,10 +40,10 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO mcp_server (
-        name, description, type, command, url, status, is_public, creator, active, create_time, update_time
+        name, description, type, command, url, status, is_public, creator, active, create_time, update_time, headers, envs
         ) VALUES (
         #{name}, #{description}, #{type}, #{command}, #{url}, #{status}, #{isPublic}, #{creator}, #{active},
-        #{createTime}, #{updateTime}
+        #{createTime}, #{updateTime}, #{headers}, #{envs}
         )
     </insert>
 
@@ -56,7 +58,9 @@
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},
-        update_time = #{updateTime}
+        update_time = #{updateTime},
+        headers = #{headers},
+        envs = #{envs}
         WHERE id = #{id}
     </update>
 

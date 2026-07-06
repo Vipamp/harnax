@@ -91,4 +91,18 @@ class McpServer : Serializable {
      */
     @Schema(description = "Update time")
     var updateTime: LocalDateTime = LocalDateTime.now()
+
+    /**
+     * HTTP headers JSON string (for sse/streamablehttp type)
+     * Format: [{"key":"Authorization","value":"Bearer xxx","secret":true}]
+     */
+    @Schema(description = "HTTP headers JSON string")
+    var headers: String? = null
+
+    /**
+     * Environment variables JSON string (for stdio type)
+     * Format: [{"key":"API_KEY","value":"sk-xxx","secret":true}]
+     */
+    @Schema(description = "Environment variables JSON string")
+    var envs: String? = null
 }

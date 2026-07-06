@@ -13,6 +13,12 @@ interface AgentTaskLogMapper {
 
     fun updateById(log: AgentTaskLog): Int
 
+    /**
+     * Lightweight status-only update. Used by stopTask() to set status=4 (stopping)
+     * immediately so the frontend gets instant feedback while the agent is being interrupted.
+     */
+    fun updateStatusById(@Param("id") id: Long, @Param("status") status: Int, @Param("errorInfo") errorInfo: String?): Int
+
     fun selectLogList(
         @Param("taskId") taskId: Long?,
         @Param("taskName") taskName: String?,

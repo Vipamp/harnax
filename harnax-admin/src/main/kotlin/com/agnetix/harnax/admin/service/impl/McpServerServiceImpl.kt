@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.entity.Agent
@@ -19,6 +20,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.util.StringUtils.hasText
+import tools.jackson.databind.ObjectMapper
 
 /**
  * MCP server service implementation
@@ -27,6 +29,8 @@ import org.springframework.util.StringUtils.hasText
 class McpServerServiceImpl(
     private val jwtUtil: JwtUtil,
     private val mcpServerMapper: McpServerMapper,
+    private val secretFieldEncryptor: SecretFieldEncryptor,
+    private val objectMapper: ObjectMapper,
 ) : McpServerService {
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
@@ -78,6 +82,10 @@ class McpServerServiceImpl(
         mcpServer.status = request.status ?: 1
         mcpServer.active = 1
 
+        // Serialize headers and envs with encryption for secret values
+        mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers)
+        mcpServer.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+
         // Set tenant ID
         mcpServer.tenantId = TenantContext.getTenantId() ?: 1
 
@@ -114,6 +122,14 @@ class McpServerServiceImpl(
         request.command.let { mcpServer.command = it }
         request.url.let { mcpServer.url = it }
         request.isPublic.let { mcpServer.isPublic = it }
+
+        // Update headers and envs with encryption
+        if (request.headers != null) {
+            mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers)
+        }
+        if (request.envs != null) {
+            mcpServer.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+        }
 
         // Validate type and field linkage logic after update
         validateTypeAndFields(mcpServer.type, mcpServer.command, mcpServer.url)
@@ -180,10 +196,10 @@ class McpServerServiceImpl(
         }
     }
 
-    override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer)
+    override fun convertToResponse(mcpServer: McpServer): McpServerResponse = McpServerResponse.fromEntity(mcpServer, objectMapper, secretFieldEncryptor)
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
         val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
-        return McpHelper.listTools(mcpServer)
+        return McpHelper.listTools(mcpServer, secretFieldEncryptor::decryptToMap)
     }
 }

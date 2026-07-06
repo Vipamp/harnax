@@ -59,7 +59,7 @@ class AgentTask : Serializable {
     var updateTime: LocalDateTime = LocalDateTime.now()
 
     // Transient fields populated via LEFT JOIN in selectTaskList
-    @Schema(description = "Last run status (0:failed, 1:success, 2:timeout, 3:running), null if never run")
+    @Schema(description = "Last run status (0:failed, 1:success, 2:timeout, 3:running, 4:stopping, 5:stopped), null if never run")
     var lastRunStatus: Int? = null
 
     @Schema(description = "Last run start time, null if never run")

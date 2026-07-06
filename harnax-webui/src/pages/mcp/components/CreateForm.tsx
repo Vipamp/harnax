@@ -8,6 +8,7 @@ import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
+import ConfigEntriesEditor from './ConfigEntriesEditor';
 
 export interface CreateFormProps {
   visible: boolean;
@@ -111,32 +112,56 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         </Form.Item>
 
         {mcpType === 'stdio' && (
-          <Form.Item
-            name="command"
-            label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
-            rules={[{ required: true, message: intl.formatMessage({ id: 'pages.mcp.commandRequired', defaultMessage: 'stdio type requires execution command' }) }]}
-            extra={intl.formatMessage({ id: 'pages.mcp.commandExtra', defaultMessage: 'stdio type: enter command line to start MCP process, supports parameters' })}
-          >
-            <Input 
-              placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
-            />
-          </Form.Item>
+          <>
+            <Form.Item
+              name="command"
+              label={intl.formatMessage({ id: 'pages.mcp.command', defaultMessage: 'Command' })}
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.mcp.commandRequired', defaultMessage: 'stdio type requires execution command' }) }]}
+              extra={intl.formatMessage({ id: 'pages.mcp.commandExtra', defaultMessage: 'stdio type: enter command line to start MCP process, supports parameters' })}
+            >
+              <Input 
+                placeholder={intl.formatMessage({ id: 'pages.mcp.commandPlaceholder', defaultMessage: 'e.g.: npx -y @modelcontextprotocol/server-filesystem /tmp' })}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="envs"
+              label={intl.formatMessage({ id: 'pages.mcp.envs', defaultMessage: '环境变量' })}
+              extra={intl.formatMessage({ id: 'pages.mcp.envsExtra', defaultMessage: 'STDIO 进程的环境变量配置' })}
+            >
+              <ConfigEntriesEditor
+                placeholder={{ key: 'API_KEY', value: 'sk-xxx' }}
+              />
+            </Form.Item>
+          </>
         )}
 
         {(mcpType === 'sse' || mcpType === 'streamablehttp') && (
-          <Form.Item
-            name="url"
-            label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
-            rules={[
-              { required: true, message: intl.formatMessage({ id: 'pages.mcp.urlRequired', defaultMessage: '{type} type requires service URL' }, { type: mcpType === 'sse' ? 'SSE' : 'Streamable HTTP' }) },
-              { type: 'url', message: intl.formatMessage({ id: 'pages.mcp.urlInvalid', defaultMessage: 'Please enter correct URL format' }) },
-            ]}
-            extra={intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
-          >
-            <Input 
-              placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
-            />
-          </Form.Item>
+          <>
+            <Form.Item
+              name="url"
+              label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
+              rules={[
+                { required: true, message: intl.formatMessage({ id: 'pages.mcp.urlRequired', defaultMessage: '{type} type requires service URL' }, { type: mcpType === 'sse' ? 'SSE' : 'Streamable HTTP' }) },
+                { type: 'url', message: intl.formatMessage({ id: 'pages.mcp.urlInvalid', defaultMessage: 'Please enter correct URL format' }) },
+              ]}
+              extra={intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
+            >
+              <Input 
+                placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="headers"
+              label={intl.formatMessage({ id: 'pages.mcp.headers', defaultMessage: 'Headers' })}
+              extra={intl.formatMessage({ id: 'pages.mcp.headersExtra', defaultMessage: 'HTTP 请求头配置，如认证 Token' })}
+            >
+              <ConfigEntriesEditor
+                placeholder={{ key: 'Authorization', value: 'Bearer sk-xxx' }}
+              />
+            </Form.Item>
+          </>
         )}
 
         <Form.Item

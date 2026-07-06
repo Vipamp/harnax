@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.mapper.McpServerMapper
 import org.junit.jupiter.api.Assertions.*
@@ -26,6 +27,7 @@ import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -44,6 +46,12 @@ class McpServerServiceImplTest {
 
     @Mock
     private lateinit var jwtUtil: JwtUtil
+
+    @Mock
+    private lateinit var secretFieldEncryptor: SecretFieldEncryptor
+
+    @Mock
+    private lateinit var objectMapper: ObjectMapper
 
     @InjectMocks
     private lateinit var mcpServerService: McpServerServiceImpl

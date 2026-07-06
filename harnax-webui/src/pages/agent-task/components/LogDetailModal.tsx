@@ -20,7 +20,8 @@ const LogDetailModal: React.FC<LogDetailModalProps> = ({ visible, log, onCancel 
     1: { color: 'green', text: intl.formatMessage({ id: 'pages.common.success', defaultMessage: 'Success' }) },
     2: { color: 'orange', text: intl.formatMessage({ id: 'pages.common.timeout', defaultMessage: 'Timeout' }) },
     3: { color: 'blue', text: intl.formatMessage({ id: 'pages.common.running', defaultMessage: 'Running' }) },
-    4: { color: 'default', text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
+    4: { color: 'gold', text: intl.formatMessage({ id: 'pages.common.stopping', defaultMessage: 'Stopping' }) },
+    5: { color: 'default', text: intl.formatMessage({ id: 'pages.common.stopped', defaultMessage: 'Stopped' }) },
   };
 
   const statusInfo = statusMap[log.status] || statusMap[0];

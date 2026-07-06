@@ -63,6 +63,17 @@ class HarnessAgentWrapper(
     @Volatile
     private var activeCallDisposable: Disposable? = null
 
+    /**
+     * Set to `true` by [interrupt] so that [call] can detect that an exception was caused by
+     * an explicit interrupt (rather than a genuine failure) and return a clean empty response.
+     */
+    @Volatile
+    private var interrupted: Boolean = false
+
+    /** The thread currently blocked in [call], used by [interrupt] to break out of `Mono.block()`. */
+    @Volatile
+    private var blockingThread: Thread? = null
+
     fun callStream(
         prompt: String,
         imageUrls: List<String> = listOf(),
@@ -102,6 +113,7 @@ class HarnessAgentWrapper(
             // subscribe() kicks off the computation and gives us a Disposable to cancel later.
             // block() then waits for the result on the current thread.
             activeCallDisposable = mono.subscribe()
+            blockingThread = Thread.currentThread()
             try {
                 val responseMsg = mono.block()
                 val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
@@ -111,11 +123,19 @@ class HarnessAgentWrapper(
                     content = content,
                     thinking = thinking?.ifEmpty { null },
                 )
-            } catch (e: java.util.concurrent.CancellationException) {
-                log.info("[harness] Call cancelled via dispose for session={}", sessionId)
-                return ChatResponse(sessionId = sessionId, content = "", thinking = null)
+            } catch (e: Exception) {
+                // harnessAgent.interrupt() invalidates the sandbox context, which causes
+                // the agent's internal tool calls to throw various exceptions (e.g.
+                // SandboxConfigurationException, InterruptedException, CancellationException).
+                // Check the interrupted flag to distinguish an explicit stop from a real failure.
+                if (interrupted) {
+                    log.info("[harness] Call interrupted for session={}, suppressed error: {}", sessionId, e.message)
+                    return ChatResponse(sessionId = sessionId, content = "", thinking = null)
+                }
+                throw e
             } finally {
                 activeCallDisposable = null
+                blockingThread = null
             }
         } finally {
             persistKeepAliveSnapshot(ctxResult)
@@ -125,20 +145,31 @@ class HarnessAgentWrapper(
     /**
      * Interrupt the ongoing agent execution.
      *
-     * Two mechanisms are used:
-     * 1. Disposes the active [Disposable] from [call] — this cancels the Mono subscription chain
-     *    and causes `block()` to throw [java.util.concurrent.CancellationException].
-     * 2. Calls [HarnessAgent.interrupt] as a best-effort signal to the agent's internal loop.
+     * Three mechanisms are used:
+     * 1. Sets [interrupted] flag so [call] can detect the interrupt and suppress resulting errors.
+     * 2. Disposes the active [Disposable] from [call] — best-effort Mono subscription cancellation.
+     * 3. Interrupts the blocking thread to break out of `Mono.block()`.
+     * 4. Calls [HarnessAgent.interrupt] — invalidates the sandbox context, causing the agent's
+     *    internal operations to fail and the Mono to complete with an error.
      */
     fun interrupt() {
         log.info("[harness] Interrupting agent for session={}", sessionId)
-        // 1. Cancel the Mono subscription (primary mechanism for blocking call())
+        // 1. Mark as interrupted BEFORE triggering any cancellation, so the catch block
+        //    in call() can detect it regardless of timing.
+        interrupted = true
+        // 2. Cancel the Mono subscription (best-effort)
         val disposable = activeCallDisposable
         if (disposable != null && !disposable.isDisposed) {
             disposable.dispose()
             log.info("[harness] Disposed active call subscription for session={}", sessionId)
         }
-        // 2. Best-effort signal to agent internals (useful for streaming case)
+        // 3. Interrupt the blocking thread to break out of Mono.block()
+        val thread = blockingThread
+        if (thread != null) {
+            thread.interrupt()
+            log.info("[harness] Interrupted blocking thread for session={}", sessionId)
+        }
+        // 4. Signal to agent internals — invalidates sandbox, causes agent ops to fail
         harnessAgent.interrupt()
     }
 

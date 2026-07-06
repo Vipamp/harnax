@@ -23,6 +23,7 @@ import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
+import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
@@ -81,6 +82,7 @@ class HarnessAgentLauncher(
     val minioConfig: MinioConfig? = null,
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
     val snapshotSpec: SandboxSnapshotSpec? = null,
+    val mcpConfigDecryptor: McpConfigDecryptor? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -143,7 +145,7 @@ class HarnessAgentLauncher(
         agentSpec.mcpServices.forEach {
             val mcpConfig = mcpConfigAdaptor.getConfig(it.mcpId)
             if (mcpConfig != null) {
-                agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync))
+                agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync, mcpConfigDecryptor?.let { d -> d::decryptToMap }))
             } else if (!it.skipIfMissing) {
                 log.error("Mcp config with id `${it.mcpId}` not found.")
                 throw HarnaxErrorCode.AGENT_MCP_NOT_FOUND.format(it.mcpId)
@@ -349,6 +351,7 @@ class HarnessAgentLauncher(
             workspaceRoot: Path = Files.createTempDirectory("harness-workspace"),
             harnessConfig: HarnessConfig = HarnessConfig(),
             minioConfig: MinioConfig? = null,
+            mcpConfigDecryptor: McpConfigDecryptor? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -395,6 +398,7 @@ class HarnessAgentLauncher(
                 minioConfig = minioConfig,
                 keepAliveSandboxManager = keepAliveManager,
                 snapshotSpec = snapshotSpec,
+                mcpConfigDecryptor = mcpConfigDecryptor,
             )
         }
     }

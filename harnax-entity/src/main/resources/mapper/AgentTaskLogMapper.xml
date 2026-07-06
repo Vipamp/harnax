@@ -45,6 +45,12 @@
             token_usage = #{tokenUsage},
             end_time = #{endTime},
             duration_ms = #{durationMs}
+        WHERE id = #{id} AND status IN (3, 4)
+    </update>
+
+    <!-- Lightweight status-only update used by stopTask() to set status=4 (stopping) immediately. -->
+    <update id="updateStatusById">
+        UPDATE agent_task_log SET status = #{status}, error_info = #{errorInfo}
         WHERE id = #{id} AND status = 3
     </update>
 
@@ -79,11 +85,11 @@
     </select>
 
     <select id="selectRunningByTaskId" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log WHERE task_id = #{taskId} AND status = 3 ORDER BY create_time DESC
+        SELECT * FROM agent_task_log WHERE task_id = #{taskId} AND status IN (3, 4) ORDER BY create_time DESC
     </select>
 
     <select id="selectAllRunningLogs" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log WHERE status = 3 ORDER BY create_time DESC
+        SELECT * FROM agent_task_log WHERE status IN (3, 4) ORDER BY create_time DESC
     </select>
 
 </mapper>

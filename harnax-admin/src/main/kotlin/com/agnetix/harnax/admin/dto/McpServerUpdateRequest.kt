@@ -35,4 +35,10 @@ data class McpServerUpdateRequest(
 
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int = 0,
+
+    @Schema(description = "HTTP headers configuration (for sse/streamablehttp type)")
+    val headers: List<McpConfigEntry>? = null,
+
+    @Schema(description = "Environment variables configuration (for stdio type)")
+    val envs: List<McpConfigEntry>? = null,
 )
