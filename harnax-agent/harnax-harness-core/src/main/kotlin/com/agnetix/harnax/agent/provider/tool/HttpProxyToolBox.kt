@@ -2,7 +2,6 @@ package com.agnetix.harnax.agent.provider.tool
 
 import io.agentscope.core.tool.AgentTool
 import io.agentscope.core.tool.ToolCallParam
-import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
 import org.slf4j.LoggerFactory
@@ -47,6 +46,7 @@ class HttpProxyToolBox(
     override fun callAsync(param: ToolCallParam): Mono<ToolResultBlock> = Mono.fromCallable {
         try {
             val requestBody = objectMapper.writeValueAsString(param.input)
+            val toolId = param.toolUseBlock.id
 
             val requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(httpUrl))
@@ -74,13 +74,18 @@ class HttpProxyToolBox(
             }
 
             ToolResultBlock.of(
-                param.id,
+                toolId,
                 toolName,
                 TextBlock.builder().text(resultText).build(),
             )
         } catch (e: Exception) {
             log.error("HTTP tool '{}' call failed: {}", toolName, e.message, e)
-            ToolResultBlock.error(param.id, toolName, "HTTP tool call failed: ${e.message}")
+            val toolId = param.toolUseBlock?.id
+            ToolResultBlock.of(
+                toolId,
+                toolName,
+                TextBlock.builder().text("Error: HTTP tool call failed: ${e.message}").build(),
+            )
         }
     }
 }
