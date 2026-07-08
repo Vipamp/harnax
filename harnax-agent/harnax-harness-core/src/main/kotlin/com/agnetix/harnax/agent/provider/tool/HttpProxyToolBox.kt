@@ -1,17 +1,17 @@
 package com.agnetix.harnax.agent.provider.tool
 
-import io.agentscope.core.tool.AgentTool
-import io.agentscope.core.tool.ToolCallParam
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock
+import io.agentscope.core.tool.AgentTool
+import io.agentscope.core.tool.ToolCallParam
 import org.slf4j.LoggerFactory
 import reactor.core.publisher.Mono
+import tools.jackson.databind.ObjectMapper
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import tools.jackson.databind.ObjectMapper
 
 class HttpProxyToolBox(
     private val toolName: String,
@@ -33,14 +33,12 @@ class HttpProxyToolBox(
 
     override fun getDescription(): String = toolDescription
 
-    override fun getParameters(): Map<String, Any> {
-        return try {
-            @Suppress("UNCHECKED_CAST")
-            objectMapper.readValue(inputSchemaJson, Map::class.java) as Map<String, Any>
-        } catch (e: Exception) {
-            log.warn("Failed to parse input schema for tool '{}', using empty schema", toolName, e)
-            emptyMap()
-        }
+    override fun getParameters(): Map<String, Any> = try {
+        @Suppress("UNCHECKED_CAST")
+        objectMapper.readValue(inputSchemaJson, Map::class.java) as Map<String, Any>
+    } catch (e: Exception) {
+        log.warn("Failed to parse input schema for tool '{}', using empty schema", toolName, e)
+        emptyMap()
     }
 
     override fun callAsync(param: ToolCallParam): Mono<ToolResultBlock> = Mono.fromCallable {

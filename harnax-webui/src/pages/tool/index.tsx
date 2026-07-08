@@ -121,17 +121,19 @@ import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUt
 
 const { Text } = Typography;
 
-const TOOL_TYPE_CONFIG: Record<
+const getToolTypeConfig = (intl: any): Record<
   string,
   { color: string; label: string; icon: React.ReactNode; bg: string }
-> = {
-  BUILTIN: { color: '#4f6ef7', label: 'BUILTIN', icon: <BuildOutlined />, bg: 'linear-gradient(135deg, #4f6ef7 0%, #6b8aff 100%)' },
-  CUSTOM: { color: '#52c41a', label: 'CUSTOM', icon: <CodeOutlined />, bg: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
-  HTTP: { color: '#faad14', label: 'HTTP', icon: <GlobalOutlined />, bg: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)' },
-};
+> => ({
+  BUILTIN: { color: '#4f6ef7', label: intl.formatMessage({ id: 'pages.tool.type.builtin', defaultMessage: 'BUILTIN' }), icon: <BuildOutlined />, bg: 'linear-gradient(135deg, #4f6ef7 0%, #6b8aff 100%)' },
+  CUSTOM: { color: '#52c41a', label: intl.formatMessage({ id: 'pages.tool.type.custom', defaultMessage: 'CUSTOM' }), icon: <CodeOutlined />, bg: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
+  HTTP: { color: '#faad14', label: intl.formatMessage({ id: 'pages.tool.type.http', defaultMessage: 'HTTP' }), icon: <GlobalOutlined />, bg: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)' },
+});
 
 const ToolManagement: React.FC = () => {
   const intl = useIntl();
+  const TOOL_TYPE_CONFIG = useMemo(() => getToolTypeConfig(intl), [intl]);
+
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<any>();
@@ -337,9 +339,9 @@ const ToolManagement: React.FC = () => {
           placeholder={intl.formatMessage({ id: 'pages.tool.typeFilter', defaultMessage: 'Type Filter' })}
           width="auto"
           options={[
-            { label: 'BUILTIN', value: 'BUILTIN' },
-            { label: 'CUSTOM', value: 'CUSTOM' },
-            { label: 'HTTP', value: 'HTTP' },
+            { label: intl.formatMessage({ id: 'pages.tool.type.builtin', defaultMessage: 'BUILTIN' }), value: 'BUILTIN' },
+            { label: intl.formatMessage({ id: 'pages.tool.type.custom', defaultMessage: 'CUSTOM' }), value: 'CUSTOM' },
+            { label: intl.formatMessage({ id: 'pages.tool.type.http', defaultMessage: 'HTTP' }), value: 'HTTP' },
           ]}
         />
       </SearchFilterBar>

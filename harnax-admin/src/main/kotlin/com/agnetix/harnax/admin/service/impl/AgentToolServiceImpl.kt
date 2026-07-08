@@ -133,9 +133,7 @@ class AgentToolServiceImpl(
 
     override fun getAvailableTools(): List<AgentTool> = agentToolMapper.selectAllEnabled()
 
-    private fun serializeHeaders(headers: List<McpConfigEntry>): String {
-        return secretFieldEncryptor.serializeWithEncryption(headers) ?: "[]"
-    }
+    private fun serializeHeaders(headers: List<McpConfigEntry>): String = secretFieldEncryptor.serializeWithEncryption(headers) ?: "[]"
 
     private fun deserializeHeaders(json: String?): List<McpConfigEntry>? {
         if (json.isNullOrBlank()) return null

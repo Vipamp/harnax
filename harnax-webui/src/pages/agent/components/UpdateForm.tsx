@@ -273,15 +273,15 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const handleNext = async () => {
     try {
       if (currentStep === 0) {
-        // 第一步：验证基本信息
+        // Step 1: Validate basic info
         await form.validateFields(['name', 'description', 'systemPrompt']);
       } else if (currentStep === 1) {
-        // 第二步：MCP 配置（可选），直接下一步
-        // MCP 配置已经在变化时实时保存到 mcpConfigs 状态中
+        // Step 2: Tool config (optional, can be skipped)
       } else if (currentStep === 2) {
-        // 第三步：Skill 配置（可选），直接下一步
+        // Step 3: MCP config (optional, can be skipped)
       } else if (currentStep === 3) {
-        // 第四步：提交表单
+        // Step 4: Skill config (optional, can be skipped)
+        // Submit form
         // 先验证并获取第一步的表单值
         const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId', 'owner']);
         console.log('表单验证后的值:', formValues);
@@ -356,9 +356,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     >
       <Steps current={currentStep} style={{ marginBottom: 24 }}>
         <Step title={intl.formatMessage({ id: 'pages.agent.basicInfo', defaultMessage: 'Basic Info' })} />
+        <Step title={intl.formatMessage({ id: 'pages.agent.toolConfig', defaultMessage: 'Tool Config' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.mcpConfig', defaultMessage: 'MCP Config' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
-        <Step title={intl.formatMessage({ id: 'pages.agent.toolConfig', defaultMessage: 'Tool Config' })} />
       </Steps>
 
       <Form 
@@ -443,7 +443,57 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           </>
         )}
 
+        {/* Step 2: Tool Config */}
         {currentStep === 1 && (
+          <div>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({ id: 'pages.agent.toolConfigOptional', defaultMessage: 'Configure tools (optional, can be skipped)' })}
+              </span>
+            </div>
+
+            {toolConfigs.map((config, index) => (
+              <Space key={index} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                <Select
+                  style={{ width: 200 }}
+                  placeholder={intl.formatMessage({ id: 'pages.agent.tool.select', defaultMessage: 'Select Tool' })}
+                  value={config.toolId}
+                  onChange={(value) => handleToolConfigChange(index, 'toolId', value)}
+                  options={tools.map((tool: any) => ({
+                    label: `${tool.displayName || tool.name} [${tool.type}]`,
+                    value: tool.id,
+                  }))}
+                />
+                <span>
+                  {intl.formatMessage({ id: 'pages.agent.tool.enableSkip', defaultMessage: 'Skip if missing' })}
+                  <Switch
+                    size="small"
+                    checked={config.enableSkip}
+                    onChange={(checked) => handleToolConfigChange(index, 'enableSkip', checked)}
+                  />
+                </span>
+                <span>
+                  {intl.formatMessage({ id: 'pages.agent.tool.needConfirm', defaultMessage: 'Need confirm' })}
+                  <Switch
+                    size="small"
+                    checked={config.needConfirm}
+                    disabled={config.entityNeedConfirm === 0}
+                    onChange={(checked) => handleToolConfigChange(index, 'needConfirm', checked)}
+                  />
+                </span>
+                <Button type="text" danger onClick={() => removeToolConfig(index)}>
+                  {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
+                </Button>
+              </Space>
+            ))}
+            <Button type="dashed" onClick={addToolConfig} style={{ width: '100%' }}>
+              + {intl.formatMessage({ id: 'pages.agent.tool.add', defaultMessage: 'Add Tool' })}
+            </Button>
+          </div>
+        )}
+
+        {/* Step 3: MCP Config */}
+        {currentStep === 2 && (
           <div>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
@@ -493,7 +543,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           </div>
         )}
 
-        {currentStep === 2 && (
+        {/* Step 4: Skill Config */}
+        {currentStep === 3 && (
           <div>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
@@ -556,7 +607,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                           </div>
                           {skill.repositoryName && (
                             <div style={{ fontSize: '12px', color: 'var(--vip-text-tertiary)', marginTop: '2px' }}>
-                              仓库: {skill.repositoryName}
+                              {intl.formatMessage({ id: 'pages.agent.skill.repository', defaultMessage: 'Repository' })}: {skill.repositoryName}
                             </div>
                           )}
                           {skill.description && (
@@ -579,54 +630,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           </div>
         )}
 
-        {/* 第四步：工具配置 */}
-        {currentStep === 3 && (
-          <div>
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
-                {intl.formatMessage({ id: 'pages.agent.toolConfigOptional', defaultMessage: 'Configure tools (optional, can be skipped)' })}
-              </span>
-            </div>
 
-            {toolConfigs.map((config, index) => (
-              <Space key={index} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
-                <Select
-                  style={{ width: 200 }}
-                  placeholder={intl.formatMessage({ id: 'pages.agent.tool.select', defaultMessage: 'Select Tool' })}
-                  value={config.toolId}
-                  onChange={(value) => handleToolConfigChange(index, 'toolId', value)}
-                  options={tools.map((tool: any) => ({
-                    label: `${tool.displayName || tool.name} [${tool.type}]`,
-                    value: tool.id,
-                  }))}
-                />
-                <span>
-                  {intl.formatMessage({ id: 'pages.agent.tool.enableSkip', defaultMessage: 'Skip if missing' })}
-                  <Switch
-                    size="small"
-                    checked={config.enableSkip}
-                    onChange={(checked) => handleToolConfigChange(index, 'enableSkip', checked)}
-                  />
-                </span>
-                <span>
-                  {intl.formatMessage({ id: 'pages.agent.tool.needConfirm', defaultMessage: 'Need confirm' })}
-                  <Switch
-                    size="small"
-                    checked={config.needConfirm}
-                    disabled={config.entityNeedConfirm === 0}
-                    onChange={(checked) => handleToolConfigChange(index, 'needConfirm', checked)}
-                  />
-                </span>
-                <Button type="text" danger onClick={() => removeToolConfig(index)}>
-                  {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
-                </Button>
-              </Space>
-            ))}
-            <Button type="dashed" onClick={addToolConfig} style={{ width: '100%' }}>
-              + {intl.formatMessage({ id: 'pages.agent.tool.add', defaultMessage: 'Add Tool' })}
-            </Button>
-          </div>
-        )}
       </Form>
 
         <Button 

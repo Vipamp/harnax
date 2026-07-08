@@ -42,6 +42,9 @@ class Channel : Serializable {
     @Schema(description = "Communication mode (webhook/websocket/long_polling)")
     var communicationMode: String = "webhook"
 
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
+    var permissionMode: String = "DEFAULT"
+
     @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)")
     var enabled: Int = 1
 

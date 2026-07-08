@@ -55,6 +55,7 @@ class AgentSpecResolver(
             .enableThinking(specInfo.enableThink == 1)
             .enableSearch(specInfo.enableSearch == 1)
             .enablePlan(specInfo.enablePlan == 1)
+            .permissionMode(specInfo.permissionMode)
             .build()
 
         return agentSpec to chatSpec

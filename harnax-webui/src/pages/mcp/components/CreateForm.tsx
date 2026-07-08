@@ -161,6 +161,16 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
                 placeholder={{ key: 'Authorization', value: 'Bearer sk-xxx' }}
               />
             </Form.Item>
+
+            <Form.Item
+              name="envs"
+              label={intl.formatMessage({ id: 'pages.mcp.envs', defaultMessage: '环境变量' })}
+              extra={intl.formatMessage({ id: 'pages.mcp.envsExtraHttp', defaultMessage: 'MCP 服务连接的环境变量配置' })}
+            >
+              <ConfigEntriesEditor
+                placeholder={{ key: 'API_KEY', value: 'sk-xxx' }}
+              />
+            </Form.Item>
           </>
         )}
 

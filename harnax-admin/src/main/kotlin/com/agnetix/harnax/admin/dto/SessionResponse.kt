@@ -36,6 +36,8 @@ data class SessionResponse(
     var enableSearch: Int? = null,
     @Schema(description = "Enable planning (0:no, 1:yes)", example = "0")
     var enablePlan: Int? = null,
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)", example = "DEFAULT")
+    var permissionMode: String? = null,
     @Schema(description = "MCP server list")
     var mcpList: List<McpItem> = listOf(),
     @Schema(description = "Skill list")

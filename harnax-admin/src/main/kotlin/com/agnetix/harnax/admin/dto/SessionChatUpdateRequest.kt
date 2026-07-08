@@ -11,4 +11,7 @@ data class SessionChatUpdateRequest(
 
     @Schema(description = "Enable planning")
     val enablePlan: Boolean? = false,
+
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
+    val permissionMode: String? = null,
 )

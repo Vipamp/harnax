@@ -18,6 +18,7 @@ import io.agentscope.core.message.ImageBlock
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
+import io.agentscope.core.permission.PermissionMode
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.sandbox.SandboxContext
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec
@@ -32,6 +33,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.Duration
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
 
 /**
  * Wraps a [HarnessAgent] and exposes a streaming call API.
@@ -52,6 +54,7 @@ class HarnessAgentWrapper(
     val keepAliveSnapshotSpec: SandboxSnapshotSpec? = null,
     val sandboxImage: String = "python:3.11-slim",
     val sandboxWorkspaceRoot: String = "/workspace",
+    val permissionMode: String = "DEFAULT",
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -107,29 +110,54 @@ class HarnessAgentWrapper(
 
     fun call(msgs: List<Msg>): ChatResponse {
         val ctxResult = buildRuntimeContext()
+        // Set permission mode from session configuration (defaults to DEFAULT if not configured)
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         try {
             val mono = harnessAgent.call(msgs, ctxResult.runtimeContext)
                 .timeout(Duration.ofMinutes(5))
-            // subscribe() kicks off the computation and gives us a Disposable to cancel later.
-            // block() then waits for the result on the current thread.
-            activeCallDisposable = mono.subscribe()
+            // Use a single subscribe() to avoid double subscription on the cold Mono.
+            // The previous subscribe()+block() pattern created two independent subscriptions,
+            // causing SandboxLifecycleMiddleware to acquire/release the sandbox twice and
+            // leaving the second subscription with a null sandbox reference.
+            var result: Msg? = null
+            var error: Throwable? = null
+            val latch = CountDownLatch(1)
             blockingThread = Thread.currentThread()
+            activeCallDisposable =
+                mono.subscribe(
+                    { msg ->
+                        result = msg
+                        latch.countDown()
+                    },
+                    { err ->
+                        error = err
+                        latch.countDown()
+                    },
+                )
             try {
-                val responseMsg = mono.block()
-                val content = responseMsg?.let { MsgExtractHelper.extractText(it) } ?: ""
-                val thinking = responseMsg?.let { MsgExtractHelper.extractThinking(it) }
+                latch.await()
+                if (error != null) {
+                    val cause = error!!
+                    // harnessAgent.interrupt() invalidates the sandbox context, which causes
+                    // the agent's internal tool calls to throw various exceptions (e.g.
+                    // SandboxConfigurationException, InterruptedException, CancellationException).
+                    // Check the interrupted flag to distinguish an explicit stop from a real failure.
+                    if (interrupted) {
+                        log.info("[harness] Call interrupted for session={}, suppressed error: {}", sessionId, cause.message)
+                        return ChatResponse(sessionId = sessionId, content = "", thinking = null)
+                    }
+                    throw cause
+                }
+                val content = result?.let { MsgExtractHelper.extractText(it) } ?: ""
+                val thinking = result?.let { MsgExtractHelper.extractThinking(it) }
                 return ChatResponse(
                     sessionId = sessionId,
                     content = content,
                     thinking = thinking?.ifEmpty { null },
                 )
-            } catch (e: Exception) {
-                // harnessAgent.interrupt() invalidates the sandbox context, which causes
-                // the agent's internal tool calls to throw various exceptions (e.g.
-                // SandboxConfigurationException, InterruptedException, CancellationException).
-                // Check the interrupted flag to distinguish an explicit stop from a real failure.
+            } catch (e: InterruptedException) {
                 if (interrupted) {
-                    log.info("[harness] Call interrupted for session={}, suppressed error: {}", sessionId, e.message)
+                    log.info("[harness] Call interrupted for session={}, suppressed InterruptedException", sessionId)
                     return ChatResponse(sessionId = sessionId, content = "", thinking = null)
                 }
                 throw e
@@ -177,6 +205,8 @@ class HarnessAgentWrapper(
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
         val ctxResult = buildRuntimeContext()
+        // Set permission mode from session configuration (defaults to DEFAULT if not configured)
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
             .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
             .doOnNext { extracted(it) }

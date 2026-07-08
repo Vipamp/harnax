@@ -1,9 +1,9 @@
 package com.agnetix.harnax.agent.provider.tool
 
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.ApplicationContext
-import jakarta.annotation.PostConstruct
 
 class ToolRegistry {
 

@@ -42,6 +42,9 @@ data class ChannelResponse(
     @Schema(description = "Communication mode (webhook/websocket/long_polling)")
     val communicationMode: String? = null,
 
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
+    val permissionMode: String? = null,
+
     @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)")
     val enabled: Int? = null,
 
@@ -89,6 +92,7 @@ data class ChannelResponse(
             callbackKey = channel.callbackKey,
             sessionId = channel.sessionId,
             communicationMode = channel.communicationMode,
+            permissionMode = channel.permissionMode,
             enabled = channel.enabled,
             configJson = channel.configJson,
             description = channel.description,

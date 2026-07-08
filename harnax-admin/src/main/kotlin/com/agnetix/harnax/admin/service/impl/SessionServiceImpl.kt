@@ -80,6 +80,7 @@ class SessionServiceImpl(
         response.enableThink = session.enableThink
         response.enableSearch = session.enableSearch
         response.enablePlan = session.enablePlan
+        response.permissionMode = session.permissionMode
 
         response.owner = session.owner
         response.status = session.status
@@ -226,6 +227,7 @@ class SessionServiceImpl(
         request.enableThink?.let { session.enableThink = if (it) 1 else 0 }
         request.enableSearch?.let { session.enableSearch = if (it) 1 else 0 }
         request.enablePlan?.let { session.enablePlan = if (it) 1 else 0 }
+        request.permissionMode?.let { session.permissionMode = it }
 
         // Update timestamp
         session.updateTime = LocalDateTime.now()

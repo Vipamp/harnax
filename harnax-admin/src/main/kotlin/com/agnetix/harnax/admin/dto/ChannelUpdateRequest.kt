@@ -22,6 +22,10 @@ data class ChannelUpdateRequest(
     @Size(max = 20)
     val communicationMode: String? = null,
 
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)", example = "DEFAULT")
+    @Size(max = 20)
+    val permissionMode: String? = null,
+
     @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)", example = "1")
     val enabled: Int? = null,
 

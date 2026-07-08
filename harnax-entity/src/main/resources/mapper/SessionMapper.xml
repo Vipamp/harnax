@@ -17,6 +17,7 @@
         <result column="enable_think" property="enableThink"/>
         <result column="enable_search" property="enableSearch"/>
         <result column="enable_plan" property="enablePlan"/>
+        <result column="permission_mode" property="permissionMode"/>
         <result column="mcp_list" property="mcpList"/>
         <result column="skill_list" property="skillList"/>
         <result column="owner" property="owner"/>
@@ -60,13 +61,13 @@
         INSERT INTO session (
             session_id, title, session_description, agent_id,
             name, description, system_prompt, model_id,
-            enable_think, enable_search, enable_plan,
+            enable_think, enable_search, enable_plan, permission_mode,
             mcp_list, skill_list, owner,
             tenant_id, status, is_public, creator, active, create_time, update_time
         ) VALUES (
             #{sessionId}, #{title}, #{sessionDescription}, #{agentId},
             #{name}, #{description}, #{systemPrompt}, #{modelId},
-            #{enableThink}, #{enableSearch}, #{enablePlan},
+            #{enableThink}, #{enableSearch}, #{enablePlan}, #{permissionMode},
             #{mcpList}, #{skillList}, #{owner},
             #{tenantId}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
@@ -82,6 +83,7 @@
         enable_think = #{enableThink},
         enable_search = #{enableSearch},
         enable_plan = #{enablePlan},
+        permission_mode = #{permissionMode},
         system_prompt = #{systemPrompt},
         is_public = #{isPublic},
         active = #{active},

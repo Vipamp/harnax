@@ -49,6 +49,9 @@ class Session : Serializable {
     @Schema(description = "Planning enabled (0:no, 1:yes)")
     var enablePlan: Int = 0
 
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
+    var permissionMode: String = "DEFAULT"
+
     @Schema(description = "MCP service list (JSON format)")
     var mcpList: String = "[]"
 

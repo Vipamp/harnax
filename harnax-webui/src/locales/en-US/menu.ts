@@ -54,6 +54,7 @@ export default {
   'menu.context.model': 'Model Management',
   'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
+  'menu.context.tool': 'Tool Management',
   'menu.context.channel': 'Channel Management',
   
   // Agent
@@ -73,4 +74,5 @@ export default {
   'menu.system.tenant.management': 'Tenant Management',
   'menu.system.token.monitor': 'Token Monitor',
   'menu.system.apikey.management': 'API Key Management',
+  'menu.system.env.management': 'Env Variables',
 };

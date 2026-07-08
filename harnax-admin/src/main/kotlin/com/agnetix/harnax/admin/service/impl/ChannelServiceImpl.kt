@@ -52,6 +52,7 @@ class ChannelServiceImpl(
             type = request.type!!
             agentId = request.agentId!!
             communicationMode = request.communicationMode ?: "webhook"
+            permissionMode = request.permissionMode ?: "DEFAULT"
             enabled = request.enabled ?: 1
             configJson = request.configJson
             description = request.description
@@ -78,6 +79,7 @@ class ChannelServiceImpl(
         request.type?.let { channel.type = it }
         request.agentId?.let { channel.agentId = it }
         request.communicationMode?.let { channel.communicationMode = it }
+        request.permissionMode?.let { channel.permissionMode = it }
         request.enabled?.let { channel.enabled = it }
         request.configJson?.let { channel.configJson = it }
         request.description?.let { channel.description = it }

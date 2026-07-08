@@ -127,6 +127,11 @@ export default [
         component: './api-key',
         access: 'canAccessUserManagement',
       },
+      {
+        name: 'env.management',
+        path: '/system/env-variable',
+        component: './env-variable',
+      },
     ],
   },
   {

@@ -151,6 +151,7 @@ class InternalApiController(
             enableThink = session.enableThink,
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
+            permissionMode = session.permissionMode,
         )
     }
 
@@ -170,6 +171,7 @@ class InternalApiController(
             mcpList = agent.mcpList,
             skillList = agent.skillList,
             toolList = agent.toolList,
+            permissionMode = channel.permissionMode,
         )
     }
 
@@ -192,6 +194,7 @@ class InternalApiController(
             mcpList = agent.mcpList,
             skillList = agent.skillList,
             toolList = agent.toolList,
+            permissionMode = "BYPASS",
         )
     }
 

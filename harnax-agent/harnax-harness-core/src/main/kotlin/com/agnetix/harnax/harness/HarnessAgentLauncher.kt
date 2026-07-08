@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
 import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
+import com.agnetix.harnax.agent.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
@@ -19,17 +20,15 @@ import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.TOOL_SET
 import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
-import com.agnetix.harnax.agent.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.agent.provider.tool.HttpProxyToolBox
+import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.ToolBox
 import com.agnetix.harnax.agent.provider.tool.ToolRegistry
-import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
-import io.agentscope.core.tool.AgentTool
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
-import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.common.error.HarnaxErrorCode
+import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
@@ -37,6 +36,7 @@ import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.core.message.Msg
 import io.agentscope.core.state.AgentStateStore
+import io.agentscope.core.tool.AgentTool
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
@@ -196,7 +196,7 @@ class HarnessAgentLauncher(
                             )
                             agentBuilder.addTool(resolvedTool)
                         } else if (resolvedTool is AgentTool) {
-                            agentBuilder.toolkit.registerAgentTool(resolvedTool)
+                            agentBuilder.registerAgentTool(resolvedTool)
                         }
 
                         if (toolSpec.needConfirm) {
@@ -351,6 +351,7 @@ class HarnessAgentLauncher(
             keepAliveSnapshotSpec = snapshotSpec,
             sandboxImage = harnessConfig.sandbox.image,
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
+            permissionMode = chatSpec.permissionMode,
         )
     }
 

@@ -7,6 +7,7 @@ import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.skill.repository.AgentSkillRepository
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo
 import io.agentscope.core.state.AgentStateStore
+import io.agentscope.core.tool.AgentTool
 import io.agentscope.core.tool.ToolExecutionContext
 import io.agentscope.core.tool.Toolkit
 import io.agentscope.core.tool.mcp.McpClientWrapper
@@ -137,6 +138,11 @@ class HarnessAgentBuilder {
             builder.skillRepository(InMemorySkillRepository(skills.toList()))
         }
         return builder.build()
+    }
+
+    fun registerAgentTool(resolvedTool: AgentTool): HarnessAgentBuilder {
+        toolkit.registerTool(resolvedTool)
+        return this
     }
 
     /**

@@ -48,4 +48,7 @@ data class AgentSpecInfoResponse(
 
     @Schema(description = "Planning enabled (0:no, 1:yes)")
     val enablePlan: Int = 0,
+
+    @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
+    val permissionMode: String = "DEFAULT",
 )

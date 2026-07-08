@@ -192,7 +192,7 @@ const AgentCard: React.FC<{
                     {skill.repositoryName && (
                       <div style={{ paddingLeft: 12, marginBottom: 2 }}>
                         <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
-                          仓库: {skill.repositoryName}
+                          {intl.formatMessage({ id: 'pages.agent.skill.repository', defaultMessage: 'Repository' })}: {skill.repositoryName}
                         </Text>
                       </div>
                     )}
