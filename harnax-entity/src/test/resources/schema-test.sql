@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS `agent` (
     `model_id` BIGINT(20) DEFAULT NULL COMMENT '对话模型 ID',
     `mcp_list` TEXT DEFAULT NULL COMMENT 'MCP 服务列表（JSON 格式）',
     `skill_list` TEXT DEFAULT NULL COMMENT '技能列表（JSON 格式）',
+    `tool_list` TEXT DEFAULT NULL COMMENT '工具列表（JSON 格式）',
     `owner` VARCHAR(100) DEFAULT NULL COMMENT '所有者',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
@@ -191,11 +192,11 @@ CREATE TABLE IF NOT EXISTS `agent` (
     UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
 
-INSERT INTO `agent` (`name`, `description`, `system_prompt`, `model_id`, `mcp_list`, `skill_list`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
-('Test Agent 1', '测试智能体1', '你是一个助手', 1, '[{"id":1,"enable_skip":"false"}]', '[1,2]', 'testuser1', 1, 1, 'testuser1', 1),
-('Test Agent 2', '测试智能体2', '你是一个编程助手', 2, '[]', '[1]', 'testuser1', 1, 0, 'testuser1', 1),
-('Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, '[{"id":2,"enable_skip":"true"}]', '[]', 'testuser2', 0, 1, 'testuser2', 1),
-('Deleted Agent', '已删除智能体', '已删除', 1, '[]', '[]', 'testuser1', 1, 1, 'testuser1', 0);
+INSERT INTO `agent` (`name`, `description`, `system_prompt`, `model_id`, `mcp_list`, `skill_list`, `tool_list`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
+('Test Agent 1', '测试智能体1', '你是一个助手', 1, '[{"id":1,"enable_skip":"false"}]', '[1,2]', '[{"id":1,"enable_skip":"true","need_confirm":false}]', 'testuser1', 1, 1, 'testuser1', 1),
+('Test Agent 2', '测试智能体2', '你是一个编程助手', 2, '[]', '[1]', '[]', 'testuser1', 1, 0, 'testuser1', 1),
+('Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, '[{"id":2,"enable_skip":"true"}]', '[]', '[{"id":2,"enable_skip":"true","need_confirm":true}]', 'testuser2', 0, 1, 'testuser2', 1),
+('Deleted Agent', '已删除智能体', '已删除', 1, '[]', '[]', '[]', 'testuser1', 1, 1, 'testuser1', 0);
 
 -- ============================================
 -- 8. Channel 通道表
@@ -480,3 +481,39 @@ INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`
 VALUES (4, 2, 'Weekly Report', 'Generate weekly report', 'Weekly report content', 'sess-004', 1, '', '2026-07-01 09:00:00', '2026-07-01 09:01:00', 60000, 'admin');
 INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`, `session_id`, `status`, `error_info`, `start_time`, `end_time`, `duration_ms`, `creator`)
 VALUES (5, 1, 'Daily News', 'Summarize breaking news', 'Breaking news response', 'sess-005', 2, 'Execution timed out', '2026-06-30 09:00:00', '2026-06-30 09:10:00', 600000, 'admin');
+
+-- ============================================
+-- 21. Agent Tool 工具定义表
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_tool` (
+    `id`              BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
+    `tenant_id`       BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
+    `name`            VARCHAR(100) NOT NULL COMMENT 'Tool identifier name',
+    `display_name`    VARCHAR(200) DEFAULT NULL COMMENT 'Display name',
+    `description`     TEXT COMMENT 'Tool description',
+    `type`            VARCHAR(20) NOT NULL COMMENT 'Tool type: BUILTIN/CUSTOM/HTTP',
+    `bean_name`       VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name',
+    `http_url`        VARCHAR(500) DEFAULT NULL COMMENT 'HTTP URL',
+    `http_method`     VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP method',
+    `http_headers`    TEXT COMMENT 'HTTP headers JSON',
+    `input_schema`    TEXT COMMENT 'Input JSON Schema',
+    `output_schema`   TEXT COMMENT 'Output JSON Schema',
+    `read_only`       TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
+    `need_confirm`    TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
+    `timeout_seconds` INT DEFAULT 30 COMMENT 'Timeout in seconds',
+    `status`          TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
+    `is_public`       TINYINT(1) DEFAULT 1 COMMENT 'Public visibility',
+    `creator`         VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
+    `active`          TINYINT(1) DEFAULT 1 COMMENT 'Active status',
+    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `update_time`     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool definition table';
+
+INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `type`, `bean_name`, `need_confirm`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 1, 'time-tool-box', '时间工具', '获取当前日期和时间', 'BUILTIN', 'time-tool-box', 0, 1, 1, 'admin', 1),
+(2, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'CUSTOM', 'weather-tool-box', 1, 1, 1, 'admin', 1),
+(3, 1, 'http-api-tool', 'HTTP API工具', '调用外部HTTP接口', 'HTTP', NULL, 1, 1, 1, 'testuser1', 1),
+(4, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'BUILTIN', 'disabled-tool-box', 0, 0, 1, 'admin', 1),
+(5, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'BUILTIN', 'deleted-tool-box', 0, 1, 1, 'admin', 0);

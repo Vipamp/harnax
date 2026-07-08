@@ -37,6 +37,9 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Skill list (JSON format or comma-separated IDs)")
     val skillList: String,
 
+    @Schema(description = "Tool list (JSON format)")
+    val toolList: String = "",
+
     @Schema(description = "Deep thinking enabled (0:no, 1:yes)")
     val enableThink: Int = 0,
 

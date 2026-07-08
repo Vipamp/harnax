@@ -36,6 +36,9 @@ data class AgentResponse(
     @Schema(description = "Skill list")
     var skillList: List<SkillItem>? = null,
 
+    @Schema(description = "Tool list")
+    var toolList: List<ToolItem>? = null,
+
     @Schema(description = "Session list")
     var sessionList: List<SessionItem>? = null,
 
@@ -117,6 +120,30 @@ data class AgentResponse(
 
         @Schema(description = "Skill description", example = "Code review skill")
         var skillDescription: String? = null,
+    )
+
+    @Schema(description = "Tool item")
+    data class ToolItem(
+        @Schema(description = "Tool ID", example = "1")
+        var toolId: Long? = null,
+
+        @Schema(description = "Tool name", example = "weather_tool")
+        var toolName: String? = null,
+
+        @Schema(description = "Tool display name", example = "Weather Tool")
+        var toolDisplayName: String? = null,
+
+        @Schema(description = "Tool description")
+        var toolDescription: String? = null,
+
+        @Schema(description = "Tool type", example = "BUILTIN")
+        var toolType: String? = null,
+
+        @Schema(description = "Whether allow skip")
+        var enableSkip: String? = null,
+
+        @Schema(description = "Requires human confirmation")
+        var needConfirm: Boolean? = null,
     )
 
     @Schema(description = "Session item")

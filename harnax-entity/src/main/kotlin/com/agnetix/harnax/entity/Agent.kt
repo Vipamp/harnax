@@ -63,6 +63,12 @@ class Agent : Serializable {
     var skillList: String = ""
 
     /**
+     * Tool list (JSON format)
+     */
+    @Schema(description = "Tool list (JSON format)")
+    var toolList: String = ""
+
+    /**
      * Owner
      */
     @Schema(description = "Owner")

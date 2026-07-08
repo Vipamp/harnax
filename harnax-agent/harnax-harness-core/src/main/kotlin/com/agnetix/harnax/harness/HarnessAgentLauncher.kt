@@ -19,8 +19,13 @@ import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.TOOL_SET
 import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
+import com.agnetix.harnax.agent.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.agent.provider.tool.HttpProxyToolBox
+import com.agnetix.harnax.agent.provider.tool.ToolBox
+import com.agnetix.harnax.agent.provider.tool.ToolRegistry
 import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
 import com.agnetix.harnax.agent.provider.tool.UserIdentifier
+import io.agentscope.core.tool.AgentTool
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
@@ -83,6 +88,8 @@ class HarnessAgentLauncher(
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
     val snapshotSpec: SandboxSnapshotSpec? = null,
     val mcpConfigDecryptor: McpConfigDecryptor? = null,
+    val toolConfigAdaptor: ToolConfigAdaptor? = null,
+    val toolRegistry: ToolRegistry? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -156,15 +163,73 @@ class HarnessAgentLauncher(
 
         // ----- Tools -----
         agentSpec.enableMetaTool?.let { agentBuilder.enableMetaTool(it) }
-        TOOL_SET.forEach { toolBox ->
-            toolBox.init(
-                toolCallLogAdaptor,
-                SessionMetaContext(agentSpec.id, sessionId),
-                userIdentifier,
-            )
-            agentBuilder.addTool(toolBox)
-            if (chatSpec.permission == Permission.NeedConfirmed) {
-                needConfirmedTools.addAll(toolBox.needConfirmedTools())
+
+        if (agentSpec.toolSpecs.isNotEmpty() && toolConfigAdaptor != null) {
+            // Dynamic tool assembly from agentSpec.toolSpecs
+            agentSpec.toolSpecs.forEach { toolSpec ->
+                val toolConfig = toolConfigAdaptor.getToolConfig(toolSpec.toolId)
+                if (toolConfig != null) {
+                    val resolvedTool: Any? = when (toolConfig.type.uppercase()) {
+                        "BUILTIN", "CUSTOM" -> {
+                            toolRegistry?.getToolBox(toolConfig.beanName ?: "")
+                        }
+                        "HTTP" -> {
+                            HttpProxyToolBox(
+                                toolName = toolConfig.name,
+                                toolDescription = toolConfig.description,
+                                httpUrl = toolConfig.httpUrl ?: "",
+                                httpMethod = toolConfig.httpMethod ?: "POST",
+                                httpHeaders = emptyMap(),
+                                inputSchemaJson = toolConfig.inputSchema ?: "{}",
+                                timeoutSeconds = toolConfig.timeoutSeconds,
+                            )
+                        }
+                        else -> null
+                    }
+
+                    if (resolvedTool != null) {
+                        if (resolvedTool is ToolBox) {
+                            resolvedTool.init(
+                                toolCallLogAdaptor,
+                                SessionMetaContext(agentSpec.id, sessionId),
+                                userIdentifier,
+                            )
+                            agentBuilder.addTool(resolvedTool)
+                        } else if (resolvedTool is AgentTool) {
+                            agentBuilder.toolkit.registerAgentTool(resolvedTool)
+                        }
+
+                        if (toolSpec.needConfirm) {
+                            val name = when (resolvedTool) {
+                                is ToolBox -> resolvedTool.name()
+                                is AgentTool -> resolvedTool.getName()
+                                else -> toolConfig.name
+                            }
+                            needConfirmedTools.add(name)
+                        }
+                    } else if (!toolSpec.skipIfMissing) {
+                        log.error("Tool with id `${toolSpec.toolId}` (bean: ${toolConfig.beanName}) not found.")
+                    } else {
+                        log.warn("Tool with id `${toolSpec.toolId}` not found, skipping.")
+                    }
+                } else if (!toolSpec.skipIfMissing) {
+                    log.error("Tool config with id `${toolSpec.toolId}` not found in database.")
+                } else {
+                    log.warn("Tool config with id `${toolSpec.toolId}` not found, skipping.")
+                }
+            }
+        } else {
+            // Fallback: use default TOOL_SET for backward compatibility
+            TOOL_SET.forEach { toolBox ->
+                toolBox.init(
+                    toolCallLogAdaptor,
+                    SessionMetaContext(agentSpec.id, sessionId),
+                    userIdentifier,
+                )
+                agentBuilder.addTool(toolBox)
+                if (chatSpec.permission == Permission.NeedConfirmed) {
+                    needConfirmedTools.addAll(toolBox.needConfirmedTools())
+                }
             }
         }
 
@@ -352,6 +417,8 @@ class HarnessAgentLauncher(
             harnessConfig: HarnessConfig = HarnessConfig(),
             minioConfig: MinioConfig? = null,
             mcpConfigDecryptor: McpConfigDecryptor? = null,
+            toolConfigAdaptor: ToolConfigAdaptor? = null,
+            toolRegistry: ToolRegistry? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -399,6 +466,8 @@ class HarnessAgentLauncher(
                 keepAliveSandboxManager = keepAliveManager,
                 snapshotSpec = snapshotSpec,
                 mcpConfigDecryptor = mcpConfigDecryptor,
+                toolConfigAdaptor = toolConfigAdaptor,
+                toolRegistry = toolRegistry,
             )
         }
     }

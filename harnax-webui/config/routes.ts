@@ -86,6 +86,12 @@ export default [
         hideInMenu: true,
       },
       {
+        name: 'tool',
+        icon: 'tool',
+        path: '/context/tool',
+        component: './tool',
+      },
+      {
         name: 'channel',
         icon: 'api',
         path: '/context/channel',

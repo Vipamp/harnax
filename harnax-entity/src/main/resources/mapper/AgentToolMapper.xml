@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.AgentToolMapper">
+
+    <resultMap id="AgentToolResultMap" type="com.agnetix.harnax.entity.AgentTool">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="name" property="name"/>
+        <result column="display_name" property="displayName"/>
+        <result column="description" property="description"/>
+        <result column="type" property="type"/>
+        <result column="bean_name" property="beanName"/>
+        <result column="http_url" property="httpUrl"/>
+        <result column="http_method" property="httpMethod"/>
+        <result column="http_headers" property="httpHeaders"/>
+        <result column="input_schema" property="inputSchema"/>
+        <result column="output_schema" property="outputSchema"/>
+        <result column="read_only" property="readOnly"/>
+        <result column="need_confirm" property="needConfirm"/>
+        <result column="timeout_seconds" property="timeoutSeconds"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <update id="deleteById">
+        UPDATE agent_tool SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <select id="selectByName" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE name = #{name} AND active = 1 LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_tool (
+            tenant_id, name, display_name, description, type, bean_name,
+            http_url, http_method, http_headers, input_schema, output_schema,
+            read_only, need_confirm, timeout_seconds,
+            status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+            #{tenantId}, #{name}, #{displayName}, #{description}, #{type}, #{beanName},
+            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{inputSchema}, #{outputSchema},
+            #{readOnly}, #{needConfirm}, #{timeoutSeconds},
+            #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <update id="updateById">
+        UPDATE agent_tool SET
+            name = #{name},
+            display_name = #{displayName},
+            description = #{description},
+            type = #{type},
+            bean_name = #{beanName},
+            http_url = #{httpUrl},
+            http_method = #{httpMethod},
+            http_headers = #{httpHeaders},
+            input_schema = #{inputSchema},
+            output_schema = #{outputSchema},
+            read_only = #{readOnly},
+            need_confirm = #{needConfirm},
+            timeout_seconds = #{timeoutSeconds},
+            is_public = #{isPublic},
+            active = #{active},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        UPDATE agent_tool SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <select id="selectAgentToolList" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test='keyword != null and keyword != ""'>
+            AND (name LIKE CONCAT('%', #{keyword}, '%')
+            OR display_name LIKE CONCAT('%', #{keyword}, '%')
+            OR description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        <if test='type != null and type != ""'>
+            AND type = #{type}
+        </if>
+        ORDER BY status DESC, update_time DESC
+    </select>
+
+    <select id="selectAllEnabled" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE status = 1 AND active = 1 ORDER BY name
+    </select>
+
+</mapper>

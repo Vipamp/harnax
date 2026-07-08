@@ -30,6 +30,9 @@ data class AgentUpdateRequest(
     @Schema(description = "Skill ID list (comma separated)", example = "1,2,3")
     val skillList: String? = null,
 
+    @Schema(description = "Tool configuration list")
+    val toolList: List<ToolConfig>? = null,
+
     @Schema(description = "Owner")
     val owner: String? = null,
 

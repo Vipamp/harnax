@@ -1,0 +1,105 @@
+package com.agnetix.harnax.admin.controller
+
+import com.agnetix.harnax.admin.dto.*
+import com.agnetix.harnax.admin.service.AgentToolService
+import com.agnetix.harnax.common.dto.ResultVo
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
+import org.slf4j.LoggerFactory
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/api/admin/tools")
+@Tag(name = "Agent Tool Management", description = "Agent tool related APIs")
+class AgentToolController(
+    private val agentToolService: AgentToolService,
+) {
+
+    private val log = LoggerFactory.getLogger(AgentToolController::class.java)
+
+    @GetMapping("/page")
+    @Operation(summary = "Get tool list with pagination", description = "Paginated query for tool information")
+    fun pageAgentTool(
+        @Parameter(description = "Page number", example = "1") @RequestParam(name = "pageNum", defaultValue = "1") pageNum: Int?,
+        @Parameter(description = "Page size", example = "10") @RequestParam(name = "pageSize", defaultValue = "10") pageSize: Int?,
+        @Parameter(description = "Keyword") @RequestParam(name = "keyword", required = false) keyword: String?,
+        @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
+        @Parameter(description = "Type filter (BUILTIN/CUSTOM/HTTP)") @RequestParam(name = "type", required = false) type: String?,
+    ): ResultVo<Page<AgentToolResponse>> = try {
+        val page = agentToolService.page(keyword, status, type, pageNum ?: 1, pageSize ?: 10)
+        ResultVo.success(page.mapRecords { agentToolService.convertToResponse(it) })
+    } catch (e: Exception) {
+        log.error("Failed to get tool list", e)
+        ResultVo.error(e.message ?: "Failed to get tool list")
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Get tool details", description = "Get tool information by ID")
+    fun getAgentTool(
+        @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<AgentToolResponse?> = try {
+        val tool = agentToolService.getAgentTool(id)
+        ResultVo.success(tool?.let { agentToolService.convertToResponse(it) })
+    } catch (e: Exception) {
+        log.error("Failed to get tool details", e)
+        ResultVo.error(e.message ?: "Failed to get tool details")
+    }
+
+    @PostMapping
+    @Operation(summary = "Create tool", description = "Add new tool")
+    fun createAgentTool(
+        @Valid @RequestBody request: AgentToolCreateRequest,
+    ): ResultVo<Void> = try {
+        if (agentToolService.createAgentTool(request)) ResultVo.success() else ResultVo.error("Failed to create tool")
+    } catch (e: Exception) {
+        log.error("Failed to create tool", e)
+        ResultVo.error(e.message ?: "Failed to create tool")
+    }
+
+    @PutMapping("/update/{id}")
+    @Operation(summary = "Update tool", description = "Update tool information by ID")
+    fun updateAgentTool(
+        @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
+        @Valid @RequestBody request: AgentToolUpdateRequest,
+    ): ResultVo<Void> = try {
+        if (agentToolService.updateAgentTool(id, request)) ResultVo.success() else ResultVo.error("Failed to update tool")
+    } catch (e: Exception) {
+        log.error("Failed to update tool", e)
+        ResultVo.error(e.message ?: "Failed to update tool")
+    }
+
+    @PutMapping("/toggle/{id}")
+    @Operation(summary = "Toggle tool status", description = "Enable or disable tool")
+    fun toggleAgentTool(
+        @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
+        @Parameter(description = "Status (0: disabled 1: enabled)") @RequestParam(name = "status") status: Int,
+    ): ResultVo<Void> = try {
+        if (agentToolService.toggleAgentToolStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle status")
+    } catch (e: Exception) {
+        log.error("Failed to toggle tool status", e)
+        ResultVo.error(e.message ?: "Failed to toggle status")
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Delete tool", description = "Logical delete tool by ID")
+    fun deleteAgentTool(
+        @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<Void> = try {
+        if (agentToolService.deleteAgentTool(id)) ResultVo.success() else ResultVo.error("Failed to delete tool")
+    } catch (e: Exception) {
+        log.error("Failed to delete tool", e)
+        ResultVo.error(e.message ?: "Failed to delete tool")
+    }
+
+    @GetMapping("/available")
+    @Operation(summary = "Get available tools", description = "Get all enabled tools for agent configuration")
+    fun getAvailableTools(): ResultVo<List<AgentToolResponse>> = try {
+        val tools = agentToolService.getAvailableTools()
+        ResultVo.success(tools.map { agentToolService.convertToResponse(it) })
+    } catch (e: Exception) {
+        log.error("Failed to get available tools", e)
+        ResultVo.error(e.message ?: "Failed to get available tools")
+    }
+}

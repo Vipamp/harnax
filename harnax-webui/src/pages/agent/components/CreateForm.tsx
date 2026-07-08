@@ -3,6 +3,7 @@ import { Steps, Form, Input, Button, message, Select, Space, Switch } from 'antd
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
+import { getAvailableTools } from '@/services/ant-design-pro/tool';
 import { PlusOutlined, MinusOutlined, RocketOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
@@ -48,12 +49,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
     skillName?: string;
   }>>([{}]);
 
+  // Tool 配置列表（支持动态添加）
+  const [tools, setTools] = useState<any[]>([]);
+  const [toolConfigs, setToolConfigs] = useState<{ toolId?: number; toolName?: string; enableSkip?: boolean; needConfirm?: boolean; entityNeedConfirm?: number }[]>([{}]);
+
   // 加载 MCP 服务器列表
   useEffect(() => {
     if (visible) {
       loadMcpServers();
       loadRepositories();
       loadModels();
+      loadTools();
     }
   }, [visible]);
 
@@ -85,6 +91,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
       setModels(enabledModels);
     } catch (error) {
       console.error('加载模型列表失败', error);
+    }
+  };
+
+  const loadTools = async () => {
+    try {
+      const response = await getAvailableTools();
+      if (response?.code === 200 && response?.data) {
+        setTools(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load tools', error);
     }
   };
 
@@ -174,6 +191,36 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
     setSkillConfigs(newConfigs);
   };
 
+  // 处理工具配置变化
+  const handleToolConfigChange = (index: number, field: string, value: any) => {
+    const newConfigs = [...toolConfigs];
+    (newConfigs[index] as any)[field] = value;
+    if (field === 'toolId' && value) {
+      const tool = tools.find((t: any) => t.id === value);
+      if (tool) {
+        newConfigs[index].toolName = tool.name;
+        newConfigs[index].entityNeedConfirm = tool.needConfirm;
+        // If tool entity needConfirm=0, force needConfirm to false
+        if (tool.needConfirm === 0) {
+          newConfigs[index].needConfirm = false;
+        }
+      }
+    }
+    setToolConfigs(newConfigs);
+  };
+
+  const addToolConfig = () => {
+    setToolConfigs([...toolConfigs, {}]);
+  };
+
+  const removeToolConfig = (index: number) => {
+    if (toolConfigs.length <= 1) {
+      message.warning(intl.formatMessage({ id: 'pages.agent.tool.keepOne', defaultMessage: 'Keep at least one tool configuration' }));
+      return;
+    }
+    setToolConfigs(toolConfigs.filter((_, i) => i !== index));
+  };
+
   // 下一步
   const handleNext = async () => {
     try {
@@ -185,6 +232,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         // 不需要验证，可以直接跳过
       } else if (currentStep === 2) {
         // 验证第三步（Skill 配置）- 可选，允许跳过
+      } else if (currentStep === 3) {
+        // 验证第四步（Tool 配置）- 可选，允许跳过
         // 提交表单
         // 使用 getFieldValue 单独获取每个字段，确保都能获取到
         const name = form.getFieldValue('name');
@@ -192,11 +241,12 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         const systemPrompt = form.getFieldValue('systemPrompt');
         const modelId = form.getFieldValue('modelId');
         const owner = form.getFieldValue('owner');
-        
+
         console.log('提交表单数据:', { name, description, systemPrompt, modelId, owner });
         console.log('MCP配置:', mcpConfigs);
         console.log('Skill配置:', skillConfigs);
-        
+        console.log('Tool配置:', toolConfigs);
+
         const submitData: API.AgentCreateRequest = {
           name,
           description,
@@ -215,12 +265,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             .filter(config => config.skillId)
             .map(config => config.skillId)
             .join(','),
+          toolList: toolConfigs.filter(config => config.toolId).map(config => ({
+            id: config.toolId,
+            enableSkip: config.enableSkip ? 'true' : 'false',
+            needConfirm: config.needConfirm || false,
+          })),
         };
         await onSubmit(submitData);
         form.resetFields();
         setCurrentStep(0);
         setMcpConfigs([{}]);
         setSkillConfigs([{}]);
+        setToolConfigs([{}]);
         return;
       }
       setCurrentStep(currentStep + 1);
@@ -240,6 +296,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
     setCurrentStep(0);
     setMcpConfigs([{}]);
     setSkillConfigs([{}]);
+    setToolConfigs([{}]);
     onCancel();
   };
 
@@ -258,6 +315,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         <Step title={intl.formatMessage({ id: 'pages.agent.basicInfo', defaultMessage: 'Basic Info' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.mcpConfig', defaultMessage: 'MCP Config' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
+        <Step title={intl.formatMessage({ id: 'pages.agent.toolConfig', defaultMessage: 'Tool Config' })} />
       </Steps>
 
       <Form 
@@ -469,6 +527,55 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
             ))}
           </div>
         )}
+
+        {/* 第四步：工具配置 */}
+        {currentStep === 3 && (
+          <div>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'var(--vip-text-secondary)', fontSize: '14px' }}>
+                {intl.formatMessage({ id: 'pages.agent.toolConfigOptional', defaultMessage: 'Configure tools (optional, can be skipped)' })}
+              </span>
+            </div>
+
+            {toolConfigs.map((config, index) => (
+              <Space key={index} style={{ display: 'flex', marginBottom: 8 }} align="baseline">
+                <Select
+                  style={{ width: 200 }}
+                  placeholder={intl.formatMessage({ id: 'pages.agent.tool.select', defaultMessage: 'Select Tool' })}
+                  value={config.toolId}
+                  onChange={(value) => handleToolConfigChange(index, 'toolId', value)}
+                  options={tools.map((tool: any) => ({
+                    label: `${tool.displayName || tool.name} [${tool.type}]`,
+                    value: tool.id,
+                  }))}
+                />
+                <span>
+                  {intl.formatMessage({ id: 'pages.agent.tool.enableSkip', defaultMessage: 'Skip if missing' })}
+                  <Switch
+                    size="small"
+                    checked={config.enableSkip}
+                    onChange={(checked) => handleToolConfigChange(index, 'enableSkip', checked)}
+                  />
+                </span>
+                <span>
+                  {intl.formatMessage({ id: 'pages.agent.tool.needConfirm', defaultMessage: 'Need confirm' })}
+                  <Switch
+                    size="small"
+                    checked={config.needConfirm}
+                    disabled={config.entityNeedConfirm === 0}
+                    onChange={(checked) => handleToolConfigChange(index, 'needConfirm', checked)}
+                  />
+                </span>
+                <Button type="text" danger onClick={() => removeToolConfig(index)}>
+                  {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
+                </Button>
+              </Space>
+            ))}
+            <Button type="dashed" onClick={addToolConfig} style={{ width: '100%' }}>
+              + {intl.formatMessage({ id: 'pages.agent.tool.add', defaultMessage: 'Add Tool' })}
+            </Button>
+          </div>
+        )}
       </Form>
 
         <Button 
@@ -481,7 +588,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           type="primary" 
           onClick={handleNext}
         >
-          {currentStep === 2 ? intl.formatMessage({ id: 'pages.agent.finish', defaultMessage: 'Finish' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
+          {currentStep === 3 ? intl.formatMessage({ id: 'pages.agent.finish', defaultMessage: 'Finish' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
     </FormModal>
   );

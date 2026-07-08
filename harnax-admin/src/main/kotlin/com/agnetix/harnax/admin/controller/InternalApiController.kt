@@ -147,6 +147,7 @@ class InternalApiController(
             modelId = agent.modelId,
             mcpList = agent.mcpList,
             skillList = agent.skillList,
+            toolList = agent.toolList,
             enableThink = session.enableThink,
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
@@ -168,6 +169,7 @@ class InternalApiController(
             modelId = agent.modelId,
             mcpList = agent.mcpList,
             skillList = agent.skillList,
+            toolList = agent.toolList,
         )
     }
 
@@ -189,6 +191,7 @@ class InternalApiController(
             modelId = agent.modelId,
             mcpList = agent.mcpList,
             skillList = agent.skillList,
+            toolList = agent.toolList,
         )
     }
 

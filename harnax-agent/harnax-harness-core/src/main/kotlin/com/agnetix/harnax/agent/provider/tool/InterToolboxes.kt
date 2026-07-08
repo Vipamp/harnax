@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent.provider.tool
 
 import io.agentscope.core.tool.Tool
+import org.springframework.stereotype.Component
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -10,6 +11,7 @@ import java.util.*
  * @Description: InnerToolBoxes
  * @Project: harnax
  */
+@Component("time-tool-box")
 class TimeToolBox : ToolBox() {
 
     @Tool(description = "获取当前日期")

@@ -5,6 +5,7 @@ import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
+import com.agnetix.harnax.agent.provider.tool.ToolSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -105,6 +106,31 @@ class AgentSpecResolver(
                 } catch (e: NumberFormatException) {
                     log.warn("Invalid skill ID: $skillIdStr")
                 }
+            }
+        }
+
+        // Parse tool list (JSON format)
+        val toolListStr = specInfo.toolList
+        if (toolListStr.isNotEmpty() && toolListStr != "[]") {
+            try {
+                val toolConfigs: List<Map<String, Any>> = objectMapper.readValue(
+                    toolListStr,
+                    object : TypeReference<List<Map<String, Any>>>() {},
+                )
+                for (config in toolConfigs) {
+                    val toolId = (config["id"] as Number).toLong()
+                    val enableSkip = config["enable_skip"] as? String
+                    val needConfirm = config["need_confirm"] as? Boolean ?: false
+                    builder.addToolSpec(
+                        ToolSpec(
+                            toolId = toolId,
+                            skipIfMissing = enableSkip == "true",
+                            needConfirm = needConfirm,
+                        ),
+                    )
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to parse tool list for session=$sessionId: ${e.message}", e)
             }
         }
 

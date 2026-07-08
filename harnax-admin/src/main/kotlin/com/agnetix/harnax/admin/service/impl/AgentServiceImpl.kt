@@ -29,6 +29,7 @@ class AgentServiceImpl(
     private val mcpServerService: McpServerService,
     private val skillRepositoryService: SkillRepositoryService,
     private val skillService: SkillService,
+    private val agentToolService: AgentToolService,
     private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
     private val jwtUtil: JwtUtil,
@@ -85,6 +86,30 @@ class AgentServiceImpl(
             agent.skillList = request.skillList
         }
 
+        // Convert tool list to JSON storage
+        // Format: [{"id":1,"enable_skip":"true","need_confirm":false}]
+        if (!request.toolList.isNullOrEmpty()) {
+            try {
+                // Validate and apply needConfirm constraints
+                val validatedToolList = request.toolList.map { config ->
+                    val toolEntity = agentToolService.getAgentTool(config.id ?: 0)
+                    val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
+                        false
+                    } else {
+                        config.needConfirm ?: false
+                    }
+                    mapOf(
+                        "id" to config.id,
+                        "enable_skip" to (config.enableSkip ?: "true"),
+                        "need_confirm" to finalNeedConfirm,
+                    )
+                }
+                agent.toolList = objectMapper.writeValueAsString(validatedToolList)
+            } catch (e: JacksonException) {
+                throw RuntimeException("Failed to serialize tool list to JSON", e)
+            }
+        }
+
         agent.createTime = LocalDateTime.now()
         agent.updateTime = LocalDateTime.now()
         agentMapper.insert(agent)
@@ -130,6 +155,32 @@ class AgentServiceImpl(
             agent.skillList = (if (request.skillList.trim().isEmpty()) null else request.skillList).toString()
         }
         // If request.skillList == null, keep original value unchanged
+
+        // Update tool list
+        if (request.toolList != null) {
+            if (request.toolList.isEmpty()) {
+                agent.toolList = ""
+            } else {
+                try {
+                    val validatedToolList = request.toolList.map { config ->
+                        val toolEntity = agentToolService.getAgentTool(config.id ?: 0)
+                        val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
+                            false
+                        } else {
+                            config.needConfirm ?: false
+                        }
+                        mapOf(
+                            "id" to config.id,
+                            "enable_skip" to (config.enableSkip ?: "true"),
+                            "need_confirm" to finalNeedConfirm,
+                        )
+                    }
+                    agent.toolList = objectMapper.writeValueAsString(validatedToolList)
+                } catch (e: JacksonException) {
+                    throw RuntimeException("Failed to serialize tool list to JSON", e)
+                }
+            }
+        }
 
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
@@ -259,6 +310,41 @@ class AgentServiceImpl(
             } catch (e: Exception) {
                 log.warn("Failed to parse skill list", e)
                 response.skillList = mutableListOf()
+            }
+        }
+
+        // Parse tool list (JSON format)
+        if (agent.toolList.isNotEmpty()) {
+            try {
+                val toolConfigs: List<Map<String, Any>> = objectMapper.readValue(
+                    agent.toolList,
+                    object : TypeReference<List<Map<String, Any>>>() {},
+                )
+
+                val toolItems = mutableListOf<AgentResponse.ToolItem>()
+                for (config in toolConfigs) {
+                    val toolId = (config["id"] as Number).toLong()
+                    val enableSkip = config["enable_skip"] as? String
+                    val needConfirm = config["need_confirm"] as? Boolean ?: false
+
+                    val fullTool = agentToolService.getAgentTool(toolId)
+                    fullTool?.let {
+                        val item = AgentResponse.ToolItem(
+                            toolId = it.id,
+                            toolName = it.name,
+                            toolDisplayName = it.displayName,
+                            toolDescription = it.description,
+                            toolType = it.type,
+                            enableSkip = enableSkip,
+                            needConfirm = needConfirm,
+                        )
+                        toolItems.add(item)
+                    }
+                }
+                response.toolList = toolItems
+            } catch (e: Exception) {
+                log.warn("Failed to parse tool list", e)
+                response.toolList = mutableListOf()
             }
         }
 

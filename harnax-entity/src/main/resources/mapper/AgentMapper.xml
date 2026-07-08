@@ -11,6 +11,7 @@
         <result column="model_id" property="modelId"/>
         <result column="mcp_list" property="mcpList"/>
         <result column="skill_list" property="skillList"/>
+        <result column="tool_list" property="toolList"/>
         <result column="owner" property="owner"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
@@ -35,10 +36,10 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent (
-        name, description, system_prompt, model_id, mcp_list, skill_list,
+        name, description, system_prompt, model_id, mcp_list, skill_list, tool_list,
         owner, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{name}, #{description}, #{systemPrompt}, #{modelId}, #{mcpList}, #{skillList},
+        #{name}, #{description}, #{systemPrompt}, #{modelId}, #{mcpList}, #{skillList}, #{toolList},
         #{owner}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
@@ -52,6 +53,7 @@
         model_id = #{modelId},
         mcp_list = #{mcpList},
         skill_list = #{skillList},
+        tool_list = #{toolList},
         owner = #{owner},
         is_public = #{isPublic},
         active = #{active},
