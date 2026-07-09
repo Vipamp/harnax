@@ -19,7 +19,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     if (visible && values) {
       form.setFieldsValue({
         envKey: values.envKey,
-        envValue: values.envValue,
+        // For sensitive entries, don't pre-fill with masked value
+        envValue: values.sensitive === 1 ? '' : values.envValue,
         description: values.description,
         sensitive: values.sensitive === 1,
       });
@@ -46,7 +47,15 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         onFinish={(formValues) => {
           const submitData: any = {};
           if (formValues.envKey !== values.envKey) submitData.envKey = formValues.envKey;
-          if (formValues.envValue !== values.envValue) submitData.envValue = formValues.envValue;
+          // For sensitive entries: only send envValue if user entered a new value
+          if (values.sensitive === 1) {
+            if (formValues.envValue && formValues.envValue.trim() !== '') {
+              submitData.envValue = formValues.envValue;
+            }
+            // If empty, don't send envValue - backend keeps the current encrypted value
+          } else {
+            if (formValues.envValue !== values.envValue) submitData.envValue = formValues.envValue;
+          }
           if (formValues.description !== values.description) submitData.description = formValues.description;
           const sensitiveVal = formValues.sensitive ? 1 : 0;
           if (sensitiveVal !== values.sensitive) submitData.sensitive = sensitiveVal;
@@ -70,12 +79,34 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           name="envValue"
           label={intl.formatMessage({ id: 'pages.env.value', defaultMessage: 'Value' })}
           rules={[
-            { required: true, message: intl.formatMessage({ id: 'pages.env.valueRequired', defaultMessage: 'Please enter the value' }) },
+            {
+              required: values?.sensitive !== 1,
+              message: intl.formatMessage({ id: 'pages.env.valueRequired', defaultMessage: 'Please enter the value' }),
+            },
           ]}
+          extra={
+            values?.sensitive === 1
+              ? intl.formatMessage({
+                  id: 'pages.env.sensitiveEditWarning',
+                  defaultMessage: 'Leave empty to keep the current value. Enter a new value to update.',
+                })
+              : undefined
+          }
         >
           <Input.TextArea
             rows={2}
-            placeholder={intl.formatMessage({ id: 'pages.env.valuePlaceholder', defaultMessage: 'Enter the value' })}
+            placeholder={
+              values?.sensitive === 1
+                ? intl.formatMessage({
+                    id: 'pages.env.sensitiveValuePlaceholder',
+                    defaultMessage: 'Leave empty to keep current value',
+                  })
+                : intl.formatMessage({
+                    id: 'pages.env.valuePlaceholder',
+                    defaultMessage: 'Enter the value',
+                  })
+            }
+            maxLength={8192}
           />
         </Form.Item>
 

@@ -30,7 +30,7 @@ class EnvVariableController(
         ResultVo.success(page.mapRecords { envVariableService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get env variable list", e)
-        ResultVo.error(e.message ?: "Failed to get env variable list")
+        ResultVo.error("Failed to get env variable list")
     }
 
     @GetMapping("/{id}")
@@ -42,7 +42,7 @@ class EnvVariableController(
         ResultVo.success(env?.let { envVariableService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get env variable details", e)
-        ResultVo.error(e.message ?: "Failed to get env variable details")
+        ResultVo.error("Failed to get env variable details")
     }
 
     @PostMapping
@@ -53,7 +53,7 @@ class EnvVariableController(
         if (envVariableService.createEnvVariable(request)) ResultVo.success() else ResultVo.error("Failed to create env variable")
     } catch (e: Exception) {
         log.error("Failed to create env variable", e)
-        ResultVo.error(e.message ?: "Failed to create env variable")
+        ResultVo.error("Failed to create env variable")
     }
 
     @PutMapping("/update/{id}")
@@ -65,7 +65,7 @@ class EnvVariableController(
         if (envVariableService.updateEnvVariable(id, request)) ResultVo.success() else ResultVo.error("Failed to update env variable")
     } catch (e: Exception) {
         log.error("Failed to update env variable", e)
-        ResultVo.error(e.message ?: "Failed to update env variable")
+        ResultVo.error("Failed to update env variable")
     }
 
     @DeleteMapping("/{id}")
@@ -76,7 +76,7 @@ class EnvVariableController(
         if (envVariableService.deleteEnvVariable(id)) ResultVo.success() else ResultVo.error("Failed to delete env variable")
     } catch (e: Exception) {
         log.error("Failed to delete env variable", e)
-        ResultVo.error(e.message ?: "Failed to delete env variable")
+        ResultVo.error("Failed to delete env variable")
     }
 
     @PutMapping("/{id}/toggle")
@@ -88,6 +88,6 @@ class EnvVariableController(
         if (envVariableService.toggleEnabled(id, enabled)) ResultVo.success() else ResultVo.error("Failed to toggle env variable")
     } catch (e: Exception) {
         log.error("Failed to toggle env variable", e)
-        ResultVo.error(e.message ?: "Failed to toggle env variable")
+        ResultVo.error("Failed to toggle env variable")
     }
 }

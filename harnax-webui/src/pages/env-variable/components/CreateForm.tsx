@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button, Form, Input, Switch } from 'antd';
 import { useIntl } from '@umijs/max';
 import { SettingOutlined } from '@ant-design/icons';
@@ -13,6 +13,7 @@ export interface CreateFormProps {
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) => {
   const intl = useIntl();
   const [form] = Form.useForm();
+  const [enabled, setEnabled] = useState<boolean>(true);
 
   return (
     <FormModal
@@ -31,7 +32,9 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
         style={{ marginTop: 12 }}
-        onFinish={onSubmit}
+        onFinish={(formValues) => {
+          onSubmit({ ...formValues, enabled: enabled ? 1 : 0 });
+        }}
       >
         <Form.Item
           name="envKey"
@@ -39,6 +42,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           rules={[
             { required: true, message: intl.formatMessage({ id: 'pages.env.keyRequired', defaultMessage: 'Please enter the key' }) },
             { max: 200, message: intl.formatMessage({ id: 'pages.env.keyMax', defaultMessage: 'Key cannot exceed 200 characters' }) },
+            {
+              pattern: /^[A-Za-z_][A-Za-z0-9_]*$/,
+              message: intl.formatMessage({
+                id: 'pages.env.keyPattern',
+                defaultMessage: 'Key must start with a letter or underscore, containing only letters, digits, and underscores',
+              }),
+            },
           ]}
         >
           <Input
@@ -56,6 +66,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           <Input.TextArea
             rows={2}
             placeholder={intl.formatMessage({ id: 'pages.env.valuePlaceholder', defaultMessage: 'Enter the value' })}
+            maxLength={8192}
           />
         </Form.Item>
 
@@ -78,6 +89,21 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           extra={intl.formatMessage({ id: 'pages.env.sensitiveExtra', defaultMessage: 'Sensitive values will be masked in display' })}
         >
           <Switch
+            checkedChildren={intl.formatMessage({ id: 'pages.common.yes', defaultMessage: 'Yes' })}
+            unCheckedChildren={intl.formatMessage({ id: 'pages.common.no', defaultMessage: 'No' })}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.env.enabled', defaultMessage: 'Enabled' })}
+          extra={intl.formatMessage({
+            id: 'pages.env.enabledExtra',
+            defaultMessage: 'Disabled variables will not be available to agents',
+          })}
+        >
+          <Switch
+            checked={enabled}
+            onChange={setEnabled}
             checkedChildren={intl.formatMessage({ id: 'pages.common.yes', defaultMessage: 'Yes' })}
             unCheckedChildren={intl.formatMessage({ id: 'pages.common.no', defaultMessage: 'No' })}
           />

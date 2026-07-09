@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.EnvVariableResponse
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.service.EnvVariableService
+import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.EnvVariable
@@ -20,13 +21,16 @@ import java.time.LocalDateTime
 class EnvVariableServiceImpl(
     private val envVariableMapper: EnvVariableMapper,
     private val jwtUtil: JwtUtil,
+    private val aesUtil: AesUtil,
 ) : EnvVariableService {
 
     private val log = LoggerFactory.getLogger(EnvVariableServiceImpl::class.java)
 
     override fun page(keyword: String?, pageNum: Int, pageSize: Int): Page<EnvVariable> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<EnvVariable>(pageNum, pageSize)
+        val boundedPageSize = pageSize.coerceIn(1, 100)
+        val boundedPageNum = pageNum.coerceAtLeast(1)
+        PageHelper.startPage<EnvVariable>(boundedPageNum, boundedPageSize)
         return Page.fromPageInfo(envVariableMapper.selectEnvVariableList(keyword, currentUsername))
     }
 
@@ -39,15 +43,22 @@ class EnvVariableServiceImpl(
         envVariable.envValue = request.envValue!!
         envVariable.description = request.description
         envVariable.sensitive = request.sensitive ?: 0
+        envVariable.enabled = request.enabled ?: 1
         envVariable.tenantId = TenantContext.getTenantId() ?: 1
         envVariable.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
         envVariable.createTime = LocalDateTime.now()
         envVariable.updateTime = LocalDateTime.now()
+
+        // Encrypt value if sensitive
+        if (envVariable.sensitive == 1) {
+            envVariable.envValue = aesUtil.encrypt(envVariable.envValue)
+        }
+
         envVariableMapper.insert(envVariable)
         true
     } catch (e: Exception) {
         log.error("Failed to create env variable", e)
-        throw RuntimeException("Failed to create env variable: ${e.message}")
+        throw RuntimeException("Failed to create env variable")
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -55,26 +66,65 @@ class EnvVariableServiceImpl(
         val envVariable = getEnvVariable(id)
             ?: throw RuntimeException("Env variable not found")
 
+        // IDOR check
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val currentTenantId = TenantContext.getTenantId() ?: 1
+        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+            throw RuntimeException("No permission to modify this env variable")
+        }
+
         request.envKey?.let { envVariable.envKey = it }
-        request.envValue?.let { envVariable.envValue = it }
+        // Only update value if provided (empty means keep current for sensitive)
+        if (request.envValue != null) {
+            val valueToStore = if (envVariable.sensitive == 1 || (request.sensitive != null && request.sensitive == 1)) {
+                aesUtil.encrypt(request.envValue!!)
+            } else {
+                request.envValue!!
+            }
+            envVariable.envValue = valueToStore
+        }
         request.description?.let { envVariable.description = it }
         request.sensitive?.let { envVariable.sensitive = it }
+        request.enabled?.let { envVariable.enabled = it }
 
         envVariable.updateTime = LocalDateTime.now()
         envVariableMapper.updateById(envVariable)
         true
     } catch (e: Exception) {
         log.error("Failed to update env variable", e)
-        throw RuntimeException("Failed to update env variable: ${e.message}")
+        throw RuntimeException("Failed to update env variable")
     }
 
-    override fun deleteEnvVariable(id: Long): Boolean = envVariableMapper.deleteById(id) > 0
+    override fun deleteEnvVariable(id: Long): Boolean {
+        val envVariable = getEnvVariable(id)
+            ?: throw RuntimeException("Env variable not found")
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val currentTenantId = TenantContext.getTenantId() ?: 1
+        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+            throw RuntimeException("No permission to delete this env variable")
+        }
+        return envVariableMapper.deleteById(id) > 0
+    }
 
-    override fun toggleEnabled(id: Long, enabled: Int): Boolean = envVariableMapper.toggleEnabled(id, enabled) > 0
+    override fun toggleEnabled(id: Long, enabled: Int): Boolean {
+        val envVariable = getEnvVariable(id)
+            ?: throw RuntimeException("Env variable not found")
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val currentTenantId = TenantContext.getTenantId() ?: 1
+        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+            throw RuntimeException("No permission to modify this env variable")
+        }
+        return envVariableMapper.toggleEnabled(id, enabled) > 0
+    }
 
     override fun convertToResponse(envVariable: EnvVariable): EnvVariableResponse {
         val displayValue = if (envVariable.sensitive == 1) {
-            maskValue(envVariable.envValue)
+            try {
+                val decrypted = aesUtil.decrypt(envVariable.envValue)
+                maskValue(decrypted)
+            } catch (e: Exception) {
+                "******"
+            }
         } else {
             envVariable.envValue
         }
@@ -91,5 +141,9 @@ class EnvVariableServiceImpl(
         )
     }
 
-    private fun maskValue(value: String): String = if (value.length <= 7) "******" else "${value.take(3)}****${value.takeLast(4)}"
+    private fun maskValue(value: String): String = when {
+        value.length <= 4 -> "******"
+        value.length <= 8 -> "${value.take(1)}****${value.takeLast(1)}"
+        else -> "${value.take(3)}****${value.takeLast(2)}"
+    }
 }
