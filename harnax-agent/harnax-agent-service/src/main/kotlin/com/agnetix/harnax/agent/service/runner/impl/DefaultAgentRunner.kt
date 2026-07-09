@@ -12,13 +12,13 @@ import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
-import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole

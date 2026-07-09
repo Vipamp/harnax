@@ -10,21 +10,13 @@ import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.adaptor.TokenStatAdaptor
-import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
-import com.agnetix.harnax.agent.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.mcp.McpHelper
 import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
-import com.agnetix.harnax.agent.provider.TOOL_SET
 import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
-import com.agnetix.harnax.agent.provider.tool.HttpProxyToolBox
-import com.agnetix.harnax.agent.provider.tool.SessionMetaContext
-import com.agnetix.harnax.agent.provider.tool.ToolBox
-import com.agnetix.harnax.agent.provider.tool.ToolRegistry
-import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.error.HarnaxErrorCode
@@ -34,6 +26,13 @@ import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.tools.sdk.HttpProxyToolBox
+import com.agnetix.harnax.tools.sdk.SessionMetaContext
+import com.agnetix.harnax.tools.sdk.ToolBox
+import com.agnetix.harnax.tools.sdk.UserIdentifier
+import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.core.message.Msg
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.AgentTool
@@ -219,8 +218,12 @@ class HarnessAgentLauncher(
                 }
             }
         } else {
-            // Fallback: use default TOOL_SET for backward compatibility
-            TOOL_SET.forEach { toolBox ->
+            // Fallback: use all registered ToolBox beans from ToolRegistry
+            val fallbackTools = toolRegistry?.getAllToolBoxes() ?: emptyList()
+            if (fallbackTools.isEmpty()) {
+                log.debug("No toolSpecs configured and no ToolBox beans found in ToolRegistry.")
+            }
+            fallbackTools.forEach { toolBox ->
                 toolBox.init(
                     toolCallLogAdaptor,
                     SessionMetaContext(agentSpec.id, sessionId),

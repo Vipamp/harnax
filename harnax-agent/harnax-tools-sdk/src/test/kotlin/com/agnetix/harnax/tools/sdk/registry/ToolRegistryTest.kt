@@ -1,5 +1,6 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.sdk.registry
 
+import com.agnetix.harnax.tools.sdk.ToolBox
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -67,6 +68,36 @@ class ToolRegistryTest {
             assertTrue(toolRegistry.contains("toolA"))
             assertTrue(toolRegistry.contains("toolB"))
             assertEquals(2, toolRegistry.getAllToolBoxes().size)
+        }
+
+        @Test
+        @DisplayName("init - Handle empty ApplicationContext gracefully")
+        fun `init should handle empty ApplicationContext gracefully`() {
+            // Given
+            `when`(applicationContext.getBeansOfType(ToolBox::class.java)).thenReturn(emptyMap())
+
+            // When
+            toolRegistry.init()
+
+            // Then
+            assertEquals(0, toolRegistry.getAllToolBoxes().size)
+            assertEquals(0, toolRegistry.getToolBoxNames().size)
+        }
+
+        @Test
+        @DisplayName("init - Register single bean correctly")
+        fun `init should register single bean correctly`() {
+            // Given
+            `when`(applicationContext.getBeansOfType(ToolBox::class.java))
+                .thenReturn(mapOf("onlyTool" to mockToolBoxA))
+
+            // When
+            toolRegistry.init()
+
+            // Then
+            assertEquals(1, toolRegistry.getAllToolBoxes().size)
+            assertTrue(toolRegistry.contains("onlyTool"))
+            assertFalse(toolRegistry.contains("toolB"))
         }
     }
 
@@ -178,6 +209,35 @@ class ToolRegistryTest {
             // When & Then
             assertFalse(toolRegistry.contains("nonExistent"))
             assertFalse(toolRegistry.contains(""))
+        }
+    }
+
+    @Nested
+    @DisplayName("Pre-Init Tests")
+    inner class PreInitTests {
+
+        @Test
+        @DisplayName("getToolBox should return null before init")
+        fun `getToolBox should return null before init`() {
+            assertNull(toolRegistry.getToolBox("anyName"))
+        }
+
+        @Test
+        @DisplayName("getAllToolBoxes should return empty list before init")
+        fun `getAllToolBoxes should return empty list before init`() {
+            assertTrue(toolRegistry.getAllToolBoxes().isEmpty())
+        }
+
+        @Test
+        @DisplayName("getToolBoxNames should return empty list before init")
+        fun `getToolBoxNames should return empty list before init`() {
+            assertTrue(toolRegistry.getToolBoxNames().isEmpty())
+        }
+
+        @Test
+        @DisplayName("contains should return false before init")
+        fun `contains should return false before init`() {
+            assertFalse(toolRegistry.contains("anyName"))
         }
     }
 }

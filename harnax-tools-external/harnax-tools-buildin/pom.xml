@@ -1,70 +1,37 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>com.agnetix</groupId>
-        <artifactId>harnax-agent</artifactId>
+        <artifactId>harnax-tools-external</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>harnax-harness-core</artifactId>
+    <artifactId>harnax-tools-buildin</artifactId>
     <packaging>jar</packaging>
 
-    <name>harnax-harness-core</name>
-    <description>Harnax Harness Core - Distributed agent runtime with MinIO, Docker sandbox and MySQL session</description>
+    <name>harnax-tools-buildin</name>
+    <description>Harnax Built-in Tools - TimeToolBox and other out-of-the-box agent tools</description>
 
     <dependencies>
-        <!-- Common: HarnaxErrorCode, HarnaxException -->
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-common</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <!-- Entity: McpServer etc. -->
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-entity</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <!-- Protocol: ChatEvent, ChatEventConverter -->
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-protocol</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <!-- Agent Utils: McpHelper, ModelHelper, ChatModelConfig -->
-        <dependency>
-            <groupId>com.agnetix</groupId>
-            <artifactId>harnax-agent-utils</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <!-- Tools SDK: ToolBox, ToolRegistry, HttpProxyToolBox -->
+        <!-- Tools SDK: ToolBox base class, NeedConfirmed annotation -->
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-tools-sdk</artifactId>
             <version>${project.version}</version>
         </dependency>
 
-        <!-- agentscope-harness (transitively brings agentscope-core) -->
+        <!-- AgentScope: @Tool annotation -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-harness</artifactId>
+            <artifactId>agentscope</artifactId>
             <version>${agent-scope.version}</version>
         </dependency>
 
-        <!-- MinIO SDK (S3 compatible) -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>8.5.17</version>
-        </dependency>
-
-        <!-- Spring Boot Autoconfigure (optional, for Spring integration) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-        </dependency>
+        <!-- Spring Context: @Component -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
@@ -76,39 +43,23 @@
             <artifactId>kotlin-stdlib-jdk8</artifactId>
             <version>${kotlin.version}</version>
         </dependency>
+
+        <!-- Test dependencies -->
         <dependency>
             <groupId>org.jetbrains.kotlin</groupId>
             <artifactId>kotlin-test</artifactId>
             <version>${kotlin.version}</version>
             <scope>test</scope>
         </dependency>
-
-        <!-- Spring Boot Test (JUnit 5 + Mockito) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <!-- Mockito Kotlin (non-null matchers for Kotlin) -->
         <dependency>
             <groupId>org.mockito.kotlin</groupId>
             <artifactId>mockito-kotlin</artifactId>
             <version>5.4.0</version>
-            <scope>test</scope>
-        </dependency>
-
-        <!-- Reactor Test (StepVerifier for Flux) -->
-        <dependency>
-            <groupId>io.projectreactor</groupId>
-            <artifactId>reactor-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <!-- H2 Database (for JDBC integration tests) -->
-        <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -128,12 +79,10 @@
                         </goals>
                         <configuration>
                             <sourceDirs>
-                                <sourceDir>target/generated-sources/annotations</sourceDir>
                                 <sourceDir>src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
                     </execution>
-
                     <execution>
                         <id>test-compile</id>
                         <phase>test-compile</phase>

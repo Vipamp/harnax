@@ -48,6 +48,13 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Harnax Built-in Tools - TimeToolBox etc. -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-tools-buildin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

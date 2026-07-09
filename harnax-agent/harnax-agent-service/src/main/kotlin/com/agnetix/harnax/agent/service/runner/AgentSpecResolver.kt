@@ -5,11 +5,11 @@ import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
-import com.agnetix.harnax.agent.provider.tool.ToolSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.tools.sdk.ToolSpec
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.core.type.TypeReference

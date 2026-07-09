@@ -8,7 +8,6 @@ import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
-import com.agnetix.harnax.agent.provider.tool.UserIdentifier
 import com.agnetix.harnax.agent.service.chat.dto.ChatRequest
 import com.agnetix.harnax.agent.service.chat.dto.ConfirmRequest
 import com.agnetix.harnax.agent.service.chat.dto.SessionConfigResponse
@@ -18,6 +17,7 @@ import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole

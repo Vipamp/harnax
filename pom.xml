@@ -19,6 +19,7 @@
         <module>harnax-entity</module>
         <module>harnax-protocol</module>
         <module>harnax-agent</module>
+        <module>harnax-tools-external</module>
         <module>harnax-channel</module>
         <module>harnax-admin</module>
         <module>harnax-session-router</module>

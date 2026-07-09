@@ -1,6 +1,6 @@
 package com.agnetix.harnax.harness
 
-import com.agnetix.harnax.agent.provider.tool.ToolBox
+import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
 import io.agentscope.core.skill.AgentSkill

@@ -1,14 +1,18 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.builtin
 
+import com.agnetix.harnax.tools.sdk.NeedConfirmed
+import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.tool.Tool
 import org.springframework.stereotype.Component
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
+ * Built-in datetime tools for agent use.
+ *
  * @Author: heqingsong
  * @Date: 2026/4/1
- * @Description: InnerToolBoxes
+ * @Description: Built-in datetime tools (date / datetime)
  * @Project: harnax
  */
 @Component("time-tool-box")

@@ -1,4 +1,4 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.sdk
 
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolResultBlock

@@ -1,4 +1,4 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.sdk
 
 data class ToolSpec(
     val toolId: Long,

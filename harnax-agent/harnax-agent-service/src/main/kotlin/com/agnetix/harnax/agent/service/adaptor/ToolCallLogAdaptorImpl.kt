@@ -1,9 +1,9 @@
 package com.agnetix.harnax.agent.service.adaptor
 
-import com.agnetix.harnax.agent.adaptor.ToolCallInfo
-import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.entity.ToolCallLogEntity
 import com.agnetix.harnax.mapper.ToolCallLogMapper
+import com.agnetix.harnax.tools.sdk.adaptor.ToolCallInfo
+import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.core.JacksonException

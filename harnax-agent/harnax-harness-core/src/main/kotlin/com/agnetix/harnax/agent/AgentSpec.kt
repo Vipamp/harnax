@@ -1,7 +1,7 @@
 package com.agnetix.harnax.agent
 
-import com.agnetix.harnax.agent.provider.tool.ToolBox
-import com.agnetix.harnax.agent.provider.tool.ToolSpec
+import com.agnetix.harnax.tools.sdk.ToolBox
+import com.agnetix.harnax.tools.sdk.ToolSpec
 
 /**
  * Agent specification for harness-based agents.

@@ -16,6 +16,7 @@
     <url>http://maven.apache.org</url>
 
     <modules>
+        <module>harnax-tools-sdk</module>
         <module>harnax-agent-utils</module>
         <module>harnax-harness-core</module>
         <module>harnax-agent-service</module>

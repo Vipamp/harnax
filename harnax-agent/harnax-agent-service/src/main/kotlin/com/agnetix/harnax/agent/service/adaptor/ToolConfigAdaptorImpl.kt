@@ -1,8 +1,8 @@
 package com.agnetix.harnax.agent.service.adaptor
 
-import com.agnetix.harnax.agent.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.mapper.AgentToolMapper
+import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 

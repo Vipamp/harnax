@@ -1,7 +1,7 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.sdk
 
-import com.agnetix.harnax.agent.adaptor.ToolCallInfo
-import com.agnetix.harnax.agent.adaptor.ToolCallLogAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolCallInfo
+import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import org.slf4j.LoggerFactory
 
 /**
@@ -62,13 +62,9 @@ abstract class ToolBox {
         val startTime = System.currentTimeMillis()
 
         return try {
-            // 执行实际的工具方法
             val result = action()
             val endTime = System.currentTimeMillis()
-
-            // 记录成功日志
             logToolCall(methodName, args, result?.toString() ?: "", startTime, endTime)
-
             result
         } catch (e: Exception) {
             val endTime = System.currentTimeMillis()
@@ -77,9 +73,6 @@ abstract class ToolBox {
         }
     }
 
-    /**
-     * 记录工具调用成功日志
-     */
     private fun logToolCall(
         toolName: String,
         args: Map<String, Any?>,
@@ -109,9 +102,6 @@ abstract class ToolBox {
         }
     }
 
-    /**
-     * 记录工具调用异常日志
-     */
     private fun logToolCallError(
         toolName: String,
         args: Map<String, Any?>,

@@ -1,5 +1,6 @@
-package com.agnetix.harnax.agent.provider.tool
+package com.agnetix.harnax.tools.sdk.registry
 
+import com.agnetix.harnax.tools.sdk.ToolBox
 import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
