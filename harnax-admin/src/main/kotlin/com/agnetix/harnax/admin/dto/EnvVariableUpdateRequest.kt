@@ -21,7 +21,4 @@ data class EnvVariableUpdateRequest(
 
     @Schema(description = "Sensitive flag (0: No, 1: Yes)")
     val sensitive: Int? = null,
-
-    @Schema(description = "Enabled status (0: Disabled, 1: Enabled)")
-    val enabled: Int? = null,
 )

@@ -69,23 +69,23 @@ class EnvVariableServiceImpl(
         // IDOR check
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val currentTenantId = TenantContext.getTenantId() ?: 1
-        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to modify this env variable")
         }
 
         request.envKey?.let { envVariable.envKey = it }
+        // Determine the resulting sensitive flag before deciding encryption
+        val targetSensitive = request.sensitive ?: envVariable.sensitive
         // Only update value if provided (empty means keep current for sensitive)
         if (request.envValue != null) {
-            val valueToStore = if (envVariable.sensitive == 1 || (request.sensitive != null && request.sensitive == 1)) {
+            envVariable.envValue = if (targetSensitive == 1) {
                 aesUtil.encrypt(request.envValue!!)
             } else {
                 request.envValue!!
             }
-            envVariable.envValue = valueToStore
         }
         request.description?.let { envVariable.description = it }
         request.sensitive?.let { envVariable.sensitive = it }
-        request.enabled?.let { envVariable.enabled = it }
 
         envVariable.updateTime = LocalDateTime.now()
         envVariableMapper.updateById(envVariable)
@@ -100,7 +100,7 @@ class EnvVariableServiceImpl(
             ?: throw RuntimeException("Env variable not found")
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val currentTenantId = TenantContext.getTenantId() ?: 1
-        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to delete this env variable")
         }
         return envVariableMapper.deleteById(id) > 0
@@ -111,7 +111,7 @@ class EnvVariableServiceImpl(
             ?: throw RuntimeException("Env variable not found")
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val currentTenantId = TenantContext.getTenantId() ?: 1
-        if (envVariable.creator != currentUsername && envVariable.tenantId != currentTenantId) {
+        if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to modify this env variable")
         }
         return envVariableMapper.toggleEnabled(id, enabled) > 0

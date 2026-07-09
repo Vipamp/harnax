@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button, Form, Input, Switch } from 'antd';
 import { useIntl } from '@umijs/max';
 import { SettingOutlined } from '@ant-design/icons';
@@ -14,6 +14,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const intl = useIntl();
   const [form] = Form.useForm();
   const [enabled, setEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (visible) {
+      form.resetFields();
+      setEnabled(true);
+    }
+  }, [visible, form]);
 
   return (
     <FormModal
