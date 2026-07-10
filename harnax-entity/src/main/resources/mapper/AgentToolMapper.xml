@@ -13,6 +13,7 @@
         <result column="http_url" property="httpUrl"/>
         <result column="http_method" property="httpMethod"/>
         <result column="http_headers" property="httpHeaders"/>
+        <result column="envs" property="envs"/>
         <result column="input_schema" property="inputSchema"/>
         <result column="output_schema" property="outputSchema"/>
         <result column="read_only" property="readOnly"/>
@@ -41,12 +42,12 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent_tool (
             tenant_id, name, display_name, description, type, bean_name,
-            http_url, http_method, http_headers, input_schema, output_schema,
+            http_url, http_method, http_headers, envs, input_schema, output_schema,
             read_only, need_confirm, timeout_seconds,
             status, is_public, creator, active, create_time, update_time
         ) VALUES (
             #{tenantId}, #{name}, #{displayName}, #{description}, #{type}, #{beanName},
-            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{inputSchema}, #{outputSchema},
+            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{envs}, #{inputSchema}, #{outputSchema},
             #{readOnly}, #{needConfirm}, #{timeoutSeconds},
             #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
@@ -62,6 +63,7 @@
             http_url = #{httpUrl},
             http_method = #{httpMethod},
             http_headers = #{httpHeaders},
+            envs = #{envs},
             input_schema = #{inputSchema},
             output_schema = #{outputSchema},
             read_only = #{readOnly},

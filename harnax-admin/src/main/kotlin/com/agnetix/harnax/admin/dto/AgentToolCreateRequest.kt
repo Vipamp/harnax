@@ -33,6 +33,9 @@ data class AgentToolCreateRequest(
     @Schema(description = "HTTP headers JSON string (for HTTP type)")
     val httpHeaders: List<McpConfigEntry>? = null,
 
+    @Schema(description = "Environment variables configuration")
+    val envs: List<McpConfigEntry>? = null,
+
     @Schema(description = "Input parameter JSON Schema (for HTTP type)")
     val inputSchema: String? = null,
 

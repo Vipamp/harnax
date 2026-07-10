@@ -32,6 +32,9 @@ data class AgentToolResponse(
     @Schema(description = "HTTP headers configuration (masked for secret values)")
     val httpHeaders: List<McpConfigEntry>? = null,
 
+    @Schema(description = "Environment variables configuration (masked for secret values)")
+    val envs: List<McpConfigEntry>? = null,
+
     @Schema(description = "Input parameter JSON Schema")
     val inputSchema: String? = null,
 

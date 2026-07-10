@@ -41,6 +41,9 @@ class AgentTool : Serializable {
     @Schema(description = "HTTP headers JSON (for HTTP type)")
     var httpHeaders: String? = null
 
+    @Schema(description = "Environment variables JSON (for all types)")
+    var envs: String? = null
+
     @Schema(description = "Input parameter JSON Schema (for HTTP type)")
     var inputSchema: String? = null
 

@@ -31,6 +31,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         httpUrl: values.httpUrl,
         httpMethod: values.httpMethod || 'POST',
         httpHeaders: values.httpHeaders || [],
+        envs: values.envs || [],
         inputSchema: values.inputSchema,
         needConfirm: values.needConfirm || false,
         readOnly: values.readOnly || false,
@@ -218,6 +219,17 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             style={{ width: '100%' }}
             placeholder={intl.formatMessage({ id: 'pages.tool.timeoutSecondsPlaceholder', defaultMessage: 'Execution timeout in seconds (default: 30)' })}
           />
+        </Form.Item>
+
+        <Form.Item
+          name="envs"
+          label={intl.formatMessage({ id: 'pages.tool.envs', defaultMessage: 'Environment Variables' })}
+          extra={intl.formatMessage({
+            id: 'pages.tool.envsExtra',
+            defaultMessage: 'Environment variables available to the tool at runtime',
+          })}
+        >
+          <ConfigEntriesEditor placeholder={{ key: 'API_KEY', value: 'sk-xxx' }} />
         </Form.Item>
 
         <Form.Item

@@ -61,6 +61,10 @@ class AgentToolServiceImpl(
             agentTool.httpHeaders = serializeHeaders(request.httpHeaders)
         }
 
+        if (request.envs != null) {
+            agentTool.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+        }
+
         agentTool.createTime = LocalDateTime.now()
         agentTool.updateTime = LocalDateTime.now()
         agentToolMapper.insert(agentTool)
@@ -92,6 +96,10 @@ class AgentToolServiceImpl(
             agentTool.httpHeaders = serializeHeaders(request.httpHeaders)
         }
 
+        if (request.envs != null) {
+            agentTool.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+        }
+
         agentTool.updateTime = LocalDateTime.now()
         agentToolMapper.updateById(agentTool)
         true
@@ -109,6 +117,7 @@ class AgentToolServiceImpl(
 
     override fun convertToResponse(agentTool: AgentTool): AgentToolResponse {
         val headers = deserializeHeaders(agentTool.httpHeaders)
+        val envs = deserializeHeaders(agentTool.envs)
         return AgentToolResponse(
             id = agentTool.id,
             name = agentTool.name,
@@ -119,6 +128,7 @@ class AgentToolServiceImpl(
             httpUrl = agentTool.httpUrl,
             httpMethod = agentTool.httpMethod,
             httpHeaders = headers,
+            envs = envs,
             inputSchema = agentTool.inputSchema,
             outputSchema = agentTool.outputSchema,
             readOnly = agentTool.readOnly,

@@ -202,6 +202,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         </Form.Item>
 
         <Form.Item
+          name="envs"
+          label={intl.formatMessage({ id: 'pages.tool.envs', defaultMessage: 'Environment Variables' })}
+          extra={intl.formatMessage({
+            id: 'pages.tool.envsExtra',
+            defaultMessage: 'Environment variables available to the tool at runtime',
+          })}
+        >
+          <ConfigEntriesEditor placeholder={{ key: 'API_KEY', value: 'sk-xxx' }} />
+        </Form.Item>
+
+        <Form.Item
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
         >
           <Switch
