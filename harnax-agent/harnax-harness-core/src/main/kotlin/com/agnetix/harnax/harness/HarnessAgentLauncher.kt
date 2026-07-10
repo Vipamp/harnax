@@ -92,7 +92,6 @@ class HarnessAgentLauncher(
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
-    private val needConfirmedTools: MutableSet<String> = mutableSetOf()
 
     /**
      * Graceful shutdown hook — called by Spring when the application context closes.
@@ -130,6 +129,7 @@ class HarnessAgentLauncher(
         chatSpec: ChatSpec = ChatSpec.builder().build(),
         userIdentifier: UserIdentifier,
     ): HarnessAgentWrapper {
+        val needConfirmedTools = mutableSetOf<String>()
         val agentBuilder = HarnessAgentBuilder()
             .name(agentSpec.name)
             .description(agentSpec.description)
@@ -178,7 +178,14 @@ class HarnessAgentLauncher(
                                 toolDescription = toolConfig.description,
                                 httpUrl = toolConfig.httpUrl ?: "",
                                 httpMethod = toolConfig.httpMethod ?: "POST",
-                                httpHeaders = emptyMap(),
+                                httpHeaders = mcpConfigDecryptor?.let { d ->
+                                    try {
+                                        d.decryptToMap(toolConfig.httpHeaders)
+                                    } catch (e: Exception) {
+                                        log.warn("Failed to decrypt HTTP headers for tool '{}': {}", toolConfig.name, e.message)
+                                        emptyMap()
+                                    }
+                                } ?: emptyMap(),
                                 inputSchemaJson = toolConfig.inputSchema ?: "{}",
                                 timeoutSeconds = toolConfig.timeoutSeconds,
                             )

@@ -13,6 +13,8 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
+import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
+import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.harness.agent.IsolationScope
 import io.minio.MinioClient
 import org.springframework.beans.factory.ObjectProvider
@@ -126,6 +128,8 @@ class HarnessAutoConfiguration {
         processLogAdaptor: ProcessLogAdaptor,
         toolCallLogAdaptorProvider: ObjectProvider<ToolCallLogAdaptor>,
         mcpConfigDecryptorProvider: ObjectProvider<McpConfigDecryptor>,
+        toolConfigAdaptorProvider: ObjectProvider<ToolConfigAdaptor>,
+        toolRegistryProvider: ObjectProvider<ToolRegistry>,
         planNoteAdaptor: PlanNoteAdaptor,
         harnessConfig: HarnessConfig,
         @Value("\${local.tmp-dir:/tmp/harnax-agent}") tmpDir: String,
@@ -134,6 +138,8 @@ class HarnessAutoConfiguration {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
         val mcpConfigDecryptor = mcpConfigDecryptorProvider.ifAvailable
+        val toolConfigAdaptor = toolConfigAdaptorProvider.ifAvailable
+        val toolRegistry = toolRegistryProvider.ifAvailable
         return HarnessAgentLauncher.initLauncher(
             chatModelConfigAdaptor = chatModelConfigAdaptor,
             mcpConfigAdaptor = mcpConfigAdaptor,
@@ -147,6 +153,8 @@ class HarnessAutoConfiguration {
             harnessConfig = harnessConfig,
             minioConfig = minioConfig,
             mcpConfigDecryptor = mcpConfigDecryptor,
+            toolConfigAdaptor = toolConfigAdaptor,
+            toolRegistry = toolRegistry,
         )
     }
 }

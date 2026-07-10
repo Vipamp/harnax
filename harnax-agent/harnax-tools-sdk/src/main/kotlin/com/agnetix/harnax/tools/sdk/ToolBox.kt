@@ -11,9 +11,9 @@ import org.slf4j.LoggerFactory
  * @Project: harnax
  */
 abstract class ToolBox {
-    protected lateinit var userIdentifier: UserIdentifier
-    private lateinit var sessionMetaContext: SessionMetaContext
-    private lateinit var toolCallLogAdaptor: ToolCallLogAdaptor
+    private val userIdentifierLocal = ThreadLocal<UserIdentifier>()
+    private val sessionMetaContextLocal = ThreadLocal<SessionMetaContext>()
+    private val toolCallLogAdaptorLocal = ThreadLocal<ToolCallLogAdaptor>()
     private val needConfirmedTools: MutableSet<String> = mutableSetOf()
     private lateinit var name: String
     private val log = LoggerFactory.getLogger(ToolBox::class.java)
@@ -28,15 +28,15 @@ abstract class ToolBox {
         sessionMetaContext: SessionMetaContext,
         userIdentifier: UserIdentifier,
     ) {
-        this.toolCallLogAdaptor = toolCallLogAdaptor
-        this.userIdentifier = userIdentifier
-        this.sessionMetaContext = sessionMetaContext
+        this.toolCallLogAdaptorLocal.set(toolCallLogAdaptor)
+        this.userIdentifierLocal.set(userIdentifier)
+        this.sessionMetaContextLocal.set(sessionMetaContext)
         this::class.java.methods.filter { it.getDeclaredAnnotation(NeedConfirmed::class.java) != null }
             .forEach { needConfirmedTools.add(it.name) }
         this.name = name()
     }
 
-    fun userIdentifier(): UserIdentifier = userIdentifier
+    fun userIdentifier(): UserIdentifier = userIdentifierLocal.get()
     fun needConfirmedTools(): Set<String> = needConfirmedTools.map { "$name::$it" }.toSet()
 
     @Suppress("UNCHECKED_CAST")
@@ -84,8 +84,8 @@ abstract class ToolBox {
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
 
         val toolCallInfo = ToolCallInfo(
-            agentId = sessionMetaContext.agentId,
-            sessionId = sessionMetaContext.sessionId,
+            agentId = sessionMetaContextLocal.get().agentId,
+            sessionId = sessionMetaContextLocal.get().sessionId,
             toolName = "$name::$toolName",
             args = argsMap,
             result = result,
@@ -96,7 +96,7 @@ abstract class ToolBox {
         )
 
         try {
-            toolCallLogAdaptor.emit(toolCallInfo)
+            toolCallLogAdaptorLocal.get().emit(toolCallInfo)
         } catch (e: Exception) {
             log.error("Failed to log tool call: toolName=$toolName", e)
         }
@@ -113,8 +113,8 @@ abstract class ToolBox {
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
 
         val toolCallInfo = ToolCallInfo(
-            agentId = sessionMetaContext.agentId,
-            sessionId = sessionMetaContext.sessionId,
+            agentId = sessionMetaContextLocal.get().agentId,
+            sessionId = sessionMetaContextLocal.get().sessionId,
             toolName = "$name::$toolName",
             args = argsMap,
             result = "ERROR: ${error.message}",
@@ -125,7 +125,7 @@ abstract class ToolBox {
         )
 
         try {
-            toolCallLogAdaptor.emit(toolCallInfo)
+            toolCallLogAdaptorLocal.get().emit(toolCallInfo)
         } catch (logEx: Exception) {
             log.error("Failed to log tool call error: toolName=$toolName", logEx)
         }

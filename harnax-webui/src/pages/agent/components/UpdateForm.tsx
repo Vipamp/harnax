@@ -167,6 +167,24 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     }
   };
 
+  // Re-initialize entityNeedConfirm from tool entity once tools are loaded
+  useEffect(() => {
+    if (tools.length === 0 || toolConfigs.every(c => !c.toolId)) return;
+    const updated = toolConfigs.map(config => {
+      if (!config.toolId) return config;
+      const tool = tools.find((t: any) => t.id === config.toolId);
+      if (tool && tool.needConfirm !== config.entityNeedConfirm) {
+        return { ...config, entityNeedConfirm: tool.needConfirm };
+      }
+      return config;
+    });
+    // Only update if something actually changed to avoid infinite loops
+    const changed = updated.some((c, i) => c.entityNeedConfirm !== toolConfigs[i].entityNeedConfirm);
+    if (changed) {
+      setToolConfigs(updated);
+    }
+  }, [tools]);
+
   // 处理 MCP 配置变化
   const handleMcpConfigChange = (index: number, field: string, value: any) => {
     const newConfigs = [...mcpConfigs];
@@ -284,10 +302,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         // Submit form
         // 先验证并获取第一步的表单值
         const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId', 'owner']);
-        console.log('表单验证后的值:', formValues);
-        console.log('MCP 配置状态:', mcpConfigs);
-        console.log('Skill 配置状态:', skillConfigs);
-        console.log('Tool 配置状态:', toolConfigs);
 
         const submitData: API.AgentUpdateRequest = {
           name: formValues.name,
@@ -313,7 +327,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             needConfirm: config.needConfirm || false,
           })),
         };
-        console.log('最终提交数据:', submitData);
         await onSubmit(submitData);
         form.resetFields();
         setCurrentStep(0);

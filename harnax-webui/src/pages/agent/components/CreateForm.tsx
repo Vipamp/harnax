@@ -241,11 +241,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         const modelId = form.getFieldValue('modelId');
         const owner = form.getFieldValue('owner');
 
-        console.log('提交表单数据:', { name, description, systemPrompt, modelId, owner });
-        console.log('MCP配置:', mcpConfigs);
-        console.log('Skill配置:', skillConfigs);
-        console.log('Tool配置:', toolConfigs);
-
         const submitData: API.AgentCreateRequest = {
           name,
           description,

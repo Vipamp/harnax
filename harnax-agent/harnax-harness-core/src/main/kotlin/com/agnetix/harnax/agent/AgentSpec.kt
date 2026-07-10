@@ -1,6 +1,5 @@
 package com.agnetix.harnax.agent
 
-import com.agnetix.harnax.tools.sdk.ToolBox
 import com.agnetix.harnax.tools.sdk.ToolSpec
 
 /**
@@ -20,7 +19,6 @@ data class AgentSpec(
     val chatModelId: Long,
     val enableMetaTool: Boolean?,
     val contextForTools: List<Any>,
-    val externalTools: List<ToolBox>,
     val toolSpecs: List<ToolSpec>,
     val mcpServices: List<McpSpec>,
 
@@ -43,7 +41,6 @@ class AgentSpecBuilder {
 
     private var chatModelId: Long = -1
     private var enableMetaTool: Boolean? = null
-    private var externalTools: MutableList<ToolBox> = mutableListOf()
     private var toolSpecs: MutableList<ToolSpec> = mutableListOf()
     private var contextForTools: MutableList<Any> = mutableListOf()
     private var mcpServices: MutableList<McpSpec> = mutableListOf()
@@ -60,7 +57,6 @@ class AgentSpecBuilder {
     fun chatModelId(chatModelId: Long) = apply { this.chatModelId = chatModelId }
     fun enableMetaTool(enableMetaTool: Boolean?) = apply { this.enableMetaTool = enableMetaTool }
     fun addContextForTool(contextForTool: Any) = apply { this.contextForTools.add(contextForTool) }
-    fun addExternalTool(externalTool: ToolBox) = apply { this.externalTools.add(externalTool) }
     fun addToolSpec(toolSpec: ToolSpec) = apply { this.toolSpecs.add(toolSpec) }
     fun addMcpService(mcpService: McpSpec) = apply { this.mcpServices.add(mcpService) }
 
@@ -80,7 +76,6 @@ class AgentSpecBuilder {
             chatModelId = chatModelId,
             enableMetaTool = enableMetaTool,
             contextForTools = contextForTools,
-            externalTools = externalTools,
             toolSpecs = toolSpecs,
             mcpServices = mcpServices,
             skills = skills,

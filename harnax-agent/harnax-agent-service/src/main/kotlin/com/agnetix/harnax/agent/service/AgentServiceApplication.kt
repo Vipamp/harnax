@@ -10,7 +10,7 @@ import org.springframework.scheduling.annotation.EnableScheduling
         "com.agnetix.harnax.agent.service",
         "com.agnetix.harnax.agent.skill",
         "com.agnetix.harnax.tools.sdk.registry",
-        "com.agnetix.harnax.tools.builtin",
+        "com.agnetix.harnax.tools.buildin",
     ],
 )
 @EnableScheduling

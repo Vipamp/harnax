@@ -78,12 +78,22 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         <Form.Item
           name="type"
           label={intl.formatMessage({ id: 'pages.tool.type', defaultMessage: 'Type' })}
+          initialValue="BUILTIN"
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.tool.typeRequired', defaultMessage: 'Please select tool type' }) }]}
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.tool.typePlaceholder', defaultMessage: 'Please select tool type' })}
-            defaultValue="BUILTIN"
-            onChange={(val: string) => setToolType(val)}
+            onChange={(val: string) => {
+              setToolType(val);
+              if (val === 'BUILTIN' || val === 'CUSTOM') {
+                form.setFieldsValue({
+                  httpUrl: undefined,
+                  httpMethod: undefined,
+                  httpHeaders: undefined,
+                  inputSchema: undefined,
+                });
+              }
+            }}
             options={toolTypeOptions}
           />
         </Form.Item>

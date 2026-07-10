@@ -44,7 +44,7 @@ class HttpProxyToolBox(
     override fun callAsync(param: ToolCallParam): Mono<ToolResultBlock> = Mono.fromCallable {
         try {
             val requestBody = objectMapper.writeValueAsString(param.input)
-            val toolId = param.toolUseBlock.id
+            val toolId = param.toolUseBlock?.id
 
             val requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(httpUrl))
