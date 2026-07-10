@@ -119,7 +119,8 @@ class AgentSpecResolver(
                     object : TypeReference<List<Map<String, Any>>>() {},
                 )
                 for (config in toolConfigs) {
-                    val toolId = (config["id"] as Number).toLong()
+                    val idValue = config["id"] ?: continue
+                    val toolId = (idValue as? Number)?.toLong() ?: continue
                     val enableSkip = config["enable_skip"] as? String
                     val needConfirm = config["need_confirm"] as? Boolean ?: false
                     builder.addToolSpec(

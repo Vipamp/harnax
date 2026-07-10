@@ -36,11 +36,11 @@ data class AgentToolUpdateRequest(
     @Schema(description = "Output result JSON Schema (for HTTP type)")
     val outputSchema: String? = null,
 
-    @Schema(description = "Is read-only (0: No, 1: Yes)")
-    val readOnly: Int? = null,
+    @Schema(description = "Is read-only")
+    val readOnly: Boolean? = null,
 
-    @Schema(description = "Requires human confirmation (0: No, 1: Yes)")
-    val needConfirm: Int? = null,
+    @Schema(description = "Requires human confirmation")
+    val needConfirm: Boolean? = null,
 
     @Schema(description = "Timeout in seconds")
     val timeoutSeconds: Int? = null,

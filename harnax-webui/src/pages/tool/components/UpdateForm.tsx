@@ -16,7 +16,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const intl = useIntl();
   const [toolType, setToolType] = useState<string>(values?.type || 'BUILTIN');
   const [form] = Form.useForm();
-  const [status, setStatus] = useState<number>(values?.status || 1);
+  const [status, setStatus] = useState<number>(values?.status ?? 1);
 
   // 初始化表单数据
   useEffect(() => {

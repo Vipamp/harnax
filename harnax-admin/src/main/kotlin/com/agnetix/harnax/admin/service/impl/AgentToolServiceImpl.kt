@@ -49,10 +49,10 @@ class AgentToolServiceImpl(
         agentTool.httpMethod = request.httpMethod ?: "POST"
         agentTool.inputSchema = request.inputSchema
         agentTool.outputSchema = request.outputSchema
-        agentTool.readOnly = request.readOnly ?: 0
-        agentTool.needConfirm = request.needConfirm ?: 0
+        agentTool.readOnly = if (request.readOnly == true) 1 else 0
+        agentTool.needConfirm = if (request.needConfirm == true) 1 else 0
         agentTool.timeoutSeconds = request.timeoutSeconds ?: 30
-        agentTool.status = 1
+        agentTool.status = request.status ?: 1
 
         agentTool.tenantId = TenantContext.getTenantId() ?: 1
         agentTool.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
@@ -84,8 +84,8 @@ class AgentToolServiceImpl(
         request.httpMethod?.let { agentTool.httpMethod = it }
         request.inputSchema?.let { agentTool.inputSchema = it }
         request.outputSchema?.let { agentTool.outputSchema = it }
-        request.readOnly?.let { agentTool.readOnly = it }
-        request.needConfirm?.let { agentTool.needConfirm = it }
+        request.readOnly?.let { agentTool.readOnly = if (it) 1 else 0 }
+        request.needConfirm?.let { agentTool.needConfirm = if (it) 1 else 0 }
         request.timeoutSeconds?.let { agentTool.timeoutSeconds = it }
 
         if (request.httpHeaders != null) {

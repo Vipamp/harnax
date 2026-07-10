@@ -215,7 +215,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         {/* 按钮区域 */}
         <Form.Item>
           <Button
-            onClick={() => form.resetFields()}
+            onClick={() => { form.resetFields(); setStatus(1); }}
           >
             {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
           </Button>
