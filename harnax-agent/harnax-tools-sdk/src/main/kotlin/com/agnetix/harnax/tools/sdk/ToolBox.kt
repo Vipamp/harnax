@@ -11,9 +11,14 @@ import org.slf4j.LoggerFactory
  * @Project: harnax
  */
 abstract class ToolBox {
-    private val userIdentifierLocal = ThreadLocal<UserIdentifier>()
-    private val sessionMetaContextLocal = ThreadLocal<SessionMetaContext>()
-    private val toolCallLogAdaptorLocal = ThreadLocal<ToolCallLogAdaptor>()
+    @Volatile
+    private var userIdentifierValue: UserIdentifier? = null
+
+    @Volatile
+    private var sessionMetaContextValue: SessionMetaContext? = null
+
+    @Volatile
+    private var toolCallLogAdaptorValue: ToolCallLogAdaptor? = null
     private val needConfirmedTools: MutableSet<String> = mutableSetOf()
     private lateinit var name: String
     private val log = LoggerFactory.getLogger(ToolBox::class.java)
@@ -28,15 +33,16 @@ abstract class ToolBox {
         sessionMetaContext: SessionMetaContext,
         userIdentifier: UserIdentifier,
     ) {
-        this.toolCallLogAdaptorLocal.set(toolCallLogAdaptor)
-        this.userIdentifierLocal.set(userIdentifier)
-        this.sessionMetaContextLocal.set(sessionMetaContext)
+        this.toolCallLogAdaptorValue = toolCallLogAdaptor
+        this.userIdentifierValue = userIdentifier
+        this.sessionMetaContextValue = sessionMetaContext
         this::class.java.methods.filter { it.getDeclaredAnnotation(NeedConfirmed::class.java) != null }
             .forEach { needConfirmedTools.add(it.name) }
         this.name = name()
     }
 
-    fun userIdentifier(): UserIdentifier = userIdentifierLocal.get()
+    fun userIdentifier(): UserIdentifier = userIdentifierValue
+        ?: throw IllegalStateException("ToolBox not initialized: userIdentifier is null")
     fun needConfirmedTools(): Set<String> = needConfirmedTools.map { "$name::$it" }.toSet()
 
     @Suppress("UNCHECKED_CAST")
@@ -82,11 +88,11 @@ abstract class ToolBox {
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
-        val meta = sessionMetaContextLocal.get()
-        val adaptor = toolCallLogAdaptorLocal.get()
+        val meta = sessionMetaContextValue
+        val adaptor = toolCallLogAdaptorValue
 
         if (meta == null || adaptor == null) {
-            log.warn("ToolBox ThreadLocal context is null (reactive thread?). Skipping tool call log for {}::{}", name, toolName)
+            log.warn("ToolBox not initialized (sessionMeta or adaptor is null). Skipping tool call log for {}::{}", name, toolName)
             return
         }
 
@@ -118,11 +124,11 @@ abstract class ToolBox {
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
-        val meta = sessionMetaContextLocal.get()
-        val adaptor = toolCallLogAdaptorLocal.get()
+        val meta = sessionMetaContextValue
+        val adaptor = toolCallLogAdaptorValue
 
         if (meta == null || adaptor == null) {
-            log.warn("ToolBox ThreadLocal context is null (reactive thread?). Skipping tool call error log for {}::{}", name, toolName)
+            log.warn("ToolBox not initialized (sessionMeta or adaptor is null). Skipping tool call error log for {}::{}", name, toolName)
             return
         }
 

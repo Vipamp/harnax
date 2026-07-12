@@ -12,12 +12,17 @@ import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import io.agentscope.core.agent.RuntimeContext
+import io.agentscope.core.event.AgentEventType
+import io.agentscope.core.event.RequireUserConfirmEvent
+import io.agentscope.core.event.ToolCallDeltaEvent
+import io.agentscope.core.event.ToolCallEndEvent
 import io.agentscope.core.message.Base64Source
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.ImageBlock
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.ToolUseBlock
 import io.agentscope.core.permission.PermissionMode
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.sandbox.SandboxContext
@@ -66,6 +71,25 @@ class HarnessAgentWrapper(
      */
     @Volatile
     private var activeCallDisposable: Disposable? = null
+
+    /**
+     * Cached pending tool calls from the last [RequireUserConfirmEvent].
+     * Used by confirm() to construct [ConfirmResult] metadata for agentscope.
+     */
+    @Volatile
+    private var pendingToolCalls: List<ToolUseBlock> = emptyList()
+
+    /**
+     * Buffer for accumulating TOOL_CALL_DELTA fragments.
+     * Key: toolCallId, Value: accumulated JSON string.
+     */
+    private val toolCallArgsBuffer = mutableMapOf<String, String>()
+
+    /**
+     * Returns the pending tool calls that require user confirmation.
+     * Populated when a [RequireUserConfirmEvent] is intercepted during streaming.
+     */
+    fun getPendingToolCalls(): List<ToolUseBlock> = pendingToolCalls
 
     /**
      * Set to `true` by [interrupt] so that [call] can detect that an exception was caused by
@@ -223,7 +247,38 @@ class HarnessAgentWrapper(
         // Set permission mode from session configuration (defaults to DEFAULT if not configured)
         harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
-            .flatMap { agentEvent -> ChatEventConverter.convert(agentEvent, dangerousTools) }
+            .doOnNext { agentEvent ->
+                // Intercept RequireUserConfirmEvent BEFORE flatMap to cache pending tool calls
+                if (agentEvent is RequireUserConfirmEvent) {
+                    pendingToolCalls = agentEvent.toolCalls
+                    log.info("[harness] Cached {} pending tool calls for session={}", agentEvent.toolCalls.size, sessionId)
+                }
+            }
+            .flatMap { agentEvent ->
+                when (agentEvent.type) {
+                    AgentEventType.TOOL_CALL_DELTA -> {
+                        // Accumulate argument delta fragments
+                        val deltaEvent = agentEvent as ToolCallDeltaEvent
+                        toolCallArgsBuffer.merge(
+                            deltaEvent.toolCallId,
+                            deltaEvent.delta ?: "",
+                        ) { old, new -> old + new }
+                        Flux.empty<ChatEvent>()
+                    }
+                    AgentEventType.TOOL_CALL_END -> {
+                        // Emit CallToolChatEvent with fully accumulated arguments
+                        val endEvent = agentEvent as ToolCallEndEvent
+                        val argsJson = toolCallArgsBuffer.remove(endEvent.toolCallId) ?: ""
+                        ChatEventConverter.convertToolCallEnd(
+                            endEvent.toolCallId,
+                            endEvent.toolCallName,
+                            argsJson,
+                            dangerousTools,
+                        )
+                    }
+                    else -> ChatEventConverter.convert(agentEvent, dangerousTools)
+                }
+            }
             .doOnNext { extracted(it) }
             .doFinally { persistKeepAliveSnapshot(ctxResult) }
             .concatWith(Flux.just(EndEventChatEvent()))

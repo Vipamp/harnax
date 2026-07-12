@@ -20,7 +20,7 @@ import tools.jackson.databind.ObjectMapper
  * Resolves AgentSpec and ChatSpec for any sessionId by calling Admin's unified internal API.
  *
  * This is the single point of agent-spec resolution in agent-service.
- * Both DefaultAgentRunner and ChatService delegate to this class instead of
+ * DefaultAgentRunner delegates to this class instead of
  * querying session/channel/task tables directly.
  *
  * Flow:

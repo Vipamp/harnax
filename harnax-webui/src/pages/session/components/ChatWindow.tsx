@@ -25,12 +25,15 @@ import {
   CheckSquareOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
+  ThunderboltOutlined,
+  StopOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { getSessionMessages, getSessionConfig, updateSessionConfig } from '@/services/ant-design-pro/chat';
+import { getSessionMessages, getSessionConfig } from '@/services/ant-design-pro/chat';
+import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import styles from './ChatWindow.less';
 
 const { TextArea } = Input;
@@ -87,7 +90,7 @@ interface PlanNote {
   subtasks: PlanSubTask[] | null;
   createdAt: string;
   finishedAt: string | null;
-  costTimeseconds: number;
+  costTimeSeconds: number;
   status: string; // TODO, IN_PROGRESS, DONE, ABANDONED
 }
 
@@ -97,20 +100,30 @@ interface PlanNote {
 const getAuthHeaders = (): Record<string, string> => {
   try {
     const tokenInfoStr = localStorage.getItem('tokenInfo');
-    console.log('[ChatWindow] tokenInfoStr:', tokenInfoStr);
     if (tokenInfoStr) {
       const tokenInfo = JSON.parse(tokenInfoStr);
-      console.log('[ChatWindow] tokenInfo:', tokenInfo);
       if (tokenInfo.accessToken) {
-        const headers = { 'Authorization': `Bearer ${tokenInfo.accessToken}` };
-        console.log('[ChatWindow] Authorization header:', headers);
-        return headers;
+        return { 'Authorization': `Bearer ${tokenInfo.accessToken}` };
       }
     }
   } catch (e) {
     console.error(`[ChatWindow] Failed to get token:`, e);
   }
   return {};
+};
+
+/* ─── 辅助函数：获取 Router 认证头（优先 X-Api-Key，回退 JWT） ─── */
+const getRouterHeaders = (): Record<string, string> => {
+  try {
+    const tokenInfoStr = localStorage.getItem('tokenInfo');
+    if (tokenInfoStr) {
+      const tokenInfo = JSON.parse(tokenInfoStr);
+      if (tokenInfo.routerApiKey) {
+        return { 'X-Api-Key': tokenInfo.routerApiKey };
+      }
+    }
+  } catch { /* ignore */ }
+  return getAuthHeaders();
 };
 
 /* ─── 代码块（带复制 + 语言标签） ─── */
@@ -187,7 +200,7 @@ const MergedToolCard: React.FC<{
 }> = ({ toolName, arguments: args, result, confirmStatus, onToggleResult }) => {
   const intl = useIntl();
   const [expanded, setExpanded] = useState(false); // 默认折叠
-  const hasResult = !!result;
+  const hasResult = result !== undefined;
   
   // 根据确认状态显示不同的文本和颜色
   const statusConfig = {
@@ -432,6 +445,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [showThinking, setShowThinking] = useState(true); // 是否显示思考过程
   const [enableSearch, setEnableSearch] = useState(false);
   const [enablePlan, setEnablePlan] = useState(false);
+  const [modelSupportReasoning, setModelSupportReasoning] = useState(true); // 模型是否支持深度思考
+  const [modelSupportInternet, setModelSupportInternet] = useState(true); // 模型是否支持联网搜索
+  const [modelSupportVision, setModelSupportVision] = useState(true); // 模型是否支持视觉
+    const [permissionMode, setPermissionMode] = useState('DEFAULT'); // 权限模式：DEFAULT/BYPASS/ACCEPT_EDITS/EXPLORE/DONT_ASK
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [pendingConfirm, setPendingConfirm] = useState<{
     pendingCallTools: PendingCallTool[];
@@ -535,6 +552,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           setEnableThink(config.enableThink || false);
           setEnableSearch(config.enableSearch || false);
           setEnablePlan(config.enablePlan || false);
+          setPermissionMode(config.permissionMode || 'DEFAULT');
+          setModelSupportReasoning(config.modelSupportReasoning !== 0);
+          setModelSupportInternet(config.modelSupportInternet !== 0);
+          setModelSupportVision(config.modelSupportVision !== 0);
         }
         
         // 加载历史消息
@@ -683,6 +704,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     'stop-sandbox': 'STOP_SANDBOX',
     enable: 'ENABLE',
     disable: 'DISABLE',
+    permission: 'PERMISSION',
   };
 
   /**
@@ -730,19 +752,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setLoading(true);
 
       try {
-        let routerApiKey = '';
-        try {
-          const tokenInfoStr = localStorage.getItem('tokenInfo');
-          if (tokenInfoStr) routerApiKey = JSON.parse(tokenInfoStr).routerApiKey || '';
-        } catch { /* ignore */ }
-
         const res = await fetch('/api/router/agent/command', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(routerApiKey ? { 'X-Api-Key': routerApiKey } : getAuthHeaders()),
+            ...getRouterHeaders(),
           },
-          body: JSON.stringify({ sessionId, command: parsed.command, args: parsed.args }),
+          body: JSON.stringify({ type: 'COMMAND', sessionId, command: parsed.command, args: parsed.args }),
         });
         const json = await res.json();
         const reply = json.data?.message || (json.data?.success ? 'Done' : json.message || 'Command failed');
@@ -813,21 +829,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     try {
       console.log('[ChatWindow] 发送消息, sessionId:', sessionId);
       const chatBody = {
+        type: 'CHAT',
         sessionId,
         message: text.trim(),
-        imageUrl: imageUrls,
-        enableThink,
-        enableSearch,
-        enablePlan,
+        imageUrls: imageUrls,
       };
       console.log('[ChatWindow] chatBody:', chatBody);
 
-      const response = await fetch('/ai/chat', {
+      const response = await fetch('/api/router/agent/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream',
-          ...getAuthHeaders(),
+          ...getRouterHeaders(),
         },
         body: JSON.stringify(chatBody),
         signal: abortController.signal,
@@ -994,7 +1008,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   const segIdx = toolCallMap.get(toolId)!;
                   currentSegs = currentSegs.map((seg, idx) => 
                     idx === segIdx && seg.type === 'tool_call'
-                      ? { ...seg, toolResult: resultContent }
+                      ? { ...seg, toolResult: resultContent, ...(data.success === false ? { confirmStatus: 'rejected' } : {}) }
                       : seg
                   );
                 }
@@ -1016,7 +1030,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 // 创建新的 segment 对象以触发 React 重新渲染
                 currentSegs = currentSegs.map((seg, idx) => 
                   idx === segIdx && seg.type === 'tool_call'
-                    ? { ...seg, toolResult: resultContent }
+                    ? { ...seg, toolResult: resultContent, ...(data.success === false ? { confirmStatus: 'rejected' } : {}) }
                     : seg
                 );
                 console.log('[ToolResultEvent] Updated segment:', currentSegs[segIdx]);
@@ -1134,22 +1148,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               // 调用 confirm 接口 (POST)
               const confirmBody = {
+                type: 'CONFIRM',
                 sessionId,
                 isConfirmed: confirmResult,
                 toolInfoList: pendingTools.map((tool: PendingCallTool) => ({
                   toolId: tool.toolId,
                   toolName: tool.toolName,
                 })),
-                enableThink,
-                enableSearch,
               };
               
-              const confirmResponse = await fetch('/ai/confirm', {
+              const confirmResponse = await fetch('/api/router/agent/confirm', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
                   'Accept': 'text/event-stream',
-                  ...getAuthHeaders(),
+                  ...getRouterHeaders(),
                 },
                 body: JSON.stringify(confirmBody),
                 signal: abortController.signal,
@@ -1289,7 +1302,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           const segIdx = toolCallMap.get(toolId)!;
                           currentSegs = currentSegs.map((seg, idx) => 
                             idx === segIdx && seg.type === 'tool_call'
-                              ? { ...seg, toolResult: resultContent }
+                              ? { ...seg, toolResult: resultContent, ...(confirmData.success === false ? { confirmStatus: 'rejected' } : {}) }
                               : seg
                           );
                         }
@@ -1308,7 +1321,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         const segIdx = toolCallMap.get(toolId)!;
                         currentSegs = currentSegs.map((seg, idx) => 
                           idx === segIdx && seg.type === 'tool_call'
-                            ? { ...seg, toolResult: resultContent }
+                            ? { ...seg, toolResult: resultContent, ...(confirmData.success === false ? { confirmStatus: 'rejected' } : {}) }
                             : seg
                         );
                       } else {
@@ -1414,22 +1427,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       flushUI();
                       
                       const nestedConfirmBody = {
+                        type: 'CONFIRM',
                         sessionId,
                         isConfirmed: nestedConfirmResult,
                         toolInfoList: nestedPendingTools.map((tool: PendingCallTool) => ({
                           toolId: tool.toolId,
                           toolName: tool.toolName,
                         })),
-                        enableThink,
-                        enableSearch,
                       };
                       
-                      const nestedConfirmResponse = await fetch('/ai/confirm', {
+                      const nestedConfirmResponse = await fetch('/api/router/agent/confirm', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
                           'Accept': 'text/event-stream',
-                          ...getAuthHeaders(),
+                          ...getRouterHeaders(),
                         },
                         body: JSON.stringify(nestedConfirmBody),
                         signal: abortController.signal,
@@ -1569,7 +1581,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                                   const segIdx = toolCallMap.get(toolId)!;
                                   currentSegs = currentSegs.map((seg, idx) => 
                                     idx === segIdx && seg.type === 'tool_call'
-                                      ? { ...seg, toolResult: resultContent }
+                                      ? { ...seg, toolResult: resultContent, ...(nestedData.success === false ? { confirmStatus: 'rejected' } : {}) }
                                       : seg
                                   );
                                 }
@@ -1588,7 +1600,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                                 const segIdx = toolCallMap.get(toolId)!;
                                 currentSegs = currentSegs.map((seg, idx) => 
                                   idx === segIdx && seg.type === 'tool_call'
-                                    ? { ...seg, toolResult: resultContent }
+                                    ? { ...seg, toolResult: resultContent, ...(nestedData.success === false ? { confirmStatus: 'rejected' } : {}) }
                                     : seg
                                 );
                               } else {
@@ -1691,18 +1703,35 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
   const handleSend = () => doSend(inputValue);
 
-  /* ─── 保存会话配置 ─── */
-  const saveSessionConfig = async (newEnableThink: boolean, newEnableSearch: boolean, newEnablePlan: boolean) => {
+  /* ─── 停止当前 agent 运行 ─── */
+  const handleStop = () => {
+    abortRef.current?.abort();
+    sendSilentCommand('INTERRUPT');
+    setLoading(false);
+  };
+
+  /* ─── 发送静默命令（不显示在聊天中，用于配置切换/清空） ─── */
+  const sendSilentCommand = async (command: string, args: string = '') => {
     if (!sessionId) return;
     try {
-      await updateSessionConfig(sessionId, {
-        enableThink: newEnableThink,
-        enableSearch: newEnableSearch,
-        enablePlan: newEnablePlan,
+      const response = await fetch('/api/router/agent/command', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getRouterHeaders(),
+        },
+        body: JSON.stringify({ type: 'COMMAND', sessionId, command, args }),
       });
+      const result = await response.json();
+      // Check if command failed and show warning
+      if (result?.data && result.data.success === false && result.data.message) {
+        message.warning(result.data.message);
+        return false;
+      }
+      return true;
     } catch (error) {
-      console.error(`${intl.formatMessage({ id: 'pages.session.saveSessionConfigFailed', defaultMessage: "Failed to save session configuration" })}:`, error);
-      // 不显示错误提示,避免干扰用户体验
+      console.error('Failed to send command:', error);
+      return false;
     }
   };
 
@@ -1757,9 +1786,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     if (!sessionId) return;
     
     try {
-      const response = await fetch(`/ai/session/${sessionId}/current-plan`, {
+      const response = await fetch(`/api/router/agent/session/${sessionId}/current-plan`, {
         headers: {
-          ...getAuthHeaders(),
+          ...getRouterHeaders(),
         },
       });
       
@@ -1882,9 +1911,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     
     try {
       setLoadingPlans(true);
-      const response = await fetch(`/ai/session/${sessionId}/plans`, {
+      const response = await fetch(`/api/router/agent/session/${sessionId}/plans`, {
         headers: {
-          ...getAuthHeaders(),
+          ...getRouterHeaders(),
         },
       });
       
@@ -1954,17 +1983,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   /* ─── 清空聊天记录 ─── */
   const handleClearChat = async () => {
     try {
-      const response = await fetch(`/ai/session/${sessionId}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      // 发送 /clear 命令到后端
+      await sendSilentCommand('CLEAR');
 
       // 清空前端聊天记录
       setMessages([]);
@@ -2048,7 +2068,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 {currentPlanExpanded && (
                   <div className={styles.refreshIndicator}>
                     <ClockCircleOutlined spin style={{ fontSize: 12 }} />
-                    <span>实时</span>
+                    <span>{intl.formatMessage({ id: 'pages.session.realtime', defaultMessage: 'Live' })}</span>
                   </div>
                 )}
                 <div className={styles.collapseIcon}>
@@ -2075,10 +2095,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         <div className={styles.subtaskInfo}>
                           <div className={styles.subtaskName}>{subtask.name}</div>
                           {subtask.state === 'IN_PROGRESS' && (
-                            <div className={styles.subtaskStatus}>执行中...</div>
+                            <div className={styles.subtaskStatus}>{intl.formatMessage({ id: 'pages.session.executing', defaultMessage: 'Executing...' })}</div>
                           )}
                           {subtask.state === 'ABANDONED' && (
-                            <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>已放弃</div>
+                            <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>{intl.formatMessage({ id: 'pages.session.abandoned', defaultMessage: 'Abandoned' })}</div>
                           )}
                         </div>
                       </div>
@@ -2165,7 +2185,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             {currentPlanExpanded && (
               <div className={styles.refreshIndicator}>
                 <ClockCircleOutlined spin style={{ fontSize: 12 }} />
-                <span>实时</span>
+                <span>{intl.formatMessage({ id: 'pages.session.realtime', defaultMessage: 'Live' })}</span>
               </div>
             )}
             <div className={styles.collapseIcon}>
@@ -2192,10 +2212,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     <div className={styles.subtaskInfo}>
                       <div className={styles.subtaskName}>{subtask.name}</div>
                       {subtask.state === 'IN_PROGRESS' && (
-                        <div className={styles.subtaskStatus}>执行中...</div>
+                        <div className={styles.subtaskStatus}>{intl.formatMessage({ id: 'pages.session.executing', defaultMessage: 'Executing...' })}</div>
                       )}
                       {subtask.state === 'ABANDONED' && (
-                        <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>已放弃</div>
+                        <div className={styles.subtaskStatus} style={{ color: '#ff4d4f' }}>{intl.formatMessage({ id: 'pages.session.abandoned', defaultMessage: 'Abandoned' })}</div>
                       )}
                     </div>
                   </div>
@@ -2319,7 +2339,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           {/* 历史计划 */}
           {loadingPlans && plans.length === 0 && (
             <div className={styles.loadingPlans}>
-              <p>加载计划中...</p>
+              <p>{intl.formatMessage({ id: 'pages.session.loadingPlans', defaultMessage: 'Loading plans...' })}</p>
             </div>
           )}
           
@@ -2443,8 +2463,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                     )}
                     <div className={styles.planFooter}>
                       <span>{intl.formatMessage({ id: 'pages.session.createdAt', defaultMessage: 'Created At:' })}{plan.createdAt}</span>
-                      {plan.costTimeseconds > 0 && (
-                        <span>{intl.formatMessage({ id: 'pages.session.totalCostTime', defaultMessage: 'Total Cost Time:' })}{plan.costTimeseconds}s</span>
+                      {plan.costTimeSeconds > 0 && (
+                        <span>{intl.formatMessage({ id: 'pages.session.totalCostTime', defaultMessage: 'Total Cost Time:' })}{plan.costTimeSeconds}s</span>
                       )}
                     </div>
                   </Collapse.Panel>
@@ -2593,8 +2613,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           <div className={styles.inputCardFooter}>
             <div className={styles.options}>
               <div
-                className={`${styles.optionItem} ${imageUrls.length > 0 ? styles.optionActive : ''}`}
-                onClick={() => uploadRef.current?.click()}
+                className={`${styles.optionItem} ${imageUrls.length > 0 ? styles.optionActive : ''} ${!modelSupportVision ? styles.optionDisabled : ''}`}
+                onClick={() => {
+                  if (!modelSupportVision) {
+                    message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportVision', defaultMessage: 'Current model does not support image input' }));
+                    return;
+                  }
+                  uploadRef.current?.click();
+                }}
               >
                 <PictureOutlined />
                 <span>{intl.formatMessage({ id: 'pages.session.imageUpload', defaultMessage: 'Image' })} ({imageUrls.length})</span>
@@ -2645,11 +2671,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 )}
               >
                 <div
-                  className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''}`}
+                  className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''} ${!modelSupportReasoning ? styles.optionDisabled : ''}`}
                   onClick={() => {
+                    if (!modelSupportReasoning) {
+                      message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportReasoning', defaultMessage: 'Current model does not support Deep Thinking' }));
+                      return;
+                    }
                     const newValue = !enableThink;
                     setEnableThink(newValue);
-                    saveSessionConfig(newValue, enableSearch, enablePlan);
+                    sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'thinking').then((success) => {
+                      if (success === false) setEnableThink(!newValue); // Revert on failure
+                    });
                   }}
                 >
                   <BulbOutlined />
@@ -2657,11 +2689,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 </div>
               </Dropdown>
               <div
-                className={`${styles.optionItem} ${enableSearch ? styles.optionActive : ''}`}
+                className={`${styles.optionItem} ${enableSearch ? styles.optionActive : ''} ${!modelSupportInternet ? styles.optionDisabled : ''}`}
                 onClick={() => {
+                  if (!modelSupportInternet) {
+                    message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportInternet', defaultMessage: 'Current model does not support Internet Search' }));
+                    return;
+                  }
                   const newValue = !enableSearch;
                   setEnableSearch(newValue);
-                  saveSessionConfig(enableThink, newValue, enablePlan);
+                  sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'search').then((success) => {
+                    if (success === false) setEnableSearch(!newValue); // Revert on failure
+                  });
                 }}
               >
                 <SearchOutlined />
@@ -2672,11 +2710,75 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 onClick={() => {
                   const newValue = !enablePlan;
                   setEnablePlan(newValue);
-                  saveSessionConfig(enableThink, enableSearch, newValue);
+                  sendSilentCommand(newValue ? 'ENABLE' : 'DISABLE', 'plan');
                 }}
               >
                 <UnorderedListOutlined />
                 <span>{intl.formatMessage({ id: 'pages.session.enablePlan', defaultMessage: 'Enable Plan' })}</span>
+              </div>
+              <Dropdown
+                menu={{
+                  items: [
+                    { key: 'DEFAULT', label: intl.formatMessage({ id: 'pages.session.permissionMode.DEFAULT', defaultMessage: 'Default (ask for risky tools)' }) },
+                    { key: 'BYPASS', label: intl.formatMessage({ id: 'pages.session.permissionMode.BYPASS', defaultMessage: 'Auto Execute (no confirmation)' }) },
+                    { key: 'ACCEPT_EDITS', label: intl.formatMessage({ id: 'pages.session.permissionMode.ACCEPT_EDITS', defaultMessage: 'Accept Edits (auto-approve file edits)' }) },
+                    { key: 'EXPLORE', label: intl.formatMessage({ id: 'pages.session.permissionMode.EXPLORE', defaultMessage: 'Explore (read-only mode)' }) },
+                    { key: 'DONT_ASK', label: intl.formatMessage({ id: 'pages.session.permissionMode.DONT_ASK', defaultMessage: 'Don\'t Ask (auto-deny risky tools)' }) },
+                  ],
+                  selectedKeys: [permissionMode],
+                  onClick: ({ key }) => {
+                    if (key === permissionMode) return;
+                    const prevMode = permissionMode;
+                    setPermissionMode(key);
+                    sendSilentCommand('PERMISSION', key).then((success) => {
+                      if (success === false) setPermissionMode(prevMode);
+                    });
+                  },
+                }}
+                trigger={['click']}
+                dropdownRender={(menu) => (
+                  <div className={styles.thinkingMenu}>
+                    <div className={styles.menuHeader}>
+                      <ThunderboltOutlined className={styles.menuHeaderIcon} />
+                      <span>{intl.formatMessage({ id: 'pages.session.permissionMenuTitle', defaultMessage: 'Tool Execution Permission' })}</span>
+                    </div>
+                    {menu}
+                  </div>
+                )}
+              >
+                <div
+                  className={`${styles.optionItem} ${permissionMode !== 'DEFAULT' ? styles.optionActive : ''}`}
+                  title={intl.formatMessage({ id: 'pages.session.permissionMenuTitle', defaultMessage: 'Tool Execution Permission' })}
+                >
+                  <ThunderboltOutlined />
+                  <span>{intl.formatMessage({ id: `pages.session.permissionMode.${permissionMode}`, defaultMessage: permissionMode })}</span>
+                </div>
+              </Dropdown>
+              <div
+                className={`${styles.optionItem} ${styles.clearOption}`}
+                onClick={async () => {
+                  if (!sessionId) return;
+                  try {
+                    const res = await getWorkspaceStatus(sessionId);
+                    if (res.code === 200 && res.data?.active) {
+                      Modal.confirm({
+                        title: intl.formatMessage({ id: 'pages.session.stopSandboxConfirmTitle', defaultMessage: 'Stop Sandbox' }),
+                        content: intl.formatMessage({ id: 'pages.session.stopSandboxConfirm', defaultMessage: 'This will stop and destroy the sandbox container. The workspace snapshot will be saved.' }),
+                        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+                        cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+                        okButtonProps: { danger: true },
+                        onOk: () => sendSilentCommand('STOP_SANDBOX'),
+                      });
+                    } else {
+                      message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
+                    }
+                  } catch {
+                    message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
+                  }
+                }}
+              >
+                <StopOutlined />
+                <span>{intl.formatMessage({ id: 'pages.session.stopSandbox', defaultMessage: 'Stop Sandbox' })}</span>
               </div>
               <Popconfirm
                 title={intl.formatMessage({ id: 'pages.session.clearChatConfirmTitle', defaultMessage: 'Clear Chat History' })}
@@ -2694,10 +2796,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             </div>
             <Button
               type="primary"
-              icon={<SendOutlined />}
-              onClick={handleSend}
-              loading={loading}
-              disabled={!inputValue.trim() && imageUrls.length === 0 || loading}
+              icon={loading ? <StopOutlined /> : <SendOutlined />}
+              onClick={loading ? handleStop : handleSend}
+              disabled={!loading && (!inputValue.trim() && imageUrls.length === 0)}
+              danger={loading}
               className={styles.sendButton}
             />
           </div>

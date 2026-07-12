@@ -2,27 +2,31 @@
 /* eslint-disable */
 import { request } from '@umijs/max';
 
+function getRouterApiKey(): string {
+  try {
+    const tokenInfoStr = localStorage.getItem('tokenInfo');
+    if (tokenInfoStr) {
+      const tokenInfo = JSON.parse(tokenInfoStr);
+      return tokenInfo.routerApiKey || '';
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
 /**
- * 发送聊天消息 (SSE 流式响应)
- * 注意: 此接口使用 EventSource 调用，不在这里直接调用
- * 前端直接使用 new EventSource('/ai/chat?params') 即可
+ * Build router request options: X-Api-Key header + skip JWT Authorization
  */
-export async function sendChatMessage(
-  params: {
-    sessionId: string;
-    message: string;
-    enableThink?: boolean;
-    enableSearch?: boolean;
-  },
-  options?: { [key: string]: any },
-) {
-  return request(`/ai/chat`, {
-    method: 'GET',
-    params: {
-      ...params,
+function buildRouterOptions(extraOptions?: { [key: string]: any }) {
+  const apiKey = getRouterApiKey();
+  return {
+    skipAuthorization: true,
+    headers: {
+      'X-Api-Key': apiKey,
     },
-    ...(options || {}),
-  });
+    ...(extraOptions || {}),
+  };
 }
 
 /**
@@ -32,9 +36,9 @@ export async function getSessionMessages(
   sessionId: string,
   options?: { [key: string]: any },
 ) {
-  return request(`/ai/session/${sessionId}`, {
+  return request(`/api/router/agent/chat/history/${sessionId}`, {
     method: 'GET',
-    ...(options || {}),
+    ...buildRouterOptions(options),
   });
 }
 

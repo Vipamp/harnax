@@ -74,6 +74,9 @@ class SessionServiceImpl(
             model?.let {
                 response.modelName = it.modelName
                 response.modelPrice = it.price
+                response.modelSupportReasoning = it.supportReasoning
+                response.modelSupportInternet = it.supportInternet
+                response.modelSupportVision = it.supportVision
             }
         }
 
@@ -201,10 +204,12 @@ class SessionServiceImpl(
     }
 
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
-        val session = Session()
+        val session = sessionMapper.selectById(id)
+            ?: throw BizException("Session not found")
         session.title = request.title
         session.description = request.sessionDescription
         request.agentId.let { session.agentId = it }
+        session.updateTime = LocalDateTime.now()
         return sessionMapper.updateById(session) > 0
     }
 

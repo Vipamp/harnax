@@ -237,6 +237,16 @@ class CommandAgentRequestParseTest {
         }
 
         @Test
+        fun `fromKeyword resolves deny`() {
+            assertEquals(CommandType.DENY, CommandType.fromKeyword("deny"))
+        }
+
+        @Test
+        fun `fromKeyword resolves reject alias as DENY`() {
+            assertEquals(CommandType.DENY, CommandType.fromKeyword("reject"))
+        }
+
+        @Test
         fun `fromKeyword resolves stop-sandbox`() {
             assertEquals(CommandType.STOP_SANDBOX, CommandType.fromKeyword("stop-sandbox"))
         }

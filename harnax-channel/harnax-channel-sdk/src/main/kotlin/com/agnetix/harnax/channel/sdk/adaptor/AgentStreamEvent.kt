@@ -75,4 +75,31 @@ sealed class AgentStreamEvent {
         val requestId: String = "",
         val cause: Throwable? = null,
     ) : AgentStreamEvent()
+
+    /**
+     * Tool Confirm Stream Event (HITL)
+     *
+     * Emitted when the agent pauses and requires user confirmation before executing tools.
+     * Channel layer converts this to a plain-text confirmation message.
+     *
+     * @param pendingTools List of tools awaiting user confirmation
+     */
+    data class ToolConfirmStreamEvent(
+        val pendingTools: List<PendingToolInfo>,
+    ) : AgentStreamEvent()
 }
+
+/**
+ * Information about a tool awaiting confirmation.
+ *
+ * @param toolId The tool call ID (matching ToolUseBlock.id)
+ * @param toolName The tool name
+ * @param arguments Tool input parameters
+ * @param isDangerous Whether this tool is marked as dangerous
+ */
+data class PendingToolInfo(
+    val toolId: String,
+    val toolName: String,
+    val arguments: Map<String, Any>,
+    val isDangerous: Boolean,
+)

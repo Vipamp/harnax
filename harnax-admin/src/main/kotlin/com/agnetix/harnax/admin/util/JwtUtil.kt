@@ -129,7 +129,7 @@ class JwtUtil {
      */
     fun getTenantIdFromToken(token: String): Long? = try {
         val claims = getClaimsFromToken(token)
-        claims["tenantId", Long::class.java]
+        claims["tenantId", Number::class.java]?.toLong()
     } catch (e: Exception) {
         null
     }

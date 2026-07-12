@@ -58,8 +58,8 @@ class EmailToolBox : ToolBox() {
         subject: String?,
         @ToolParam(name = "body", description = "Email body content")
         body: String?,
-        @ToolParam(name = "is_html", description = "Whether the body is HTML format (default: false)", required = false)
-        isHtml: Boolean? = false,
+        @ToolParam(name = "is_html", description = "Whether the body is HTML format (default: true)", required = false)
+        isHtml: Boolean? = true,
         envContext: ToolEnvContext,
     ): String = execute("to" to to, "subject" to subject) {
         val log = LoggerFactory.getLogger(EmailToolBox::class.java)

@@ -5,6 +5,7 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
 import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
 import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
+import com.agnetix.harnax.channel.sdk.adaptor.PendingToolInfo
 import com.agnetix.harnax.channel.service.client.RouterClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -126,6 +127,11 @@ class RouterAgentAdaptor(
             message = event.message,
             requestId = requestId,
         )
-        else -> null // Tool events are not relevant for channel output
+        is ToolConfirmChatEvent -> AgentStreamEvent.ToolConfirmStreamEvent(
+            pendingTools = event.pendingCallTools.map {
+                PendingToolInfo(it.toolId, it.toolName, it.arguments, it.isDangerous)
+            },
+        )
+        else -> null // Other events not relevant for channel output
     }
 }

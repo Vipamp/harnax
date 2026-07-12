@@ -117,16 +117,37 @@ data class CommandAgentRequest(
 /**
  * Confirm request - carries tool confirmation decision from the client.
  *
- * @property isConfirmed Whether the user confirmed the tool execution
- * @property toolInfoList List of tools pending confirmation
+ * Supports two modes:
+ * 1. Bulk: use [isConfirmed] to approve/reject all tools at once
+ * 2. Per-tool: use [toolResults] for individual decisions per tool
+ *
+ * @property isConfirmed Whether the user confirmed all tool executions (bulk mode)
+ * @property toolInfoList List of tools pending confirmation (legacy)
+ * @property toolResults Per-tool confirmation decisions (preferred over bulk mode)
  */
 data class ConfirmAgentRequest(
     override val sessionId: String,
     val isConfirmed: Boolean,
     val toolInfoList: List<ToolInfo> = emptyList(),
+    val toolResults: List<ToolConfirmResult> = emptyList(),
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CONFIRM
 }
+
+/**
+ * Per-tool confirmation decision.
+ *
+ * @property toolId The tool call ID (matching ToolUseBlock.id)
+ * @property toolName The tool name
+ * @property confirmed Whether this specific tool is approved
+ * @property alwaysAllow Whether to add a PermissionRule for future calls
+ */
+data class ToolConfirmResult(
+    val toolId: String,
+    val toolName: String,
+    val confirmed: Boolean,
+    val alwaysAllow: Boolean = false,
+)
 
 /**
  * Tool information for confirmation requests.
@@ -155,6 +176,7 @@ enum class RequestType {
  * - STOP_SANDBOX: Stop and remove the sandbox container for the session
  * - ENABLE: Enable a session capability (args: "search", "thinking", "plan")
  * - DISABLE: Disable a session capability (args: "search", "thinking", "plan")
+ * - PERMISSION: Set permission mode (args: "DEFAULT", "BYPASS", "ACCEPT_EDITS", "EXPLORE", "DONT_ASK")
  *
  * Each command defines a set of slash-command aliases (case-insensitive).
  * Use [fromKeyword] to resolve a keyword to its CommandType.
@@ -166,9 +188,11 @@ enum class CommandType(vararg val aliases: String) {
     CLEAR("clear"),
     COMPACT("compact"),
     APPROVE("approve"),
+    DENY("deny", "reject"),
     STOP_SANDBOX("stop-sandbox"),
     ENABLE("enable"),
     DISABLE("disable"),
+    PERMISSION("permission"),
     REFRESH("refresh"),
     ;
 

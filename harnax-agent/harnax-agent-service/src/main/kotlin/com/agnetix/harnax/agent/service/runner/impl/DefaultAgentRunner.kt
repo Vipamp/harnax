@@ -12,6 +12,8 @@ import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
+import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
@@ -22,10 +24,9 @@ import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
+import io.agentscope.core.event.ConfirmResult
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
-import io.agentscope.core.message.TextBlock
-import io.agentscope.core.message.ToolResultBlock
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -37,8 +38,7 @@ import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 
 /**
  * Default implementation of AgentRunner.
- * Uses HarnessAgentLauncher to create agents based on session configuration,
- * similar to ChatService but adapted for the AgentRunner interface.
+ * Uses HarnessAgentLauncher to create agents based on session configuration.
  */
 @Service
 class DefaultAgentRunner(
@@ -46,6 +46,7 @@ class DefaultAgentRunner(
     private val agentSpecResolver: AgentSpecResolver,
     private val sessionMapper: SessionMapper,
     private val channelMapper: ChannelMapper,
+    private val adminApiClient: AdminApiClient,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
 ) : AgentRunner {
@@ -135,11 +136,8 @@ class DefaultAgentRunner(
                 log.info("Compact command received for session=$sessionId, args='$args' (not yet implemented)")
                 CommandResponse.success(sessionId, message = "Compact not yet implemented")
             }
-            CommandType.APPROVE -> {
-                // TODO: implement approve with optional args
-                log.info("Approve command received for session=$sessionId, args='$args' (not yet implemented)")
-                CommandResponse.success(sessionId, message = "Approve not yet implemented")
-            }
+            CommandType.APPROVE -> handleApproveOrDeny(sessionId, isConfirmed = true)
+            CommandType.DENY -> handleApproveOrDeny(sessionId, isConfirmed = false)
             CommandType.STOP_SANDBOX -> {
                 val sandboxManager = launcher.keepAliveSandboxManager
                 if (sandboxManager != null) {
@@ -158,6 +156,9 @@ class DefaultAgentRunner(
             }
             CommandType.DISABLE -> {
                 handleCapabilityToggle(sessionId, args, enable = false)
+            }
+            CommandType.PERMISSION -> {
+                handlePermissionModeChange(sessionId, args)
             }
             CommandType.REFRESH -> {
                 // Force-rebuild the agent entity from the latest spec.
@@ -204,28 +205,44 @@ class DefaultAgentRunner(
 
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}")
+        log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}, toolResults=${request.toolResults.size}")
         val agent = agentCache.getIfPresent(sessionId)
             ?: run {
                 log.warn("Agent not in cache for confirm, rebuilding: session=$sessionId")
                 getOrCreateAgent(sessionId, UserIdentifier(0))
             }
-        val stream = if (request.isConfirmed) {
-            agent.callStream()
-        } else {
-            val results = request.toolInfoList.map { tool ->
-                ToolResultBlock.of(
-                    tool.toolId,
-                    tool.toolName,
-                    TextBlock.builder().text("Operation cancelled by user").build(),
-                )
-            }
-            val cancelResult = Msg.builder()
-                .name("Assistant").role(MsgRole.TOOL)
-                .content(*results.toTypedArray())
-                .build()
-            agent.callStream(msg = cancelResult)
+
+        // Build ConfirmResult list for agentscope's METADATA_CONFIRM_RESULTS
+        val pendingToolCalls = agent.getPendingToolCalls()
+        if (pendingToolCalls.isEmpty()) {
+            log.error("No pending tool calls for confirm session=$sessionId — agent may have been rebuilt")
+            return Flux.just(
+                ErrorChatEvent(
+                    code = HarnaxErrorCode.SYSTEM_ERROR.code,
+                    message = "No pending tool confirmation for session $sessionId. The agent state may have been lost. Please retry your message.",
+                ),
+                EndEventChatEvent(),
+            )
         }
+        val confirmResults = if (request.toolResults.isNotEmpty()) {
+            // Per-tool decision mode
+            request.toolResults.map { tr ->
+                val toolUseBlock = pendingToolCalls.find { it.id == tr.toolId }
+                ConfirmResult(tr.confirmed, toolUseBlock, null)
+            }
+        } else {
+            // Bulk mode: apply isConfirmed to all pending tools
+            pendingToolCalls.map { ConfirmResult(request.isConfirmed, it, null) }
+        }
+
+        // Construct msg with ConfirmResult metadata as agentscope expects
+        val msg = Msg.builder()
+            .name("user").role(MsgRole.USER)
+            .textContent("[confirm]")
+            .metadata(mapOf(Msg.METADATA_CONFIRM_RESULTS to confirmResults))
+            .build()
+
+        val stream = agent.callStream(msg = msg)
         return stream
             .doOnSubscribe { subscription ->
                 activeStreams[sessionId] = subscription
@@ -278,12 +295,59 @@ class DefaultAgentRunner(
     }
 
     /**
+     * Handle /approve and /deny commands by delegating to the confirm flow.
+     * Builds a ConfirmAgentRequest, calls confirm() to resume the agent,
+     * collects the streaming output, and returns a CommandResponse with the text.
+     */
+    private fun handleApproveOrDeny(sessionId: String, isConfirmed: Boolean): CommandResponse {
+        val action = if (isConfirmed) "approve" else "deny"
+        log.info("Handling $action command for session=$sessionId, delegating to confirm flow")
+
+        val confirmRequest = ConfirmAgentRequest(
+            sessionId = sessionId,
+            isConfirmed = isConfirmed,
+        )
+        val stream = confirm(confirmRequest)
+        val events = stream.collectList().block() ?: emptyList()
+
+        val textContent = StringBuilder()
+        var hasError = false
+        var errorMessage = ""
+
+        for (event in events) {
+            when (event) {
+                is StreamTextChatEvent -> textContent.append(event.message)
+                is ErrorChatEvent -> {
+                    hasError = true
+                    errorMessage = "[${event.code}] ${event.message}"
+                }
+                else -> { /* skip other events */ }
+            }
+        }
+
+        return if (hasError) {
+            CommandResponse.failure(sessionId, errorMessage)
+        } else {
+            val output = textContent.toString()
+            val message = if (output.isNotBlank()) {
+                output
+            } else if (isConfirmed) {
+                "Tools approved, agent resumed."
+            } else {
+                "Tools denied."
+            }
+            CommandResponse.success(sessionId, message = message)
+        }
+    }
+
+    /**
      * Handle /enable and /disable commands to toggle session capabilities.
      *
      * Supported args values:
      * - "search"   → toggle enableSearch
      * - "thinking" → toggle enableThink
      * - "plan"     → toggle enablePlan
+     * - "bypass"   → toggle permissionMode between BYPASS and DEFAULT
      *
      * After updating the DB, invalidates the agent cache so the next request
      * will rebuild the agent with the new ChatSpec.
@@ -307,6 +371,27 @@ class DefaultAgentRunner(
         val flag = if (enable) 1 else 0
         val display = capability.replaceFirstChar { it.uppercase() }
 
+        // When enabling a capability, validate that the model supports it
+        if (enable) {
+            try {
+                val specInfo = adminApiClient.getAgentSpec(sessionId)
+                val unsupported = when (capability) {
+                    "thinking" -> specInfo.modelSupportReasoning != 1
+                    "search" -> specInfo.modelSupportInternet != 1
+                    else -> false
+                }
+                if (unsupported) {
+                    return CommandResponse.failure(
+                        sessionId,
+                        "Current model does not support $display. Please switch to a model that supports this capability.",
+                    )
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to validate model capability for session=$sessionId: ${e.message}")
+                // Proceed with toggle if validation fails (fail-open)
+            }
+        }
+
         if (sessionId.startsWith("chn-")) {
             // Channel session: update channel table
             val channel = channelMapper.selectBySessionId(sessionId)
@@ -315,6 +400,7 @@ class DefaultAgentRunner(
                 "search" -> channel.enableSearch = flag
                 "thinking" -> channel.enableThink = flag
                 "plan" -> channel.enablePlan = flag
+                "bypass" -> channel.permissionMode = if (enable) "BYPASS" else "DEFAULT"
             }
             channel.updateTime = LocalDateTime.now()
             channelMapper.updateById(channel)
@@ -326,6 +412,7 @@ class DefaultAgentRunner(
                 "search" -> session.enableSearch = flag
                 "thinking" -> session.enableThink = flag
                 "plan" -> session.enablePlan = flag
+                "bypass" -> session.permissionMode = if (enable) "BYPASS" else "DEFAULT"
             }
             session.updateTime = LocalDateTime.now()
             sessionMapper.updateById(session)
@@ -338,7 +425,51 @@ class DefaultAgentRunner(
         return CommandResponse.success(sessionId, message = "$display ${action}d")
     }
 
+    /**
+     * Handle /permission command to change the session's permission mode.
+     *
+     * Valid args: DEFAULT, BYPASS, ACCEPT_EDITS, EXPLORE, DONT_ASK
+     * Updates the DB and invalidates the agent cache so the next request
+     * rebuilds with the new ChatSpec (including new permissionMode).
+     */
+    private fun handlePermissionModeChange(sessionId: String, args: String): CommandResponse {
+        val mode = args.trim().uppercase()
+
+        if (mode !in VALID_PERMISSION_MODES) {
+            return CommandResponse.failure(
+                sessionId,
+                "Invalid permission mode: '$mode'. Valid modes: ${VALID_PERMISSION_MODES.joinToString(", ")}",
+            )
+        }
+
+        // Task sessions don't support custom permission mode (always BYPASS)
+        if (sessionId.startsWith("task-")) {
+            return CommandResponse.failure(sessionId, "Permission mode change is not supported for task sessions")
+        }
+
+        if (sessionId.startsWith("chn-")) {
+            val channel = channelMapper.selectBySessionId(sessionId)
+                ?: return CommandResponse.failure(sessionId, "Channel not found: $sessionId")
+            channel.permissionMode = mode
+            channel.updateTime = LocalDateTime.now()
+            channelMapper.updateById(channel)
+        } else {
+            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                ?: return CommandResponse.failure(sessionId, "Session not found: $sessionId")
+            session.permissionMode = mode
+            session.updateTime = LocalDateTime.now()
+            sessionMapper.updateById(session)
+        }
+
+        // Invalidate cached agent so it gets recreated with new permissionMode
+        agentCache.invalidate(sessionId)
+
+        log.info("Session permission mode changed: session=$sessionId, mode=$mode")
+        return CommandResponse.success(sessionId, message = "Permission mode set to $mode")
+    }
+
     companion object {
-        private val SUPPORTED_CAPABILITIES = setOf("search", "thinking", "plan")
+        private val SUPPORTED_CAPABILITIES = setOf("search", "thinking", "plan", "bypass")
+        private val VALID_PERMISSION_MODES = setOf("DEFAULT", "BYPASS", "ACCEPT_EDITS", "EXPLORE", "DONT_ASK")
     }
 }

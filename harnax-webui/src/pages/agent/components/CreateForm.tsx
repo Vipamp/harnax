@@ -1,5 +1,5 @@
 import { useIntl, useModel } from '@umijs/max';
-import { Steps, Form, Input, Button, message, Select, Switch } from 'antd';
+import { Steps, Form, Input, Button, message, Select, Switch, Alert } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
@@ -43,6 +43,12 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const [envVarOptions, setEnvVarOptions] = useState<EnvVarOption[]>([]);
   const [toolEnvCollapsed, setToolEnvCollapsed] = useState<Set<number>>(new Set());
   const [mcpEnvCollapsed, setMcpEnvCollapsed] = useState<Set<number>>(new Set());
+
+  // Track selected model's capabilities (persistent across step navigation)
+  const [selectedModelId, setSelectedModelId] = useState<number | undefined>();
+  const selectedModel = models.find(m => m.id === selectedModelId);
+  const modelSupportsTool = selectedModel?.supportTool === 1;
+  const modelSupportsMcp = selectedModel?.supportMcp === 1;
 
   useEffect(() => {
     if (visible && currentUser) {
@@ -165,6 +171,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   const handleClose = () => {
     form.resetFields();
     setCurrentStep(0);
+    setSelectedModelId(undefined);
     setMcpConfigs([{}]);
     setSkillConfigs([{}]);
     setToolConfigs([{}]);
@@ -203,7 +210,12 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
               <TextArea rows={8} placeholder={intl.formatMessage({ id: 'pages.agent.systemPromptPlaceholder', defaultMessage: 'Please enter system prompt, supports Markdown syntax' })} />
             </Form.Item>
             <Form.Item label={intl.formatMessage({ id: 'pages.agent.model', defaultMessage: 'Model' })} name="modelId" rules={[{ required: true, message: intl.formatMessage({ id: 'pages.agent.modelRequired', defaultMessage: 'Please select model' }) }]}>
-              <Select placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })} allowClear options={models.map(model => ({ label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`, value: model.id }))} />
+              <Select
+                placeholder={intl.formatMessage({ id: 'pages.agent.modelPlaceholder', defaultMessage: 'Please select model' })}
+                allowClear
+                onChange={(val) => setSelectedModelId(val)}
+                options={models.map(model => ({ label: `${model.modelName} - ${model.providerName || intl.formatMessage({ id: 'pages.common.unknownProvider', defaultMessage: 'Unknown provider' })} ¥${model.price || 0}/M`, value: model.id }))}
+              />
             </Form.Item>
             <Form.Item label={intl.formatMessage({ id: 'pages.agent.owner', defaultMessage: 'Owner' })} name="owner">
               <Input placeholder={intl.formatMessage({ id: 'pages.agent.ownerPlaceholder', defaultMessage: 'Auto-filled with current user' })} disabled />
@@ -218,28 +230,52 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         )}
 
         {currentStep === 1 && (
-          <ToolConfigPanel
-            toolConfigs={toolConfigs}
-            setToolConfigs={setToolConfigs}
-            tools={tools}
-            toolType={toolType}
-            onToolTypeChange={handleToolTypeChange}
-            envVarOptions={envVarOptions}
-            collapsed={toolEnvCollapsed}
-            setCollapsed={setToolEnvCollapsed}
-            locale={locale}
-          />
+          <>
+            {selectedModel && !modelSupportsTool && (
+              <Alert
+                type="warning"
+                showIcon
+                message={intl.formatMessage({ id: 'pages.agent.modelNotSupportTool', defaultMessage: 'Current model does not support tool calling. Switch to a supported model or skip this step' })}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <div style={{ opacity: modelSupportsTool || !selectedModel ? 1 : 0.4, pointerEvents: modelSupportsTool || !selectedModel ? 'auto' : 'none' }}>
+              <ToolConfigPanel
+                toolConfigs={toolConfigs}
+                setToolConfigs={setToolConfigs}
+                tools={tools}
+                toolType={toolType}
+                onToolTypeChange={handleToolTypeChange}
+                envVarOptions={envVarOptions}
+                collapsed={toolEnvCollapsed}
+                setCollapsed={setToolEnvCollapsed}
+                locale={locale}
+              />
+            </div>
+          </>
         )}
 
         {currentStep === 2 && (
-          <McpConfigPanel
-            mcpConfigs={mcpConfigs}
-            setMcpConfigs={setMcpConfigs}
-            mcpServers={mcpServers}
-            envVarOptions={envVarOptions}
-            collapsed={mcpEnvCollapsed}
-            setCollapsed={setMcpEnvCollapsed}
-          />
+          <>
+            {selectedModel && !modelSupportsMcp && (
+              <Alert
+                type="warning"
+                showIcon
+                message={intl.formatMessage({ id: 'pages.agent.modelNotSupportMcp', defaultMessage: 'Current model does not support MCP services. Switch to a supported model or skip this step' })}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            <div style={{ opacity: modelSupportsMcp || !selectedModel ? 1 : 0.4, pointerEvents: modelSupportsMcp || !selectedModel ? 'auto' : 'none' }}>
+              <McpConfigPanel
+                mcpConfigs={mcpConfigs}
+                setMcpConfigs={setMcpConfigs}
+                mcpServers={mcpServers}
+                envVarOptions={envVarOptions}
+                collapsed={mcpEnvCollapsed}
+                setCollapsed={setMcpEnvCollapsed}
+              />
+            </div>
+          </>
         )}
 
         {currentStep === 3 && (

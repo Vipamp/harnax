@@ -24,7 +24,6 @@ class UnifiedAuthFilter(
     private val unprotectedPrefixes = listOf(
         "/health",
         "/actuator",
-        "/ai",
     ) + extraSkipPaths
 
     override fun doFilterInternal(

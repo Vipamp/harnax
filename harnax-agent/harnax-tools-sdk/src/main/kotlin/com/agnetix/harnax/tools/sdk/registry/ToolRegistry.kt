@@ -51,6 +51,26 @@ class ToolRegistry {
 
     fun getToolBox(beanName: String): ToolBox? = registry[beanName]
 
+    /**
+     * Create a new per-session instance of the ToolBox registered under [beanName].
+     *
+     * This avoids the singleton ToolBox being shared across concurrent sessions.
+     * The caller is responsible for calling init() on the returned instance.
+     *
+     * @return a fresh ToolBox instance, or null if beanName is not registered
+     */
+    fun createToolBoxInstance(beanName: String): ToolBox? {
+        val template = registry[beanName] ?: return null
+        return try {
+            val instance = template::class.java.getDeclaredConstructor().newInstance()
+            log.debug("[ToolRegistry] Created new instance of '{}' for session", beanName)
+            instance
+        } catch (e: Exception) {
+            log.error("[ToolRegistry] Failed to create instance of '{}', falling back to singleton", beanName, e)
+            template
+        }
+    }
+
     fun getAllToolBoxes(): List<ToolBox> = registry.values.toList()
 
     fun getToolBoxNames(): List<String> = registry.keys.toList()

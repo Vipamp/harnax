@@ -30,6 +30,12 @@ data class SessionResponse(
     var modelName: String? = null,
     @Schema(description = "Model price (CNY/million tokens)", example = "15.0")
     var modelPrice: Double? = null,
+    @Schema(description = "Model supports reasoning/thinking (0:no, 1:yes)", example = "1")
+    var modelSupportReasoning: Int? = null,
+    @Schema(description = "Model supports internet search (0:no, 1:yes)", example = "1")
+    var modelSupportInternet: Int? = null,
+    @Schema(description = "Model supports vision/image input (0:no, 1:yes)", example = "1")
+    var modelSupportVision: Int? = null,
     @Schema(description = "Enable deep thinking (0:no, 1:yes)", example = "0")
     var enableThink: Int? = null,
     @Schema(description = "Enable web search (0:no, 1:yes)", example = "0")

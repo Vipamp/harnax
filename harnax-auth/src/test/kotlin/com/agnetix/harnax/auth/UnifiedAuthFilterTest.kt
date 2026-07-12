@@ -1,6 +1,7 @@
 package com.agnetix.harnax.auth
 
 import jakarta.servlet.FilterChain
+import jakarta.servlet.ServletOutputStream
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.junit.jupiter.api.AfterEach
@@ -78,12 +79,16 @@ class UnifiedAuthFilterTest {
         }
 
         @Test
-        fun `skips ai endpoint`() {
-            `when`(request.requestURI).thenReturn("/ai/callback")
+        fun `rejects unprotected endpoint without credentials`() {
+            `when`(request.requestURI).thenReturn("/some/protected/path")
+            `when`(response.isCommitted).thenReturn(false)
+            val fakeStream = mock(ServletOutputStream::class.java)
+            `when`(response.outputStream).thenReturn(fakeStream)
 
             filter.doFilter(request, response, chain)
 
-            verify(chain).doFilter(request, response)
+            verify(chain, never()).doFilter(request, response)
+            verify(response).status = 401
         }
 
         @Test

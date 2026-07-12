@@ -349,6 +349,46 @@ declare namespace API {
     repositoryName?: string;
     skillId: number;
     skillName: string;
+    skillDescription?: string;
+  };
+
+  // Agent tool config (from AgentResponse.ToolItem)
+  type EnvBinding = {
+    envKey?: string;
+    envVarId?: number;
+    envVarName?: string;
+    envValue?: string;
+    customValue?: string;
+  };
+
+  type AgentToolConfig = {
+    toolId?: number;
+    toolName?: string;
+    toolDisplayName?: string;
+    toolDisplayNameZh?: string;
+    toolDescription?: string;
+    toolType?: string;
+    enableSkip?: string;
+    needConfirm?: boolean;
+    envBindings?: EnvBinding[];
+  };
+
+  // Agent MCP config (from AgentResponse.McpItem)
+  type AgentMcpConfig = {
+    mcpId?: number;
+    mcpName?: string;
+    mcpDescription?: string;
+    enableSkip?: string;
+    envBindings?: EnvBinding[];
+  };
+
+  // Agent skill item (from AgentResponse.SkillItem)
+  type AgentSkillItem = {
+    repositoryId?: number;
+    repositoryName?: string;
+    skillId?: number;
+    skillName?: string;
+    skillDescription?: string;
   };
 
   type SessionCreateRequest = {

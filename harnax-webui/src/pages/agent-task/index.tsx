@@ -117,17 +117,16 @@ const AgentTaskManagement: React.FC = () => {
               setLogTask(task);
               setLogModalVisible(true);
             }
+          } else {
+            // Detect 'already running' error from backend and use i18n message
+            const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
+            const errorMsg = isAlreadyRunning
+              ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
+              : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
+            message.error(errorMsg);
           }
           // Refresh task list to update last run status
           setTimeout(() => loadTasks(), 1500);
-        } else {
-          // Detect 'already running' error from backend and use i18n message
-          const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
-          const errorMsg = isAlreadyRunning
-            ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
-            : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
-          message.error(errorMsg);
-        }
       } catch (error) {
         message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
       }

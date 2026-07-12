@@ -44,10 +44,7 @@ class SecurityConfig(
                         "/webjars/**",
                     )
                     .permitAll()
-                    // AI 聊天端点使用控制器中的手动 JWT 校验
-                    .requestMatchers("/ai/**")
-                    .permitAll()
-                    // 内部服务调用端点使用 InternalApiAuthFilter 认证
+                    // Internal service endpoints use InternalApiAuthFilter
                     .requestMatchers("/api/admin/internal/**")
                     .permitAll()
                     .anyRequest()

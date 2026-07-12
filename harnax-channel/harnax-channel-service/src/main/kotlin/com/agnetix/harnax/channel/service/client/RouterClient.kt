@@ -7,6 +7,7 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.dto.ResultVo
@@ -174,9 +175,9 @@ class RouterClient(
                 }
             }
         }
-
+        is ConfirmAgentRequest -> streamConfirm(request, agentId)
         else -> {
-            TODO()
+            TODO("Unsupported request type: ${request::class.simpleName}")
         }
     }
 
@@ -246,5 +247,42 @@ class RouterClient(
             }
         }
         return "[Channel→Router] Failed to reach router for session=$sessionId: ${e.message}"
+    }
+
+    /**
+     * Send a confirm request (HITL) to the agent via session-router with SSE streaming.
+     * Used when the user responds to a tool confirmation prompt (/approve or /deny).
+     */
+    fun streamConfirm(
+        request: ConfirmAgentRequest,
+        agentId: Long,
+    ): kotlinx.coroutines.flow.Flow<ChatEvent> {
+        val url = "$routerUrl/api/router/agent/confirm"
+        log.info("[Channel→Router] Sending confirm request for session={}, confirmed={}", request.sessionId, request.isConfirmed)
+
+        return webClient.post()
+            .uri(url)
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(request)
+            .retrieve()
+            .bodyToFlux(ChatEvent::class.java)
+            .doOnNext { event ->
+                log.info("[Channel←Router] Confirm stream event for session={}: {}", request.sessionId, event.javaClass.simpleName)
+            }
+            .doOnComplete {
+                log.info("[Channel←Router] Confirm stream completed for session={}", request.sessionId)
+            }
+            .onErrorResume { e ->
+                val errorMsg = describeRouterError(e, request.sessionId)
+                log.error("Confirm stream to router failed for session={}: {}", request.sessionId, errorMsg, e)
+                Flux.just(
+                    ErrorChatEvent(
+                        code = HarnaxErrorCode.ROUTER_CONNECTION_ERROR.code,
+                        message = errorMsg,
+                    ),
+                    EndEventChatEvent(),
+                )
+            }
+            .asFlow()
     }
 }

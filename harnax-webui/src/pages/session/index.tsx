@@ -3,6 +3,7 @@ import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
 import { PlusOutlined, BulbOutlined, CloudServerOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
+import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
@@ -240,7 +241,19 @@ const SessionPage: React.FC = () => {
                   type="text"
                   icon={<CloudServerOutlined />}
                   size="small"
-                  onClick={() => setWorkspaceDrawerVisible(true)}
+                  onClick={async () => {
+                    if (!selectedSession?.sessionId) return;
+                    try {
+                      const res = await getWorkspaceStatus(selectedSession.sessionId);
+                      if (res.code === 200 && res.data?.active) {
+                        setWorkspaceDrawerVisible(true);
+                      } else {
+                        message.warning(intl.formatMessage({ id: 'pages.session.sandboxNotActive', defaultMessage: 'Sandbox is not running for this session' }));
+                      }
+                    } catch {
+                      message.error(intl.formatMessage({ id: 'pages.session.sandboxCheckFailed', defaultMessage: 'Failed to check sandbox status' }));
+                    }
+                  }}
                 >
                   Workspace
                 </Button>

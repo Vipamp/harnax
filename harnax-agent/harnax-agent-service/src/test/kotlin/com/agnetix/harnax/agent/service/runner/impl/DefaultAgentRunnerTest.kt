@@ -20,6 +20,7 @@ import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import io.agentscope.core.message.ToolUseBlock
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -69,6 +70,14 @@ class DefaultAgentRunnerTest {
         `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenReturn(agentWrapper)
     }
 
+    private fun stubPendingToolCalls() {
+        `when`(agentWrapper.getPendingToolCalls()).thenReturn(
+            listOf(
+                ToolUseBlock("tool-1", "delete_file", emptyMap()),
+            ),
+        )
+    }
+
     // ==================== executeCommand ====================
 
     @Nested
@@ -115,7 +124,16 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `executeCommand APPROVE returns not-implemented message`() {
+        fun `executeCommand APPROVE delegates to confirm and collects stream`() {
+            stubAgentCreation()
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(
+                Flux.just(
+                    StreamTextChatEvent("Tools approved, continuing...", false, null),
+                    EndEventChatEvent(),
+                ),
+            )
+
             val request = CommandAgentRequest(
                 sessionId = "session-1",
                 command = CommandType.APPROVE,
@@ -124,7 +142,26 @@ class DefaultAgentRunnerTest {
             val response = runner.executeCommand(request)
 
             assertTrue(response.success)
-            assertTrue(response.message?.contains("not yet implemented") == true)
+            assertTrue(response.message?.contains("Tools approved") == true)
+        }
+
+        @Test
+        fun `executeCommand DENY delegates to confirm and collects stream`() {
+            stubAgentCreation()
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(
+                Flux.just(EndEventChatEvent()),
+            )
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.DENY,
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertTrue(response.message?.contains("Tools denied") == true)
         }
 
         @Test
@@ -457,7 +494,8 @@ class DefaultAgentRunnerTest {
         @Test
         fun `confirm with isConfirmed true calls agent callStream`() {
             stubAgentCreation()
-            `when`(agentWrapper.callStream(msg = null)).thenReturn(Flux.just(EndEventChatEvent()))
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
 
             val request = ConfirmAgentRequest(
                 sessionId = "session-1",
@@ -474,6 +512,7 @@ class DefaultAgentRunnerTest {
         @Test
         fun `confirm with isConfirmed false sends cancel result to agent`() {
             stubAgentCreation()
+            stubPendingToolCalls()
             `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
 
             val request = ConfirmAgentRequest(
@@ -575,7 +614,8 @@ class DefaultAgentRunnerTest {
         @Test
         fun `confirm creates agent when not in cache`() {
             stubAgentCreation()
-            `when`(agentWrapper.callStream(msg = null)).thenReturn(Flux.just(EndEventChatEvent()))
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
 
             val request = ConfirmAgentRequest(sessionId = "session-1", isConfirmed = true)
             val result = runner.confirm(request)
@@ -587,9 +627,9 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `confirm with empty toolInfoList and isConfirmed false`() {
+        fun `confirm returns error when no pending tool calls`() {
             stubAgentCreation()
-            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
+            // getPendingToolCalls() returns empty list by default (Mockito)
 
             val request = ConfirmAgentRequest(
                 sessionId = "session-1",
@@ -599,8 +639,10 @@ class DefaultAgentRunnerTest {
             val result = runner.confirm(request)
 
             StepVerifier.create(result)
-                .expectNextCount(1)
+                .expectNextMatches { it is ErrorChatEvent }
+                .expectNextMatches { it is EndEventChatEvent }
                 .verifyComplete()
+            verify(agentWrapper, never()).callStream(msg = any())
         }
     }
 }

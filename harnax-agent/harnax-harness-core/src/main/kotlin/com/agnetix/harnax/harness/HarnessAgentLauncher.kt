@@ -34,6 +34,7 @@ import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.core.message.Msg
+import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.AgentTool
 import io.agentscope.harness.agent.DistributedStore
@@ -192,7 +193,7 @@ class HarnessAgentLauncher(
                         "BUILTIN", "CUSTOM" -> {
                             val beanName = toolConfig.beanName ?: ""
                             if (beanName.isNotEmpty() && beanName !in addedToolBoxBeans) {
-                                val toolBox = toolRegistry?.getToolBox(beanName)
+                                val toolBox = toolRegistry?.createToolBoxInstance(beanName)
                                 if (toolBox != null) {
                                     toolBox.init(
                                         toolCallLogAdaptor,
@@ -207,6 +208,7 @@ class HarnessAgentLauncher(
                                 toolBox
                             } else {
                                 // Already added this ToolBox, just return it for needConfirm handling
+                                // Note: for needConfirm we only need the name, so singleton is fine here
                                 toolRegistry?.getToolBox(beanName)
                             }
                         }
@@ -266,7 +268,13 @@ class HarnessAgentLauncher(
             if (fallbackTools.isEmpty()) {
                 log.debug("No toolSpecs configured and no ToolBox beans found in ToolRegistry.")
             }
-            fallbackTools.forEach { toolBox ->
+            fallbackTools.forEach { templateBox ->
+                val toolBox = toolRegistry?.let { reg ->
+                    // Create a per-session instance to avoid ThreadLocal / singleton sharing issues
+                    val names = reg.getToolBoxNames()
+                    val beanName = names.firstOrNull { reg.getToolBox(it) === templateBox }
+                    beanName?.let { reg.createToolBoxInstance(it) }
+                } ?: templateBox
                 toolBox.init(
                     toolCallLogAdaptor,
                     SessionMetaContext(agentSpec.id, sessionId),
@@ -430,15 +438,18 @@ class HarnessAgentLauncher(
     /**
      * Loads session messages from the AgentStateStore.
      *
-     * In 2.0.0, Session.getList(SimpleSessionKey, key, type) →
-     * AgentStateStore.getList(userId, sessionId, key, type).
+     * In agentscope 2.0.0, messages are stored in AgentState.context under key "agent_state".
+     * Falls back to legacy "memory_messages" key for backward compatibility.
      */
-    fun loadSessionMessages(sessionId: String): List<Msg> = stateStore.getList(
-        "",
-        sessionId,
-        "memory_messages",
-        Msg::class.java,
-    )
+    fun loadSessionMessages(sessionId: String): List<Msg> {
+        // Try loading from agent_state (2.0.0 format) first
+        val agentState = stateStore.get("", sessionId, "agent_state", AgentState::class.java)
+        if (agentState.isPresent) {
+            return agentState.get().context
+        }
+        // Fall back to legacy memory_messages key
+        return stateStore.getList("", sessionId, "memory_messages", Msg::class.java)
+    }
 
     fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = planNoteAdaptor.getPlanNotes(sessionId)
 

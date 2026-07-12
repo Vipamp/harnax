@@ -6,6 +6,7 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
 import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
 import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
+import com.agnetix.harnax.channel.sdk.adaptor.PendingToolInfo
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageRole
@@ -41,6 +42,11 @@ import java.util.UUID
  */
 open class ChannelChatService(
     protected val sessionManager: ChannelSessionManager,
+    /**
+     * Optional callback invoked when a HITL tool confirmation event is received.
+     * The caller (e.g. ChannelManager) can use this to persist the pending confirm state.
+     */
+    protected val onPendingConfirm: ((sessionId: String, tools: List<PendingToolInfo>) -> Unit)? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(ChannelChatService::class.java)
@@ -151,6 +157,15 @@ open class ChannelChatService(
                         formatErrorMessage(event.code, event.requestId, event.message),
                     )
                 }
+                is AgentStreamEvent.ToolConfirmStreamEvent -> {
+                    // HITL: convert pending tools to plain-text confirmation message
+                    val confirmText = buildConfirmText(event.pendingTools)
+                    channelAdaptor.sendMessage(channel, message.sessionId, confirmText)
+                    saveAssistantMessage(message, confirmText, channel)
+                    // Notify caller to persist pending confirm state
+                    onPendingConfirm?.invoke(message.sessionId, event.pendingTools)
+                    logger.info("Tool confirm event sent for session ${message.sessionId}, tools=${event.pendingTools.size}")
+                }
             }
         }
     }
@@ -252,4 +267,22 @@ open class ChannelChatService(
      * - message: user-readable error description
      */
     private fun formatErrorMessage(code: String, requestId: String, message: String): String = "[$code][$requestId][$message]"
+
+    /**
+     * Build a plain-text confirmation message from pending tool info.
+     * Used for channels that cannot render rich UI (e.g. Feishu, WeChat).
+     */
+    protected fun buildConfirmText(tools: List<PendingToolInfo>): String {
+        val sb = StringBuilder()
+        sb.appendLine("\u26a0\ufe0f AI needs to execute the following tools, please confirm:")
+        sb.appendLine()
+        tools.forEachIndexed { index, tool ->
+            val dangerTag = if (tool.isDangerous) " [dangerous]" else ""
+            val argsSummary = tool.arguments.entries.joinToString(", ") { "${it.key}: ${it.value}" }
+            sb.appendLine("${index + 1}. ${tool.toolName}$dangerTag \u2014 $argsSummary")
+        }
+        sb.appendLine()
+        sb.appendLine("Reply /approve to confirm, or /deny to reject.")
+        return sb.toString().trimEnd()
+    }
 }

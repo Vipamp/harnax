@@ -286,7 +286,7 @@ class RouterAgentAdaptorTest {
         }
 
         @Test
-        fun `streamProcess skips ToolConfirmChatEvent and ToolResultChatEvent`() = runBlocking {
+        fun `streamProcess converts ToolConfirmChatEvent and skips ToolResultChatEvent`() = runBlocking {
             val events: List<ChatEvent> = listOf(
                 StreamTextChatEvent("before", false, null),
                 ToolConfirmChatEvent(
@@ -307,13 +307,18 @@ class RouterAgentAdaptorTest {
 
             val results = adaptor.streamProcess(context).toList()
 
-            // Only TextStreamEvent x2 + EndStreamEvent = 3, tool events are skipped
-            assertEquals(3, results.size)
+            // TextStreamEvent + ToolConfirmStreamEvent + TextStreamEvent + EndStreamEvent = 4
+            // ToolResultChatEvent is still skipped
+            assertEquals(4, results.size)
             assertTrue(results[0] is AgentStreamEvent.TextStreamEvent)
             assertEquals("before", (results[0] as AgentStreamEvent.TextStreamEvent).content)
-            assertTrue(results[1] is AgentStreamEvent.TextStreamEvent)
-            assertEquals("after", (results[1] as AgentStreamEvent.TextStreamEvent).content)
-            assertTrue(results[2] is AgentStreamEvent.EndStreamEvent)
+            assertTrue(results[1] is AgentStreamEvent.ToolConfirmStreamEvent)
+            val confirmEvent = results[1] as AgentStreamEvent.ToolConfirmStreamEvent
+            assertEquals(1, confirmEvent.pendingTools.size)
+            assertEquals("delete", confirmEvent.pendingTools[0].toolName)
+            assertTrue(results[2] is AgentStreamEvent.TextStreamEvent)
+            assertEquals("after", (results[2] as AgentStreamEvent.TextStreamEvent).content)
+            assertTrue(results[3] is AgentStreamEvent.EndStreamEvent)
         }
 
         @Test

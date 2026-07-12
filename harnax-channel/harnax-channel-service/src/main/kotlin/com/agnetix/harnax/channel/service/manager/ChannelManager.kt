@@ -21,8 +21,10 @@ import org.springframework.stereotype.Service
  * Manages channel message processing by routing messages through
  * the session-router to agent-service, then returning results to the channel.
  *
- * Uses ChannelChatService from the SDK with a RouterAgentAdaptor that
- * delegates agent processing to the remote agent-service via session-router.
+ * Slash commands (/approve, /deny, /clear, etc.) are parsed by the channel's
+ * MessageParser and sent as CommandAgentRequest. The agent-service's
+ * executeCommand() handles them, including HITL approve/deny which delegates
+ * to the confirm flow internally.
  */
 @Service
 class ChannelManager(
@@ -34,8 +36,10 @@ class ChannelManager(
 
     private val log = LoggerFactory.getLogger(ChannelManager::class.java)
 
-    /** ChannelChatService instance using RouterAgentAdaptor */
-    private val chatService = ChannelChatService(sessionManager)
+    /** ChannelChatService instance for processing channel messages */
+    private val chatService = ChannelChatService(
+        sessionManager = sessionManager,
+    )
 
     /** RouterAgentAdaptor that delegates to agent-service via session-router */
     private val routerAgentAdaptor = RouterAgentAdaptor(routerClient)
@@ -48,12 +52,8 @@ class ChannelManager(
      * Routes the message through the session-router to agent-service
      * and sends the response back through the channel.
      *
-     * Flow:
-     * 1. Parse ChannelMessage → AgentRequest using channel-specific MessageParser
-     * 2. Pass AgentRequest to ChannelChatService for processing
-     *
-     * @param message The channel message to process
-     * @param channel The channel configuration
+     * Slash commands (including /approve and /deny) are parsed by the
+     * MessageParser and handled by agent-service's executeCommand().
      */
     suspend fun handleMessage(message: ChannelMessage, channel: ChannelSpec) {
         log.info("Received message from channel ${channel.id}, session=${message.sessionId}")
@@ -61,7 +61,7 @@ class ChannelManager(
         val channelAdaptor = getAdaptor(channel.type)
         val messageParser = getParser(channel.type)
 
-        // Parse channel message into AgentRequest (ChatAgentRequest or CommandAgentRequest)
+        // Parse channel message into AgentRequest
         val agentRequest = messageParser.parse(message)
         log.info("Parsed message as {} for session={}", agentRequest.type, message.sessionId)
 
