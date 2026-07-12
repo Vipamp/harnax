@@ -21,4 +21,16 @@ interface EnvVariableService {
     fun toggleEnabled(id: Long, enabled: Int): Boolean
 
     fun convertToResponse(envVariable: EnvVariable): EnvVariableResponse
+
+    /**
+     * List all env variables for agent config dropdown use.
+     * Returns real (decrypted) values plus masked display values for sensitive ones.
+     */
+    fun listForAgentConfig(): List<Map<String, Any?>>
+
+    /**
+     * Get decrypted real value for an env variable by ID.
+     * Returns null if not found.
+     */
+    fun getDecryptedValue(id: Long): String?
 }

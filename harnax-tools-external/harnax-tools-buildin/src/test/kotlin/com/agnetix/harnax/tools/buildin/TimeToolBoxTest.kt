@@ -19,7 +19,8 @@ import java.text.SimpleDateFormat
  * - getDate() returns yyyy-MM-dd formatted date
  * - getDatetime() returns yyyy-MM-dd HH:mm:ss formatted datetime
  * - name() returns the correct tool name
- * - @NeedConfirmed methods are discovered correctly
+ * - @ToolMeta(needConfirm=true) is declared on methods (verified at registration level)
+ *   Note: runtime needConfirm is driven by DB record, not by ToolBox.needConfirmedTools()
  *
  * @author agnetix
  * @since 2026-07-10
@@ -45,9 +46,9 @@ class TimeToolBoxTest {
     inner class NameTests {
 
         @Test
-        @DisplayName("name should return 'datetime-tool-box'")
+        @DisplayName("name should return 'time-tool-box'")
         fun `name should return correct value`() {
-            assertEquals("datetime-tool-box", timeToolBox.name())
+            assertEquals("time-tool-box", timeToolBox.name())
         }
 
         @Test
@@ -58,28 +59,16 @@ class TimeToolBoxTest {
     }
 
     @Nested
-    @DisplayName("NeedConfirmed Tests")
-    inner class NeedConfirmedTests {
+    @DisplayName("NeedConfirm Declaration Tests")
+    inner class NeedConfirmTests {
 
         @Test
-        @DisplayName("should discover both @NeedConfirmed methods")
-        fun `should discover both NeedConfirmed methods`() {
+        @DisplayName("needConfirmedTools returns empty since @NeedConfirmed annotation is not used")
+        fun `needConfirmedTools should be empty without NeedConfirmed annotation`() {
+            // needConfirm is now driven by @ToolMeta(needConfirm=true) -> DB record,
+            // not by @NeedConfirmed annotation on ToolBox methods
             val confirmed = timeToolBox.needConfirmedTools()
-            assertEquals(2, confirmed.size)
-        }
-
-        @Test
-        @DisplayName("should include getDate in needConfirmedTools")
-        fun `should include getDate`() {
-            val confirmed = timeToolBox.needConfirmedTools()
-            assertTrue(confirmed.contains("datetime-tool-box::getDate"))
-        }
-
-        @Test
-        @DisplayName("should include getDatetime in needConfirmedTools")
-        fun `should include getDatetime`() {
-            val confirmed = timeToolBox.needConfirmedTools()
-            assertTrue(confirmed.contains("datetime-tool-box::getDatetime"))
+            assertEquals(0, confirmed.size)
         }
     }
 
@@ -104,7 +93,7 @@ class TimeToolBoxTest {
             verify(mockAdaptor, times(1)).emit(captor.capture())
 
             val info = captor.firstValue
-            assertEquals("datetime-tool-box::getDate", info.toolName)
+            assertEquals("time-tool-box::getDate", info.toolName)
             assertTrue(info.success)
             assertEquals(1L, info.agentId)
             assertEquals("test-session", info.sessionId)
@@ -136,7 +125,7 @@ class TimeToolBoxTest {
             verify(mockAdaptor, times(1)).emit(captor.capture())
 
             val info = captor.firstValue
-            assertEquals("datetime-tool-box::getDatetime", info.toolName)
+            assertEquals("time-tool-box::getDatetime", info.toolName)
             assertTrue(info.success)
         }
     }

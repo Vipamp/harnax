@@ -1,291 +1,183 @@
 import { PageContainer } from '@ant-design/pro-components';
 import {
-  Button,
   Empty,
+  Input,
   message,
-  Modal,
+  Popover,
+  Result,
+  Table,
+  Tabs,
   Tag,
-  Typography,
 } from 'antd';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ColumnsType } from 'antd/es/table';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useIntl } from '@umijs/max';
-import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
-import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
-import CardPagination from '@/components/CardPagination';
-import EntityCard, { TagItem } from '@/components/EntityCard';
 
-// Tool 卡片组件
-const ToolCard: React.FC<{
-  item: any;
-  index: number;
-  config: { color: string; label: string; icon: React.ReactNode; bg: string };
-  isAdmin: boolean;
-  currentUser: string;
-  onToggleStatus: (id: number, status: number) => void;
-  onEdit: (item: any) => void;
-  onDelete: (id: number) => void;
-  hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission }) => {
-  const intl = useIntl();
-
-  // 构建额外标签（needConfirm / readOnly）
-  const extraTags: TagItem[] = [];
-  if (item.needConfirm) {
-    extraTags.push({
-      label: intl.formatMessage({ id: 'pages.tool.needConfirm', defaultMessage: 'Need Confirm' }),
-      color: 'orange',
-    });
-  }
-  if (item.readOnly) {
-    extraTags.push({
-      label: intl.formatMessage({ id: 'pages.tool.readOnly', defaultMessage: 'Read Only' }),
-      color: 'blue',
-    });
-  }
-
-  // 渲染描述区域
-  const renderDescription = () => {
-    const hasDescription = item.description && item.description.trim() !== '';
-    const hasDisplayName = item.displayName && item.displayName.trim() !== '';
-
-    return (
-      <div>
-        {/* displayName */}
-        {hasDisplayName && (
-          <div style={{ marginBottom: '6px' }}>
-            <span
-              style={{
-                fontSize: '12px',
-                color: 'var(--vip-primary)',
-                fontWeight: 500,
-              }}
-            >
-              {item.displayName}
-            </span>
-          </div>
-        )}
-
-        {/* 描述 */}
-        {hasDescription && (
-          <div style={{ lineHeight: 1.6 }}>
-            {item.description}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <EntityCard
-      entity={item}
-      index={index}
-      icon={config.icon}
-      name={item.name}
-      tagLabel={config.label}
-      tagColor={config.color}
-      tagBgHover={config.color}
-      tags={extraTags}
-      description={renderDescription()}
-      status={item.status}
-      isPublic={item.isPublic}
-      creator={item.creator}
-      createTime={item.createTime}
-      actions={{
-        showTest: false,
-        showEdit: hasOperationPermission(isAdmin, currentUser, item.creator),
-        showDelete: hasOperationPermission(isAdmin, currentUser, item.creator),
-        onEdit: () => onEdit(item),
-        onDelete: () => onDelete(item.id!),
-      }}
-      onToggle={(id, status) => onToggleStatus(id, status)}
-    />
-  );
-};
+import { getBuiltinTools } from '@/services/ant-design-pro/tool';
 import {
-  deleteAgentTool,
-  getAgentToolPage,
-  toggleAgentToolStatus,
-  createAgentTool,
-  updateAgentTool,
-} from '@/services/ant-design-pro/tool';
-import {
-  PlusOutlined,
   ToolOutlined,
-  CodeOutlined,
   BuildOutlined,
-  GlobalOutlined,
+  KeyOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
-import CreateForm from './components/CreateForm';
-import UpdateForm from './components/UpdateForm';
-import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 
-const { Text } = Typography;
-
-const getToolTypeConfig = (intl: any): Record<
-  string,
-  { color: string; label: string; icon: React.ReactNode; bg: string }
-> => ({
-  BUILTIN: { color: '#4f6ef7', label: intl.formatMessage({ id: 'pages.tool.type.builtin', defaultMessage: 'BUILTIN' }), icon: <BuildOutlined />, bg: 'linear-gradient(135deg, #4f6ef7 0%, #6b8aff 100%)' },
-  CUSTOM: { color: '#52c41a', label: intl.formatMessage({ id: 'pages.tool.type.custom', defaultMessage: 'CUSTOM' }), icon: <CodeOutlined />, bg: 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)' },
-  HTTP: { color: '#faad14', label: intl.formatMessage({ id: 'pages.tool.type.http', defaultMessage: 'HTTP' }), icon: <GlobalOutlined />, bg: 'linear-gradient(135deg, #faad14 0%, #ffc53d 100%)' },
-});
+// Get localized display name based on current locale
+const getLocalizedToolName = (item: any, locale: string): string => {
+  if (locale.startsWith('zh')) {
+    return item.displayNameZh?.trim() || item.displayName?.trim() || item.name;
+  }
+  return item.displayName?.trim() || item.name;
+};
 
 const ToolManagement: React.FC = () => {
   const intl = useIntl();
-  const TOOL_TYPE_CONFIG = useMemo(() => getToolTypeConfig(intl), [intl]);
+  const locale = intl.locale;
 
-  const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
-  const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
-  const [currentRow, setCurrentRow] = useState<any>();
+  const [activeTab, setActiveTab] = useState<string>('toolbox');
+  const [builtinTools, setBuiltinTools] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [data, setData] = useState<any[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [pageNum, setPageNum] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(8);
   const [keyword, setKeyword] = useState<string>('');
-  const [status, setStatus] = useState<number | undefined>(undefined);
-  const [type, setType] = useState<string | undefined>(undefined);
-  const [cardsPerRow, setCardsPerRow] = useState<number>(4);
-
-  // 防抖定时器引用
-  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // 使用 ref 保存最新的筛选参数，避免闭包问题
-  const filtersRef = useRef({
-    keyword: '',
-    status: undefined as number | undefined,
-    type: undefined as string | undefined,
-  });
   const [messageApi, contextHolder] = message.useMessage();
 
-  // 获取当前用户信息
-  const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
-
-  /** 加载数据（使用 ref 中的最新筛选参数，避免闭包问题） */
-  const loadDataWithFilters = async (page = 1, size = pageSize) => {
-    const { keyword: kw, status: st, type: tp } = filtersRef.current;
-
+  const loadBuiltinTools = async () => {
     setLoading(true);
     try {
-      const res = await getAgentToolPage({
-        current: page,
-        size: size,
-        keyword: kw || undefined,
-        status: st,
-        type: tp,
-      });
-      setData(res.data?.records || []);
-      setTotal(res.data?.total || 0);
+      const response = await getBuiltinTools();
+      if (response?.code === 200 && response?.data) {
+        setBuiltinTools(response.data);
+      }
     } catch (error) {
-      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDataWithFilters(pageNum, pageSize);
-  }, [pageNum, pageSize]);
-
-  // 组件卸载时清理定时器
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) {
-        clearTimeout(searchTimerRef.current);
-      }
-    };
+    loadBuiltinTools();
   }, []);
 
-  /** 关键词变化（带防抖） */
-  const handleKeywordChange = (value: string) => {
-    setKeyword(value);
-    filtersRef.current.keyword = value;
+  // Front-end keyword filtering
+  const filteredBuiltinTools = useMemo(() => {
+    if (!keyword.trim()) return builtinTools;
+    const kw = keyword.toLowerCase();
+    return builtinTools.filter(
+      (item: any) =>
+        (item.name && item.name.toLowerCase().includes(kw)) ||
+        (item.displayName && item.displayName.toLowerCase().includes(kw)) ||
+        (item.displayNameZh && item.displayNameZh.toLowerCase().includes(kw)) ||
+        (item.description && item.description.toLowerCase().includes(kw)),
+    );
+  }, [builtinTools, keyword]);
 
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
-
-    searchTimerRef.current = setTimeout(() => {
-      setPageNum(1);
-      loadDataWithFilters(1);
-    }, 500);
-  };
-
-  /** 状态筛选改变 */
-  const handleStatusChange = (value: number | undefined) => {
-    setStatus(value);
-    filtersRef.current.status = value;
-    setPageNum(1);
-    loadDataWithFilters(1);
-  };
-
-  /** 类型筛选改变 */
-  const handleTypeChange = (value: string | undefined) => {
-    setType(value);
-    filtersRef.current.type = value;
-    setPageNum(1);
-    loadDataWithFilters(1);
-  };
-
-  /** 重置筛选 */
-  const handleReset = () => {
-    setKeyword('');
-    setStatus(undefined);
-    setType(undefined);
-    filtersRef.current = {
-      keyword: '',
-      status: undefined,
-      type: undefined,
-    };
-    setPageNum(1);
-    loadDataWithFilters(1);
-  };
-
-  /** 删除工具 */
-  const handleRemove = async (id: number) => {
-    Modal.confirm({
-      title: intl.formatMessage({ id: 'pages.message.toolDeleteConfirm', defaultMessage: 'Are you sure to delete this tool?' }),
-      content: intl.formatMessage({ id: 'pages.message.irreversibleOperation', defaultMessage: 'This operation cannot be undone, please proceed with caution' }),
-      okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
-      cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          const response = await deleteAgentTool(id);
-          if (response.code === 200) {
-            messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
-            loadDataWithFilters();
-          } else {
-            const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
-            messageApi.error(errorMsg);
-          }
-        } catch (error: any) {
-          const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed, please try again' });
-          messageApi.error(errorMsg);
-        }
-      },
-    });
-  };
-
-  /** 切换启用状态 */
-  const handleToggleStatus = async (id: number, newStatus: number) => {
-    try {
-      const response = await toggleAgentToolStatus(id, newStatus);
-      if (response.code === 200) {
-        messageApi.success(newStatus === 1 ? intl.formatMessage({ id: 'pages.message.enabled', defaultMessage: 'Enabled' }) : intl.formatMessage({ id: 'pages.message.disabled', defaultMessage: 'Disabled' }));
-        // 只更新当前卡片状态，不重新加载整个列表
-        setData((prevData) =>
-          prevData.map((item) =>
-            item.id === id ? { ...item, status: newStatus } : item
-          )
+  const columns: ColumnsType<any> = [
+    {
+      title: intl.formatMessage({ id: 'pages.tool.name', defaultMessage: 'Name' }),
+      dataIndex: 'name',
+      key: 'name',
+      width: 200,
+      render: (_: any, record: any) => {
+        const localizedName = getLocalizedToolName(record, locale);
+        const showTechName = localizedName !== record.name;
+        return (
+          <div>
+            <div style={{ fontWeight: 500, color: 'var(--vip-text-primary)' }}>
+              <BuildOutlined style={{ marginRight: 6, color: '#4f6ef7' }} />
+              {localizedName}
+            </div>
+            {showTechName && (
+              <div style={{ fontSize: 12, color: 'var(--vip-text-quaternary)', fontFamily: 'monospace', marginTop: 2 }}>
+                {record.name}
+              </div>
+            )}
+          </div>
         );
-      } else {
-        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
-      }
-    } catch (error) {
-      messageApi.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
-    }
-  };
+      },
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.tool.description', defaultMessage: 'Description' }),
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+      render: (text: string) => (
+        <span style={{ color: 'var(--vip-text-secondary)', fontSize: 13 }}>
+          {text || '-'}
+        </span>
+      ),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.tool.envParams', defaultMessage: 'Env Params' }),
+      key: 'envParams',
+      width: 120,
+      align: 'center',
+      render: (_: any, record: any) => {
+        const envParams: any[] = record.envParams || [];
+        const count = envParams.length || record.requiredEnvParamKeys?.length || 0;
+        if (count <= 0) return <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>;
+
+        const popoverContent = (
+          <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 320 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--vip-border)' }}>
+                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'pages.tool.envParamName', defaultMessage: 'Param Name' })}
+                </th>
+                <th style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 500, color: 'var(--vip-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'pages.tool.envParamDesc', defaultMessage: 'Description' })}
+                </th>
+                <th style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 500, color: 'var(--vip-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'pages.tool.envParamRequired', defaultMessage: 'Required' })}
+                </th>
+                <th style={{ padding: '4px 8px', textAlign: 'center', fontWeight: 500, color: 'var(--vip-text-secondary)' }}>
+                  {intl.formatMessage({ id: 'pages.tool.envParamSecret', defaultMessage: 'Sensitive' })}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {envParams.map((param: any, idx: number) => (
+                <tr key={idx} style={{ borderBottom: '1px solid var(--vip-border)' }}>
+                  <td style={{ padding: '4px 8px', fontFamily: 'monospace', color: 'var(--vip-text-primary)' }}>{param.envParamName}</td>
+                  <td style={{ padding: '4px 8px', color: 'var(--vip-text-secondary)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{param.description || '-'}</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'center' }}>{param.required ? <Tag color="red" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Y</Tag> : <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>}</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'center' }}>{param.secret ? <Tag color="orange" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>Y</Tag> : <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        );
+
+        return (
+          <Popover content={popoverContent} trigger="hover" placement="bottomRight" overlayStyle={{ maxWidth: 520 }}>
+            <Tag icon={<EnvironmentOutlined />} color="purple" style={{ cursor: 'pointer' }}>{count}</Tag>
+          </Popover>
+        );
+      },
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.tool.needConfirm', defaultMessage: 'Need Confirm' }),
+      key: 'needConfirm',
+      width: 120,
+      align: 'center',
+      render: (_: any, record: any) =>
+        record.needConfirm === 1 ? (
+          <Tag color="orange">{intl.formatMessage({ id: 'pages.tool.yes', defaultMessage: 'Yes' })}</Tag>
+        ) : (
+          <span style={{ color: 'var(--vip-text-quaternary)' }}>-</span>
+        ),
+    },
+    {
+      title: intl.formatMessage({ id: 'pages.tool.required', defaultMessage: 'Required' }),
+      key: 'isRequired',
+      width: 100,
+      align: 'center',
+      render: (_: any, record: any) =>
+        record.isRequired === 1 ? (
+          <Tag color="red">{intl.formatMessage({ id: 'pages.tool.required', defaultMessage: 'Required' })}</Tag>
+        ) : (
+          <Tag>{intl.formatMessage({ id: 'pages.tool.optional', defaultMessage: 'Optional' })}</Tag>
+        ),
+    },
+  ];
 
   return (
     <PageContainer
@@ -299,152 +191,66 @@ const ToolManagement: React.FC = () => {
       }}
     >
       {contextHolder}
-
-      {/* 搜索和工具栏 */}
-      <SearchFilterBar
-        onSearch={() => {}}
-        onReset={handleReset}
-        showSearchButton={false}
-        searchText={intl.formatMessage({ id: 'pages.common.search', defaultMessage: 'Search' })}
-        resetText={intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
-        extra={
-          <ActionButton
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateModalVisible(true)}
-          >
-            {intl.formatMessage({ id: 'pages.tool.createTool', defaultMessage: 'Create Tool' })}
-          </ActionButton>
-        }
-      >
-        <SearchInput
-          value={keyword}
-          onChange={handleKeywordChange}
-          placeholder={intl.formatMessage({ id: 'pages.tool.searchPlaceholder', defaultMessage: 'Search tool name or description' })}
-          width="auto"
-        />
-        <FilterSelect
-          value={status}
-          onChange={handleStatusChange}
-          placeholder={intl.formatMessage({ id: 'pages.tool.statusFilter', defaultMessage: 'Status Filter' })}
-          width="auto"
-          options={[
-            { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
-            { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
-          ]}
-        />
-        <FilterSelect
-          value={type}
-          onChange={handleTypeChange}
-          placeholder={intl.formatMessage({ id: 'pages.tool.typeFilter', defaultMessage: 'Type Filter' })}
-          width="auto"
-          options={[
-            { label: intl.formatMessage({ id: 'pages.tool.type.builtin', defaultMessage: 'BUILTIN' }), value: 'BUILTIN' },
-            { label: intl.formatMessage({ id: 'pages.tool.type.custom', defaultMessage: 'CUSTOM' }), value: 'CUSTOM' },
-            { label: intl.formatMessage({ id: 'pages.tool.type.http', defaultMessage: 'HTTP' }), value: 'HTTP' },
-          ]}
-        />
-      </SearchFilterBar>
-
-      {/* 卡片列表 */}
-      <ResponsiveCardGrid
-        data={data}
-        cardHeight={260}
-        minAspectRatio={1.4}
-        gutter={[20, 20]}
-        loading={loading}
-        onCardsPerRowChange={setCardsPerRow}
-        emptyText={
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={intl.formatMessage({ id: 'pages.tool.noTools', defaultMessage: 'No tools' })}
-            style={{ marginTop: 80 }}
-          />
-        }
-        renderCard={(item, index) => {
-          const config = TOOL_TYPE_CONFIG[item.type] || { color: '#999', label: item.type, icon: <ToolOutlined />, bg: '#999' };
-          return (
-            <ToolCard
-              item={item}
-              index={index}
-              config={config}
-              isAdmin={isAdmin}
-              currentUser={currentUser}
-              onToggleStatus={handleToggleStatus}
-              onEdit={(item) => {
-                setCurrentRow(item);
-                setUpdateModalVisible(true);
-              }}
-              onDelete={handleRemove}
-              hasOperationPermission={hasOperationPermission}
-            />
-          );
-        }}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'toolbox',
+            label: (
+              <span>
+                <BuildOutlined style={{ marginRight: 6 }} />
+                {intl.formatMessage({ id: 'pages.tool.marketplace', defaultMessage: 'Toolbox' })}
+              </span>
+            ),
+            children: (
+              <div>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Input.Search
+                    placeholder={intl.formatMessage({ id: 'pages.tool.searchPlaceholder', defaultMessage: 'Search tool name or description' })}
+                    allowClear
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    style={{ maxWidth: 400 }}
+                  />
+                </div>
+                <Table
+                  columns={columns}
+                  dataSource={filteredBuiltinTools}
+                  rowKey="id"
+                  loading={loading}
+                  pagination={false}
+                  size="middle"
+                  locale={{
+                    emptyText: (
+                      <Empty
+                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                        description={intl.formatMessage({ id: 'pages.tool.noTools', defaultMessage: 'No tools' })}
+                      />
+                    ),
+                  }}
+                />
+              </div>
+            ),
+          },
+          {
+            key: 'custom',
+            label: (
+              <span>
+                <KeyOutlined style={{ marginRight: 6 }} />
+                {intl.formatMessage({ id: 'pages.tool.customTools', defaultMessage: 'Custom Tools' })}
+              </span>
+            ),
+            children: (
+              <Result
+                status="info"
+                title={intl.formatMessage({ id: 'pages.tool.comingSoon', defaultMessage: 'Coming soon' })}
+                style={{ marginTop: 80 }}
+              />
+            ),
+          },
+        ]}
       />
-
-      {/* 分页组件 */}
-      <CardPagination
-        current={pageNum}
-        pageSize={pageSize}
-        total={total}
-        cardsPerRow={cardsPerRow}
-        onChange={(page, size) => {
-          setPageNum(page);
-          setPageSize(size);
-          loadDataWithFilters(page, size);
-        }}
-      />
-
-      {/* 新建工具弹窗 */}
-      <CreateForm
-        visible={createModalVisible}
-        onCancel={() => setCreateModalVisible(false)}
-        onSubmit={async (values) => {
-          try {
-            const response = await createAgentTool(values);
-            if (response.code === 200) {
-              messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
-              setCreateModalVisible(false);
-              loadDataWithFilters();
-            } else {
-              const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' });
-              messageApi.error(errorMsg);
-            }
-          } catch (error: any) {
-            const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' });
-            messageApi.error(errorMsg);
-          }
-        }}
-      />
-
-      {/* 编辑工具弹窗 */}
-      {currentRow && (
-        <UpdateForm
-          visible={updateModalVisible}
-          values={currentRow}
-          onCancel={() => {
-            setUpdateModalVisible(false);
-            setCurrentRow(undefined);
-          }}
-          onSubmit={async (values) => {
-            try {
-              const response = await updateAgentTool(currentRow.id!, values);
-              if (response.code === 200) {
-                messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
-                setUpdateModalVisible(false);
-                setCurrentRow(undefined);
-                loadDataWithFilters();
-              } else {
-                const errorMsg = response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' });
-                messageApi.error(errorMsg);
-              }
-            } catch (error: any) {
-              const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' });
-              messageApi.error(errorMsg);
-            }
-          }}
-        />
-      )}
     </PageContainer>
   );
 };

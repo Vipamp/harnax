@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.AgentToolEnvParamMapper">
+
+    <resultMap id="AgentToolEnvParamResultMap" type="com.agnetix.harnax.entity.AgentToolEnvParam">
+        <id column="id" property="id"/>
+        <result column="tool_id" property="toolId"/>
+        <result column="env_param_name" property="envParamName"/>
+        <result column="description" property="description"/>
+        <result column="required" property="required"/>
+        <result column="secret" property="secret"/>
+        <result column="default_value" property="defaultValue"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="AgentToolEnvParamResultMap">
+        SELECT * FROM agent_tool_env_param WHERE id = #{id} LIMIT 1
+    </select>
+
+    <select id="selectByToolId" resultMap="AgentToolEnvParamResultMap">
+        SELECT * FROM agent_tool_env_param WHERE tool_id = #{toolId} ORDER BY env_param_name
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_tool_env_param (tool_id, env_param_name, description, `required`, secret, default_value, create_time, update_time)
+        VALUES (#{toolId}, #{envParamName}, #{description}, #{required}, #{secret}, #{defaultValue}, #{createTime}, #{updateTime})
+    </insert>
+
+    <insert id="batchInsert">
+        INSERT INTO agent_tool_env_param (tool_id, env_param_name, description, `required`, secret, default_value, create_time, update_time)
+        VALUES
+        <foreach collection="list" item="env" separator=",">
+            (#{env.toolId}, #{env.envParamName}, #{env.description}, #{env.required}, #{env.secret}, #{env.defaultValue}, #{env.createTime}, #{env.updateTime})
+        </foreach>
+    </insert>
+
+    <update id="updateById">
+        UPDATE agent_tool_env_param SET
+            env_param_name = #{envParamName},
+            description = #{description},
+            `required` = #{required},
+            secret = #{secret},
+            default_value = #{defaultValue},
+            update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM agent_tool_env_param WHERE id = #{id}
+    </delete>
+
+    <delete id="deleteByToolId">
+        DELETE FROM agent_tool_env_param WHERE tool_id = #{toolId}
+    </delete>
+
+</mapper>

@@ -106,6 +106,69 @@ class CommandAgentRequestParseTest {
             assertEquals(CommandType.INTERRUPT, result!!.command)
             assertEquals("some reason here", result.args)
         }
+
+        @Test
+        fun `parse enable with colon separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/enable:search")
+
+            assertNotNull(result)
+            assertEquals(CommandType.ENABLE, result!!.command)
+            assertEquals("search", result.args)
+        }
+
+        @Test
+        fun `parse enable thinking with colon separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/enable:thinking")
+
+            assertNotNull(result)
+            assertEquals(CommandType.ENABLE, result!!.command)
+            assertEquals("thinking", result.args)
+        }
+
+        @Test
+        fun `parse enable plan with colon separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/enable:plan")
+
+            assertNotNull(result)
+            assertEquals(CommandType.ENABLE, result!!.command)
+            assertEquals("plan", result.args)
+        }
+
+        @Test
+        fun `parse disable with colon separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/disable:search")
+
+            assertNotNull(result)
+            assertEquals(CommandType.DISABLE, result!!.command)
+            assertEquals("search", result.args)
+        }
+
+        @Test
+        fun `parse enable with space separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/enable search")
+
+            assertNotNull(result)
+            assertEquals(CommandType.ENABLE, result!!.command)
+            assertEquals("search", result.args)
+        }
+
+        @Test
+        fun `parse disable with space separator`() {
+            val result = CommandAgentRequest.parse("session-1", "/disable thinking")
+
+            assertNotNull(result)
+            assertEquals(CommandType.DISABLE, result!!.command)
+            assertEquals("thinking", result.args)
+        }
+
+        @Test
+        fun `parse enable is case insensitive`() {
+            val result = CommandAgentRequest.parse("session-1", "/ENABLE:Search")
+
+            assertNotNull(result)
+            assertEquals(CommandType.ENABLE, result!!.command)
+            assertEquals("Search", result.args)
+        }
     }
 
     // ==================== parse invalid commands ====================
@@ -176,6 +239,16 @@ class CommandAgentRequestParseTest {
         @Test
         fun `fromKeyword resolves stop-sandbox`() {
             assertEquals(CommandType.STOP_SANDBOX, CommandType.fromKeyword("stop-sandbox"))
+        }
+
+        @Test
+        fun `fromKeyword resolves enable`() {
+            assertEquals(CommandType.ENABLE, CommandType.fromKeyword("enable"))
+        }
+
+        @Test
+        fun `fromKeyword resolves disable`() {
+            assertEquals(CommandType.DISABLE, CommandType.fromKeyword("disable"))
         }
 
         @Test

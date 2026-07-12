@@ -24,17 +24,9 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
-  # Flyway Configuration
+  # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
   flyway:
-    enabled: ${FLYWAY_ENABLED:true}
-    locations: classpath:db/migration
-    schemas: harnax_admin
-    baseline-on-migrate: true
-    baseline-version: 0
-    validate-on-migrate: true
-    clean-disabled: true
-    sql-migration-prefixes: V
-    repeatable-sql-migration-prefixes: R
+    enabled: ${FLYWAY_ENABLED:false}
 
   # Quartz Configuration
   quartz:

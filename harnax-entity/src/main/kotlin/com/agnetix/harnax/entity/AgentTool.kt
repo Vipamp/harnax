@@ -17,11 +17,14 @@ class AgentTool : Serializable {
     @Schema(description = "Tenant ID")
     var tenantId: Long = 1
 
-    @Schema(description = "Tool identifier name (snake_case)")
+    @Schema(description = "Tool identifier name")
     var name: String = ""
 
-    @Schema(description = "Display name")
+    @Schema(description = "Display name (English)")
     var displayName: String? = null
+
+    @Schema(description = "Display name (Chinese, for i18n zh-CN locale)")
+    var displayNameZh: String? = null
 
     @Schema(description = "Tool description (sent to LLM)")
     var description: String = ""
@@ -32,6 +35,9 @@ class AgentTool : Serializable {
     @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
     var beanName: String? = null
 
+    @Schema(description = "Java method name (for BUILTIN/CUSTOM type, one record per @Tool method)")
+    var methodName: String? = null
+
     @Schema(description = "HTTP request URL (for HTTP type)")
     var httpUrl: String? = null
 
@@ -41,8 +47,8 @@ class AgentTool : Serializable {
     @Schema(description = "HTTP headers JSON (for HTTP type)")
     var httpHeaders: String? = null
 
-    @Schema(description = "Environment variables JSON (for all types)")
-    var envs: String? = null
+    @Schema(description = "Environment parameters configuration JSON")
+    var envParams: String? = null
 
     @Schema(description = "Input parameter JSON Schema (for HTTP type)")
     var inputSchema: String? = null
@@ -55,6 +61,12 @@ class AgentTool : Serializable {
 
     @Schema(description = "Requires human confirmation (0: No, 1: Yes)")
     var needConfirm: Int = 0
+
+    @Schema(description = "Is mandatory tool (0: optional, 1: required — always included, hidden from UI)")
+    var isRequired: Int = 0
+
+    @Schema(description = "Required environment parameter keys, JSON array format")
+    var requiredEnvParamKeys: String? = null
 
     @Schema(description = "Timeout in seconds")
     var timeoutSeconds: Int = 30

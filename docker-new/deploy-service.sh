@@ -29,12 +29,30 @@ fi
 
 cd "$PROJECT_DIR"
 
+# Load .env if exists
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+fi
+
 echo "=========================================="
 echo "  部署服务: $SERVICE"
 echo "=========================================="
 
 case $SERVICE in
     admin)
+        # Safety check: verify database has Flyway history (warn if empty)
+        if docker ps --format '{{.Names}}' | grep -q harnax-mysql; then
+            FLYWAY_EXISTS=$(docker exec harnax-mysql mysql -uroot -p"${DB_PASSWORD:-harnax123}" harnax_admin -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='harnax_admin' AND table_name='flyway_schema_history'" 2>/dev/null | tr -d '[:space:]')
+            if [ "$FLYWAY_EXISTS" = "0" ]; then
+                echo "⚠️  WARNING: harnax_admin database is EMPTY (no flyway_schema_history)."
+                echo "   All migrations will run from scratch and existing data will be lost."
+                echo "   If this is intentional, press Enter to continue, or Ctrl+C to abort."
+                read -r
+            fi
+        fi
+
         echo "📦 步骤 1/4: 编译 harnax-admin..."
         mvn clean package -Dmaven.test.skip=true -pl harnax-admin -am -q
 

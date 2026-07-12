@@ -141,9 +141,48 @@ class EnvVariableServiceImpl(
         )
     }
 
+    override fun listForAgentConfig(): List<Map<String, Any?>> {
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val allVars = envVariableMapper.selectEnvVariableList(null, currentUsername)
+        return allVars.filter { it.enabled == 1 }.map { env ->
+            val isSensitive = env.sensitive == 1
+            val displayValue = if (isSensitive && !env.envValue.isNullOrBlank()) {
+                try {
+                    val realValue = aesUtil.decrypt(env.envValue)
+                    maskValue(realValue)
+                } catch (e: Exception) {
+                    log.warn("Failed to decrypt env variable {}: {}", env.envKey, e.message)
+                    "******"
+                }
+            } else {
+                env.envValue ?: ""
+            }
+            mapOf(
+                "id" to env.id,
+                "envKey" to env.envKey,
+                "displayValue" to displayValue,
+                "sensitive" to isSensitive,
+            )
+        }
+    }
+
     private fun maskValue(value: String): String = when {
         value.length <= 4 -> "******"
         value.length <= 8 -> "${value.take(1)}****${value.takeLast(1)}"
         else -> "${value.take(3)}****${value.takeLast(2)}"
+    }
+
+    override fun getDecryptedValue(id: Long): String? {
+        val env = envVariableMapper.selectById(id) ?: return null
+        return if (env.sensitive == 1 && !env.envValue.isNullOrBlank()) {
+            try {
+                aesUtil.decrypt(env.envValue)
+            } catch (e: Exception) {
+                log.warn("Failed to decrypt env variable {}: {}", env.envKey, e.message)
+                null
+            }
+        } else {
+            env.envValue
+        }
     }
 }

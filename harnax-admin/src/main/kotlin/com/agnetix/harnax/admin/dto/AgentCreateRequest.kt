@@ -37,6 +37,9 @@ data class AgentCreateRequest(
 
     @Schema(description = "Status (0:disabled 1:enabled)", example = "1")
     val status: Int? = null,
+
+    @Schema(description = "Is public (0:false 1:true)", example = "0")
+    val isPublic: Int? = null,
 ) {
     /**
      * MCP configuration
@@ -48,6 +51,9 @@ data class AgentCreateRequest(
 
         @Schema(description = "Whether allow to skip", example = "true")
         val enableSkip: String? = null,
+
+        @Schema(description = "Environment variable bindings for MCP")
+        val envBindings: List<EnvBinding>? = null,
     )
 
     /**

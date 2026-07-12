@@ -27,4 +27,14 @@ interface AgentToolMapper {
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 
     fun selectAllEnabled(): List<AgentTool>
+
+    fun selectBuiltinToolList(): List<AgentTool>
+
+    fun selectAvailableToolsByType(@Param("type") type: String?): List<AgentTool>
+
+    /** Select builtin tool records by Spring bean name (returns multiple records, one per @Tool method) */
+    fun selectByBeanName(@Param("beanName") beanName: String): List<AgentTool>
+
+    /** Upsert a builtin tool record (insert or update on duplicate key) */
+    fun upsertBuiltinTool(agentTool: AgentTool): Int
 }

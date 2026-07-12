@@ -18,6 +18,8 @@ import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.mapper.ChannelMapper
+import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.message.Msg
@@ -29,6 +31,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 
@@ -41,6 +44,8 @@ import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 class DefaultAgentRunner(
     private val launcher: HarnessAgentLauncher,
     private val agentSpecResolver: AgentSpecResolver,
+    private val sessionMapper: SessionMapper,
+    private val channelMapper: ChannelMapper,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
 ) : AgentRunner {
@@ -60,6 +65,7 @@ class DefaultAgentRunner(
         val message = request.message
         val imageUrls = request.imageUrls
         log.info("Processing direct (non-streaming) chat request for session=$sessionId")
+
         try {
             // TODO [P1] UserIdentifier(0) is hardcoded — all requests share userId=0.
             //   Should extract real user ID from request context (e.g. SecurityContext or request header).
@@ -82,6 +88,7 @@ class DefaultAgentRunner(
         val message = request.message
         val imageUrls = request.imageUrls
         log.info("Streaming message for session=$sessionId: $message, images=${imageUrls.size}")
+
         try {
             // TODO [P1] UserIdentifier(0) is hardcoded — see process() for details.
             val userIdentifier = UserIdentifier(0)
@@ -145,6 +152,12 @@ class DefaultAgentRunner(
                     log.warn("Stop-sandbox command received but keepAliveSandboxManager is null for session=$sessionId")
                     CommandResponse.failure(sessionId, "Sandbox manager not available")
                 }
+            }
+            CommandType.ENABLE -> {
+                handleCapabilityToggle(sessionId, args, enable = true)
+            }
+            CommandType.DISABLE -> {
+                handleCapabilityToggle(sessionId, args, enable = false)
             }
         }
     }
@@ -244,5 +257,70 @@ class DefaultAgentRunner(
         )
         log.info("Agent for session=$sid created and cached successfully")
         agent
+    }
+
+    /**
+     * Handle /enable and /disable commands to toggle session capabilities.
+     *
+     * Supported args values:
+     * - "search"   → toggle enableSearch
+     * - "thinking" → toggle enableThink
+     * - "plan"     → toggle enablePlan
+     *
+     * After updating the DB, invalidates the agent cache so the next request
+     * will rebuild the agent with the new ChatSpec.
+     */
+    private fun handleCapabilityToggle(sessionId: String, args: String, enable: Boolean): CommandResponse {
+        val action = if (enable) "enable" else "disable"
+        val capability = args.trim().lowercase()
+
+        if (capability !in SUPPORTED_CAPABILITIES) {
+            return CommandResponse.failure(
+                sessionId,
+                "Unknown capability: '$capability'. Supported: ${SUPPORTED_CAPABILITIES.joinToString(", ")}",
+            )
+        }
+
+        // Task sessions don't support per-session capability toggle
+        if (sessionId.startsWith("task-")) {
+            return CommandResponse.failure(sessionId, "Capability toggle is not supported for task sessions")
+        }
+
+        val flag = if (enable) 1 else 0
+        val display = capability.replaceFirstChar { it.uppercase() }
+
+        if (sessionId.startsWith("chn-")) {
+            // Channel session: update channel table
+            val channel = channelMapper.selectBySessionId(sessionId)
+                ?: return CommandResponse.failure(sessionId, "Channel not found: $sessionId")
+            when (capability) {
+                "search" -> channel.enableSearch = flag
+                "thinking" -> channel.enableThink = flag
+                "plan" -> channel.enablePlan = flag
+            }
+            channel.updateTime = LocalDateTime.now()
+            channelMapper.updateById(channel)
+        } else {
+            // Web/mp session: update session table
+            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                ?: return CommandResponse.failure(sessionId, "Session not found: $sessionId")
+            when (capability) {
+                "search" -> session.enableSearch = flag
+                "thinking" -> session.enableThink = flag
+                "plan" -> session.enablePlan = flag
+            }
+            session.updateTime = LocalDateTime.now()
+            sessionMapper.updateById(session)
+        }
+
+        // Invalidate cached agent so it gets recreated with new ChatSpec
+        agentCache.invalidate(sessionId)
+
+        log.info("Session capability toggled: session=$sessionId, action=$action, capability=$capability")
+        return CommandResponse.success(sessionId, message = "$display ${action}d")
+    }
+
+    companion object {
+        private val SUPPORTED_CAPABILITIES = setOf("search", "thinking", "plan")
     }
 }

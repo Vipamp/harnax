@@ -97,6 +97,9 @@ data class AgentResponse(
 
         @Schema(description = "Whether allow skip", example = "true")
         var enableSkip: String? = null,
+
+        @Schema(description = "Environment variable bindings")
+        var envBindings: List<EnvBinding>? = null,
     )
 
     data class McpConfigInternal(
@@ -133,6 +136,9 @@ data class AgentResponse(
         @Schema(description = "Tool display name", example = "Weather Tool")
         var toolDisplayName: String? = null,
 
+        @Schema(description = "Tool display name (Chinese)", example = "天气工具")
+        var toolDisplayNameZh: String? = null,
+
         @Schema(description = "Tool description")
         var toolDescription: String? = null,
 
@@ -144,6 +150,9 @@ data class AgentResponse(
 
         @Schema(description = "Requires human confirmation")
         var needConfirm: Boolean? = null,
+
+        @Schema(description = "Environment variable bindings")
+        var envBindings: List<EnvBinding>? = null,
     )
 
     @Schema(description = "Session item")

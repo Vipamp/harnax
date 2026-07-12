@@ -112,14 +112,23 @@ package com.agnetix.harnax.tools.builtin
 
 import com.agnetix.harnax.tools.sdk.NeedConfirmed
 import com.agnetix.harnax.tools.sdk.ToolBox
+import com.agnetix.harnax.tools.sdk.ToolEnvContext
 import io.agentscope.core.tool.Tool
+import io.agentscope.core.tool.ToolParam
 import org.springframework.stereotype.Component
 
 @Component("my-tool-box")
 class MyToolBox : ToolBox() {
 
     @Tool(description = "工具方法描述")
-    fun myMethod(): String = execute {
+    fun myMethod(
+        @ToolParam(name = "query", description = "搜索关键词")
+        query: String,
+        @ToolParam(name = "limit", description = "最大返回数量", required = false)
+        limit: Int? = 10,
+        envContext: ToolEnvContext,  // 框架自动注入，不加 @ToolParam
+    ): String = execute("query" to query) {
+        val apiKey = envContext.require("API_KEY")
         // 实现工具逻辑
         "result"
     }
@@ -134,6 +143,9 @@ class MyToolBox : ToolBox() {
     override fun name(): String = "my-tool-box"
 }
 ```
+
+> **重要**：工具方法中所有需要 LLM 传入的参数必须加 `@ToolParam` 注解，否则不会出现在工具的 JSON Schema 中，LLM 将无法传入这些参数。
+> 没有 `@ToolParam` 的参数（如 `ToolEnvContext`）会被视为框架自动注入的上下文参数。
 
 2. 工具会被 `ToolRegistry` 自动发现并注册
 3. 在 admin 中配置工具时，`beanName` 填写 `@Component` 的值（如 `my-tool-box`）

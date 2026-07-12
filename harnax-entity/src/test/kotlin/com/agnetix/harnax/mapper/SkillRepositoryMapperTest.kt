@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class SkillRepositoryMapperTest {
+open class SkillRepositoryMapperTest {
 
     companion object {
         @Container
@@ -234,6 +234,142 @@ class SkillRepositoryMapperTest {
             // Then
             assertNotNull(repository)
             assertEquals("Default Repository", repository.name)
+        }
+    }
+
+    @Nested
+    @DisplayName("租户隔离测试")
+    inner class TenantIsolationTests {
+
+        @Test
+        @DisplayName("selectByName - 传入 tenantId=1 只返回租户1的仓库")
+        fun `selectByName with tenantId should return only tenant1 repository`() {
+            // When
+            val repository = skillRepositoryMapper.selectByName("Default Repository", 1L)
+
+            // Then
+            assertNotNull(repository)
+            assertEquals("Default Repository", repository.name)
+            assertEquals(1L, repository.tenantId)
+            assertEquals("https://github.com/agnetix/skills", repository.url)
+        }
+
+        @Test
+        @DisplayName("selectByName - 传入 tenantId=2 返回租户2的同名仓库")
+        fun `selectByName with tenantId2 should return tenant2 repository`() {
+            // When
+            val repository = skillRepositoryMapper.selectByName("Default Repository", 2L)
+
+            // Then
+            assertNotNull(repository)
+            assertEquals("Default Repository", repository.name)
+            assertEquals(2L, repository.tenantId)
+            assertEquals("https://github.com/tenant2/default", repository.url)
+        }
+
+        @Test
+        @DisplayName("selectByName - 不同租户的同名仓库是不同的记录")
+        fun `selectByName same name different tenant returns different records`() {
+            val repo1 = skillRepositoryMapper.selectByName("Default Repository", 1L)
+            val repo2 = skillRepositoryMapper.selectByName("Default Repository", 2L)
+
+            assertNotNull(repo1)
+            assertNotNull(repo2)
+            assertEquals("Default Repository", repo1.name)
+            assertEquals("Default Repository", repo2.name)
+            // 不同租户，ID 和 URL 不同
+            assertTrue(repo1.id != repo2.id, "Different tenants should have different IDs")
+            assertEquals(1L, repo1.tenantId)
+            assertEquals(2L, repo2.tenantId)
+        }
+
+        @Test
+        @DisplayName("selectByName - 传入不存在的租户返回 null")
+        fun `selectByName with non-existing tenantId returns null`() {
+            val repository = skillRepositoryMapper.selectByName("Default Repository", 999L)
+            assertNull(repository)
+        }
+
+        @Test
+        @DisplayName("selectRepositoryList - 按租户过滤列表")
+        fun `selectRepositoryList with tenantId filters by tenant`() {
+            // When - 查询租户1
+            val tenant1Repos = skillRepositoryMapper.selectRepositoryList(null, null, "admin", 1L)
+            // Then - 租户1有2个公开仓库
+            assertTrue(tenant1Repos.isNotEmpty())
+            tenant1Repos.forEach {
+                assertEquals(1L, it.tenantId)
+            }
+
+            // When - 查询租户2
+            val tenant2Repos = skillRepositoryMapper.selectRepositoryList(null, null, "user2", 2L)
+            // Then
+            assertTrue(tenant2Repos.isNotEmpty())
+            tenant2Repos.forEach {
+                assertEquals(2L, it.tenantId)
+            }
+
+            // 两个租户的仓库不重叠
+            val tenant1Ids = tenant1Repos.map { it.id }.toSet()
+            val tenant2Ids = tenant2Repos.map { it.id }.toSet()
+            assertTrue(tenant1Ids.intersect(tenant2Ids).isEmpty(), "Tenant repositories should not overlap")
+        }
+
+        @Test
+        @DisplayName("selectActiveRepositories - 按租户过滤活跃仓库")
+        fun `selectActiveRepositories with tenantId filters by tenant`() {
+            // When - 查询租户1
+            val tenant1Active = skillRepositoryMapper.selectActiveRepositories(1L)
+            assertTrue(tenant1Active.isNotEmpty())
+            tenant1Active.forEach {
+                assertEquals(1L, it.tenantId)
+                assertEquals(1, it.status)
+                assertEquals(1, it.active)
+            }
+
+            // When - 查询租户2
+            val tenant2Active = skillRepositoryMapper.selectActiveRepositories(2L)
+            assertTrue(tenant2Active.isNotEmpty())
+            tenant2Active.forEach {
+                assertEquals(2L, it.tenantId)
+                assertEquals(1, it.status)
+                assertEquals(1, it.active)
+            }
+        }
+
+        @Test
+        @DisplayName("insert - 插入带 tenantId 的仓库并正确读回")
+        fun `insert with tenantId should persist and read back correctly`() {
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val newRepo = SkillRepository().apply {
+                tenantId = 3L
+                name = "Tenant3 Repo"
+                url = "https://github.com/tenant3/skills"
+                branch = "main"
+                sourceType = "GIT"
+                sourceConfig = """{"url":"https://github.com/tenant3/skills"}"""
+                description = "Tenant 3 repository"
+                status = 1
+                isPublic = 0
+                creator = "user3"
+                active = 1
+                createTime = now
+                updateTime = now
+            }
+
+            val result = skillRepositoryMapper.insert(newRepo)
+            assertEquals(1, result)
+            assertTrue(newRepo.id > 0)
+
+            // 用 tenantId 查询应该能找到
+            val found = skillRepositoryMapper.selectByName("Tenant3 Repo", 3L)
+            assertNotNull(found)
+            assertEquals(3L, found.tenantId)
+            assertEquals("Tenant3 Repo", found.name)
+
+            // 用其他 tenantId 查询不应该找到
+            val notFound = skillRepositoryMapper.selectByName("Tenant3 Repo", 1L)
+            assertNull(notFound)
         }
     }
 }

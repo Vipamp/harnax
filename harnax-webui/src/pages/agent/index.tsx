@@ -62,7 +62,9 @@ const AgentCard: React.FC<{
   screenSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl';
 }> = ({ item, index, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, hasOperationPermission, screenSize = 'lg' }) => {
   const intl = useIntl();
+  const locale = intl.locale;
   const mcpCount = item.mcpList?.length || 0;
+  const toolCount = item.toolList?.length || 0;
   const skillCount = item.skillList?.length || 0;
   const sessionCount = item.sessionCount || 0;
 
@@ -82,8 +84,73 @@ const AgentCard: React.FC<{
     });
   }
 
-  // 构建 stats：MCP、Skill、Session 统计（带 Popover 列表）
+  // 构建 stats：Tools、MCP、Skill、Session 统计（带 Popover 列表）
   const stats = [
+    {
+      label: 'Tools',
+      value: toolCount,
+      color: '#faad14',
+      popoverContent: (
+        <div style={{ maxWidth: 320 }}>
+          {toolCount === 0 ? (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.tool.noConfig', defaultMessage: 'No tool configuration' })}</Text>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={item.toolList || []}
+              renderItem={(tool) => {
+                const displayName = locale.startsWith('zh')
+                  ? (tool.toolDisplayNameZh?.trim() || tool.toolDisplayName || tool.toolName)
+                  : (tool.toolDisplayName || tool.toolName);
+                return (
+                  <List.Item
+                    style={{
+                      padding: '8px 12px',
+                      background: 'var(--vip-bg-container)',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => window.open(`/context/tool`, '_blank')}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'var(--vip-primary-light)';
+                      e.currentTarget.style.paddingLeft = '16px';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'var(--vip-bg-container)';
+                      e.currentTarget.style.paddingLeft = '12px';
+                    }}
+                  >
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                        <div style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: '#faad14',
+                          flexShrink: 0,
+                        }} />
+                        <Text strong style={{ fontSize: '12px', color: 'var(--vip-text-primary)' }}>
+                          {displayName || `Tool #${tool.toolId}`}
+                        </Text>
+                      </div>
+                      {tool.toolDescription && (
+                        <div style={{ paddingLeft: 12 }}>
+                          <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
+                            {tool.toolDescription}
+                          </Text>
+                        </div>
+                      )}
+                    </div>
+                  </List.Item>
+                );
+              }}
+            />
+          )}
+        </div>
+      ),
+    },
     {
       label: 'MCPs',
       value: mcpCount,

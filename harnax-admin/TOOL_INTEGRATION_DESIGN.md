@@ -504,7 +504,10 @@ agent-service 收到请求
 @Component("weather-tool-box")
 class WeatherToolBox : ToolBox() {
     @Tool(description = "查询城市天气信息")
-    fun getWeather(@ToolParam(description = "城市名称") city: String): String {
+    fun getWeather(
+        @ToolParam(name = "city", description = "城市名称")
+        city: String,
+    ): String {
         return execute("city" to city) {
             // 调用天气 API
         }

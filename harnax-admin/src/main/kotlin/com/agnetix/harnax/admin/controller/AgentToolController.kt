@@ -47,17 +47,6 @@ class AgentToolController(
         ResultVo.error(e.message ?: "Failed to get tool details")
     }
 
-    @PostMapping
-    @Operation(summary = "Create tool", description = "Add new tool")
-    fun createAgentTool(
-        @Valid @RequestBody request: AgentToolCreateRequest,
-    ): ResultVo<Void> = try {
-        if (agentToolService.createAgentTool(request)) ResultVo.success() else ResultVo.error("Failed to create tool")
-    } catch (e: Exception) {
-        log.error("Failed to create tool", e)
-        ResultVo.error(e.message ?: "Failed to create tool")
-    }
-
     @PutMapping("/update/{id}")
     @Operation(summary = "Update tool", description = "Update tool information by ID")
     fun updateAgentTool(
@@ -94,12 +83,36 @@ class AgentToolController(
     }
 
     @GetMapping("/available")
-    @Operation(summary = "Get available tools", description = "Get all enabled tools for agent configuration")
-    fun getAvailableTools(): ResultVo<List<AgentToolResponse>> = try {
-        val tools = agentToolService.getAvailableTools()
+    @Operation(summary = "Get available tools", description = "Get all enabled tools for agent configuration, optionally filtered by type")
+    fun getAvailableTools(
+        @Parameter(description = "Type filter (BUILTIN/CUSTOM/HTTP)") @RequestParam(name = "type", required = false) type: String?,
+    ): ResultVo<List<AgentToolResponse>> = try {
+        val tools = agentToolService.getAvailableToolsByType(type)
         ResultVo.success(tools.map { agentToolService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get available tools", e)
         ResultVo.error(e.message ?: "Failed to get available tools")
+    }
+
+    @GetMapping("/builtin")
+    @Operation(summary = "Get builtin tools", description = "Get all builtin tools that are enabled and active")
+    fun getBuiltinTools(): ResultVo<List<AgentToolResponse>> = try {
+        val tools = agentToolService.getBuiltinTools()
+        ResultVo.success(tools.map { agentToolService.convertToResponse(it) })
+    } catch (e: Exception) {
+        log.error("Failed to get builtin tools", e)
+        ResultVo.error(e.message ?: "Failed to get builtin tools")
+    }
+
+    @GetMapping("/{id}/required-env-params")
+    @Operation(summary = "Get required env param keys", description = "Get required environment parameter keys for a tool")
+    fun getRequiredEnvParamKeys(
+        @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<List<String>> = try {
+        val keys = agentToolService.getRequiredEnvParamKeys(id)
+        ResultVo.success(keys)
+    } catch (e: Exception) {
+        log.error("Failed to get required env param keys", e)
+        ResultVo.error(e.message ?: "Failed to get required env param keys")
     }
 }

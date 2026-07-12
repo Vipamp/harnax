@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class AgentToolMapperTest {
+open class AgentToolMapperTest {
 
     companion object {
         @Container
@@ -208,7 +208,7 @@ class AgentToolMapperTest {
         @DisplayName("selectAgentToolList - Query all active AgentTools")
         fun `selectAgentToolList should return all active agent tools`() {
             // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, null, null)
+            val agentTools = agentToolMapper.selectAgentToolList(null, null, null, "admin")
 
             // Then
             assertTrue(agentTools.isNotEmpty())
@@ -219,7 +219,7 @@ class AgentToolMapperTest {
         @DisplayName("selectAgentToolList - Filter by keyword")
         fun `selectAgentToolList should filter by keyword`() {
             // When
-            val agentTools = agentToolMapper.selectAgentToolList("tool", null, null)
+            val agentTools = agentToolMapper.selectAgentToolList("tool", null, null, "admin")
 
             // Then
             assertTrue(agentTools.isNotEmpty())
@@ -232,7 +232,7 @@ class AgentToolMapperTest {
         @DisplayName("selectAgentToolList - Filter by status")
         fun `selectAgentToolList should filter by status`() {
             // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, 1, null)
+            val agentTools = agentToolMapper.selectAgentToolList(null, 1, null, "admin")
 
             // Then
             assertTrue(agentTools.isNotEmpty())
@@ -245,7 +245,7 @@ class AgentToolMapperTest {
         @DisplayName("selectAgentToolList - Filter by type")
         fun `selectAgentToolList should filter by type`() {
             // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, null, "BUILTIN")
+            val agentTools = agentToolMapper.selectAgentToolList(null, null, "BUILTIN", "admin")
 
             // Then
             assertTrue(agentTools.isNotEmpty())

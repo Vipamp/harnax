@@ -25,11 +25,12 @@ interface SkillRepositoryMapper {
         @Param("name") name: String?,
         @Param("status") status: Int?,
         @Param("currentUsername") currentUsername: String,
+        @Param("tenantId") tenantId: Long? = null,
     ): List<SkillRepository>
 
-    fun selectActiveRepositories(): List<SkillRepository>
+    fun selectActiveRepositories(@Param("tenantId") tenantId: Long? = null): List<SkillRepository>
 
-    fun selectByName(@Param("name") name: String): SkillRepository?
+    fun selectByName(@Param("name") name: String, @Param("tenantId") tenantId: Long? = null): SkillRepository?
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
 }

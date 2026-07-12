@@ -45,6 +45,15 @@ class Channel : Serializable {
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     var permissionMode: String = "DEFAULT"
 
+    @Schema(description = "Enable thinking mode (0:no, 1:yes)")
+    var enableThink: Int = 0
+
+    @Schema(description = "Enable web search (0:no, 1:yes)")
+    var enableSearch: Int = 0
+
+    @Schema(description = "Enable plan mode (0:no, 1:yes)")
+    var enablePlan: Int = 0
+
     @Schema(description = "Whether to auto-listen on service startup (0:no, 1:yes)")
     var enabled: Int = 1
 

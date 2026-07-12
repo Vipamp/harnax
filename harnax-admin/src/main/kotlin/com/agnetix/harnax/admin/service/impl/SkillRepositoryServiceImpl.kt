@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
 import com.agnetix.harnax.admin.dto.SkillRepositoryResponse
@@ -46,11 +47,15 @@ class SkillRepositoryServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val tenantId = TenantContext.getTenantId() ?: 1
         PageHelper.startPage<SkillRepository>(pageNum, pageSize)
-        return Page.fromPageInfo(skillRepositoryMapper.selectRepositoryList(name, status, currentUsername))
+        return Page.fromPageInfo(skillRepositoryMapper.selectRepositoryList(name, status, currentUsername, tenantId))
     }
 
-    override fun getActiveRepositories(): List<SkillRepository> = skillRepositoryMapper.selectActiveRepositories()
+    override fun getActiveRepositories(): List<SkillRepository> {
+        val tenantId = TenantContext.getTenantId() ?: 1
+        return skillRepositoryMapper.selectActiveRepositories(tenantId)
+    }
 
     override fun getSkillRepository(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)
 
@@ -59,12 +64,14 @@ class SkillRepositoryServiceImpl(
         log.info("Creating skill repository, name: {}", request.name)
 
         // Check if repository name already exists
-        val existRepository = skillRepositoryMapper.selectByName(request.name!!)
+        val tenantId = TenantContext.getTenantId() ?: 1
+        val existRepository = skillRepositoryMapper.selectByName(request.name!!, tenantId)
         if (existRepository != null) {
             throw BizException("Repository name already exists")
         }
 
         val repository = SkillRepository()
+        repository.tenantId = tenantId
         repository.name = request.name
         repository.url = request.url
         repository.branch = request.branch
@@ -90,7 +97,7 @@ class SkillRepositoryServiceImpl(
 
         // If request contains repository name and it's different from current name, check if new name is already in use
         if (request.name != null && request.name != repository.name) {
-            val existRepository = skillRepositoryMapper.selectByName(request.name!!)
+            val existRepository = skillRepositoryMapper.selectByName(request.name!!, repository.tenantId)
             if (existRepository != null) {
                 throw BizException("Repository name already exists")
             }
@@ -123,7 +130,10 @@ class SkillRepositoryServiceImpl(
         return skillRepositoryMapper.deleteById(id) > 0
     }
 
-    override fun getByName(name: String): SkillRepository? = skillRepositoryMapper.selectByName(name)
+    override fun getByName(name: String): SkillRepository? {
+        val tenantId = TenantContext.getTenantId() ?: 1
+        return skillRepositoryMapper.selectByName(name, tenantId)
+    }
 
     override fun fetchRemoteSkills(repositoryId: Long): List<SyncSkillResponse> {
         log.info("Fetching remote skill list, repositoryId: {}", repositoryId)

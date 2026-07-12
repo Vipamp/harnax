@@ -13,9 +13,13 @@ import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.ToolInfo
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.entity.Channel
+import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.mapper.ChannelMapper
+import com.agnetix.harnax.mapper.SessionMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
@@ -29,6 +33,8 @@ class DefaultAgentRunnerTest {
 
     private lateinit var launcher: HarnessAgentLauncher
     private lateinit var agentSpecResolver: AgentSpecResolver
+    private lateinit var sessionMapper: SessionMapper
+    private lateinit var channelMapper: ChannelMapper
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
 
@@ -36,11 +42,15 @@ class DefaultAgentRunnerTest {
     fun setUp() {
         launcher = mock(HarnessAgentLauncher::class.java)
         agentSpecResolver = mock(AgentSpecResolver::class.java)
+        sessionMapper = mock(SessionMapper::class.java)
+        channelMapper = mock(ChannelMapper::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
 
         runner = DefaultAgentRunner(
             launcher = launcher,
             agentSpecResolver = agentSpecResolver,
+            sessionMapper = sessionMapper,
+            channelMapper = channelMapper,
             cacheMaxSize = 100L,
         )
     }
@@ -147,6 +157,149 @@ class DefaultAgentRunnerTest {
 
             assertFalse(response.success)
             assertEquals("Sandbox manager not available", response.message)
+        }
+
+        @Test
+        fun `executeCommand ENABLE search toggles enableSearch`() {
+            val session = Session().apply {
+                id = 1L
+                sessionId = "session-1"
+                enableSearch = 0
+                enableThink = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Search enabled", response.message)
+            assertEquals(1, session.enableSearch)
+            verify(sessionMapper).updateById(session)
+        }
+
+        @Test
+        fun `executeCommand DISABLE thinking toggles enableThink`() {
+            val session = Session().apply {
+                id = 1L
+                sessionId = "session-1"
+                enableSearch = 0
+                enableThink = 1
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.DISABLE,
+                args = "thinking",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Thinking disabled", response.message)
+            assertEquals(0, session.enableThink)
+            verify(sessionMapper).updateById(session)
+        }
+
+        @Test
+        fun `executeCommand ENABLE plan toggles enablePlan`() {
+            val session = Session().apply {
+                id = 1L
+                sessionId = "session-1"
+                enableSearch = 0
+                enableThink = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "plan",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Plan enabled", response.message)
+            assertEquals(1, session.enablePlan)
+        }
+
+        @Test
+        fun `executeCommand ENABLE with unknown capability fails`() {
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "unknown",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("Unknown capability") == true)
+        }
+
+        @Test
+        fun `executeCommand ENABLE for channel session updates channel table`() {
+            val channel = Channel().apply {
+                id = 1L
+                sessionId = "chn-test-123"
+                enableSearch = 0
+                enableThink = 0
+                enablePlan = 0
+            }
+            `when`(channelMapper.selectBySessionId("chn-test-123")).thenReturn(channel)
+
+            val request = CommandAgentRequest(
+                sessionId = "chn-test-123",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Search enabled", response.message)
+            assertEquals(1, channel.enableSearch)
+            verify(channelMapper).updateById(channel)
+        }
+
+        @Test
+        fun `executeCommand ENABLE for task session fails`() {
+            val request = CommandAgentRequest(
+                sessionId = "task-123-run",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("not supported") == true)
+        }
+
+        @Test
+        fun `executeCommand ENABLE with missing session fails`() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(null)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("Session not found") == true)
         }
     }
 

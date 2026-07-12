@@ -82,10 +82,17 @@ abstract class ToolBox {
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
+        val meta = sessionMetaContextLocal.get()
+        val adaptor = toolCallLogAdaptorLocal.get()
+
+        if (meta == null || adaptor == null) {
+            log.warn("ToolBox ThreadLocal context is null (reactive thread?). Skipping tool call log for {}::{}", name, toolName)
+            return
+        }
 
         val toolCallInfo = ToolCallInfo(
-            agentId = sessionMetaContextLocal.get().agentId,
-            sessionId = sessionMetaContextLocal.get().sessionId,
+            agentId = meta.agentId,
+            sessionId = meta.sessionId,
             toolName = "$name::$toolName",
             args = argsMap,
             result = result,
@@ -96,7 +103,7 @@ abstract class ToolBox {
         )
 
         try {
-            toolCallLogAdaptorLocal.get().emit(toolCallInfo)
+            adaptor.emit(toolCallInfo)
         } catch (e: Exception) {
             log.error("Failed to log tool call: toolName=$toolName", e)
         }
@@ -111,10 +118,17 @@ abstract class ToolBox {
     ) {
         val duration = endTime - startTime
         val argsMap = args.mapValues { it.value?.toString() ?: "null" }
+        val meta = sessionMetaContextLocal.get()
+        val adaptor = toolCallLogAdaptorLocal.get()
+
+        if (meta == null || adaptor == null) {
+            log.warn("ToolBox ThreadLocal context is null (reactive thread?). Skipping tool call error log for {}::{}", name, toolName)
+            return
+        }
 
         val toolCallInfo = ToolCallInfo(
-            agentId = sessionMetaContextLocal.get().agentId,
-            sessionId = sessionMetaContextLocal.get().sessionId,
+            agentId = meta.agentId,
+            sessionId = meta.sessionId,
             toolName = "$name::$toolName",
             args = argsMap,
             result = "ERROR: ${error.message}",
@@ -125,7 +139,7 @@ abstract class ToolBox {
         )
 
         try {
-            toolCallLogAdaptorLocal.get().emit(toolCallInfo)
+            adaptor.emit(toolCallInfo)
         } catch (logEx: Exception) {
             log.error("Failed to log tool call error: toolName=$toolName", logEx)
         }

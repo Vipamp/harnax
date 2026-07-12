@@ -50,8 +50,9 @@ class SkillServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val tenantId = TenantContext.getTenantId() ?: 1
         PageHelper.startPage<Skill>(pageNum, pageSize)
-        return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername))
+        return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername, tenantId))
     }
 
     override fun getSkill(id: Long): Skill {

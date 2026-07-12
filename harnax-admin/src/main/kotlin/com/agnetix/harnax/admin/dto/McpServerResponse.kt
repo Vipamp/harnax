@@ -35,8 +35,8 @@ data class McpServerResponse(
     val updateTime: LocalDateTime? = null,
     @Schema(description = "HTTP headers configuration (masked for secret values)")
     val headers: List<McpConfigEntry>? = null,
-    @Schema(description = "Environment variables configuration (masked for secret values)")
-    val envs: List<McpConfigEntry>? = null,
+    @Schema(description = "Environment parameters configuration (masked for secret values)")
+    val envParams: List<ToolEnvParamEntry>? = null,
 ) {
     companion object {
         @JvmStatic
@@ -46,7 +46,7 @@ data class McpServerResponse(
             encryptor: SecretFieldEncryptor? = null,
         ): McpServerResponse {
             val headers = deserializeAndMaskConfig(entity.headers, objectMapper, encryptor, true)
-            val envs = deserializeAndMaskConfig(entity.envs, objectMapper, encryptor, true)
+            val envParams = deserializeAndMaskToolEnvParams(entity.envParams, objectMapper, encryptor, true)
             return McpServerResponse(
                 id = entity.id,
                 name = entity.name,
@@ -60,7 +60,7 @@ data class McpServerResponse(
                 createTime = entity.createTime,
                 updateTime = entity.updateTime,
                 headers = headers,
-                envs = envs,
+                envParams = envParams,
             )
         }
 
@@ -80,6 +80,34 @@ data class McpServerResponse(
                     entries.map { entry ->
                         if (entry.secret) {
                             entry.copy(value = maskValue(entry.value, encryptor))
+                        } else {
+                            entry
+                        }
+                    }
+                } else {
+                    entries
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        /**
+         * 反序列化 ToolEnvParamEntry JSON 并对敏感值做掩码处理
+         */
+        private fun deserializeAndMaskToolEnvParams(
+            json: String?,
+            objectMapper: ObjectMapper?,
+            encryptor: SecretFieldEncryptor?,
+            maskSecret: Boolean,
+        ): List<ToolEnvParamEntry>? {
+            if (json.isNullOrBlank() || objectMapper == null) return null
+            return try {
+                val entries = objectMapper.readValue(json, objectMapper.typeFactory.constructCollectionType(List::class.java, ToolEnvParamEntry::class.java)) as List<ToolEnvParamEntry>
+                if (maskSecret) {
+                    entries.map { entry ->
+                        if (entry.secret && entry.defaultValue != null) {
+                            entry.copy(defaultValue = maskValue(entry.defaultValue!!, encryptor))
                         } else {
                             entry
                         }

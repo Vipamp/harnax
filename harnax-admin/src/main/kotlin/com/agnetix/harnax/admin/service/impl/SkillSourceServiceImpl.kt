@@ -41,31 +41,36 @@ class SkillSourceServiceImpl(
         status: Int?,
         pageNum: Int,
         pageSize: Int,
-    ): Page<SkillRepository> {
+    ): Page<SkillSourceResponse> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val tenantId = TenantContext.getTenantId() ?: 1
         PageHelper.startPage<SkillRepository>(pageNum, pageSize)
-        return Page.fromPageInfo(
-            skillRepositoryMapper.selectRepositoryList(name, status, currentUsername),
+        val entityPage = Page.fromPageInfo(
+            skillRepositoryMapper.selectRepositoryList(name, status, currentUsername, tenantId),
         )
+        return entityPage.mapRecords { convertToResponse(it) }
     }
 
     override fun getSkillSource(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)
 
+    @Transactional(rollbackFor = [Exception::class])
     override fun createSkillSource(request: SkillSourceCreateRequest): SkillRepository {
         log.info("Creating skill source, name: {}, type: {}", request.name, request.sourceType)
 
-        val existing = skillRepositoryMapper.selectByName(request.name)
+        val tenantId = TenantContext.getTenantId() ?: 1
+
+        val existing = skillRepositoryMapper.selectByName(request.name, tenantId)
         if (existing != null) {
             throw BizException("Source name already exists")
         }
 
-        val loader = skillLoaderRegistry.getLoader(request.sourceType)
-
         val config = buildConfigMap(request.sourceType, request.sourceConfig, request.url, request.branch)
+
+        val loader = skillLoaderRegistry.getLoader(request.sourceType)
         loader.validateConfig(config)
 
         val repository = SkillRepository()
-        repository.tenantId = TenantContext.getTenantId() ?: 1
+        repository.tenantId = tenantId
         repository.name = request.name
         repository.sourceType = request.sourceType
         repository.sourceConfig = objectMapper.writeValueAsString(config)
@@ -97,7 +102,7 @@ class SkillSourceServiceImpl(
             ?: throw BizException("Skill source not found")
 
         if (request.name != null && request.name != repository.name) {
-            val existing = skillRepositoryMapper.selectByName(request.name)
+            val existing = skillRepositoryMapper.selectByName(request.name, repository.tenantId)
             if (existing != null) {
                 throw BizException("Source name already exists")
             }
@@ -166,7 +171,8 @@ class SkillSourceServiceImpl(
     override fun uploadAndInstall(zipPath: String, originalFilename: String, name: String): SkillRepository {
         log.info("Installing skill from ZIP upload: {}", originalFilename)
 
-        val existing = skillRepositoryMapper.selectByName(name)
+        val tenantId = TenantContext.getTenantId() ?: 1
+        val existing = skillRepositoryMapper.selectByName(name, tenantId)
         if (existing != null) {
             throw BizException("Source name already exists")
         }
@@ -177,7 +183,7 @@ class SkillSourceServiceImpl(
         )
 
         val repository = SkillRepository()
-        repository.tenantId = TenantContext.getTenantId() ?: 1
+        repository.tenantId = tenantId
         repository.name = name
         repository.sourceType = "ZIP"
         repository.sourceConfig = objectMapper.writeValueAsString(config)
@@ -279,7 +285,9 @@ class SkillSourceServiceImpl(
 
     private fun getTmpDir(): Path {
         val base = localTmpDir ?: System.getProperty("java.io.tmpdir")
-        return Files.createTempDirectory(Path.of(base), "skill-source-")
+        val basePath = Path.of(base)
+        Files.createDirectories(basePath)
+        return Files.createTempDirectory(basePath, "skill-source-")
     }
 
     private fun cleanupTmpDir(tmpDir: Path) {

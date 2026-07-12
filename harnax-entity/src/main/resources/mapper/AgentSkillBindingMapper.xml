@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.AgentSkillBindingMapper">
+
+    <resultMap id="AgentSkillBindingResultMap" type="com.agnetix.harnax.entity.AgentSkillBinding">
+        <id column="id" property="id"/>
+        <result column="agent_id" property="agentId"/>
+        <result column="skill_id" property="skillId"/>
+        <result column="env_bindings" property="envBindings"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectByAgentId" resultMap="AgentSkillBindingResultMap">
+        SELECT * FROM agent_skill_binding WHERE agent_id = #{agentId} ORDER BY id
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO agent_skill_binding (agent_id, skill_id, env_bindings, create_time, update_time)
+        VALUES
+        <foreach collection="list" item="b" separator=",">
+            (#{b.agentId}, #{b.skillId}, #{b.envBindings}, #{b.createTime}, #{b.updateTime})
+        </foreach>
+    </insert>
+
+    <delete id="deleteByAgentId">
+        DELETE FROM agent_skill_binding WHERE agent_id = #{agentId}
+    </delete>
+
+</mapper>

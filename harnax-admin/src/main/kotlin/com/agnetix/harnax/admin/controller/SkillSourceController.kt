@@ -3,7 +3,6 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.service.SkillSourceService
 import com.agnetix.harnax.common.dto.ResultVo
-import com.agnetix.harnax.entity.SkillRepository
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
@@ -19,7 +18,7 @@ import java.nio.file.Path
 @RequestMapping("/api/admin/skill-sources")
 class SkillSourceController(
     private val skillSourceService: SkillSourceService,
-    @Value("\${local.tmp-dir:/tmp/harnax}") private val localTmpDir: String,
+    @Value("\${local.tmp-dir:/home/harnax/skills}") private val localTmpDir: String,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillSourceController::class.java)
@@ -32,7 +31,7 @@ class SkillSourceController(
         @RequestParam(required = false) status: Int?,
         @RequestParam(defaultValue = "1") pageNum: Int,
         @RequestParam(defaultValue = "10") pageSize: Int,
-    ): ResultVo<Page<SkillRepository>> = try {
+    ): ResultVo<Page<SkillSourceResponse>> = try {
         ResultVo.success(skillSourceService.page(name, sourceType, status, pageNum, pageSize))
     } catch (e: Exception) {
         log.error("Failed to query skill source list", e)

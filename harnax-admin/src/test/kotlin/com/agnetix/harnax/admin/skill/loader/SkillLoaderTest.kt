@@ -298,6 +298,48 @@ class SkillLoaderTest {
                 )
             }
         }
+
+        @Test
+        fun `validateConfig should pass with simple package name`() {
+            assertDoesNotThrow {
+                npmLoader.validateConfig(mapOf("packageName" to "lodash"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should pass with package name containing dots and underscores`() {
+            assertDoesNotThrow {
+                npmLoader.validateConfig(mapOf("packageName" to "my_skill.v2"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should reject package name with shell injection`() {
+            assertThrows<IllegalArgumentException> {
+                npmLoader.validateConfig(mapOf("packageName" to "foo; rm -rf /"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should reject package name with uppercase letters`() {
+            assertThrows<IllegalArgumentException> {
+                npmLoader.validateConfig(mapOf("packageName" to "MyPackage"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should reject package name with special characters`() {
+            assertThrows<IllegalArgumentException> {
+                npmLoader.validateConfig(mapOf("packageName" to "foo\$bar"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should reject package name with spaces`() {
+            assertThrows<IllegalArgumentException> {
+                npmLoader.validateConfig(mapOf("packageName" to "foo bar"))
+            }
+        }
     }
 
     // ==================== GitSkillLoader ====================

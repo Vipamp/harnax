@@ -12,7 +12,9 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
+import org.mockito.kotlin.any
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.web.servlet.MockMvc
@@ -84,11 +86,11 @@ class SkillSourceControllerTest {
 
         @Test
         fun `page should return paginated results`() {
-            val page = com.agnetix.harnax.admin.dto.Page<SkillRepository>(
+            val page = com.agnetix.harnax.admin.dto.Page<SkillSourceResponse>(
                 total = 1L,
                 pageNum = 1L,
                 pageSize = 10L,
-                records = listOf(testRepository),
+                records = listOf(testResponse),
             )
             `when`(skillSourceService.page(null, null, null, 1, 10)).thenReturn(page)
 
@@ -152,7 +154,7 @@ class SkillSourceControllerTest {
                 sourceConfig = mapOf("url" to "https://github.com/new/skills", "branch" to "main"),
             )
 
-            `when`(skillSourceService.createSkillSource(any())).thenReturn(testRepository)
+            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(testRepository)
             `when`(skillSourceService.convertToResponse(testRepository)).thenReturn(testResponse)
 
             mockMvc.perform(
@@ -172,7 +174,7 @@ class SkillSourceControllerTest {
                 sourceConfig = mapOf("url" to "https://github.com/test/skills"),
             )
 
-            `when`(skillSourceService.createSkillSource(any()))
+            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>()))
                 .thenThrow(BizException("Source name already exists"))
 
             mockMvc.perform(
@@ -205,7 +207,7 @@ class SkillSourceControllerTest {
                 sourceConfig = mapOf("packageName" to "@harnax/skills"),
             )
 
-            `when`(skillSourceService.createSkillSource(any())).thenReturn(npmRepo)
+            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(npmRepo)
             `when`(skillSourceService.convertToResponse(npmRepo)).thenReturn(npmResponse)
 
             mockMvc.perform(
@@ -228,7 +230,7 @@ class SkillSourceControllerTest {
                 description = "Updated description",
             )
 
-            `when`(skillSourceService.updateSkillSource(anyLong(), any())).thenReturn(true)
+            `when`(skillSourceService.updateSkillSource(any<Long>(), any<SkillSourceUpdateRequest>())).thenReturn(true)
 
             mockMvc.perform(
                 put("/api/admin/skill-sources/1")
@@ -242,7 +244,7 @@ class SkillSourceControllerTest {
         @Test
         fun `update should return error on failure`() {
             val request = SkillSourceUpdateRequest(description = "test")
-            `when`(skillSourceService.updateSkillSource(anyLong(), any())).thenReturn(false)
+            `when`(skillSourceService.updateSkillSource(any<Long>(), any<SkillSourceUpdateRequest>())).thenReturn(false)
 
             mockMvc.perform(
                 put("/api/admin/skill-sources/1")
@@ -332,7 +334,7 @@ class SkillSourceControllerTest {
                 byteArrayOf(0x50, 0x4B, 0x03, 0x04),
             )
 
-            `when`(skillSourceService.uploadAndInstall(anyString(), anyString(), anyString()))
+            `when`(skillSourceService.uploadAndInstall(any(), any(), any()))
                 .thenReturn(testRepository)
             `when`(skillSourceService.convertToResponse(testRepository)).thenReturn(testResponse)
 
@@ -354,7 +356,7 @@ class SkillSourceControllerTest {
                 byteArrayOf(0x00),
             )
 
-            `when`(skillSourceService.uploadAndInstall(anyString(), anyString(), anyString()))
+            `when`(skillSourceService.uploadAndInstall(any(), any(), any()))
                 .thenThrow(RuntimeException("Invalid ZIP"))
 
             mockMvc.perform(

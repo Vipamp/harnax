@@ -82,9 +82,9 @@ class McpServerServiceImpl(
         mcpServer.status = request.status ?: 1
         mcpServer.active = 1
 
-        // Serialize headers and envs with encryption for secret values
+        // Serialize headers with encryption (McpConfigEntry) and envParams with ToolEnvParamEntry format
         mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers)
-        mcpServer.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+        mcpServer.envParams = secretFieldEncryptor.serializeToolEnvParams(request.envParams)
 
         // Set tenant ID
         mcpServer.tenantId = TenantContext.getTenantId() ?: 1
@@ -123,12 +123,12 @@ class McpServerServiceImpl(
         request.url.let { mcpServer.url = it }
         request.isPublic.let { mcpServer.isPublic = it }
 
-        // Update headers and envs with encryption
+        // Update headers (McpConfigEntry) and envParams (ToolEnvParamEntry) with encryption
         if (request.headers != null) {
             mcpServer.headers = secretFieldEncryptor.serializeWithEncryption(request.headers)
         }
-        if (request.envs != null) {
-            mcpServer.envs = secretFieldEncryptor.serializeWithEncryption(request.envs)
+        if (request.envParams != null) {
+            mcpServer.envParams = secretFieldEncryptor.serializeToolEnvParams(request.envParams)
         }
 
         // Validate type and field linkage logic after update
@@ -200,6 +200,6 @@ class McpServerServiceImpl(
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
         val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
-        return McpHelper.listTools(mcpServer, secretFieldEncryptor::decryptToMap)
+        return McpHelper.listTools(mcpServer, secretFieldEncryptor::decryptToMap, secretFieldEncryptor::decryptToolEnvParamsToMap)
     }
 }

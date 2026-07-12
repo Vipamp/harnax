@@ -673,9 +673,99 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     loadSessionData();
   }, [sessionId]);
 
+  /* ─── Slash-command keyword → command type mapping ─── */
+  const SLASH_COMMANDS: Record<string, string> = {
+    interrupt: 'INTERRUPT',
+    stop: 'INTERRUPT',
+    clear: 'CLEAR',
+    compact: 'COMPACT',
+    approve: 'APPROVE',
+    'stop-sandbox': 'STOP_SANDBOX',
+    enable: 'ENABLE',
+    disable: 'DISABLE',
+  };
+
+  /**
+   * Parse slash-command text. Returns { command, args } or null.
+   */
+  const parseSlashCommand = (text: string): { command: string; args: string } | null => {
+    if (!text.startsWith('/')) return null;
+    const afterSlash = text.substring(1).trim();
+    if (!afterSlash) return null;
+
+    const spaceIdx = afterSlash.indexOf(' ');
+    const colonIdx = afterSlash.indexOf(':');
+    const sepIdx =
+      spaceIdx < 0 && colonIdx < 0
+        ? -1
+        : spaceIdx < 0
+          ? colonIdx
+          : colonIdx < 0
+            ? spaceIdx
+            : Math.min(spaceIdx, colonIdx);
+
+    const keyword = (sepIdx >= 0 ? afterSlash.substring(0, sepIdx) : afterSlash).toLowerCase();
+    const args = sepIdx >= 0 ? afterSlash.substring(sepIdx + 1).trim() : '';
+
+    const command = SLASH_COMMANDS[keyword];
+    if (!command) return null;
+    return { command, args };
+  };
+
   /* ─── 发送消息（fetch + ReadableStream，走代理） ─── */
   const doSend = async (text: string) => {
     if (!text.trim() || loading) return;
+
+    // Detect slash commands and route to /command endpoint
+    const parsed = parseSlashCommand(text.trim());
+    if (parsed) {
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        segments: [{ type: 'text', content: text.trim() }],
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setInputValue('');
+      setLoading(true);
+
+      try {
+        let routerApiKey = '';
+        try {
+          const tokenInfoStr = localStorage.getItem('tokenInfo');
+          if (tokenInfoStr) routerApiKey = JSON.parse(tokenInfoStr).routerApiKey || '';
+        } catch { /* ignore */ }
+
+        const res = await fetch('/api/router/agent/command', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(routerApiKey ? { 'X-Api-Key': routerApiKey } : getAuthHeaders()),
+          },
+          body: JSON.stringify({ sessionId, command: parsed.command, args: parsed.args }),
+        });
+        const json = await res.json();
+        const reply = json.data?.message || (json.data?.success ? 'Done' : json.message || 'Command failed');
+        const assistantMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          segments: [{ type: 'text', content: reply }],
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+      } catch (e: any) {
+        const errMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          segments: [{ type: 'text', content: `\n\n> **Error**: ${e.message}` }],
+          timestamp: Date.now(),
+        };
+        setMessages((prev) => [...prev, errMsg]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,

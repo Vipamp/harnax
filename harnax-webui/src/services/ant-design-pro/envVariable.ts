@@ -63,3 +63,11 @@ export async function toggleEnvVariable(id: number, enabled: number, options?: {
     ...(options || {}),
   });
 }
+
+/** 获取环境变量列表（用于智能体配置下拉） GET /api/admin/env-variables/list */
+export async function getEnvVariableList(options?: { [key: string]: any }) {
+  return request('/api/admin/env-variables/list', {
+    method: 'GET',
+    ...(options || {}),
+  });
+}

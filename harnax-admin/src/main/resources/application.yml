@@ -28,12 +28,11 @@ spring:
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
-    schemas: harnax_admin
     baseline-on-migrate: true
     baseline-version: 0
     validate-on-migrate: true
     repair-on-migrate: true
-    clean-disabled: true
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
     sql-migration-prefixes: V
     repeatable-sql-migration-prefixes: R
 
@@ -76,7 +75,7 @@ session:
   password: ${SESSION_PASSWORD:123456}
 
 local:
-  tmp-dir: ${LOCAL_TMP_DIR:/tmp/harnax}
+  tmp-dir: ${LOCAL_TMP_DIR:/home/harnax/skills}
 
 # Admin internal API authentication
 # Other harnax services (channel, router, agent-service) use this secret

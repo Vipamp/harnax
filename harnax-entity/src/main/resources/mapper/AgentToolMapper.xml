@@ -7,17 +7,21 @@
         <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="display_name" property="displayName"/>
+        <result column="display_name_zh" property="displayNameZh"/>
         <result column="description" property="description"/>
         <result column="type" property="type"/>
         <result column="bean_name" property="beanName"/>
+        <result column="method_name" property="methodName"/>
         <result column="http_url" property="httpUrl"/>
         <result column="http_method" property="httpMethod"/>
         <result column="http_headers" property="httpHeaders"/>
-        <result column="envs" property="envs"/>
+        <result column="env_params" property="envParams"/>
         <result column="input_schema" property="inputSchema"/>
         <result column="output_schema" property="outputSchema"/>
         <result column="read_only" property="readOnly"/>
         <result column="need_confirm" property="needConfirm"/>
+        <result column="is_required" property="isRequired"/>
+        <result column="required_env_param_keys" property="requiredEnvParamKeys"/>
         <result column="timeout_seconds" property="timeoutSeconds"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
@@ -41,14 +45,14 @@
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent_tool (
-            tenant_id, name, display_name, description, type, bean_name,
-            http_url, http_method, http_headers, envs, input_schema, output_schema,
-            read_only, need_confirm, timeout_seconds,
+            tenant_id, name, display_name, display_name_zh, description, type, bean_name, method_name,
+            http_url, http_method, http_headers, input_schema, output_schema,
+            read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
             status, is_public, creator, active, create_time, update_time
         ) VALUES (
-            #{tenantId}, #{name}, #{displayName}, #{description}, #{type}, #{beanName},
-            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{envs}, #{inputSchema}, #{outputSchema},
-            #{readOnly}, #{needConfirm}, #{timeoutSeconds},
+            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{type}, #{beanName}, #{methodName},
+            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{inputSchema}, #{outputSchema},
+            #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
             #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
@@ -57,17 +61,20 @@
         UPDATE agent_tool SET
             name = #{name},
             display_name = #{displayName},
+            display_name_zh = #{displayNameZh},
             description = #{description},
             type = #{type},
             bean_name = #{beanName},
+            method_name = #{methodName},
             http_url = #{httpUrl},
             http_method = #{httpMethod},
             http_headers = #{httpHeaders},
-            envs = #{envs},
             input_schema = #{inputSchema},
             output_schema = #{outputSchema},
             read_only = #{readOnly},
             need_confirm = #{needConfirm},
+            is_required = #{isRequired},
+            required_env_param_keys = #{requiredEnvParamKeys},
             timeout_seconds = #{timeoutSeconds},
             is_public = #{isPublic},
             active = #{active},
@@ -100,5 +107,47 @@
     <select id="selectAllEnabled" resultMap="AgentToolResultMap">
         SELECT * FROM agent_tool WHERE status = 1 AND active = 1 ORDER BY name
     </select>
+
+    <select id="selectBuiltinToolList" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE type = 'BUILTIN' AND is_required = 0 AND status = 1 AND active = 1 ORDER BY name
+    </select>
+
+    <select id="selectAvailableToolsByType" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE status = 1 AND active = 1
+        <if test='type != null and type != ""'>
+            AND type = #{type}
+        </if>
+        ORDER BY name
+    </select>
+
+    <!-- Select builtin tools by bean name (returns multiple records, one per @Tool method) -->
+    <select id="selectByBeanName" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool
+        WHERE bean_name = #{beanName} AND type = 'BUILTIN' AND active = 1
+    </select>
+
+    <!-- Upsert a single builtin tool method record (one per @Tool method) -->
+    <insert id="upsertBuiltinTool">
+        INSERT INTO agent_tool (
+            tenant_id, name, display_name, display_name_zh, description, type, bean_name, method_name,
+            env_params, read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
+            status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, 'BUILTIN', #{beanName}, #{methodName},
+            NULL, #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
+            1, #{isPublic}, 'SYSTEM', 1, NOW(), NOW()
+        )
+        ON DUPLICATE KEY UPDATE
+            display_name = VALUES(display_name),
+            display_name_zh = VALUES(display_name_zh),
+            description = VALUES(description),
+            read_only = VALUES(read_only),
+            need_confirm = VALUES(need_confirm),
+            is_required = VALUES(is_required),
+            required_env_param_keys = VALUES(required_env_param_keys),
+            timeout_seconds = VALUES(timeout_seconds),
+            is_public = VALUES(is_public),
+            update_time = NOW()
+    </insert>
 
 </mapper>

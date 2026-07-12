@@ -2,16 +2,18 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
-import com.agnetix.harnax.admin.service.McpServerService
-import com.agnetix.harnax.admin.service.ModelService
-import com.agnetix.harnax.admin.service.SkillRepositoryService
-import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentMcpBinding
+import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -68,6 +70,21 @@ class AgentServiceImplTest {
 
     @Mock
     private lateinit var jwtUtil: JwtUtil
+
+    @Mock
+    private lateinit var agentToolService: AgentToolService
+
+    @Mock
+    private lateinit var envVariableService: EnvVariableService
+
+    @Mock
+    private lateinit var toolBindingMapper: AgentToolBindingMapper
+
+    @Mock
+    private lateinit var mcpBindingMapper: AgentMcpBindingMapper
+
+    @Mock
+    private lateinit var skillBindingMapper: AgentSkillBindingMapper
 
     @Captor
     private lateinit var agentCaptor: ArgumentCaptor<Agent>
@@ -413,8 +430,8 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
-            // Verify the testAgent was modified
-            assertEquals("", testAgent.mcpList)
+            // Verify binding table: old bindings deleted, no new ones inserted
+            verify(mcpBindingMapper).deleteByAgentId(1L)
         }
 
         @Test
@@ -434,8 +451,8 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
-            // Verify the testAgent was modified - empty string becomes "null" string
-            assertEquals("null", testAgent.skillList)
+            // Verify binding table: old bindings deleted, no new ones inserted
+            verify(skillBindingMapper).deleteByAgentId(1L)
         }
 
         @Test
@@ -584,6 +601,13 @@ class AgentServiceImplTest {
                 },
             )
 
+            val mcpBinding = AgentMcpBinding().apply {
+                agentId = 1L
+                mcpId = 1L
+                enableSkip = "true"
+                envBindings = null
+            }
+
             val mcpServer = McpServer().apply {
                 id = 1L
                 name = "Weather MCP"
@@ -592,6 +616,7 @@ class AgentServiceImplTest {
 
             `when`(modelService.getModel(1L)).thenReturn(model)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
+            `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(listOf(mcpBinding))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(mcpServer)
 
             // When
@@ -608,6 +633,7 @@ class AgentServiceImplTest {
             assertEquals(1, result.mcpList?.size)
             verify(modelService).getModel(1L)
             verify(sessionMapper).selectByAgentId(1L)
+            verify(mcpBindingMapper).selectByAgentId(1L)
             verify(mcpServerService).getMcpServer(1L)
         }
 
@@ -665,48 +691,53 @@ class AgentServiceImplTest {
         @Test
         @DisplayName("convertToResponse - Handle invalid MCP list JSON gracefully")
         fun `convertToResponse should handle invalid mcp list json gracefully`() {
-            // Given
-            val agentWithInvalidMcp = Agent().apply {
+            // Given - binding table returns empty list (no invalid JSON scenario)
+            val agentWithEmptyBindings = Agent().apply {
                 id = 1L
-                name = "Invalid MCP Agent"
+                name = "Empty MCP Agent"
                 modelId = 1L
-                mcpList = "invalid json"
-                skillList = ""
             }
 
             val sessions = listOf<Session>()
             `when`(modelService.getModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
+            `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(emptyList())
 
             // When
-            val result = agentService.convertToResponse(agentWithInvalidMcp)
+            val result = agentService.convertToResponse(agentWithEmptyBindings)
 
             // Then
             assertNotNull(result)
-            assertTrue(result.mcpList?.isEmpty() == true)
+            assertNull(result.mcpList)
         }
 
         @Test
         @DisplayName("convertToResponse - Handle invalid skill IDs gracefully")
         fun `convertToResponse should handle invalid skill ids gracefully`() {
-            // Given
-            val agentWithInvalidSkill = Agent().apply {
+            // Given - binding table has a skill binding but skill doesn't exist
+            val agentWithOrphanBinding = Agent().apply {
                 id = 1L
-                name = "Invalid Skill Agent"
+                name = "Orphan Skill Agent"
                 modelId = 1L
-                mcpList = ""
-                skillList = "abc,def"
+            }
+
+            val skillBinding = AgentSkillBinding().apply {
+                agentId = 1L
+                skillId = 999L
             }
 
             val sessions = listOf<Session>()
             `when`(modelService.getModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
+            `when`(skillBindingMapper.selectByAgentId(1L)).thenReturn(listOf(skillBinding))
+            `when`(skillService.getSkill(999L)).thenReturn(null)
 
             // When
-            val result = agentService.convertToResponse(agentWithInvalidSkill)
+            val result = agentService.convertToResponse(agentWithOrphanBinding)
 
             // Then
             assertNotNull(result)
+            // Skill binding exists but skill not found, so skillList is empty
             assertTrue(result.skillList?.isEmpty() == true)
         }
 
@@ -714,9 +745,16 @@ class AgentServiceImplTest {
         @DisplayName("convertToResponse - Skip non-existent MCP servers")
         fun `convertToResponse should skip non-existent mcp servers`() {
             // Given
+            val mcpBinding = AgentMcpBinding().apply {
+                agentId = 1L
+                mcpId = 1L
+                enableSkip = "true"
+            }
+
             val sessions = listOf<Session>()
             `when`(modelService.getModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
+            `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(listOf(mcpBinding))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(null)
 
             // When
@@ -724,6 +762,7 @@ class AgentServiceImplTest {
 
             // Then
             assertNotNull(result)
+            // MCP binding exists but server not found, so mcpList is empty
             assertTrue(result.mcpList?.isEmpty() == true)
         }
 
@@ -731,17 +770,21 @@ class AgentServiceImplTest {
         @DisplayName("convertToResponse - Skip non-existent skills")
         fun `convertToResponse should skip non-existent skills`() {
             // Given
+            val skillBinding = AgentSkillBinding().apply {
+                agentId = 1L
+                skillId = 999L
+            }
+
             val agentWithSkills = Agent().apply {
                 id = 1L
                 name = "Skill Agent"
                 modelId = 1L
-                mcpList = ""
-                skillList = "999"
             }
 
             val sessions = listOf<Session>()
             `when`(modelService.getModel(1L)).thenReturn(null)
             `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
+            `when`(skillBindingMapper.selectByAgentId(1L)).thenReturn(listOf(skillBinding))
             `when`(skillService.getSkill(999L)).thenReturn(null)
 
             // When

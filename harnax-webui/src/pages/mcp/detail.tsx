@@ -1,12 +1,13 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message, Descriptions } from 'antd';
+import { Card, Tag, Typography, Table, Spin, Empty, Button, Breadcrumb, message, Descriptions, Tooltip } from 'antd';
 import { 
   ToolOutlined, 
   ApiOutlined,
   LinkOutlined,
   SettingOutlined,
-  KeyOutlined
+  KeyOutlined,
+  QuestionCircleOutlined
 } from '@ant-design/icons';
 import React, { useEffect, useState } from 'react';
 // @ts-ignore
@@ -245,8 +246,8 @@ const McpDetail: React.FC = () => {
               intl={intl}
             />
 
-            {/* 配置信息 - 仅当有 headers 或 envs 时显示 */}
-            {((mcpInfo.headers && mcpInfo.headers.length > 0) || (mcpInfo.envs && mcpInfo.envs.length > 0)) && (
+            {/* 配置信息 - 仅当有 headers 或 envParams 时显示 */}
+            {((mcpInfo.headers && mcpInfo.headers.length > 0) || (mcpInfo.envParams && mcpInfo.envParams.length > 0)) && (
               <Card
                 title={
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -284,11 +285,14 @@ const McpDetail: React.FC = () => {
                   </div>
                 )}
 
-                {mcpInfo.envs && mcpInfo.envs.length > 0 && (
+                {mcpInfo.envParams && mcpInfo.envParams.length > 0 && (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                       <SettingOutlined style={{ color: '#52c41a' }} />
-                      <Text strong>{intl.formatMessage({ id: 'pages.mcp.detail.envs', defaultMessage: '环境变量' })}</Text>
+                      <Text strong>{intl.formatMessage({ id: 'pages.mcp.detail.envParams', defaultMessage: '环境参数' })}</Text>
+                      <Tooltip title={intl.formatMessage({ id: 'pages.mcp.detail.envParamsTip', defaultMessage: '环境参数在 MCP 服务启动时注入到进程环境变量中，供服务读取使用。如 API Key、数据库连接地址、第三方服务凭证等。' })}>
+                        <QuestionCircleOutlined style={{ fontSize: 12, color: 'var(--vip-text-secondary)', cursor: 'pointer' }} />
+                      </Tooltip>
                     </div>
                     <Descriptions
                       bordered
@@ -296,9 +300,10 @@ const McpDetail: React.FC = () => {
                       column={1}
                       styles={{ label: { width: 200, background: 'var(--vip-bg-layout)' } }}
                     >
-                      {mcpInfo.envs.map((e, i) => (
-                        <Descriptions.Item key={i} label={e.key}>
-                          <span style={{ fontFamily: 'monospace' }}>{e.value}</span>
+                      {mcpInfo.envParams.map((e, i) => (
+                        <Descriptions.Item key={i} label={e.envParamName}>
+                          <span style={{ fontFamily: 'monospace' }}>{e.defaultValue || '-'}</span>
+                          {e.required && <Tag color="red" style={{ marginLeft: 8 }}>{intl.formatMessage({ id: 'pages.mcp.config.required', defaultMessage: '必填' })}</Tag>}
                           {e.secret && <Tag color="orange" style={{ marginLeft: 8 }}>{intl.formatMessage({ id: 'pages.mcp.config.secret', defaultMessage: '敏感' })}</Tag>}
                         </Descriptions.Item>
                       ))}

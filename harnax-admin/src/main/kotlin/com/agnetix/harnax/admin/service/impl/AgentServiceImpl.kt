@@ -4,24 +4,33 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
+import com.agnetix.harnax.admin.dto.EnvBinding
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.dto.ToolConfig
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentMcpBinding
+import com.agnetix.harnax.entity.AgentSkillBinding
+import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import tools.jackson.core.JacksonException
 import tools.jackson.core.type.TypeReference
 import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
- * Agent service implementation
+ * Agent service implementation.
+ * Uses normalized binding tables (agent_tool_binding, agent_mcp_binding, agent_skill_binding)
+ * for storing tool/MCP/skill associations with environment variable binding snapshots.
  */
 @Service
 class AgentServiceImpl(
@@ -33,6 +42,10 @@ class AgentServiceImpl(
     private val modelService: ModelService,
     private val sessionMapper: SessionMapper,
     private val jwtUtil: JwtUtil,
+    private val envVariableService: EnvVariableService,
+    private val toolBindingMapper: AgentToolBindingMapper,
+    private val mcpBindingMapper: AgentMcpBindingMapper,
+    private val skillBindingMapper: AgentSkillBindingMapper,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -58,61 +71,21 @@ class AgentServiceImpl(
         agent.modelId = request.modelId!!
         agent.owner = request.owner!!
         agent.status = request.status ?: 1
-
-        // Set tenant ID
+        agent.isPublic = request.isPublic ?: 0
         agent.tenantId = TenantContext.getTenantId() ?: 1
 
-        // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         agent.creator = currentUsername!!
-
-        // Default not public
-        if (agent.isPublic == null) {
-            agent.isPublic = 0
-        }
-
-        // Convert MCP list to JSON storage
-        // Format: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
-        if (!request.mcpList.isNullOrEmpty()) {
-            try {
-                agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
-            } catch (e: JacksonException) {
-                throw RuntimeException("Failed to serialize MCP list to JSON", e)
-            }
-        }
-
-        // Skills list stored directly as string format "1,2,3"
-        if (!request.skillList.isNullOrEmpty()) {
-            agent.skillList = request.skillList
-        }
-
-        // Convert tool list to JSON storage
-        // Format: [{"id":1,"enable_skip":"true","need_confirm":false}]
-        if (!request.toolList.isNullOrEmpty()) {
-            try {
-                // Validate and apply needConfirm constraints
-                val validatedToolList = request.toolList.map { config ->
-                    val toolEntity = agentToolService.getAgentTool(config.id ?: 0)
-                    val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
-                        false
-                    } else {
-                        config.needConfirm ?: false
-                    }
-                    mapOf(
-                        "id" to config.id,
-                        "enable_skip" to (config.enableSkip ?: "true"),
-                        "need_confirm" to finalNeedConfirm,
-                    )
-                }
-                agent.toolList = objectMapper.writeValueAsString(validatedToolList)
-            } catch (e: JacksonException) {
-                throw RuntimeException("Failed to serialize tool list to JSON", e)
-            }
-        }
 
         agent.createTime = LocalDateTime.now()
         agent.updateTime = LocalDateTime.now()
         agentMapper.insert(agent)
+
+        // Save to normalized binding tables
+        saveToolBindings(agent.id, request.toolList)
+        saveMcpBindings(agent.id, request.mcpList)
+        saveSkillBindings(agent.id, request.skillList)
+
         true
     } catch (e: Exception) {
         log.error("Failed to create agent", e)
@@ -133,57 +106,20 @@ class AgentServiceImpl(
         request.owner?.let { agent.owner = it }
         request.isPublic?.let { agent.isPublic = it }
 
-        // Update MCP list
-        if (request.mcpList != null) {
-            // Allow clearing MCP list
-            if (request.mcpList.isEmpty()) {
-                agent.mcpList = ""
-            } else {
-                // Store directly in JSON format: [{"id":1, "enable_skip":"true"},{"id":2, "enable_skip":"false"}]
-                try {
-                    agent.mcpList = objectMapper.writeValueAsString(request.mcpList)
-                } catch (e: JacksonException) {
-                    throw RuntimeException("Failed to serialize MCP list to JSON", e)
-                }
-            }
-        }
-        // If request.mcpList == null, keep original value unchanged
-
-        // Update skill list
-        if (request.skillList != null) {
-            // skillList is string format "1,2,3" or empty string ""
-            agent.skillList = (if (request.skillList.trim().isEmpty()) null else request.skillList).toString()
-        }
-        // If request.skillList == null, keep original value unchanged
-
-        // Update tool list
-        if (request.toolList != null) {
-            if (request.toolList.isEmpty()) {
-                agent.toolList = ""
-            } else {
-                try {
-                    val validatedToolList = request.toolList.map { config ->
-                        val toolEntity = agentToolService.getAgentTool(config.id ?: 0)
-                        val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
-                            false
-                        } else {
-                            config.needConfirm ?: false
-                        }
-                        mapOf(
-                            "id" to config.id,
-                            "enable_skip" to (config.enableSkip ?: "true"),
-                            "need_confirm" to finalNeedConfirm,
-                        )
-                    }
-                    agent.toolList = objectMapper.writeValueAsString(validatedToolList)
-                } catch (e: JacksonException) {
-                    throw RuntimeException("Failed to serialize tool list to JSON", e)
-                }
-            }
-        }
-
         agent.updateTime = LocalDateTime.now()
         agentMapper.updateById(agent)
+
+        // Update binding tables (delete-then-insert pattern)
+        if (request.toolList != null) {
+            saveToolBindings(agent.id, request.toolList)
+        }
+        if (request.mcpList != null) {
+            saveMcpBindings(agent.id, request.mcpList)
+        }
+        if (request.skillList != null) {
+            saveSkillBindings(agent.id, request.skillList)
+        }
+
         true
     } catch (e: Exception) {
         log.error("Failed to update agent", e)
@@ -196,12 +132,19 @@ class AgentServiceImpl(
         return agentMapper.updateStatus(id, status) > 0
     }
 
-    override fun deleteAgent(id: Long): Boolean = agentMapper.deleteById(id) > 0
+    override fun deleteAgent(id: Long): Boolean {
+        // Clean up bindings before deleting agent
+        toolBindingMapper.deleteByAgentId(id)
+        mcpBindingMapper.deleteByAgentId(id)
+        skillBindingMapper.deleteByAgentId(id)
+        return agentMapper.deleteById(id) > 0
+    }
 
     override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, "")
 
     /**
-     * Convert Agent entity to response DTO (with complete skill and MCP information)
+     * Convert Agent entity to response DTO.
+     * Reads tool/mcp/skill associations from binding tables.
      */
     override fun convertToResponse(agent: Agent): AgentResponse {
         val response = AgentResponse()
@@ -229,8 +172,6 @@ class AgentServiceImpl(
 
         // Query associated session list
         val sessions = sessionMapper.selectByAgentId(agent.id)
-
-        // Convert to SessionItem list
         val sessionItems = sessions.map { session ->
             val item = AgentResponse.SessionItem()
             item.id = session.id
@@ -239,115 +180,210 @@ class AgentServiceImpl(
             item.sessionId = session.sessionId
             item
         }
-
         response.sessionList = sessionItems
         response.sessionCount = sessionItems.size
 
-        // Parse MCP list (JSON format)
-        if (agent.mcpList.isNotEmpty()) {
-            try {
-                // First deserialize to Map to get ID and enableSkip
-                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    agent.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {},
+        // Read tool bindings from normalized table
+        val toolBindings = toolBindingMapper.selectByAgentId(agent.id)
+        if (toolBindings.isNotEmpty()) {
+            val toolItems = mutableListOf<AgentResponse.ToolItem>()
+            for (binding in toolBindings) {
+                val fullTool = agentToolService.getAgentTool(binding.toolId) ?: continue
+                toolItems.add(
+                    AgentResponse.ToolItem(
+                        toolId = fullTool.id,
+                        toolName = fullTool.name,
+                        toolDisplayName = fullTool.displayName,
+                        toolDisplayNameZh = fullTool.displayNameZh,
+                        toolDescription = fullTool.description,
+                        toolType = fullTool.type,
+                        enableSkip = binding.enableSkip,
+                        needConfirm = binding.needConfirm == 1,
+                        envBindings = parseEnvBindingsJson(binding.envBindings),
+                    ),
                 )
-
-                // Query complete MCP information from database
-                val mcpItems = mutableListOf<AgentResponse.McpItem>()
-                for (config in mcpConfigs) {
-                    val mcpId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as String?
-
-                    val fullMcp = mcpServerService.getMcpServer(mcpId)
-                    fullMcp?.let {
-                        val item = AgentResponse.McpItem()
-                        item.mcpId = it.id
-                        item.mcpName = it.name
-                        item.mcpDescription = it.description
-                        item.enableSkip = enableSkip
-                        mcpItems.add(item)
-                    }
-                }
-                response.mcpList = mcpItems
-            } catch (e: Exception) {
-                log.warn("Failed to parse MCP list", e)
-                response.mcpList = mutableListOf()
             }
+            response.toolList = toolItems
         }
 
-        // Parse skill list (comma-separated string)
-        if (agent.skillList.isNotEmpty()) {
-            try {
-                val skillIds = agent.skillList.split(",")
-                val skillItems = mutableListOf<AgentResponse.SkillItem>()
-
-                for (skillIdStr in skillIds) {
-                    try {
-                        val skillId = skillIdStr.trim().toLong()
-                        // Query complete skill information from database
-                        val skill = skillService.getSkill(skillId)
-                        skill?.let { it ->
-                            val item = AgentResponse.SkillItem()
-                            item.skillId = it.id
-                            item.skillName = it.name
-                            item.skillDescription = it.description
-
-                            // Query skill repository information
-                            val repository = skillRepositoryService.getSkillRepository(it.repositoryId)
-                            repository?.let {
-                                item.repositoryId = it.id
-                                item.repositoryName = it.name
-                            }
-
-                            skillItems.add(item)
-                        }
-                    } catch (e: NumberFormatException) {
-                        log.warn("Invalid skill ID: {}", skillIdStr)
-                    }
-                }
-
-                response.skillList = skillItems
-            } catch (e: Exception) {
-                log.warn("Failed to parse skill list", e)
-                response.skillList = mutableListOf()
+        // Read MCP bindings from normalized table
+        val mcpBindings = mcpBindingMapper.selectByAgentId(agent.id)
+        if (mcpBindings.isNotEmpty()) {
+            val mcpItems = mutableListOf<AgentResponse.McpItem>()
+            for (binding in mcpBindings) {
+                val fullMcp = mcpServerService.getMcpServer(binding.mcpId) ?: continue
+                val item = AgentResponse.McpItem()
+                item.mcpId = fullMcp.id
+                item.mcpName = fullMcp.name
+                item.mcpDescription = fullMcp.description
+                item.enableSkip = binding.enableSkip
+                item.envBindings = parseEnvBindingsJson(binding.envBindings)
+                mcpItems.add(item)
             }
+            response.mcpList = mcpItems
         }
 
-        // Parse tool list (JSON format)
-        if (agent.toolList.isNotEmpty()) {
-            try {
-                val toolConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    agent.toolList,
-                    object : TypeReference<List<Map<String, Any>>>() {},
-                )
-
-                val toolItems = mutableListOf<AgentResponse.ToolItem>()
-                for (config in toolConfigs) {
-                    val toolId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as? String
-                    val needConfirm = config["need_confirm"] as? Boolean ?: false
-
-                    val fullTool = agentToolService.getAgentTool(toolId)
-                    fullTool?.let {
-                        val item = AgentResponse.ToolItem(
-                            toolId = it.id,
-                            toolName = it.name,
-                            toolDisplayName = it.displayName,
-                            toolDescription = it.description,
-                            toolType = it.type,
-                            enableSkip = enableSkip,
-                            needConfirm = needConfirm,
-                        )
-                        toolItems.add(item)
-                    }
+        // Read skill bindings from normalized table
+        val skillBindings = skillBindingMapper.selectByAgentId(agent.id)
+        if (skillBindings.isNotEmpty()) {
+            val skillItems = mutableListOf<AgentResponse.SkillItem>()
+            for (binding in skillBindings) {
+                val skill = skillService.getSkill(binding.skillId) ?: continue
+                val item = AgentResponse.SkillItem()
+                item.skillId = skill.id
+                item.skillName = skill.name
+                item.skillDescription = skill.description
+                val repository = skillRepositoryService.getSkillRepository(skill.repositoryId)
+                repository?.let {
+                    item.repositoryId = it.id
+                    item.repositoryName = it.name
                 }
-                response.toolList = toolItems
-            } catch (e: Exception) {
-                log.warn("Failed to parse tool list", e)
-                response.toolList = mutableListOf()
+                skillItems.add(item)
             }
+            response.skillList = skillItems
         }
 
         return response
+    }
+
+    // ========== Binding table save helpers ==========
+
+    /**
+     * Save tool bindings: delete old + insert new.
+     * Builds env binding snapshots with envVarId + envVarName + envValue.
+     */
+    private fun saveToolBindings(agentId: Long, toolList: List<ToolConfig>?) {
+        toolBindingMapper.deleteByAgentId(agentId)
+        if (toolList.isNullOrEmpty()) return
+
+        val now = LocalDateTime.now()
+        val bindings = toolList.mapNotNull { config ->
+            val toolId = config.id ?: return@mapNotNull null
+            val toolEntity = agentToolService.getAgentTool(toolId)
+            val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
+                0
+            } else {
+                if (config.needConfirm == true) 1 else 0
+            }
+            AgentToolBinding().apply {
+                this.agentId = agentId
+                this.toolId = toolId
+                this.enableSkip = config.enableSkip ?: "false"
+                this.needConfirm = finalNeedConfirm
+                this.envBindings = serializeEnvBindings(config.envBindings)
+                this.createTime = now
+                this.updateTime = now
+            }
+        }
+        if (bindings.isNotEmpty()) {
+            toolBindingMapper.batchInsert(bindings)
+        }
+    }
+
+    /**
+     * Save MCP bindings: delete old + insert new.
+     */
+    private fun saveMcpBindings(agentId: Long, mcpList: List<AgentCreateRequest.McpConfig>?) {
+        mcpBindingMapper.deleteByAgentId(agentId)
+        if (mcpList.isNullOrEmpty()) return
+
+        val now = LocalDateTime.now()
+        val bindings = mcpList.mapNotNull { config ->
+            val mcpId = config.id ?: return@mapNotNull null
+            AgentMcpBinding().apply {
+                this.agentId = agentId
+                this.mcpId = mcpId
+                this.enableSkip = config.enableSkip ?: "false"
+                this.envBindings = serializeEnvBindings(config.envBindings)
+                this.createTime = now
+                this.updateTime = now
+            }
+        }
+        if (bindings.isNotEmpty()) {
+            mcpBindingMapper.batchInsert(bindings)
+        }
+    }
+
+    /**
+     * Save skill bindings: delete old + insert new.
+     */
+    private fun saveSkillBindings(agentId: Long, skillList: String?) {
+        skillBindingMapper.deleteByAgentId(agentId)
+        if (skillList.isNullOrBlank()) return
+
+        val now = LocalDateTime.now()
+        val bindings = skillList.split(",").mapNotNull { idStr ->
+            val skillId = idStr.trim().toLongOrNull() ?: return@mapNotNull null
+            AgentSkillBinding().apply {
+                this.agentId = agentId
+                this.skillId = skillId
+                this.createTime = now
+                this.updateTime = now
+            }
+        }
+        if (bindings.isNotEmpty()) {
+            skillBindingMapper.batchInsert(bindings)
+        }
+    }
+
+    // ========== Env binding serialization helpers ==========
+
+    /**
+     * Serialize env bindings to JSON snapshot.
+     * For bindings with envVarId, resolves envVarName and envValue from env_variable table.
+     */
+    private fun serializeEnvBindings(bindings: List<EnvBinding>?): String? {
+        if (bindings.isNullOrEmpty()) return null
+
+        val snapshots = bindings.map { binding ->
+            val snapshot = mutableMapOf<String, Any?>("envKey" to binding.envKey)
+
+            if (binding.envVarId != null) {
+                snapshot["envVarId"] = binding.envVarId
+                // Resolve envVarName and envValue from DB
+                val envVar = envVariableService.getEnvVariable(binding.envVarId)
+                snapshot["envVarName"] = binding.envVarName ?: envVar?.envKey
+                snapshot["envValue"] = binding.envValue ?: envVariableService.getDecryptedValue(binding.envVarId)
+            } else if (binding.customValue != null) {
+                snapshot["customValue"] = binding.customValue
+            } else if (binding.envValue != null) {
+                // No envVarId reference — treat plain envValue as custom input
+                snapshot["customValue"] = binding.envValue
+            }
+
+            snapshot
+        }
+        return objectMapper.writeValueAsString(snapshots)
+    }
+
+    /**
+     * Parse env_bindings JSON string from binding table to List<EnvBinding>.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseEnvBindingsJson(json: String?): List<EnvBinding>? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            val list: List<Map<String, Any?>> = objectMapper.readValue(
+                json,
+                object : TypeReference<List<Map<String, Any?>>>() {},
+            )
+            list.map { entry ->
+                val envVarId = (entry["envVarId"] as? Number)?.toLong()
+                val envValue = entry["envValue"]?.toString()
+                val customValue = entry["customValue"]?.toString()
+                // Legacy compat: if no envVarId but envValue exists, treat as custom input
+                val effectiveCustomValue = customValue ?: if (envVarId == null && envValue != null) envValue else null
+                EnvBinding(
+                    envKey = entry["envKey"]?.toString() ?: "",
+                    envValue = if (effectiveCustomValue != null) null else envValue,
+                    envVarId = envVarId,
+                    envVarName = entry["envVarName"]?.toString(),
+                    customValue = effectiveCustomValue,
+                )
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to parse env_bindings JSON: {}", json, e)
+            null
+        }
     }
 }

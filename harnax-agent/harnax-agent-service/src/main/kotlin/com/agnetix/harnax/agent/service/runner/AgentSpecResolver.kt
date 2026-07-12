@@ -9,6 +9,7 @@ import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.tools.sdk.ToolEnvContext
 import com.agnetix.harnax.tools.sdk.ToolSpec
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -51,10 +52,24 @@ class AgentSpecResolver(
         )
 
         val agentSpec = buildAgentSpec(specInfo, sessionId)
+
+        // Mask session-level enable flags with model capabilities.
+        // If the model doesn't support a feature, force it off regardless of session config.
+        val effectiveSearch = specInfo.enableSearch == 1 && specInfo.modelSupportInternet == 1
+        val effectiveThinking = specInfo.enableThink == 1 && specInfo.modelSupportReasoning == 1
+        val effectivePlan = specInfo.enablePlan == 1
+
+        if (specInfo.enableSearch == 1 && specInfo.modelSupportInternet != 1) {
+            log.warn("Session requests enableSearch but model does not support internet search: sessionId={}, modelId={}", sessionId, specInfo.modelId)
+        }
+        if (specInfo.enableThink == 1 && specInfo.modelSupportReasoning != 1) {
+            log.warn("Session requests enableThink but model does not support reasoning: sessionId={}, modelId={}", sessionId, specInfo.modelId)
+        }
+
         val chatSpec = ChatSpecBuilder()
-            .enableThinking(specInfo.enableThink == 1)
-            .enableSearch(specInfo.enableSearch == 1)
-            .enablePlan(specInfo.enablePlan == 1)
+            .enableThinking(effectiveThinking)
+            .enableSearch(effectiveSearch)
+            .enablePlan(effectivePlan)
             .permissionMode(specInfo.permissionMode)
             .build()
 
@@ -63,7 +78,8 @@ class AgentSpecResolver(
 
     /**
      * Build AgentSpec from the unified admin response.
-     * Parses MCP list (JSON) and resolves skill names from local skill table.
+     * Parses tool/MCP bindings (JSON from normalized tables) and resolves skill names.
+     * Env bindings are pre-resolved by admin (envVarId → latest value, fallback to snapshot).
      */
     private fun buildAgentSpec(specInfo: AgentSpecInfoResponse, sessionId: String): AgentSpec {
         val builder = AgentSpec.builder()
@@ -73,7 +89,13 @@ class AgentSpecResolver(
             .systemPrompt(specInfo.systemPrompt)
             .chatModelId(specInfo.modelId)
 
-        // Parse MCP list (JSON format)
+        // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
+        val allEnvBindings = mutableMapOf<String, String>()
+
+        log.info("[env-debug] Raw toolList from admin: {}", specInfo.toolList)
+        log.info("[env-debug] Raw mcpList from admin: {}", specInfo.mcpList)
+
+        // Parse MCP list (JSON from binding table)
         val mcpListStr = specInfo.mcpList
         if (mcpListStr.isNotEmpty() && mcpListStr != "[]") {
             try {
@@ -84,6 +106,10 @@ class AgentSpecResolver(
                 for (config in mcpConfigs) {
                     val mcpId = (config["id"] as Number).toLong()
                     val enableSkip = config["enable_skip"] as? String
+                    // Collect MCP env bindings too
+                    val envBindings = parseEnvBindings(config["env_bindings"])
+                    log.info("[env-debug] MCP id={} env_bindings parsed: {}", mcpId, envBindings)
+                    allEnvBindings.putAll(envBindings)
                     builder.addMcpService(McpSpec(mcpId = mcpId, skipIfMissing = enableSkip == "true"))
                 }
             } catch (e: Exception) {
@@ -110,7 +136,7 @@ class AgentSpecResolver(
             }
         }
 
-        // Parse tool list (JSON format)
+        // Parse tool list (JSON from binding table)
         val toolListStr = specInfo.toolList
         if (toolListStr.isNotEmpty() && toolListStr != "[]") {
             try {
@@ -123,6 +149,9 @@ class AgentSpecResolver(
                     val toolId = (idValue as? Number)?.toLong() ?: continue
                     val enableSkip = config["enable_skip"] as? String
                     val needConfirm = config["need_confirm"] as? Boolean ?: false
+                    val envBindings = parseEnvBindings(config["env_bindings"])
+                    log.info("[env-debug] Tool id={} env_bindings parsed: {}", toolId, envBindings)
+                    allEnvBindings.putAll(envBindings)
                     builder.addToolSpec(
                         ToolSpec(
                             toolId = toolId,
@@ -136,6 +165,36 @@ class AgentSpecResolver(
             }
         }
 
+        // Register ToolEnvContext for per-agent tool env variable injection via ToolExecutionContext
+        log.info("[env-debug] Final allEnvBindings ({} entries): {}", allEnvBindings.size, allEnvBindings.keys)
+        if (allEnvBindings.isNotEmpty()) {
+            builder.addContextForTool(ToolEnvContext(bindings = allEnvBindings))
+            log.info("[env-debug] ToolEnvContext registered with {} bindings", allEnvBindings.size)
+        } else {
+            log.warn("[env-debug] No env bindings found — ToolEnvContext NOT registered!")
+        }
+
         return builder.build()
+    }
+
+    /**
+     * Parse env_bindings from tool/mcp config JSON.
+     * Admin pre-resolves envVarId to actual values, so format is:
+     * [{envKey: "SMTP_HOST", envValue: "smtp.gmail.com"}, ...]
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseEnvBindings(raw: Any?): Map<String, String> {
+        if (raw == null) return emptyMap()
+        return try {
+            val list = raw as? List<Map<String, Any>> ?: return emptyMap()
+            list.mapNotNull { binding ->
+                val key = binding["envKey"] as? String ?: return@mapNotNull null
+                val value = binding["envValue"] as? String ?: return@mapNotNull null
+                key to value
+            }.toMap()
+        } catch (e: Exception) {
+            log.warn("Failed to parse env_bindings: ${e.message}")
+            emptyMap()
+        }
     }
 }

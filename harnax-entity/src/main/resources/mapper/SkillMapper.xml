@@ -5,6 +5,7 @@
     <!-- Result Map -->
     <resultMap id="SkillResultMap" type="com.agnetix.harnax.entity.Skill">
         <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="repository_id" property="repositoryId"/>
         <result column="description" property="description"/>
@@ -50,9 +51,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill (
-        name, repository_id, description, skillmd, resources, storage_path, version, status, is_public, creator, active, create_time, update_time
+        tenant_id, name, repository_id, description, skillmd, resources, storage_path, version, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{storagePath}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        #{tenantId}, #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{storagePath}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -69,7 +70,7 @@
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},
-        update_time = #{updateTime}
+        update_time = NOW()
         WHERE id = #{id}
     </update>
 
@@ -78,6 +79,9 @@
         SELECT * FROM skill
         WHERE active = 1
         AND (is_public = 1 OR creator = #{currentUsername})
+        <if test="tenantId != null">
+            AND tenant_id = #{tenantId}
+        </if>
         <if test='name != null and name != ""'>
             AND name LIKE CONCAT('%', #{name}, '%')
         </if>

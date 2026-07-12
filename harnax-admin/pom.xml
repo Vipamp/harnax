@@ -134,6 +134,18 @@
             <artifactId>harnax-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Harnax Tools SDK - for ToolRegistry and tool metadata discovery -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-tools-sdk</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Harnax Built-in Tools (for BuiltinToolAutoRegistrar to discover ToolBox beans) -->
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-tools-buildin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Harnax Entity - Shared database entities and mappers -->
         <dependency>
             <groupId>com.agnetix</groupId>

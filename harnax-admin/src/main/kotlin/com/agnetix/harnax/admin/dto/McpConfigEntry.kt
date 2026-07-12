@@ -3,8 +3,8 @@ package com.agnetix.harnax.admin.dto
 import io.swagger.v3.oas.annotations.media.Schema
 
 /**
- * 通用配置条目（headers 和 envs 共用）
- * 用于 MCP 服务的 HTTP 请求头和环境变量配置
+ * 通用配置条目（headers 和 envParams 共用）
+ * 用于 MCP 服务的 HTTP 请求头和环境参数配置
  */
 @Schema(description = "MCP 配置条目")
 data class McpConfigEntry(

@@ -33,6 +33,15 @@ class EnvVariableController(
         ResultVo.error("Failed to get env variable list")
     }
 
+    @GetMapping("/list")
+    @Operation(summary = "List env variables for agent config", description = "Returns all enabled env variables with real values for agent config dropdown")
+    fun listForAgentConfig(): ResultVo<List<Map<String, Any?>>> = try {
+        ResultVo.success(envVariableService.listForAgentConfig())
+    } catch (e: Exception) {
+        log.error("Failed to list env variables for agent config", e)
+        ResultVo.error("Failed to list env variables for agent config")
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get env variable details", description = "Get env variable by ID")
     fun getById(

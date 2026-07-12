@@ -25,19 +25,6 @@ export async function getAgentToolById(id: number, options?: { [key: string]: an
   return request(`/api/admin/tools/${id}`, { method: 'GET', ...(options || {}) });
 }
 
-/** 创建工具 POST /api/admin/tools */
-export async function createAgentTool(
-  data: any,
-  options?: { [key: string]: any },
-) {
-  return request('/api/admin/tools', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    data,
-    ...(options || {}),
-  });
-}
-
 /** 更新工具 PUT /api/admin/tools/update/${id} */
 export async function updateAgentTool(
   id: number,
@@ -71,6 +58,23 @@ export async function deleteAgentTool(id: number, options?: { [key: string]: any
 }
 
 /** 获取可用工具列表 GET /api/admin/tools/available */
-export async function getAvailableTools(options?: { [key: string]: any }) {
-  return request('/api/admin/tools/available', { method: 'GET', ...(options || {}) });
+export async function getAvailableTools(
+  params?: { type?: string },
+  options?: { [key: string]: any },
+) {
+  return request('/api/admin/tools/available', {
+    method: 'GET',
+    params,
+    ...(options || {}),
+  });
+}
+
+/** 获取内置工具列表 GET /api/admin/tools/builtin */
+export async function getBuiltinTools(options?: { [key: string]: any }) {
+  return request('/api/admin/tools/builtin', { method: 'GET', ...(options || {}) });
+}
+
+/** 获取工具所需环境参数key GET /api/admin/tools/${id}/required-env-params */
+export async function getToolRequiredEnvParams(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/tools/${id}/required-env-params`, { method: 'GET', ...(options || {}) });
 }

@@ -69,6 +69,13 @@ class HarnessAgentBuilder {
         toolBoxes.forEach { this.toolkit.registerTool(it) }
     }
 
+    /**
+     * Remove a single tool method by name (e.g. a disabled @Tool method).
+     */
+    fun removeTool(toolName: String): HarnessAgentBuilder = apply {
+        this.toolkit.removeTool(toolName)
+    }
+
     fun addToolContext(ctx: ToolExecutionContext): HarnessAgentBuilder = apply {
         builder.toolExecutionContext(ctx)
     }

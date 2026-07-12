@@ -38,7 +38,7 @@ const SkillManagement: React.FC = () => {
   const loadRepositories = async () => {
     setRepositoryLoading(true);
     try {
-      const response = await getSkillRepositoryPage({ pageNum: 1, pageSize: 100 });
+      const response = await getSkillRepositoryPage({ pageNum: 1, pageSize: 50 });
       if (response.data) {
         setRepositories(response.data.records || []);
         // 默认选中第一个仓库

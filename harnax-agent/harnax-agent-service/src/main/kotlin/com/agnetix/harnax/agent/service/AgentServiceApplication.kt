@@ -9,8 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling
     scanBasePackages = [
         "com.agnetix.harnax.agent.service",
         "com.agnetix.harnax.agent.skill",
-        "com.agnetix.harnax.tools.sdk.registry",
-        "com.agnetix.harnax.tools.buildin",
+        "com.agnetix.harnax.tools",
     ],
 )
 @EnableScheduling

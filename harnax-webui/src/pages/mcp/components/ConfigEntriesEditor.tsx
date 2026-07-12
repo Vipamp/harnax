@@ -17,7 +17,7 @@ interface ConfigEntriesEditorProps {
 
 /**
  * 动态 Key-Value 配置编辑器，支持敏感值标记
- * 用于 MCP 服务的 Headers 和环境变量配置
+ * 用于 MCP 服务的 Headers 和环境参数配置
  */
 const ConfigEntriesEditor: React.FC<ConfigEntriesEditorProps> = ({
   value = [],

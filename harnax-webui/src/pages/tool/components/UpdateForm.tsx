@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Switch, Input, Form, Select, InputNumber } from 'antd';
+import { Button, Switch, Input, Form, Select, InputNumber, message } from 'antd';
 import { useIntl } from '@umijs/max';
 import { ToolOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import ConfigEntriesEditor from '@/pages/mcp/components/ConfigEntriesEditor';
+import ToolEnvEntriesEditor from './ToolEnvEntriesEditor';
 
 export interface UpdateFormProps {
   visible: boolean;
@@ -31,7 +32,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         httpUrl: values.httpUrl,
         httpMethod: values.httpMethod || 'POST',
         httpHeaders: values.httpHeaders || [],
-        envs: values.envs || [],
+        envParams: values.envParams || [],
         inputSchema: values.inputSchema,
         needConfirm: values.needConfirm || false,
         readOnly: values.readOnly || false,
@@ -60,7 +61,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     <FormModal
       open={visible}
       onCancel={onCancel}
-      size="md"
+      size="lg"
       titleConfig={{
         mainTitle: intl.formatMessage({ id: 'pages.tool.edit', defaultMessage: 'Edit Tool' }),
         subtitle: intl.formatMessage({ id: 'pages.tool.edit.subtitle', defaultMessage: 'Modify tool configuration, changes take effect immediately' }),
@@ -75,7 +76,24 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
         style={{ marginTop: 12 }}
-        onFinish={(formValues) => onSubmit({ ...formValues, status })}
+        onFinish={(formValues) => {
+          // Validate: required envs must have defaultValue
+          const envParams: any[] = formValues.envParams || [];
+          const invalidEnv = envParams.find((e: any) => e.required && !e.defaultValue?.trim());
+          if (invalidEnv) {
+            message.error(intl.formatMessage({
+              id: 'pages.tool.envRequiredError',
+              defaultMessage: 'Required environment parameter "{name}" must have a default value',
+            }, { name: invalidEnv.envParamName || '' }));
+            return;
+          }
+          onSubmit({
+            ...formValues,
+            needConfirm: formValues.needConfirm ? 1 : 0,
+            readOnly: formValues.readOnly ? 1 : 0,
+            status,
+          });
+        }}
       >
         <Form.Item
           name="name"
@@ -222,14 +240,14 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         </Form.Item>
 
         <Form.Item
-          name="envs"
-          label={intl.formatMessage({ id: 'pages.tool.envs', defaultMessage: 'Environment Variables' })}
+          name="envParams"
+          label={intl.formatMessage({ id: 'pages.tool.envParams', defaultMessage: 'Environment Parameters' })}
           extra={intl.formatMessage({
-            id: 'pages.tool.envsExtra',
-            defaultMessage: 'Environment variables available to the tool at runtime',
+            id: 'pages.tool.envParamsExtra',
+            defaultMessage: 'Environment parameters available to the tool at runtime',
           })}
         >
-          <ConfigEntriesEditor placeholder={{ key: 'API_KEY', value: 'sk-xxx' }} />
+          <ToolEnvEntriesEditor />
         </Form.Item>
 
         <Form.Item

@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.util
 
 import com.agnetix.harnax.admin.dto.McpConfigEntry
+import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
@@ -52,9 +53,52 @@ class SecretFieldEncryptor(
     }
 
     /**
+     * Encrypt a plain text value
+     */
+    fun encrypt(plainValue: String): String = aesUtil.encrypt(plainValue)
+
+    /**
      * 解密单个加密字符串
      */
     fun decrypt(encryptedValue: String): String = aesUtil.decrypt(encryptedValue)
+
+    /**
+     * Serialize ToolEnvParamEntry list with encryption for secret defaultValue
+     */
+    fun serializeToolEnvParams(entries: List<ToolEnvParamEntry>?): String? {
+        if (entries.isNullOrEmpty()) return null
+        val encryptedEntries = entries.map { entry ->
+            if (entry.secret && !entry.defaultValue.isNullOrBlank()) {
+                entry.copy(defaultValue = aesUtil.encrypt(entry.defaultValue!!))
+            } else {
+                entry
+            }
+        }
+        return objectMapper.writeValueAsString(encryptedEntries)
+    }
+
+    /**
+     * Deserialize ToolEnvParamEntry JSON and decrypt secret defaultValue, return as Map<envParamName, defaultValue>
+     */
+    override fun decryptToolEnvParamsToMap(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return try {
+            val entries = objectMapper.readValue(
+                json,
+                objectMapper.typeFactory.constructCollectionType(List::class.java, ToolEnvParamEntry::class.java),
+            ) as List<ToolEnvParamEntry>
+            entries.associate { entry ->
+                val value = if (entry.secret && !entry.defaultValue.isNullOrBlank()) {
+                    aesUtil.decrypt(entry.defaultValue!!)
+                } else {
+                    entry.defaultValue ?: ""
+                }
+                entry.envParamName to value
+            }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
 
     /**
      * 反序列化 JSON 为 McpConfigEntry 列表

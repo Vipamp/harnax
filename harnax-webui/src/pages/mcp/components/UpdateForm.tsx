@@ -9,6 +9,7 @@ import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
 import ConfigEntriesEditor from './ConfigEntriesEditor';
+import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
 
 export interface UpdateFormProps {
   visible: boolean;
@@ -38,7 +39,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         command: values.command,
         url: values.url,
         headers: values.headers || [],
-        envs: values.envs || [],
+        envParams: values.envParams || [],
       });
     }
   }, [visible, values]);
@@ -87,7 +88,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     <FormModal
       open={visible}
       onCancel={onCancel}
-      size="md"
+      size="lg"
       titleConfig={{
         mainTitle: intl.formatMessage({ id: 'pages.mcp.edit', defaultMessage: 'Edit MCP Service' }),
         subtitle: intl.formatMessage({ id: 'pages.mcp.edit.subtitle', defaultMessage: 'Modify MCP service configuration, changes take effect immediately' }),
@@ -102,7 +103,19 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         labelCol={{ span: 6 }}
         wrapperCol={{ span: 18 }}
         style={{ marginTop: 12 }}
-        onFinish={(formValues) => onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0, status })}
+        onFinish={(formValues) => {
+          // Validate: required envParams must have defaultValue
+          const envParams: any[] = formValues.envParams || [];
+          const invalidEnv = envParams.find((e: any) => e.required && !e.defaultValue?.trim());
+          if (invalidEnv) {
+            message.error(intl.formatMessage({
+              id: 'pages.mcp.envRequiredError',
+              defaultMessage: 'Required environment parameter "{name}" must have a default value',
+            }, { name: invalidEnv.envParamName || '' }));
+            return;
+          }
+          onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0, status });
+        }}
       >
         <Form.Item
           name="name"
@@ -154,13 +167,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             </Form.Item>
 
             <Form.Item
-              name="envs"
-              label={intl.formatMessage({ id: 'pages.mcp.envs', defaultMessage: '环境变量' })}
-              extra={intl.formatMessage({ id: 'pages.mcp.envsExtra', defaultMessage: 'STDIO 进程的环境变量配置' })}
+              name="envParams"
+              label={intl.formatMessage({ id: 'pages.mcp.envParams', defaultMessage: '环境参数' })}
+              extra={intl.formatMessage({ id: 'pages.mcp.envParamsExtra', defaultMessage: 'STDIO 进程的环境参数配置' })}
             >
-              <ConfigEntriesEditor
-                placeholder={{ key: 'API_KEY', value: 'sk-xxx' }}
-              />
+              <ToolEnvEntriesEditor />
             </Form.Item>
           </>
         )}
@@ -172,7 +183,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
               rules={[
                 { required: true, message: intl.formatMessage({ id: 'pages.mcp.urlRequired', defaultMessage: '{type} type requires service URL' }, { type: mcpType === 'sse' ? 'SSE' : 'Streamable HTTP' }) },
-                { type: 'url', message: intl.formatMessage({ id: 'pages.mcp.urlInvalid', defaultMessage: 'Please enter correct URL format' }) },
+                {
+                  pattern: /^https?:\/\/[\w\-]+(\.[\w\-]+)*(:\d+)?(\/.*)?$/,
+                  message: intl.formatMessage({ id: 'pages.mcp.urlInvalid', defaultMessage: 'Please enter correct URL format' }),
+                },
               ]}
               extra={intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
             >
@@ -192,13 +206,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             </Form.Item>
 
             <Form.Item
-              name="envs"
-              label={intl.formatMessage({ id: 'pages.mcp.envs', defaultMessage: '环境变量' })}
-              extra={intl.formatMessage({ id: 'pages.mcp.envsExtraHttp', defaultMessage: 'MCP 服务连接的环境变量配置' })}
+              name="envParams"
+              label={intl.formatMessage({ id: 'pages.mcp.envParams', defaultMessage: '环境参数' })}
+              extra={intl.formatMessage({ id: 'pages.mcp.envParamsExtraHttp', defaultMessage: 'MCP 服务连接的环境参数配置' })}
             >
-              <ConfigEntriesEditor
-                placeholder={{ key: 'API_KEY', value: 'sk-xxx' }}
-              />
+              <ToolEnvEntriesEditor />
             </Form.Item>
           </>
         )}

@@ -39,6 +39,6 @@ data class McpServerUpdateRequest(
     @Schema(description = "HTTP headers configuration (for sse/streamablehttp type)")
     val headers: List<McpConfigEntry>? = null,
 
-    @Schema(description = "Environment variables configuration (for stdio type)")
-    val envs: List<McpConfigEntry>? = null,
+    @Schema(description = "Environment parameters configuration")
+    val envParams: List<ToolEnvParamEntry>? = null,
 )

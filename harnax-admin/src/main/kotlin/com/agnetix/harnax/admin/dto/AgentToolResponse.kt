@@ -8,11 +8,14 @@ data class AgentToolResponse(
     @Schema(description = "Tool ID", example = "1")
     val id: Long? = null,
 
-    @Schema(description = "Tool identifier name", example = "weather_tool")
+    @Schema(description = "Tool identifier name", example = "send_email")
     val name: String? = null,
 
-    @Schema(description = "Display name", example = "Weather Tool")
+    @Schema(description = "Display name (English)", example = "Send Email")
     val displayName: String? = null,
+
+    @Schema(description = "Display name (Chinese, for i18n zh-CN locale)", example = "发送邮件")
+    val displayNameZh: String? = null,
 
     @Schema(description = "Tool description")
     val description: String? = null,
@@ -23,6 +26,9 @@ data class AgentToolResponse(
     @Schema(description = "Spring Bean name")
     val beanName: String? = null,
 
+    @Schema(description = "Java method name")
+    val methodName: String? = null,
+
     @Schema(description = "HTTP request URL")
     val httpUrl: String? = null,
 
@@ -32,8 +38,8 @@ data class AgentToolResponse(
     @Schema(description = "HTTP headers configuration (masked for secret values)")
     val httpHeaders: List<McpConfigEntry>? = null,
 
-    @Schema(description = "Environment variables configuration (masked for secret values)")
-    val envs: List<McpConfigEntry>? = null,
+    @Schema(description = "Environment parameters configuration")
+    val envParams: List<ToolEnvParamEntry>? = null,
 
     @Schema(description = "Input parameter JSON Schema")
     val inputSchema: String? = null,
@@ -46,6 +52,12 @@ data class AgentToolResponse(
 
     @Schema(description = "Requires human confirmation (0: No, 1: Yes)")
     val needConfirm: Int? = null,
+
+    @Schema(description = "Is mandatory tool (0: optional, 1: required)")
+    val isRequired: Int? = null,
+
+    @Schema(description = "Required environment parameter keys")
+    val requiredEnvParamKeys: List<String>? = null,
 
     @Schema(description = "Timeout in seconds")
     val timeoutSeconds: Int? = null,

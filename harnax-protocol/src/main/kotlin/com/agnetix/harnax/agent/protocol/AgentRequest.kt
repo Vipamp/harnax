@@ -56,11 +56,13 @@ data class ChatAgentRequest(
 /**
  * Command request - carries a command enum and optional arguments for agent control operations.
  *
- * Command format: "/<commandName> [args]"
+ * Command format: "/<commandName> [args]" or "/<commandName>:<args>"
  * Examples:
- *   "/clear"       → command=CLEAR, args=""
- *   "/stop xx"     → command=INTERRUPT, args="xx"
- *   "/compact 500" → command=COMPACT, args="500"
+ *   "/clear"            → command=CLEAR, args=""
+ *   "/stop xx"          → command=INTERRUPT, args="xx"
+ *   "/compact 500"      → command=COMPACT, args="500"
+ *   "/enable:search"    → command=ENABLE, args="search"
+ *   "/disable:thinking" → command=DISABLE, args="thinking"
  *
  * @property command The command type to execute
  * @property args    Command arguments (text after command name), empty string if no arguments
@@ -76,11 +78,13 @@ data class CommandAgentRequest(
         /**
          * Parse a slash-command text into a CommandAgentRequest.
          *
-         * Format: "/<commandName> [args]"
+         * Format: "/<commandName> [args]" or "/<commandName>:<args>"
          * Examples:
-         *   "/clear"         → CommandAgentRequest(command=CLEAR, args="")
-         *   "/stop xx"       → CommandAgentRequest(command=INTERRUPT, args="xx")
-         *   "/compact 500"   → CommandAgentRequest(command=COMPACT, args="500")
+         *   "/clear"            → CommandAgentRequest(command=CLEAR, args="")
+         *   "/stop xx"          → CommandAgentRequest(command=INTERRUPT, args="xx")
+         *   "/compact 500"      → CommandAgentRequest(command=COMPACT, args="500")
+         *   "/enable:search"    → CommandAgentRequest(command=ENABLE, args="search")
+         *   "/disable:thinking" → CommandAgentRequest(command=DISABLE, args="thinking")
          *
          * @param sessionId Session identifier
          * @param text      Raw text input (already trimmed, mention prefix stripped)
@@ -91,9 +95,18 @@ data class CommandAgentRequest(
             val afterSlash = text.substring(1).trim()
             if (afterSlash.isEmpty()) return null
 
+            // Support both space and colon as separator between keyword and args
+            // e.g. "/enable:search" or "/enable search"
             val spaceIdx = afterSlash.indexOf(' ')
-            val keyword = if (spaceIdx >= 0) afterSlash.substring(0, spaceIdx) else afterSlash
-            val args = if (spaceIdx >= 0) afterSlash.substring(spaceIdx + 1).trim() else ""
+            val colonIdx = afterSlash.indexOf(':')
+            val sepIdx = when {
+                spaceIdx < 0 && colonIdx < 0 -> -1
+                spaceIdx < 0 -> colonIdx
+                colonIdx < 0 -> spaceIdx
+                else -> minOf(spaceIdx, colonIdx)
+            }
+            val keyword = if (sepIdx >= 0) afterSlash.substring(0, sepIdx) else afterSlash
+            val args = if (sepIdx >= 0) afterSlash.substring(sepIdx + 1).trim() else ""
 
             val commandType = CommandType.fromKeyword(keyword) ?: return null
             return CommandAgentRequest(sessionId = sessionId, command = commandType, args = args)
@@ -140,6 +153,8 @@ enum class RequestType {
  * - COMPACT: Compact/summarize conversation memory
  * - APPROVE: Approve pending operation
  * - STOP_SANDBOX: Stop and remove the sandbox container for the session
+ * - ENABLE: Enable a session capability (args: "search", "thinking", "plan")
+ * - DISABLE: Disable a session capability (args: "search", "thinking", "plan")
  *
  * Each command defines a set of slash-command aliases (case-insensitive).
  * Use [fromKeyword] to resolve a keyword to its CommandType.
@@ -152,6 +167,8 @@ enum class CommandType(vararg val aliases: String) {
     COMPACT("compact"),
     APPROVE("approve"),
     STOP_SANDBOX("stop-sandbox"),
+    ENABLE("enable"),
+    DISABLE("disable"),
     ;
 
     companion object {

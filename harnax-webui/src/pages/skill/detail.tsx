@@ -110,7 +110,6 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
             code: ({ className, children, ...props }: any) => {
               // 检查是否有语言标记（有 language-xxx 类名的都是代码块）
               const match = /language-(\w+)/.exec(className || '');
-              console.log('FileContentRenderer code className:', className, 'match:', match);
               // 如果有语言标记，说明是多行代码块，需要语法高亮
               if (match) {
                 return <CodeBlock className={className}>{children}</CodeBlock>;
@@ -207,12 +206,12 @@ const SkillDetail: React.FC = () => {
               setSelectedFile(firstFile);
             }
           } catch (error) {
-            console.error('解析 resources 失败', error);
+            // resources 解析失败，忽略
           }
         }
       }
     } catch (error) {
-      console.error('加载技能详情失败', error);
+      // 加载技能详情失败
     } finally {
       setLoading(false);
     }

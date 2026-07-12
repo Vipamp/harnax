@@ -13,6 +13,10 @@ import io.swagger.v3.oas.annotations.media.Schema
  *
  * This centralizes all agent spec resolution in admin, keeping agent-service
  * free from direct DB queries for session/channel/task configuration.
+ *
+ * Tool/MCP/Skill bindings are read from normalized binding tables
+ * (agent_tool_binding, agent_mcp_binding, agent_skill_binding).
+ * Env bindings are resolved at admin side: envVarId → latest value, fallback to snapshot.
  */
 @Schema(description = "Unified Agent Spec response for agent-service")
 data class AgentSpecInfoResponse(
@@ -31,14 +35,14 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Chat model ID")
     val modelId: Long,
 
-    @Schema(description = "MCP service list (JSON format)")
-    val mcpList: String,
+    @Schema(description = "Tool bindings (JSON: [{id, enableSkip, needConfirm, envBindings}])")
+    val toolList: String = "[]",
 
-    @Schema(description = "Skill list (JSON format or comma-separated IDs)")
-    val skillList: String,
+    @Schema(description = "MCP bindings (JSON: [{id, enableSkip, envBindings}])")
+    val mcpList: String = "[]",
 
-    @Schema(description = "Tool list (JSON format)")
-    val toolList: String = "",
+    @Schema(description = "Skill IDs (comma-separated)")
+    val skillList: String = "",
 
     @Schema(description = "Deep thinking enabled (0:no, 1:yes)")
     val enableThink: Int = 0,
@@ -51,4 +55,10 @@ data class AgentSpecInfoResponse(
 
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     val permissionMode: String = "DEFAULT",
+
+    @Schema(description = "Model supports internet search (0:no, 1:yes)")
+    val modelSupportInternet: Int = 0,
+
+    @Schema(description = "Model supports reasoning/thinking (0:no, 1:yes)")
+    val modelSupportReasoning: Int = 0,
 )

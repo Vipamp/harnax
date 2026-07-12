@@ -143,7 +143,7 @@ class HarnessAgentLauncher(
         val chatModel = ModelHelper.createChatModel(
             chatModelConfig,
             chatSpec.enableThinking,
-            true, // chatSpec.enableSearch,
+            chatSpec.enableSearch,
         )
         agentBuilder.model(chatModel)
 
@@ -151,7 +151,7 @@ class HarnessAgentLauncher(
         agentSpec.mcpServices.forEach {
             val mcpConfig = mcpConfigAdaptor.getConfig(it.mcpId)
             if (mcpConfig != null) {
-                agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync, mcpConfigDecryptor?.let { d -> d::decryptToMap }))
+                agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync, mcpConfigDecryptor?.let { d -> d::decryptToMap }, mcpConfigDecryptor?.let { d -> d::decryptToolEnvParamsToMap }))
             } else if (!it.skipIfMissing) {
                 log.error("Mcp config with id `${it.mcpId}` not found.")
                 throw HarnaxErrorCode.AGENT_MCP_NOT_FOUND.format(it.mcpId)
@@ -165,12 +165,50 @@ class HarnessAgentLauncher(
 
         if (agentSpec.toolSpecs.isNotEmpty() && toolConfigAdaptor != null) {
             // Dynamic tool assembly from agentSpec.toolSpecs
+            // Deduplicate ToolBox additions by beanName (multiple agent_tool records may share the same beanName)
+            val addedToolBoxBeans = mutableSetOf<String>()
+            // Track disabled tool names per beanName to remove after addTool (which registers ALL @Tool methods)
+            val disabledToolNamesByBean = mutableMapOf<String, MutableSet<String>>()
+
             agentSpec.toolSpecs.forEach { toolSpec ->
                 val toolConfig = toolConfigAdaptor.getToolConfig(toolSpec.toolId)
                 if (toolConfig != null) {
+                    // Skip disabled tools (status=0) — they should not be available to the agent
+                    if (toolConfig.status == 0) {
+                        log.info("Tool '{}' (id={}) is disabled, skipping", toolConfig.name, toolConfig.id)
+                        val beanName = toolConfig.beanName ?: ""
+                        // Track this tool name scoped to its beanName
+                        if (beanName.isNotEmpty()) {
+                            disabledToolNamesByBean.getOrPut(beanName) { mutableSetOf() }.add(toolConfig.name)
+                        }
+                        // Remove from toolkit if the ToolBox was already registered
+                        if (beanName in addedToolBoxBeans) {
+                            agentBuilder.removeTool(toolConfig.name)
+                        }
+                        return@forEach
+                    }
+
                     val resolvedTool: Any? = when (toolConfig.type.uppercase()) {
                         "BUILTIN", "CUSTOM" -> {
-                            toolRegistry?.getToolBox(toolConfig.beanName ?: "")
+                            val beanName = toolConfig.beanName ?: ""
+                            if (beanName.isNotEmpty() && beanName !in addedToolBoxBeans) {
+                                val toolBox = toolRegistry?.getToolBox(beanName)
+                                if (toolBox != null) {
+                                    toolBox.init(
+                                        toolCallLogAdaptor,
+                                        SessionMetaContext(agentSpec.id, sessionId),
+                                        userIdentifier,
+                                    )
+                                    agentBuilder.addTool(toolBox)
+                                    addedToolBoxBeans.add(beanName)
+                                    // Remove disabled methods scoped to this ToolBox
+                                    disabledToolNamesByBean[beanName]?.forEach { name -> agentBuilder.removeTool(name) }
+                                }
+                                toolBox
+                            } else {
+                                // Already added this ToolBox, just return it for needConfirm handling
+                                toolRegistry?.getToolBox(beanName)
+                            }
                         }
                         "HTTP" -> {
                             HttpProxyToolBox(
@@ -194,20 +232,18 @@ class HarnessAgentLauncher(
                     }
 
                     if (resolvedTool != null) {
-                        if (resolvedTool is ToolBox) {
-                            resolvedTool.init(
-                                toolCallLogAdaptor,
-                                SessionMetaContext(agentSpec.id, sessionId),
-                                userIdentifier,
-                            )
-                            agentBuilder.addTool(resolvedTool)
-                        } else if (resolvedTool is AgentTool) {
+                        if (resolvedTool is AgentTool) {
                             agentBuilder.registerAgentTool(resolvedTool)
                         }
 
-                        if (toolSpec.needConfirm) {
+                        // Per-method needConfirm from DB record, or from toolSpec override
+                        val shouldConfirm = toolConfig.needConfirm == 1 || toolSpec.needConfirm
+                        if (shouldConfirm) {
                             val name = when (resolvedTool) {
-                                is ToolBox -> resolvedTool.name()
+                                is ToolBox -> {
+                                    val methodSuffix = toolConfig.methodName?.let { "::$it" } ?: ""
+                                    "${resolvedTool.name()}$methodSuffix"
+                                }
                                 is AgentTool -> resolvedTool.getName()
                                 else -> toolConfig.name
                             }
@@ -244,9 +280,16 @@ class HarnessAgentLauncher(
         }
 
         if (agentSpec.contextForTools.isNotEmpty()) {
+            log.info("[env-debug] Registering {} context(s) into ToolExecutionContext", agentSpec.contextForTools.size)
             val ctxBuilder = io.agentscope.core.tool.ToolExecutionContext.builder()
-            agentSpec.contextForTools.forEach { ctxBuilder.register(it) }
+            agentSpec.contextForTools.forEach {
+                log.info("[env-debug] Registering context type: {}", it::class.java.name)
+                ctxBuilder.register(it)
+            }
             agentBuilder.addToolContext(ctxBuilder.build())
+            log.info("[env-debug] ToolExecutionContext registered with agent builder")
+        } else {
+            log.warn("[env-debug] agentSpec.contextForTools is EMPTY — no ToolExecutionContext set!")
         }
 
         // ----- Skills -----

@@ -14,6 +14,10 @@ import kotlin.io.path.name
 class NpmSkillLoader : SkillLoader {
     override val sourceType = "NPM"
 
+    companion object {
+        private val PACKAGE_NAME_REGEX = Regex("^[a-z0-9@/._-]+$")
+    }
+
     private val log = LoggerFactory.getLogger(NpmSkillLoader::class.java)
 
     override fun loadSkills(config: Map<String, Any>, tmpDir: Path): List<AgentSkill> {
@@ -54,8 +58,14 @@ class NpmSkillLoader : SkillLoader {
     }
 
     override fun validateConfig(config: Map<String, Any>) {
-        if ((config["packageName"] as? String).isNullOrBlank()) {
+        val packageName = config["packageName"] as? String
+        if (packageName.isNullOrBlank()) {
             throw IllegalArgumentException("NPM source config requires 'packageName'")
+        }
+        if (!PACKAGE_NAME_REGEX.matches(packageName)) {
+            throw IllegalArgumentException(
+                "Invalid NPM package name '$packageName'. Only lowercase letters, digits, @, /, ., _, - are allowed.",
+            )
         }
     }
 

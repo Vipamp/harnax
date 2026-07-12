@@ -7,7 +7,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 /**
  * Harnax Admin Backend Service Application Entry Point
  */
-@SpringBootApplication
+@SpringBootApplication(
+    scanBasePackages = [
+        "com.agnetix.harnax.admin",
+        "com.agnetix.harnax.tools",
+    ],
+)
 @MapperScan(basePackages = ["com.agnetix.harnax.mapper", "com.agnetix.harnax.admin.mapper"])
 class HarnaxAdminApplication
 

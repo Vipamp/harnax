@@ -13,6 +13,9 @@
         <result column="session_id"         property="sessionId"/>
         <result column="communication_mode" property="communicationMode"/>
         <result column="permission_mode"  property="permissionMode"/>
+        <result column="enable_think"     property="enableThink"/>
+        <result column="enable_search"    property="enableSearch"/>
+        <result column="enable_plan"      property="enablePlan"/>
         <result column="enabled"            property="enabled"/>
         <result column="config_json"        property="configJson"/>
         <result column="description"        property="description"/>
@@ -25,7 +28,8 @@
 
     <sql id="BaseColumnList">
         id, tenant_id, name, type, agent_id, callback_key, session_id,
-        communication_mode, permission_mode, enabled, config_json, description,
+        communication_mode, permission_mode, enable_think, enable_search, enable_plan,
+        enabled, config_json, description,
         creator, status, active, create_time, update_time
     </sql>
 
@@ -59,11 +63,13 @@
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO channel (
             tenant_id, name, type, agent_id, callback_key, session_id,
-            communication_mode, permission_mode, enabled, config_json, description,
+            communication_mode, permission_mode, enable_think, enable_search, enable_plan,
+            enabled, config_json, description,
             creator, status, active, create_time, update_time
         ) VALUES (
             #{tenantId}, #{name}, #{type}, #{agentId}, #{callbackKey}, #{sessionId},
-            #{communicationMode}, #{permissionMode}, #{enabled}, #{configJson}, #{description},
+            #{communicationMode}, #{permissionMode}, #{enableThink}, #{enableSearch}, #{enablePlan},
+            #{enabled}, #{configJson}, #{description},
             #{creator}, #{status}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
@@ -77,6 +83,9 @@
             callback_key       = #{callbackKey},
             communication_mode = #{communicationMode},
             permission_mode    = #{permissionMode},
+            enable_think       = #{enableThink},
+            enable_search      = #{enableSearch},
+            enable_plan        = #{enablePlan},
             enabled            = #{enabled},
             config_json        = #{configJson},
             description        = #{description},

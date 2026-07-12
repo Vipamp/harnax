@@ -5,7 +5,7 @@ import com.agnetix.harnax.entity.SkillRepository
 
 interface SkillSourceService {
 
-    fun page(name: String?, sourceType: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SkillRepository>
+    fun page(name: String?, sourceType: String?, status: Int?, pageNum: Int, pageSize: Int): Page<SkillSourceResponse>
 
     fun getSkillSource(id: Long): SkillRepository?
 

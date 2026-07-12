@@ -123,6 +123,7 @@ services:
       # Flyway Configuration
       SPRING_FLYWAY_ENABLED: "true"
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      FLYWAY_CLEAN_DISABLED: "true"
       # JWT Configuration
       JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
       # Internal API Secret
@@ -143,6 +144,7 @@ services:
       - "8080:8080"
     volumes:
       - admin-logs:/app/logs
+      - admin-skills:/home/harnax/skills
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       mysql:
@@ -236,9 +238,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration
-      SPRING_FLYWAY_ENABLED: "true"
-      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
+      SPRING_FLYWAY_ENABLED: "false"
       # Scheduler Configuration
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       SCHEDULER_INSTANCE_ID: ${SCHEDULER_INSTANCE_ID:-}
@@ -365,9 +366,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration
-      SPRING_FLYWAY_ENABLED: "true"
-      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+      # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
+      SPRING_FLYWAY_ENABLED: "false"
       # Router Configuration
       ROUTER_URL: http://router:8081
       # Admin Service (for API key auto-fetch)
@@ -477,6 +477,8 @@ volumes:
   minio-data:
     driver: local
   admin-logs:
+    driver: local
+  admin-skills:
     driver: local
   router-logs:
     driver: local

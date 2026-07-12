@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class McpServerMapperTest {
+open class McpServerMapperTest {
 
     companion object {
         @Container
@@ -141,7 +141,7 @@ class McpServerMapperTest {
                 creator = "admin"
                 active = 1
                 headers = headersJson
-                envs = envsJson
+                envParams = envsJson
                 createTime = now
                 updateTime = now
             }
@@ -157,7 +157,7 @@ class McpServerMapperTest {
             assertNotNull(inserted)
             assertEquals("MCP With Config", inserted.name)
             assertEquals(headersJson, inserted.headers)
-            assertEquals(envsJson, inserted.envs)
+            assertEquals(envsJson, inserted.envParams)
         }
 
         @Test

@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
@@ -7,7 +8,10 @@ import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.ModelMapper
@@ -55,6 +59,18 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var channelMapper: ChannelMapper
+
+    @Mock
+    private lateinit var toolBindingMapper: AgentToolBindingMapper
+
+    @Mock
+    private lateinit var mcpBindingMapper: AgentMcpBindingMapper
+
+    @Mock
+    private lateinit var skillBindingMapper: AgentSkillBindingMapper
+
+    @Mock
+    private lateinit var envVariableService: EnvVariableService
 
     @InjectMocks
     private lateinit var controller: InternalApiController

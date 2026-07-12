@@ -41,7 +41,7 @@ class Skill : Serializable {
     var status: Int = 1
 
     @Schema(description = "Public status (0:no, 1:yes)")
-    var isPublic: Int = 1
+    var isPublic: Int = 0
 
     @Schema(description = "Creator")
     var creator: String = ""

@@ -167,13 +167,29 @@ message?: string;
  };
 
   /**
-   * @zh-CN MCP 配置条目（headers 和 envs 共用）
+   * @zh-CN MCP 配置条目（headers 使用）
    */
   export type McpConfigEntry = {
     key: string;
     value: string;
     secret?: boolean;
   };
+
+  /**
+   * @zh-CN 工具/MCP 环境参数条目
+   */
+  export type ToolEnvParamEntry = {
+    id?: number;
+    envParamName: string;
+    required?: boolean;
+    secret?: boolean;
+    defaultValue?: string;
+  };
+
+  /**
+   * @deprecated Use ToolEnvParamEntry instead
+   */
+  export type ToolEnvEntry = ToolEnvParamEntry;
 
   /**
    * @zh-CN MCP 服务对象
@@ -191,7 +207,7 @@ message?: string;
     createTime?: string;
     updateTime?: string;
     headers?: McpConfigEntry[];
-    envs?: McpConfigEntry[];
+    envParams?: ToolEnvParamEntry[];
   };
 
   /**
@@ -206,7 +222,7 @@ message?: string;
     status?: number;
     isPublic?: number;
     headers?: McpConfigEntry[];
-    envs?: McpConfigEntry[];
+    envParams?: ToolEnvParamEntry[];
   };
 
   /**
@@ -222,7 +238,7 @@ message?: string;
     status?: number;
     isPublic?: number;
     headers?: McpConfigEntry[];
-    envs?: McpConfigEntry[];
+    envParams?: ToolEnvParamEntry[];
   };
 
   /**
@@ -344,6 +360,7 @@ message?: string;
     modelPrice?: number;  // 模型价格
     mcpList?: AgentMcpConfig[];
     skillList?: AgentSkillConfig[];
+    toolList?: AgentToolConfig[];
     sessionList?: SessionItem[];  // 会话列表
     sessionCount?: number;  // 关联会话数量
     owner?: string;
@@ -352,6 +369,32 @@ message?: string;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 智能体工具配置
+   */
+  export type AgentToolConfig = {
+    toolId?: number;
+    toolName?: string;
+    toolDisplayName?: string;
+    toolDisplayNameZh?: string;
+    toolDescription?: string;
+    toolType?: string;
+    enableSkip?: string;
+    needConfirm?: boolean;
+    envBindings?: EnvBinding[];
+  };
+
+  /**
+   * @zh-CN 环境参数绑定（快照结构）
+   */
+  export type EnvBinding = {
+    envKey: string;
+    envValue?: string;
+    envVarId?: number;
+    envVarName?: string;
+    customValue?: string;
   };
 
   /**
@@ -364,6 +407,7 @@ message?: string;
     mcpId?: number;
     mcpName?: string;
     mcpDescription?: string;
+    envBindings?: EnvBinding[];
   };
 
   /**
@@ -386,6 +430,7 @@ message?: string;
     systemPrompt?: string;
     modelId?: number;
     mcpList?: AgentMcpConfig[];
+    toolList?: { id?: number; enableSkip?: string; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string;
     owner?: string;
     status?: number;
@@ -402,6 +447,7 @@ message?: string;
     systemPrompt?: string;
     modelId?: number;
     mcpList?: AgentMcpConfig[];
+    toolList?: { id?: number; enableSkip?: string; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // 逗号分隔的字符串 "1,2,3"
     owner?: string;
     status?: number;

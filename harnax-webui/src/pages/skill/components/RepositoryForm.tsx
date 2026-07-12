@@ -59,16 +59,16 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
 
       if (sourceType === 'ZIP' && isCreate) {
         if (!zipFile) {
-          message.error('Please select a ZIP file');
+          message.error(intl.formatMessage({ id: 'pages.skill.repository.selectZip', defaultMessage: '请选择一个 ZIP 文件' }));
           setLoading(false);
           return;
         }
         const response = await uploadSkillSourceZip(zipFile, formValues.name);
         if (response.code === 200) {
-          message.success('Upload and install successful');
+          message.success(intl.formatMessage({ id: 'pages.skill.repository.upload.success', defaultMessage: '上传安装成功' }));
           onSuccess();
         } else {
-          message.error(response.message || 'Upload failed');
+          message.error(response.message || intl.formatMessage({ id: 'pages.skill.repository.upload.failed', defaultMessage: '上传失败' }));
         }
       } else {
         let sourceConfig: Record<string, any> = {};
@@ -99,23 +99,23 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             branch: data.branch,
           });
           if (response.code === 200) {
-            message.success('Update successful');
+            message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: '更新成功' }));
             onSuccess();
           } else {
-            message.error(response.message || 'Update failed');
+            message.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: '更新失败' }));
           }
         } else {
           const response = await createSkillSource(data);
           if (response.code === 200) {
-            message.success('Create successful');
+            message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: '创建成功' }));
             onSuccess();
           } else {
-            message.error(response.message || 'Create failed');
+            message.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: '创建失败' }));
           }
         }
       }
     } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || 'Operation failed';
+      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: '操作失败' });
       message.error(errorMsg);
     } finally {
       setLoading(false);

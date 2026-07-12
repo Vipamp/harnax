@@ -1,4 +1,4 @@
-import { Form, Input, Select, Typography, Button } from 'antd';
+import { Form, Input, Select, Typography, Button, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
 import { LinkOutlined } from '@ant-design/icons';
@@ -43,7 +43,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
       setLoading(true);
 
       // Extract type-specific config fields and serialize into configJson
-      const { token, encodingAesKey, appId, appSecret, webhookUrl, ...restValues } = values;
+      const { token, encodingAesKey, appId, appSecret, webhookUrl, enabled, ...restValues } = values;
       const config: Record<string, string> = {};
       if (token) config.token = token;
       if (encodingAesKey) config.encodingAesKey = encodingAesKey;
@@ -53,6 +53,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
 
       const submitData: API.ChannelCreateRequest = {
         ...restValues,
+        enabled: enabled ? 1 : 0,
         configJson: Object.keys(config).length > 0 ? JSON.stringify(config) : undefined,
       };
 
@@ -194,6 +195,30 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
               value: agent.id,
             }))}
           />
+        </Form.Item>
+
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
+          name="communicationMode"
+          initialValue="webhook"
+        >
+          <Select
+            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
+            options={[
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
+            ]}
+          />
+        </Form.Item>
+
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.enabled', defaultMessage: 'Auto Listen' })}
+          name="enabled"
+          valuePropName="checked"
+          initialValue={true}
+        >
+          <Switch />
         </Form.Item>
 
         {renderTypeSpecificFields()}

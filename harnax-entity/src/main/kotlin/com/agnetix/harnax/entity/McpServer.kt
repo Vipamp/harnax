@@ -100,9 +100,9 @@ class McpServer : Serializable {
     var headers: String? = null
 
     /**
-     * Environment variables JSON string (for stdio type)
+     * Environment parameters JSON string (for stdio type)
      * Format: [{"key":"API_KEY","value":"sk-xxx","secret":true}]
      */
-    @Schema(description = "Environment variables JSON string")
-    var envs: String? = null
+    @Schema(description = "Environment parameters JSON string")
+    var envParams: String? = null
 }

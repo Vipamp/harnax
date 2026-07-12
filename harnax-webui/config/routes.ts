@@ -64,6 +64,12 @@ export default [
         component: './model',
       },
       {
+        name: 'tool',
+        icon: 'tool',
+        path: '/context/tool',
+        component: './tool',
+      },
+      {
         name: 'mcp',
         icon: 'api',
         path: '/context/mcp',
@@ -84,12 +90,6 @@ export default [
         path: '/context/skill/detail/:id',
         component: './skill/detail',
         hideInMenu: true,
-      },
-      {
-        name: 'tool',
-        icon: 'tool',
-        path: '/context/tool',
-        component: './tool',
       },
       {
         name: 'channel',

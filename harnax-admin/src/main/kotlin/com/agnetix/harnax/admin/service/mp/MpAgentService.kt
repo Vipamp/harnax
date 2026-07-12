@@ -8,11 +8,11 @@ import com.agnetix.harnax.admin.service.ModelProviderService
 import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.MpSessionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import tools.jackson.core.type.TypeReference
-import tools.jackson.databind.ObjectMapper
 
 @Service
 class MpAgentService(
@@ -22,7 +22,8 @@ class MpAgentService(
     private val modelProviderService: ModelProviderService,
     private val mcpServerService: McpServerService,
     private val skillService: SkillService,
-    private val objectMapper: ObjectMapper,
+    private val mcpBindingMapper: AgentMcpBindingMapper,
+    private val skillBindingMapper: AgentSkillBindingMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(MpAgentService::class.java)
@@ -55,8 +56,8 @@ class MpAgentService(
         val modelProvider = model?.let { modelProviderService.getModelProvider(it.providerId) }
         val modelProviderName = modelProvider?.name ?: ""
 
-        val mcpItems = parseMcpList(agent.mcpList)
-        val skillItems = parseSkillList(agent.skillList)
+        val mcpItems = loadMcpItems(agentId)
+        val skillItems = loadSkillItems(agentId)
 
         return MpAgentDetailResponse(
             id = agent.id,
@@ -72,43 +73,33 @@ class MpAgentService(
         )
     }
 
-    private fun parseMcpList(mcpListJson: String): List<MpAgentDetailResponse.McpInfo> {
-        if (mcpListJson.isBlank() || mcpListJson == "[]") return emptyList()
-        return try {
-            val configs: List<Map<String, Any>> = objectMapper.readValue(
-                mcpListJson,
-                object : TypeReference<List<Map<String, Any>>>() {},
+    /**
+     * Load MCP items from binding table instead of parsing agent.mcpList JSON.
+     */
+    private fun loadMcpItems(agentId: Long): List<MpAgentDetailResponse.McpInfo> {
+        val bindings = mcpBindingMapper.selectByAgentId(agentId)
+        return bindings.mapNotNull { binding ->
+            val fullMcp = mcpServerService.getMcpServer(binding.mcpId) ?: return@mapNotNull null
+            MpAgentDetailResponse.McpInfo(
+                id = fullMcp.id,
+                name = fullMcp.name,
+                description = fullMcp.description,
             )
-            configs.mapNotNull { config ->
-                val mcpId = (config["id"] as? Number)?.toLong() ?: return@mapNotNull null
-                val fullMcp = mcpServerService.getMcpServer(mcpId) ?: return@mapNotNull null
-                MpAgentDetailResponse.McpInfo(
-                    id = fullMcp.id,
-                    name = fullMcp.name,
-                    description = fullMcp.description,
-                )
-            }
-        } catch (e: Exception) {
-            log.warn("Failed to parse MCP list: {}", e.message)
-            emptyList()
         }
     }
 
-    private fun parseSkillList(skillListStr: String): List<MpAgentDetailResponse.SkillInfo> {
-        if (skillListStr.isBlank()) return emptyList()
-        return try {
-            skillListStr.split(",").mapNotNull { skillIdStr ->
-                val skillId = skillIdStr.trim().toLongOrNull() ?: return@mapNotNull null
-                val skill = skillService.getSkill(skillId) ?: return@mapNotNull null
-                MpAgentDetailResponse.SkillInfo(
-                    id = skill.id,
-                    name = skill.name,
-                    description = skill.description,
-                )
-            }
-        } catch (e: Exception) {
-            log.warn("Failed to parse skill list: {}", e.message)
-            emptyList()
+    /**
+     * Load skill items from binding table instead of parsing agent.skillList comma-separated string.
+     */
+    private fun loadSkillItems(agentId: Long): List<MpAgentDetailResponse.SkillInfo> {
+        val bindings = skillBindingMapper.selectByAgentId(agentId)
+        return bindings.mapNotNull { binding ->
+            val skill = skillService.getSkill(binding.skillId) ?: return@mapNotNull null
+            MpAgentDetailResponse.SkillInfo(
+                id = skill.id,
+                name = skill.name,
+                description = skill.description,
+            )
         }
     }
 }

@@ -23,4 +23,10 @@ interface AgentToolService {
     fun convertToResponse(agentTool: AgentTool): AgentToolResponse
 
     fun getAvailableTools(): List<AgentTool>
+
+    fun getBuiltinTools(): List<AgentTool>
+
+    fun getAvailableToolsByType(type: String?): List<AgentTool>
+
+    fun getRequiredEnvParamKeys(id: Long): List<String>
 }

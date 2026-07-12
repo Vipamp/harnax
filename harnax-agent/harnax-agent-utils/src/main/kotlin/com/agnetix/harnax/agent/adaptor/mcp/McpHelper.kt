@@ -24,8 +24,8 @@ object McpHelper {
 
     private val log = LoggerFactory.getLogger(McpHelper::class.java)
 
-    fun listTools(mcpServer: McpServer, configResolver: McpConfigResolver? = null): List<McpSchema.Tool> {
-        val mcpClient = createMcpClient(mcpServer, false, configResolver)
+    fun listTools(mcpServer: McpServer, configResolver: McpConfigResolver? = null, envResolver: McpConfigResolver? = null): List<McpSchema.Tool> {
+        val mcpClient = createMcpClient(mcpServer, false, configResolver, envResolver)
         try {
             mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
         } catch (t: Throwable) {
@@ -44,16 +44,17 @@ object McpHelper {
      * Build McpConfig based on MCP type
      *
      * @param mcpServer MCP server entity
-     * @param configResolver optional resolver to deserialize + decrypt headers/envs JSON to plain Map
+     * @param configResolver optional resolver to deserialize + decrypt headers/envParams JSON to plain Map
      */
-    fun buildMcpConfig(mcpServer: McpServer, configResolver: McpConfigResolver? = null): McpConfig? {
+    fun buildMcpConfig(mcpServer: McpServer, configResolver: McpConfigResolver? = null, envResolver: McpConfigResolver? = null): McpConfig? {
         val resolve: McpConfigResolver = configResolver ?: { emptyMap() }
+        val resolveEnv: McpConfigResolver = envResolver ?: resolve
         return when (val type = mcpServer.type.lowercase()) {
             "stdio" -> StdioMcpConfig(
                 mcpServer.name,
                 mcpServer.command,
                 emptyList(),
-                resolve(mcpServer.envs),
+                resolveEnv(mcpServer.envParams),
             )
             "sse" -> SseHttpMcpConfig(
                 mcpServer.name,
@@ -79,7 +80,7 @@ object McpHelper {
      *
      * @param mcpServer MCP 服务实体
      * @param isAsync 是否异步创建客户端
-     * @param configResolver optional resolver to deserialize + decrypt headers/envs JSON to plain Map
+     * @param configResolver optional resolver to deserialize + decrypt headers/envParams JSON to plain Map
      * @return McpClientWrapper 实例
      * @throws McpErrorCode.MCP_CLIENT_CREATE_FAILED 当客户端创建失败时抛出
      */
@@ -87,8 +88,9 @@ object McpHelper {
         mcpServer: McpServer,
         isAsync: Boolean,
         configResolver: McpConfigResolver? = null,
+        envResolver: McpConfigResolver? = null,
     ): McpClientWrapper {
-        val mcpConfig = buildMcpConfig(mcpServer, configResolver) ?: throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format("MCP config is null")
+        val mcpConfig = buildMcpConfig(mcpServer, configResolver, envResolver) ?: throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format("MCP config is null")
         val builder = when (mcpConfig) {
             is StdioMcpConfig -> buildStdioMcpClient(mcpConfig)
             is SseHttpMcpConfig -> buildSseMcpClient(mcpConfig)

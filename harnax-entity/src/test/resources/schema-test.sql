@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS `mcp_server` (
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `headers` TEXT DEFAULT NULL COMMENT 'HTTP headers JSON',
-    `envs` TEXT DEFAULT NULL COMMENT 'Env vars JSON',
+    `env_params` TEXT DEFAULT NULL COMMENT 'Env params JSON',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务表';
@@ -124,50 +124,61 @@ INSERT INTO `mcp_server` (`name`, `description`, `type`, `command`, `url`, `stat
 -- ============================================
 CREATE TABLE IF NOT EXISTS `skill_repository` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
     `name` VARCHAR(100) NOT NULL COMMENT '仓库名称',
-    `url` VARCHAR(500) NOT NULL COMMENT '仓库 URL',
+    `url` VARCHAR(500) DEFAULT NULL COMMENT '仓库 URL',
     `branch` VARCHAR(100) NOT NULL DEFAULT 'main' COMMENT '分支名称',
+    `source_type` VARCHAR(20) NOT NULL DEFAULT 'GIT' COMMENT 'Source type: GIT / NPM / ZIP',
+    `source_config` TEXT DEFAULT NULL COMMENT 'Source configuration JSON',
+    `version` VARCHAR(100) DEFAULT NULL COMMENT 'Version identifier',
+    `storage_path` VARCHAR(500) DEFAULT NULL COMMENT 'Content storage path',
     `description` TEXT DEFAULT NULL COMMENT '仓库描述',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
-    `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
+    `is_public` TINYINT(1) DEFAULT 0 COMMENT '是否公开（0:否，1:是）',
+    `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
+    KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能仓库表';
 
-INSERT INTO `skill_repository` (`name`, `url`, `branch`, `description`, `status`, `is_public`, `creator`, `active`) VALUES
-('Default Repository', 'https://github.com/agnetix/skills', 'main', '默认技能仓库', 1, 1, 'admin', 1),
-('Advanced Skills', 'https://github.com/agnetix/advanced-skills', 'master', '高级技能仓库', 1, 1, 'admin', 1),
-('Deleted Repository', 'https://github.com/agnetix/deleted', 'main', '已删除仓库', 1, 1, 'admin', 0);
+INSERT INTO `skill_repository` (`tenant_id`, `name`, `url`, `branch`, `source_type`, `source_config`, `description`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'Default Repository', 'https://github.com/agnetix/skills', 'main', 'GIT', '{"url":"https://github.com/agnetix/skills","branch":"main"}', '默认技能仓库', 1, 1, 'admin', 1),
+(1, 'Advanced Skills', 'https://github.com/agnetix/advanced-skills', 'master', 'GIT', '{"url":"https://github.com/agnetix/advanced-skills","branch":"master"}', '高级技能仓库', 1, 1, 'admin', 1),
+(1, 'Deleted Repository', 'https://github.com/agnetix/deleted', 'main', 'GIT', NULL, '已删除仓库', 1, 1, 'admin', 0),
+(2, 'Tenant2 Repository', 'https://github.com/tenant2/skills', 'main', 'GIT', '{"url":"https://github.com/tenant2/skills","branch":"main"}', '租户2仓库', 1, 1, 'user2', 1),
+(2, 'Default Repository', 'https://github.com/tenant2/default', 'main', 'GIT', NULL, '租户2同名仓库', 1, 0, 'user2', 1);
 
 -- ============================================
 -- 6. 技能表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `skill` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
     `name` VARCHAR(100) NOT NULL COMMENT '技能名称',
     `repository_id` BIGINT(20) NOT NULL COMMENT '所属仓库 ID',
     `description` TEXT DEFAULT NULL COMMENT '技能描述',
     `skillmd` TEXT DEFAULT NULL COMMENT 'skill.md 内容',
     `resources` TEXT DEFAULT NULL COMMENT '资源信息',
+    `storage_path` VARCHAR(500) DEFAULT NULL COMMENT 'Content storage path',
+    `version` VARCHAR(100) DEFAULT NULL COMMENT 'Skill version',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
-    `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
-    `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
+    `is_public` TINYINT(1) DEFAULT 0 COMMENT '是否公开（0:否，1:是）',
+    `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name_repository_id` (`name`, `repository_id`)
+    KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能表';
 
-INSERT INTO `skill` (`name`, `repository_id`, `description`, `skillmd`, `resources`, `status`, `is_public`, `creator`, `active`) VALUES
-('web-search', 1, '网络搜索技能', '# Web Search\n搜索网络信息', '{}', 1, 1, 'admin', 1),
-('code-review', 1, '代码审查技能', '# Code Review\n审查代码质量', '{}', 1, 1, 'admin', 1),
-('data-analysis', 2, '数据分析技能', '# Data Analysis\n分析数据', '{}', 1, 1, 'admin', 1),
-('deleted-skill', 1, '已删除技能', '# Deleted', '{}', 1, 1, 'admin', 0);
+INSERT INTO `skill` (`tenant_id`, `name`, `repository_id`, `description`, `skillmd`, `resources`, `storage_path`, `version`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'web-search', 1, '网络搜索技能', '# Web Search\n搜索网络信息', '{}', '1/web-search', '1.0.0', 1, 1, 'admin', 1),
+(1, 'code-review', 1, '代码审查技能', '# Code Review\n审查代码质量', '{}', '1/code-review', '1.0.0', 1, 1, 'admin', 1),
+(1, 'data-analysis', 2, '数据分析技能', '# Data Analysis\n分析数据', '{}', '2/data-analysis', '1.0.0', 1, 1, 'admin', 1),
+(1, 'deleted-skill', 1, '已删除技能', '# Deleted', '{}', '1/deleted-skill', '1.0.0', 1, 1, 'admin', 0),
+(2, 'tenant2-skill', 4, '租户2技能', '# Tenant2 Skill', '{}', '4/tenant2-skill', '1.0.0', 1, 1, 'user2', 1);
 
 -- ============================================
 -- 7. 智能体表
@@ -486,34 +497,56 @@ VALUES (5, 1, 'Daily News', 'Summarize breaking news', 'Breaking news response',
 -- 21. Agent Tool 工具定义表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `agent_tool` (
-    `id`              BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
-    `tenant_id`       BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
-    `name`            VARCHAR(100) NOT NULL COMMENT 'Tool identifier name',
-    `display_name`    VARCHAR(200) DEFAULT NULL COMMENT 'Display name',
-    `description`     TEXT COMMENT 'Tool description',
-    `type`            VARCHAR(20) NOT NULL COMMENT 'Tool type: BUILTIN/CUSTOM/HTTP',
-    `bean_name`       VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name',
-    `http_url`        VARCHAR(500) DEFAULT NULL COMMENT 'HTTP URL',
-    `http_method`     VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP method',
-    `http_headers`    TEXT COMMENT 'HTTP headers JSON',
-    `input_schema`    TEXT COMMENT 'Input JSON Schema',
-    `output_schema`   TEXT COMMENT 'Output JSON Schema',
-    `read_only`       TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
-    `need_confirm`    TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
-    `timeout_seconds` INT DEFAULT 30 COMMENT 'Timeout in seconds',
-    `status`          TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
-    `is_public`       TINYINT(1) DEFAULT 1 COMMENT 'Public visibility',
-    `creator`         VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
-    `active`          TINYINT(1) DEFAULT 1 COMMENT 'Active status',
-    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
-    `update_time`     DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    `id`                       BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Tool ID',
+    `tenant_id`                BIGINT(20) NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
+    `name`                     VARCHAR(100) NOT NULL COMMENT 'Tool identifier name',
+    `display_name`             VARCHAR(200) DEFAULT NULL COMMENT 'Display name (English)',
+    `display_name_zh`          VARCHAR(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)',
+    `description`              TEXT COMMENT 'Tool description',
+    `type`                     VARCHAR(20) NOT NULL COMMENT 'Tool type: BUILTIN/CUSTOM/HTTP',
+    `bean_name`                VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name',
+    `method_name`              VARCHAR(100) DEFAULT NULL COMMENT 'Java method name (one record per @Tool method)',
+    `http_url`                 VARCHAR(500) DEFAULT NULL COMMENT 'HTTP URL',
+    `http_method`              VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP method',
+    `http_headers`             TEXT COMMENT 'HTTP headers JSON',
+    `env_params`               TEXT COMMENT 'Environment parameters configuration JSON',
+    `required_env_param_keys`  VARCHAR(1000) DEFAULT NULL COMMENT 'Required environment parameter keys, JSON array',
+    `input_schema`             TEXT COMMENT 'Input JSON Schema',
+    `output_schema`            TEXT COMMENT 'Output JSON Schema',
+    `read_only`                TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
+    `need_confirm`             TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
+    `timeout_seconds`          INT DEFAULT 30 COMMENT 'Timeout in seconds',
+    `status`                   TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
+    `is_public`                TINYINT(1) DEFAULT 1 COMMENT 'Public visibility',
+    `creator`                  VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
+    `active`                   TINYINT(1) DEFAULT 1 COMMENT 'Active status',
+    `create_time`              DATETIME DEFAULT CURRENT_TIMESTAMP,
+    `update_time`              DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_tenant_bean_method` (`tenant_id`, `bean_name`, `method_name`, `active`),
     KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool definition table';
 
-INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `type`, `bean_name`, `need_confirm`, `status`, `is_public`, `creator`, `active`) VALUES
-(1, 1, 'time-tool-box', '时间工具', '获取当前日期和时间', 'BUILTIN', 'time-tool-box', 0, 1, 1, 'admin', 1),
-(2, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'CUSTOM', 'weather-tool-box', 1, 1, 1, 'admin', 1),
-(3, 1, 'http-api-tool', 'HTTP API工具', '调用外部HTTP接口', 'HTTP', NULL, 1, 1, 1, 'testuser1', 1),
-(4, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'BUILTIN', 'disabled-tool-box', 0, 0, 1, 'admin', 1),
-(5, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'BUILTIN', 'deleted-tool-box', 0, 1, 1, 'admin', 0);
+-- Tool Environment Parameter Table
+CREATE TABLE IF NOT EXISTS `agent_tool_env_param` (
+    `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'Env param entry ID',
+    `tool_id`           BIGINT       NOT NULL COMMENT 'FK to agent_tool.id',
+    `env_param_name`    VARCHAR(200) NOT NULL COMMENT 'Environment parameter name',
+    `description`       VARCHAR(500) DEFAULT NULL COMMENT 'Human-readable description shown in Admin UI',
+    `required`          TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Is required (0: No, 1: Yes)',
+    `secret`            TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Is sensitive (0: No, 1: Yes)',
+    `default_value`     TEXT         DEFAULT NULL COMMENT 'Default value',
+    `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation time',
+    `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Update time',
+    PRIMARY KEY (`id`),
+    KEY `idx_tool_id` (`tool_id`),
+    UNIQUE KEY `uk_tool_env_param_name` (`tool_id`, `env_param_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool environment parameter definitions';
+
+INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `type`, `bean_name`, `method_name`, `need_confirm`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 1, 'getDate', '获取日期', '获取当前日期', 'BUILTIN', 'time-tool-box', 'getDate', 0, 1, 1, 'admin', 1),
+(2, 1, 'getDatetime', '获取时间', '获取当前时间', 'BUILTIN', 'time-tool-box', 'getDatetime', 0, 1, 1, 'admin', 1),
+(3, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'CUSTOM', 'weather-tool-box', NULL, 1, 1, 1, 'admin', 1),
+(4, 1, 'http-api-tool', 'HTTP API工具', '调用外部HTTP接口', 'HTTP', NULL, NULL, 1, 1, 1, 'testuser1', 1),
+(5, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'BUILTIN', 'disabled-tool-box', 'doSomething', 0, 0, 1, 'admin', 1),
+(6, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'BUILTIN', 'deleted-tool-box', 'doSomething', 0, 1, 1, 'admin', 0);

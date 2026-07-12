@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class SkillMapperTest {
+open class SkillMapperTest {
 
     companion object {
         @Container
@@ -221,6 +221,90 @@ class SkillMapperTest {
             assertNotNull(skill)
             assertEquals("web-search", skill.name)
             assertEquals(1L, skill.repositoryId)
+        }
+    }
+
+    @Nested
+    @DisplayName("租户隔离测试")
+    inner class TenantIsolationTests {
+
+        @Test
+        @DisplayName("selectSkillList - 按租户 ID 过滤")
+        fun `selectSkillList should filter by tenantId`() {
+            // When: tenant 1 admin
+            val tenant1Skills = skillMapper.selectSkillList(null, null, null, "admin", 1L)
+
+            // Then: should only see tenant 1 skills
+            assertTrue(tenant1Skills.isNotEmpty())
+            assertTrue(tenant1Skills.all { it.tenantId == 1L })
+            assertEquals(3, tenant1Skills.size) // web-search, code-review, data-analysis
+        }
+
+        @Test
+        @DisplayName("selectSkillList - 不同租户数据隔离")
+        fun `selectSkillList should isolate between tenants`() {
+            // When
+            val tenant1Skills = skillMapper.selectSkillList(null, null, null, "admin", 1L)
+            val tenant2Skills = skillMapper.selectSkillList(null, null, null, "user2", 2L)
+
+            // Then
+            assertTrue(tenant1Skills.isNotEmpty())
+            assertTrue(tenant2Skills.isNotEmpty())
+            assertTrue(tenant1Skills.none { it.name == "tenant2-skill" })
+            assertTrue(tenant2Skills.none { it.name == "web-search" })
+        }
+
+        @Test
+        @DisplayName("selectSkillList - 不传 tenantId 返回所有租户数据")
+        fun `selectSkillList without tenantId returns all tenants`() {
+            // When
+            val allSkills = skillMapper.selectSkillList(null, null, null, "admin", null)
+
+            // Then: should include skills from both tenants (admin sees public + own)
+            assertTrue(allSkills.size >= 4) // 3 tenant1 + at least 1 tenant2
+        }
+
+        @Test
+        @DisplayName("insert - 带 tenantId 插入并验证隔离")
+        fun `insert with tenantId should persist and isolate`() {
+            // Given
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            val newSkill = Skill().apply {
+                tenantId = 2L
+                name = "tenant2-new-skill"
+                repositoryId = 4L
+                description = "租户2新技能"
+                skillmd = "# New"
+                resources = "{}"
+                status = 1
+                isPublic = 1
+                creator = "user2"
+                active = 1
+                createTime = now
+                updateTime = now
+            }
+
+            // When
+            skillMapper.insert(newSkill)
+
+            // Then: tenant 2 should see it
+            val tenant2Skills = skillMapper.selectSkillList(null, null, null, "user2", 2L)
+            assertTrue(tenant2Skills.any { it.name == "tenant2-new-skill" })
+
+            // Tenant 1 should NOT see it
+            val tenant1Skills = skillMapper.selectSkillList(null, null, null, "admin", 1L)
+            assertTrue(tenant1Skills.none { it.name == "tenant2-new-skill" })
+        }
+
+        @Test
+        @DisplayName("selectById - 返回结果的 tenantId 正确")
+        fun `selectById should return correct tenantId`() {
+            // When
+            val skill = skillMapper.selectById(1L)
+
+            // Then
+            assertNotNull(skill)
+            assertEquals(1L, skill.tenantId)
         }
     }
 }
