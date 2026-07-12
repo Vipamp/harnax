@@ -308,6 +308,9 @@ services:
       SANDBOX_ENABLED: "true"
       SANDBOX_IMAGE: python:3.11-slim
       SANDBOX_KEEP_ALIVE: "true"
+      # Docker network for sandbox containers (default: bridge).
+      # Set to a custom network name if sandbox needs to reach other services by DNS name.
+      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-bridge}
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}

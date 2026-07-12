@@ -35,6 +35,8 @@ class KeepAliveSandboxManager(
     private val sandboxFactory: SandboxFactory = SandboxFactory { DockerSandbox(it) },
     private val snapshotSpec: SandboxSnapshotSpec? = null,
     private val skipScanOnStartup: Boolean = false,
+    /** Docker network mode or name passed to `docker run --network`. Null uses Docker default. */
+    private val network: String? = null,
 ) {
 
     init {
@@ -241,13 +243,16 @@ class KeepAliveSandboxManager(
                 }
 
                 // Scenario 1: No existing container -> create new
-                log.info("[keepAlive] Creating new sandbox for session={}, image={}, workspaceRoot={}", sessionId, image, workspaceRoot)
+                log.info("[keepAlive] Creating new sandbox for session={}, image={}, workspaceRoot={}, network={}", sessionId, image, workspaceRoot, network ?: "default")
                 val state = DockerSandboxState()
                 state.setSessionId(sessionId)
                 state.setImage(image)
                 state.setWorkspaceRoot(workspaceRoot)
                 state.setContainerOwned(true)
                 state.setWorkspaceRootReady(false)
+                if (network != null) {
+                    state.setNetwork(network)
+                }
                 if (workspaceSpec != null) {
                     state.setWorkspaceSpec(workspaceSpec)
                 }

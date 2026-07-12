@@ -404,6 +404,7 @@ class HarnessAgentLauncher(
             keepAliveSnapshotSpec = snapshotSpec,
             sandboxImage = harnessConfig.sandbox.image,
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
+            sandboxNetwork = harnessConfig.sandbox.network,
             permissionMode = chatSpec.permissionMode,
         )
     }
@@ -501,6 +502,7 @@ class HarnessAgentLauncher(
                     image = harnessConfig.sandbox.image,
                     workspaceRoot = harnessConfig.sandbox.workspaceRoot,
                     snapshotSpec = snapshotSpec,
+                    network = harnessConfig.sandbox.network,
                 )
             } else {
                 null

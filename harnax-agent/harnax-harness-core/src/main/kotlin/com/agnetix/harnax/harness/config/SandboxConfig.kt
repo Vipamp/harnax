@@ -12,6 +12,9 @@ import io.agentscope.harness.agent.IsolationScope
  * @param keepAlive when true, the sandbox container remains running between agent calls,
  *   avoiding the overhead of container destruction and recreation; when false (default),
  *   the container is stopped and removed after each call
+ * @param network Docker network mode or name passed to `docker run --network`;
+ *   when null, Docker uses the default bridge network; set to "host" to share host network,
+ *   or a custom network name (e.g. "docker-new_harnax-network") for inter-container communication
  */
 data class SandboxConfig(
     val enabled: Boolean = false,
@@ -19,4 +22,5 @@ data class SandboxConfig(
     val workspaceRoot: String = "/workspace",
     val isolationScope: IsolationScope = IsolationScope.SESSION,
     val keepAlive: Boolean = false,
+    val network: String? = null,
 )

@@ -159,6 +159,24 @@ class DefaultAgentRunner(
             CommandType.DISABLE -> {
                 handleCapabilityToggle(sessionId, args, enable = false)
             }
+            CommandType.REFRESH -> {
+                // Force-rebuild the agent entity from the latest spec.
+                // Invalidates the agent cache so the next getOrCreateAgent() call will:
+                //   1. Re-fetch the agent spec from admin (picks up config changes)
+                //   2. Re-create the HarnessAgent + HarnessAgentWrapper
+                // The sandbox container and session message history are preserved because:
+                //   - KeepAliveSandboxManager.getOrCreate() returns the existing container
+                //   - Session messages are stored in DB, not in the agent instance
+                val existingAgent = agentCache.getIfPresent(sessionId)
+                if (existingAgent != null) {
+                    agentCache.invalidate(sessionId)
+                    log.info("Agent cache invalidated for session=$sessionId (refresh command). Next call will rebuild from latest spec.")
+                    CommandResponse.success(sessionId, message = "Agent refreshed — next message will use the latest configuration")
+                } else {
+                    log.info("Refresh command for session=$sessionId but no cached agent found")
+                    CommandResponse.success(sessionId, message = "No active agent to refresh")
+                }
+            }
         }
     }
 

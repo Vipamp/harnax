@@ -924,6 +924,8 @@ export default {
   'pages.agentTask.triggered': 'Task triggered',
   'pages.agentTask.triggerFailed': 'Failed to trigger task',
   'pages.agentTask.alreadyRunning': 'Task is already running, please wait for it to complete',
+  'pages.agentTask.confirmRunTitle': 'Confirm Run Task',
+  'pages.agentTask.confirmRunContent': 'Are you sure to execute this task now?',
   'pages.agentTask.deleted': 'Task deleted',
   'pages.agentTask.deleteFailed': 'Failed to delete task',
   'pages.agentTask.createSuccess': 'Create successful',

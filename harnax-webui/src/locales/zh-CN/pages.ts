@@ -933,6 +933,8 @@ export default {
   'pages.agentTask.triggered': '任务已触发',
   'pages.agentTask.triggerFailed': '触发任务失败',
   'pages.agentTask.alreadyRunning': '任务正在运行中，请等待执行完成后再触发',
+  'pages.agentTask.confirmRunTitle': '确认执行任务',
+  'pages.agentTask.confirmRunContent': '确定要立即执行该任务吗？',
   'pages.agentTask.deleted': '任务已删除',
   'pages.agentTask.deleteFailed': '删除任务失败',
   'pages.agentTask.createSuccess': '创建成功',

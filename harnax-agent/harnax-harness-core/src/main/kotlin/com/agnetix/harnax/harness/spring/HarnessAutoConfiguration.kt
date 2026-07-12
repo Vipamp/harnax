@@ -46,6 +46,7 @@ class SandboxProperties {
     var workspaceRoot: String = "/workspace"
     var isolationScope: String = "SESSION"
     var keepAlive: Boolean = false
+    var network: String? = null
 }
 
 @ConfigurationProperties(prefix = "harness")
@@ -106,6 +107,7 @@ class HarnessAutoConfiguration {
             isolationScope = runCatching { IsolationScope.valueOf(sandboxProps.isolationScope) }
                 .getOrDefault(IsolationScope.SESSION),
             keepAlive = sandboxProps.keepAlive,
+            network = sandboxProps.network,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,

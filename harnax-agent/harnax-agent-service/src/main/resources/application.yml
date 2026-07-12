@@ -55,6 +55,7 @@ harness:
     workspace-root: ${SANDBOX_WORKSPACE_ROOT:/workspace}
     isolation-scope: ${SANDBOX_ISOLATION_SCOPE:SESSION}
     keep-alive: ${SANDBOX_KEEP_ALIVE:true}
+    network: ${SANDBOX_NETWORK:}
 
 # Logging Configuration
 logging:

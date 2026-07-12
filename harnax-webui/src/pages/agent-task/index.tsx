@@ -94,36 +94,45 @@ const AgentTaskManagement: React.FC = () => {
     }
   };
 
-  const handleRunOnce = async (id: number) => {
+  const handleRunOnce = (id: number) => {
     // Prevent triggering if task is already running
     const currentTask = tasks.find((t) => t.id === id);
     if (currentTask?.lastRunStatus === 3 || currentTask?.lastRunStatus === 4) {
       message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
       return;
     }
-    try {
-      const response = await triggerAgentTask(id);
-      if (response.code === 200) {
-        message.success(intl.formatMessage({ id: 'pages.agentTask.triggered', defaultMessage: 'Task triggered' }));
-        // Auto-open log modal to watch execution progress
-        const task = tasks.find((t) => t.id === id);
-        if (task) {
-          setLogTask(task);
-          setLogModalVisible(true);
+    Modal.confirm({
+      title: intl.formatMessage({ id: 'pages.agentTask.confirmRunTitle', defaultMessage: 'Confirm Run Task' }),
+      content: intl.formatMessage({ id: 'pages.agentTask.confirmRunContent', defaultMessage: 'Are you sure to execute this task now?' }),
+      okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+      onOk: async () => {
+        try {
+          const response = await triggerAgentTask(id);
+          if (response.code === 200) {
+            message.success(intl.formatMessage({ id: 'pages.agentTask.triggered', defaultMessage: 'Task triggered' }));
+            // Auto-open log modal to watch execution progress
+            const task = tasks.find((t) => t.id === id);
+            if (task) {
+              setLogTask(task);
+              setLogModalVisible(true);
+            }
+          }
+          // Refresh task list to update last run status
+          setTimeout(() => loadTasks(), 1500);
+        } else {
+          // Detect 'already running' error from backend and use i18n message
+          const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
+          const errorMsg = isAlreadyRunning
+            ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
+            : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
+          message.error(errorMsg);
         }
-        // Refresh task list to update last run status
-        setTimeout(() => loadTasks(), 1500);
-      } else {
-        // Detect 'already running' error from backend and use i18n message
-        const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
-        const errorMsg = isAlreadyRunning
-          ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
-          : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
-        message.error(errorMsg);
+      } catch (error) {
+        message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
       }
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
-    }
+      },
+    });
   };
 
   const handleDelete = (id: number) => {

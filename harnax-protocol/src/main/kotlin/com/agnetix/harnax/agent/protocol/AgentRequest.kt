@@ -169,6 +169,7 @@ enum class CommandType(vararg val aliases: String) {
     STOP_SANDBOX("stop-sandbox"),
     ENABLE("enable"),
     DISABLE("disable"),
+    REFRESH("refresh"),
     ;
 
     companion object {

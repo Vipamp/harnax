@@ -54,6 +54,7 @@ class HarnessAgentWrapper(
     val keepAliveSnapshotSpec: SandboxSnapshotSpec? = null,
     val sandboxImage: String = "python:3.11-slim",
     val sandboxWorkspaceRoot: String = "/workspace",
+    val sandboxNetwork: String? = null,
     val permissionMode: String = "DEFAULT",
 ) {
 
@@ -136,6 +137,24 @@ class HarnessAgentWrapper(
                 )
             try {
                 latch.await()
+                // If we got a result, return it even if a late error also arrived.
+                // This handles a race in agentscope where SandboxLifecycleMiddleware.releaseForCall()
+                // sets filesystemProxy.sandbox = null AFTER the Mono has already emitted the response.
+                // A subsequent post-processing step on a different thread may then try to access
+                // SandboxBackedFilesystem and trigger a spurious SandboxConfigurationException.
+                // Since the response was already successfully produced, we should return it.
+                if (result != null) {
+                    if (error != null) {
+                        log.warn("[harness] Late error after successful call for session={}, suppressed: {}", sessionId, error!!.message)
+                    }
+                    val content = MsgExtractHelper.extractText(result!!) ?: ""
+                    val thinking = MsgExtractHelper.extractThinking(result!!)
+                    return ChatResponse(
+                        sessionId = sessionId,
+                        content = content,
+                        thinking = thinking?.ifEmpty { null },
+                    )
+                }
                 if (error != null) {
                     val cause = error!!
                     // harnessAgent.interrupt() invalidates the sandbox context, which causes
@@ -148,13 +167,9 @@ class HarnessAgentWrapper(
                     }
                     throw cause
                 }
-                val content = result?.let { MsgExtractHelper.extractText(it) } ?: ""
-                val thinking = result?.let { MsgExtractHelper.extractThinking(it) }
-                return ChatResponse(
-                    sessionId = sessionId,
-                    content = content,
-                    thinking = thinking?.ifEmpty { null },
-                )
+                // Neither result nor error — should not happen, but handle gracefully
+                log.warn("[harness] Call completed without result or error for session={}", sessionId)
+                return ChatResponse(sessionId = sessionId, content = "", thinking = null)
             } catch (e: InterruptedException) {
                 if (interrupted) {
                     log.info("[harness] Call interrupted for session={}, suppressed InterruptedException", sessionId)
@@ -291,6 +306,9 @@ class HarnessAgentWrapper(
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)
                 .workspaceRoot(sandboxWorkspaceRoot)
+            if (sandboxNetwork != null) {
+                clientOptions.network(sandboxNetwork)
+            }
             val sandboxContext = SandboxContext.builder()
                 .client(DockerSandboxClient())
                 .clientOptions(clientOptions)
