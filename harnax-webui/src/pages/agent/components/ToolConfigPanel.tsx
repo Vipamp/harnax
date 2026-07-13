@@ -1,5 +1,5 @@
 import { useIntl } from '@umijs/max';
-import { Button, Input, Select, Space, Switch, Radio, Tag } from 'antd';
+import { Button, Input, Select, Space, Switch, Tag } from 'antd';
 import React from 'react';
 import { PlusOutlined, LockOutlined, DownOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
 
@@ -24,8 +24,6 @@ interface ToolConfigPanelProps {
   toolConfigs: ToolConfigState[];
   setToolConfigs: (configs: ToolConfigState[]) => void;
   tools: any[];
-  toolType: string;
-  onToolTypeChange: (e: any) => void;
   envVarOptions: EnvVarOption[];
   collapsed: Set<number>;
   setCollapsed: (set: Set<number>) => void;
@@ -36,14 +34,38 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
   toolConfigs,
   setToolConfigs,
   tools,
-  toolType,
-  onToolTypeChange,
   envVarOptions,
   collapsed,
   setCollapsed,
   locale,
 }) => {
   const intl = useIntl();
+
+  // Group tools by type for OptGroup display
+  const groupedToolOptions = React.useMemo(() => {
+    const builtinTools = tools.filter((t: any) => t.type === 'BUILTIN');
+    const customTools = tools.filter((t: any) => t.type !== 'BUILTIN');
+    const groups: { label: string; options: { label: string; value: number }[] }[] = [];
+    if (builtinTools.length > 0) {
+      groups.push({
+        label: intl.formatMessage({ id: 'pages.agent.tool.groupBuiltin', defaultMessage: 'Built-in Tools' }),
+        options: builtinTools.map((tool: any) => ({
+          label: locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name),
+          value: tool.id,
+        })),
+      });
+    }
+    if (customTools.length > 0) {
+      groups.push({
+        label: intl.formatMessage({ id: 'pages.agent.tool.groupCustom', defaultMessage: 'Custom Tools' }),
+        options: customTools.map((tool: any) => ({
+          label: locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name),
+          value: tool.id,
+        })),
+      });
+    }
+    return groups;
+  }, [tools, locale, intl]);
 
   const handleToolConfigChange = (index: number, field: string, value: any) => {
     const newConfigs = [...toolConfigs];
@@ -107,20 +129,6 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
         </Button>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <span style={{ marginRight: 12, fontWeight: 500, color: 'var(--vip-text-primary)' }}>
-          {intl.formatMessage({ id: 'pages.agent.tool.type', defaultMessage: 'Tool Type' })}
-        </span>
-        <Radio.Group value={toolType} onChange={onToolTypeChange}>
-          <Radio.Button value="BUILTIN">
-            {intl.formatMessage({ id: 'pages.agent.tool.typeBuiltin', defaultMessage: 'Built-in Tools' })}
-          </Radio.Button>
-          <Radio.Button value="CUSTOM">
-            {intl.formatMessage({ id: 'pages.agent.tool.typeCustom', defaultMessage: 'Custom Tools' })}
-          </Radio.Button>
-        </Radio.Group>
-      </div>
-
       {toolConfigs.map((config, index) => (
         <div key={index} style={{ marginBottom: 16, padding: 12, border: '1px solid var(--vip-border)', borderRadius: 8, background: 'var(--vip-bg-layout)' }}>
           <Space style={{ display: 'flex', marginBottom: 8 }} align="baseline">
@@ -129,10 +137,7 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
               placeholder={intl.formatMessage({ id: 'pages.agent.tool.select', defaultMessage: 'Select Tool' })}
               value={config.toolId}
               onChange={(value) => handleToolConfigChange(index, 'toolId', value)}
-              options={tools.map((tool: any) => ({
-                label: locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name),
-                value: tool.id,
-              }))}
+              options={groupedToolOptions}
             />
             <span>
               {intl.formatMessage({ id: 'pages.agent.tool.enableSkip', defaultMessage: 'Skip if missing' })}

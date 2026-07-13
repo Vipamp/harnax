@@ -20,7 +20,7 @@ data class ToolEnvParamDescriptor(
  * Descriptor for a single tool method within a ToolBox.
  * Each @Tool method corresponds to one agent_tool database record.
  *
- * Extracted at runtime from @Tool (agentscope) + @ToolMeta + @NeedConfirmed annotations.
+ * Extracted at runtime from @Tool (agentscope) + @ToolMeta annotations.
  */
 data class ToolMethodDescriptor(
     /** Java method name */
@@ -35,7 +35,7 @@ data class ToolMethodDescriptor(
     val description: String,
     /** Whether this method is read-only (from @Tool.readOnly) */
     val readOnly: Boolean,
-    /** Whether this method requires user confirmation (from @ToolMeta.needConfirm or @NeedConfirmed) */
+    /** Whether this method requires user confirmation (from @ToolMeta.needConfirm) */
     val needConfirm: Boolean,
     /** Environment parameter definitions from @ToolMeta.envParamDefs */
     val envParamDescriptors: List<ToolEnvParamDescriptor>,

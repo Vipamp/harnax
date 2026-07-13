@@ -14,9 +14,8 @@ import org.mockito.kotlin.*
  * ToolBox Unit Tests
  *
  * Uses a concrete TestableToolBox subclass to verify the abstract ToolBox behavior:
- * - init() stores context fields and discovers @NeedConfirmed methods
+ * - init() stores context fields
  * - execute() wraps actions with logging (success / error)
- * - needConfirmedTools() returns formatted tool method names
  *
  * @author agnetix
  * @since 2026-07-10
@@ -26,9 +25,6 @@ class ToolBoxTest {
     /** Concrete subclass for testing the abstract ToolBox */
     class TestableToolBox : ToolBox() {
         override fun name(): String = "test-tool"
-
-        @NeedConfirmed
-        fun confirmedAction(): String = execute { "confirmed-result" }
 
         fun normalAction(): String = execute { "normal-result" }
 
@@ -59,21 +55,6 @@ class ToolBoxTest {
         @DisplayName("init should store userIdentifier accessible via userIdentifier()")
         fun `init should store userIdentifier`() {
             assertEquals(userId, toolBox.getProtectedUserIdentifier())
-        }
-
-        @Test
-        @DisplayName("init should discover @NeedConfirmed annotated methods")
-        fun `init should discover NeedConfirmed methods`() {
-            val confirmed = toolBox.needConfirmedTools()
-            assertEquals(1, confirmed.size)
-            assertTrue(confirmed.contains("test-tool::confirmedAction"))
-        }
-
-        @Test
-        @DisplayName("needConfirmedTools should NOT include non-annotated methods")
-        fun `needConfirmedTools should exclude normal methods`() {
-            val confirmed = toolBox.needConfirmedTools()
-            assertFalse(confirmed.any { it.contains("normalAction") })
         }
     }
 

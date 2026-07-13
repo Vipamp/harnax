@@ -1011,9 +1011,8 @@ export default {
 
   // Tool management refactor
   'pages.tool.requiredEnvParamKeys': 'Required Env Parameters',
-  'pages.agent.tool.type': 'Tool Type',
-  'pages.agent.tool.typeBuiltin': 'Built-in Tools',
-  'pages.agent.tool.typeCustom': 'Custom Tools',
+  'pages.agent.tool.groupBuiltin': 'Built-in Tools',
+  'pages.agent.tool.groupCustom': 'Custom Tools',
   'pages.agent.tool.envBinding': 'Env Variable Config',
   'pages.agent.mcp.envBinding': 'MCP Env Variable Config',
   'pages.agent.tool.selectEnvVar': 'Select or enter env variable value',

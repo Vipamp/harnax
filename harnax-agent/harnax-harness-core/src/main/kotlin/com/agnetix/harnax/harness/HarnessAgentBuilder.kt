@@ -3,6 +3,7 @@ package com.agnetix.harnax.harness
 import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
+import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.skill.AgentSkill
 import io.agentscope.core.skill.repository.AgentSkillRepository
 import io.agentscope.core.skill.repository.AgentSkillRepositoryInfo
@@ -96,6 +97,8 @@ class HarnessAgentBuilder {
      * Adds a middleware (replaces addHook in agentscope 2.0.0).
      */
     fun addMiddleware(middleware: MiddlewareBase): HarnessAgentBuilder = apply { builder.middleware(middleware) }
+
+    fun permissionContext(ctx: PermissionContextState): HarnessAgentBuilder = apply { builder.permissionContext(ctx) }
 
     fun enablePlan(enable: Boolean): HarnessAgentBuilder = apply {
         if (enable) builder.enablePlanMode()

@@ -1,6 +1,5 @@
 package com.agnetix.harnax.tools.sdk.registry
 
-import com.agnetix.harnax.tools.sdk.NeedConfirmed
 import com.agnetix.harnax.tools.sdk.ToolBox
 import com.agnetix.harnax.tools.sdk.ToolEnvParamDescriptor
 import com.agnetix.harnax.tools.sdk.ToolMeta
@@ -94,7 +93,6 @@ class ToolRegistry {
         for (method in clazz.methods) {
             val toolAnnotation = method.getAnnotation(Tool::class.java) ?: continue
             val toolMeta = method.getAnnotation(ToolMeta::class.java)
-            val hasNeedConfirm = method.getAnnotation(NeedConfirmed::class.java) != null
 
             val envParamDescriptors = toolMeta?.envParamDefs?.map { envDef ->
                 ToolEnvParamDescriptor(
@@ -106,8 +104,8 @@ class ToolRegistry {
                 )
             } ?: emptyList()
 
-            // needConfirm: @ToolMeta.needConfirm OR @NeedConfirmed
-            val needConfirm = toolMeta?.needConfirm == true || hasNeedConfirm
+            // needConfirm: only from @ToolMeta.needConfirm
+            val needConfirm = toolMeta?.needConfirm == true
 
             methods.add(
                 ToolMethodDescriptor(

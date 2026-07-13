@@ -2,7 +2,6 @@ package com.agnetix.harnax.harness
 
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
-import com.agnetix.harnax.agent.Permission
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNote
@@ -28,12 +27,15 @@ import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.tools.sdk.HttpProxyToolBox
 import com.agnetix.harnax.tools.sdk.SessionMetaContext
-import com.agnetix.harnax.tools.sdk.ToolBox
+import com.agnetix.harnax.tools.sdk.ToolMeta
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
 import io.agentscope.core.message.Msg
+import io.agentscope.core.permission.PermissionBehavior
+import io.agentscope.core.permission.PermissionContextState
+import io.agentscope.core.permission.PermissionRule
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.AgentTool
@@ -241,15 +243,8 @@ class HarnessAgentLauncher(
                         // Per-method needConfirm from DB record, or from toolSpec override
                         val shouldConfirm = toolConfig.needConfirm == 1 || toolSpec.needConfirm
                         if (shouldConfirm) {
-                            val name = when (resolvedTool) {
-                                is ToolBox -> {
-                                    val methodSuffix = toolConfig.methodName?.let { "::$it" } ?: ""
-                                    "${resolvedTool.name()}$methodSuffix"
-                                }
-                                is AgentTool -> resolvedTool.getName()
-                                else -> toolConfig.name
-                            }
-                            needConfirmedTools.add(name)
+                            // Use the framework tool name (@Tool.name) so PermissionEngine can match
+                            needConfirmedTools.add(toolConfig.name)
                         }
                     } else if (!toolSpec.skipIfMissing) {
                         log.error("Tool with id `${toolSpec.toolId}` (bean: ${toolConfig.beanName}) not found.")
@@ -281,9 +276,16 @@ class HarnessAgentLauncher(
                     userIdentifier,
                 )
                 agentBuilder.addTool(toolBox)
-                if (chatSpec.permission == Permission.NeedConfirmed) {
-                    needConfirmedTools.addAll(toolBox.needConfirmedTools())
-                }
+                // Scan @ToolMeta(needConfirm=true) from ToolBox methods
+                val toolName = toolBox.name()
+                toolBox::class.java.methods
+                    .filter { it.getAnnotation(ToolMeta::class.java)?.needConfirm == true }
+                    .forEach { method ->
+                        // Use @Tool.name if available, fall back to method name
+                        val toolAnnotation = method.getAnnotation(io.agentscope.core.tool.Tool::class.java)
+                        val frameworkName = toolAnnotation?.name?.takeIf { it.isNotBlank() } ?: method.name
+                        needConfirmedTools.add(frameworkName)
+                    }
             }
         }
 
@@ -387,6 +389,19 @@ class HarnessAgentLauncher(
         }
         if (!harnessConfig.enableSessionPersistence) {
             agentBuilder.disableSessionPersistence()
+        }
+
+        // ----- Permission Context (registers ASK rules for dangerous tools) -----
+        if (needConfirmedTools.isNotEmpty()) {
+            val permCtxBuilder = PermissionContextState.builder()
+            needConfirmedTools.forEach { toolName ->
+                permCtxBuilder.addAskRule(
+                    toolName,
+                    PermissionRule(toolName, "Tool requires user confirmation", PermissionBehavior.ASK, "harnax"),
+                )
+            }
+            agentBuilder.permissionContext(permCtxBuilder.build())
+            log.info("PermissionContext configured with {} ASK rules: {}", needConfirmedTools.size, needConfirmedTools)
         }
 
         // ----- Build -----

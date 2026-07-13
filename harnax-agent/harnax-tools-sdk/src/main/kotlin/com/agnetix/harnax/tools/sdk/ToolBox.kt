@@ -19,7 +19,6 @@ abstract class ToolBox {
 
     @Volatile
     private var toolCallLogAdaptorValue: ToolCallLogAdaptor? = null
-    private val needConfirmedTools: MutableSet<String> = mutableSetOf()
     private lateinit var name: String
     private val log = LoggerFactory.getLogger(ToolBox::class.java)
 
@@ -36,14 +35,11 @@ abstract class ToolBox {
         this.toolCallLogAdaptorValue = toolCallLogAdaptor
         this.userIdentifierValue = userIdentifier
         this.sessionMetaContextValue = sessionMetaContext
-        this::class.java.methods.filter { it.getDeclaredAnnotation(NeedConfirmed::class.java) != null }
-            .forEach { needConfirmedTools.add(it.name) }
         this.name = name()
     }
 
     fun userIdentifier(): UserIdentifier = userIdentifierValue
         ?: throw IllegalStateException("ToolBox not initialized: userIdentifier is null")
-    fun needConfirmedTools(): Set<String> = needConfirmedTools.map { "$name::$it" }.toSet()
 
     @Suppress("UNCHECKED_CAST")
     protected fun <T> execute(
@@ -151,8 +147,3 @@ abstract class ToolBox {
         }
     }
 }
-
-/**
- * 标记需要用户确认的工具方法
- */
-annotation class NeedConfirmed

@@ -20,7 +20,7 @@ import java.text.SimpleDateFormat
  * - getDatetime() returns yyyy-MM-dd HH:mm:ss formatted datetime
  * - name() returns the correct tool name
  * - @ToolMeta(needConfirm=true) is declared on methods (verified at registration level)
- *   Note: runtime needConfirm is driven by DB record, not by ToolBox.needConfirmedTools()
+ *   Note: runtime needConfirm is driven by DB record, not by annotation scanning
  *
  * @author agnetix
  * @since 2026-07-10
@@ -55,20 +55,6 @@ class TimeToolBoxTest {
         @DisplayName("NAME companion constant should match name()")
         fun `NAME constant should match name`() {
             assertEquals(TimeToolBox.NAME, timeToolBox.name())
-        }
-    }
-
-    @Nested
-    @DisplayName("NeedConfirm Declaration Tests")
-    inner class NeedConfirmTests {
-
-        @Test
-        @DisplayName("needConfirmedTools returns empty since @NeedConfirmed annotation is not used")
-        fun `needConfirmedTools should be empty without NeedConfirmed annotation`() {
-            // needConfirm is now driven by @ToolMeta(needConfirm=true) -> DB record,
-            // not by @NeedConfirmed annotation on ToolBox methods
-            val confirmed = timeToolBox.needConfirmedTools()
-            assertEquals(0, confirmed.size)
         }
     }
 

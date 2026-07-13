@@ -3,7 +3,7 @@ import { Steps, Form, Input, Button, Select, Switch, Alert } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
-import { getAvailableTools, getBuiltinTools } from '@/services/ant-design-pro/tool';
+import { getAvailableTools } from '@/services/ant-design-pro/tool';
 import { getEnvVariableList } from '@/services/ant-design-pro/envVariable';
 import { RocketOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
@@ -40,7 +40,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [skillConfigs, setSkillConfigs] = useState<SkillConfigState[]>([{}]);
   const [tools, setTools] = useState<any[]>([]);
   const [toolConfigs, setToolConfigs] = useState<ToolConfigState[]>([{}]);
-  const [toolType, setToolType] = useState<string>('BUILTIN');
   const [envVarOptions, setEnvVarOptions] = useState<EnvVarOption[]>([]);
   const [toolEnvCollapsed, setToolEnvCollapsed] = useState<Set<number>>(new Set());
   const [mcpEnvCollapsed, setMcpEnvCollapsed] = useState<Set<number>>(new Set());
@@ -121,7 +120,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       loadMcpServers();
       loadRepositories();
       loadModels();
-      loadTools(toolType);
+      loadTools();
       loadEnvVarOptions();
     }
   }, [visible, values]);
@@ -196,9 +195,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     } catch (error) { console.error('加载模型列表失败', error); }
   };
 
-  const loadTools = async (type?: string) => {
+  const loadTools = async () => {
     try {
-      const response = type === 'BUILTIN' ? await getBuiltinTools() : await getAvailableTools({ type: type || undefined });
+      const response = await getAvailableTools();
       if (response?.code === 200 && response?.data) { setTools(response.data); }
     } catch (error) { console.error('Failed to load tools', error); }
   };
@@ -212,12 +211,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     } catch (error) { console.error('Failed to load env parameters', error); }
   };
 
-  const handleToolTypeChange = (e: any) => {
-    const newType = e.target.value;
-    setToolType(newType);
-    setToolConfigs([{}]);
-    loadTools(newType);
-  };
 
   const handleNext = async () => {
     try {
@@ -345,8 +338,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                 toolConfigs={toolConfigs}
                 setToolConfigs={setToolConfigs}
                 tools={tools}
-                toolType={toolType}
-                onToolTypeChange={handleToolTypeChange}
                 envVarOptions={envVarOptions}
                 collapsed={toolEnvCollapsed}
                 setCollapsed={setToolEnvCollapsed}

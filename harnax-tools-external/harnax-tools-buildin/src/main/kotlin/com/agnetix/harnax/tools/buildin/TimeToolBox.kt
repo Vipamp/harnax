@@ -19,11 +19,11 @@ import java.util.*
 class TimeToolBox : ToolBox() {
 
     @Tool(name = "getDate", description = "获取当前日期", readOnly = true)
-    @ToolMeta(displayName = "Get Date", displayNameZh = "获取日期", needConfirm = true)
+    @ToolMeta(displayName = "Get Date", displayNameZh = "获取日期", needConfirm = false)
     fun getDate(): String = execute { SimpleDateFormat(YYYY_MM_DD).format(Date()) }
 
     @Tool(name = "getDatetime", description = "获取当前时间", readOnly = true)
-    @ToolMeta(displayName = "Get DateTime", displayNameZh = "获取时间", needConfirm = true)
+    @ToolMeta(displayName = "Get DateTime", displayNameZh = "获取时间", needConfirm = false)
     fun getDatetime(): String = execute { SimpleDateFormat(YYYY_MM_DD_HH_MM_SS).format(Date()) }
 
     override fun name(): String = NAME

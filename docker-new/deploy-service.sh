@@ -65,7 +65,7 @@ case $SERVICE in
         docker build --no-cache -f docker-new/Dockerfile.admin -t harnax-admin:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate admin
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps admin
         ;;
 
     router)
@@ -81,7 +81,7 @@ case $SERVICE in
         docker build --no-cache -f docker-new/Dockerfile.router -t harnax-router:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate router
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps router
         ;;
 
     agent-service)
@@ -97,7 +97,7 @@ case $SERVICE in
         docker build --no-cache -f docker-new/Dockerfile.agent-service -t harnax-agent-service:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate agent-service
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps agent-service
         ;;
 
     channel-service)
@@ -113,7 +113,7 @@ case $SERVICE in
         docker build --no-cache -f docker-new/Dockerfile.channel-service -t harnax-channel-service:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate channel-service
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps channel-service
         ;;
 
     scheduler)
@@ -129,7 +129,7 @@ case $SERVICE in
         docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest . -q
 
         echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate scheduler
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps scheduler
         ;;
 
     frontend)
@@ -146,7 +146,7 @@ case $SERVICE in
         echo "🐳 步骤 3/3: 构建并重启服务..."
         docker rmi -f harnax-frontend:latest 2>/dev/null || true
         docker build --no-cache -f docker-new/Dockerfile.frontend -t harnax-frontend:latest . -q
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate frontend
+        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps frontend
         ;;
 
     *)

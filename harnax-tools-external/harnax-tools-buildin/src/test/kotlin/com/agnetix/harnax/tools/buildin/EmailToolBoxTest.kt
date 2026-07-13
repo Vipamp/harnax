@@ -348,18 +348,4 @@ class EmailToolBoxTest {
             }
         }
     }
-
-    @Nested
-    @DisplayName("NeedConfirm Declaration Tests")
-    inner class NeedConfirmTests {
-
-        @Test
-        @DisplayName("needConfirmedTools should be empty since @NeedConfirmed annotation is not used")
-        fun `needConfirmedTools should be empty without NeedConfirmed annotation`() {
-            // needConfirm is driven by @ToolMeta(needConfirm=true) -> DB record,
-            // not by @NeedConfirmed annotation on ToolBox methods
-            val confirmed = emailToolBox.needConfirmedTools()
-            assertEquals(0, confirmed.size)
-        }
-    }
 }

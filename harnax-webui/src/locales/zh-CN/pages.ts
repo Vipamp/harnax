@@ -1018,9 +1018,8 @@ export default {
 
   // 工具管理重构
   'pages.tool.requiredEnvParamKeys': '所需环境参数',
-  'pages.agent.tool.type': '工具类型',
-  'pages.agent.tool.typeBuiltin': '内置工具',
-  'pages.agent.tool.typeCustom': '自定义工具',
+  'pages.agent.tool.groupBuiltin': '内置工具',
+  'pages.agent.tool.groupCustom': '自定义工具',
   'pages.agent.tool.envBinding': '环境参数配置',
   'pages.agent.mcp.envBinding': 'MCP 环境参数配置',
   'pages.agent.tool.selectEnvVar': '选择或输入环境参数值',
