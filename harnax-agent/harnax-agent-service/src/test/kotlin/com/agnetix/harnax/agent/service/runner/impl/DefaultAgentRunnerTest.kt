@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.ToolInfo
+import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.entity.Channel
@@ -36,6 +37,7 @@ class DefaultAgentRunnerTest {
     private lateinit var agentSpecResolver: AgentSpecResolver
     private lateinit var sessionMapper: SessionMapper
     private lateinit var channelMapper: ChannelMapper
+    private lateinit var adminApiClient: AdminApiClient
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
 
@@ -46,10 +48,12 @@ class DefaultAgentRunnerTest {
         sessionMapper = mock(SessionMapper::class.java)
         channelMapper = mock(ChannelMapper::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
+        adminApiClient = mock(AdminApiClient::class.java)
 
         runner = DefaultAgentRunner(
             launcher = launcher,
             agentSpecResolver = agentSpecResolver,
+            adminApiClient = adminApiClient,
             sessionMapper = sessionMapper,
             channelMapper = channelMapper,
             cacheMaxSize = 100L,
