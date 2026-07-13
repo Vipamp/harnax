@@ -24,6 +24,7 @@
         <module>harnax-admin</module>
         <module>harnax-session-router</module>
         <module>harnax-scheduler</module>
+        <module>harnax-client</module>
     </modules>
 
     <properties>

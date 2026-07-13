@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agnetix</groupId>
+        <artifactId>harnax</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>harnax-client</artifactId>
+    <packaging>pom</packaging>
+
+    <name>harnax-client</name>
+    <description>Harnax Client SDK - External HTTP client for calling Router API</description>
+
+    <modules>
+        <module>harnax-client-common</module>
+        <module>harnax-single-client</module>
+        <module>harnax-springboot-client</module>
+    </modules>
+</project>
