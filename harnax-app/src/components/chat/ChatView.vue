@@ -21,7 +21,7 @@
         <text class="typing-dot typing-delay-1">●</text>
         <text class="typing-dot typing-delay-2">●</text>
       </view>
-      <view :id="'scroll-bottom'" style="height: 1px" />
+      <view :id="`scroll-bottom-${scrollCounter}`" style="height: 1px" />
     </scroll-view>
     <InputArea
       :isStreaming="isStreaming"
@@ -44,6 +44,7 @@ const chatStore = useChatStore()
 const { messages, isStreaming, scrollToBottom } = storeToRefs(chatStore)
 
 const scrollAnchor = ref('')
+let scrollCounter = 0
 
 const hasAssistantMessage = computed(() =>
   messages.value.some((m) => m.role === 'assistant'),
@@ -63,10 +64,8 @@ function handleConfirm(confirmed: boolean) {
 
 watch(scrollToBottom, (val) => {
   if (val) {
-    scrollAnchor.value = ''
-    setTimeout(() => {
-      scrollAnchor.value = 'scroll-bottom'
-    }, 50)
+    scrollCounter++
+    scrollAnchor.value = `scroll-bottom-${scrollCounter}`
     chatStore.scrollToBottom = false
   }
 })

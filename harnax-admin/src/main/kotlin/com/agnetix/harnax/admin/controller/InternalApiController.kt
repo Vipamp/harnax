@@ -4,16 +4,25 @@ import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.McpDetailDto
+import com.agnetix.harnax.entity.dto.ModelConfigDto
+import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
+import com.agnetix.harnax.entity.dto.ToolDetailDto
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
+import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.entity.Model
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 import tools.jackson.core.type.TypeReference
@@ -25,6 +34,7 @@ class InternalApiController(
     private val apiKeyMapper: ApiKeyMapper,
     private val sessionMapper: SessionMapper,
     private val modelMapper: ModelMapper,
+    private val modelProviderMapper: ModelProviderMapper,
     private val aesUtil: AesUtil,
     private val agentTaskMapper: AgentTaskMapper,
     private val agentMapper: AgentMapper,
@@ -33,6 +43,9 @@ class InternalApiController(
     private val mcpBindingMapper: AgentMcpBindingMapper,
     private val skillBindingMapper: AgentSkillBindingMapper,
     private val envVariableService: EnvVariableService,
+    private val agentToolMapper: AgentToolMapper,
+    private val mcpServerMapper: McpServerMapper,
+    private val skillMapper: SkillMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -157,12 +170,11 @@ class InternalApiController(
             description = agent.description,
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
+            model = model,
             enableThink = session.enableThink,
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
-            modelSupportInternet = model?.supportInternet ?: 0,
-            modelSupportReasoning = model?.supportReasoning ?: 0,
         )
     }
 
@@ -180,12 +192,11 @@ class InternalApiController(
             description = agent.description,
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
+            model = model,
             permissionMode = channel.permissionMode,
             enableThink = channel.enableThink,
             enableSearch = channel.enableSearch,
             enablePlan = channel.enablePlan,
-            modelSupportInternet = model?.supportInternet ?: 0,
-            modelSupportReasoning = model?.supportReasoning ?: 0,
         )
     }
 
@@ -206,9 +217,8 @@ class InternalApiController(
             description = agent.description,
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
+            model = model,
             permissionMode = "BYPASS",
-            modelSupportInternet = model?.supportInternet ?: 0,
-            modelSupportReasoning = model?.supportReasoning ?: 0,
         )
     }
 
@@ -217,7 +227,8 @@ class InternalApiController(
     // ========================================
 
     /**
-     * Build AgentSpecInfoResponse with binding table data serialized as JSON.
+     * Build AgentSpecInfoResponse with binding table data serialized as JSON,
+     * and full detail DTOs for model/tools/MCPs/skills.
      * Env bindings are resolved: envVarId → latest value, fallback to snapshot.
      */
     private fun buildAgentSpecResponse(
@@ -226,13 +237,13 @@ class InternalApiController(
         description: String,
         systemPrompt: String,
         modelId: Long,
+        model: Model? = null,
         enableThink: Int = 0,
         enableSearch: Int = 0,
         enablePlan: Int = 0,
         permissionMode: String = "DEFAULT",
-        modelSupportInternet: Int = 0,
-        modelSupportReasoning: Int = 0,
     ): AgentSpecInfoResponse {
+        // ── Tool bindings (JSON for backward compat + full detail DTOs) ──
         val toolBindings = toolBindingMapper.selectByAgentId(agentId)
         val toolListJson = if (toolBindings.isEmpty()) {
             "[]"
@@ -248,6 +259,38 @@ class InternalApiController(
             objectMapper.writeValueAsString(items)
         }
 
+        val toolDetails = toolBindings.mapNotNull { binding ->
+            val tool = agentToolMapper.selectById(binding.toolId)
+            if (tool == null) {
+                log.warn("Tool not found: toolId={}", binding.toolId)
+                null
+            } else {
+                ToolDetailDto(
+                    id = tool.id,
+                    name = tool.name,
+                    displayName = tool.displayName,
+                    displayNameZh = tool.displayNameZh,
+                    description = tool.description,
+                    type = tool.type,
+                    beanName = tool.beanName,
+                    methodName = tool.methodName,
+                    httpUrl = tool.httpUrl,
+                    httpMethod = tool.httpMethod,
+                    httpHeaders = tool.httpHeaders,
+                    envParams = tool.envParams,
+                    inputSchema = tool.inputSchema,
+                    outputSchema = tool.outputSchema,
+                    readOnly = tool.readOnly,
+                    needConfirm = tool.needConfirm,
+                    requiredEnvParamKeys = tool.requiredEnvParamKeys,
+                    timeoutSeconds = tool.timeoutSeconds,
+                    enableSkip = binding.enableSkip,
+                    bindingNeedConfirm = binding.needConfirm == 1,
+                )
+            }
+        }
+
+        // ── MCP bindings (JSON for backward compat + full detail DTOs) ──
         val mcpBindings = mcpBindingMapper.selectByAgentId(agentId)
         val mcpListJson = if (mcpBindings.isEmpty()) {
             "[]"
@@ -262,8 +305,67 @@ class InternalApiController(
             objectMapper.writeValueAsString(items)
         }
 
+        val mcpDetails = mcpBindings.mapNotNull { binding ->
+            val mcp = mcpServerMapper.selectById(binding.mcpId)
+            if (mcp == null) {
+                log.warn("MCP server not found: mcpId={}", binding.mcpId)
+                null
+            } else {
+                McpDetailDto(
+                    id = mcp.id,
+                    name = mcp.name,
+                    description = mcp.description,
+                    type = mcp.type,
+                    command = mcp.command,
+                    url = mcp.url,
+                    headers = mcp.headers,
+                    envParams = mcp.envParams,
+                    enableSkip = binding.enableSkip,
+                )
+            }
+        }
+
+        // ── Skill bindings (comma-separated IDs + full detail DTOs) ──
         val skillBindings = skillBindingMapper.selectByAgentId(agentId)
         val skillListStr = skillBindings.joinToString(",") { it.skillId.toString() }
+
+        val skillDetails = skillBindings.mapNotNull { binding ->
+            val skill = skillMapper.selectById(binding.skillId)
+            if (skill == null) {
+                log.warn("Skill not found: skillId={}", binding.skillId)
+                null
+            } else {
+                SkillDetailDto(
+                    id = skill.id,
+                    name = skill.name,
+                    description = skill.description,
+                    skillmd = skill.skillmd,
+                    storagePath = skill.storagePath,
+                    resources = skill.resources,
+                    version = skill.version,
+                )
+            }
+        }
+
+        // ── Model + Provider full config (reuse already-queried model) ──
+        val modelConfig = if (model != null) {
+            val provider = modelProviderMapper.selectById(model.providerId)
+            ModelConfigDto(
+                modelId = model.id,
+                modelName = model.modelName,
+                modelType = model.modelType,
+                providerType = provider?.type ?: "unknown",
+                apiKey = provider?.apiKey,
+                baseUrl = provider?.baseUrl,
+                supportInternet = model.supportInternet,
+                supportReasoning = model.supportReasoning,
+                supportTool = model.supportTool,
+                supportVision = model.supportVision,
+                supportMcp = model.supportMcp,
+            )
+        } else {
+            null
+        }
 
         return AgentSpecInfoResponse(
             agentId = agentId,
@@ -278,8 +380,12 @@ class InternalApiController(
             enableSearch = enableSearch,
             enablePlan = enablePlan,
             permissionMode = permissionMode,
-            modelSupportInternet = modelSupportInternet,
-            modelSupportReasoning = modelSupportReasoning,
+            modelSupportInternet = model?.supportInternet ?: 0,
+            modelSupportReasoning = model?.supportReasoning ?: 0,
+            modelConfig = modelConfig,
+            toolDetails = toolDetails,
+            mcpDetails = mcpDetails,
+            skillDetails = skillDetails,
         )
     }
 
@@ -348,5 +454,106 @@ class InternalApiController(
     } catch (e: Exception) {
         log.error("Failed to get agent task spec: taskId={}", taskId, e)
         ResultVo.error("Failed to get agent task spec: ${e.message}")
+    }
+
+    // ========================================
+    // Session capability / permission updates
+    // (for agent-service to call instead of direct DB writes)
+    // ========================================
+
+    data class CapabilityToggleRequest(
+        val capability: String,  // "search" | "thinking" | "plan" | "bypass"
+        val enable: Boolean,
+    )
+
+    data class PermissionModeRequest(
+        val mode: String,  // "DEFAULT" | "BYPASS" | "ACCEPT_EDITS" | "EXPLORE" | "DONT_ASK"
+    )
+
+    /**
+     * Toggle a session/channel capability (search, thinking, plan, bypass).
+     * Agent-service calls this instead of directly updating session/channel tables.
+     */
+    @PutMapping("/sessions/{sessionId}/capabilities")
+    fun toggleCapability(
+        @PathVariable sessionId: String,
+        @RequestBody request: CapabilityToggleRequest,
+    ): ResultVo<String> = try {
+        val flag = if (request.enable) 1 else 0
+        val capability = request.capability.lowercase()
+        val now = java.time.LocalDateTime.now()
+
+        if (sessionId.startsWith("chn-")) {
+            val channel = channelMapper.selectBySessionId(sessionId)
+                ?: return ResultVo.error("Channel not found: $sessionId")
+            when (capability) {
+                "search" -> channel.enableSearch = flag
+                "thinking" -> channel.enableThink = flag
+                "plan" -> channel.enablePlan = flag
+                "bypass" -> channel.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
+                else -> return ResultVo.error("Unknown capability: $capability")
+            }
+            channel.updateTime = now
+            channelMapper.updateById(channel)
+        } else {
+            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                ?: return ResultVo.error("Session not found: $sessionId")
+            when (capability) {
+                "search" -> session.enableSearch = flag
+                "thinking" -> session.enableThink = flag
+                "plan" -> session.enablePlan = flag
+                "bypass" -> session.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
+                else -> return ResultVo.error("Unknown capability: $capability")
+            }
+            session.updateTime = now
+            sessionMapper.updateById(session)
+        }
+
+        log.info("[Admin] Capability toggled: sessionId={}, capability={}, enable={}", sessionId, capability, request.enable)
+        ResultVo.success("OK")
+    } catch (e: Exception) {
+        log.error("Failed to toggle capability: sessionId={}", sessionId, e)
+        ResultVo.error("Failed to toggle capability: ${e.message}")
+    }
+
+    /**
+     * Change a session/channel permission mode.
+     * Agent-service calls this instead of directly updating session/channel tables.
+     */
+    @PutMapping("/sessions/{sessionId}/permission-mode")
+    fun updatePermissionMode(
+        @PathVariable sessionId: String,
+        @RequestBody request: PermissionModeRequest,
+    ): ResultVo<String> = try {
+        val mode = request.mode.uppercase()
+        if (mode !in VALID_PERMISSION_MODES) {
+            return ResultVo.error("Invalid permission mode: '${request.mode}'. Valid: ${VALID_PERMISSION_MODES.joinToString(", ")}")
+        }
+
+        val now = java.time.LocalDateTime.now()
+
+        if (sessionId.startsWith("chn-")) {
+            val channel = channelMapper.selectBySessionId(sessionId)
+                ?: return ResultVo.error("Channel not found: $sessionId")
+            channel.permissionMode = mode
+            channel.updateTime = now
+            channelMapper.updateById(channel)
+        } else {
+            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                ?: return ResultVo.error("Session not found: $sessionId")
+            session.permissionMode = mode
+            session.updateTime = now
+            sessionMapper.updateById(session)
+        }
+
+        log.info("[Admin] Permission mode updated: sessionId={}, mode={}", sessionId, mode)
+        ResultVo.success("OK")
+    } catch (e: Exception) {
+        log.error("Failed to update permission mode: sessionId={}", sessionId, e)
+        ResultVo.error("Failed to update permission mode: ${e.message}")
+    }
+
+    companion object {
+        private val VALID_PERMISSION_MODES = setOf("DEFAULT", "BYPASS", "ACCEPT_EDITS", "EXPLORE", "DONT_ASK")
     }
 }

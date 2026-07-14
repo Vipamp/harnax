@@ -1,5 +1,5 @@
 <template>
-  <view :class="['message-bubble', `message-${message.role}`]">
+  <view :class="['message-bubble', `message-${message.role}`]" @longpress="handleLongPress">
     <view class="bubble-avatar">
       <text class="avatar-text">{{ message.role === 'user' ? '👤' : '🤖' }}</text>
     </view>
@@ -27,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import type { ChatMessage } from '@/types/chat'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallCard from './ToolCallCard.vue'
@@ -34,7 +35,9 @@ import ToolConfirmCard from './ToolConfirmCard.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import TokenUsage from './TokenUsage.vue'
 
-defineProps<{
+const { t } = useI18n()
+
+const props = defineProps<{
   message: ChatMessage
 }>()
 
@@ -44,6 +47,32 @@ const emit = defineEmits<{
 
 function handleConfirm(confirmed: boolean) {
   emit('confirm', confirmed)
+}
+
+function handleLongPress() {
+  const textContent = props.message.segments
+    .filter((s) => s.type === 'text' || s.type === 'thinking')
+    .map((s) => s.content)
+    .join('\n')
+
+  if (!textContent.trim()) return
+
+  uni.showActionSheet({
+    itemList: [t('common.copy')],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        uni.setClipboardData({
+          data: textContent,
+          success: () => {
+            uni.showToast({ title: t('common.copied'), icon: 'success' })
+          },
+          fail: () => {
+            uni.showToast({ title: t('common.copyFailed'), icon: 'none' })
+          },
+        })
+      }
+    },
+  })
 }
 </script>
 

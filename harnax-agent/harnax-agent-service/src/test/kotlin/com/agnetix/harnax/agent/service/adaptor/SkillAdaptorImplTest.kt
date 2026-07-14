@@ -2,7 +2,10 @@ package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.skill.store.SkillContentData
 import com.agnetix.harnax.agent.skill.store.SkillContentReader
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.mapper.SkillMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -19,6 +22,7 @@ import java.time.LocalDateTime
  */
 class SkillAdaptorImplTest {
 
+    private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var skillMapper: SkillMapper
     private lateinit var objectMapper: ObjectMapper
     private lateinit var skillContentReader: SkillContentReader
@@ -28,10 +32,11 @@ class SkillAdaptorImplTest {
 
     @BeforeEach
     fun setUp() {
+        specContextHolder = mock(AgentSpecContextHolder::class.java)
         skillMapper = mock(SkillMapper::class.java)
         objectMapper = ObjectMapper()
         skillContentReader = mock(SkillContentReader::class.java)
-        adaptor = SkillAdaptorImpl(skillMapper, objectMapper, skillContentReader)
+        adaptor = SkillAdaptorImpl(specContextHolder, skillMapper, objectMapper, skillContentReader)
 
         testSkill = Skill().apply {
             id = 1L
@@ -428,6 +433,64 @@ class SkillAdaptorImplTest {
             assertNotNull(result)
             assertEquals("minimal-skill", result!!.name)
             assertEquals("Minimal desc", result.description)
+        }
+    }
+
+    @Nested
+    @DisplayName("Context-first path tests")
+    inner class ContextFirstTests {
+
+        private fun stubContext(skillDetails: List<SkillDetailDto>) {
+            val specInfo = AgentSpecInfoResponse(
+                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
+                modelId = 1L, skillDetails = skillDetails,
+            )
+            `when`(specContextHolder.get()).thenReturn(specInfo)
+        }
+
+        @Test
+        fun `getSkill should load from context when skill DTO found`() {
+            val dto = SkillDetailDto(
+                id = 10L, name = "ctx-skill", description = "From context",
+                skillmd = "# Context Skill", storagePath = "", resources = "",
+                version = "1.0.0",
+            )
+            stubContext(listOf(dto))
+
+            val result = adaptor.getSkill(10L)
+
+            assertNotNull(result)
+            assertEquals("ctx-skill", result!!.name)
+            assertEquals("# Context Skill", result.skillContent)
+            verify(skillMapper, never()).selectById(10L)
+        }
+
+        @Test
+        fun `getSkill should fallback to DB when context has no matching skill`() {
+            stubContext(emptyList())
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillContentReader.load("1/test-skill")).thenReturn(
+                SkillContentData(skillmd = "# DB", resources = emptyMap()),
+            )
+
+            val result = adaptor.getSkill(1L)
+
+            assertNotNull(result)
+            verify(skillMapper).selectById(1L)
+        }
+
+        @Test
+        fun `getSkill should fallback to DB when context is null`() {
+            `when`(specContextHolder.get()).thenReturn(null)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillContentReader.load("1/test-skill")).thenReturn(
+                SkillContentData(skillmd = "# DB", resources = emptyMap()),
+            )
+
+            val result = adaptor.getSkill(1L)
+
+            assertNotNull(result)
+            verify(skillMapper).selectById(1L)
         }
     }
 }

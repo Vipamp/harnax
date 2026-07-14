@@ -12,6 +12,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useIntl } from '@umijs/max';
+import { useIsMobile } from '@/utils/responsive';
 
 import { getBuiltinTools } from '@/services/ant-design-pro/tool';
 import {
@@ -32,6 +33,7 @@ const getLocalizedToolName = (item: any, locale: string): string => {
 const ToolManagement: React.FC = () => {
   const intl = useIntl();
   const locale = intl.locale;
+  const isMobile = useIsMobile();
 
   const [activeTab, setActiveTab] = useState<string>('toolbox');
   const [builtinTools, setBuiltinTools] = useState<any[]>([]);
@@ -205,13 +207,13 @@ const ToolManagement: React.FC = () => {
             ),
             children: (
               <div>
-                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   <Input.Search
                     placeholder={intl.formatMessage({ id: 'pages.tool.searchPlaceholder', defaultMessage: 'Search tool name or description' })}
                     allowClear
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    style={{ maxWidth: 400 }}
+                    style={{ maxWidth: isMobile ? '100%' : 400, width: isMobile ? '100%' : undefined }}
                   />
                 </div>
                 <Table
@@ -220,7 +222,8 @@ const ToolManagement: React.FC = () => {
                   rowKey="id"
                   loading={loading}
                   pagination={false}
-                  size="middle"
+                  size={isMobile ? 'small' : 'middle'}
+                  scroll={{ x: 'max-content' }}
                   locale={{
                     emptyText: (
                       <Empty

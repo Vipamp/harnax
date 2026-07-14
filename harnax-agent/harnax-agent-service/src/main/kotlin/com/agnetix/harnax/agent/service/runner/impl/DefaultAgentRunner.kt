@@ -14,14 +14,13 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.service.client.AdminApiClient
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
-import com.agnetix.harnax.mapper.ChannelMapper
-import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.event.ConfirmResult
@@ -32,7 +31,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
-import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 
@@ -44,8 +42,7 @@ import java.util.concurrent.ConcurrentHashMap as JConcurrentHashMap
 class DefaultAgentRunner(
     private val launcher: HarnessAgentLauncher,
     private val agentSpecResolver: AgentSpecResolver,
-    private val sessionMapper: SessionMapper,
-    private val channelMapper: ChannelMapper,
+    private val specContextHolder: AgentSpecContextHolder,
     private val adminApiClient: AdminApiClient,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
@@ -280,18 +277,23 @@ class DefaultAgentRunner(
      * Route agent creation based on sessionId prefix.
      * Delegates spec resolution to AgentSpecResolver (which calls Admin).
      */
-    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = agentCache.get(sessionId) { sid ->
-        log.info("Resolving agent spec for sessionId=$sid")
-        val (agentSpec, chatSpec) = agentSpecResolver.resolve(sid)
-        val agent = launcher.createSingleAgent(
-            agentSpec = agentSpec,
-            sessionId = sid,
-            stateless = false,
-            chatSpec = chatSpec,
-            userIdentifier = userIdentifier,
-        )
-        log.info("Agent for session=$sid created and cached successfully")
-        agent
+    private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = try {
+        agentCache.get(sessionId) { sid ->
+            log.info("Resolving agent spec for sessionId=$sid")
+            val (agentSpec, chatSpec) = agentSpecResolver.resolve(sid)
+            val agent = launcher.createSingleAgent(
+                agentSpec = agentSpec,
+                sessionId = sid,
+                stateless = false,
+                chatSpec = chatSpec,
+                userIdentifier = userIdentifier,
+            )
+            log.info("Agent for session=$sid created and cached successfully")
+            agent
+        }
+    } finally {
+        // Clear ThreadLocal context to prevent leaks after agent creation
+        specContextHolder.clear()
     }
 
     /**
@@ -368,7 +370,6 @@ class DefaultAgentRunner(
             return CommandResponse.failure(sessionId, "Capability toggle is not supported for task sessions")
         }
 
-        val flag = if (enable) 1 else 0
         val display = capability.replaceFirstChar { it.uppercase() }
 
         // When enabling a capability, validate that the model supports it
@@ -392,30 +393,10 @@ class DefaultAgentRunner(
             }
         }
 
-        if (sessionId.startsWith("chn-")) {
-            // Channel session: update channel table
-            val channel = channelMapper.selectBySessionId(sessionId)
-                ?: return CommandResponse.failure(sessionId, "Channel not found: $sessionId")
-            when (capability) {
-                "search" -> channel.enableSearch = flag
-                "thinking" -> channel.enableThink = flag
-                "plan" -> channel.enablePlan = flag
-                "bypass" -> channel.permissionMode = if (enable) "BYPASS" else "DEFAULT"
-            }
-            channel.updateTime = LocalDateTime.now()
-            channelMapper.updateById(channel)
-        } else {
-            // Web/mp session: update session table
-            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-                ?: return CommandResponse.failure(sessionId, "Session not found: $sessionId")
-            when (capability) {
-                "search" -> session.enableSearch = flag
-                "thinking" -> session.enableThink = flag
-                "plan" -> session.enablePlan = flag
-                "bypass" -> session.permissionMode = if (enable) "BYPASS" else "DEFAULT"
-            }
-            session.updateTime = LocalDateTime.now()
-            sessionMapper.updateById(session)
+        // Delegate to admin API instead of direct DB writes
+        val success = adminApiClient.toggleCapability(sessionId, capability, enable)
+        if (!success) {
+            return CommandResponse.failure(sessionId, "Failed to toggle $display via admin API")
         }
 
         // Invalidate cached agent so it gets recreated with new ChatSpec
@@ -447,18 +428,10 @@ class DefaultAgentRunner(
             return CommandResponse.failure(sessionId, "Permission mode change is not supported for task sessions")
         }
 
-        if (sessionId.startsWith("chn-")) {
-            val channel = channelMapper.selectBySessionId(sessionId)
-                ?: return CommandResponse.failure(sessionId, "Channel not found: $sessionId")
-            channel.permissionMode = mode
-            channel.updateTime = LocalDateTime.now()
-            channelMapper.updateById(channel)
-        } else {
-            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-                ?: return CommandResponse.failure(sessionId, "Session not found: $sessionId")
-            session.permissionMode = mode
-            session.updateTime = LocalDateTime.now()
-            sessionMapper.updateById(session)
+        // Delegate to admin API instead of direct DB writes
+        val success = adminApiClient.updatePermissionMode(sessionId, mode)
+        if (!success) {
+            return CommandResponse.failure(sessionId, "Failed to update permission mode via admin API")
         }
 
         // Invalidate cached agent so it gets recreated with new permissionMode

@@ -75,6 +75,10 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 function inlineFormat(text: string): string {
   let html = escapeHtml(text)
   // bold
@@ -83,8 +87,8 @@ function inlineFormat(text: string): string {
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
   // inline code
   html = html.replace(/`([^`]+)`/g, '<code style="background:rgba(127,127,127,0.15);padding:1px 4px;border-radius:3px;font-size:0.9em">$1</code>')
-  // links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:var(--chat-primary)">$1</a>')
+  // links (escape href to prevent malformed HTML)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, linkText, url) => `<a href="${escapeAttr(url)}" style="color:var(--chat-primary)">${linkText}</a>`)
   return html
 }
 

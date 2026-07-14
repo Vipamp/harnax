@@ -17,6 +17,9 @@ import io.swagger.v3.oas.annotations.media.Schema
  * Tool/MCP/Skill bindings are read from normalized binding tables
  * (agent_tool_binding, agent_mcp_binding, agent_skill_binding).
  * Env bindings are resolved at admin side: envVarId → latest value, fallback to snapshot.
+ *
+ * Since v2: also includes full model/tool/mcp/skill details so agent-service
+ * no longer needs to query harnax_admin DB for configuration data.
  */
 @Schema(description = "Unified Agent Spec response for agent-service")
 data class AgentSpecInfoResponse(
@@ -61,4 +64,20 @@ data class AgentSpecInfoResponse(
 
     @Schema(description = "Model supports reasoning/thinking (0:no, 1:yes)")
     val modelSupportReasoning: Int = 0,
+
+    // ──────────────────────────────────────────────
+    // Full configuration details (populated by admin)
+    // ──────────────────────────────────────────────
+
+    @Schema(description = "Full model + provider configuration")
+    val modelConfig: ModelConfigDto? = null,
+
+    @Schema(description = "Full tool configurations (with binding overrides)")
+    val toolDetails: List<ToolDetailDto> = emptyList(),
+
+    @Schema(description = "Full MCP server configurations (with binding overrides)")
+    val mcpDetails: List<McpDetailDto> = emptyList(),
+
+    @Schema(description = "Full skill configurations")
+    val skillDetails: List<SkillDetailDto> = emptyList(),
 )

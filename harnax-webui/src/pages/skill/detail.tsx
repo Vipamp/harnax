@@ -18,6 +18,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import BackButton from '@/components/BackButton';
 import DetailPageHeader from '@/components/DetailPageHeader';
+import { useIsMobile } from '@/utils/responsive';
 
 const { Text, Title } = Typography;
 const { DirectoryTree } = Tree;
@@ -172,6 +173,7 @@ const FileContentRenderer: React.FC<{ filename: string; content: string }> = ({ 
 const SkillDetail: React.FC = () => {
   const intl = useIntl();
   const location = useLocation();
+  const isMobile = useIsMobile();
   const [loading, setLoading] = useState(false);
   const [skillInfo, setSkillInfo] = useState<API.SkillItem | null>(null);
   const [selectedFile, setSelectedFile] = useState<string>('');
@@ -368,16 +370,19 @@ const SkillDetail: React.FC = () => {
           <div style={{ 
             flex: 1, 
             display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
             overflow: 'hidden'
           }}>
             {/* 左侧文件树 */}
             <div className="file-tree-panel" style={{
-              width: '320px',
+              width: isMobile ? '100%' : '320px',
               background: 'var(--vip-bg-container)',
-              borderRight: '1px solid var(--vip-border)',
+              borderRight: isMobile ? 'none' : '1px solid var(--vip-border)',
+              borderBottom: isMobile ? '1px solid var(--vip-border)' : 'none',
               display: 'flex',
               flexDirection: 'column',
-              overflow: 'hidden'
+              overflow: 'hidden',
+              maxHeight: isMobile ? '200px' : undefined,
             }}>
               <div style={{ 
                 padding: '12px 16px', 

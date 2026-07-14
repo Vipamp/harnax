@@ -1,6 +1,9 @@
 package com.agnetix.harnax.agent.service.adaptor
 
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.AgentTool
+import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.ToolDetailDto
 import com.agnetix.harnax.mapper.AgentToolMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -32,6 +35,9 @@ class ToolConfigAdaptorImplTest {
     @Mock
     private lateinit var agentToolMapper: AgentToolMapper
 
+    @Mock
+    private lateinit var specContextHolder: AgentSpecContextHolder
+
     @InjectMocks
     private lateinit var toolConfigAdaptor: ToolConfigAdaptorImpl
 
@@ -50,6 +56,66 @@ class ToolConfigAdaptorImplTest {
             active = 1
             createTime = LocalDateTime.now()
             updateTime = LocalDateTime.now()
+        }
+    }
+
+    @Nested
+    @DisplayName("Context-first path tests")
+    inner class ContextFirstTests {
+
+        private fun stubContext(toolDetails: List<ToolDetailDto>) {
+            val specInfo = AgentSpecInfoResponse(
+                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
+                modelId = 1L, toolDetails = toolDetails,
+            )
+            `when`(specContextHolder.get()).thenReturn(specInfo)
+        }
+
+        @Test
+        @DisplayName("getToolConfig - Load from context when DTO found")
+        fun `getToolConfig should load from context when tool DTO found`() {
+            val dto = ToolDetailDto(
+                id = 1L, name = "ctx-tool", displayName = "Context Tool",
+                displayNameZh = null, description = "From context",
+                type = "BUILTIN", beanName = "ctx-tool-bean",
+                methodName = "run", httpUrl = null, httpMethod = null,
+                httpHeaders = null, envParams = null, inputSchema = null,
+                outputSchema = null, readOnly = 0, needConfirm = 0,
+                requiredEnvParamKeys = null, timeoutSeconds = null,
+                enableSkip = "false", bindingNeedConfirm = 0,
+            )
+            stubContext(listOf(dto))
+
+            val result = toolConfigAdaptor.getToolConfig(1L)
+
+            assertNotNull(result)
+            assertEquals("ctx-tool", result?.name)
+            assertEquals("Context Tool", result?.displayName)
+            verify(agentToolMapper, never()).selectById(1L)
+        }
+
+        @Test
+        @DisplayName("getToolConfig - Fallback to DB when context has no matching tool")
+        fun `getToolConfig should fallback to DB when context has no matching tool`() {
+            stubContext(emptyList())
+            `when`(agentToolMapper.selectById(999L)).thenReturn(testAgentTool)
+
+            val result = toolConfigAdaptor.getToolConfig(999L)
+
+            assertNotNull(result)
+            verify(agentToolMapper).selectById(999L)
+        }
+
+        @Test
+        @DisplayName("getToolConfig - Fallback to DB when context is null")
+        fun `getToolConfig should fallback to DB when context is null`() {
+            `when`(specContextHolder.get()).thenReturn(null)
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+
+            val result = toolConfigAdaptor.getToolConfig(1L)
+
+            assertNotNull(result)
+            verify(agentToolMapper).selectById(1L)
         }
     }
 

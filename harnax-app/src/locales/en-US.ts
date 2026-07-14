@@ -88,5 +88,8 @@ export default {
     sessionExpiring: 'Session expiring, please login again',
     yes: 'Yes',
     no: 'No',
+    darkMode: 'Dark Mode',
+    lightMode: 'Light Mode',
+    networkDisconnected: 'Network disconnected, please check your connection',
   },
 }

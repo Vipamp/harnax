@@ -346,6 +346,7 @@ const McpDetail: React.FC = () => {
                   dataSource={tools}
                   rowKey="name"
                   pagination={false}
+                  scroll={{ x: 'max-content' }}
                   locale={{
                     emptyText: toolsLoading ? intl.formatMessage({ id: 'pages.common.loading', defaultMessage: 'Loading...' }) : intl.formatMessage({ id: 'pages.mcp.detail.noTools', defaultMessage: 'No tools' }),
                   }}

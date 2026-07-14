@@ -111,7 +111,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
     if (warningTime > 0) {
       refreshTimer = setTimeout(() => {
-        console.warn('[Auth] Token expiring soon, redirecting to login')
+        console.warn('[Auth] Token expiring soon')
         uni.showToast({
           title: i18n.global.t('common.sessionExpiring'),
           icon: 'none',
@@ -119,12 +119,10 @@ export const useConnectionStore = defineStore('connection', () => {
         })
         setTimeout(() => {
           clearAuth()
-          uni.redirectTo({ url: '/pages/setup/index' })
         }, 2000)
       }, warningTime)
     } else {
       clearAuth()
-      uni.redirectTo({ url: '/pages/setup/index' })
     }
   }
 

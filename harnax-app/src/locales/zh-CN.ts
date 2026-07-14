@@ -88,5 +88,8 @@ export default {
     sessionExpiring: '登录即将过期，请重新登录',
     yes: '是',
     no: '否',
+    darkMode: '深色模式',
+    lightMode: '浅色模式',
+    networkDisconnected: '网络已断开，请检查网络连接',
   },
 }

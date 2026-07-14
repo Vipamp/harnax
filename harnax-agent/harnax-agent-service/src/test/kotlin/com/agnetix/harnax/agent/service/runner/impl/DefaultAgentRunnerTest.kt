@@ -12,15 +12,12 @@ import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.agent.protocol.ToolInfo
 import com.agnetix.harnax.agent.service.client.AdminApiClient
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxException
-import com.agnetix.harnax.entity.Channel
-import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
-import com.agnetix.harnax.mapper.ChannelMapper
-import com.agnetix.harnax.mapper.SessionMapper
 import io.agentscope.core.message.ToolUseBlock
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -35,8 +32,7 @@ class DefaultAgentRunnerTest {
 
     private lateinit var launcher: HarnessAgentLauncher
     private lateinit var agentSpecResolver: AgentSpecResolver
-    private lateinit var sessionMapper: SessionMapper
-    private lateinit var channelMapper: ChannelMapper
+    private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var adminApiClient: AdminApiClient
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
@@ -45,17 +41,15 @@ class DefaultAgentRunnerTest {
     fun setUp() {
         launcher = mock(HarnessAgentLauncher::class.java)
         agentSpecResolver = mock(AgentSpecResolver::class.java)
-        sessionMapper = mock(SessionMapper::class.java)
-        channelMapper = mock(ChannelMapper::class.java)
+        specContextHolder = mock(AgentSpecContextHolder::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
         adminApiClient = mock(AdminApiClient::class.java)
 
         runner = DefaultAgentRunner(
             launcher = launcher,
             agentSpecResolver = agentSpecResolver,
+            specContextHolder = specContextHolder,
             adminApiClient = adminApiClient,
-            sessionMapper = sessionMapper,
-            channelMapper = channelMapper,
             cacheMaxSize = 100L,
         )
     }
@@ -201,15 +195,8 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `executeCommand ENABLE search toggles enableSearch`() {
-            val session = Session().apply {
-                id = 1L
-                sessionId = "session-1"
-                enableSearch = 0
-                enableThink = 0
-                enablePlan = 0
-            }
-            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+        fun `executeCommand ENABLE search delegates to adminApiClient`() {
+            `when`(adminApiClient.toggleCapability("session-1", "search", true)).thenReturn(true)
 
             val request = CommandAgentRequest(
                 sessionId = "session-1",
@@ -221,20 +208,12 @@ class DefaultAgentRunnerTest {
 
             assertTrue(response.success)
             assertEquals("Search enabled", response.message)
-            assertEquals(1, session.enableSearch)
-            verify(sessionMapper).updateById(session)
+            verify(adminApiClient).toggleCapability("session-1", "search", true)
         }
 
         @Test
-        fun `executeCommand DISABLE thinking toggles enableThink`() {
-            val session = Session().apply {
-                id = 1L
-                sessionId = "session-1"
-                enableSearch = 0
-                enableThink = 1
-                enablePlan = 0
-            }
-            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+        fun `executeCommand DISABLE thinking delegates to adminApiClient`() {
+            `when`(adminApiClient.toggleCapability("session-1", "thinking", false)).thenReturn(true)
 
             val request = CommandAgentRequest(
                 sessionId = "session-1",
@@ -246,20 +225,12 @@ class DefaultAgentRunnerTest {
 
             assertTrue(response.success)
             assertEquals("Thinking disabled", response.message)
-            assertEquals(0, session.enableThink)
-            verify(sessionMapper).updateById(session)
+            verify(adminApiClient).toggleCapability("session-1", "thinking", false)
         }
 
         @Test
-        fun `executeCommand ENABLE plan toggles enablePlan`() {
-            val session = Session().apply {
-                id = 1L
-                sessionId = "session-1"
-                enableSearch = 0
-                enableThink = 0
-                enablePlan = 0
-            }
-            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(session)
+        fun `executeCommand ENABLE plan delegates to adminApiClient`() {
+            `when`(adminApiClient.toggleCapability("session-1", "plan", true)).thenReturn(true)
 
             val request = CommandAgentRequest(
                 sessionId = "session-1",
@@ -271,7 +242,6 @@ class DefaultAgentRunnerTest {
 
             assertTrue(response.success)
             assertEquals("Plan enabled", response.message)
-            assertEquals(1, session.enablePlan)
         }
 
         @Test
@@ -289,15 +259,8 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `executeCommand ENABLE for channel session updates channel table`() {
-            val channel = Channel().apply {
-                id = 1L
-                sessionId = "chn-test-123"
-                enableSearch = 0
-                enableThink = 0
-                enablePlan = 0
-            }
-            `when`(channelMapper.selectBySessionId("chn-test-123")).thenReturn(channel)
+        fun `executeCommand ENABLE for channel session delegates to adminApiClient`() {
+            `when`(adminApiClient.toggleCapability("chn-test-123", "search", true)).thenReturn(true)
 
             val request = CommandAgentRequest(
                 sessionId = "chn-test-123",
@@ -309,8 +272,7 @@ class DefaultAgentRunnerTest {
 
             assertTrue(response.success)
             assertEquals("Search enabled", response.message)
-            assertEquals(1, channel.enableSearch)
-            verify(channelMapper).updateById(channel)
+            verify(adminApiClient).toggleCapability("chn-test-123", "search", true)
         }
 
         @Test
@@ -328,8 +290,8 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `executeCommand ENABLE with missing session fails`() {
-            `when`(sessionMapper.selectBySessionIdAndStatus("session-1", 1)).thenReturn(null)
+        fun `executeCommand ENABLE fails when admin API returns false`() {
+            `when`(adminApiClient.toggleCapability("session-1", "search", true)).thenReturn(false)
 
             val request = CommandAgentRequest(
                 sessionId = "session-1",
@@ -340,7 +302,230 @@ class DefaultAgentRunnerTest {
             val response = runner.executeCommand(request)
 
             assertFalse(response.success)
-            assertTrue(response.message?.contains("Session not found") == true)
+            assertTrue(response.message?.contains("Failed to toggle") == true)
+        }
+
+        @Test
+        fun `executeCommand PERMISSION delegates to adminApiClient`() {
+            `when`(adminApiClient.updatePermissionMode("session-1", "BYPASS")).thenReturn(true)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.PERMISSION,
+                args = "BYPASS",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Permission mode set to BYPASS", response.message)
+            verify(adminApiClient).updatePermissionMode("session-1", "BYPASS")
+        }
+
+        @Test
+        fun `executeCommand PERMISSION with invalid mode fails`() {
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.PERMISSION,
+                args = "HACK",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("Invalid permission mode") == true)
+        }
+
+        @Test
+        fun `executeCommand PERMISSION for task session fails`() {
+            val request = CommandAgentRequest(
+                sessionId = "task-123-run",
+                command = CommandType.PERMISSION,
+                args = "DEFAULT",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("not supported") == true)
+        }
+
+        @Test
+        fun `executeCommand REFRESH invalidates cached agent`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            // First, create and cache the agent
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hi"))
+
+            // Now refresh it
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.REFRESH,
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertTrue(response.message?.contains("refreshed") == true)
+        }
+
+        @Test
+        fun `executeCommand REFRESH succeeds when no cached agent`() {
+            val request = CommandAgentRequest(
+                sessionId = "session-no-cache",
+                command = CommandType.REFRESH,
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertTrue(response.message?.contains("No active agent") == true)
+        }
+
+        @Test
+        fun `executeCommand REFRESH then next call re-creates agent`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            // First call creates agent
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "first"))
+
+            // Refresh invalidates cache
+            runner.executeCommand(CommandAgentRequest(sessionId = "session-1", command = CommandType.REFRESH))
+
+            // Next call should re-create the agent
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "second"))
+
+            verify(launcher, times(2)).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+        }
+
+        @Test
+        fun `executeCommand ENABLE bypass delegates to adminApiClient`() {
+            `when`(adminApiClient.toggleCapability("session-1", "bypass", true)).thenReturn(true)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "bypass",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Bypass enabled", response.message)
+            verify(adminApiClient).toggleCapability("session-1", "bypass", true)
+        }
+
+        @Test
+        fun `executeCommand DISABLE fails when admin API returns false`() {
+            `when`(adminApiClient.toggleCapability("session-1", "thinking", false)).thenReturn(false)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.DISABLE,
+                args = "thinking",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("Failed to toggle") == true)
+        }
+
+        @Test
+        fun `executeCommand PERMISSION fails when admin API returns false`() {
+            `when`(adminApiClient.updatePermissionMode("session-1", "DEFAULT")).thenReturn(false)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.PERMISSION,
+                args = "DEFAULT",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("Failed to update") == true)
+        }
+
+        @Test
+        fun `executeCommand PERMISSION for channel session delegates to adminApiClient`() {
+            `when`(adminApiClient.updatePermissionMode("chn-test-123", "BYPASS")).thenReturn(true)
+
+            val request = CommandAgentRequest(
+                sessionId = "chn-test-123",
+                command = CommandType.PERMISSION,
+                args = "BYPASS",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            assertEquals("Permission mode set to BYPASS", response.message)
+            verify(adminApiClient).updatePermissionMode("chn-test-123", "BYPASS")
+        }
+
+        @Test
+        fun `executeCommand ENABLE thinking fails when model does not support reasoning`() {
+            val specInfo = com.agnetix.harnax.entity.dto.AgentSpecInfoResponse(
+                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
+                modelId = 1L, modelSupportReasoning = 0,
+            )
+            `when`(adminApiClient.getAgentSpec("session-1")).thenReturn(specInfo)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "thinking",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("does not support") == true)
+        }
+
+        @Test
+        fun `executeCommand ENABLE search fails when model does not support internet`() {
+            val specInfo = com.agnetix.harnax.entity.dto.AgentSpecInfoResponse(
+                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
+                modelId = 1L, modelSupportInternet = 0,
+            )
+            `when`(adminApiClient.getAgentSpec("session-1")).thenReturn(specInfo)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("does not support") == true)
+        }
+
+        @Test
+        fun `executeCommand ENABLE thinking proceeds when model validation fails with exception`() {
+            // Fail-open: admin API throws during model validation, toggle should still proceed
+            `when`(adminApiClient.getAgentSpec("session-1")).thenThrow(RuntimeException("Connection timeout"))
+            `when`(adminApiClient.toggleCapability("session-1", "thinking", true)).thenReturn(true)
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "thinking",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertTrue(response.success)
+            verify(adminApiClient).toggleCapability("session-1", "thinking", true)
         }
     }
 

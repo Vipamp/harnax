@@ -7,9 +7,14 @@
 
   /* Background */
   --chat-bg: #f5f7fa;
+  --chat-bg-base: #ffffff;
   --chat-bg-container: #ffffff;
   --chat-bg-elevated: #f8f9fc;
   --chat-bg-input: #ffffff;
+
+  /* Warning (tool confirm) */
+  --chat-warning-border: rgba(245, 158, 11, 0.3);
+  --chat-warning-bg: rgba(245, 158, 11, 0.06);
 
   /* Text */
   --chat-text-primary: #1a1a2e;
@@ -60,9 +65,13 @@ html.dark {
   --chat-primary-rgb: 107, 138, 255;
 
   --chat-bg: #0d1117;
+  --chat-bg-base: #161b22;
   --chat-bg-container: #161b22;
   --chat-bg-elevated: #1c2128;
   --chat-bg-input: #1c2128;
+
+  --chat-warning-border: rgba(245, 158, 11, 0.25);
+  --chat-warning-bg: rgba(245, 158, 11, 0.08);
 
   --chat-text-primary: #e6edf3;
   --chat-text-secondary: #8b949e;

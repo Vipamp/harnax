@@ -1,13 +1,14 @@
-import { LinkOutlined } from '@ant-design/icons';
+import { LinkOutlined, MenuOutlined } from '@ant-design/icons';
 import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
-import { Space, Typography } from 'antd';
-import React from 'react';
+import { Button, Space, Typography } from 'antd';
+import React, { useState } from 'react';
 import { AvatarDropdown, AvatarName, Footer, Question, SelectLang, ThemeSwitcher } from '@/components';
 import TenantSwitcher from '@/components/TenantSwitcher';
 import { ThemeProvider } from '@/contexts/ThemeProvider';
+import { useIsMobile } from '@/utils/responsive';
 import defaultSettings from '../config/defaultSettings';
 import { errorConfig } from './requestErrorConfig';
 import '@ant-design/v5-patch-for-react-19';
@@ -81,13 +82,51 @@ export const layout: RunTimeLayoutConfig = ({
   initialState,
   setInitialState,
 }) => {
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(true);
+
   return {
-    actionsRender: () => [
-      <TenantSwitcher key="TenantSwitcher" />,
-      <ThemeSwitcher key="ThemeSwitcher" />,
-      <Question key="doc" />,
-      <SelectLang key="SelectLang" />,
-    ],
+    // 移动端使用 breakpoint 控制侧边栏抽屉模式
+    breakpoint: 'md',
+    collapsed,
+    onCollapse: setCollapsed,
+    actionsRender: () => {
+      if (isMobile) {
+        return [
+          <ThemeSwitcher key="ThemeSwitcher" />,
+        ];
+      }
+      return [
+        <TenantSwitcher key="TenantSwitcher" />,
+        <ThemeSwitcher key="ThemeSwitcher" />,
+        <Question key="doc" />,
+        <SelectLang key="SelectLang" />,
+      ];
+    },
+    // 移动端 header 左侧汉堡菜单按钮
+    headerTitleRender: (logo, title) => {
+      if (isMobile) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              onClick={() => setCollapsed(!collapsed)}
+              size="small"
+              style={{ color: 'var(--vip-text-primary)' }}
+            />
+            {logo}
+            {title}
+          </div>
+        );
+      }
+      return (
+        <>
+          {logo}
+          {title}
+        </>
+      );
+    },
     // 顶部右侧显示用户头像和登录信息
     avatarProps: {
       src: initialState?.currentUser?.avatar,
@@ -112,26 +151,29 @@ export const layout: RunTimeLayoutConfig = ({
       // 默认展开所有菜单
       autoOpen: true,
     },
-    bgLayoutImgList: [
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/D2LWSqNny4sAAAAAAAAAAAAAFl94AQBr',
-        left: 85,
-        bottom: 100,
-        height: '303px',
-      },
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/C2TWRpJpiC0AAAAAAAAAAAAAFl94AQBr',
-        bottom: -68,
-        right: -45,
-        height: '303px',
-      },
-      {
-        src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/F6vSTbj8KpYAAAAAAAAAAAAAFl94AQBr',
-        bottom: 0,
-        left: 0,
-        width: '331px',
-      },
-    ],
+    // 移动端背景装饰图隐藏
+    bgLayoutImgList: isMobile
+      ? []
+      : [
+          {
+            src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/D2LWSqNny4sAAAAAAAAAAAAAFl94AQBr',
+            left: 85,
+            bottom: 100,
+            height: '303px',
+          },
+          {
+            src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/C2TWRpJpiC0AAAAAAAAAAAAAFl94AQBr',
+            bottom: -68,
+            right: -45,
+            height: '303px',
+          },
+          {
+            src: 'https://mdn.alipayobjects.com/yuyan_qk0oxh/afts/img/F6vSTbj8KpYAAAAAAAAAAAAAFl94AQBr',
+            bottom: 0,
+            left: 0,
+            width: '331px',
+          },
+        ],
     links: isDev
       ? [
           <Link key="openapi" to="/umi/plugin/openapi" target="_blank">

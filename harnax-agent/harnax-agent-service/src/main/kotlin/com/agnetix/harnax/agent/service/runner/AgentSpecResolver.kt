@@ -6,9 +6,8 @@ import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
-import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
-import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
 import com.agnetix.harnax.tools.sdk.ToolSpec
 import org.slf4j.LoggerFactory
@@ -25,14 +24,18 @@ import tools.jackson.databind.ObjectMapper
  *
  * Flow:
  *   1. Call adminApiClient.getAgentSpec(sessionId) — admin resolves by prefix
- *   2. Build AgentSpec from response (parse MCP list, resolve skill names)
- *   3. Build ChatSpec from response (enableThink/Search/Plan flags)
- *   4. Return Pair(AgentSpec, ChatSpec)
+ *   2. Store full spec in AgentSpecContextHolder (for adaptors to read during agent creation)
+ *   3. Build AgentSpec from response (parse MCP list, tool list, skill details)
+ *   4. Build ChatSpec from response (enableThink/Search/Plan flags)
+ *   5. Return Pair(AgentSpec, ChatSpec)
+ *
+ * Since v2: skill names are resolved from the admin response's skillDetails,
+ * no longer queries SkillMapper directly.
  */
 @Component
 class AgentSpecResolver(
     private val adminApiClient: AdminApiClient,
-    private val skillMapper: SkillMapper,
+    private val specContextHolder: AgentSpecContextHolder,
     private val objectMapper: ObjectMapper,
 ) {
 
@@ -41,9 +44,14 @@ class AgentSpecResolver(
     /**
      * Resolve agent and chat spec for the given sessionId.
      * Delegates to admin's unified `/api/admin/internal/agent-spec/{sessionId}` endpoint.
+     * Also stores the full spec in ThreadLocal context for adaptor impls to read.
      */
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
+
+        // Store full spec in context so adaptors can read during agent creation
+        specContextHolder.set(specInfo)
+
         log.info(
             "Resolved agent spec from admin: sessionId={}, agentId={}, agentName={}",
             sessionId,
@@ -78,8 +86,8 @@ class AgentSpecResolver(
 
     /**
      * Build AgentSpec from the unified admin response.
-     * Parses tool/MCP bindings (JSON from normalized tables) and resolves skill names.
-     * Env bindings are pre-resolved by admin (envVarId → latest value, fallback to snapshot).
+     * Uses full detail DTOs (toolDetails, mcpDetails, skillDetails) instead of
+     * querying DB separately.
      */
     private fun buildAgentSpec(specInfo: AgentSpecInfoResponse, sessionId: String): AgentSpec {
         val builder = AgentSpec.builder()
@@ -92,80 +100,33 @@ class AgentSpecResolver(
         // Collect all env bindings for ToolEnvContext (flat map, merged across tools and MCPs)
         val allEnvBindings = mutableMapOf<String, String>()
 
-        log.info("[env-debug] Raw toolList from admin: {}", specInfo.toolList)
-        log.info("[env-debug] Raw mcpList from admin: {}", specInfo.mcpList)
-
-        // Parse MCP list (JSON from binding table)
-        val mcpListStr = specInfo.mcpList
-        if (mcpListStr.isNotEmpty() && mcpListStr != "[]") {
-            try {
-                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    mcpListStr,
-                    object : TypeReference<List<Map<String, Any>>>() {},
-                )
-                for (config in mcpConfigs) {
-                    val mcpId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as? String
-                    // Collect MCP env bindings too
-                    val envBindings = parseEnvBindings(config["env_bindings"])
-                    log.info("[env-debug] MCP id={} env_bindings parsed: {}", mcpId, envBindings)
-                    allEnvBindings.putAll(envBindings)
-                    builder.addMcpService(McpSpec(mcpId = mcpId, skipIfMissing = enableSkip == "true"))
-                }
-            } catch (e: Exception) {
-                log.warn("Failed to parse MCP list for session=$sessionId: ${e.message}", e)
-            }
+        // ── MCP details (full config from admin) ──
+        for (mcp in specInfo.mcpDetails) {
+            builder.addMcpService(McpSpec(mcpId = mcp.id, skipIfMissing = mcp.enableSkip == "true"))
         }
 
-        // Parse skill list (comma-separated IDs) and resolve names from local DB
-        val skillListStr = specInfo.skillList
-        if (skillListStr.isNotEmpty() && skillListStr != "[]") {
-            val skillIds = skillListStr.split(",")
-            for (skillIdStr in skillIds) {
-                try {
-                    val skillId = skillIdStr.trim().toLong()
-                    val skill: Skill? = skillMapper.selectById(skillId)
-                    if (skill != null) {
-                        builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
-                    } else {
-                        log.warn("Skill not found: $skillId")
-                    }
-                } catch (e: NumberFormatException) {
-                    log.warn("Invalid skill ID: $skillIdStr")
-                }
-            }
+        // ── Skill details (full config from admin, no SkillMapper needed) ──
+        for (skill in specInfo.skillDetails) {
+            builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
         }
 
-        // Parse tool list (JSON from binding table)
-        val toolListStr = specInfo.toolList
-        if (toolListStr.isNotEmpty() && toolListStr != "[]") {
-            try {
-                val toolConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    toolListStr,
-                    object : TypeReference<List<Map<String, Any>>>() {},
-                )
-                for (config in toolConfigs) {
-                    val idValue = config["id"] ?: continue
-                    val toolId = (idValue as? Number)?.toLong() ?: continue
-                    val enableSkip = config["enable_skip"] as? String
-                    val needConfirm = config["need_confirm"] as? Boolean ?: false
-                    val envBindings = parseEnvBindings(config["env_bindings"])
-                    log.info("[env-debug] Tool id={} env_bindings parsed: {}", toolId, envBindings)
-                    allEnvBindings.putAll(envBindings)
-                    builder.addToolSpec(
-                        ToolSpec(
-                            toolId = toolId,
-                            skipIfMissing = enableSkip == "true",
-                            needConfirm = needConfirm,
-                        ),
-                    )
-                }
-            } catch (e: Exception) {
-                log.warn("Failed to parse tool list for session=$sessionId: ${e.message}", e)
-            }
+        // ── Tool details (full config from admin) ──
+        for (tool in specInfo.toolDetails) {
+            builder.addToolSpec(
+                ToolSpec(
+                    toolId = tool.id,
+                    skipIfMissing = tool.enableSkip == "true",
+                    needConfirm = tool.bindingNeedConfirm,
+                ),
+            )
         }
 
-        // Register ToolEnvContext for per-agent tool env variable injection via ToolExecutionContext
+        // ── Env bindings: still parsed from legacy JSON (toolList/mcpList) for backward compat ──
+        // Admin pre-resolves envVarId to actual values, so format is:
+        // [{envKey: "SMTP_HOST", envValue: "smtp.gmail.com"}, ...]
+        allEnvBindings.putAll(parseEnvBindingsFromLegacyJson(specInfo.toolList))
+        allEnvBindings.putAll(parseEnvBindingsFromLegacyJson(specInfo.mcpList))
+
         log.info("[env-debug] Final allEnvBindings ({} entries): {}", allEnvBindings.size, allEnvBindings.keys)
         if (allEnvBindings.isNotEmpty()) {
             builder.addContextForTool(ToolEnvContext(bindings = allEnvBindings))
@@ -178,9 +139,29 @@ class AgentSpecResolver(
     }
 
     /**
-     * Parse env_bindings from tool/mcp config JSON.
+     * Parse env_bindings from legacy tool/mcp JSON lists.
      * Admin pre-resolves envVarId to actual values, so format is:
      * [{envKey: "SMTP_HOST", envValue: "smtp.gmail.com"}, ...]
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun parseEnvBindingsFromLegacyJson(jsonList: String): Map<String, String> {
+        if (jsonList.isBlank() || jsonList == "[]") return emptyMap()
+        return try {
+            val list: List<Map<String, Any>> = objectMapper.readValue(
+                jsonList,
+                object : TypeReference<List<Map<String, Any>>>() {},
+            )
+            list.flatMap { config ->
+                parseEnvBindings(config["env_bindings"])
+            }.toMap()
+        } catch (e: Exception) {
+            log.warn("Failed to parse legacy env bindings JSON: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /**
+     * Parse env_bindings from tool/mcp config JSON.
      */
     @Suppress("UNCHECKED_CAST")
     private fun parseEnvBindings(raw: Any?): Map<String, String> {

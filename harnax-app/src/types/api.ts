@@ -9,7 +9,8 @@ export interface ChatRequest {
 
 export interface CommandRequest {
   sessionId: string
-  command: 'INTERRUPT' | 'CLEAR' | 'COMPACT' | 'APPROVE'
+  command: 'INTERRUPT' | 'CLEAR' | 'COMPACT' | 'APPROVE' | 'ENABLE' | 'DISABLE'
+  args?: string
 }
 
 export interface ConfirmRequest {

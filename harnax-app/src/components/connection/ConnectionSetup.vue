@@ -106,7 +106,7 @@ async function handleTestServer() {
   isTesting.value = true
 
   try {
-    const healthUrl = `${url.replace(/\/+$/, '')}/api/mp/auth/captcha`
+    const healthUrl = `${url.replace(/\/+$/, '')}/api/admin/mp/auth/captcha`
     await new Promise<void>((resolve, reject) => {
       uni.request({
         url: healthUrl,

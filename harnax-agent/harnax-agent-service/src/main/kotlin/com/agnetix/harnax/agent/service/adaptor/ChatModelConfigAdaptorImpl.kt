@@ -5,19 +5,24 @@ import com.agnetix.harnax.agent.adaptor.model.ChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.DashScopeChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.OllamaChatModelConfig
 import com.agnetix.harnax.agent.adaptor.model.OpenAIChatModelConfig
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.ModelProvider
+import com.agnetix.harnax.entity.dto.ModelConfigDto
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
- * ChatModelConfigAdaptor Implementation
- * Loads model configuration from database and converts to ChatModelConfig
+ * ChatModelConfigAdaptor Implementation.
+ *
+ * **Primary path**: reads model config from [AgentSpecContextHolder] (populated by admin API).
+ * **Fallback**: queries DB directly via [ModelMapper] + [ModelProviderMapper].
  */
 @Component
 class ChatModelConfigAdaptorImpl(
+    private val specContextHolder: AgentSpecContextHolder,
     private val modelMapper: ModelMapper,
     private val modelProviderMapper: ModelProviderMapper,
 ) : ChatModelConfigAdaptor {
@@ -30,28 +35,62 @@ class ChatModelConfigAdaptorImpl(
             return null
         }
 
-        // Query model information
+        // Primary: read from context (admin pre-resolved)
+        val modelConfig = specContextHolder.get()?.modelConfig
+        if (modelConfig != null && modelConfig.modelId == modelId) {
+            log.debug("Model config loaded from context: modelId={}, providerType={}", modelId, modelConfig.providerType)
+            return buildFromDto(modelConfig)
+        }
+
+        // Fallback: direct DB query
+        log.debug("Model config fallback to DB: modelId={}", modelId)
         val model = modelMapper.selectById(modelId)
         if (model == null) {
             log.warn("Model not found: $modelId")
             return null
         }
-
-        // Query model provider information
         val provider = modelProviderMapper.selectById(model.providerId)
         if (provider == null) {
             log.warn("Model provider not found: ${model.providerId}")
             return null
         }
-
-        // Create corresponding configuration based on provider type
-        return buildChatModelConfig(model, provider)
+        return buildFromEntities(model, provider)
     }
 
-    /**
-     * Build ChatModelConfig based on provider type
-     */
-    private fun buildChatModelConfig(model: Model, provider: ModelProvider): ChatModelConfig? = when (val providerType = provider.type.lowercase()) {
+    private fun buildFromDto(cfg: ModelConfigDto): ChatModelConfig? = when (val providerType = cfg.providerType.lowercase()) {
+        "dashscope" -> DashScopeChatModelConfig(
+            cfg.modelName,
+            cfg.apiKey!!,
+            cfg.baseUrl,
+            stream = true,
+            enableThinking = true,
+            enableSearch = false,
+            httpTransport = null,
+            options = null,
+            encrypt = false,
+        )
+        "openai" -> OpenAIChatModelConfig(
+            cfg.modelName,
+            cfg.apiKey!!,
+            cfg.baseUrl,
+            true,
+            null,
+            null,
+            null,
+        )
+        "ollama" -> OllamaChatModelConfig(
+            cfg.modelName,
+            cfg.baseUrl ?: "http://localhost:11434",
+            null,
+            null,
+        )
+        else -> {
+            log.warn("Unsupported provider type: $providerType")
+            null
+        }
+    }
+
+    private fun buildFromEntities(model: Model, provider: ModelProvider): ChatModelConfig? = when (val providerType = provider.type.lowercase()) {
         "dashscope" -> DashScopeChatModelConfig(
             model.modelName,
             provider.apiKey!!,
@@ -63,7 +102,6 @@ class ChatModelConfigAdaptorImpl(
             options = null,
             encrypt = false,
         )
-
         "openai" -> OpenAIChatModelConfig(
             model.modelName,
             provider.apiKey!!,
@@ -73,14 +111,12 @@ class ChatModelConfigAdaptorImpl(
             null,
             null,
         )
-
         "ollama" -> OllamaChatModelConfig(
             model.modelName,
             provider.baseUrl ?: "http://localhost:11434",
             null,
             null,
         )
-
         else -> {
             log.warn("Unsupported provider type: $providerType")
             null

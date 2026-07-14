@@ -8,10 +8,54 @@ import type {
   TokenUsage,
 } from '@/types/chat'
 import { streamChat, streamConfirm, sendCommand, clearSession } from '@/api/router'
+import type { CommandRequest } from '@/types/api'
 import { mpGetChatHistory, mpSaveChatMessages, mpDeleteChatHistory } from '@/api/admin'
 import { useSessionStore } from './useSessionStore'
 import { getStorage, setStorage } from '@/utils/storage'
 import { generateUUID } from '@/utils/platform'
+import { vibrateShort, vibrateLong } from '@/utils/network'
+
+/**
+ * Slash-command keyword → CommandType mapping (mirrors Kotlin CommandType enum).
+ */
+const COMMAND_KEYWORDS: Record<string, CommandRequest['command']> = {
+  interrupt: 'INTERRUPT',
+  stop: 'INTERRUPT',
+  clear: 'CLEAR',
+  compact: 'COMPACT',
+  approve: 'APPROVE',
+  'stop-sandbox': 'INTERRUPT', // map to INTERRUPT for now; stop-sandbox not exposed via frontend
+  enable: 'ENABLE',
+  disable: 'DISABLE',
+}
+
+/**
+ * Parse a slash-command text into a CommandRequest.
+ * Returns null if the text is not a valid command.
+ */
+function parseSlashCommand(text: string): { command: CommandRequest['command']; args: string } | null {
+  if (!text.startsWith('/')) return null
+  const afterSlash = text.substring(1).trim()
+  if (!afterSlash) return null
+
+  const spaceIdx = afterSlash.indexOf(' ')
+  const colonIdx = afterSlash.indexOf(':')
+  const sepIdx =
+    spaceIdx < 0 && colonIdx < 0
+      ? -1
+      : spaceIdx < 0
+        ? colonIdx
+        : colonIdx < 0
+          ? spaceIdx
+          : Math.min(spaceIdx, colonIdx)
+
+  const keyword = (sepIdx >= 0 ? afterSlash.substring(0, sepIdx) : afterSlash).toLowerCase()
+  const args = sepIdx >= 0 ? afterSlash.substring(sepIdx + 1).trim() : ''
+
+  const command = COMMAND_KEYWORDS[keyword]
+  if (!command) return null
+  return { command, args }
+}
 
 function messagesKey(sessionId: string): string {
   return `messages_${sessionId}`
@@ -100,6 +144,7 @@ export const useChatStore = defineStore('chat', () => {
 
       case 'TextEvent': {
         const last = msg.segments[msg.segments.length - 1]
+        const isFirstText = !msg.segments.some((s) => s.type === 'text')
         if (last && last.type === 'text') {
           last.content += event.message
         } else {
@@ -107,6 +152,8 @@ export const useChatStore = defineStore('chat', () => {
         }
         updateTokenUsage(event.tokenUsage)
         triggerScroll()
+        // Only vibrate on first text chunk to avoid excessive buzzing
+        if (isFirstText) vibrateShort()
         break
       }
 
@@ -153,6 +200,7 @@ export const useChatStore = defineStore('chat', () => {
         pendingConfirmTools.value = event.pendingCallTools
         isWaitingConfirm.value = true
         triggerScroll()
+        vibrateLong()
         break
       }
 
@@ -172,12 +220,62 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function sendMessage(text: string, imageUrls?: string[]) {
+    // Prevent concurrent sends while streaming
+    if (isStreaming.value) return
+
     const sessionStore = useSessionStore()
     const sessionId = await sessionStore.ensureSession()
 
     if (!sessionId) {
       // No session available, redirect to agent selection
-      uni.redirectTo({ url: '/pages/agents/index' })
+      uni.switchTab({ url: '/pages/agents/index' })
+      return
+    }
+
+    // Detect slash commands and route to /command endpoint
+    const parsed = parseSlashCommand(text)
+    if (parsed) {
+      const userMessage: ChatMessage = {
+        id: generateUUID(),
+        role: 'user',
+        segments: [{ type: 'text', content: text }],
+        timestamp: Date.now(),
+      }
+      messages.value.push(userMessage)
+
+      isStreaming.value = true
+      triggerScroll()
+
+      try {
+        const res = await sendCommand({
+          sessionId,
+          command: parsed.command,
+          args: parsed.args,
+        })
+        const reply = res.data?.message || (res.data?.success ? 'Done' : res.message || 'Command failed')
+        const assistantMsg: ChatMessage = {
+          id: generateUUID(),
+          role: 'assistant',
+          segments: [{ type: 'text', content: reply }],
+          timestamp: Date.now(),
+        }
+        messages.value.push(assistantMsg)
+        assistantMessage = null
+      } catch (e) {
+        const msg: ChatMessage = {
+          id: generateUUID(),
+          role: 'assistant',
+          segments: [{ type: 'text', content: `\n\n> **Error**: ${(e as Error).message}` }],
+          timestamp: Date.now(),
+        }
+        messages.value.push(msg)
+      } finally {
+        isStreaming.value = false
+        triggerScroll()
+        sessionStore.touchSession(sessionId)
+        persistMessages(sessionId)
+        syncToServer(sessionId)
+      }
       return
     }
 
@@ -221,8 +319,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function confirmTools(confirmed: boolean) {
+    // Prevent concurrent confirmations while streaming
+    if (isStreaming.value) return
+
     const sessionStore = useSessionStore()
     const sessionId = sessionStore.currentSessionId
+    if (!sessionId) return
 
     const tools = pendingConfirmTools.value
     isWaitingConfirm.value = false
@@ -263,28 +365,40 @@ export const useChatStore = defineStore('chat', () => {
     } finally {
       isStreaming.value = false
       currentAbortController.value = null
+      sessionStore.touchSession(sessionId)
       persistMessages(sessionId)
       triggerScroll()
+      syncToServer(sessionId)
     }
   }
 
   function stopStreaming() {
     currentAbortController.value?.abort()
+    const sessionId = useSessionStore().currentSessionId
     isStreaming.value = false
     currentAbortController.value = null
+    if (sessionId) {
+      persistMessages(sessionId)
+      syncToServer(sessionId)
+    }
   }
 
   async function interruptSession() {
     const sessionStore = useSessionStore()
     const sessionId = sessionStore.currentSessionId
     stopStreaming()
+    if (!sessionId) return
     await sendCommand({ sessionId, command: 'INTERRUPT' })
   }
 
   async function clearCurrentSession() {
     const sessionStore = useSessionStore()
     const sessionId = sessionStore.currentSessionId
+    if (!sessionId) return
     const session = sessionStore.currentSession
+
+    // Abort any active stream first
+    stopStreaming()
 
     // Clear on router side
     await clearSession(sessionId).catch(() => {})
@@ -342,7 +456,7 @@ export const useChatStore = defineStore('chat', () => {
               id: `history_${i}_${generateUUID()}`,
               role: msg.role as 'user' | 'assistant',
               segments,
-              timestamp: Date.now(),
+              timestamp: Date.now() + i,
               tokenUsage,
               imageUrls,
             }

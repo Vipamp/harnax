@@ -1,9 +1,6 @@
 <template>
   <view class="page-profile">
     <view class="profile-header">
-      <view class="back-btn" @tap="goBack">
-        <text class="back-icon">&lt;</text>
-      </view>
       <text class="header-title">{{ t('profile.title') }}</text>
     </view>
 
@@ -28,6 +25,7 @@
       </view>
 
       <view class="action-section">
+        <ThemeToggle />
         <view class="action-item" @tap="handleChangePassword">
           <text class="action-text">{{ t('profile.changePassword') }}</text>
           <text class="action-arrow">&gt;</text>
@@ -79,6 +77,7 @@ import { useI18n } from 'vue-i18n'
 import { mpGetProfile, mpChangePassword, mpLogout } from '@/api/admin'
 import { useConnectionStore } from '@/store/useConnectionStore'
 import { sha256 } from '@/utils/crypto'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import type { MpUserProfileResponse } from '@/types/api'
 
 const { t } = useI18n()
@@ -93,7 +92,9 @@ const pwdError = ref('')
 const isChangingPwd = ref(false)
 
 onMounted(() => {
-  loadProfile()
+  if (connection.isLoggedIn) {
+    loadProfile()
+  }
 })
 
 async function loadProfile() {
@@ -164,15 +165,12 @@ async function handleLogout() {
           // ignore
         }
         connection.clearAuth()
-        uni.redirectTo({ url: '/pages/setup/index' })
       }
     },
   })
 }
 
-function goBack() {
-  uni.navigateBack()
-}
+
 </script>
 
 <style lang="scss" scoped>
@@ -191,20 +189,6 @@ function goBack() {
   background: var(--chat-bg-base, #fff);
   border-bottom: 1px solid var(--chat-border, #e5e5e5);
   gap: 12px;
-}
-
-.back-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.back-icon {
-  font-size: 18px;
-  color: var(--chat-text-primary, #1a1a2e);
-  font-weight: 600;
 }
 
 .header-title {

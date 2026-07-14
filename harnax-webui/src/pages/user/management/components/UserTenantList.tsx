@@ -262,6 +262,7 @@ const UserTenantList: React.FC<UserTenantListProps> = ({ userId, visible }) => {
         columns={columns}
         dataSource={tenants}
         loading={loading}
+        scroll={{ x: 'max-content' }}
         pagination={{
           pageSize: 10,
           showSizeChanger: true,

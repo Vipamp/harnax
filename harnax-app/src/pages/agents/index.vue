@@ -1,5 +1,9 @@
 <template>
-  <view class="page-agents">
+  <!-- 未登录时显示登录组件 -->
+  <ConnectionSetup v-if="!connection.isLoggedIn" @connected="onConnected" />
+
+  <!-- 已登录后显示智能体列表 -->
+  <view v-else class="page-agents">
     <view class="page-header">
       <text class="page-title">{{ t('agents.title') }}</text>
       <view class="header-right">
@@ -43,10 +47,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import { mpListAgents } from '@/api/admin'
 import { useConnectionStore } from '@/store/useConnectionStore'
 import type { MpAgentResponse } from '@/types/api'
 import AgentCard from '@/components/agents/AgentCard.vue'
+import ConnectionSetup from '@/components/connection/ConnectionSetup.vue'
 
 const { t } = useI18n()
 const connection = useConnectionStore()
@@ -84,15 +90,29 @@ function handleSelectAgent(agent: MpAgentResponse) {
 }
 
 function handleProfile() {
-  uni.navigateTo({ url: '/pages/profile/index' })
+  uni.switchTab({ url: '/pages/profile/index' })
+}
+
+function onConnected() {
+  loadAgents()
 }
 
 onMounted(() => {
-  if (!connection.isLoggedIn) {
-    uni.redirectTo({ url: '/pages/setup/index' })
-    return
+  if (connection.isLoggedIn) {
+    loadAgents()
   }
-  loadAgents()
+})
+
+// Refresh agent list when returning from detail page (sessionCount may have changed)
+onShow(() => {
+  if (connection.isLoggedIn && agents.value.length > 0) {
+    loadAgents()
+  }
+})
+
+onPullDownRefresh(async () => {
+  await loadAgents()
+  uni.stopPullDownRefresh()
 })
 </script>
 

@@ -182,7 +182,7 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
         rowKey={(record, index) => `${record.name}-${index}`}
         pagination={false}
         size="small"
-        scroll={{ y: 400 }}
+        scroll={{ x: 'max-content', y: 400 }}
       />
     </FormModal>
   );

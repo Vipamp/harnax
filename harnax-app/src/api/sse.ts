@@ -39,7 +39,12 @@ async function streamSSEH5(
     return
   }
 
-  const reader = response.body!.getReader()
+  if (!response.body) {
+    options.onError?.(new Error('Response body is null'))
+    return
+  }
+
+  const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
 
@@ -67,6 +72,20 @@ async function streamSSEH5(
         }
       }
     }
+
+    // Flush remaining buffer
+    const remaining = buffer.trim()
+    if (remaining.startsWith('data:')) {
+      const jsonStr = remaining.slice(5).trim()
+      if (jsonStr) {
+        try {
+          const event = JSON.parse(jsonStr) as ChatEvent
+          options.onEvent(event)
+        } catch (e) {
+          console.warn('[SSE] Failed to parse final event:', jsonStr, e)
+        }
+      }
+    }
   } catch (e) {
     if ((e as Error).name !== 'AbortError') {
       options.onError?.(e as Error)
@@ -83,6 +102,26 @@ async function streamSSEApp(
   // App 平台使用 uni.request + enableChunked (HBuilderX 4.0+)
   // 降级方案：如果流式不可用，使用同步接口
   return new Promise((resolve, reject) => {
+    let buffer = ''
+    let ended = false
+
+    const flushBuffer = () => {
+      if (ended) return
+      ended = true
+      const remaining = buffer.trim()
+      if (remaining.startsWith('data:')) {
+        const jsonStr = remaining.slice(5).trim()
+        if (jsonStr) {
+          try {
+            const event = JSON.parse(jsonStr) as ChatEvent
+            options.onEvent(event)
+          } catch (e) {
+            console.warn('[SSE] Failed to parse final event:', jsonStr)
+          }
+        }
+      }
+    }
+
     const requestTask = uni.request({
       url,
       method: 'POST',
@@ -91,15 +130,16 @@ async function streamSSEApp(
       enableChunked: true,
       timeout: 600000,
       success: () => {
+        flushBuffer()
         resolve()
       },
       fail: (err) => {
-        options.onError?.(new Error(err.errMsg || 'Request failed'))
-        reject(err)
+        if (!ended) {
+          options.onError?.(new Error(err.errMsg || 'Request failed'))
+          reject(err)
+        }
       },
     })
-
-    let buffer = ''
 
     // @ts-ignore - enableChunked callback
     requestTask.onChunkReceived?.((res: { data: ArrayBuffer }) => {
@@ -118,6 +158,7 @@ async function streamSSEApp(
             const event = JSON.parse(jsonStr) as ChatEvent
             options.onEvent(event)
             if (event.eventType === 'EndEvent') {
+              ended = true
               requestTask.abort?.()
               resolve()
               return
@@ -130,6 +171,7 @@ async function streamSSEApp(
     })
 
     options.signal?.addEventListener('abort', () => {
+      ended = true
       requestTask.abort?.()
       resolve()
     })

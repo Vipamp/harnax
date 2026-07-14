@@ -94,28 +94,3 @@ export async function clearSession(
     method: 'DELETE',
   })
 }
-
-export async function getPlans(
-  sessionId: string,
-): Promise<ApiResponse<unknown[]>> {
-  return routerRequest<unknown[]>(
-    `/api/router/agent/session/${sessionId}/plans`,
-  )
-}
-
-export async function getCurrentPlan(
-  sessionId: string,
-): Promise<ApiResponse<unknown>> {
-  return routerRequest<unknown>(
-    `/api/router/agent/session/${sessionId}/current-plan`,
-  )
-}
-
-export async function checkHealth(): Promise<boolean> {
-  try {
-    const res = await routerRequest('/api/router/health')
-    return res.code === 200
-  } catch {
-    return false
-  }
-}

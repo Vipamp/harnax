@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getStorage, setStorage, ensureCacheSpace } from '@/utils/storage'
+import { getStorage, setStorage, removeStorage, ensureCacheSpace } from '@/utils/storage'
 import {
   mpListSessions,
   mpCreateSession,
@@ -55,7 +55,14 @@ export const useSessionStore = defineStore('session', () => {
     try {
       const res = await mpListSessions()
       if (res.code === 200 && res.data) {
-        sessions.value = res.data.map(toSessionItem)
+        // Don't overwrite local sessions if server returns empty (e.g. first login before sync)
+        if (res.data.length === 0 && sessions.value.length > 0) {
+          return
+        }
+        const serverSessions = res.data.map(toSessionItem)
+        // Preserve local-only sessions (serverId === null, never synced to server)
+        const neverSynced = sessions.value.filter((s) => s.serverId === null)
+        sessions.value = [...serverSessions, ...neverSynced]
         if (currentSessionId.value && !sessions.value.some((s) => s.id === currentSessionId.value)) {
           currentSessionId.value = sessions.value[0]?.id || ''
         }
@@ -131,6 +138,8 @@ export const useSessionStore = defineStore('session', () => {
     if (currentSessionId.value === id) {
       currentSessionId.value = sessions.value[0]?.id || ''
     }
+    // Clean up local message cache for deleted session
+    removeStorage(`messages_${id}`)
     persist()
 
     if (session?.serverId) {

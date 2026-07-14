@@ -314,6 +314,7 @@ const TaskLogModal: React.FC<TaskLogModalProps> = ({ visible, task, onCancel, on
         loading={loading}
         rowKey="id"
         size="small"
+        scroll={{ x: 'max-content' }}
         onRow={(record) => ({
           onClick: () => { setSelectedLog(record); setDetailVisible(true); },
           style: { cursor: 'pointer' },

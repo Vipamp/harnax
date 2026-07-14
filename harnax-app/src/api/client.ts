@@ -40,7 +40,6 @@ export async function adminRequest<T = unknown>(
           resolve(res.data as ApiResponse<T>)
         } else if (res.statusCode === 401) {
           connection.clearAuth()
-          uni.redirectTo({ url: '/pages/setup/index' })
           reject(new Error('Authentication expired'))
         } else {
           reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(res.data)}`))
@@ -84,6 +83,9 @@ export async function routerRequest<T = unknown>(
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data as ApiResponse<T>)
+        } else if (res.statusCode === 401) {
+          connection.clearAuth()
+          reject(new Error('Authentication expired'))
         } else {
           reject(new Error(`HTTP ${res.statusCode}: ${JSON.stringify(res.data)}`))
         }

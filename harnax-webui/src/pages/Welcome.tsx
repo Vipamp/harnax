@@ -1,6 +1,7 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { Card, Col, Row, Statistic, theme, Typography, Badge, Space } from 'antd';
 import React, { useEffect, useState, useRef } from 'react';
+import { useIsMobile } from '@/utils/responsive';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -267,6 +268,7 @@ const Welcome: React.FC = () => {
   const { token } = theme.useToken();
   const currentUser = useCurrentUser();
   const username = currentUser?.nickname || currentUser?.username || '管理员';
+  const isMobile = useIsMobile();
 
   const features = [
     { title: '多模型集成', desc: '支持 GPT、Claude、Gemini 等主流大模型，自由切换和组合使用', icon: '🤖', color: '#4f6ef7' },
@@ -295,7 +297,7 @@ const Welcome: React.FC = () => {
           overflow: 'hidden',
           position: 'relative',
         }}
-        styles={{ body: { padding: '40px 48px' } }}
+        styles={{ body: { padding: isMobile ? '24px 20px' : '40px 48px' } }}
       >
         {/* 背景装饰 */}
         <div style={{
@@ -342,7 +344,7 @@ const Welcome: React.FC = () => {
           }}>
             Harnax 是一个整合了多种大模型、工具、MCP、Skills 的智能体平台，为企业和开发者提供一站式的解决方案。
           </Paragraph>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {['🤖 大模型集成', '🛠️ 工具平台', '🔗 MCP 协议', '⚡ Skills 库'].map(tag => (
               <div key={tag} style={{
                 padding: '6px 14px',
@@ -387,7 +389,7 @@ const Welcome: React.FC = () => {
           border: '1px solid var(--glass-border)',
           boxShadow: 'var(--glass-shadow)',
         }}
-        styles={{ body: { padding: '28px 28px 8px' } }}
+        styles={{ body: { padding: isMobile ? '16px 16px 8px' : '28px 28px 8px' } }}
       >
         <Title level={5} style={{ margin: '0 0 20px', fontSize: '17px', color: '#1a1a2e' }}>
           🚀 平台能力

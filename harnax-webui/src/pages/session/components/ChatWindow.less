@@ -1882,3 +1882,134 @@ html.dark {
     }
   }
 }
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+  .messageList {
+    padding: 12px 12px 8px;
+  }
+
+  .messageRow {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .messageBubble {
+    max-width: 85%;
+  }
+
+  .bubbleUser {
+    padding: 8px 12px;
+    border-radius: 14px 14px 4px 14px;
+  }
+
+  .bubbleAssistant {
+    padding: 10px 12px;
+    border-radius: 14px 14px 14px 4px;
+  }
+
+  .bubbleInner {
+    font-size: 13px;
+
+    /* 代码块横向滚动 */
+    pre {
+      overflow-x: auto;
+      max-width: 100%;
+    }
+
+    /* Markdown 内容自适应 */
+    table {
+      display: block;
+      overflow-x: auto;
+    }
+
+    img {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+  }
+
+  .suggestions {
+    max-width: 100%;
+    padding: 0 8px;
+  }
+
+  .inputArea {
+    padding: 8px 8px 12px;
+  }
+
+  .inputCardBody {
+    :global {
+      .ant-input {
+        padding: 10px 12px 6px;
+        font-size: 16px; /* 防止 iOS 自动缩放 */
+      }
+    }
+  }
+
+  .inputCardFooter {
+    padding: 6px 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .optionItem {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .sendButton {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+  }
+
+  /* 计划面板移动端全屏 */
+  .planPanel {
+    width: 100%;
+  }
+
+  .historyPlanToggleButton {
+    width: 20px;
+    height: 48px;
+  }
+
+  /* 工具调用卡片紧凑 */
+  .toolCallCard,
+  .toolConfirmCard {
+    border-radius: 10px;
+
+    :global(.ant-card-body) {
+      padding: 8px 10px;
+    }
+  }
+
+  /* 图片预览缩小 */
+  .previewImage {
+    max-width: 140px;
+    max-height: 140px;
+  }
+
+  .uploadedImageItem {
+    width: 64px;
+    height: 64px;
+  }
+
+  /* 空状态 */
+  .emptyState {
+    padding: 0 16px;
+  }
+
+  .emptyIcon {
+    width: 48px;
+    height: 48px;
+    font-size: 20px;
+  }
+}

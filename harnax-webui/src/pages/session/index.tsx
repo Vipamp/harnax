@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
 import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
-import { PlusOutlined, BulbOutlined, CloudServerOutlined } from '@ant-design/icons';
+import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import SettingsModal from './components/SettingsModal';
@@ -10,6 +10,7 @@ import ChatWindow from './components/ChatWindow';
 import WorkspaceDrawer from './components/WorkspaceDrawer';
 import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
+import { useIsMobile } from '@/utils/responsive';
 // @ts-ignore
 import { useModel, useLocation, useIntl } from '@umijs/max';
 
@@ -18,6 +19,7 @@ const { Text, Title } = Typography;
 const SessionPage: React.FC = () => {
   const intl = useIntl();
   const location = useLocation();
+  const isMobile = useIsMobile();
   const [sessions, setSessions] = useState<API.SessionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedSession, setSelectedSession] = useState<API.SessionItem | null>(null);
@@ -99,6 +101,11 @@ const SessionPage: React.FC = () => {
     setSelectedSession(session);
   };
 
+  // 移动端：返回列表
+  const handleBackToList = () => {
+    setSelectedSession(null);
+  };
+
   // 处理设置弹窗关闭
   const handleSettingsModalClose = () => {
     setSettingsModalVisible(false);
@@ -132,19 +139,27 @@ const SessionPage: React.FC = () => {
         ),
       }}
     >
-      <div style={{ display: 'flex', height: 'calc(100vh - 150px)', gap: 12, overflow: 'hidden' }}>
+      <div style={{
+        display: 'flex',
+        height: isMobile ? 'calc(100vh - 120px)' : 'calc(100vh - 150px)',
+        gap: isMobile ? 0 : 12,
+        overflow: 'hidden',
+        flexDirection: isMobile ? 'column' : 'row',
+      }}>
         {/* 左侧：会话列表 */}
+        {(!isMobile || !selectedSession) && (
         <Card
           style={{ 
-            width: 300, 
+            width: isMobile ? '100%' : 300, 
             display: 'flex', 
             flexDirection: 'column',
             borderRadius: '14px',
             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
             border: '1px solid var(--vip-border)',
             background: 'var(--vip-bg-container)',
+            flex: isMobile ? 1 : undefined,
           }}
-          styles={{ body: { flex: 1, overflow: 'auto', padding: '12px' } }}
+          styles={{ body: { flex: 1, overflow: 'auto', padding: isMobile ? '8px' : '12px' } }}
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, fontSize: 14 }}>{intl.formatMessage({ id: 'pages.session.listTitle', defaultMessage: 'Session List' })}</span>
@@ -174,16 +189,17 @@ const SessionPage: React.FC = () => {
                       cursor: 'pointer',
                       backgroundColor: selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.06)' : 'transparent',
                       borderRadius: 10,
-                      padding: '10px 12px',
+                      padding: isMobile ? '14px 12px' : '10px 12px',
                       marginBottom: 4,
                       border: `1px solid ${selectedSession?.id === session.id ? 'rgba(99, 102, 241, 0.18)' : 'transparent'}`,
                       transition: 'all 0.2s',
+                      minHeight: isMobile ? 48 : undefined,
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                       <Text 
                         ellipsis 
-                        style={{ flex: 1, fontWeight: selectedSession?.id === session.id ? 600 : 400 }}
+                        style={{ flex: 1, fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
                       >
                         {session.title}
                       </Text>
@@ -198,16 +214,18 @@ const SessionPage: React.FC = () => {
             )}
           </Spin>
         </Card>
+        )}
 
         {/* 右侧：聊天窗口区域 */}
+        {(!isMobile || selectedSession) && (
         <Card
           style={{ 
             flex: 1, 
             display: 'flex', 
             flexDirection: 'column',
-            borderRadius: '14px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            border: '1px solid var(--vip-border)',
+            borderRadius: isMobile ? '0' : '14px',
+            boxShadow: isMobile ? 'none' : '0 1px 4px rgba(0,0,0,0.04)',
+            border: isMobile ? 'none' : '1px solid var(--vip-border)',
             background: 'var(--vip-bg-container)',
             overflow: 'hidden',
           }}
@@ -217,26 +235,35 @@ const SessionPage: React.FC = () => {
             <>
               {/* 会话标题栏 */}
               <div style={{ 
-                padding: '14px 24px',
+                padding: isMobile ? '10px 12px' : '14px 24px',
                 borderBottom: '1px solid var(--vip-border)',
                 background: 'var(--vip-bg-container)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
+                gap: isMobile ? 6 : 10,
                 flexShrink: 0,
               }}>
+                {isMobile && (
+                  <Button
+                    type="text"
+                    icon={<ArrowLeftOutlined />}
+                    onClick={handleBackToList}
+                    size="small"
+                    style={{ flexShrink: 0 }}
+                  />
+                )}
                 <div style={{
-                  width: 28, height: 28, borderRadius: 8,
+                  width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, borderRadius: 8,
                   background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 14, color: '#fff', flexShrink: 0,
+                  fontSize: isMobile ? 12 : 14, color: '#fff', flexShrink: 0,
                 }}>
                   <BulbOutlined />
                 </div>
-                <Title level={5} style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+                <Title level={5} style={{ margin: 0, fontSize: isMobile ? 14 : 15, fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {selectedSession.title}
                 </Title>
-                <div style={{ flex: 1 }} />
+                {!isMobile && <div style={{ flex: 1 }} />}
                 <Button
                   type="text"
                   icon={<CloudServerOutlined />}
@@ -255,7 +282,7 @@ const SessionPage: React.FC = () => {
                     }
                   }}
                 >
-                  Workspace
+                  {isMobile ? '' : 'Workspace'}
                 </Button>
               </div>
               
@@ -286,6 +313,7 @@ const SessionPage: React.FC = () => {
             </div>
           )}
         </Card>
+        )}
       </div>
 
       {/* 创建会话弹窗 */}

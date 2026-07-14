@@ -35,7 +35,7 @@ const chatStore = useChatStore()
 const { sortedSessions, currentSessionId } = storeToRefs(sessionStore)
 
 function handleNew() {
-  uni.navigateTo({ url: '/pages/agents/index' })
+  uni.switchTab({ url: '/pages/agents/index' })
 }
 
 function handleSelect(id: string) {

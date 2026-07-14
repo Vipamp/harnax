@@ -1941,15 +1941,130 @@ html.dark {
 }
 
 /* ===== 响应式优化 ===== */
+
+/* --- 平板适配 (max-width: 1024px) --- */
+@media (max-width: 1024px) {
+  /* ProLayout 页面容器缩减内边距 */
+  .ant-pro-page-container-children-content {
+    padding-inline: 16px !important;
+    padding-block: 16px !important;
+  }
+}
+
+/* --- 手机适配 (max-width: 768px) --- */
 @media (max-width: 768px) {
+  /* 全局排版缩减 */
+  html {
+    font-size: 13px;
+  }
+
+  /* ProLayout header 缩小 */
+  .ant-pro-layout .ant-pro-layout-header,
+  .ant-layout-header {
+    height: 48px !important;
+    line-height: 48px !important;
+  }
+
+  /* 侧边栏抽屉化后 z-index 确保覆盖 */
+  .ant-pro-sider.ant-pro-sider-mobile {
+    z-index: 1000;
+  }
+
+  /* 卡片圆角 */
   .ant-card {
     border-radius: var(--vip-radius-md) !important;
   }
 
+  /* Modal 移动端全屏化 */
   .ant-modal {
+    max-width: 100vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    top: 0 !important;
+
     .ant-modal-content {
-      border-radius: var(--vip-radius-md) !important;
+      border-radius: 0 !important;
+      min-height: 100vh;
     }
+
+    .ant-modal-body {
+      max-height: calc(100vh - 120px) !important;
+    }
+  }
+
+  /* Modal wrap 居中调整 */
+  .ant-modal-wrap {
+    overflow: hidden !important;
+  }
+
+  /* Drawer 全屏 */
+  .ant-drawer-content-wrapper {
+    max-width: 100vw !important;
+    width: 100vw !important;
+  }
+
+  /* ProTable 横向滚动 */
+  .ant-pro-table .ant-table {
+    overflow-x: auto;
+  }
+
+  /* ProLayout 内容区 padding 缩减 */
+  .ant-pro-page-container-children-content {
+    padding-inline: 12px !important;
+    padding-block: 12px !important;
+  }
+
+  /* ProTable 搜索栏紧凑 */
+  .ant-pro-table-search {
+    padding: 12px !important;
+  }
+
+  /* 按钮最小触摸高度 44px */
+  .ant-btn {
+    min-height: 36px;
+  }
+
+  /* 表单输入框防止 iOS 自动缩放 */
+  .ant-input,
+  .ant-select-selector,
+  .ant-picker-input input,
+  textarea.ant-input {
+    font-size: 16px !important;
+  }
+
+  /* 表格紧凑 */
+  .ant-table {
+    font-size: 12px;
+
+    .ant-table-cell {
+      padding: 8px 8px !important;
+    }
+  }
+
+  /* ProTable styled 表格 */
+  .styled-pro-table {
+    overflow-x: auto;
+  }
+
+  /* 背景装饰图隐藏 */
+  .ant-pro-layout .ant-pro-layout-bg-list {
+    display: none !important;
+  }
+}
+
+/* --- 小屏手机适配 (max-width: 480px) --- */
+@media (max-width: 480px) {
+  .ant-pro-page-container-children-content {
+    padding-inline: 8px !important;
+    padding-block: 8px !important;
+  }
+
+  .ant-card .ant-card-body {
+    padding: 12px !important;
+  }
+
+  .ant-modal .ant-modal-content {
+    padding: 12px !important;
   }
 }
 
@@ -2962,5 +3077,78 @@ html.dark .ant-tooltip {
       border: 1px solid rgba(255, 255, 255, 0.1) !important;
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
     }
+  }
+}
+
+/* ===== 移动端触摸交互优化 ===== */
+@media (max-width: 768px) {
+  /* 可点击元素最小触摸高度 */
+  .ant-btn-sm {
+    min-height: 32px;
+  }
+
+  /* 列表项触摸友好 */
+  .ant-list-item {
+    min-height: 44px;
+  }
+
+  /* Select 下拉项触摸友好 */
+  .ant-select-item {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  /* Tag 触摸友好 */
+  .ant-tag {
+    min-height: 24px;
+  }
+
+  /* Tabs 触摸友好 */
+  .ant-tabs-tab {
+    padding: 8px 0 !important;
+    min-height: 40px;
+  }
+
+  /* Switch 触摸友好 */
+  .ant-switch {
+    min-width: 44px;
+    min-height: 24px;
+  }
+
+  /* Popover 移动端适配 */
+  .ant-popover {
+    max-width: calc(100vw - 32px);
+  }
+
+  /* Descriptions 移动端自适应 */
+  .ant-descriptions-item-label {
+    width: auto !important;
+    min-width: 80px;
+  }
+
+  /* 图片预览自适应 */
+  .ant-image {
+    max-width: 100% !important;
+  }
+
+  /* 全局禁用 hover 动画（移动端无 hover 状态） */
+  .vip-hover-lift {
+    &:hover {
+      transform: none !important;
+    }
+  }
+
+  /* PageContainer header 紧凑 */
+  .ant-pro-page-container-header {
+    padding-inline: 12px !important;
+  }
+
+  .ant-pro-page-container-warp-page-header {
+    padding-inline: 12px !important;
+  }
+
+  /* Breadcrumb 紧凑 */
+  .ant-breadcrumb {
+    font-size: 12px;
   }
 }

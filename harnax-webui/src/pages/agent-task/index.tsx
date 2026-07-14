@@ -296,6 +296,7 @@ const AgentTaskManagement: React.FC = () => {
             loading={loading}
             rowKey="id"
             size="small"
+            scroll={{ x: 'max-content' }}
             pagination={{
               current: pageNum,
               pageSize,

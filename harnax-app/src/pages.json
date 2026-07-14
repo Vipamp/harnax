@@ -4,7 +4,8 @@
       "path": "pages/agents/index",
       "style": {
         "navigationBarTitleText": "Agents",
-        "navigationStyle": "custom"
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true
       }
     },
     {
@@ -18,13 +19,6 @@
       "path": "pages/chat/index",
       "style": {
         "navigationBarTitleText": "Harnax Chat",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/setup/index",
-      "style": {
-        "navigationBarTitleText": "Setup",
         "navigationStyle": "custom"
       }
     },
@@ -46,13 +40,33 @@
       "titleNView": false
     }
   },
-  "condition": {
-    "current": 0,
+  "tabBar": {
+    "color": "#9e9eab",
+    "selectedColor": "#4f6ef7",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "height": "50px",
+    "fontSize": "11px",
+    "iconWidth": "24px",
+    "spacing": "3px",
     "list": [
       {
-        "name": "",
-        "path": "",
-        "query": ""
+        "pagePath": "pages/agents/index",
+        "text": "智能体",
+        "iconPath": "static/tabbar/agents.png",
+        "selectedIconPath": "static/tabbar/agents-active.png"
+      },
+      {
+        "pagePath": "pages/chat/index",
+        "text": "对话",
+        "iconPath": "static/tabbar/chat.png",
+        "selectedIconPath": "static/tabbar/chat-active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "static/tabbar/profile.png",
+        "selectedIconPath": "static/tabbar/profile-active.png"
       }
     ]
   }

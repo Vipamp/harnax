@@ -3,6 +3,7 @@ import { useIntl } from '@umijs/max';
 import { Row, Col, Card, Button, message, Spin, Empty, Tag, Input, Select } from 'antd';
 import { GithubOutlined, SearchOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { PageContainer } from '@ant-design/pro-components';
+import { useIsMobile } from '@/utils/responsive';
 import RepositoryList from './components/RepositoryList';
 import RepositoryForm from './components/RepositoryForm';
 import SkillList from './components/SkillList';
@@ -12,6 +13,7 @@ import { fetchSkillSourceSkills } from '@/services/ant-design-pro/skillSource';
 
 const SkillManagement: React.FC = () => {
   const intl = useIntl();
+  const isMobile = useIsMobile();
   // 仓库相关状态
   const [repositories, setRepositories] = useState<API.SkillRepositoryItem[]>([]);
   const [selectedRepository, setSelectedRepository] = useState<API.SkillRepositoryItem | null>(null);
@@ -153,9 +155,9 @@ const SkillManagement: React.FC = () => {
       }}
     >
       <div style={{ padding: '0', minHeight: 'calc(100vh - 140px)' }}>
-      <Row gutter={16}>
+      <Row gutter={[16, 16]}>
         {/* 左侧：仓库列表 */}
-        <Col span={6}>
+        <Col xs={24} md={6}>
           <Card
             title={
               <span style={{ fontSize: '14px', fontWeight: 600 }}>
@@ -191,7 +193,7 @@ const SkillManagement: React.FC = () => {
         </Col>
 
         {/* 右侧：技能列表 */}
-        <Col span={18}>
+        <Col xs={24} md={18}>
           <Card
             title={
               selectedRepository ? (
@@ -210,7 +212,7 @@ const SkillManagement: React.FC = () => {
               )
             }
             extra={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
                 {/* 关键词搜索 */}
                 <Input
                   placeholder={intl.formatMessage({ id: 'pages.skill.searchPlaceholder', defaultMessage: 'Search skill name' })}
@@ -218,22 +220,24 @@ const SkillManagement: React.FC = () => {
                   value={filters.name}
                   onChange={(e) => setFilters({ ...filters, name: e.target.value })}
                   allowClear
-                  style={{ width: 240 }}
+                  style={{ width: isMobile ? '100%' : 240, flex: isMobile ? 1 : undefined }}
+                  size={isMobile ? 'small' : 'middle'}
                 />
                 {/* 状态 */}
                 <Select
                   placeholder={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
-                  style={{ width: 120 }}
+                  style={{ width: isMobile ? '100%' : 120, flex: isMobile ? undefined : undefined }}
                   value={filters.status}
                   onChange={(value) => setFilters({ ...filters, status: value })}
                   allowClear
+                  size={isMobile ? 'small' : 'middle'}
                   options={[
                     { label: intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' }), value: 1 },
                     { label: intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' }), value: 0 },
                   ]}
                 />
                 {/* 重置按钮 */}
-                <Button icon={<ReloadOutlined />} onClick={handleResetFilters} style={{ color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
+                <Button icon={<ReloadOutlined />} onClick={handleResetFilters} size={isMobile ? 'small' : 'middle'} style={{ color: 'var(--vip-text-primary)', borderColor: 'var(--vip-border)', background: 'var(--vip-bg-container)' }}>
                   {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
                 </Button>
               </div>

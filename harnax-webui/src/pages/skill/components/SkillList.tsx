@@ -128,6 +128,7 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       dataSource={data}
       loading={loading}
       size="small"
+      scroll={{ x: 'max-content' }}
       pagination={{
         current: pageNum,
         pageSize,

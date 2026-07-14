@@ -415,6 +415,7 @@ const ToolConfirmCard: React.FC<{
         rowKey="toolId"
         pagination={false}
         size="small"
+        scroll={{ x: 'max-content' }}
       />
     </Modal>
   );
@@ -2412,6 +2413,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           rowKey={(record) => record.name}
                           size="small"
                           pagination={false}
+                          scroll={{ x: 'max-content' }}
                           columns={[
                             {
                               title: intl.formatMessage({ id: 'pages.session.status', defaultMessage: 'Status' }),

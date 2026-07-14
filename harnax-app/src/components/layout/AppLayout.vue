@@ -32,6 +32,9 @@
 
     <!-- #ifdef APP-PLUS -->
     <view class="layout-mobile">
+      <view v-if="!isConnected" class="network-banner">
+        <text class="network-banner-text">{{ t('common.networkDisconnected') }}</text>
+      </view>
       <view v-if="showDrawer" class="drawer-overlay" @tap="showDrawer = false" />
       <view v-if="showDrawer" class="drawer-panel">
         <SessionList />
@@ -69,6 +72,7 @@ import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '@/store/useSessionStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useConnectionStore } from '@/store/useConnectionStore'
+import { useNetwork } from '@/utils/network'
 import { mpLogout } from '@/api/admin'
 import Sidebar from './Sidebar.vue'
 import SessionList from '@/components/session/SessionList.vue'
@@ -77,6 +81,7 @@ const { t } = useI18n()
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
 const connectionStore = useConnectionStore()
+const { isConnected } = useNetwork()
 
 const sidebarVisible = ref(true)
 const showDrawer = ref(false)
@@ -100,22 +105,29 @@ function handleClear() {
 function handleSettings() {
   uni.showActionSheet({
     itemList: [t('profile.logout')],
-    success: async (res) => {
+    success: (res) => {
       if (res.tapIndex === 0) {
-        try {
-          await mpLogout()
-        } catch {
-          // ignore
-        }
-        connectionStore.clearAuth()
-        uni.redirectTo({ url: '/pages/setup/index' })
+        uni.showModal({
+          title: t('profile.logoutConfirmTitle'),
+          content: t('profile.logoutConfirm'),
+          success: async (modalRes) => {
+            if (modalRes.confirm) {
+              try {
+                await mpLogout()
+              } catch {
+                // ignore
+              }
+              connectionStore.clearAuth()
+            }
+          },
+        })
       }
     },
   })
 }
 
 function goToAgents() {
-  uni.redirectTo({ url: '/pages/agents/index' })
+  uni.switchTab({ url: '/pages/agents/index' })
 }
 </script>
 
@@ -194,6 +206,20 @@ function goToAgents() {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+
+.network-banner {
+  background: var(--chat-warning, #faad14);
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.network-banner-text {
+  font-size: 12px;
+  color: #fff;
+  font-weight: 500;
 }
 
 .drawer-overlay {

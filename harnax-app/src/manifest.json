@@ -20,6 +20,95 @@
       "android": {
         "permissions": [
           "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
+          "<uses-permission android:name=\"android.permission.VIBRATE\"/>"
+        ],
+        "minSdkVersion": 26,
+        "targetSdkVersion": 34,
+        "abiFilters": ["armeabi-v7a", "arm64-v8a"]
+      },
+      "ios": {
+        "dSYMs": false,
+        "privacyDescription": {
+          "NSPhotoLibraryUsageDescription": "用于保存聊天截图",
+          "NSCameraUsageDescription": "用于拍照发送",
+          "NSMicrophoneUsageDescription": "用于语音输入"
+        }
+      },
+      "sdkConfigs": {}
+    },
+    "screenOrientation": ["portrait-primary"],
+    "icons": {
+      "android": {
+        "hdpi": "static/icon/logo.png",
+        "xhdpi": "static/icon/logo.png",
+        "xxhdpi": "static/icon/logo.png",
+        "xxxhdpi": "static/icon/logo.png"
+      },
+      "ios": {
+        "appstore": "static/icon/logo.png",
+        "ipad": {
+          "app": "static/icon/logo.png",
+          "app@2x": "static/icon/logo.png",
+          "notification": "static/icon/logo.png",
+          "notification@2x": "static/icon/logo.png",
+          "proApp@2x": "static/icon/logo.png",
+          "settings": "static/icon/logo.png",
+          "settings@2x": "static/icon/logo.png",
+          "spotlight": "static/icon/logo.png",
+          "spotlight@2x": "static/icon/logo.png"
+        },
+        "iphone": {
+          "app@2x": "static/icon/logo.png",
+          "app@3x": "static/icon/logo.png",
+          "notification@2x": "static/icon/logo.png",
+          "notification@3x": "static/icon/logo.png",
+          "settings@2x": "static/icon/logo.png",
+          "settings@3x": "static/icon/logo.png",
+          "spotlight@2x": "static/icon/logo.png",
+          "spotlight@3x": "static/icon/logo.png"
+        }
+      }
+    }
+  },
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false
+    },
+    "usingComponents": true
+  },
+  "vueVersion": "3",
+  "h5": {
+    "title": "Harnax Chat",
+    "router": {
+      "mode": "hash"
+    }
+  }
+}
+{
+  "name": "harnax-chat",
+  "appid": "__UNI__HARNAX01",
+  "description": "Harnax AI Agent Chat Application",
+  "versionName": "1.0.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
           "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>"
         ],
         "minSdkVersion": 26,

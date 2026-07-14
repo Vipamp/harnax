@@ -118,7 +118,7 @@ async function handleStartChat() {
     const sessionStore = useSessionStore()
     await sessionStore.createSession(agent.value.id, agent.value.name)
 
-    uni.redirectTo({ url: '/pages/chat/index' })
+    uni.switchTab({ url: '/pages/chat/index' })
   } catch (e) {
     console.error('[AgentDetail] Failed to create session', e)
   } finally {

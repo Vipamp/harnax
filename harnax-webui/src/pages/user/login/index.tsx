@@ -17,6 +17,7 @@ import React, { useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Footer } from '@/components';
 import { login as loginApi, getCaptcha } from '@/services/ant-design-pro/login';
+import { useIsMobile } from '@/utils/responsive';
 import Settings from '../../../../config/defaultSettings';
 import CryptoJS from 'crypto-js';
 
@@ -41,6 +42,9 @@ const useStyles = createStyles(({ token }) => {
       minHeight: '100vh',
       position: 'relative',
       overflow: 'hidden',
+      '@media (max-width: 768px)': {
+        flexDirection: 'column',
+      },
     },
     // 左侧品牌展示区
     leftPanel: {
@@ -52,6 +56,11 @@ const useStyles = createStyles(({ token }) => {
       justifyContent: 'space-between',
       padding: '60px',
       overflow: 'hidden',
+      '@media (max-width: 768px)': {
+        flex: 'none',
+        padding: '24px 20px 16px',
+        minHeight: 'auto',
+      },
     },
     // 右侧登录操作区
     rightPanel: {
@@ -62,6 +71,12 @@ const useStyles = createStyles(({ token }) => {
       justifyContent: 'center',
       padding: '40px',
       position: 'relative',
+      '@media (max-width: 768px)': {
+        flex: 1,
+        padding: '20px 16px',
+        alignItems: 'flex-start',
+        paddingTop: '20px',
+      },
     },
     // 粒子背景
     particleBackground: {
@@ -72,11 +87,19 @@ const useStyles = createStyles(({ token }) => {
       bottom: 0,
       pointerEvents: 'none',
       overflow: 'hidden',
+      '@media (max-width: 768px)': {
+        display: 'none',
+      },
     },
     // Logo 区域
     logoArea: {
       position: 'relative',
       zIndex: 10,
+      '@media (max-width: 768px)': {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+      },
     },
     logoIcon: {
       width: 56,
@@ -89,6 +112,14 @@ const useStyles = createStyles(({ token }) => {
       fontSize: '28px',
       marginBottom: '16px',
       boxShadow: '0 8px 24px rgba(22, 119, 255, 0.25)',
+      '@media (max-width: 768px)': {
+        width: 40,
+        height: 40,
+        borderRadius: '10px',
+        fontSize: '20px',
+        marginBottom: 0,
+        flexShrink: 0,
+      },
     },
     logoTitle: {
       fontSize: '28px',
@@ -96,12 +127,19 @@ const useStyles = createStyles(({ token }) => {
       color: '#1f2937',
       margin: '0 0 8px',
       letterSpacing: '-0.5px',
+      '@media (max-width: 768px)': {
+        fontSize: '20px',
+        margin: 0,
+      },
     },
     logoSubtitle: {
       fontSize: '14px',
       color: '#6b7280',
       margin: 0,
       fontWeight: 500,
+      '@media (max-width: 768px)': {
+        display: 'none',
+      },
     },
     // 中间视觉区域
     visualArea: {
@@ -111,6 +149,9 @@ const useStyles = createStyles(({ token }) => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      '@media (max-width: 768px)': {
+        display: 'none',
+      },
     },
     visualIllustration: {
       width: '100%',
@@ -121,6 +162,9 @@ const useStyles = createStyles(({ token }) => {
     bottomArea: {
       position: 'relative',
       zIndex: 10,
+      '@media (max-width: 768px)': {
+        display: 'none',
+      },
     },
     slogan: {
       fontSize: '20px',
@@ -151,16 +195,25 @@ const useStyles = createStyles(({ token }) => {
     loginCard: {
       width: '100%',
       maxWidth: '420px',
+      '@media (max-width: 768px)': {
+        maxWidth: '100%',
+      },
     },
     loginHeader: {
       textAlign: 'center',
       marginBottom: '32px',
+      '@media (max-width: 768px)': {
+        marginBottom: '20px',
+      },
     },
     loginTitle: {
       fontSize: '28px',
       fontWeight: 700,
       color: '#1f2937',
       margin: '0 0 8px',
+      '@media (max-width: 768px)': {
+        fontSize: '22px',
+      },
     },
     loginSubtitle: {
       fontSize: '14px',
@@ -173,6 +226,10 @@ const useStyles = createStyles(({ token }) => {
       justifyContent: 'center',
       marginTop: 24,
       flexWrap: 'wrap',
+      '@media (max-width: 768px)': {
+        marginTop: 16,
+        gap: '8px',
+      },
     },
     featureTag: {
       padding: '6px 14px',
@@ -186,6 +243,9 @@ const useStyles = createStyles(({ token }) => {
     thirdPartyLogin: {
       marginTop: 24,
       textAlign: 'center',
+      '@media (max-width: 768px)': {
+        marginTop: 16,
+      },
     },
     thirdPartyTitle: {
       fontSize: '13px',
@@ -245,6 +305,7 @@ const Login: React.FC = () => {
   const { styles } = useStyles();
   const intl = useIntl();
 
+  const isMobile = useIsMobile();
   // 鼠标位置追踪（用于左侧粒子动画）
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const leftPanelRef = React.useRef<HTMLDivElement>(null);
@@ -535,8 +596,8 @@ const Login: React.FC = () => {
           background: 'rgba(255,255,255,0.7)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          borderRadius: '24px',
-          padding: '40px 36px',
+          borderRadius: isMobile ? '16px' : '24px',
+          padding: isMobile ? '24px 20px' : '40px 36px',
           border: '1px solid rgba(255,255,255,0.5)',
           boxShadow: '0 8px 40px rgba(31,38,135,0.1)',
         }}>

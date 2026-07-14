@@ -39,7 +39,7 @@ import type { ProTableProps } from '@ant-design/pro-components';
 const StyledProTable: <T extends Record<string, any>>(
   props: ProTableProps<T, Record<string, any>>
 ) => React.ReactNode = (props) => {
-  const { className, style, ...restProps } = props;
+  const { className, style, scroll, ...restProps } = props;
 
   return (
     <ProTable
@@ -49,6 +49,7 @@ const StyledProTable: <T extends Record<string, any>>(
         fontSize: '12px',
         ...style,
       }}
+      scroll={scroll || { x: 'max-content' }}
       tableAlertRender={false}
       options={{
         density: false,

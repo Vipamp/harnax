@@ -3,6 +3,7 @@ import { Card, Input, Select, Button, Space, DatePicker } from 'antd';
 import { SearchOutlined, PlusOutlined } from '@ant-design/icons';
 import type { RangePickerProps } from 'antd/es/date-picker';
 import dayjs from 'dayjs';
+import { useIsMobile } from '@/utils/responsive';
 
 /**
  * 搜索筛选栏组件
@@ -51,10 +52,12 @@ const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   showResetButton = true,
   style,
 }) => {
+  const isMobile = useIsMobile();
+
   return (
     <Card
       style={{
-        marginBottom: 24,
+        marginBottom: isMobile ? 12 : 24,
         borderRadius: '12px',
         background: 'var(--glass-bg)',
         backdropFilter: 'blur(16px)',
@@ -63,17 +66,18 @@ const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
         boxShadow: 'var(--glass-shadow)',
         ...style,
       }}
-      styles={{ body: { padding: '12px 20px' } }}
+      styles={{ body: { padding: isMobile ? '10px 12px' : '12px 20px' } }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 16, flexWrap: 'wrap' }}>
         {/* 左侧：搜索筛选组 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 300 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 12, flex: 1, minWidth: isMobile ? 'auto' : 300, flexWrap: 'wrap' }}>
           {children}
           
           {/* 搜索按钮 */}
           {showSearchButton && (
             <Button
               type="primary"
+              size={isMobile ? 'small' : 'middle'}
               onClick={onSearch}
             >
               {searchText}
@@ -83,6 +87,7 @@ const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           {/* 重置按钮 */}
           {showResetButton && (
             <Button
+              size={isMobile ? 'small' : 'middle'}
               onClick={onReset}
               style={{
                 background: 'var(--vip-bg-container)',
@@ -140,6 +145,8 @@ export const SearchInput: React.FC<SearchInputProps> = ({
   width = 240,
   style,
 }) => {
+  const isMobile = useIsMobile();
+
   return (
     <Input
       placeholder={placeholder}
@@ -148,10 +155,12 @@ export const SearchInput: React.FC<SearchInputProps> = ({
       onChange={(e) => onChange?.(e.target.value)}
       onPressEnter={onSearch}
       allowClear
+      size={isMobile ? 'small' : 'middle'}
       style={{
-        width: width === 'auto' ? 'auto' : width,
-        minWidth: width === 'auto' ? 200 : undefined,
-        maxWidth: width === 'auto' ? 400 : undefined,
+        width: isMobile ? '100%' : (width === 'auto' ? 'auto' : width),
+        minWidth: isMobile ? undefined : (width === 'auto' ? 200 : undefined),
+        maxWidth: isMobile ? undefined : (width === 'auto' ? 400 : undefined),
+        flex: isMobile ? 1 : undefined,
         ...style,
       }}
     />
