@@ -1,0 +1,30 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="名称" value="{{form.name}}" placeholder="请输入 MCP 名称" data-field="name" bind:change="onInput" clearable />
+    <t-textarea label="描述" value="{{form.description}}" placeholder="用途说明" data-field="description" bind:change="onInput" autosize maxlength="-1" />
+    <picker mode="selector" range="{{transports}}" value="{{transportIndex}}" bindchange="onTransportChange">
+      <t-cell title="传输方式" note="{{transports[transportIndex]}}" arrow hover />
+    </picker>
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <block wx:if="{{form.type === 'stdio'}}">
+      <t-input label="启动命令" value="{{form.command}}" placeholder="如 npx -y @modelcontextprotocol/server-filesystem /tmp" data-field="command" bind:change="onInput" clearable />
+    </block>
+    <block wx:else>
+      <t-input label="服务 URL" value="{{form.url}}" placeholder="如 https://example.com/mcp" data-field="url" bind:change="onInput" clearable />
+    </block>
+    <view class="form-item form-item--row">
+      <view class="form-label">启用状态</view>
+      <t-switch value="{{form.status === 1}}"  bind:change="onStatusChange" />
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

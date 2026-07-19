@@ -1,5 +1,6 @@
 package com.agnetix.harnax.harness
 
+import com.agnetix.harnax.harness.permission.DangerousInputCheckingTool
 import com.agnetix.harnax.tools.sdk.ToolBox
 import io.agentscope.core.middleware.MiddlewareBase
 import io.agentscope.core.model.ChatModelBase
@@ -153,6 +154,34 @@ class HarnessAgentBuilder {
     fun registerAgentTool(resolvedTool: AgentTool): HarnessAgentBuilder {
         toolkit.registerTool(resolvedTool)
         return this
+    }
+
+    /**
+     * Retrieves a registered tool by name.
+     * Used by the launcher to find tools that need post-registration wrapping.
+     */
+    fun getTool(toolName: String): AgentTool? = toolkit.getTool(toolName)
+
+    /**
+     * Wraps an already-registered tool with [DangerousInputCheckingTool].
+     *
+     * This replaces the original tool in the toolkit's registry with a [io.agentscope.core.tool.ToolBase]
+     * subclass whose `checkPermissions()` scans all string-valued inputs for dangerous patterns
+     * (shell commands like `rm -rf`, sensitive paths like `.env`).
+     *
+     * The wrapped tool delegates execution to the original, but the permission check happens
+     * **before** execution — ensuring bypass-immune safety even in BYPASS mode.
+     *
+     * Call this after [addTool] to wrap specific @Tool methods marked with `@ToolMeta(dangerousInput=true)`.
+     *
+     * @param toolName the name of the tool to wrap (must already be registered)
+     * @throws IllegalArgumentException if the tool is not found
+     */
+    fun wrapWithDangerousInputCheck(toolName: String): HarnessAgentBuilder = apply {
+        val original = toolkit.getTool(toolName)
+            ?: throw IllegalArgumentException("Cannot wrap tool '$toolName': not found in toolkit")
+        val wrapped = DangerousInputCheckingTool(original)
+        toolkit.registerTool(wrapped)
     }
 
     /**

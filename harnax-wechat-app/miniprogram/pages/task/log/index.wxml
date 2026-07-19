@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="list">
+    <view
+      class="log-card"
+      wx:for="{{list}}"
+      wx:key="id"
+      data-idx="{{index}}"
+      bindtap="onToggleDetail"
+    >
+      <view class="log-card__head">
+        <text class="log-card__time">{{item.startTimeText}}</text>
+        <status-tag type="{{item.statusType}}" text="{{item.statusText}}" />
+      </view>
+
+      <view class="log-card__meta">
+        <text class="log-card__meta-item">耗时：{{item.durationText}}</text>
+        <text wx:if="{{item.tokenUsage}}" class="log-card__meta-item">Token：{{item.tokenUsage}}</text>
+      </view>
+
+      <block wx:if="{{item.expanded}}" >
+        <view wx:if="{{item.prompt}}" class="log-card__section">
+          <view class="log-card__label">提示词</view>
+          <view class="log-card__text">{{item.prompt}}</view>
+        </view>
+        <view wx:if="{{item.response}}" class="log-card__section">
+          <view class="log-card__label">响应</view>
+          <view class="log-card__text">{{item.response}}</view>
+        </view>
+        <view wx:if="{{item.errorInfo}}" class="log-card__section">
+          <view class="log-card__label log-card__label--error">错误信息</view>
+          <view class="log-card__text log-card__text--error">{{item.errorInfo}}</view>
+        </view>
+      </block>
+      <view wx:else class="log-card__hint">点击查看详情</view>
+    </view>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无执行记录" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

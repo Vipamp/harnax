@@ -1,0 +1,44 @@
+<view class="dashboard">
+  <!-- 欢迎横幅 -->
+  <view class="banner">
+    <view class="banner__row">
+      <view class="banner__avatar">
+        <t-icon name="user" size="44rpx" color="#4F46E5" />
+      </view>
+      <view class="banner__info">
+        <text class="banner__hi">欢迎回来</text>
+        <text class="banner__name">{{username}}</text>
+      </view>
+    </view>
+    <text class="banner__desc">Harnax 智能体管理平台，一站式管理 Agent、模型、工具与会话。</text>
+    <view class="banner__tags">
+      <text class="banner__tag">大模型</text>
+      <text class="banner__tag">MCP</text>
+      <text class="banner__tag">Skills</text>
+    </view>
+  </view>
+
+  <!-- 统计卡片 -->
+  <view class="stats">
+    <view class="stat" wx:for="{{stats}}" wx:key="key" bindtap="onStatTap" data-url="{{item.url}}" data-tab="{{item.tab}}" >
+      <view class="stat__icon" style="background: {{item.bg}};">
+        <t-icon name="{{item.icon}}" size="36rpx" color="#FFFFFF" />
+      </view>
+      <view class="stat__value">{{item.value}}</view>
+      <view class="stat__label">{{item.label}}</view>
+    </view>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="section-title">快捷功能</view>
+  <view class="quick">
+    <view class="quick__item" wx:for="{{quickEntries}}" wx:key="url" bindtap="onQuickTap" data-url="{{item.url}}" data-tab="{{item.tab}}" >
+      <view class="quick__icon" style="background: {{item.bg}};">
+        <t-icon name="{{item.icon}}" size="40rpx" color="#FFFFFF" />
+      </view>
+      <text class="quick__label">{{item.label}}</text>
+    </view>
+  </view>
+
+  <loading wx:if="{{loading}}" text="加载中" />
+</view>

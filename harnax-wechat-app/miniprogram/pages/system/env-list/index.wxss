@@ -1,0 +1,35 @@
+/* ---- Env List — Modern Minimal ---- */
+.e-card {
+  display: flex;
+  align-items: flex-start;
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  box-shadow: var(--shadow);
+  border: 1rpx solid var(--border-color);
+}
+.e-card:active { background: #F7F8FA; }
+.e-card__icon {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+.e-card__body { flex: 1; min-width: 0; }
+.e-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
+.e-card__key {
+  font-size: 30rpx; font-weight: 600; color: #1D2129;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace; word-break: break-all;
+}
+.e-card__value {
+  font-size: 26rpx; color: #4E5969;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  word-break: break-all; background: #F7F8FA; border-radius: var(--radius-md);
+  padding: 14rpx 18rpx; margin-bottom: 12rpx; border: 1rpx solid #F0F0F0;
+}
+.e-card__desc { display: block; font-size: 24rpx; color: #86909C; }

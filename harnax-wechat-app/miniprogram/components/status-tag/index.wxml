@@ -1,0 +1,6 @@
+<t-tag
+  theme="{{type === 'success' ? 'success' : type === 'danger' ? 'danger' : type === 'warning' ? 'warning' : type === 'processing' ? 'primary' : 'default'}}"
+  variant="{{type === 'processing' ? 'light' : 'light'}}"
+  size="small"
+  class="status-tag status-tag--{{type}}"
+>{{text}}</t-tag>

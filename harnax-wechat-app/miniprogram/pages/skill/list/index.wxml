@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="tabs">
+    <view class="tabs__item {{tab === 'repo' ? 'tabs__item--active' : ''}}" data-tab="repo" bindtap="onTab">技能仓库</view>
+    <view class="tabs__item {{tab === 'skill' ? 'tabs__item--active' : ''}}" data-tab="skill" bindtap="onTab">技能</view>
+  </view>
+
+  <!-- 仓库列表 -->
+  <view wx:if="{{tab === 'repo'}}" class="list">
+    <view class="s-card" wx:for="{{repos}}" wx:key="id">
+      <view class="s-card__head">
+        <text class="s-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <text wx:if="{{item.description}}" class="s-card__desc">{{item.description}}</text>
+      <text wx:if="{{item.url}}" class="s-card__sub">{{item.url}}{{item.branch ? ' @ ' + item.branch : ''}}</text>
+      <view class="s-card__actions">
+        <text class="s-card__btn" catchtap="onSyncRepo" data-id="{{item.id}}" >同步</text>
+        <text class="s-card__btn" catchtap="onToggleRepo" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="s-card__btn" catchtap="onEditRepo" data-id="{{item.id}}" >编辑</text>
+        <text class="s-card__btn s-card__btn--danger" catchtap="onDeleteRepo" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+    <empty-state wx:if="{{!loading && repos.length === 0}}" text="暂无技能仓库，点击右下角添加" />
+  </view>
+
+  <!-- 技能列表 -->
+  <view wx:else class="list">
+    <view class="s-card" wx:for="{{skills}}" wx:key="id" data-id="{{item.id}}" bindtap="onTapSkill">
+      <view class="s-card__head">
+        <text class="s-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <text wx:if="{{item.repositoryName}}" class="s-card__sub">{{item.repositoryName}}</text>
+      <view class="s-card__actions">
+        <text class="s-card__btn" catchtap="onToggleSkill" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="s-card__btn s-card__btn--danger" catchtap="onDeleteSkill" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+    <empty-state wx:if="{{!loading && skills.length === 0}}" text="暂无技能，可在仓库中同步导入" />
+  </view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

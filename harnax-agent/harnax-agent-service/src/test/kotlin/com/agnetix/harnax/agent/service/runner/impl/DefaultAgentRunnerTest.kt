@@ -473,8 +473,12 @@ class DefaultAgentRunnerTest {
         @Test
         fun `executeCommand ENABLE thinking fails when model does not support reasoning`() {
             val specInfo = com.agnetix.harnax.entity.dto.AgentSpecInfoResponse(
-                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-                modelId = 1L, modelSupportReasoning = 0,
+                agentId = 1L,
+                agentName = "Test",
+                description = "",
+                systemPrompt = "",
+                modelId = 1L,
+                modelSupportReasoning = 0,
             )
             `when`(adminApiClient.getAgentSpec("session-1")).thenReturn(specInfo)
 
@@ -493,8 +497,12 @@ class DefaultAgentRunnerTest {
         @Test
         fun `executeCommand ENABLE search fails when model does not support internet`() {
             val specInfo = com.agnetix.harnax.entity.dto.AgentSpecInfoResponse(
-                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-                modelId = 1L, modelSupportInternet = 0,
+                agentId = 1L,
+                agentName = "Test",
+                description = "",
+                systemPrompt = "",
+                modelId = 1L,
+                modelSupportInternet = 0,
             )
             `when`(adminApiClient.getAgentSpec("session-1")).thenReturn(specInfo)
 

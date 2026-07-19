@@ -1,0 +1,16 @@
+<t-tab-bar
+  value="{{selected}}"
+  bind:change="onChange"
+  class="tab-bar-wrap"
+>
+  <t-tab-bar-item
+    wx:for="{{list}}"
+    wx:key="index"
+    value="{{index}}"
+    aria-label="{{item.text}}"
+  >
+    <t-icon slot="icon" name="{{item.icon}}" />
+    <t-icon slot="icon-active" name="{{item.iconActive || item.icon}}" />
+    {{item.text}}
+  </t-tab-bar-item>
+</t-tab-bar>

@@ -1,0 +1,11 @@
+{
+  "navigationBarTitleText": "工作区",
+  "usingComponents": {
+    "loading": "/components/loading/index",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-popup": "tdesign-miniprogram/popup/popup",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-loading": "tdesign-miniprogram/loading/loading"
+  }
+}

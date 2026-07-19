@@ -1,0 +1,57 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索租户名称" bind:search="onSearch" />
+
+  <view class="list">
+    <t-swipe-cell wx:for="{{list}}" wx:key="id" style="display:block;margin-bottom:20rpx;">
+      <view class="t-card" bindtap="onEdit" data-id="{{item.id}}">
+        <view class="t-card__icon">
+          <t-icon name="city" size="40rpx" color="#FFFFFF" />
+        </view>
+        <view class="t-card__body">
+          <view class="t-card__head">
+            <view class="t-card__title">
+              <text class="t-card__name">{{item.name}}</text>
+              <text wx:if="{{item.code}}" class="t-card__code">{{item.code}}</text>
+            </view>
+            <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '正常' : '禁用'}}" />
+          </view>
+          <text wx:if="{{item.description}}" class="t-card__desc">{{item.description}}</text>
+        </view>
+      </view>
+      <view slot="right" class="swipe-actions">
+        <view class="swipe-btn swipe-btn--special" catchtap="onManage" data-id="{{item.id}}" data-name="{{item.name}}">成员</view>
+        <view class="swipe-btn swipe-btn--toggle" catchtap="onToggle" data-id="{{item.id}}">状态</view>
+        <view class="swipe-btn swipe-btn--edit" catchtap="onEdit" data-id="{{item.id}}">编辑</view>
+        <view class="swipe-btn swipe-btn--del" catchtap="onDelete" data-id="{{item.id}}">删除</view>
+      </view>
+    </t-swipe-cell>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无租户，点击右下角创建" />
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+
+  <!-- 成员弹层 -->
+  <view wx:if="{{showMembers}}" class="mask" bindtap="onCloseMembers">
+    <view class="sheet" catchtap="">
+      <view class="sheet__head">
+        <text class="sheet__title">{{currentTenantName}} 成员</text>
+        <text class="sheet__close" bindtap="onCloseMembers">✕</text>
+      </view>
+      <view wx:if="{{membersLoading}}" class="sheet__empty">加载中...</view>
+      <view wx:elif="{{members.length === 0}}" class="sheet__empty">暂无成员</view>
+      <view wx:else class="sheet__list">
+        <view class="sheet__item" wx:for="{{members}}" wx:key="id">
+          <view class="sheet__item-info">
+            <text class="sheet__item-name">{{item.username || item.nickname || item.name}}</text>
+            <text wx:if="{{item.role}}" class="sheet__item-role">{{item.role}}</text>
+          </view>
+          <text class="sheet__item-btn" catchtap="onRemoveUser" data-user-id="{{item.userId || item.id}}" data-name="{{item.username || item.name}}" >移除</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

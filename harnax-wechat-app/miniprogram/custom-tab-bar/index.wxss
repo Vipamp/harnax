@@ -1,0 +1,21 @@
+/* ---- Custom Tab Bar — Modern Minimal + TDesign ---- */
+
+.tab-bar-wrap {
+  /* TDesign tab-bar theme overrides */
+  --td-tab-bar-bg-color: #FFFFFF;
+  --td-tab-bar-active-color: #4F46E5;
+  --td-tab-bar-color: #86909C;
+  --td-tab-bar-active-bg-color: transparent;
+  --td-tab-bar-border-color: #F0F0F0;
+  --td-tab-bar-item-font-size: 26rpx;
+  --td-tab-bar-item-active-font-size: 26rpx;
+}
+
+:host {
+  display: block;
+}
+
+.tab-bar-wrap {
+  box-shadow: 0 -1rpx 4rpx rgba(0, 0, 0, 0.04);
+  padding-bottom: env(safe-area-inset-bottom);
+}

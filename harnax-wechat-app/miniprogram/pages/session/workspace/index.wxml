@@ -1,0 +1,76 @@
+<view class="ws">
+  <!-- 状态栏 -->
+  <view class="ws__status">
+    <view class="ws__status-left">
+      <view class="ws__dot {{sandboxActive ? 'ws__dot--on' : 'ws__dot--off'}}"></view>
+      <text class="ws__status-text">{{sandboxText}}</text>
+    </view>
+    <view class="ws__status-actions">
+      <view class="ws__act" bindtap="onUpload">
+        <t-icon name="upload" size="34rpx" color="#4F46E5" />
+        <text class="ws__act-text">上传</text>
+      </view>
+      <view class="ws__act" bindtap="onRefresh">
+        <t-icon name="refresh" size="34rpx" color="#4F46E5" />
+        <text class="ws__act-text">刷新</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 路径栏 -->
+  <view class="ws__path">
+    <view class="ws__up {{canGoUp ? '' : 'ws__up--disabled'}}" bindtap="onGoUp">
+      <t-icon name="rollback" size="32rpx" color="{{canGoUp ? '#4F46E5' : '#C9CDD4'}}" />
+    </view>
+    <text class="ws__path-text">{{currentPath}}</text>
+  </view>
+
+  <!-- 文件列表 -->
+  <view class="ws__list" wx:if="{{!loading}}">
+    <view
+      class="ws__file"
+      wx:for="{{files}}"
+      wx:key="fullPath"
+      data-item="{{item}}"
+      bindtap="onTapItem"
+    >
+      <t-icon
+        class="ws__file-icon"
+        name="{{item.isDir ? 'folder' : 'file'}}"
+        size="44rpx"
+        color="{{item.isDir ? '#ED7B2F' : '#86909C'}}"
+      />
+      <view class="ws__file-main">
+        <text class="ws__file-name">{{item.name}}</text>
+        <text class="ws__file-size" wx:if="{{item.sizeText}}">{{item.sizeText}}</text>
+      </view>
+      <t-icon name="chevron-right" size="36rpx" color="#C9CDD4" />
+    </view>
+
+    <t-empty wx:if="{{files.length === 0}}" icon="folder-open" description="当前目录为空" />
+  </view>
+
+  <loading wx:if="{{loading}}" text="加载中" />
+</view>
+
+<!-- 文件内容弹层 -->
+<t-popup visible="{{fileVisible}}" placement="bottom" bind:visible-change="onCloseFile">
+  <view class="fp">
+    <view class="fp__head">
+      <text class="fp__name">{{fileName}}</text>
+      <t-icon name="close" size="40rpx" color="#86909C" bindtap="onCloseFile" />
+    </view>
+    <scroll-view scroll-y class="fp__body">
+      <block wx:if="{{!fileLoading}}">
+        <text class="fp__content" user-select>{{fileContent}}</text>
+      </block>
+      <view wx:else class="fp__loading">
+        <t-loading theme="circular" size="40rpx" text="加载中" />
+      </view>
+    </scroll-view>
+    <view class="fp__foot">
+      <t-button theme="default" size="medium" variant="outline" bindtap="onCopyContent">复制内容</t-button>
+      <t-button theme="primary" size="medium" bindtap="onDownloadFile">下载 / 打开</t-button>
+    </view>
+  </view>
+</t-popup>

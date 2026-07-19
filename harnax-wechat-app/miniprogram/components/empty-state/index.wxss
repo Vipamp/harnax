@@ -1,0 +1,35 @@
+/* ---- Empty State — Modern Minimal ---- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 140rpx 40rpx;
+}
+
+.empty-icon {
+  font-size: 88rpx;
+  margin-bottom: 28rpx;
+  opacity: 0.4;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #86909C;
+  margin-bottom: 36rpx;
+  text-align: center;
+  font-weight: 500;
+}
+
+.empty-action {
+  padding: 18rpx 52rpx;
+  background: #4F46E5;
+  color: #ffffff;
+  border-radius: var(--radius-md);
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.empty-action:active {
+  background: #4338CA;
+}

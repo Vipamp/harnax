@@ -1,0 +1,52 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索任务名称" bind:search="onSearch" />
+
+  <view class="list">
+    <view
+      class="task-card"
+      wx:for="{{list}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onTapItem"
+    >
+      <view class="task-card__head">
+        <text class="task-card__name">{{item.name}}</text>
+        <status-tag
+          type="{{item.taskStatus === 1 ? 'success' : 'default'}}"
+          text="{{item.taskStatus === 1 ? '运行中' : '已停用'}}"
+        />
+      </view>
+
+      <text class="task-card__desc">{{item.description || item.prompt}}</text>
+
+      <view class="task-card__meta">
+        <text class="task-card__meta-item"><t-icon name="robot" size="24rpx" color="#86909C" />{{item.agentName || '-'}}</text>
+        <text class="task-card__meta-item"><t-icon name="time" size="24rpx" color="#86909C" />{{item.cronExpression}}</text>
+      </view>
+      <view class="task-card__meta">
+        <text class="task-card__meta-item">上次运行：{{item.lastRunTimeText}}</text>
+      </view>
+
+      <view class="task-card__actions" catchtap="noop">
+        <text class="task-card__btn" catchtap="onTrigger" data-id="{{item.id}}" >触发</text>
+        <text
+          class="task-card__btn"
+          catchtap="onToggle"
+          data-id="{{item.id}}"
+          data-status="{{item.taskStatus}}"
+        >{{item.taskStatus === 1 ? '停用' : '启用'}}</text>
+        <text class="task-card__btn" catchtap="onEdit" data-id="{{item.id}}" >编辑</text>
+        <text class="task-card__btn task-card__btn--danger" catchtap="onDelete" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无定时任务，点击右下角创建" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

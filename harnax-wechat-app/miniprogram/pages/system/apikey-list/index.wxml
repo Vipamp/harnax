@@ -1,0 +1,37 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索 Key 名称" bind:search="onSearch" />
+
+  <view class="list">
+    <t-swipe-cell wx:for="{{list}}" wx:key="id" style="display:block;margin-bottom:20rpx;">
+      <view class="k-card" bindtap="onEdit" data-id="{{item.id}}">
+        <view class="k-card__icon">
+          <t-icon name="lock-on" size="40rpx" color="#FFFFFF" />
+        </view>
+        <view class="k-card__body">
+          <view class="k-card__head">
+            <text class="k-card__name">{{item.name}}</text>
+            <status-tag type="{{item.enabled === 1 ? 'success' : 'default'}}" text="{{item.enabled === 1 ? '启用' : '禁用'}}" />
+          </view>
+          <view class="k-card__key">{{item.keyPrefix}}••••••••••</view>
+          <view class="k-card__meta">
+            <text wx:if="{{item.scopes}}" class="k-card__tag">{{item.scopes}}</text>
+            <text class="k-card__meta-text">限流 {{item.rateLimit}}/分</text>
+          </view>
+        </view>
+      </view>
+      <view slot="right" class="swipe-actions">
+        <view class="swipe-btn swipe-btn--special" catchtap="onRegenerate" data-id="{{item.id}}">重置</view>
+        <view class="swipe-btn swipe-btn--toggle" catchtap="onToggle" data-id="{{item.id}}" data-enabled="{{item.enabled}}">{{item.enabled === 1 ? '禁用' : '启用'}}</view>
+        <view class="swipe-btn swipe-btn--edit" catchtap="onEdit" data-id="{{item.id}}">编辑</view>
+        <view class="swipe-btn swipe-btn--del" catchtap="onDelete" data-id="{{item.id}}">删除</view>
+      </view>
+    </t-swipe-cell>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无 API Key，点击右下角创建" />
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

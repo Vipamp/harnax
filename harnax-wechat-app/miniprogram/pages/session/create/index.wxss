@@ -1,0 +1,23 @@
+/* ---- Session Create — Modern Minimal ---- */
+.agent-tip {
+  margin: 0 28rpx;
+  padding: 28rpx;
+  background: #EEF2FF;
+  border-radius: var(--radius-lg);
+  border: 1rpx solid #E0E7FF;
+}
+
+.agent-tip__label {
+  display: block;
+  font-size: 26rpx;
+  color: #4F46E5;
+  font-weight: 600;
+}
+
+.agent-tip__desc {
+  display: block;
+  font-size: 24rpx;
+  color: #4E5969;
+  margin-top: 10rpx;
+  line-height: 1.7;
+}

@@ -1,0 +1,69 @@
+<view class="login">
+  <view class="login__header">
+    <view class="login__logo">H</view>
+    <view class="login__brand">Harnax</view>
+    <view class="login__slogan">AI Agent 智能管理平台</view>
+  </view>
+
+  <view class="login__card">
+    <t-input
+      label="服务器地址"
+      value="{{baseUrl}}"
+      placeholder="https://your-server.com"
+      clearable
+      bind:change="onBaseUrlInput"
+    />
+
+    <t-input
+      label="用户名"
+      value="{{username}}"
+      placeholder="请输入用户名"
+      clearable
+      bind:change="onUsernameInput"
+    />
+
+    <t-input
+      label="密码"
+      value="{{password}}"
+      type="{{showPwd ? 'text' : 'password'}}"
+      placeholder="请输入密码"
+      clearable
+      suffixIcon="{{showPwd ? 'browse' : 'browse-off'}}"
+      bind:change="onPasswordInput"
+      bind:icon-click="togglePwd"
+      bind:confirm="onSubmit"
+    />
+
+    <view class="login__row">
+      <t-checkbox-group value="{{autoLogin ? ['remember'] : []}}" bind:change="onRememberChange">
+        <t-checkbox value="remember" label="记住登录状态" />
+      </t-checkbox-group>
+      <text class="login__adv-toggle" catchtap="toggleAdvanced">{{showAdvanced ? '收起高级 ▲' : '高级设置 ▼'}}</text>
+    </view>
+
+    <view wx:if="{{showAdvanced}}" class="login__advanced">
+      <t-input
+        label="Router 地址"
+        value="{{routerUrl}}"
+        placeholder="与服务器地址相同可留空"
+        clearable
+        tips="对话流服务地址，通常与服务器地址相同"
+        bind:change="onRouterUrlInput"
+      />
+    </view>
+
+    <t-button
+      theme="primary"
+      block
+      size="large"
+      loading="{{loading}}"
+      disabled="{{loading}}"
+      bindtap="onSubmit"
+      class="login__btn"
+    >
+      登 录
+    </t-button>
+  </view>
+
+  <view class="login__footer">Harnax (c) 2026</view>
+</view>

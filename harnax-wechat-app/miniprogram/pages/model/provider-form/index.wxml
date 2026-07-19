@@ -1,0 +1,19 @@
+<view class="page">
+  <t-cell-group bordered>
+    <picker mode="selector" range="{{types}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <t-cell title="类型" note="{{types[typeIndex]}}" />
+    </picker>
+    <t-input label="名称" value="{{form.name}}" placeholder="请输入服务商名称" data-field="name" bind:change="onInput" clearable />
+    <t-input label="Base URL" value="{{form.baseUrl}}" placeholder="如 https://api.openai.com/v1" data-field="baseUrl" bind:change="onInput" clearable />
+    <t-input label="API Key" value="{{form.apiKey}}" placeholder="请输入 API Key" data-field="apiKey" bind:change="onInput" clearable />
+    <t-textarea label="描述" value="{{form.description}}" placeholder="备注说明" data-field="description" bind:change="onInput" autosize maxlength="-1" />
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

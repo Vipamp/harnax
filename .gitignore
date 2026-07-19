@@ -11,6 +11,7 @@ buildNumber.properties
 
 # Node
 node_modules/
+miniprogram_npm/
 dist/
 build/
 tmp/

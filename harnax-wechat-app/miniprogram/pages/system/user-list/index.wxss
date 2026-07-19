@@ -1,0 +1,62 @@
+/* ---- User List — Modern Minimal ---- */
+.u-card {
+  display: flex;
+  align-items: flex-start;
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  box-shadow: var(--shadow);
+  border: 1rpx solid var(--border-color);
+}
+.u-card:active { background: #F7F8FA; }
+.u-card__icon {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #6366F1, #4F46E5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+.u-card__body { flex: 1; min-width: 0; }
+.u-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+.u-card__title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.u-card__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1D2129;
+}
+.u-card__nick {
+  font-size: 24rpx;
+  color: #86909C;
+  margin-top: 4rpx;
+}
+.u-card__info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  align-items: center;
+}
+.u-card__tag {
+  font-size: 22rpx;
+  color: #4F46E5;
+  background: #EEF2FF;
+  border-radius: var(--radius-full);
+  padding: 4rpx 18rpx;
+  font-weight: 500;
+}
+.u-card__meta {
+  font-size: 24rpx;
+  color: #86909C;
+}

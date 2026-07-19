@@ -1,0 +1,1 @@
+<t-loading wx:if="{{show}}" theme="circular" size="{{fullscreen ? 80 : 48}}" text="{{text}}" class="loading-wrap {{fullscreen ? 'loading-fullscreen' : ''}}" />

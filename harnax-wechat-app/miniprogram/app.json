@@ -1,0 +1,89 @@
+{
+  "pages": [
+    "pages/login/index",
+    "pages/index/index",
+    "pages/agent/list/index",
+    "pages/agent/detail/index",
+    "pages/agent/form/index",
+    "pages/session/list/index",
+    "pages/session/create/index",
+    "pages/session/chat/index",
+    "pages/session/workspace/index",
+    "pages/session/detail/index",
+    "pages/task/list/index",
+    "pages/task/form/index",
+    "pages/task/log/index",
+    "pages/model/list/index",
+    "pages/model/provider-form/index",
+    "pages/model/model-form/index",
+    "pages/mcp/list/index",
+    "pages/mcp/form/index",
+    "pages/mcp/detail/index",
+    "pages/skill/list/index",
+    "pages/skill/repo-form/index",
+    "pages/skill/detail/index",
+    "pages/tool/list/index",
+    "pages/channel/list/index",
+    "pages/channel/form/index",
+    "pages/system/user-list/index",
+    "pages/system/user-form/index",
+    "pages/system/tenant-list/index",
+    "pages/system/tenant-form/index",
+    "pages/system/apikey-list/index",
+    "pages/system/apikey-form/index",
+    "pages/system/env-list/index",
+    "pages/system/env-form/index",
+    "pages/system/token-monitor/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#0C0A1D",
+    "navigationBarTitleText": "Harnax",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F0F4F8"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#94A3B8",
+    "selectedColor": "#1E1B4B",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "仪表盘"
+      },
+      {
+        "pagePath": "pages/agent/list/index",
+        "text": "Agent"
+      },
+      {
+        "pagePath": "pages/session/list/index",
+        "text": "会话"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "usingComponents": {
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-loading": "tdesign-miniprogram/loading/loading",
+    "t-toast": "tdesign-miniprogram/toast/toast",
+    "t-dialog": "tdesign-miniprogram/dialog/dialog",
+    "t-message": "tdesign-miniprogram/message/message",
+    "t-popup": "tdesign-miniprogram/popup/popup",
+    "t-divider": "tdesign-miniprogram/divider/divider",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-tag": "tdesign-miniprogram/tag/tag",
+    "t-check-tag": "tdesign-miniprogram/check-tag/check-tag",
+    "t-fab": "tdesign-miniprogram/fab/fab",
+    "t-navbar": "tdesign-miniprogram/navbar/navbar"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

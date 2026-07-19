@@ -1,0 +1,112 @@
+/* ---- Profile — Modern Minimal ---- */
+.page {
+  min-height: 100vh;
+  background: transparent;
+  padding-bottom: 40rpx;
+}
+
+.user-card {
+  display: flex;
+  align-items: center;
+  gap: 28rpx;
+  padding: 52rpx 36rpx;
+  background: #FFFFFF;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.user-card__avatar {
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 28rpx;
+  background: #EEF2FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.user-card__name {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #1D2129;
+  letter-spacing: -0.02em;
+}
+
+.user-card__nick {
+  font-size: 26rpx;
+  color: #86909C;
+}
+
+.user-card__role {
+  display: inline-block;
+  font-size: 22rpx;
+  color: #4F46E5;
+  background: #EEF2FF;
+  padding: 4rpx 18rpx;
+  border-radius: var(--radius-full);
+  align-self: flex-start;
+  margin-top: 4rpx;
+  font-weight: 500;
+}
+
+.server-card {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  background: #FFFFFF;
+  padding: 24rpx 28rpx;
+  margin: 28rpx;
+  border-radius: 16rpx;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid #F0F0F0;
+}
+
+.server-card__label {
+  font-size: 26rpx;
+  color: #86909C;
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.server-card__url {
+  flex: 1;
+  font-size: 24rpx;
+  color: #4E5969;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  word-break: break-all;
+}
+
+.server-card__copy {
+  font-size: 24rpx;
+  color: #4F46E5;
+  padding: 6rpx 20rpx;
+  border: 1rpx solid #E0E7FF;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.menu-card {
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  margin: 0 28rpx;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid #F0F0F0;
+  overflow: hidden;
+}
+
+.logout-bar {
+  margin: 48rpx 28rpx;
+}
+
+.logout-bar .btn {
+  height: 88rpx;
+  font-size: 30rpx;
+  border-radius: var(--radius-md);
+}

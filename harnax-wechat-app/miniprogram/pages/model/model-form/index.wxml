@@ -1,0 +1,48 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="显示名称" value="{{form.name}}" placeholder="如 GPT-4o" data-field="name" bind:change="onInput" clearable />
+    <t-input label="模型标识" value="{{form.modelName}}" placeholder="如 gpt-4o" data-field="modelName" bind:change="onInput" clearable />
+    <picker mode="selector" range="{{providerNames}}" value="{{providerIndex}}" bindchange="onProviderChange">
+      <t-cell title="服务商" note="{{providerIndex >= 0 ? providerNames[providerIndex] : '请选择服务商'}}" />
+    </picker>
+    <picker mode="selector" range="{{modelTypes}}" value="{{modelTypeIndex}}" bindchange="onModelTypeChange">
+      <t-cell title="模型类型" note="{{modelTypes[modelTypeIndex]}}" arrow hover />
+    </picker>
+    <t-input label="价格（每千 token）" value="{{form.price}}" placeholder="0" data-field="price" bind:change="onInput" clearable />
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <view class="form-item form-item--row">
+      <view class="form-label">支持推理</view>
+      <t-switch value="{{form.supportReasoning === 1}}" data-field="supportReasoning" bind:change="onSwitch" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">支持联网</view>
+      <t-switch value="{{form.supportInternet === 1}}" data-field="supportInternet" bind:change="onSwitch" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">支持工具</view>
+      <t-switch value="{{form.supportTool === 1}}" data-field="supportTool" bind:change="onSwitch" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">支持 MCP</view>
+      <t-switch value="{{form.supportMcp === 1}}" data-field="supportMcp" bind:change="onSwitch" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">支持视觉</view>
+      <t-switch value="{{form.supportVision === 1}}" data-field="supportVision" bind:change="onSwitch" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">启用状态</view>
+      <t-switch value="{{form.status === 1}}"  bind:change="onStatusChange" />
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

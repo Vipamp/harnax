@@ -1,0 +1,36 @@
+/* ---- API Key List — Modern Minimal ---- */
+.k-card {
+  display: flex;
+  align-items: flex-start;
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  box-shadow: var(--shadow);
+  border: 1rpx solid var(--border-color);
+}
+.k-card:active { background: #F7F8FA; }
+.k-card__icon {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #F59E0B, #ED7B2F);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+.k-card__body { flex: 1; min-width: 0; }
+.k-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12rpx; }
+.k-card__name { font-size: 32rpx; font-weight: 600; color: #1D2129; }
+.k-card__key {
+  font-size: 26rpx; color: #4E5969;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  margin-bottom: 12rpx; word-break: break-all;
+}
+.k-card__meta { display: flex; flex-wrap: wrap; gap: 12rpx; align-items: center; }
+.k-card__tag {
+  font-size: 22rpx; color: #ED7B2F; background: #FEF3EA;
+  border-radius: var(--radius-full); padding: 4rpx 18rpx; font-weight: 500;
+}
+.k-card__meta-text { font-size: 24rpx; color: #86909C; }

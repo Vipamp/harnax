@@ -1,0 +1,7 @@
+/* pages/task/form/index.wxss */
+.prompt-input {
+  min-height: 160rpx;
+}
+.cron-presets {
+  margin-top: 16rpx;
+}

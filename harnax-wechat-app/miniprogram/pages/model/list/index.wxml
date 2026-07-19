@@ -1,0 +1,52 @@
+<view class="page">
+  <view class="tabs">
+    <view class="tabs__item {{tab === 'provider' ? 'tabs__item--active' : ''}}" data-tab="provider" bindtap="onTab">服务商</view>
+    <view class="tabs__item {{tab === 'model' ? 'tabs__item--active' : ''}}" data-tab="model" bindtap="onTab">模型</view>
+  </view>
+
+  <!-- 服务商列表 -->
+  <view wx:if="{{tab === 'provider'}}" class="list">
+    <view class="m-card" wx:for="{{providers}}" wx:key="id">
+      <view class="m-card__head">
+        <text class="m-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <view class="m-card__tag">{{item.type}}</view>
+      <text wx:if="{{item.baseUrl}}" class="m-card__sub">{{item.baseUrl}}</text>
+      <view class="m-card__actions">
+        <text class="m-card__btn" catchtap="onTestProvider" data-id="{{item.id}}" >测试</text>
+        <text class="m-card__btn" catchtap="onToggleProvider" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="m-card__btn" catchtap="onEditProvider" data-id="{{item.id}}" >编辑</text>
+        <text class="m-card__btn m-card__btn--danger" catchtap="onDeleteProvider" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+    <empty-state wx:if="{{!loading && providers.length === 0}}" text="暂无服务商" />
+  </view>
+
+  <!-- 模型列表 -->
+  <view wx:else class="list">
+    <view class="m-card" wx:for="{{models}}" wx:key="id">
+      <view class="m-card__head">
+        <text class="m-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <text class="m-card__sub">{{item.modelName}} · {{item.providerName || '-'}}</text>
+      <view class="m-card__caps">
+        <text wx:if="{{item.supportReasoning}}" class="cap">推理</text>
+        <text wx:if="{{item.supportInternet}}" class="cap">联网</text>
+        <text wx:if="{{item.supportTool}}" class="cap">工具</text>
+        <text wx:if="{{item.supportMcp}}" class="cap">MCP</text>
+        <text wx:if="{{item.supportVision}}" class="cap">视觉</text>
+      </view>
+      <view class="m-card__actions">
+        <text class="m-card__btn" catchtap="onToggleModel" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="m-card__btn" catchtap="onEditModel" data-id="{{item.id}}" >编辑</text>
+        <text class="m-card__btn m-card__btn--danger" catchtap="onDeleteModel" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+    <empty-state wx:if="{{!loading && models.length === 0}}" text="暂无模型" />
+  </view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

@@ -1,0 +1,41 @@
+<view class="page" wx:if="{{detail}}" >
+  <view class="header">
+    <view class="header__name">{{detail.name}}</view>
+    <status-tag
+      type="{{detail.status === 1 ? 'success' : 'default'}}"
+      text="{{detail.status === 1 ? '已启用' : '已禁用'}}"
+    />
+  </view>
+
+  <card title="所属仓库">
+    <view class="info-row">
+      <text class="info-row__label">仓库</text>
+      <text class="info-row__value">{{detail.repositoryName || '-'}}</text>
+    </view>
+    <view class="info-row" wx:if="{{detail.repositoryUrl}}" >
+      <text class="info-row__label">地址</text>
+      <text class="info-row__value">{{detail.repositoryUrl}}{{detail.repositoryBranch ? ' @ ' + detail.repositoryBranch : ''}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建时间</text>
+      <text class="info-row__value">{{createTime}}</text>
+    </view>
+  </card>
+
+  <card title="SKILL.md" wx:if="{{detail.skillmd}}" >
+    <text class="code-block">{{detail.skillmd}}</text>
+  </card>
+
+  <card title="资源" wx:if="{{detail.resources}}" >
+    <text class="code-block">{{detail.resources}}</text>
+  </card>
+
+  <view class="action-bar">
+    <t-button theme="default" size="small" variant="outline" bindtap="onToggle">
+      {{detail.status === 1 ? '禁用' : '启用'}}
+    </t-button>
+    <t-button theme="danger" size="small" bindtap="onDelete">删除</t-button>
+  </view>
+</view>
+
+<loading wx:if="{{loading}}" fullscreen text="加载中" />

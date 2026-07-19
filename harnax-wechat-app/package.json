@@ -1,0 +1,14 @@
+{
+  "name": "harnax-wechat-app",
+  "version": "1.0.0",
+  "description": "Harnax AI Agent 管理后台微信小程序",
+  "private": true,
+  "scripts": {
+    "tsc": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "miniprogram-api-typings": "^3.12.2",
+    "miniprogram-ci": "^2.1.31",
+    "typescript": "^5.4.0"
+  }
+}

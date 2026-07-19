@@ -38,8 +38,12 @@ class McpConfigAdaptorImplTest {
 
     private fun stubContext(mcpDetails: List<McpDetailDto>) {
         val specInfo = AgentSpecInfoResponse(
-            agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-            modelId = 1L, mcpDetails = mcpDetails,
+            agentId = 1L,
+            agentName = "Test",
+            description = "",
+            systemPrompt = "",
+            modelId = 1L,
+            mcpDetails = mcpDetails,
         )
         `when`(specContextHolder.get()).thenReturn(specInfo)
     }
@@ -51,8 +55,11 @@ class McpConfigAdaptorImplTest {
         @Test
         fun `getConfig should load from context when MCP DTO found`() {
             val dto = McpDetailDto(
-                id = 1L, name = "ctx-mcp", description = "From context",
-                type = "stdio", command = "npx -y @mcp/ctx",
+                id = 1L,
+                name = "ctx-mcp",
+                description = "From context",
+                type = "stdio",
+                command = "npx -y @mcp/ctx",
             )
             stubContext(listOf(dto))
 
@@ -67,8 +74,12 @@ class McpConfigAdaptorImplTest {
         @Test
         fun `getConfig should convert all DTO fields correctly`() {
             val dto = McpDetailDto(
-                id = 5L, name = "full-mcp", description = "Full config",
-                type = "sse", command = "", url = "http://localhost:3000",
+                id = 5L,
+                name = "full-mcp",
+                description = "Full config",
+                type = "sse",
+                command = "",
+                url = "http://localhost:3000",
                 headers = """{"Authorization":"Bearer xxx"}""",
                 envParams = """{"KEY":"val"}""",
             )

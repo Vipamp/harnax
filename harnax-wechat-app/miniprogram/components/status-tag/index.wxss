@@ -1,0 +1,48 @@
+/* ---- Status Tag — Modern Minimal ---- */
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 18rpx;
+  border-radius: var(--radius-full);
+  font-size: 22rpx;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.status-tag__dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  margin-right: 8rpx;
+  background-color: currentColor;
+}
+
+/* 成功 / 启用 / 运行中 */
+.status-tag--success {
+  color: #00A870;
+  background: #E8F8F2;
+}
+
+/* 默认 / 禁用 / 已停止 */
+.status-tag--default {
+  color: #86909C;
+  background: #F2F3F5;
+}
+
+/* 处理中 / 进行中 */
+.status-tag--processing {
+  color: #4F46E5;
+  background: #EEF2FF;
+}
+
+/* 警告 / 待执行 */
+.status-tag--warning {
+  color: #ED7B2F;
+  background: #FEF3EA;
+}
+
+/* 错误 / 失败 */
+.status-tag--error {
+  color: #E34D59;
+  background: #FDECEE;
+}

@@ -16,6 +16,8 @@ import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.RequireUserConfirmEvent
 import io.agentscope.core.event.ToolCallDeltaEvent
 import io.agentscope.core.event.ToolCallEndEvent
+import io.agentscope.core.event.ToolResultEndEvent
+import io.agentscope.core.event.ToolResultTextDeltaEvent
 import io.agentscope.core.message.Base64Source
 import io.agentscope.core.message.ContentBlock
 import io.agentscope.core.message.ImageBlock
@@ -23,7 +25,10 @@ import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
 import io.agentscope.core.message.ToolUseBlock
+import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionMode
+import io.agentscope.core.state.AgentState
+import io.agentscope.core.state.Task
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.sandbox.SandboxContext
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec
@@ -61,6 +66,14 @@ class HarnessAgentWrapper(
     val sandboxWorkspaceRoot: String = "/workspace",
     val sandboxNetwork: String? = null,
     val permissionMode: String = "DEFAULT",
+    /**
+     * The [PermissionContextState] configured at agent creation time (ALLOW/ASK rules from
+     * tool `needConfirm` settings and framework tool allow-list). Stored here so we can
+     * merge it into the loaded agent state before each call — without this, persisted states
+     * with trivial (empty-rule) permission contexts bypass the full permission engine,
+     * causing read-only tools like `glob_files` to skip the confirmation prompt.
+     */
+    val configuredPermissionContext: PermissionContextState? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -86,10 +99,163 @@ class HarnessAgentWrapper(
     private val toolCallArgsBuffer = mutableMapOf<String, String>()
 
     /**
+     * Buffer for accumulating TOOL_RESULT_TEXT_DELTA fragments.
+     * Key: toolCallId, Value: accumulated result text.
+     */
+    private val toolResultBuffer = mutableMapOf<String, String>()
+
+    /**
      * Returns the pending tool calls that require user confirmation.
      * Populated when a [RequireUserConfirmEvent] is intercepted during streaming.
      */
     fun getPendingToolCalls(): List<ToolUseBlock> = pendingToolCalls
+
+    /**
+     * Ensures the configured permission rules (ALLOW/ASK) are present on the loaded agent state.
+     *
+     * When `ReActAgent` loads a persisted `AgentState` from the stateStore, it uses the
+     * persisted `permissionContext` as-is. If the state was saved before permission rules were
+     * configured, the context is "trivial" (empty rules), causing the framework to skip the
+     * full permission engine and auto-allow tools like `glob_files` via the legacy lightweight path.
+     *
+     * This method replaces a trivial context with the configured one (preserving the current mode),
+     * and re-builds the cached `PermissionEngine` via `setPermissionMode`.
+     */
+    private fun ensurePermissionRulesMerged() {
+        val configured = configuredPermissionContext ?: return
+        if (configured.isTrivial) return
+
+        try {
+            val delegate = harnessAgent.delegate ?: return
+            val state = delegate.getAgentState(userId, sessionId) ?: return
+            val current = state.permissionContext
+
+            // Only merge if the loaded state has a trivial (empty-rule) context
+            if (current.isTrivial) {
+                val merged = configured.withMode(PermissionMode.fromString(permissionMode))
+                state.setPermissionContext(merged)
+                log.info(
+                    "[harness] Merged configured permission rules into trivial state for session={}: " +
+                        "allowRules={}, askRules={}, mode={}",
+                    sessionId,
+                    merged.allowRules.keys,
+                    merged.askRules.keys,
+                    merged.mode,
+                )
+            }
+        } catch (e: Exception) {
+            log.debug("[harness] ensurePermissionRulesMerged failed for session={}: {}", sessionId, e.message)
+        }
+    }
+
+    /**
+     * Reads the current plan markdown file (plans/PLAN.md) from the workspace.
+     */
+    fun readPlanContent(): String? = readWorkspaceFile("plans/PLAN.md")
+
+    /**
+     * Reads the todo/task-list file (plans/todo.md) from the workspace.
+     */
+    fun readTodoContent(): String? = readWorkspaceFile("plans/todo.md")
+
+    /**
+     * Reads structured Task list from AgentStateStore.
+     * This is the preferred way to get subtasks (vs parsing markdown).
+     * Returns null if no tasks are found or an error occurs.
+     */
+    fun readTasksFromState(): List<Task>? {
+        return try {
+            val stateStore = harnessAgent.stateStore ?: return null
+            val state = stateStore.get(userId, sessionId, "agent_state", AgentState::class.java)
+                .orElse(null) ?: return null
+            val tasks = state.tasksContext?.tasks ?: return null
+            if (tasks.isEmpty()) null else tasks
+        } catch (e: Exception) {
+            log.debug("[harness] readTasksFromState failed for session={}: {}", sessionId, e.message)
+            null
+        }
+    }
+
+    /**
+     * Reads the full plan data from AgentState in a single call.
+     * Combines planModeContext (is plan active, plan file path) and tasksContext (structured tasks).
+     *
+     * This is the preferred data source for the frontend plan panel — it uses structured
+     * [Task] objects with real-time execution states (PENDING/IN_PROGRESS/COMPLETED)
+     * instead of parsing markdown files.
+     *
+     * @return [AgentStatePlanData] if AgentState is available, null otherwise.
+     */
+    fun readFullPlanFromState(): AgentStatePlanData? {
+        return try {
+            val stateStore = harnessAgent.stateStore ?: return null
+            val state = stateStore.get(userId, sessionId, "agent_state", AgentState::class.java)
+                .orElse(null) ?: return null
+
+            val planCtx = state.planModeContext
+            val tasks = state.tasksContext?.tasks
+
+            log.debug(
+                "[harness] readFullPlanFromState for session={}: planActive={}, currentPlanFile={}, tasks={}",
+                sessionId,
+                planCtx?.isPlanActive,
+                planCtx?.currentPlanFile,
+                tasks?.size ?: 0,
+            )
+
+            AgentStatePlanData(
+                planActive = planCtx?.isPlanActive ?: false,
+                currentPlanFile = planCtx?.currentPlanFile,
+                tasks = if (tasks.isNullOrEmpty()) null else tasks,
+            )
+        } catch (e: Exception) {
+            log.debug("[harness] readFullPlanFromState failed for session={}: {}", sessionId, e.message)
+            null
+        }
+    }
+
+    /**
+     * Reads a workspace file using two-layer strategy:
+     * 1. workspaceManager (works during active agent call context)
+     * 2. Direct sandbox Docker exec (works outside call context, e.g. frontend polling)
+     */
+    private fun readWorkspaceFile(relativePath: String): String? {
+        // Try workspace manager first (works during active calls)
+        try {
+            val wsManager = harnessAgent.workspaceManager
+            if (wsManager != null) {
+                val rc = RuntimeContext.builder().sessionId(sessionId).userId(userId ?: "").build()
+                val content = wsManager.readManagedWorkspaceFileUtf8(rc, relativePath)
+                if (content.isNotBlank()) {
+                    return content
+                }
+            }
+        } catch (e: Exception) {
+            log.debug("[harness] readWorkspaceFile via workspaceManager failed for session={}, path={}: {}", sessionId, relativePath, e.message)
+        }
+
+        // Fall back to direct sandbox exec (works outside call context)
+        return readFileFromSandbox(relativePath)
+    }
+
+    /**
+     * Reads a file directly from sandbox container via Docker exec.
+     */
+    private fun readFileFromSandbox(relativePath: String): String? {
+        val sandboxManager = keepAliveSandboxManager ?: return null
+        return try {
+            val sandbox = sandboxManager.getSandbox(sessionId) ?: run {
+                log.debug("[harness] readFileFromSandbox: no sandbox for session={}", sessionId)
+                return null
+            }
+            val result = sandbox.exec(null, "cat $sandboxWorkspaceRoot/$relativePath 2>/dev/null", 5)
+            val content = result.stdout()
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            log.debug("[harness] readFileFromSandbox: failed for session={}, path={}: {}", sessionId, relativePath, e.message)
+            null
+        }
+    }
 
     /**
      * Set to `true` by [interrupt] so that [call] can detect that an exception was caused by
@@ -135,6 +301,8 @@ class HarnessAgentWrapper(
 
     fun call(msgs: List<Msg>): ChatResponse {
         val ctxResult = buildRuntimeContext()
+        // Ensure configured permission rules are merged into loaded state before setting mode
+        ensurePermissionRulesMerged()
         // Set permission mode from session configuration (defaults to DEFAULT if not configured)
         harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         try {
@@ -244,6 +412,8 @@ class HarnessAgentWrapper(
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
         val ctxResult = buildRuntimeContext()
+        // Ensure configured permission rules are merged into loaded state before setting mode
+        ensurePermissionRulesMerged()
         // Set permission mode from session configuration (defaults to DEFAULT if not configured)
         harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
@@ -273,8 +443,35 @@ class HarnessAgentWrapper(
                             endEvent.toolCallId,
                             endEvent.toolCallName,
                             argsJson,
-                            dangerousTools,
                         )
+                    }
+                    AgentEventType.TOOL_RESULT_START -> {
+                        // Start event not needed by frontend; tool card already exists from CallToolEvent
+                        Flux.empty<ChatEvent>()
+                    }
+                    AgentEventType.TOOL_RESULT_TEXT_DELTA -> {
+                        // Accumulate result text delta fragments
+                        val deltaEvent = agentEvent as ToolResultTextDeltaEvent
+                        toolResultBuffer.merge(
+                            deltaEvent.toolCallId,
+                            deltaEvent.delta ?: "",
+                        ) { old, new -> old + new }
+                        Flux.empty<ChatEvent>()
+                    }
+                    AgentEventType.TOOL_RESULT_DATA_DELTA -> {
+                        // Binary data result delta (e.g. images) — currently not accumulated.
+                        // Log for observability; text results cover all current tools.
+                        log.debug(
+                            "[harness] TOOL_RESULT_DATA_DELTA for toolId={}, skipping binary accumulation",
+                            (agentEvent as? io.agentscope.core.event.ToolResultDataDeltaEvent)?.toolCallId,
+                        )
+                        Flux.empty<ChatEvent>()
+                    }
+                    AgentEventType.TOOL_RESULT_END -> {
+                        // Delegate to ChatEventConverter with accumulated result text
+                        val endEvent = agentEvent as ToolResultEndEvent
+                        val resultText = toolResultBuffer.remove(endEvent.toolCallId) ?: ""
+                        ChatEventConverter.convertToolResultEnd(endEvent, resultText)
                     }
                     else -> ChatEventConverter.convert(agentEvent, dangerousTools)
                 }
@@ -381,3 +578,19 @@ class HarnessAgentWrapper(
         val keepAliveSandbox: io.agentscope.harness.agent.sandbox.Sandbox?,
     )
 }
+
+/**
+ * Structured plan data extracted from [AgentState].
+ *
+ * Preferred over parsing markdown files (plans/PLAN.md, plans/todo.md) because
+ * it carries real-time task execution states (PENDING/IN_PROGRESS/COMPLETED)
+ * written by the `todo_write` tool.
+ */
+data class AgentStatePlanData(
+    /** Whether plan mode is currently active. */
+    val planActive: Boolean,
+    /** Workspace-relative path of the current plan file (e.g. "plans/PLAN.md"). */
+    val currentPlanFile: String?,
+    /** Structured tasks from `tasksContext` — null if no tasks exist. */
+    val tasks: List<Task>?,
+)

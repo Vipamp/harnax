@@ -1,0 +1,135 @@
+<view class="page">
+  <!-- 基本信息 -->
+  <t-cell-group bordered>
+    <t-input label="名称" value="{{form.name}}" placeholder="请输入 Agent 名称" data-field="name" bind:change="onInput" clearable />
+    <t-textarea label="描述" value="{{form.description}}" placeholder="简要描述该 Agent 的用途" data-field="description" bind:change="onInput" autosize />
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <picker mode="selector" range="{{modelNames}}" value="{{modelIndex}}" bindchange="onModelChange">
+      <t-cell title="模型" arrow hover>
+        <text slot="note" class="{{modelIndex < 0 ? 'text-placeholder' : ''}}">{{modelIndex >= 0 ? modelNames[modelIndex] : '请选择模型'}}</text>
+      </t-cell>
+    </picker>
+    <view class="form-item form-item--row">
+      <view class="form-label">启用状态</view>
+      <t-switch value="{{form.status === 1}}" bind:change="onStatusChange" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">公开可见</view>
+      <t-switch value="{{form.isPublic === 1}}" bind:change="onIsPublicChange" />
+    </view>
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <t-textarea label="系统提示词" value="{{form.systemPrompt}}" placeholder="设定 Agent 的角色与行为..." data-field="systemPrompt" bind:change="onInput" autosize />
+  </t-cell-group>
+
+  <!-- 工具配置 -->
+  <view class="section">
+    <view class="section__head">
+      <text class="section__title">工具配置</text>
+      <view class="section__add" bindtap="onAddTool">+ 添加工具</view>
+    </view>
+    <view class="cfg-empty" wx:if="{{!toolConfigs.length}}">未配置工具</view>
+    <view class="cfg-card" wx:for="{{toolConfigs}}" wx:key="_id" wx:for-index="ti">
+      <view class="cfg-card__row">
+        <picker class="cfg-picker" mode="selector" range="{{toolRange}}" value="{{item.pickerIndex}}" data-index="{{ti}}" bindchange="onToolPick">
+          <view class="cfg-picker__val {{item.pickerIndex < 0 ? 'is-ph' : ''}}">{{item.pickerIndex >= 0 ? item.label : '选择工具'}}</view>
+        </picker>
+        <view class="cfg-card__del" data-index="{{ti}}" bindtap="onRemoveTool">删除</view>
+      </view>
+      <view class="cfg-switches">
+        <view class="cfg-switch">
+          <text>缺失即跳过</text>
+          <t-switch size="small" value="{{item.enableSkip}}" data-index="{{ti}}" bind:change="onToolEnableSkip" />
+        </view>
+        <view class="cfg-switch">
+          <text>需要确认</text>
+          <t-switch size="small" value="{{item.needConfirm}}" disabled="{{item.entityNeedConfirm === 0}}" data-index="{{ti}}" bind:change="onToolNeedConfirm" />
+        </view>
+      </view>
+      <view class="env-list" wx:if="{{item.envBindings.length}}">
+        <view class="env-list__title">环境参数（{{item.envBindings.length}}）</view>
+        <view class="env-row" wx:for="{{item.envBindings}}" wx:key="envKey" wx:for-item="binding" wx:for-index="ei">
+          <view class="env-row__key">
+            {{binding.envKey}}
+            <text class="env-badge env-badge--req" wx:if="{{binding.required}}">必填</text>
+            <text class="env-badge env-badge--sec" wx:if="{{binding.secret}}">敏感</text>
+          </view>
+          <picker class="env-src" mode="selector" range="{{envVarRange}}" value="{{binding.sourceIndex}}" data-type="tool" data-index="{{ti}}" data-env-index="{{ei}}" bindchange="onEnvSourceChange">
+            <view class="env-src__val {{binding.sourceIndex < 0 ? 'is-ph' : ''}}">{{binding.sourceIndex >= 0 ? envVarRange[binding.sourceIndex] : '选择环境变量'}}</view>
+          </picker>
+          <input wx:if="{{binding.customInput}}" class="env-val-input" value="{{binding.envValue}}" placeholder="输入值" data-type="tool" data-index="{{ti}}" data-env-index="{{ei}}" bindinput="onEnvCustomInput" />
+          <view wx:elif="{{binding.envValue}}" class="env-val-text">{{binding.envValue}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- MCP 配置 -->
+  <view class="section">
+    <view class="section__head">
+      <text class="section__title">MCP 服务</text>
+      <view class="section__add" bindtap="onAddMcp">+ 添加 MCP</view>
+    </view>
+    <view class="cfg-empty" wx:if="{{!mcpConfigs.length}}">未配置 MCP 服务</view>
+    <view class="cfg-card" wx:for="{{mcpConfigs}}" wx:key="_id" wx:for-index="mi">
+      <view class="cfg-card__row">
+        <picker class="cfg-picker" mode="selector" range="{{mcpRange}}" value="{{item.pickerIndex}}" data-index="{{mi}}" bindchange="onMcpPick">
+          <view class="cfg-picker__val {{item.pickerIndex < 0 ? 'is-ph' : ''}}">{{item.pickerIndex >= 0 ? item.label : '选择 MCP 服务'}}</view>
+        </picker>
+        <view class="cfg-card__del" data-index="{{mi}}" bindtap="onRemoveMcp">删除</view>
+      </view>
+      <view class="cfg-switches">
+        <view class="cfg-switch">
+          <text>允许跳过</text>
+          <t-switch size="small" value="{{item.enableSkip}}" data-index="{{mi}}" bind:change="onMcpEnableSkip" />
+        </view>
+      </view>
+      <view class="env-list" wx:if="{{item.envBindings.length}}">
+        <view class="env-list__title">环境参数（{{item.envBindings.length}}）</view>
+        <view class="env-row" wx:for="{{item.envBindings}}" wx:key="envKey" wx:for-item="binding" wx:for-index="ei">
+          <view class="env-row__key">
+            {{binding.envKey}}
+            <text class="env-badge env-badge--req" wx:if="{{binding.required}}">必填</text>
+            <text class="env-badge env-badge--sec" wx:if="{{binding.secret}}">敏感</text>
+          </view>
+          <picker class="env-src" mode="selector" range="{{envVarRange}}" value="{{binding.sourceIndex}}" data-type="mcp" data-index="{{mi}}" data-env-index="{{ei}}" bindchange="onEnvSourceChange">
+            <view class="env-src__val {{binding.sourceIndex < 0 ? 'is-ph' : ''}}">{{binding.sourceIndex >= 0 ? envVarRange[binding.sourceIndex] : '选择环境变量'}}</view>
+          </picker>
+          <input wx:if="{{binding.customInput}}" class="env-val-input" value="{{binding.envValue}}" placeholder="输入值" data-type="mcp" data-index="{{mi}}" data-env-index="{{ei}}" bindinput="onEnvCustomInput" />
+          <view wx:elif="{{binding.envValue}}" class="env-val-text">{{binding.envValue}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 技能配置 -->
+  <view class="section">
+    <view class="section__head">
+      <text class="section__title">技能配置</text>
+      <view class="section__add" bindtap="onAddSkill">+ 添加技能</view>
+    </view>
+    <view class="cfg-empty" wx:if="{{!skillConfigs.length}}">未配置技能</view>
+    <view class="cfg-card" wx:for="{{skillConfigs}}" wx:key="_id" wx:for-index="si">
+      <view class="cfg-card__row">
+        <picker class="cfg-picker" mode="selector" range="{{repoRange}}" value="{{item.repoPickerIndex}}" data-index="{{si}}" bindchange="onSkillRepoPick">
+          <view class="cfg-picker__val {{item.repoPickerIndex < 0 ? 'is-ph' : ''}}">{{item.repoPickerIndex >= 0 ? item.repoLabel : '选择技能仓库'}}</view>
+        </picker>
+        <view class="cfg-card__del" data-index="{{si}}" bindtap="onRemoveSkill">删除</view>
+      </view>
+      <picker class="cfg-picker cfg-picker--full {{item.repoPickerIndex < 0 ? 'is-disabled' : ''}}" mode="selector" range="{{item.skillRange}}" value="{{item.skillPickerIndex}}" data-index="{{si}}" bindchange="onSkillPick" disabled="{{item.repoPickerIndex < 0}}">
+        <view class="cfg-picker__val {{item.skillPickerIndex < 0 ? 'is-ph' : ''}}">{{item.skillPickerIndex >= 0 ? item.skillLabel : '选择技能'}}</view>
+      </picker>
+    </view>
+  </view>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

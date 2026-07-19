@@ -1,0 +1,42 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="任务名称" value="{{form.name}}" placeholder="请输入任务名称" data-field="name" bind:change="onInput" clearable />
+
+    <picker mode="selector" range="{{agentNames}}" value="{{agentIndex}}" bindchange="onAgentChange">
+      <t-cell title="执行 Agent" note="{{agentIndex >= 0 ? agentNames[agentIndex] : '请选择 Agent'}}" />
+    </picker>
+
+    <t-textarea label="描述" value="{{form.description}}" placeholder="任务用途说明" data-field="description" bind:change="onInput" autosize maxlength="-1" />
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <t-textarea label="任务提示词" value="{{form.prompt}}" placeholder="每次执行发送给 Agent 的指令..." data-field="prompt" bind:change="onInput" autosize maxlength="-1" />
+  </t-cell-group>
+
+  <t-cell-group bordered>
+    <t-input label="Cron 表达式" value="{{form.cronExpression}}" placeholder="如 0 0 9 * * ?" data-field="cronExpression" bind:change="onInput" clearable />
+    <view class="chips cron-presets">
+      <t-check-tag
+        wx:for="{{cronPresets}}"
+        wx:key="value"
+        data-value="{{item.value}}"
+        bindtap="onCronPreset"
+      >{{item.label}}</t-check-tag>
+    </view>
+
+    <t-input label="超时时间（秒）" value="{{form.timeoutSeconds}}" placeholder="300" data-field="timeoutSeconds" bind:change="onNumberInput" clearable />
+
+    <view class="form-item form-item--row">
+      <view class="form-label">允许并发执行</view>
+      <t-switch value="{{form.concurrent === 1}}"  bind:change="onConcurrentChange" />
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

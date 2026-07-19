@@ -34,8 +34,12 @@ class ChatModelConfigAdaptorImplTest {
 
     private fun stubContext(modelConfig: ModelConfigDto?) {
         val specInfo = AgentSpecInfoResponse(
-            agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-            modelId = modelConfig?.modelId ?: 1L, modelConfig = modelConfig,
+            agentId = 1L,
+            agentName = "Test",
+            description = "",
+            systemPrompt = "",
+            modelId = modelConfig?.modelId ?: 1L,
+            modelConfig = modelConfig,
         )
         `when`(specContextHolder.get()).thenReturn(specInfo)
     }
@@ -65,8 +69,11 @@ class ChatModelConfigAdaptorImplTest {
         @Test
         fun `getConfig should load DashScope from context`() {
             val dto = ModelConfigDto(
-                modelId = 1L, modelName = "qwen-max", providerType = "dashscope",
-                apiKey = "sk-dashscope-123", baseUrl = "https://dashscope.aliyuncs.com",
+                modelId = 1L,
+                modelName = "qwen-max",
+                providerType = "dashscope",
+                apiKey = "sk-dashscope-123",
+                baseUrl = "https://dashscope.aliyuncs.com",
             )
             stubContext(dto)
 
@@ -80,8 +87,11 @@ class ChatModelConfigAdaptorImplTest {
         @Test
         fun `getConfig should load OpenAI from context`() {
             val dto = ModelConfigDto(
-                modelId = 2L, modelName = "gpt-4o", providerType = "openai",
-                apiKey = "sk-openai-456", baseUrl = "https://api.openai.com",
+                modelId = 2L,
+                modelName = "gpt-4o",
+                providerType = "openai",
+                apiKey = "sk-openai-456",
+                baseUrl = "https://api.openai.com",
             )
             stubContext(dto)
 
@@ -95,7 +105,9 @@ class ChatModelConfigAdaptorImplTest {
         @Test
         fun `getConfig should load Ollama from context without apiKey`() {
             val dto = ModelConfigDto(
-                modelId = 3L, modelName = "llama3", providerType = "ollama",
+                modelId = 3L,
+                modelName = "llama3",
+                providerType = "ollama",
                 baseUrl = "http://localhost:11434",
             )
             stubContext(dto)
@@ -110,7 +122,9 @@ class ChatModelConfigAdaptorImplTest {
         @Test
         fun `getConfig should return null for unknown provider type from context`() {
             val dto = ModelConfigDto(
-                modelId = 4L, modelName = "unknown-model", providerType = "anthropic",
+                modelId = 4L,
+                modelName = "unknown-model",
+                providerType = "anthropic",
                 apiKey = "sk-xxx",
             )
             stubContext(dto)
@@ -123,7 +137,9 @@ class ChatModelConfigAdaptorImplTest {
         @Test
         fun `getConfig should fallback to DB when context modelId does not match`() {
             val dto = ModelConfigDto(
-                modelId = 1L, modelName = "qwen-max", providerType = "dashscope",
+                modelId = 1L,
+                modelName = "qwen-max",
+                providerType = "dashscope",
                 apiKey = "sk-123",
             )
             stubContext(dto)

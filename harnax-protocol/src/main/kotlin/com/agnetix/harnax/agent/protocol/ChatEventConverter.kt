@@ -2,6 +2,7 @@ package com.agnetix.harnax.agent.protocol
 
 import io.agentscope.core.event.AgentEvent
 import io.agentscope.core.event.AgentEventType
+import io.agentscope.core.event.ExceedMaxItersEvent
 import io.agentscope.core.event.ModelCallEndEvent
 import io.agentscope.core.event.RequireUserConfirmEvent
 import io.agentscope.core.event.TextBlockDeltaEvent
@@ -73,24 +74,10 @@ object ChatEventConverter {
             Flux.empty()
         }
         AgentEventType.TOOL_RESULT_END -> {
+            // Dead path: HarnessAgentWrapper intercepts TOOL_RESULT_END before this.
+            // Kept for defensive fallback with empty result.
             val resultEvent = event as ToolResultEndEvent
-            val state = resultEvent.state
-            val (success, resultMessage) = when (state) {
-                ToolResultState.SUCCESS -> true to ""
-                ToolResultState.DENIED -> false to "Tool execution denied by user"
-                ToolResultState.ERROR -> false to "Tool execution failed"
-                ToolResultState.INTERRUPTED -> false to "Tool execution interrupted"
-                else -> true to ""
-            }
-            Flux.just(
-                ToolResultChatEvent(
-                    toolId = resultEvent.toolCallId,
-                    toolName = resultEvent.toolCallName,
-                    message = resultMessage,
-                    success = success,
-                    tokenUsage = null,
-                ),
-            )
+            convertToolResultEnd(resultEvent, "")
         }
         AgentEventType.MODEL_CALL_END -> {
             val modelEnd = event as ModelCallEndEvent
@@ -115,6 +102,23 @@ object ChatEventConverter {
             }
             Flux.just(ToolConfirmChatEvent(pendingCallTools = pendingTools, tokenUsage = null))
         }
+        AgentEventType.EXCEED_MAX_ITERS -> {
+            val itersEvent = event as ExceedMaxItersEvent
+            log.warn(
+                "Agent exceeded max iterations: current={}, max={}",
+                itersEvent.currentIter,
+                itersEvent.maxIters,
+            )
+            Flux.just(
+                StreamTextChatEvent(
+                    message = "\n\n> **Warning**: Agent reached maximum iteration limit (${itersEvent.maxIters}). Please try again with a more specific request.",
+                    isLast = false,
+                    tokenUsage = null,
+                ),
+            )
+        }
+        // Note: ALL_TOOLS_DENIED exists in newer agentscope versions but not in 2.0.0-RC3.
+        // When upgrading agentscope, add handling here to notify the user.
         else -> Flux.empty()
     }
 
@@ -136,7 +140,6 @@ object ChatEventConverter {
         toolCallId: String,
         toolCallName: String,
         argsJson: String,
-        dangerousTools: Set<String>,
     ): Flux<ChatEvent> {
         val arguments = parseArguments(argsJson)
         return Flux.just(
@@ -144,6 +147,35 @@ object ChatEventConverter {
                 toolId = toolCallId,
                 toolName = toolCallName,
                 arguments = arguments,
+                tokenUsage = null,
+            ),
+        )
+    }
+
+    /**
+     * Emit ToolResultChatEvent at TOOL_RESULT_END with fully accumulated result text.
+     *
+     * @param event the ToolResultEndEvent from agentscope
+     * @param accumulatedResult the full result text accumulated from TOOL_RESULT_TEXT_DELTA events
+     */
+    fun convertToolResultEnd(
+        event: ToolResultEndEvent,
+        accumulatedResult: String,
+    ): Flux<ChatEvent> {
+        val state = event.state
+        val (success, resultMessage) = when (state) {
+            ToolResultState.SUCCESS -> true to accumulatedResult
+            ToolResultState.DENIED -> false to "Tool execution denied by user"
+            ToolResultState.ERROR -> false to ("Tool execution failed: $accumulatedResult").trim()
+            ToolResultState.INTERRUPTED -> false to "Tool execution interrupted"
+            else -> true to accumulatedResult
+        }
+        return Flux.just(
+            ToolResultChatEvent(
+                toolId = event.toolCallId,
+                toolName = event.toolCallName,
+                message = resultMessage,
+                success = success,
                 tokenUsage = null,
             ),
         )

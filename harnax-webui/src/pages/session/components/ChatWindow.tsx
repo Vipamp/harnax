@@ -190,6 +190,65 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
   );
 };
 
+/* ─── 参数表格：将 JSON 参数显示为键值对表格 ─── */
+const ArgumentsTable: React.FC<{ args: Record<string, any> | string }> = ({ args }) => {
+  let parsed: Record<string, any>;
+  try {
+    if (typeof args === 'string') {
+      parsed = JSON.parse(args);
+    } else {
+      parsed = args || {};
+    }
+  } catch {
+    return <pre style={{ margin: 0, fontSize: 12 }}>{typeof args === 'string' ? args : JSON.stringify(args, null, 2)}</pre>;
+  }
+
+  const entries = Object.entries(parsed);
+  if (entries.length === 0) return <span style={{ color: 'var(--vip-text-tertiary)', fontSize: 12 }}>—</span>;
+
+  const formatValue = (val: any): React.ReactNode => {
+    if (val === null || val === undefined) {
+      return <span style={{ color: 'var(--vip-text-tertiary)' }}>null</span>;
+    }
+    if (typeof val === 'boolean') {
+      return <Tag color={val ? 'green' : 'default'}>{val ? 'true' : 'false'}</Tag>;
+    }
+    if (typeof val === 'number') {
+      return <span style={{ fontFamily: 'monospace' }}>{String(val)}</span>;
+    }
+    if (typeof val === 'string') {
+      if (val.length > 200) {
+        return (
+          <span>
+            <span style={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{val.slice(0, 200)}…</span>
+            <Collapse ghost size="small" items={[{ key: '1', label: <span style={{ fontSize: 11 }}>Show full</span>, children: <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 300, overflow: 'auto' }}>{val}</pre> }]} />
+          </span>
+        );
+      }
+      return <span style={{ fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{val}</span>;
+    }
+    // object or array
+    const jsonStr = JSON.stringify(val, null, 2);
+    if (jsonStr.length > 300) {
+      return (
+        <Collapse ghost size="small" items={[{ key: '1', label: <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{jsonStr.slice(0, 80)}…</span>, children: <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 300, overflow: 'auto' }}>{jsonStr}</pre> }]} />
+      );
+    }
+    return <pre style={{ margin: 0, fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{jsonStr}</pre>;
+  };
+
+  return (
+    <div className={styles.argsTable}>
+      {entries.map(([key, val]) => (
+        <div key={key} className={styles.argsRow}>
+          <span className={styles.argsKey}>{key}</span>
+          <span className={styles.argsValue}>{formatValue(val)}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 /* ─── 合并的工具卡片（工具调用 + 工具返回） ─── */
 const MergedToolCard: React.FC<{
   toolName: string;
@@ -247,7 +306,7 @@ const MergedToolCard: React.FC<{
           {args && (
             <div className={styles.mergedToolArgs}>
               <div className={styles.mergedToolSectionLabel}>{intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' })}</div>
-              <pre className={styles.mergedToolCode}>{args}</pre>
+              <ArgumentsTable args={args} />
             </div>
           )}
           
@@ -359,16 +418,8 @@ const ToolConfirmCard: React.FC<{
       title: intl.formatMessage({ id: 'pages.session.toolName', defaultMessage: 'Tool Name' }),
       dataIndex: 'toolName',
       key: 'toolName',
-      width: 150,
-    },
-    {
-      title: intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' }),
-      dataIndex: 'arguments',
-      key: 'arguments',
-      render: (args: Record<string, any>) => (
-        <pre style={{ margin: 0, fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
-          {JSON.stringify(args, null, 2)}
-        </pre>
+      render: (name: string) => (
+        <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{name}</span>
       ),
     },
     {
@@ -415,7 +466,17 @@ const ToolConfirmCard: React.FC<{
         rowKey="toolId"
         pagination={false}
         size="small"
-        scroll={{ x: 'max-content' }}
+        expandable={{
+          expandedRowRender: (record) => (
+            <div style={{ padding: '4px 0' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--vip-primary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                {intl.formatMessage({ id: 'pages.session.toolArguments', defaultMessage: 'Arguments' })}
+              </div>
+              <ArgumentsTable args={record.arguments} />
+            </div>
+          ),
+          defaultExpandAllRows: true,
+        }}
       />
     </Modal>
   );
@@ -462,19 +523,44 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [currentPlanExpanded, setCurrentPlanExpanded] = useState(true); // 当前计划默认展开
   const previousHasPlanRef = useRef<boolean>(false); // 记录上一次是否有计划
   const currentPlanMessageIdRef = useRef<string | null>(null); // 当前计划消息的ID
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef<boolean>(true); // 是否接近底部（用于决定是否自动滚动）
   const abortRef = useRef<AbortController | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const planRefreshTimerRef = useRef<NodeJS.Timeout | null>(null); // 当前计划刷新定时器（2秒）
   const plansListTimerRef = useRef<NodeJS.Timeout | null>(null); // 历史计划刷新定时器（5秒）
+  const planExitedRef = useRef<boolean>(false); // plan_exit 已触发标记，防止 finally 块重新加载
 
-  const scrollToBottom = useCallback(() => {
+  const NEAR_BOTTOM_THRESHOLD = 120; // 距离底部多少像素内视为"接近底部"
+
+  const scrollToBottom = useCallback((force = false) => {
+    if (!force && !isNearBottomRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
+  // 用户滚动时检测是否接近底部
+  const handleScroll = useCallback(() => {
+    const el = messageListRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom);
+  }, []);
+
+  // 新消息到来时，仅在用户接近底部时自动滚动
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  // 用户点击"回到底部"按钮
+  const handleScrollToBottomClick = useCallback(() => {
+    isNearBottomRef.current = true;
+    setShowScrollToBottom(false);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   // 当开启计划功能时，立即加载当前计划
   useEffect(() => {
@@ -815,6 +901,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     setImageUrls([]); // 清空图片
     setLoading(true);
 
+    // Helper: find tool_call segment index by toolId (via map) or by toolName (fallback)
+    const findToolSegmentIdx = (toolId: string, toolName: string): number => {
+      // Primary: exact match by toolId in toolCallMap
+      if (toolId && toolCallMap.has(toolId)) {
+        return toolCallMap.get(toolId)!;
+      }
+      // Fallback 1: find last tool_call segment with matching toolName that has no result yet
+      for (let i = currentSegs.length - 1; i >= 0; i--) {
+        const seg = currentSegs[i];
+        if (seg.type === 'tool_call' && seg.toolName === toolName && seg.toolResult === undefined) {
+          if (toolId) toolCallMap.set(toolId, i);
+          return i;
+        }
+      }
+      // Fallback 2: find ANY tool_call segment without confirmStatus and without result
+      // (handles case where CallToolEvent and ToolConfirmEvent have different toolName formats)
+      for (let i = currentSegs.length - 1; i >= 0; i--) {
+        const seg = currentSegs[i];
+        if (seg.type === 'tool_call' && !seg.confirmStatus && seg.toolResult === undefined) {
+          console.log('[findToolSegmentIdx] Broad fallback matched segment at index:', i, 'segName:', seg.toolName, 'searchName:', toolName);
+          if (toolId) toolCallMap.set(toolId, i);
+          return i;
+        }
+      }
+      return -1;
+    };
+
     const flushUI = () => {
       const idx = currentMsgs.findIndex((m) => m.id === currentAssistantMessageId);
       if (idx >= 0) {
@@ -901,6 +1014,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               }
               
               accText += data.message || '';
+              // Skip empty text events (e.g. tokenUsage-only events with empty message)
+              if (!accText) {
+                continue;
+              }
               // 创建或更新 text segment
               if (activeTextIdx < 0 || activeTextIdx >= currentSegs.length) {
                 currentSegs.push({ type: 'text', content: accText });
@@ -937,6 +1054,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               // 累积当前批次的思考内容
               accThinking += data.message || '';
+              // Skip empty thinking events
+              if (!accThinking) {
+                continue;
+              }
               
               // 创建或更新 thinking segment
               if (activeThinkIdx < 0 || activeThinkIdx >= currentSegs.length) {
@@ -961,8 +1082,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 continue;
               }
               
-              // 如果是 create_plan，自动打开执行计划侧边栏并加载当前计划
-              if (toolName === 'create_plan' && enablePlan) {
+              // 如果是 plan_write 或 plan_enter，自动打开执行计划侧边栏并加载当前计划
+              if ((toolName === 'plan_write' || toolName === 'plan_enter') && enablePlan) {
                 setShowPlanPanel(true);
                 // 立即加载当前计划，后续由 useEffect 自动管理定时器
                 loadCurrentPlan();
@@ -982,15 +1103,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               activeTextIdx = -1;
               activeThinkIdx = -1;
               
-              const toolSeg: MessageSegment = {
-                type: 'tool_call',
-                content: JSON.stringify(data.arguments || {}, null, 2),
-                toolName: toolName,
-                toolId: toolId,
-              };
-              currentSegs.push(toolSeg);
-              toolCallMap.set(toolId, currentSegs.length - 1);
-              console.log('[CallToolEvent] Added tool at index:', currentSegs.length - 1);
+              // Dedup: find by toolId or toolName fallback
+              const existIdx = findToolSegmentIdx(toolId, toolName);
+              if (existIdx >= 0) {
+                console.log('[CallToolEvent] Tool already exists at index:', existIdx, '- updating in place');
+                currentSegs = currentSegs.map((seg, idx) =>
+                  idx === existIdx && seg.type === 'tool_call'
+                    ? { ...seg, content: JSON.stringify(data.arguments || {}, null, 2), toolName: toolName, toolId: toolId }
+                    : seg
+                );
+              } else {
+                const toolSeg: MessageSegment = {
+                  type: 'tool_call',
+                  content: JSON.stringify(data.arguments || {}, null, 2),
+                  toolName: toolName,
+                  toolId: toolId,
+                };
+                currentSegs.push(toolSeg);
+                toolCallMap.set(toolId, currentSegs.length - 1);
+                console.log('[CallToolEvent] Added tool at index:', currentSegs.length - 1);
+              }
               changed = true;
               
             } else if (data.eventType === 'ToolResultEvent') {
@@ -1004,9 +1136,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               // 计划相关工具的结果不中断思考的连续性
               if (isPlanRelatedTool(toolName)) {
                 console.log('[ToolResultEvent] Plan-related tool result, not interrupting thinking');
-                // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
-                if (toolId && toolCallMap.has(toolId)) {
-                  const segIdx = toolCallMap.get(toolId)!;
+                const segIdx = findToolSegmentIdx(toolId, toolName);
+                if (segIdx >= 0) {
                   currentSegs = currentSegs.map((seg, idx) => 
                     idx === segIdx && seg.type === 'tool_call'
                       ? { ...seg, toolResult: resultContent, ...(data.success === false ? { confirmStatus: 'rejected' } : {}) }
@@ -1014,6 +1145,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   );
                 }
                 changed = true;
+                
+                // plan_exit 完成后创建新消息分段（plan 阶段 → 执行阶段）
+                if (toolName === 'plan_exit') {
+                  console.log('[ToolResultEvent] Detected plan_exit, creating new assistant message');
+                  flushUI();
+                  const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                  const newAssistantMessage: ChatMessage = {
+                    id: newAssistantMessageId,
+                    role: 'assistant',
+                    segments: [],
+                    timestamp: Date.now(),
+                  };
+                  currentMsgs = [...currentMsgs, newAssistantMessage];
+                  setMessages(currentMsgs);
+                  currentAssistantMessageId = newAssistantMessageId;
+                  currentSegs = [];
+                  accText = '';
+                  accThinking = '';
+                  activeTextIdx = -1;
+                  activeThinkIdx = -1;
+                  currentEventType = null;
+                  toolCallMap = new Map<string, number>();
+                  // plan 已结束，清理状态以停止轮询
+                  setCurrentPlan(null);
+                  currentPlanMessageIdRef.current = null;
+                  previousHasPlanRef.current = false;
+                  planExitedRef.current = true;
+                }
                 continue;
               }
               
@@ -1025,10 +1184,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               activeThinkIdx = -1;
               
               // 根据 toolId 找到对应的工具调用 segment 并更新
-              if (toolId && toolCallMap.has(toolId)) {
-                const segIdx = toolCallMap.get(toolId)!;
+              const segIdx = findToolSegmentIdx(toolId, toolName);
+              if (segIdx >= 0) {
                 console.log('[ToolResultEvent] Found tool at index:', segIdx);
-                // 创建新的 segment 对象以触发 React 重新渲染
                 currentSegs = currentSegs.map((seg, idx) => 
                   idx === segIdx && seg.type === 'tool_call'
                     ? { ...seg, toolResult: resultContent, ...(data.success === false ? { confirmStatus: 'rejected' } : {}) }
@@ -1036,43 +1194,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 );
                 console.log('[ToolResultEvent] Updated segment:', currentSegs[segIdx]);
               } else {
-                // 如果找不到对应的工具调用，不显示独立的工具结果
                 console.log('[ToolResultEvent] Tool not found, ignoring result');
               }
               changed = true;
-              
-              // 检查是否是 finish_subtask 或 finish_plan 工具
-              if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
-                console.log('[ToolResultEvent] Detected finish tool, creating new assistant message');
-                
-                // 完成当前消息
-                flushUI();
-                
-                // 创建新的 assistant 消息
-                const newAssistantMessageId = `assistant-${Date.now()}-new`;
-                const newAssistantMessage: ChatMessage = {
-                  id: newAssistantMessageId,
-                  role: 'assistant',
-                  segments: [],
-                  timestamp: Date.now(),
-                };
-                
-                // 更新 currentMsgs
-                currentMsgs = [...currentMsgs, newAssistantMessage];
-                setMessages(currentMsgs);
-                
-                // 更新当前 assistant message ID
-                currentAssistantMessageId = newAssistantMessageId;
-                
-                // 重置所有状态以开始新消息
-                currentSegs = [];
-                accText = '';
-                accThinking = '';
-                activeTextIdx = -1;
-                activeThinkIdx = -1;
-                currentEventType = null;
-                toolCallMap = new Map<string, number>();
-              }
               
             } else if (data.eventType === 'EndEvent') {
               // 收到结束事件，表示 AI 输出已完成
@@ -1082,9 +1206,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               accThinking = '';
               activeTextIdx = -1;
               activeThinkIdx = -1;
+              
+              // Clean up empty segments to prevent LoadingDots from appearing
+              // after stream ends (e.g. empty text/thinking segments from tokenUsage-only events)
+              currentSegs = currentSegs.filter((seg) => {
+                if ((seg.type === 'text' || seg.type === 'thinking') && !seg.content) return false;
+                return true;
+              });
+              
               // 立即释放 loading 状态，允许用户发送新消息
               setLoading(false);
-              // 不需要创建新消息，只是标记当前事件流结束
               changed = true;
               
             } else if (data.eventType === 'ToolConfirmEvent') {
@@ -1097,7 +1228,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               const pendingTools = data.pendingCallTools || [];
               
-              // 为每个待确认的工具添加工具调用卡片
+              // 为每个待确认的工具添加工具调用卡片（去重：复用 CallToolEvent 已创建的卡片）
               for (const tool of pendingTools) {
                 // 如果没有工具名称，跳过
                 if (!tool.toolName) {
@@ -1111,17 +1242,29 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   continue;
                 }
                 
-                const toolSeg: MessageSegment = {
-                  type: 'tool_call',
-                  content: JSON.stringify(tool.arguments || {}, null, 2),
-                  toolName: tool.toolName,
-                  toolId: tool.toolId,
-                  confirmStatus: 'pending' as const,
-                };
-                currentSegs.push(toolSeg);
-                // 重要：将工具调用添加到 toolCallMap 中，以便 confirm 流中的 ToolResultEvent 能找到它
-                toolCallMap.set(tool.toolId, currentSegs.length - 1);
-                console.log('[ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
+                // 去重：检查 CallToolEvent 是否已创建该工具卡片
+                console.log('[ToolConfirmEvent] Searching for tool:', tool.toolId, tool.toolName, '| currentSegs:', currentSegs.map((s, i) => `[${i}]${s.type}:${s.toolName||'?'}/${s.toolId||'?'}/${s.confirmStatus||'-'}/${s.toolResult!==undefined?'hasResult':'noResult'}`).join(', '), '| toolCallMap:', Array.from(toolCallMap.entries()).map(([k,v]) => `${k}→${v}`).join(', '));
+                const existIdx = findToolSegmentIdx(tool.toolId, tool.toolName);
+                if (existIdx >= 0) {
+                  // 复用已有卡片，仅更新 confirmStatus 和参数
+                  console.log('[ToolConfirmEvent] Tool already exists at index:', existIdx, '- updating confirmStatus to pending');
+                  currentSegs = currentSegs.map((seg, idx) =>
+                    idx === existIdx && seg.type === 'tool_call'
+                      ? { ...seg, confirmStatus: 'pending' as const, content: JSON.stringify(tool.arguments || {}, null, 2) }
+                      : seg
+                  );
+                } else {
+                  const toolSeg: MessageSegment = {
+                    type: 'tool_call',
+                    content: JSON.stringify(tool.arguments || {}, null, 2),
+                    toolName: tool.toolName,
+                    toolId: tool.toolId,
+                    confirmStatus: 'pending' as const,
+                  };
+                  currentSegs.push(toolSeg);
+                  toolCallMap.set(tool.toolId, currentSegs.length - 1);
+                  console.log('[ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
+                }
               }
               changed = true;
               flushUI();
@@ -1262,7 +1405,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       const confirmToolName = confirmData.toolName || '未知工具';
                       const confirmToolId = confirmData.toolId || `tool-${Date.now()}`;
                       
-                      if (confirmToolName === 'create_plan' && enablePlan) {
+                      if ((confirmToolName === 'plan_write' || confirmToolName === 'plan_enter') && enablePlan) {
                         setShowPlanPanel(true);
                         // 立即加载当前计划，后续由 useEffect 自动管理定时器
                         loadCurrentPlan();
@@ -1281,14 +1424,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       activeTextIdx = -1;
                       activeThinkIdx = -1;
                       
-                      const toolSeg: MessageSegment = {
-                        type: 'tool_call',
-                        content: JSON.stringify(confirmData.arguments || {}, null, 2),
-                        toolName: confirmToolName,
-                        toolId: confirmToolId,
-                      };
-                      currentSegs.push(toolSeg);
-                      toolCallMap.set(confirmToolId, currentSegs.length - 1);
+                      // Dedup: if toolId already in toolCallMap, or find by toolName fallback
+                      const existIdx = findToolSegmentIdx(confirmToolId, confirmToolName);
+                      if (existIdx >= 0) {
+                        console.log('[Confirm CallToolEvent] Tool already exists at index:', existIdx, '- updating in place');
+                        currentSegs = currentSegs.map((seg, idx) =>
+                          idx === existIdx && seg.type === 'tool_call'
+                            ? { ...seg, content: JSON.stringify(confirmData.arguments || {}, null, 2), toolName: confirmToolName, toolId: confirmToolId }
+                            : seg
+                        );
+                      } else {
+                        const toolSeg: MessageSegment = {
+                          type: 'tool_call',
+                          content: JSON.stringify(confirmData.arguments || {}, null, 2),
+                          toolName: confirmToolName,
+                          toolId: confirmToolId,
+                        };
+                        currentSegs.push(toolSeg);
+                        toolCallMap.set(confirmToolId, currentSegs.length - 1);
+                      }
                       confirmChanged = true;
                       
                     } else if (confirmData.eventType === 'ToolResultEvent') {
@@ -1298,9 +1452,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       
                       // 计划相关工具的结果不中断思考的连续性
                       if (isPlanRelatedTool(toolName)) {
-                        // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
-                        if (toolId && toolCallMap.has(toolId)) {
-                          const segIdx = toolCallMap.get(toolId)!;
+                        const segIdx = findToolSegmentIdx(toolId, toolName);
+                        if (segIdx >= 0) {
                           currentSegs = currentSegs.map((seg, idx) => 
                             idx === segIdx && seg.type === 'tool_call'
                               ? { ...seg, toolResult: resultContent, ...(confirmData.success === false ? { confirmStatus: 'rejected' } : {}) }
@@ -1308,6 +1461,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           );
                         }
                         confirmChanged = true;
+                        
+                        // plan_exit 完成后创建新消息分段
+                        if (toolName === 'plan_exit') {
+                          console.log('[Confirm ToolResultEvent] Detected plan_exit, creating new assistant message');
+                          flushUI();
+                          const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                          const newAssistantMessage: ChatMessage = {
+                            id: newAssistantMessageId,
+                            role: 'assistant',
+                            segments: [],
+                            timestamp: Date.now(),
+                          };
+                          currentMsgs = [...currentMsgs, newAssistantMessage];
+                          setMessages(currentMsgs);
+                          currentAssistantMessageId = newAssistantMessageId;
+                          currentSegs = [];
+                          accText = '';
+                          accThinking = '';
+                          activeTextIdx = -1;
+                          activeThinkIdx = -1;
+                          currentEventType = null;
+                          toolCallMap = new Map<string, number>();
+                          // plan 已结束，清理状态以停止轮询
+                          setCurrentPlan(null);
+                          currentPlanMessageIdRef.current = null;
+                          previousHasPlanRef.current = false;
+                          planExitedRef.current = true;
+                        }
                         continue;
                       }
                       
@@ -1318,51 +1499,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       activeTextIdx = -1;
                       activeThinkIdx = -1;
                       
-                      if (toolId && toolCallMap.has(toolId)) {
-                        const segIdx = toolCallMap.get(toolId)!;
+                      const segIdx = findToolSegmentIdx(toolId, toolName);
+                      if (segIdx >= 0) {
                         currentSegs = currentSegs.map((seg, idx) => 
                           idx === segIdx && seg.type === 'tool_call'
                             ? { ...seg, toolResult: resultContent, ...(confirmData.success === false ? { confirmStatus: 'rejected' } : {}) }
                             : seg
                         );
                       } else {
-                        // 如果找不到对应的工具调用，不显示独立的工具结果
                         console.log('[Confirm ToolResultEvent] Tool not found, ignoring result');
                       }
                       confirmChanged = true;
-                      
-                      // 检查是否是 finish_subtask 或 finish_plan 工具
-                      if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
-                        console.log('[Confirm ToolResultEvent] Detected finish tool, creating new assistant message');
-                        
-                        // 完成当前消息
-                        flushUI();
-                        
-                        // 创建新的 assistant 消息
-                        const newAssistantMessageId = `assistant-${Date.now()}-new`;
-                        const newAssistantMessage: ChatMessage = {
-                          id: newAssistantMessageId,
-                          role: 'assistant',
-                          segments: [],
-                          timestamp: Date.now(),
-                        };
-                        
-                        // 更新 currentMsgs
-                        currentMsgs = [...currentMsgs, newAssistantMessage];
-                        setMessages(currentMsgs);
-                        
-                        // 更新当前 assistant message ID
-                        currentAssistantMessageId = newAssistantMessageId;
-                        
-                        // 重置所有状态以开始新消息
-                        currentSegs = [];
-                        accText = '';
-                        accThinking = '';
-                        activeTextIdx = -1;
-                        activeThinkIdx = -1;
-                        currentEventType = null;
-                        toolCallMap = new Map<string, number>();
-                      }
                     } else if (confirmData.eventType === 'EndEvent') {
                       // 收到结束事件，表示 AI 输出已完成
                       console.log('[Confirm EndEvent] AI output completed');
@@ -1379,7 +1526,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       accText = '';
                       const nestedPendingTools = confirmData.pendingCallTools || [];
                       
-                      // 为每个待确认的工具添加工具调用卡片（与正常工具调用一致）
+                      // 为每个待确认的工具添加工具调用卡片（去重：复用已有卡片）
                       for (const tool of nestedPendingTools) {
                         // 如果没有工具名称，跳过
                         if (!tool.toolName) {
@@ -1393,17 +1540,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           continue;
                         }
                         
-                        const toolSeg: MessageSegment = {
-                          type: 'tool_call',
-                          content: JSON.stringify(tool.arguments || {}, null, 2),
-                          toolName: tool.toolName,
-                          toolId: tool.toolId,
-                          confirmStatus: 'pending' as const,
-                        };
-                        currentSegs.push(toolSeg);
-                        // 重要：将工具调用添加到 toolCallMap 中
-                        toolCallMap.set(tool.toolId, currentSegs.length - 1);
-                        console.log('[Nested ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
+                        // 去重：检查是否已存在该工具卡片
+                        console.log('[Nested ToolConfirmEvent] Searching for tool:', tool.toolId, tool.toolName, '| currentSegs:', currentSegs.map((s, i) => `[${i}]${s.type}:${s.toolName||'?'}/${s.toolId||'?'}/${s.confirmStatus||'-'}/${s.toolResult!==undefined?'hasResult':'noResult'}`).join(', '));
+                        const nestedExistIdx = findToolSegmentIdx(tool.toolId, tool.toolName);
+                        if (nestedExistIdx >= 0) {
+                          console.log('[Nested ToolConfirmEvent] Tool already exists at index:', nestedExistIdx, '- updating confirmStatus to pending');
+                          currentSegs = currentSegs.map((seg, idx) =>
+                            idx === nestedExistIdx && seg.type === 'tool_call'
+                              ? { ...seg, confirmStatus: 'pending' as const, content: JSON.stringify(tool.arguments || {}, null, 2) }
+                              : seg
+                          );
+                        } else {
+                          const toolSeg: MessageSegment = {
+                            type: 'tool_call',
+                            content: JSON.stringify(tool.arguments || {}, null, 2),
+                            toolName: tool.toolName,
+                            toolId: tool.toolId,
+                            confirmStatus: 'pending' as const,
+                          };
+                          currentSegs.push(toolSeg);
+                          toolCallMap.set(tool.toolId, currentSegs.length - 1);
+                          console.log('[Nested ToolConfirmEvent] Added tool to map:', tool.toolId, 'at index:', currentSegs.length - 1);
+                        }
                       }
                       confirmChanged = true;
                       flushUI();
@@ -1541,7 +1699,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               const nestedToolName = nestedData.toolName || '未知工具';
                               const nestedToolId = nestedData.toolId || `tool-${Date.now()}`;
                               
-                              if (nestedToolName === 'create_plan' && enablePlan) {
+                              if ((nestedToolName === 'plan_write' || nestedToolName === 'plan_enter') && enablePlan) {
                                 setShowPlanPanel(true);
                                 // 立即加载当前计划，后续由 useEffect 自动管理定时器
                                 loadCurrentPlan();
@@ -1560,14 +1718,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               activeTextIdx = -1;
                               activeThinkIdx = -1;
                               
-                              const toolSeg: MessageSegment = {
-                                type: 'tool_call',
-                                content: JSON.stringify(nestedData.arguments || {}, null, 2),
-                                toolName: nestedToolName,
-                                toolId: nestedToolId,
-                              };
-                              currentSegs.push(toolSeg);
-                              toolCallMap.set(nestedToolId, currentSegs.length - 1);
+                              // Dedup: find by toolId or toolName fallback
+                              const nestedExistIdx = findToolSegmentIdx(nestedToolId, nestedToolName);
+                              if (nestedExistIdx >= 0) {
+                                console.log('[Nested Confirm CallToolEvent] Tool already exists at index:', nestedExistIdx, '- updating in place');
+                                currentSegs = currentSegs.map((seg, idx) =>
+                                  idx === nestedExistIdx && seg.type === 'tool_call'
+                                    ? { ...seg, content: JSON.stringify(nestedData.arguments || {}, null, 2), toolName: nestedToolName, toolId: nestedToolId }
+                                    : seg
+                                );
+                              } else {
+                                const toolSeg: MessageSegment = {
+                                  type: 'tool_call',
+                                  content: JSON.stringify(nestedData.arguments || {}, null, 2),
+                                  toolName: nestedToolName,
+                                  toolId: nestedToolId,
+                                };
+                                currentSegs.push(toolSeg);
+                                toolCallMap.set(nestedToolId, currentSegs.length - 1);
+                              }
                               confirmChanged = true;
                               
                             } else if (nestedData.eventType === 'ToolResultEvent') {
@@ -1577,16 +1746,43 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               
                               // 计划相关工具的结果不中断思考的连续性
                               if (isPlanRelatedTool(toolName)) {
-                                // 根据 toolId 找到对应的工具调用 segment 并更新（如果有）
-                                if (toolId && toolCallMap.has(toolId)) {
-                                  const segIdx = toolCallMap.get(toolId)!;
+                                const planSegIdx = findToolSegmentIdx(toolId, toolName);
+                                if (planSegIdx >= 0) {
                                   currentSegs = currentSegs.map((seg, idx) => 
-                                    idx === segIdx && seg.type === 'tool_call'
+                                    idx === planSegIdx && seg.type === 'tool_call'
                                       ? { ...seg, toolResult: resultContent, ...(nestedData.success === false ? { confirmStatus: 'rejected' } : {}) }
                                       : seg
                                   );
                                 }
                                 confirmChanged = true;
+                                
+                                // plan_exit 完成后创建新消息分段
+                                if (toolName === 'plan_exit') {
+                                  console.log('[Nested ToolResultEvent] Detected plan_exit, creating new assistant message');
+                                  flushUI();
+                                  const newAssistantMessageId = `assistant-${Date.now()}-new`;
+                                  const newAssistantMessage: ChatMessage = {
+                                    id: newAssistantMessageId,
+                                    role: 'assistant',
+                                    segments: [],
+                                    timestamp: Date.now(),
+                                  };
+                                  currentMsgs = [...currentMsgs, newAssistantMessage];
+                                  setMessages(currentMsgs);
+                                  currentAssistantMessageId = newAssistantMessageId;
+                                  currentSegs = [];
+                                  accText = '';
+                                  accThinking = '';
+                                  activeTextIdx = -1;
+                                  activeThinkIdx = -1;
+                                  currentEventType = null;
+                                  toolCallMap = new Map<string, number>();
+                                  // plan 已结束，清理状态以停止轮询
+                                  setCurrentPlan(null);
+                                  currentPlanMessageIdRef.current = null;
+                                  previousHasPlanRef.current = false;
+                                  planExitedRef.current = true;
+                                }
                                 continue;
                               }
                               
@@ -1597,50 +1793,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               activeTextIdx = -1;
                               activeThinkIdx = -1;
                               
-                              if (toolId && toolCallMap.has(toolId)) {
-                                const segIdx = toolCallMap.get(toolId)!;
+                              const nestedSegIdx = findToolSegmentIdx(toolId, toolName);
+                              if (nestedSegIdx >= 0) {
                                 currentSegs = currentSegs.map((seg, idx) => 
-                                  idx === segIdx && seg.type === 'tool_call'
+                                  idx === nestedSegIdx && seg.type === 'tool_call'
                                     ? { ...seg, toolResult: resultContent, ...(nestedData.success === false ? { confirmStatus: 'rejected' } : {}) }
                                     : seg
                                 );
                               } else {
-                                currentSegs.push({ type: 'tool_result', content: resultContent });
+                                console.log('[Nested ToolResultEvent] Tool not found, ignoring result');
                               }
                               confirmChanged = true;
-                              
-                              // 检查是否是 finish_subtask 或 finish_plan 工具
-                              if (toolName === 'finish_subtask' || toolName === 'finish_plan') {
-                                console.log('[Nested ToolResultEvent] Detected finish tool, creating new assistant message');
-                                
-                                // 完成当前消息
-                                flushUI();
-                                
-                                // 创建新的 assistant 消息
-                                const newAssistantMessageId = `assistant-${Date.now()}-new`;
-                                const newAssistantMessage: ChatMessage = {
-                                  id: newAssistantMessageId,
-                                  role: 'assistant',
-                                  segments: [],
-                                  timestamp: Date.now(),
-                                };
-                                
-                                // 更新 currentMsgs
-                                currentMsgs = [...currentMsgs, newAssistantMessage];
-                                setMessages(currentMsgs);
-                                
-                                // 更新当前 assistant message ID
-                                currentAssistantMessageId = newAssistantMessageId;
-                                
-                                // 重置所有状态以开始新消息
-                                currentSegs = [];
-                                accText = '';
-                                accThinking = '';
-                                activeTextIdx = -1;
-                                activeThinkIdx = -1;
-                                currentEventType = null;
-                                toolCallMap = new Map<string, number>();
-                              }
                             } else if (nestedData.eventType === 'EndEvent') {
                               // 收到结束事件，表示 AI 输出已完成
                               console.log('[Nested EndEvent] AI output completed');
@@ -1696,9 +1859,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       abortRef.current = null;
       
       // 如果启用了计划功能且卡片处于展开状态，立即刷新一次
-      if (enablePlan && currentPlanExpanded) {
+      // 但如果 plan_exit 已触发，跳过刷新避免重新加载已完成的计划
+      if (enablePlan && currentPlanExpanded && !planExitedRef.current) {
         loadCurrentPlan();
       }
+      // 重置 planExited 标记
+      planExitedRef.current = false;
     }
   };
 
@@ -2139,16 +2305,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   /* ─── 判断是否为计划相关的工具 ─── */
   const isPlanRelatedTool = (toolName: string): boolean => {
     const planTools = [
-      'create_plan',
-      'update_plan_info',
-      'revise_current_plan',
-      'update_subtask_state',
-      'finish_subtask',
-      'view_subtasks',
-      'get_subtask_count',
-      'finish_plan',
-      'view_historical_plans',
-      'recover_historical_plan',
+      'plan_enter',
+      'plan_write',
+      'plan_exit',
     ];
     return planTools.includes(toolName);
   };
@@ -2272,15 +2431,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       )}
                     </div>
                   </div>
-                  <div className={styles.planProgressBadge}>
-                    <span className={styles.progressText}>
-                      {currentPlan.activePlan.subtasks.filter((t: any) => t.state === 'DONE').length}
-                    </span>
-                    <span className={styles.progressDivider}>/</span>
-                    <span className={styles.progressTotal}>
-                      {currentPlan.activePlan.subtasks.length}
-                    </span>
-                  </div>
+                  {currentPlan.activePlan.subtasks && currentPlan.activePlan.subtasks.length > 0 && (
+                    <div className={styles.planProgressBadge}>
+                      <span className={styles.progressText}>
+                        {currentPlan.activePlan.subtasks.filter((t: any) => t.state === 'DONE').length}
+                      </span>
+                      <span className={styles.progressDivider}>/</span>
+                      <span className={styles.progressTotal}>
+                        {currentPlan.activePlan.subtasks.length}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 
                 {/* 子任务列表 */}
@@ -2505,7 +2666,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       )}
       
       {/* ─── 消息列表 ─── */}
-      <div className={styles.messageList}>
+      <div className={styles.messageListWrap}>
+        <div ref={messageListRef} className={styles.messageList} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
@@ -2522,7 +2684,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             </div>
           </div>
         ) : (
-          messages.map((msg) => (
+          messages.map((msg) => {
+            // Skip empty assistant messages after stream ended (EndEvent received)
+            if (msg.role === 'assistant' && isEmpty(msg) && !loading) return null;
+            return (
             <div
               key={msg.id}
               className={`${styles.messageRow} ${msg.role === 'user' ? styles.messageRowUser : ''}`}
@@ -2553,7 +2718,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       <span>{msg.segments[0]?.content}</span>
                     </div>
                   ) : isEmpty(msg) ? (
-                    <LoadingDots />
+                    loading && msg.id === messages[messages.length - 1]?.id ? <LoadingDots /> : null
                   ) : (
                     <>
                       {msg.segments.map((seg, idx) => renderSegment(seg, idx))}
@@ -2575,9 +2740,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 </div>
               </div>
             </div>
-          ))
+            );
+          })
         )}
         <div ref={messagesEndRef} />
+        </div>
+
+        {/* ─── 回到底部按钮 ─── */}
+        {showScrollToBottom && (
+          <button className={styles.scrollToBottomBtn} onClick={handleScrollToBottomClick} title="Scroll to bottom">
+            <DownOutlined />
+          </button>
+        )}
       </div>
 
       {/* ─── 输入区域 ─── */}

@@ -1,8 +1,8 @@
 package com.agnetix.harnax.agent.service.adaptor
 
+import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.skill.store.SkillContentData
 import com.agnetix.harnax.agent.skill.store.SkillContentReader
-import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.SkillDetailDto
@@ -442,8 +442,12 @@ class SkillAdaptorImplTest {
 
         private fun stubContext(skillDetails: List<SkillDetailDto>) {
             val specInfo = AgentSpecInfoResponse(
-                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-                modelId = 1L, skillDetails = skillDetails,
+                agentId = 1L,
+                agentName = "Test",
+                description = "",
+                systemPrompt = "",
+                modelId = 1L,
+                skillDetails = skillDetails,
             )
             `when`(specContextHolder.get()).thenReturn(specInfo)
         }
@@ -451,8 +455,12 @@ class SkillAdaptorImplTest {
         @Test
         fun `getSkill should load from context when skill DTO found`() {
             val dto = SkillDetailDto(
-                id = 10L, name = "ctx-skill", description = "From context",
-                skillmd = "# Context Skill", storagePath = "", resources = "",
+                id = 10L,
+                name = "ctx-skill",
+                description = "From context",
+                skillmd = "# Context Skill",
+                storagePath = "",
+                resources = "",
                 version = "1.0.0",
             )
             stubContext(listOf(dto))

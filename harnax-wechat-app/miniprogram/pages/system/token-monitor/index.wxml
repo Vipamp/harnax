@@ -1,0 +1,100 @@
+<view class="page">
+  <view class="stats-card">
+    <view class="stats-card__title">累计统计</view>
+    <view class="stats-grid">
+      <view class="stat-item">
+        <text class="stat-item__label">总 Token</text>
+        <text class="stat-item__value">{{totalTokensText}}</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-item__label">Prompt</text>
+        <text class="stat-item__value">{{promptTokensText}}</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-item__label">Completion</text>
+        <text class="stat-item__value">{{completionTokensText}}</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-item__label">累计成本</text>
+        <text class="stat-item__value stat-item__value--cost">{{totalCostText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="stats-card stats-card--today">
+    <view class="stats-card__title">概览</view>
+    <view class="stats-grid">
+      <view class="stat-item">
+        <text class="stat-item__label">会话数</text>
+        <text class="stat-item__value">{{todayTokensText}}</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-item__label">Agent 数</text>
+        <text class="stat-item__value">{{todayCostText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- Prompt / Completion 占比 -->
+  <view class="chart-card" wx:if="{{promptPct + completionPct > 0}}">
+    <view class="chart-card__title">Token 构成</view>
+    <view class="ratio-bar">
+      <view class="ratio-bar__seg ratio-bar__seg--prompt" style="width: {{promptPct}}%"></view>
+      <view class="ratio-bar__seg ratio-bar__seg--completion" style="width: {{completionPct}}%"></view>
+    </view>
+    <view class="ratio-legend">
+      <view class="ratio-legend__item">
+        <view class="ratio-legend__dot ratio-legend__dot--prompt"></view>
+        <text class="ratio-legend__text">Prompt {{promptPct}}%</text>
+      </view>
+      <view class="ratio-legend__item">
+        <view class="ratio-legend__dot ratio-legend__dot--completion"></view>
+        <text class="ratio-legend__text">Completion {{completionPct}}%</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 模型分布 -->
+  <view class="chart-card" wx:if="{{modelBars.length}}">
+    <view class="chart-card__title">模型 Token 分布 (Top 5)</view>
+    <view class="mbar" wx:for="{{modelBars}}" wx:key="name">
+      <view class="mbar__head">
+        <text class="mbar__name">{{item.name}}</text>
+        <text class="mbar__value">{{item.tokensText}}</text>
+      </view>
+      <view class="mbar__track">
+        <view class="mbar__fill" style="width: {{item.widthPct}}%"></view>
+      </view>
+    </view>
+  </view>
+
+  <view class="trend-head">
+    <text class="trend-head__title">趋势</text>
+    <picker mode="selector" range="{{granularities}}" value="{{granularityIndex}}" bindchange="onGranularityChange">
+      <t-cell note="{{granularities[granularityIndex]}}" />
+    </picker>
+  </view>
+
+  <!-- 趋势柱状图 -->
+  <view class="trend-chart" wx:if="{{trendBars.length}}">
+    <view class="trend-chart__bars">
+      <view class="tbar" wx:for="{{trendBars}}" wx:key="label">
+        <view class="tbar__col">
+          <view class="tbar__fill" style="height: {{item.heightPct}}%"></view>
+        </view>
+        <text class="tbar__label">{{item.shortLabel}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="trend-list" wx:if="{{trends.length}}">
+    <view class="trend-row" wx:for="{{trends}}" wx:key="date">
+      <text class="trend-row__date">{{item.date}}</text>
+      <text class="trend-row__tokens">{{item.tokensText}}</text>
+      <text class="trend-row__cost">{{item.costText}}</text>
+    </view>
+  </view>
+  <empty-state wx:elif="{{!loading}}" text="暂无趋势数据" />
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

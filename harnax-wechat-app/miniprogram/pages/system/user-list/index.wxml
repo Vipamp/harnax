@@ -1,0 +1,39 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索用户名/昵称/手机号" bind:search="onSearch" />
+
+  <view class="list">
+    <t-swipe-cell wx:for="{{list}}" wx:key="id" style="display:block;margin-bottom:20rpx;">
+      <view class="u-card" bindtap="onEdit" data-id="{{item.id}}">
+        <view class="u-card__icon">
+          <t-icon name="user" size="40rpx" color="#FFFFFF" />
+        </view>
+        <view class="u-card__body">
+          <view class="u-card__head">
+            <view class="u-card__title">
+              <text class="u-card__name">{{item.username}}</text>
+              <text wx:if="{{item.nickname}}" class="u-card__nick">{{item.nickname}}</text>
+            </view>
+            <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '正常' : '禁用'}}" />
+          </view>
+          <view class="u-card__info">
+            <text wx:if="{{item.roles}}" class="u-card__tag">{{item.roles}}</text>
+            <text wx:if="{{item.phone}}" class="u-card__meta">{{item.phone}}</text>
+            <text wx:if="{{item.email}}" class="u-card__meta">{{item.email}}</text>
+          </view>
+        </view>
+      </view>
+      <view slot="right" class="swipe-actions">
+        <view class="swipe-btn swipe-btn--toggle" catchtap="onToggle" data-id="{{item.id}}" data-status="{{item.status}}">{{item.status === 1 ? '禁用' : '启用'}}</view>
+        <view class="swipe-btn swipe-btn--edit" catchtap="onEdit" data-id="{{item.id}}">编辑</view>
+        <view class="swipe-btn swipe-btn--del" catchtap="onDelete" data-id="{{item.id}}">删除</view>
+      </view>
+    </t-swipe-cell>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无用户，点击右下角创建" />
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

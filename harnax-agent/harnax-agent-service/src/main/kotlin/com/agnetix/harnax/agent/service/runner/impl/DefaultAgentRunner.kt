@@ -1,6 +1,8 @@
 package com.agnetix.harnax.agent.service.runner.impl
 
 import com.agnetix.harnax.agent.adaptor.PlanNote
+import com.agnetix.harnax.agent.adaptor.PlanSubTask
+import com.agnetix.harnax.agent.adaptor.TaskState
 import com.agnetix.harnax.agent.chat.MessageLog
 import com.agnetix.harnax.agent.chat.MessageLogConverter
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
@@ -19,6 +21,7 @@ import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.AgentStatePlanData
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -26,6 +29,8 @@ import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.event.ConfirmResult
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
+import io.agentscope.core.state.AgentState
+import io.agentscope.core.state.Task
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -260,7 +265,245 @@ class DefaultAgentRunner(
 
     override fun loadPlans(sessionId: String): List<PlanNote> = launcher.loadSessionHistoryPlan(sessionId)
 
-    override fun loadCurrentPlan(sessionId: String): PlanNote? = launcher.loadSessionCurrentPlanNote(sessionId)
+    override fun loadCurrentPlan(sessionId: String): PlanNote? {
+        // First try the legacy DB-based plan notes
+        val legacyPlan = launcher.loadSessionCurrentPlanNote(sessionId)
+        if (legacyPlan != null) {
+            log.info("[loadCurrentPlan] Returning legacy DB plan for session={}, subtasks={}", sessionId, legacyPlan.subtasks.size)
+            return legacyPlan
+        }
+
+        // ─── Step 1: Try structured plan data from AgentState (preferred) ───
+        val wrapper = agentCache.getIfPresent(sessionId)
+        val statePlanData = wrapper?.readFullPlanFromState() ?: readFullPlanFromStateStore(sessionId)
+
+        if (statePlanData != null && statePlanData.tasks != null) {
+            // AgentState has structured tasks — use them directly
+            val tasks = statePlanData.tasks ?: return null
+            val subtasks = convertStructuredTasks(tasks)
+
+            // For plan name/description, still read PLAN.md (AgentState doesn't store plan text)
+            val planContent = wrapper?.readPlanContent() ?: readPlanFromSandbox(sessionId)
+            val (name, description) = extractPlanNameAndDescription(planContent)
+
+            log.info(
+                "[loadCurrentPlan] Using AgentState: planActive={}, {} structured tasks, plan='{}' for session={}",
+                statePlanData.planActive,
+                subtasks.size,
+                name,
+                sessionId,
+            )
+
+            return PlanNote(
+                sessionId = sessionId,
+                planId = "active",
+                name = name,
+                description = description,
+                subtasks = subtasks,
+                createdAt = "",
+                finishedAt = null,
+                costTimeSeconds = 0L,
+                status = TaskState.IN_PROGRESS,
+            )
+        }
+
+        // ─── Step 2: Fallback — parse PLAN.md for plan content and subtasks ───
+        val planContent = wrapper?.readPlanContent() ?: readPlanFromSandbox(sessionId)
+
+        if (planContent == null) {
+            log.info(
+                "[loadCurrentPlan] No plan content found for session={} (wrapper={}, sandbox={})",
+                sessionId,
+                wrapper != null,
+                launcher.keepAliveSandboxManager?.attachToExisting(sessionId) != null,
+            )
+            return null
+        }
+
+        val (name, description) = extractPlanNameAndDescription(planContent)
+
+        // Parse subtasks from markdown (fallback when agent doesn't use todo_write)
+        val subtasks = parseSubtasksFromPlanMarkdown(planContent)
+        log.info(
+            "[loadCurrentPlan] Plan '{}' from PLAN.md with {} subtasks (parsed from markdown) for session={}",
+            name,
+            subtasks.size,
+            sessionId,
+        )
+
+        return PlanNote(
+            sessionId = sessionId,
+            planId = "active",
+            name = name,
+            description = description,
+            subtasks = subtasks,
+            createdAt = "",
+            finishedAt = null,
+            costTimeSeconds = 0L,
+            status = TaskState.IN_PROGRESS,
+        )
+    }
+
+    /**
+     * Extracts plan name and description from markdown content.
+     * The first heading becomes the name, the rest becomes the description.
+     */
+    private fun extractPlanNameAndDescription(planContent: String?): Pair<String, String> {
+        if (planContent == null) return "Plan" to ""
+
+        val lines = planContent.lines()
+        val titleLineIdx = lines.indexOfFirst { it.startsWith("#") }
+        val name = if (titleLineIdx >= 0) {
+            lines[titleLineIdx].replace(Regex("^#+\\s*"), "").trim()
+        } else {
+            "Plan"
+        }
+        val description = if (titleLineIdx >= 0) {
+            lines.toMutableList().apply { removeAt(titleLineIdx) }
+                .joinToString("\n")
+                .trim()
+        } else {
+            planContent
+        }
+        return name to description
+    }
+
+    /**
+     * Parses subtasks from PLAN.md markdown as a fallback when agent doesn't use todo_write.
+     * Extracts ## headings as section groups and `- [ ]` / `- [x]` checkboxes as individual tasks.
+     */
+    private fun parseSubtasksFromPlanMarkdown(planContent: String): List<PlanSubTask> {
+        val lines = planContent.lines()
+        val subtasks = mutableListOf<PlanSubTask>()
+        var currentSection = ""
+
+        for (line in lines) {
+            val trimmed = line.trim()
+
+            // Extract section headers (## level)
+            val headerMatch = Regex("^##\\s+(.+)$").find(trimmed)
+            if (headerMatch != null) {
+                currentSection = headerMatch.groupValues[1].trim()
+                continue
+            }
+
+            // Extract checkbox items
+            val checkboxMatch = Regex("^-\\s+\\[([ xX])\\]\\s+(.+)$").find(trimmed)
+            if (checkboxMatch != null) {
+                val isChecked = checkboxMatch.groupValues[1].lowercase() == "x"
+                val taskText = checkboxMatch.groupValues[2].trim()
+                val state = if (isChecked) TaskState.DONE else TaskState.TODO
+                val name = if (currentSection.isNotEmpty()) "$currentSection: $taskText" else taskText
+
+                subtasks.add(
+                    PlanSubTask(
+                        name = name,
+                        description = "",
+                        expectedOutcome = "",
+                        outcome = "",
+                        state = state,
+                        createdAt = "",
+                        finishedAt = if (isChecked) "" else null,
+                        costTimeSeconds = 0L,
+                    ),
+                )
+            }
+        }
+
+        // If no checkbox items found, try to use ## headings as tasks
+        if (subtasks.isEmpty()) {
+            for (line in lines) {
+                val trimmed = line.trim()
+                val headerMatch = Regex("^##\\s+(.+)$").find(trimmed)
+                if (headerMatch != null) {
+                    subtasks.add(
+                        PlanSubTask(
+                            name = headerMatch.groupValues[1].trim(),
+                            description = "",
+                            expectedOutcome = "",
+                            outcome = "",
+                            state = TaskState.TODO,
+                            createdAt = "",
+                            finishedAt = null,
+                            costTimeSeconds = 0L,
+                        ),
+                    )
+                }
+            }
+        }
+
+        return subtasks
+    }
+
+    /**
+     * Reads plan markdown directly from sandbox when agent is not in cache.
+     */
+    private fun readPlanFromSandbox(sessionId: String): String? = readSandboxFile(sessionId, "plans/PLAN.md")
+
+    /**
+     * Reads a workspace file from sandbox via Docker exec, independent of agent cache.
+     */
+    private fun readSandboxFile(sessionId: String, relativePath: String): String? {
+        val sandboxManager = launcher.keepAliveSandboxManager ?: return null
+        return try {
+            // Use attachToExisting to discover containers not in memory cache (e.g. after restart)
+            val sandbox = sandboxManager.attachToExisting(sessionId) ?: run {
+                log.debug("[readSandboxFile] No sandbox for session={}", sessionId)
+                return null
+            }
+            val workspaceRoot = launcher.harnessConfig.sandbox.workspaceRoot
+            val result = sandbox.exec(null, "cat $workspaceRoot/$relativePath 2>/dev/null", 5)
+            val content = result.stdout()
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            log.debug("[readSandboxFile] Failed for session={}, path={}: {}", sessionId, relativePath, e.message)
+            null
+        }
+    }
+
+    /**
+     * Reads full plan data from AgentStateStore, independent of agent cache.
+     * Used when the agent wrapper is not in the cache (e.g. after service restart).
+     */
+    private fun readFullPlanFromStateStore(sessionId: String): AgentStatePlanData? {
+        return try {
+            val stateStore = launcher.stateStore
+            val state = stateStore.get(null, sessionId, "agent_state", AgentState::class.java)
+                .orElse(null) ?: return null
+            val planCtx = state.planModeContext
+            val tasks = state.tasksContext?.tasks
+            AgentStatePlanData(
+                planActive = planCtx?.isPlanActive ?: false,
+                currentPlanFile = planCtx?.currentPlanFile,
+                tasks = if (tasks.isNullOrEmpty()) null else tasks,
+            )
+        } catch (e: Exception) {
+            log.debug("[readFullPlanFromStateStore] Failed for session={}: {}", sessionId, e.message)
+            null
+        }
+    }
+
+    /**
+     * Converts agentscope structured Task objects to our PlanSubTask model.
+     */
+    private fun convertStructuredTasks(tasks: List<Task>): List<PlanSubTask> = tasks.map { task ->
+        val state = when (task.state) {
+            Task.State.COMPLETED -> TaskState.DONE
+            Task.State.IN_PROGRESS -> TaskState.IN_PROGRESS
+            Task.State.PENDING -> TaskState.TODO
+            else -> TaskState.TODO
+        }
+        PlanSubTask(
+            name = task.subject ?: "",
+            description = task.description ?: "",
+            expectedOutcome = "",
+            outcome = "",
+            state = state,
+            createdAt = task.createdAt ?: "",
+            finishedAt = if (state == TaskState.DONE) "" else null,
+            costTimeSeconds = 0L,
+        )
+    }
 
     override suspend fun initAgent(agentId: Long) {
         log.info("Initializing agent: $agentId")

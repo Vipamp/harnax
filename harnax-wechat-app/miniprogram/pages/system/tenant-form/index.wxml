@@ -1,0 +1,20 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="租户名称" value="{{form.name}}" placeholder="请输入租户名称" data-field="name" bind:change="onInput" clearable />
+    <t-input label="租户代码" value="{{form.code}}" placeholder="可选，唯一标识" data-field="code" bind:change="onInput" disabled="{{isEdit}}" clearable />
+    <t-textarea label="描述" value="{{form.description}}" placeholder="租户说明（可选）" data-field="description" bind:change="onInput" autosize maxlength="-1" />
+    <view class="form-item" wx:if="{{!isEdit}}">
+      <picker mode="selector" range="{{userLabels}}" value="{{userIndex}}" bindchange="onUserChange">
+        <t-cell title="管理员" note="{{userIndex >= 0 ? userLabels[userIndex] : '请选择租户管理员'}}" />
+      </picker>
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar" wx:if="{{!isEdit}}">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '创建中...' : '创建租户'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

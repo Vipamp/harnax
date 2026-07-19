@@ -1,0 +1,28 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input wx:if="{{!isEdit}}" label="Key 名称" value="{{form.name}}" placeholder="如 生产环境 Key" data-field="name" bind:change="onInput" clearable />
+    <t-cell title="权限范围">
+      <view slot="note">
+        <t-check-tag
+          wx:for="{{scopes}}"
+          wx:key="*this"
+          checked="{{scopeOn[index]}}"
+          data-idx="{{index}}"
+          bindtap="onToggleScope"
+        >{{item}}</t-check-tag>
+      </view>
+    </t-cell>
+    <t-input label="限流（次/分）" value="{{form.rateLimit}}" placeholder="默认 1000" bind:change="onRateInput" clearable />
+    <picker mode="date" value="{{form.expiresAt}}" bindchange="onDateChange">
+      <t-cell title="过期日期" note="{{form.expiresAt || '永不过期'}}" />
+    </picker>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : (isEdit ? '保存' : '创建')}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

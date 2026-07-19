@@ -1,0 +1,60 @@
+/* ---- MCP List — Modern Minimal ---- */
+.mcp-card {
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+  box-shadow: var(--shadow);
+  border: 1rpx solid var(--border-color);
+}
+.mcp-card:active { background: #F7F8FA; }
+.mcp-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+.mcp-card__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1D2129;
+}
+.mcp-card__desc {
+  display: block;
+  font-size: 26rpx;
+  color: #86909C;
+  line-height: 1.6;
+  margin-bottom: 16rpx;
+}
+.mcp-card__meta {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+.mcp-card__tag {
+  font-size: 22rpx;
+  color: #4F46E5;
+  background: #EEF2FF;
+  border-radius: var(--radius-full);
+  padding: 4rpx 18rpx;
+  font-weight: 500;
+}
+.mcp-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #F2F3F5;
+}
+.mcp-card__btn {
+  font-size: 26rpx;
+  color: #4F46E5;
+  padding: 8rpx 24rpx;
+  border: 1rpx solid #E0E7FF;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+.mcp-card__btn--danger {
+  color: #E34D59;
+  border-color: #FDECEE;
+}

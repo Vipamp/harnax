@@ -14,7 +14,6 @@ import com.agnetix.harnax.agent.adaptor.model.ModelErrorCode
 import com.agnetix.harnax.agent.adaptor.model.ModelHelper
 import com.agnetix.harnax.agent.adaptor.token.TokenStatBuilder
 import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
-import com.agnetix.harnax.agent.provider.middleware.ConfirmToolsMiddleware
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
@@ -133,6 +132,7 @@ class HarnessAgentLauncher(
         userIdentifier: UserIdentifier,
     ): HarnessAgentWrapper {
         val needConfirmedTools = mutableSetOf<String>()
+        val dangerousInputTools = mutableSetOf<String>()
         val agentBuilder = HarnessAgentBuilder()
             .name(agentSpec.name)
             .description(agentSpec.description)
@@ -172,6 +172,8 @@ class HarnessAgentLauncher(
             val addedToolBoxBeans = mutableSetOf<String>()
             // Track disabled tool names per beanName to remove after addTool (which registers ALL @Tool methods)
             val disabledToolNamesByBean = mutableMapOf<String, MutableSet<String>>()
+            // Track already-scanned ToolBox classes to avoid redundant reflection
+            val scannedDangerousInputClasses = mutableSetOf<Class<*>>()
 
             agentSpec.toolSpecs.forEach { toolSpec ->
                 val toolConfig = toolConfigAdaptor.getToolConfig(toolSpec.toolId)
@@ -246,6 +248,16 @@ class HarnessAgentLauncher(
                             // Use the framework tool name (@Tool.name) so PermissionEngine can match
                             needConfirmedTools.add(toolConfig.name)
                         }
+
+                        // Scan ToolBox methods for @ToolMeta(dangerousInput=true) — deduplicated by class
+                        val beanName = toolConfig.beanName ?: ""
+                        if (beanName.isNotEmpty()) {
+                            val toolBoxClass = toolRegistry?.getToolBox(beanName)?.let { it::class.java }
+                            if (toolBoxClass != null && toolBoxClass !in scannedDangerousInputClasses) {
+                                scannedDangerousInputClasses.add(toolBoxClass)
+                                collectDangerousInputTools(toolBoxClass, dangerousInputTools)
+                            }
+                        }
                     } else if (!toolSpec.skipIfMissing) {
                         log.error("Tool with id `${toolSpec.toolId}` (bean: ${toolConfig.beanName}) not found.")
                     } else {
@@ -279,12 +291,16 @@ class HarnessAgentLauncher(
                 // Scan @ToolMeta(needConfirm=true) from ToolBox methods
                 val toolName = toolBox.name()
                 toolBox::class.java.methods
-                    .filter { it.getAnnotation(ToolMeta::class.java)?.needConfirm == true }
                     .forEach { method ->
-                        // Use @Tool.name if available, fall back to method name
                         val toolAnnotation = method.getAnnotation(io.agentscope.core.tool.Tool::class.java)
                         val frameworkName = toolAnnotation?.name?.takeIf { it.isNotBlank() } ?: method.name
-                        needConfirmedTools.add(frameworkName)
+                        val toolMeta = method.getAnnotation(ToolMeta::class.java)
+                        if (toolMeta?.needConfirm == true) {
+                            needConfirmedTools.add(frameworkName)
+                        }
+                        if (toolMeta?.dangerousInput == true) {
+                            dangerousInputTools.add(frameworkName)
+                        }
                     }
             }
         }
@@ -316,10 +332,10 @@ class HarnessAgentLauncher(
         }
 
         // ----- Middleware (replaces Hooks in 2.0.0) -----
+        // Dangerous-tool interception is fully handled by the built-in PermissionEngine
+        // (ASK/ALLOW/DENY rules configured below via PermissionContextState).
+        // No custom ConfirmToolsMiddleware needed.
         MIDDLEWARE_SET.forEach { middleware ->
-            if (middleware is ConfirmToolsMiddleware) {
-                middleware.setDangerousTools(needConfirmedTools)
-            }
             if (middleware is ProcessLogMiddleware) {
                 middleware.initial(processLogAdaptor, agentSpec.id, agentSpec.name, sessionId)
             }
@@ -391,17 +407,56 @@ class HarnessAgentLauncher(
             agentBuilder.disableSessionPersistence()
         }
 
-        // ----- Permission Context (registers ASK rules for dangerous tools) -----
-        if (needConfirmedTools.isNotEmpty()) {
-            val permCtxBuilder = PermissionContextState.builder()
-            needConfirmedTools.forEach { toolName ->
-                permCtxBuilder.addAskRule(
-                    toolName,
-                    PermissionRule(toolName, "Tool requires user confirmation", PermissionBehavior.ASK, "harnax"),
-                )
+        // ----- Permission Context (ASK rules for dangerous tools + ALLOW rules for framework tools) -----
+        // Framework tools (plan mode, todo, subagent) must always be allowed — without explicit ALLOW
+        // rules, PermissionEngine defaults to ASK in DEFAULT mode, which blocks these internal tools.
+        val frameworkAllowTools = setOf(
+            "plan_enter", "plan_write", "plan_exit",
+            "todo_write",
+            "agent_spawn", "agent_send", "agent_list",
+            "task_output", "task_list",
+        )
+        val permCtxBuilder = PermissionContextState.builder()
+        frameworkAllowTools.forEach { toolName ->
+            permCtxBuilder.addAllowRule(
+                toolName,
+                PermissionRule(toolName, "Framework tool — always allowed", PermissionBehavior.ALLOW, "harnax"),
+            )
+        }
+        needConfirmedTools.forEach { toolName ->
+            permCtxBuilder.addAskRule(
+                toolName,
+                PermissionRule(toolName, "Tool requires user confirmation", PermissionBehavior.ASK, "harnax"),
+            )
+        }
+        val builtPermCtx = permCtxBuilder.build()
+        agentBuilder.permissionContext(builtPermCtx)
+        log.info(
+            "PermissionContext configured: {} ALLOW rules (framework), {} ASK rules (user tools: {}), {} dangerous-input wrapped tools",
+            frameworkAllowTools.size,
+            needConfirmedTools.size,
+            needConfirmedTools,
+            dangerousInputTools.size,
+        )
+
+        // ----- Dangerous Input Wrapping -----
+        // Wrap tools whose @Tool methods are annotated with @ToolMeta(dangerousInput=true).
+        // This replaces the ReflectiveFunctionTool with a DangerousInputCheckingTool that
+        // scans string inputs for dangerous commands/paths in checkPermissions() — bypass-immune.
+        //
+        // Skip wrapping if the tool already has a needConfirm ASK rule — the ASK rule fires at
+        // PermissionEngine step ② (before step ③ checkPermissions), making the input scan redundant.
+        dangerousInputTools.forEach { toolName ->
+            if (toolName in needConfirmedTools) {
+                log.debug("Skipping dangerousInput wrap for '{}': already has needConfirm ASK rule", toolName)
+                return@forEach
             }
-            agentBuilder.permissionContext(permCtxBuilder.build())
-            log.info("PermissionContext configured with {} ASK rules: {}", needConfirmedTools.size, needConfirmedTools)
+            try {
+                agentBuilder.wrapWithDangerousInputCheck(toolName)
+                log.info("Wrapped tool '{}' with DangerousInputCheckingTool", toolName)
+            } catch (e: IllegalArgumentException) {
+                log.warn("Could not wrap tool '{}' with dangerous input check: {}", toolName, e.message)
+            }
         }
 
         // ----- Build -----
@@ -416,7 +471,7 @@ class HarnessAgentLauncher(
 
         return HarnessAgentWrapper(
             harnessAgent = agent,
-            dangerousTools = needConfirmedTools,
+            dangerousTools = needConfirmedTools + dangerousInputTools,
             tokenStatBuilder = TokenStatBuilder()
                 .agentId(agentSpec.id)
                 .sessionId(sessionId)
@@ -429,6 +484,7 @@ class HarnessAgentLauncher(
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
             sandboxNetwork = harnessConfig.sandbox.network,
             permissionMode = chatSpec.permissionMode,
+            configuredPermissionContext = builtPermCtx,
         )
     }
 
@@ -482,6 +538,21 @@ class HarnessAgentLauncher(
     }
 
     companion object {
+        /**
+         * Scans a ToolBox class for methods annotated with `@ToolMeta(dangerousInput=true)`.
+         * Collects the framework tool names (@Tool.name or method name) into the target set.
+         */
+        private fun collectDangerousInputTools(clazz: Class<*>, target: MutableSet<String>) {
+            clazz.methods.forEach { method ->
+                val toolMeta = method.getAnnotation(ToolMeta::class.java)
+                if (toolMeta?.dangerousInput == true) {
+                    val toolAnnotation = method.getAnnotation(io.agentscope.core.tool.Tool::class.java)
+                    val frameworkName = toolAnnotation?.name?.takeIf { it.isNotBlank() } ?: method.name
+                    target.add(frameworkName)
+                }
+            }
+        }
+
         /**
          * Factory method mirroring [com.agnetix.harnax.agent.AscopeAgentLauncher.initLauncher].
          */

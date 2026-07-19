@@ -1,0 +1,54 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索 Agent 名称" bind:search="onSearch" />
+
+  <view class="list">
+    <t-swipe-cell
+      wx:for="{{list}}"
+      wx:key="id"
+      style="display:block;margin-bottom:24rpx;"
+    >
+      <view class="agent-card" data-id="{{item.id}}" bindtap="onTapItem">
+        <view class="agent-card__top">
+          <view class="agent-card__avatar">
+            <t-icon name="robot" size="40rpx" color="#FFFFFF" />
+          </view>
+          <view class="agent-card__main">
+            <view class="agent-card__name-row">
+              <text class="agent-card__name">{{item.name}}</text>
+              <status-tag
+                type="{{item.status === 1 ? 'success' : 'default'}}"
+                text="{{item.status === 1 ? '启用' : '禁用'}}"
+              />
+            </view>
+            <text class="agent-card__desc">{{item.description || '暂无描述'}}</text>
+          </view>
+        </view>
+
+        <view class="agent-card__meta">
+          <t-icon name="layers" size="26rpx" color="#86909C" />
+          <text class="agent-card__model">{{item.modelName || '未配置模型'}}</text>
+        </view>
+
+        <view class="agent-card__footer">
+          <view class="agent-card__stat">MCP {{item.mcpCount || 0}}</view>
+          <view class="agent-card__stat">工具 {{item.toolCount || 0}}</view>
+          <view class="agent-card__stat">技能 {{item.skillCount || 0}}</view>
+        </view>
+      </view>
+      <view slot="right" class="swipe-actions">
+        <view class="swipe-btn swipe-btn--toggle" catchtap="onToggle" data-id="{{item.id}}" data-status="{{item.status}}">{{item.status === 1 ? '禁用' : '启用'}}</view>
+        <view class="swipe-btn swipe-btn--edit" catchtap="onEdit" data-id="{{item.id}}">编辑</view>
+        <view class="swipe-btn swipe-btn--del" catchtap="onDelete" data-id="{{item.id}}" data-name="{{item.name}}">删除</view>
+      </view>
+    </t-swipe-cell>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无 Agent，点击右下角创建" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

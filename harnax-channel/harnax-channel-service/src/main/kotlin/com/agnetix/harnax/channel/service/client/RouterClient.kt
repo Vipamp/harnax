@@ -83,11 +83,12 @@ class RouterClient(
         log.info("[Channel←Router] Response for session={}, isNull={}, elapsed={}ms", sessionId, resultVo == null, elapsed)
 
         if (resultVo == null) {
+            log.error("[Channel\u2190Router] Null response from router for session={}, agent may have timed out or router is unreachable", sessionId)
             return ChatResponse(sessionId = sessionId, content = "")
         }
         if (!resultVo.isSuccess()) {
             val errorMsg = resultVo.message ?: "Unknown router error"
-            log.error("[Channel←Router] Router error for session={}: {}", sessionId, errorMsg)
+            log.error("[Channel\u2190Router] Router error for session={}: code={}, message={}", sessionId, resultVo.code, errorMsg)
             return ChatResponse(sessionId = sessionId, content = "[Router Error] $errorMsg")
         }
         val data = resultVo.data

@@ -49,7 +49,13 @@ class RouterAgentAdaptor(
                     message = request.message,
                     imageUrls = request.imageUrls,
                 )
-                log.info("[Adaptor] Batch process completed for session=$sessionId, responseLength={}", chatResponse.content.length)
+                if (chatResponse.content.isBlank()) {
+                    log.warn("[Adaptor] Empty response from router for session=$sessionId — agent may have failed silently")
+                } else if (chatResponse.content.startsWith("[Router Error]")) {
+                    log.warn("[Adaptor] Router error response for session=$sessionId: {}", chatResponse.content)
+                } else {
+                    log.info("[Adaptor] Batch process completed for session=$sessionId, responseLength={}", chatResponse.content.length)
+                }
                 AgentResponse(content = chatResponse.content, shouldReply = true)
             }
             is CommandAgentRequest -> {

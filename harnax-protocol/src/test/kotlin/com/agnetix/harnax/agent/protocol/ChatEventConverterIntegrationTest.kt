@@ -2,6 +2,7 @@ package com.agnetix.harnax.agent.protocol
 
 import io.agentscope.core.event.AgentEvent
 import io.agentscope.core.event.AgentEventType
+import io.agentscope.core.event.ExceedMaxItersEvent
 import io.agentscope.core.event.ModelCallEndEvent
 import io.agentscope.core.event.TextBlockDeltaEvent
 import io.agentscope.core.event.ThinkingBlockDeltaEvent
@@ -124,13 +125,23 @@ class ChatEventConverterIntegrationTest {
     @Nested
     inner class ToolEvents {
         @Test
-        fun `TOOL_CALL_START converts to CallToolChatEvent`() {
+        fun `TOOL_CALL_START returns empty (handled by Wrapper)`() {
             val event = mock(ToolCallStartEvent::class.java)
             `when`(event.type).thenReturn(AgentEventType.TOOL_CALL_START)
-            `when`(event.toolCallId).thenReturn("call_123")
-            `when`(event.toolCallName).thenReturn("search_web")
 
             val result = ChatEventConverter.convert(event, emptyDangerousTools)
+
+            StepVerifier.create(result)
+                .verifyComplete()
+        }
+
+        @Test
+        fun `convertToolCallEnd emits CallToolChatEvent with accumulated args`() {
+            val result = ChatEventConverter.convertToolCallEnd(
+                "call_123",
+                "search_web",
+                """{"query":"kotlin"}""",
+            )
 
             StepVerifier.create(result)
                 .assertNext { chatEvent ->
@@ -138,6 +149,7 @@ class ChatEventConverterIntegrationTest {
                     val toolEvent = chatEvent as CallToolChatEvent
                     assertEquals("call_123", toolEvent.toolId)
                     assertEquals("search_web", toolEvent.toolName)
+                    assertEquals("kotlin", toolEvent.arguments["query"])
                 }
                 .verifyComplete()
         }
@@ -149,7 +161,7 @@ class ChatEventConverterIntegrationTest {
             `when`(event.toolCallId).thenReturn("call_456")
             `when`(event.toolCallName).thenReturn("code_exec")
 
-            val result = ChatEventConverter.convert(event, emptyDangerousTools)
+            val result = ChatEventConverter.convertToolResultEnd(event, "output text")
 
             StepVerifier.create(result)
                 .assertNext { chatEvent ->
@@ -158,6 +170,25 @@ class ChatEventConverterIntegrationTest {
                     assertEquals("call_456", resultEvent.toolId)
                     assertEquals("code_exec", resultEvent.toolName)
                     assertTrue(resultEvent.success)
+                    assertEquals("output text", resultEvent.message)
+                }
+                .verifyComplete()
+        }
+
+        @Test
+        fun `EXCEED_MAX_ITERS converts to warning StreamTextChatEvent`() {
+            val event = mock(ExceedMaxItersEvent::class.java)
+            `when`(event.type).thenReturn(AgentEventType.EXCEED_MAX_ITERS)
+            `when`(event.maxIters).thenReturn(50)
+            `when`(event.currentIter).thenReturn(51)
+
+            val result = ChatEventConverter.convert(event, emptyDangerousTools)
+
+            StepVerifier.create(result)
+                .assertNext { chatEvent ->
+                    assertTrue(chatEvent is StreamTextChatEvent)
+                    val textEvent = chatEvent as StreamTextChatEvent
+                    assertTrue(textEvent.message.contains("50"))
                 }
                 .verifyComplete()
         }

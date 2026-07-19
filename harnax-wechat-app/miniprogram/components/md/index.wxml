@@ -1,0 +1,15 @@
+<!-- components/md/index.wxml -->
+<view class="md">
+  <block wx:for="{{blocks}}" wx:key="index">
+    <rich-text wx:if="{{item.type === 'rich'}}" class="md-rich" nodes="{{item.html}}" />
+    <view wx:else class="md-code">
+      <view class="md-code__bar">
+        <text class="md-code__lang">{{item.lang || 'code'}}</text>
+        <text class="md-code__copy" catchtap="onCopy" data-code="{{item.code}}">复制</text>
+      </view>
+      <scroll-view scroll-x class="md-code__scroll">
+        <text class="md-code__text" user-select>{{item.code}}</text>
+      </scroll-view>
+    </view>
+  </block>
+</view>

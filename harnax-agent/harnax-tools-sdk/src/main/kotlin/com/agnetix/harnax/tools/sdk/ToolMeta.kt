@@ -43,6 +43,23 @@ annotation class ToolMeta(
     /** Whether this tool requires user confirmation before execution */
     val needConfirm: Boolean = false,
     /**
+     * Whether this tool's string inputs should be scanned for dangerous patterns
+     * (shell commands like `rm -rf`, sensitive paths like `.env`, `.ssh/`).
+     *
+     * When true, the tool is wrapped with a [io.agentscope.core.tool.ToolBase] subclass
+     * that overrides `checkPermissions()` to inspect runtime inputs. If a dangerous
+     * pattern is detected, the engine returns an ASK decision with a "safety" reason —
+     * this is bypass-immune (cannot be skipped even in BYPASS mode).
+     *
+     * Usage:
+     * ```
+     * @Tool(name = "execute_command", description = "Run a shell command")
+     * @ToolMeta(dangerousInput = true)
+     * fun executeCommand(@ToolParam(...) command: String): String = ...
+     * ```
+     */
+    val dangerousInput: Boolean = false,
+    /**
      * Whether this tool is mandatory (always available to all agents, not shown in UI tool selection).
      * Required tools are automatically included when an agent launches and cannot be deselected.
      */

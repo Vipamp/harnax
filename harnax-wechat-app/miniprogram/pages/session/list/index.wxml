@@ -1,0 +1,47 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索会话标题" bind:search="onSearch" />
+
+  <view class="list">
+    <t-swipe-cell wx:for="{{list}}" wx:key="id" style="display:block;margin-bottom:20rpx;">
+      <view
+        class="sess-card"
+        data-item="{{item}}"
+        bindtap="onTapItem"
+      >
+        <view class="sess-card__icon">
+          <t-icon name="chat" size="40rpx" color="#FFFFFF" />
+        </view>
+        <view class="sess-card__body">
+          <view class="sess-card__title-row">
+            <text class="sess-card__title">{{item.title}}</text>
+            <status-tag
+              type="{{item.status === 1 ? 'success' : 'default'}}"
+              text="{{item.status === 1 ? '正常' : '停用'}}"
+            />
+          </view>
+          <view class="sess-card__agent">
+            <t-icon name="robot" size="22rpx" color="#86909C" />
+            <text>{{item.name || '未知 Agent'}}</text>
+          </view>
+          <text class="sess-card__time">{{item._time}}</text>
+        </view>
+      </view>
+      <view
+        slot="right"
+        class="swipe-del"
+        catchtap="onDelete"
+        data-id="{{item.id}}"
+        data-title="{{item.title}}"
+      >删除</view>
+    </t-swipe-cell>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无会话，点击右下角创建" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

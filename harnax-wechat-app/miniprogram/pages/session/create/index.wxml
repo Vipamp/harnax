@@ -1,0 +1,24 @@
+<view class="page">
+  <t-cell-group bordered>
+    <picker mode="selector" range="{{agentNames}}" value="{{agentIndex}}" bindchange="onAgentChange">
+      <t-cell title="选择 Agent" note="{{agentIndex >= 0 ? agentNames[agentIndex] : '请选择 Agent'}}" />
+    </picker>
+
+    <t-input label="会话标题" value="{{title}}" placeholder="请输入会话标题" bind:change="onTitleInput" clearable />
+
+    <t-textarea label="会话描述" value="{{description}}" placeholder="可选" bind:change="onDescInput" autosize />
+  </t-cell-group>
+
+  <view class="agent-tip" wx:if="{{selectedAgent}}">
+    <text class="agent-tip__label">模型：{{selectedAgent.modelName || '未配置'}}</text>
+    <text class="agent-tip__desc" wx:if="{{selectedAgent.description}}">{{selectedAgent.description}}</text>
+  </view>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '创建中...' : '创建并开始对话'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

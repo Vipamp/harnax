@@ -1,0 +1,75 @@
+<view class="page" wx:if="{{detail}}">
+  <!-- 头部 -->
+  <view class="header">
+    <view class="header__avatar">
+      <t-icon name="chat" size="56rpx" color="#4F46E5" />
+    </view>
+    <view class="header__name">{{detail.title || detail.name || '未命名会话'}}</view>
+    <view class="header__sub" wx:if="{{detail.sessionDescription || detail.description}}">
+      {{detail.sessionDescription || detail.description}}
+    </view>
+  </view>
+
+  <card title="基本信息">
+    <view class="info-row">
+      <text class="info-row__label">所属 Agent</text>
+      <text class="info-row__value">{{detail.name || '-'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">模型</text>
+      <text class="info-row__value">{{detail.modelName || '未配置'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">权限模式</text>
+      <text class="info-row__value">{{permissionText}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建者</text>
+      <text class="info-row__value">{{detail.creator || detail.owner || '-'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建时间</text>
+      <text class="info-row__value">{{createTime}}</text>
+    </view>
+  </card>
+
+  <card title="模型能力" wx:if="{{capabilities.length}}">
+    <view class="caps">
+      <t-tag
+        wx:for="{{capabilities}}"
+        wx:key="*this"
+        theme="primary"
+        variant="light"
+        size="medium"
+      >{{item}}</t-tag>
+    </view>
+  </card>
+
+  <card title="系统提示词" wx:if="{{detail.systemPrompt}}">
+    <text class="prompt">{{detail.systemPrompt}}</text>
+  </card>
+
+  <card title="MCP 服务 ({{detail.mcpList.length || 0}})" wx:if="{{detail.mcpList.length}}">
+    <view class="tag-item" wx:for="{{detail.mcpList}}" wx:key="mcpId">
+      <text class="tag-item__name">{{item.mcpName}}</text>
+      <text class="tag-item__desc" wx:if="{{item.mcpDescription}}">{{item.mcpDescription}}</text>
+    </view>
+  </card>
+
+  <card title="技能 ({{detail.skillList.length || 0}})" wx:if="{{detail.skillList.length}}">
+    <view class="tag-item" wx:for="{{detail.skillList}}" wx:key="skillId">
+      <text class="tag-item__name">{{item.skillName}}</text>
+      <text class="tag-item__desc" wx:if="{{item.skillDescription}}">{{item.skillDescription}}</text>
+    </view>
+  </card>
+
+  <!-- 底部操作栏 -->
+  <view class="action-bar">
+    <t-button class="action-bar__ws" theme="primary" size="medium" bindtap="onOpenWorkspace">
+      <t-icon name="folder" size="34rpx" />
+      <text class="action-bar__ws-text">查看工作区文件</text>
+    </t-button>
+  </view>
+</view>
+
+<loading wx:if="{{loading}}" fullscreen text="加载中" />

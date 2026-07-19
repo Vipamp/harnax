@@ -1,0 +1,43 @@
+/* ---- Card Component — Modern Minimal ---- */
+.ui-card {
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  margin: 24rpx 28rpx;
+  overflow: hidden;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid #F0F0F0;
+}
+
+.ui-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #F2F3F5;
+}
+
+.ui-card__title {
+  display: flex;
+  align-items: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1D2129;
+}
+
+.ui-card__bar {
+  width: 6rpx;
+  height: 28rpx;
+  background: #4F46E5;
+  border-radius: 3rpx;
+  margin-right: 18rpx;
+}
+
+.ui-card__extra {
+  font-size: 26rpx;
+  color: #86909C;
+  font-weight: 500;
+}
+
+.ui-card__body {
+  padding: 28rpx 32rpx;
+}

@@ -65,8 +65,12 @@ class ToolConfigAdaptorImplTest {
 
         private fun stubContext(toolDetails: List<ToolDetailDto>) {
             val specInfo = AgentSpecInfoResponse(
-                agentId = 1L, agentName = "Test", description = "", systemPrompt = "",
-                modelId = 1L, toolDetails = toolDetails,
+                agentId = 1L,
+                agentName = "Test",
+                description = "",
+                systemPrompt = "",
+                modelId = 1L,
+                toolDetails = toolDetails,
             )
             `when`(specContextHolder.get()).thenReturn(specInfo)
         }

@@ -1,0 +1,36 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索 MCP 名称" bind:search="onSearch" />
+
+  <view class="list">
+    <view
+      class="mcp-card"
+      wx:for="{{list}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onTapItem"
+    >
+      <view class="mcp-card__head">
+        <text class="mcp-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <text class="mcp-card__desc">{{item.description || '暂无描述'}}</text>
+      <view class="mcp-card__meta">
+        <text wx:if="{{item.transport}}" class="mcp-card__tag">{{item.transport}}</text>
+        <text wx:if="{{item.type}}" class="mcp-card__tag">{{item.type}}</text>
+      </view>
+      <view class="mcp-card__actions">
+        <text class="mcp-card__btn" catchtap="onToggle" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="mcp-card__btn" catchtap="onEdit" data-id="{{item.id}}" >编辑</text>
+        <text class="mcp-card__btn mcp-card__btn--danger" catchtap="onDelete" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无 MCP 服务，点击右下角创建" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

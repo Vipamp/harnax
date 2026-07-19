@@ -1,0 +1,16 @@
+{
+  "navigationBarTitleText": "API Key",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "search-bar": "/components/search-bar/index",
+    "status-tag": "/components/status-tag/index",
+    "empty-state": "/components/empty-state/index",
+    "loading": "/components/loading/index",
+    "t-search": "tdesign-miniprogram/search/search",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-tag": "tdesign-miniprogram/tag/tag",
+    "t-fab": "tdesign-miniprogram/fab/fab",
+    "t-pull-down-refresh": "tdesign-miniprogram/pull-down-refresh/pull-down-refresh",
+    "t-swipe-cell": "tdesign-miniprogram/swipe-cell/swipe-cell"
+  }
+}

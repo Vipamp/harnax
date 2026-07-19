@@ -205,7 +205,14 @@ open class ChannelChatService(
                 channelAdaptor.sendMessage(channel, message.sessionId, responseText)
                 logger.info("[Batch] Response sent for session=${message.sessionId}, text length=${responseText.length}")
             } else {
-                logger.warn("[Batch] Empty response, nothing sent for session=${message.sessionId}")
+                // Send fallback notification to user instead of silent no-op
+                val fallbackMsg = "\u26a0\ufe0f AI processing completed but returned no content. Please try again."
+                logger.warn("[Batch] Empty response for session=${message.sessionId}, sending fallback message")
+                try {
+                    channelAdaptor.sendMessage(channel, message.sessionId, fallbackMsg)
+                } catch (e: Exception) {
+                    logger.error("[Batch] Failed to send fallback message for session=${message.sessionId}: ${e.message}", e)
+                }
             }
             // Save AI reply to session
             saveAssistantMessage(message, responseText, channel)

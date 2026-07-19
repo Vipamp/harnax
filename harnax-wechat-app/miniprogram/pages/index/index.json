@@ -1,0 +1,14 @@
+{
+  "navigationBarTitleText": "仪表盘",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "loading": "/components/loading/index",
+    "t-grid": "tdesign-miniprogram/grid/grid",
+    "t-grid-item": "tdesign-miniprogram/grid-item/grid-item",
+    "t-cell": "tdesign-miniprogram/cell/cell",
+    "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-pull-down-refresh": "tdesign-miniprogram/pull-down-refresh/pull-down-refresh",
+    "t-badge": "tdesign-miniprogram/badge/badge"
+  }
+}

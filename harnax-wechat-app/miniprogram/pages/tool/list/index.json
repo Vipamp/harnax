@@ -1,0 +1,11 @@
+{
+  "navigationBarTitleText": "工具管理",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "search-bar": "/components/search-bar/index",
+    "empty-state": "/components/empty-state/index",
+    "loading": "/components/loading/index",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-popup": "tdesign-miniprogram/popup/popup"
+  }
+}

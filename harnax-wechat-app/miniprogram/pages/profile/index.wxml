@@ -1,0 +1,39 @@
+<view class="page">
+  <!-- 用户卡片 -->
+  <view class="user-card">
+    <view class="user-card__avatar">
+      <t-icon name="user" size="56rpx" color="#4F46E5" />
+    </view>
+    <view class="user-card__info">
+      <text class="user-card__name">{{userInfo.username || '未登录'}}</text>
+      <text class="user-card__nick" wx:if="{{userInfo.nickname}}">{{userInfo.nickname}}</text>
+      <text class="user-card__role" wx:if="{{userInfo.roles}}">{{userInfo.roles}}</text>
+    </view>
+  </view>
+
+  <!-- 服务器信息 -->
+  <view class="server-card" wx:if="{{baseUrl}}" bindtap="onCopyUrl">
+    <text class="server-card__label">服务器</text>
+    <text class="server-card__url">{{baseUrl}}</text>
+    <text class="server-card__copy">复制</text>
+  </view>
+
+  <!-- 系统管理菜单 -->
+  <t-cell-group title="系统管理" class="menu-card" bordered>
+    <t-cell
+      wx:for="{{menus}}"
+      wx:key="url"
+      title="{{item.title}}"
+      left-icon="{{item.icon}}"
+      arrow
+      hover
+      data-url="{{item.url}}"
+      bindtap="onGo"
+    />
+  </t-cell-group>
+
+  <!-- 退出登录 -->
+  <view class="logout-bar">
+    <t-button theme="danger" block bindtap="onLogout">退出登录</t-button>
+  </view>
+</view>

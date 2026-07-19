@@ -1,0 +1,36 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索渠道名称" bind:search="onSearch" />
+
+  <view class="list">
+    <view
+      class="ch-card"
+      wx:for="{{list}}"
+      wx:key="id"
+      data-id="{{item.id}}"
+      bindtap="onEdit"
+    >
+      <view class="ch-card__head">
+        <text class="ch-card__name">{{item.name}}</text>
+        <status-tag type="{{item.status === 1 ? 'success' : 'default'}}" text="{{item.status === 1 ? '启用' : '禁用'}}" />
+      </view>
+      <view class="ch-card__meta">
+        <text class="ch-card__tag">{{item.typeDisplayName || item.type}}</text>
+        <text wx:if="{{item.communicationMode}}" class="ch-card__tag ch-card__tag--gray">{{item.communicationMode}}</text>
+      </view>
+      <text class="ch-card__sub">{{item.agentName || ('Agent #' + item.agentId)}}</text>
+      <view class="ch-card__actions">
+        <text class="ch-card__btn" catchtap="onToggle" data-id="{{item.id}}" data-status="{{item.status}}" >{{item.status === 1 ? '禁用' : '启用'}}</text>
+        <text class="ch-card__btn" catchtap="onEdit" data-id="{{item.id}}" >编辑</text>
+        <text class="ch-card__btn ch-card__btn--danger" catchtap="onDelete" data-id="{{item.id}}" >删除</text>
+      </view>
+    </view>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无渠道，点击右下角创建" />
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{noMore && list.length > 0}}" class="load-more">没有更多了</view>
+
+  <t-fab icon="add" bind:click="onCreate" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

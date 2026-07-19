@@ -1,0 +1,85 @@
+<view class="page">
+  <search-bar value="{{keyword}}" placeholder="搜索工具名称或描述" bind:search="onSearch" />
+
+  <view class="list" wx:if="{{!loading}}">
+    <view
+      class="tool-card"
+      wx:for="{{list}}"
+      wx:key="name"
+      data-item="{{item}}"
+      bindtap="onTapItem"
+    >
+      <view class="tool-card__head">
+        <view class="tool-card__icon">
+          <t-icon name="tools" size="40rpx" color="#4F46E5" />
+        </view>
+        <view class="tool-card__title">
+          <text class="tool-card__name">{{item.localName}}</text>
+          <text wx:if="{{item.showTechName}}" class="tool-card__tech">{{item.name}}</text>
+        </view>
+        <t-icon name="chevron-right" size="36rpx" color="#C9CDD4" />
+      </view>
+      <text class="tool-card__desc">{{item.description || '暂无描述'}}</text>
+      <view class="tool-card__meta">
+        <text wx:if="{{item.envCount > 0}}" class="tool-card__tag tool-card__tag--env">环境参数 {{item.envCount}}</text>
+        <text wx:if="{{item.needConfirmFlag}}" class="tool-card__tag tool-card__tag--warn">需确认</text>
+        <text wx:if="{{item.requiredFlag}}" class="tool-card__tag tool-card__tag--req">必需</text>
+      </view>
+    </view>
+  </view>
+
+  <empty-state wx:if="{{!loading && list.length === 0}}" text="暂无内置工具" />
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>
+
+<!-- 工具详情弹层 -->
+<t-popup visible="{{detailVisible}}" placement="bottom" bind:visible-change="onCloseDetail">
+  <view class="td" wx:if="{{current}}">
+    <view class="td__head">
+      <view class="td__title">
+        <text class="td__name">{{current.localName}}</text>
+        <text wx:if="{{current.showTechName}}" class="td__tech">{{current.name}}</text>
+      </view>
+      <t-icon name="close" size="40rpx" color="#86909C" bindtap="onCloseDetail" />
+    </view>
+
+    <scroll-view scroll-y class="td__body">
+      <view class="td__section">
+        <text class="td__label">描述</text>
+        <text class="td__text">{{current.description || '暂无描述'}}</text>
+      </view>
+
+      <view class="td__section">
+        <text class="td__label">策略</text>
+        <view class="td__flags">
+          <text class="tool-card__tag {{current.needConfirmFlag ? 'tool-card__tag--warn' : 'tool-card__tag--off'}}">
+            {{current.needConfirmFlag ? '调用需确认' : '无需确认'}}
+          </text>
+          <text class="tool-card__tag {{current.requiredFlag ? 'tool-card__tag--req' : 'tool-card__tag--off'}}">
+            {{current.requiredFlag ? '必需工具' : '可选工具'}}
+          </text>
+        </view>
+      </view>
+
+      <view class="td__section" wx:if="{{envParams.length}}">
+        <text class="td__label">环境参数 ({{envParams.length}})</text>
+        <view class="env" wx:for="{{envParams}}" wx:key="envParamName">
+          <view class="env__top">
+            <text class="env__name">{{item.envParamName}}</text>
+            <view class="env__badges">
+              <text wx:if="{{item.required}}" class="env__badge env__badge--req">必填</text>
+              <text wx:if="{{item.secret}}" class="env__badge env__badge--secret">敏感</text>
+            </view>
+          </view>
+          <text wx:if="{{item.description}}" class="env__desc">{{item.description}}</text>
+          <text wx:if="{{item.defaultValue}}" class="env__default">默认：{{item.defaultValue}}</text>
+        </view>
+      </view>
+
+      <view class="td__section" wx:else>
+        <text class="td__label">环境参数</text>
+        <text class="td__text">无需额外环境参数</text>
+      </view>
+    </scroll-view>
+  </view>
+</t-popup>

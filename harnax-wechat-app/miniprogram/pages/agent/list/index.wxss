@@ -1,0 +1,88 @@
+/* ---- Agent List — Modern Minimal ---- */
+.agent-card {
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  padding: 32rpx;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid #F0F0F0;
+}
+
+.agent-card:active {
+  background: #F7F8FA;
+}
+
+.agent-card__top {
+  display: flex;
+  align-items: flex-start;
+}
+
+.agent-card__avatar {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 16rpx;
+  background: #4F46E5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+
+.agent-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-card__name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agent-card__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1D2129;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 400rpx;
+}
+
+.agent-card__desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 26rpx;
+  color: #86909C;
+  margin-top: 10rpx;
+  line-height: 1.6;
+}
+
+.agent-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  color: #4E5969;
+  font-weight: 500;
+}
+
+.agent-card__footer {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #F2F3F5;
+}
+
+.agent-card__stat {
+  font-size: 24rpx;
+  color: #86909C;
+  background: #F2F3F5;
+  padding: 8rpx 22rpx;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}

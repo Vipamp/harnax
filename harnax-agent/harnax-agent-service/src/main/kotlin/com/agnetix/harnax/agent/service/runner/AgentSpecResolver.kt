@@ -152,8 +152,8 @@ class AgentSpecResolver(
                 object : TypeReference<List<Map<String, Any>>>() {},
             )
             list.flatMap { config ->
-                parseEnvBindings(config["env_bindings"])
-            }.toMap()
+                parseEnvBindings(config["env_bindings"]).entries
+            }.associate { it.key to it.value }
         } catch (e: Exception) {
             log.warn("Failed to parse legacy env bindings JSON: ${e.message}")
             emptyMap()

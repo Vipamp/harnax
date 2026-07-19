@@ -1,0 +1,40 @@
+/* ---- Loading — Modern Minimal ---- */
+.loading-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60rpx 0;
+}
+
+.loading-fullscreen {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(247, 248, 250, 0.8);
+  z-index: 999;
+}
+
+.loading-spinner {
+  width: 56rpx;
+  height: 56rpx;
+  border: 6rpx solid #F0F0F0;
+  border-top-color: #4F46E5;
+  border-radius: 50%;
+  animation: loading-rotate 0.75s linear infinite;
+}
+
+.loading-text {
+  margin-top: 24rpx;
+  font-size: 26rpx;
+  color: #86909C;
+  font-weight: 500;
+}
+
+@keyframes loading-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}

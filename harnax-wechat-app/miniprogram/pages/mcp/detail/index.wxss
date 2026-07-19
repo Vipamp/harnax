@@ -1,0 +1,46 @@
+/* ---- MCP Detail — Modern Minimal ---- */
+.page { padding-bottom: 140rpx; }
+
+.header {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 52rpx 32rpx 36rpx;
+  background: #FFFFFF;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.header__name {
+  margin-bottom: 16rpx; font-size: 40rpx; font-weight: 600;
+  color: #1D2129; word-break: break-all; text-align: center;
+}
+
+.info-row { display: flex; padding: 14rpx 0; }
+.info-row__label { width: 160rpx; flex-shrink: 0; font-size: 28rpx; color: #86909C; font-weight: 500; }
+.info-row__value { flex: 1; font-size: 28rpx; color: #1D2129; word-break: break-all; }
+
+.code-block {
+  display: block; font-size: 24rpx; color: #4E5969; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-all;
+  background: #F7F8FA; border-radius: var(--radius-md); padding: 24rpx;
+  border: 1rpx solid #F0F0F0;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+.test-result { margin-top: 24rpx; font-size: 26rpx; padding: 18rpx 24rpx; border-radius: var(--radius-md); font-weight: 500; }
+.test-result--ok { color: #00A870; background: #E8F8F2; }
+.test-result--fail { color: #E34D59; background: #FDECEE; }
+
+.tag-item { padding: 18rpx 0; border-bottom: 1rpx solid #F2F3F5; }
+.tag-item:last-child { border-bottom: none; }
+.tag-item__name { display: block; font-size: 28rpx; color: #1D2129; font-weight: 600; }
+.tag-item__desc { display: block; font-size: 24rpx; color: #86909C; margin-top: 8rpx; }
+
+.action-bar {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 16rpx;
+  padding: 20rpx 28rpx;
+  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  box-shadow: 0 -1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border-top: 1rpx solid #F0F0F0;
+}
+.action-bar .btn { flex: 1; height: 80rpx; border-radius: var(--radius-md); }

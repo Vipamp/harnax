@@ -57,6 +57,10 @@ class FeishuWebSocketMode(
     companion object {
         // Max number of message IDs to keep per channel before cleanup
         private const val MAX_PROCESSED_IDS = 1000
+
+        // Feishu text message content limit (bytes). The actual API limit is ~150KB for content JSON;
+        // use a conservative 20KB per chunk to leave headroom for JSON wrapper and metadata.
+        private const val MAX_MESSAGE_CHUNK_BYTES = 20_000
     }
 
     override fun getModeName(): String = "websocket"
@@ -192,6 +196,10 @@ class FeishuWebSocketMode(
     /**
      * Send text message
      * Sent via Feishu Open API (requires tenant_access_token)
+     *
+     * Automatically splits long messages into chunks to stay within Feishu's
+     * message size limit (~150KB content JSON). Each chunk is sent as a separate
+     * message to preserve the full response.
      */
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         val appId = channel.appId
@@ -208,8 +216,28 @@ class FeishuWebSocketMode(
         // Get tenant_access_token
         val token = getTenantAccessToken(appId, appSecret)
 
-        // Build message body (must include receive_id)
-        // Note: Feishu API requires content field to be JSON string, not object
+        // Split long messages into chunks to respect Feishu's content size limit
+        val chunks = splitMessageIntoChunks(message, MAX_MESSAGE_CHUNK_BYTES)
+        if (chunks.size > 1) {
+            logger.info("Splitting long message into {} chunks for session={}, totalLength={}", chunks.size, sessionId, message.length)
+        }
+
+        for ((index, chunk) in chunks.withIndex()) {
+            sendSingleMessage(channel, sessionId, chunk, token, index + 1, chunks.size)
+        }
+    }
+
+    /**
+     * Send a single message chunk to Feishu.
+     */
+    private suspend fun sendSingleMessage(
+        channel: ChannelSpec,
+        sessionId: String,
+        message: String,
+        token: String,
+        chunkIndex: Int,
+        totalChunks: Int,
+    ) {
         val contentJson = objectMapper.writeValueAsString(mapOf("text" to message))
         val messageBody = mapOf(
             "receive_id" to sessionId,
@@ -217,9 +245,12 @@ class FeishuWebSocketMode(
             "content" to contentJson,
         )
 
-        logger.debug("Sending Feishu message: receive_id={}, msg_type={}, content={}", sessionId, "text", message)
+        if (totalChunks > 1) {
+            logger.debug("Sending Feishu message chunk {}/{}: receive_id={}, length={}", chunkIndex, totalChunks, sessionId, message.length)
+        } else {
+            logger.debug("Sending Feishu message: receive_id={}, msg_type={}, contentLength={}", sessionId, "text", message.length)
+        }
 
-        // Call Feishu Open API to send message
         val url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
         val response = httpClient.postJson(
             url,
@@ -230,10 +261,72 @@ class FeishuWebSocketMode(
         )
 
         if (response is PlatformResponse.Error) {
-            logger.error("Feishu API error response: status={}, body={}", response.statusCode, response.body)
+            logger.error("Feishu API error response: status={}, body={}, chunk={}/{}", response.statusCode, response.body, chunkIndex, totalChunks)
         }
 
         handleSendResponse(response)
+    }
+
+    /**
+     * Split a message into chunks based on byte size limit.
+     * Tries to split at newline boundaries to preserve readability.
+     */
+    private fun splitMessageIntoChunks(message: String, maxBytes: Int): List<String> {
+        val messageBytes = message.toByteArray(Charsets.UTF_8)
+        if (messageBytes.size <= maxBytes) {
+            return listOf(message)
+        }
+
+        val chunks = mutableListOf<String>()
+        var start = 0
+
+        while (start < message.length) {
+            val remaining = message.substring(start)
+            val remainingBytes = remaining.toByteArray(Charsets.UTF_8)
+
+            if (remainingBytes.size <= maxBytes) {
+                chunks.add(remaining)
+                break
+            }
+
+            // Find a safe split point: prefer newline, then space, then hard split
+            var end = start + estimateCharLimit(message, start, maxBytes)
+            end = end.coerceAtMost(message.length)
+
+            // Try to find a newline near the end for clean split
+            val searchStart = (end - 200).coerceAtLeast(start)
+            val newlinePos = message.lastIndexOf('\n', end - 1)
+            if (newlinePos >= searchStart && newlinePos > start) {
+                end = newlinePos + 1
+            } else {
+                // Try to find a space for word-boundary split
+                val spacePos = message.lastIndexOf(' ', end - 1)
+                if (spacePos >= searchStart && spacePos > start) {
+                    end = spacePos + 1
+                }
+            }
+
+            chunks.add(message.substring(start, end))
+            start = end
+        }
+
+        return chunks
+    }
+
+    /**
+     * Estimate how many characters fit within the byte limit starting from a given position.
+     * For ASCII-heavy text, 1 char ≈ 1 byte; for CJK, 1 char ≈ 3 bytes.
+     */
+    private fun estimateCharLimit(message: String, start: Int, maxBytes: Int): Int {
+        var bytes = 0
+        var chars = 0
+        for (i in start until message.length) {
+            val charBytes = message[i].toString().toByteArray(Charsets.UTF_8).size
+            if (bytes + charBytes > maxBytes) break
+            bytes += charBytes
+            chars++
+        }
+        return chars
     }
 
     /**

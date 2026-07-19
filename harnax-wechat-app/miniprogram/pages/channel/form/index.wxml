@@ -1,0 +1,44 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="渠道名称" value="{{form.name}}" placeholder="如 企业微信客服" data-field="name" bind:change="onInput" clearable />
+    <picker mode="selector" range="{{channelTypeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <t-cell title="渠道类型" note="{{channelTypeLabels[typeIndex]}}" arrow hover />
+    </picker>
+    <picker mode="selector" range="{{agentNames}}" value="{{agentIndex}}" bindchange="onAgentChange">
+      <t-cell title="关联 Agent" arrow hover>
+        <text slot="note" class="{{agentIndex < 0 ? 'text-placeholder' : ''}}">{{agentIndex >= 0 ? agentNames[agentIndex] : '请选择 Agent'}}</text>
+      </t-cell>
+    </picker>
+    <picker mode="selector" range="{{commModeLabels}}" value="{{commModeIndex}}" bindchange="onCommModeChange">
+      <t-cell title="通信模式" note="{{commModeLabels[commModeIndex]}}" arrow hover />
+    </picker>
+    <view class="form-item form-item--row">
+      <view class="form-label">自动监听</view>
+      <t-switch value="{{form.enabled === 1}}"  bind:change="onEnabledChange" />
+    </view>
+  </t-cell-group>
+
+  <!-- 类型专属配置 -->
+  <t-cell-group bordered>
+    <block wx:if="{{form.type === 'wecom'}}">
+      <t-input label="Token" value="{{form.token}}" placeholder="企业微信校验 Token" data-field="token" bind:change="onInput" clearable />
+      <t-input label="EncodingAESKey" value="{{form.encodingAesKey}}" placeholder="消息加密密钥" data-field="encodingAesKey" bind:change="onInput" clearable />
+    </block>
+    <block wx:elif="{{form.type === 'feishu' || form.type === 'dingtalk'}}">
+      <t-input label="{{form.type === 'dingtalk' ? 'App Key' : 'App ID'}}" value="{{form.appId}}" placeholder="应用标识" data-field="appId" bind:change="onInput" clearable />
+      <t-input label="App Secret" value="{{form.appSecret}}" placeholder="应用密钥" data-field="appSecret" bind:change="onInput" clearable />
+    </block>
+    <block wx:elif="{{form.type === 'http'}}">
+      <t-input label="Webhook URL" value="{{form.webhookUrl}}" placeholder="HTTP 回调地址（可选）" data-field="webhookUrl" bind:change="onInput" clearable />
+    </block>
+    <t-textarea label="描述" value="{{form.description}}" placeholder="渠道用途说明" data-field="description" bind:change="onInput" autosize maxlength="-1" />
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

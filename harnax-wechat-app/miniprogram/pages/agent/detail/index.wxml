@@ -1,0 +1,69 @@
+<view class="page" wx:if="{{detail}}" >
+  <!-- 头部 -->
+  <view class="header">
+    <view class="header__avatar">
+      <t-icon name="robot" size="60rpx" color="#4F46E5" />
+    </view>
+    <view class="header__name">{{detail.name}}</view>
+    <status-tag
+      type="{{detail.status === 1 ? 'success' : 'default'}}"
+      text="{{detail.status === 1 ? '已启用' : '已禁用'}}"
+    />
+  </view>
+
+  <card title="基本信息">
+    <view class="info-row">
+      <text class="info-row__label">描述</text>
+      <text class="info-row__value">{{detail.description || '暂无描述'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">模型</text>
+      <text class="info-row__value">{{detail.modelName || '未配置'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建者</text>
+      <text class="info-row__value">{{detail.creator || '-'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建时间</text>
+      <text class="info-row__value">{{createTime}}</text>
+    </view>
+  </card>
+
+  <card title="系统提示词">
+    <md wx:if="{{detail.systemPrompt}}" content="{{detail.systemPrompt}}" />
+    <text wx:else class="prompt">未设置系统提示词</text>
+  </card>
+
+  <card title="工具 ({{detail.toolList.length || 0}})" wx:if="{{detail.toolList.length}}" >
+    <view class="tag-item" wx:for="{{detail.toolList}}" wx:key="toolId">
+      <text class="tag-item__name">{{item.toolDisplayNameZh || item.toolDisplayName || item.toolName}}</text>
+      <text class="tag-item__desc" wx:if="{{item.toolDescription}}" >{{item.toolDescription}}</text>
+    </view>
+  </card>
+
+  <card title="MCP 服务 ({{detail.mcpList.length || 0}})" wx:if="{{detail.mcpList.length}}" >
+    <view class="tag-item" wx:for="{{detail.mcpList}}" wx:key="mcpId">
+      <text class="tag-item__name">{{item.mcpName}}</text>
+      <text class="tag-item__desc" wx:if="{{item.mcpDescription}}" >{{item.mcpDescription}}</text>
+    </view>
+  </card>
+
+  <card title="技能 ({{detail.skillList.length || 0}})" wx:if="{{detail.skillList.length}}" >
+    <view class="tag-item" wx:for="{{detail.skillList}}" wx:key="skillId">
+      <text class="tag-item__name">{{item.skillName}}</text>
+      <text class="tag-item__desc" wx:if="{{item.skillDescription}}" >{{item.skillDescription}}</text>
+    </view>
+  </card>
+
+  <!-- 底部操作栏 -->
+  <view class="action-bar">
+    <t-button theme="default" size="small" variant="outline" bindtap="onToggle">
+      {{detail.status === 1 ? '禁用' : '启用'}}
+    </t-button>
+    <t-button theme="default" size="small" variant="outline" bindtap="onEdit">编辑</t-button>
+    <t-button theme="danger" size="small" bindtap="onDelete">删除</t-button>
+  </view>
+</view>
+
+<loading wx:if="{{loading}}" fullscreen text="加载中" />

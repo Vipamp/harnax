@@ -1,0 +1,199 @@
+/* ---- Tool List — Modern Minimal ---- */
+.list {
+  padding: 8rpx 24rpx 40rpx;
+}
+
+.tool-card {
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  padding: 26rpx 28rpx;
+  margin-bottom: 20rpx;
+  border: 1rpx solid #F0F0F0;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.03);
+}
+.tool-card:active {
+  background: #F7F8FA;
+}
+.tool-card__head {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+.tool-card__icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
+  background: #EEF2FF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.tool-card__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+.tool-card__name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1D2129;
+}
+.tool-card__tech {
+  font-size: 22rpx;
+  color: #C9CDD4;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+}
+.tool-card__desc {
+  display: block;
+  font-size: 26rpx;
+  color: #86909C;
+  line-height: 1.6;
+  margin: 18rpx 0 0;
+}
+.tool-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+.tool-card__tag {
+  font-size: 22rpx;
+  border-radius: var(--radius-full);
+  padding: 4rpx 18rpx;
+  font-weight: 500;
+}
+.tool-card__tag--env {
+  color: #4F46E5;
+  background: #EEF2FF;
+}
+.tool-card__tag--warn {
+  color: #ED7B2F;
+  background: #FEF3EA;
+}
+.tool-card__tag--req {
+  color: #E34D59;
+  background: #FDECEE;
+}
+.tool-card__tag--off {
+  color: #86909C;
+  background: #F2F3F5;
+}
+
+/* 详情弹层 */
+.td {
+  display: flex;
+  flex-direction: column;
+  max-height: 82vh;
+  border-radius: 24rpx 24rpx 0 0;
+  background: #FFFFFF;
+  overflow: hidden;
+}
+.td__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+.td__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  margin-right: 20rpx;
+}
+.td__name {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1D2129;
+}
+.td__tech {
+  font-size: 22rpx;
+  color: #C9CDD4;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+}
+.td__body {
+  max-height: 64vh;
+  padding: 8rpx 28rpx 36rpx;
+}
+.td__section {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #F2F3F5;
+}
+.td__section:last-child {
+  border-bottom: none;
+}
+.td__label {
+  display: block;
+  font-size: 24rpx;
+  color: #86909C;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+.td__text {
+  font-size: 28rpx;
+  color: #1D2129;
+  line-height: 1.7;
+}
+.td__flags {
+  display: flex;
+  gap: 12rpx;
+}
+
+.env {
+  background: #F7F8FA;
+  border-radius: 14rpx;
+  padding: 20rpx 22rpx;
+  margin-bottom: 16rpx;
+  border: 1rpx solid #F0F0F0;
+}
+.env:last-child {
+  margin-bottom: 0;
+}
+.env__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.env__name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1D2129;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+}
+.env__badges {
+  display: flex;
+  gap: 10rpx;
+}
+.env__badge {
+  font-size: 20rpx;
+  border-radius: var(--radius-full);
+  padding: 2rpx 14rpx;
+  font-weight: 500;
+}
+.env__badge--req {
+  color: #E34D59;
+  background: #FDECEE;
+}
+.env__badge--secret {
+  color: #ED7B2F;
+  background: #FEF3EA;
+}
+.env__desc {
+  display: block;
+  font-size: 24rpx;
+  color: #86909C;
+  line-height: 1.6;
+  margin-top: 10rpx;
+}
+.env__default {
+  display: block;
+  font-size: 22rpx;
+  color: #C9CDD4;
+  margin-top: 8rpx;
+  font-family: "SF Mono", "JetBrains Mono", monospace;
+}

@@ -226,10 +226,22 @@ class AgentSpecResolverTest {
         @Test
         fun `resolve should build skill specs from skillDetails`() {
             val skills = listOf(
-                SkillDetailDto(id = 1L, name = "code-review", description = "Review code",
-                    skillmd = "# Code Review", storagePath = "1/code-review", resources = ""),
-                SkillDetailDto(id = 2L, name = "git-commit", description = "Commit changes",
-                    skillmd = "# Git Commit", storagePath = "2/git-commit", resources = ""),
+                SkillDetailDto(
+                    id = 1L,
+                    name = "code-review",
+                    description = "Review code",
+                    skillmd = "# Code Review",
+                    storagePath = "1/code-review",
+                    resources = "",
+                ),
+                SkillDetailDto(
+                    id = 2L,
+                    name = "git-commit",
+                    description = "Commit changes",
+                    skillmd = "# Git Commit",
+                    storagePath = "2/git-commit",
+                    resources = "",
+                ),
             )
             val spec = buildSpecResponse(skillDetails = skills)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)

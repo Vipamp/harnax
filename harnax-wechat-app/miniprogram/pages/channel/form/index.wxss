@@ -1,0 +1,4 @@
+/* pages/channel/form/index.wxss */
+.text-placeholder {
+  color: #b0b0b0;
+}

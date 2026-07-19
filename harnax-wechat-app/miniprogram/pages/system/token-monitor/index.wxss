@@ -1,0 +1,181 @@
+/* ---- Token Monitor — Modern Minimal ---- */
+.stats-card {
+  background: #4F46E5;
+  border-radius: var(--radius-lg);
+  padding: 36rpx;
+  margin: 28rpx;
+  color: #fff;
+}
+.stats-card--today {
+  background: #00A870;
+}
+.stats-card__title {
+  font-size: 32rpx; font-weight: 600; margin-bottom: 24rpx;
+}
+.stats-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 24rpx;
+}
+.stat-item { display: flex; flex-direction: column; }
+.stat-item__label { font-size: 24rpx; opacity: 0.8; margin-bottom: 10rpx; font-weight: 500; }
+.stat-item__value { font-size: 32rpx; font-weight: 600; word-break: break-all; }
+.stat-item__value--cost { color: #FDE68A; }
+
+.trend-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 24rpx 28rpx; background: #fff;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+.trend-head__title { font-size: 30rpx; font-weight: 600; color: #1D2129; }
+.trend-head__picker { font-size: 26rpx; color: #4F46E5; font-weight: 500; }
+
+.trend-list { background: #fff; }
+.trend-row {
+  display: flex; align-items: center;
+  padding: 22rpx 28rpx; border-bottom: 1rpx solid #F2F3F5;
+}
+.trend-row:last-child { border-bottom: none; }
+.trend-row__date {
+  flex: 1; font-size: 26rpx; color: #4E5969;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+.trend-row__tokens {
+  flex: 1; text-align: right; font-size: 26rpx;
+  color: #4F46E5; font-weight: 500;
+}
+.trend-row__cost {
+  width: 160rpx; text-align: right; font-size: 26rpx;
+  color: #ED7B2F; font-weight: 500;
+}
+
+/* ---- 图表卡片 ---- */
+.chart-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  padding: 32rpx 28rpx;
+  margin: 0 28rpx 28rpx;
+  border: 1rpx solid #F0F0F0;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.03);
+}
+.chart-card__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1D2129;
+  margin-bottom: 24rpx;
+}
+
+/* 占比条 */
+.ratio-bar {
+  display: flex;
+  height: 32rpx;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: #F2F3F5;
+}
+.ratio-bar__seg {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.ratio-bar__seg--prompt { background: #4F46E5; }
+.ratio-bar__seg--completion { background: #00A870; }
+.ratio-legend {
+  display: flex;
+  gap: 40rpx;
+  margin-top: 20rpx;
+}
+.ratio-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+.ratio-legend__dot {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 4rpx;
+}
+.ratio-legend__dot--prompt { background: #4F46E5; }
+.ratio-legend__dot--completion { background: #00A870; }
+.ratio-legend__text {
+  font-size: 24rpx;
+  color: #86909C;
+  font-weight: 500;
+}
+
+/* 模型分布条 */
+.mbar {
+  margin-bottom: 22rpx;
+}
+.mbar:last-child { margin-bottom: 0; }
+.mbar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10rpx;
+}
+.mbar__name {
+  font-size: 26rpx;
+  color: #1D2129;
+  font-weight: 500;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mbar__value {
+  font-size: 24rpx;
+  color: #4F46E5;
+  font-weight: 600;
+}
+.mbar__track {
+  height: 20rpx;
+  border-radius: var(--radius-full);
+  background: #F2F3F5;
+  overflow: hidden;
+}
+.mbar__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #6366F1, #4F46E5);
+  transition: width 0.4s ease;
+}
+
+/* 趋势柱状图 */
+.trend-chart {
+  background: #fff;
+  padding: 32rpx 24rpx 20rpx;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+.trend-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  height: 260rpx;
+  gap: 8rpx;
+}
+.tbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+.tbar__col {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.tbar__fill {
+  width: 60%;
+  max-width: 36rpx;
+  border-radius: 6rpx 6rpx 0 0;
+  background: linear-gradient(180deg, #6366F1, #4F46E5);
+  transition: height 0.4s ease;
+}
+.tbar__label {
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: #C9CDD4;
+  transform: scale(0.9);
+  white-space: nowrap;
+}

@@ -1,0 +1,24 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="用户名" value="{{form.username}}" placeholder="请输入用户名" data-field="username" bind:change="onInput" disabled="{{isEdit}}" clearable />
+    <t-input wx:if="{{!isEdit}}" label="密码" value="{{form.password}}" placeholder="请输入密码" type="password" data-field="password" bind:change="onInput" clearable />
+    <t-input label="昵称" value="{{form.nickname}}" placeholder="昵称（可选）" data-field="nickname" bind:change="onInput" clearable />
+    <t-input label="手机号" value="{{form.phone}}" placeholder="手机号（可选）" data-field="phone" bind:change="onInput" clearable />
+    <t-input label="邮箱" value="{{form.email}}" placeholder="邮箱（可选）" data-field="email" bind:change="onInput" clearable />
+    <picker mode="selector" range="{{roles}}" value="{{roleIndex}}" bindchange="onRoleChange">
+      <t-cell title="角色" note="{{roles[roleIndex]}}" arrow hover />
+    </picker>
+    <view class="form-item form-item--row">
+      <view class="form-label">启用状态</view>
+      <t-switch value="{{form.status === 1}}"  bind:change="onStatusChange" />
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

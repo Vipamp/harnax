@@ -1,0 +1,37 @@
+/* ---- Skill Detail — Modern Minimal ---- */
+.page { padding-bottom: 140rpx; }
+
+.header {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 52rpx 32rpx 36rpx;
+  background: #FFFFFF;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.header__name {
+  margin-bottom: 16rpx; font-size: 40rpx; font-weight: 600;
+  color: #1D2129; word-break: break-all; text-align: center;
+}
+
+.info-row { display: flex; padding: 14rpx 0; }
+.info-row__label { width: 140rpx; flex-shrink: 0; font-size: 28rpx; color: #86909C; font-weight: 500; }
+.info-row__value { flex: 1; font-size: 28rpx; color: #1D2129; word-break: break-all; }
+
+.code-block {
+  display: block; font-size: 24rpx; color: #4E5969; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-all;
+  background: #F7F8FA; border-radius: var(--radius-md); padding: 24rpx;
+  border: 1rpx solid #F0F0F0;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+}
+
+.action-bar {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; gap: 16rpx;
+  padding: 20rpx 28rpx;
+  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  box-shadow: 0 -1rpx 4rpx rgba(0, 0, 0, 0.04);
+  border-top: 1rpx solid #F0F0F0;
+}
+.action-bar .btn { flex: 1; height: 80rpx; border-radius: var(--radius-md); }

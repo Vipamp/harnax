@@ -1,0 +1,11 @@
+{
+  "navigationBarTitleText": "MCP 详情",
+  "usingComponents": {
+    "card": "/components/card/index",
+    "status-tag": "/components/status-tag/index",
+    "loading": "/components/loading/index",
+    "t-cell": "tdesign-miniprogram/cell/cell",
+    "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-tag": "tdesign-miniprogram/tag/tag"
+  }
+}

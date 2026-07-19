@@ -1,0 +1,78 @@
+/* ---- Session List — Modern Minimal ---- */
+.sess-card {
+  display: flex;
+  align-items: center;
+  background: #FFFFFF;
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  box-shadow: var(--shadow);
+  border: 1rpx solid var(--border-color);
+}
+
+.sess-card:active {
+  background: #F7F8FA;
+}
+
+.sess-card__icon {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: var(--radius-md);
+  background: #00A870;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+
+.sess-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sess-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sess-card__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1D2129;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 360rpx;
+}
+
+.sess-card__agent {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 24rpx;
+  color: #86909C;
+  margin-top: 8rpx;
+  font-weight: 500;
+}
+
+.sess-card__time {
+  display: block;
+  font-size: 22rpx;
+  color: #C9CDD4;
+  margin-top: 6rpx;
+}
+
+/* 左滑删除按钮 */
+.swipe-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 40rpx;
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  background: #E34D59;
+  color: #FFFFFF;
+  font-size: 28rpx;
+  font-weight: 600;
+}

@@ -1,0 +1,14 @@
+<view class="ui-card">
+  <view wx:if="{{title}}" class="ui-card__header">
+    <view class="ui-card__title">
+      <view wx:if="{{bar}}" class="ui-card__bar"></view>
+      <text>{{title}}</text>
+    </view>
+    <view class="ui-card__extra">
+      <slot name="extra"></slot>
+    </view>
+  </view>
+  <view class="ui-card__body">
+    <slot></slot>
+  </view>
+</view>

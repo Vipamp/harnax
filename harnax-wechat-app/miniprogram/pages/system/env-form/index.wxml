@@ -1,0 +1,23 @@
+<view class="page">
+  <t-cell-group bordered>
+    <t-input label="变量名" value="{{form.envKey}}" placeholder="如 OPENAI_API_KEY" data-field="envKey" bind:change="onInput" disabled="{{isEdit}}" clearable />
+    <t-textarea label="变量值" value="{{form.envValue}}" placeholder="{{isEdit && form.sensitive === 1 ? '留空则保持原值不变' : '变量值'}}" data-field="envValue" bind:change="onInput" autosize maxlength="-1" />
+    <t-input label="描述" value="{{form.description}}" placeholder="用途说明（可选）" data-field="description" bind:change="onInput" clearable />
+    <view class="form-item form-item--row">
+      <view class="form-label">敏感信息</view>
+      <t-switch value="{{form.sensitive === 1}}"  bind:change="onSensitiveChange" />
+    </view>
+    <view class="form-item form-item--row">
+      <view class="form-label">启用状态</view>
+      <t-switch value="{{form.enabled === 1}}"  bind:change="onEnabledChange" />
+    </view>
+  </t-cell-group>
+
+  <view class="submit-bar">
+    <t-button theme="primary" block loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      {{submitting ? '保存中...' : '保存'}}
+    </t-button>
+  </view>
+
+  <loading wx:if="{{loading}}" fullscreen text="加载中" />
+</view>

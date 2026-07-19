@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
@@ -22,7 +23,6 @@ import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
-import com.agnetix.harnax.entity.Model
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 import tools.jackson.core.type.TypeReference
@@ -462,12 +462,12 @@ class InternalApiController(
     // ========================================
 
     data class CapabilityToggleRequest(
-        val capability: String,  // "search" | "thinking" | "plan" | "bypass"
+        val capability: String, // "search" | "thinking" | "plan" | "bypass"
         val enable: Boolean,
     )
 
     data class PermissionModeRequest(
-        val mode: String,  // "DEFAULT" | "BYPASS" | "ACCEPT_EDITS" | "EXPLORE" | "DONT_ASK"
+        val mode: String, // "DEFAULT" | "BYPASS" | "ACCEPT_EDITS" | "EXPLORE" | "DONT_ASK"
     )
 
     /**
@@ -478,42 +478,44 @@ class InternalApiController(
     fun toggleCapability(
         @PathVariable sessionId: String,
         @RequestBody request: CapabilityToggleRequest,
-    ): ResultVo<String> = try {
-        val flag = if (request.enable) 1 else 0
-        val capability = request.capability.lowercase()
-        val now = java.time.LocalDateTime.now()
+    ): ResultVo<String> {
+        return try {
+            val flag = if (request.enable) 1 else 0
+            val capability = request.capability.lowercase()
+            val now = java.time.LocalDateTime.now()
 
-        if (sessionId.startsWith("chn-")) {
-            val channel = channelMapper.selectBySessionId(sessionId)
-                ?: return ResultVo.error("Channel not found: $sessionId")
-            when (capability) {
-                "search" -> channel.enableSearch = flag
-                "thinking" -> channel.enableThink = flag
-                "plan" -> channel.enablePlan = flag
-                "bypass" -> channel.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
-                else -> return ResultVo.error("Unknown capability: $capability")
+            if (sessionId.startsWith("chn-")) {
+                val channel = channelMapper.selectBySessionId(sessionId)
+                    ?: return ResultVo.error("Channel not found: $sessionId")
+                when (capability) {
+                    "search" -> channel.enableSearch = flag
+                    "thinking" -> channel.enableThink = flag
+                    "plan" -> channel.enablePlan = flag
+                    "bypass" -> channel.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
+                    else -> return ResultVo.error("Unknown capability: $capability")
+                }
+                channel.updateTime = now
+                channelMapper.updateById(channel)
+            } else {
+                val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                    ?: return ResultVo.error("Session not found: $sessionId")
+                when (capability) {
+                    "search" -> session.enableSearch = flag
+                    "thinking" -> session.enableThink = flag
+                    "plan" -> session.enablePlan = flag
+                    "bypass" -> session.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
+                    else -> return ResultVo.error("Unknown capability: $capability")
+                }
+                session.updateTime = now
+                sessionMapper.updateById(session)
             }
-            channel.updateTime = now
-            channelMapper.updateById(channel)
-        } else {
-            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-                ?: return ResultVo.error("Session not found: $sessionId")
-            when (capability) {
-                "search" -> session.enableSearch = flag
-                "thinking" -> session.enableThink = flag
-                "plan" -> session.enablePlan = flag
-                "bypass" -> session.permissionMode = if (request.enable) "BYPASS" else "DEFAULT"
-                else -> return ResultVo.error("Unknown capability: $capability")
-            }
-            session.updateTime = now
-            sessionMapper.updateById(session)
+
+            log.info("[Admin] Capability toggled: sessionId={}, capability={}, enable={}", sessionId, capability, request.enable)
+            ResultVo.success("OK")
+        } catch (e: Exception) {
+            log.error("Failed to toggle capability: sessionId={}", sessionId, e)
+            ResultVo.error("Failed to toggle capability: ${e.message}")
         }
-
-        log.info("[Admin] Capability toggled: sessionId={}, capability={}, enable={}", sessionId, capability, request.enable)
-        ResultVo.success("OK")
-    } catch (e: Exception) {
-        log.error("Failed to toggle capability: sessionId={}", sessionId, e)
-        ResultVo.error("Failed to toggle capability: ${e.message}")
     }
 
     /**
@@ -524,33 +526,35 @@ class InternalApiController(
     fun updatePermissionMode(
         @PathVariable sessionId: String,
         @RequestBody request: PermissionModeRequest,
-    ): ResultVo<String> = try {
-        val mode = request.mode.uppercase()
-        if (mode !in VALID_PERMISSION_MODES) {
-            return ResultVo.error("Invalid permission mode: '${request.mode}'. Valid: ${VALID_PERMISSION_MODES.joinToString(", ")}")
+    ): ResultVo<String> {
+        return try {
+            val mode = request.mode.uppercase()
+            if (mode !in VALID_PERMISSION_MODES) {
+                return ResultVo.error("Invalid permission mode: '${request.mode}'. Valid: ${VALID_PERMISSION_MODES.joinToString(", ")}")
+            }
+
+            val now = java.time.LocalDateTime.now()
+
+            if (sessionId.startsWith("chn-")) {
+                val channel = channelMapper.selectBySessionId(sessionId)
+                    ?: return ResultVo.error("Channel not found: $sessionId")
+                channel.permissionMode = mode
+                channel.updateTime = now
+                channelMapper.updateById(channel)
+            } else {
+                val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+                    ?: return ResultVo.error("Session not found: $sessionId")
+                session.permissionMode = mode
+                session.updateTime = now
+                sessionMapper.updateById(session)
+            }
+
+            log.info("[Admin] Permission mode updated: sessionId={}, mode={}", sessionId, mode)
+            ResultVo.success("OK")
+        } catch (e: Exception) {
+            log.error("Failed to update permission mode: sessionId={}", sessionId, e)
+            ResultVo.error("Failed to update permission mode: ${e.message}")
         }
-
-        val now = java.time.LocalDateTime.now()
-
-        if (sessionId.startsWith("chn-")) {
-            val channel = channelMapper.selectBySessionId(sessionId)
-                ?: return ResultVo.error("Channel not found: $sessionId")
-            channel.permissionMode = mode
-            channel.updateTime = now
-            channelMapper.updateById(channel)
-        } else {
-            val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
-                ?: return ResultVo.error("Session not found: $sessionId")
-            session.permissionMode = mode
-            session.updateTime = now
-            sessionMapper.updateById(session)
-        }
-
-        log.info("[Admin] Permission mode updated: sessionId={}, mode={}", sessionId, mode)
-        ResultVo.success("OK")
-    } catch (e: Exception) {
-        log.error("Failed to update permission mode: sessionId={}", sessionId, e)
-        ResultVo.error("Failed to update permission mode: ${e.message}")
     }
 
     companion object {

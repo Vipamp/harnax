@@ -1,0 +1,10 @@
+<t-search
+  value="{{value}}"
+  placeholder="{{placeholder}}"
+  shape="round"
+  clearable
+  bind:change="onTChange"
+  bind:submit="onTSubmit"
+  bind:clear="onTClear"
+  bind:action-click="onTSubmit"
+/>

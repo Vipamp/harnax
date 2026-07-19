@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "会话详情",
+  "usingComponents": {
+    "card": "/components/card/index",
+    "loading": "/components/loading/index",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-tag": "tdesign-miniprogram/tag/tag"
+  }
+}

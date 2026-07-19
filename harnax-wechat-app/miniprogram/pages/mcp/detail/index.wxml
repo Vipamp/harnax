@@ -1,0 +1,65 @@
+<view class="page" wx:if="{{detail}}" >
+  <view class="header">
+    <view class="header__name">{{detail.name}}</view>
+    <status-tag
+      type="{{detail.status === 1 ? 'success' : 'default'}}"
+      text="{{detail.status === 1 ? '已启用' : '已禁用'}}"
+    />
+  </view>
+
+  <card title="基本信息">
+    <view class="info-row">
+      <text class="info-row__label">描述</text>
+      <text class="info-row__value">{{detail.description || '暂无描述'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">传输方式</text>
+      <text class="info-row__value">{{detail.type || '-'}}</text>
+    </view>
+    <view class="info-row" wx:if="{{detail.command}}" >
+      <text class="info-row__label">启动命令</text>
+      <text class="info-row__value">{{detail.command}}</text>
+    </view>
+    <view class="info-row" wx:if="{{detail.url}}" >
+      <text class="info-row__label">服务 URL</text>
+      <text class="info-row__value">{{detail.url}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建者</text>
+      <text class="info-row__value">{{detail.creator || '-'}}</text>
+    </view>
+    <view class="info-row">
+      <text class="info-row__label">创建时间</text>
+      <text class="info-row__value">{{createTime}}</text>
+    </view>
+  </card>
+
+  <card title="连通性测试">
+    <t-button theme="default" block variant="outline" bindtap="onTest" disabled="{{testing}}" >
+      {{testing ? '测试中...' : '测试连接'}}
+    </t-button>
+    <view wx:if="{{testResult}}" class="test-result {{testOk ? 'test-result--ok' : 'test-result--fail'}}" >
+      {{testResult}}
+    </view>
+  </card>
+
+  <card title="可用工具 ({{tools.length}})">
+    <t-button theme="default" block variant="outline" bindtap="onListTools" disabled="{{loadingTools}}" >
+      {{loadingTools ? '加载中...' : '获取工具列表'}}
+    </t-button>
+    <view class="tag-item" wx:for="{{tools}}" wx:key="index">
+      <text class="tag-item__name">{{item.name || item.toolName || item}}</text>
+      <text class="tag-item__desc" wx:if="{{item.description}}" >{{item.description}}</text>
+    </view>
+  </card>
+
+  <view class="action-bar">
+    <t-button theme="default" size="small" variant="outline" bindtap="onToggle">
+      {{detail.status === 1 ? '禁用' : '启用'}}
+    </t-button>
+    <t-button theme="default" size="small" variant="outline" bindtap="onEdit">编辑</t-button>
+    <t-button theme="danger" size="small" bindtap="onDelete">删除</t-button>
+  </view>
+</view>
+
+<loading wx:if="{{loading}}" fullscreen text="加载中" />

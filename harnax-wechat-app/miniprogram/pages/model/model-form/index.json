@@ -1,0 +1,13 @@
+{
+  "navigationBarTitleText": "模型",
+  "usingComponents": {
+    "loading": "/components/loading/index",
+    "t-input": "tdesign-miniprogram/input/input",
+    "t-textarea": "tdesign-miniprogram/textarea/textarea",
+    "t-switch": "tdesign-miniprogram/switch/switch",
+    "t-cell": "tdesign-miniprogram/cell/cell",
+    "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-picker": "tdesign-miniprogram/picker/picker",
+    "t-picker-item": "tdesign-miniprogram/picker-item/picker-item"
+  }
+}

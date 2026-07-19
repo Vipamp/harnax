@@ -1,0 +1,248 @@
+<!-- pages/session/chat/index.wxml -->
+<view class="chat">
+  <!-- 顶部操作栏 -->
+  <view class="chat__topbar">
+    <view class="chat__topbar-btn" bindtap="onOpenDetail">
+      <t-icon name="info-circle" size="34rpx" color="#4F46E5" />
+      <text class="chat__topbar-text">详情</text>
+    </view>
+    <view class="chat__topbar-btn" bindtap="onOpenWorkspace">
+      <t-icon name="folder" size="34rpx" color="#4F46E5" />
+      <text class="chat__topbar-text">工作区</text>
+    </view>
+  </view>
+
+  <loading wx:if="{{loading}}" show="{{true}}" fullscreen="{{true}}" text="加载中" />
+
+  <!-- 加载失败状态 -->
+  <view wx:elif="{{loadError}}" class="chat__empty">
+    <t-icon class="chat__empty-icon" name="error-circle" size="80rpx" color="#C9CDD4" />
+    <text class="chat__empty-text">{{loadErrorMsg || '加载消息失败'}}</text>
+    <view class="chat__empty-btn" bindtap="onRetryLoad">重试</view>
+  </view>
+
+  <scroll-view
+    wx:else
+    class="chat__scroll"
+    scroll-y
+    scroll-into-view="{{scrollToId}}"
+    scroll-with-animation
+    enable-flex
+  >
+    <view class="chat__list">
+      <!-- 空消息状态 -->
+      <view wx:if="{{messages.length === 0 && !streaming}}" class="chat__empty">
+        <t-icon class="chat__empty-icon" name="chat" size="80rpx" color="#C9CDD4" />
+        <text class="chat__empty-text">暂无聊天记录，发送消息开始对话</text>
+      </view>
+      <view
+        wx:for="{{messages}}"
+        wx:key="id"
+        id="msg-{{item.id}}"
+        class="msg msg--{{item.role}}"
+      >
+        <!-- 用户消息 -->
+        <block wx:if="{{item.role === 'user'}}" >
+          <view class="user-wrap">
+            <view wx:if="{{item.images.length}}" class="user-imgs">
+              <image
+                wx:for="{{item.images}}"
+                wx:for-item="img"
+                wx:key="*this"
+                class="user-img"
+                src="{{img}}"
+                mode="aspectFill"
+                data-src="{{img}}"
+                bindtap="onPreviewImage"
+              />
+            </view>
+            <view wx:if="{{item.segments[0].content}}" class="bubble bubble--user">
+              <text>{{item.segments[0].content}}</text>
+            </view>
+            <text wx:if="{{item.timeText}}" class="msg__time">{{item.timeText}}</text>
+          </view>
+          <view class="avatar avatar--user">
+            <t-icon name="user-1" size="38rpx" color="#FFFFFF" />
+          </view>
+        </block>
+
+        <!-- 助手消息：按 segment 渲染 -->
+        <block wx:else>
+          <view class="avatar avatar--assistant">
+            <t-icon name="app" size="38rpx" color="#FFFFFF" />
+          </view>
+          <view class="assistant-wrap">
+          <view class="bubble bubble--assistant">
+            <view
+              wx:for="{{item.segments}}"
+              wx:for-item="seg"
+              wx:for-index="si"
+              wx:key="si"
+              class="seg"
+            >
+              <!-- 文本（Markdown 渲染） -->
+              <view wx:if="{{seg.type === 'text'}}" class="seg__text">
+                <md content="{{seg.content}}" />
+              </view>
+
+              <!-- 思考 -->
+              <view wx:elif="{{seg.type === 'thinking'}}" class="seg__thinking">
+                <view
+                  class="seg__thinking-head"
+                  bindtap="onToggleSeg"
+                  data-mid="{{item.id}}"
+                  data-sid="{{si}}"
+                >
+                  <t-icon class="seg__thinking-icon" name="chat-bubble-1" size="28rpx" color="#86909C" />
+                  <text class="seg__thinking-label">思考过程</text>
+                  <text class="seg__toggle">{{seg.collapsed ? '展开' : '收起'}}</text>
+                </view>
+                <view wx:if="{{!seg.collapsed}}" class="seg__thinking-body">
+                  <text space="nbsp">{{seg.content}}</text>
+                </view>
+              </view>
+
+              <!-- 工具调用 -->
+              <view wx:elif="{{seg.type === 'tool_call'}}" class="seg__tool">
+                <view
+                  class="seg__tool-head"
+                  bindtap="onToggleSeg"
+                  data-mid="{{item.id}}"
+                  data-sid="{{si}}"
+                >
+                  <t-icon class="seg__tool-icon" name="tools" size="28rpx" color="#4F46E5" />
+                  <text class="seg__tool-name">{{seg.toolName}}</text>
+                  <text
+                    wx:if="{{seg.confirmStatus === 'pending'}}"
+                    class="seg__tool-status seg__tool-status--pending"
+                  >待确认</text>
+                  <text
+                    wx:elif="{{seg.confirmStatus === 'confirmed'}}"
+                    class="seg__tool-status seg__tool-status--confirmed"
+                  >已确认</text>
+                  <text
+                    wx:elif="{{seg.confirmStatus === 'rejected'}}"
+                    class="seg__tool-status seg__tool-status--rejected"
+                  >已拒绝</text>
+                  <text
+                    wx:elif="{{!seg.toolResult}}"
+                    class="seg__tool-status seg__tool-status--calling"
+                  >调用中...</text>
+                  <text
+                    wx:elif="{{seg.toolResult}}"
+                    class="seg__tool-status seg__tool-status--done"
+                  >已完成</text>
+                  <text class="seg__toggle">{{seg.collapsed ? '展开' : '收起'}}</text>
+                </view>
+                <view wx:if="{{!seg.collapsed}}" class="seg__tool-body">
+                  <view class="seg__tool-label">参数</view>
+                  <view class="seg__code">{{seg.content}}</view>
+                  <block wx:if="{{seg.toolResult}}" >
+                    <view class="seg__tool-label">结果</view>
+                    <view class="seg__code">{{seg.toolResult}}</view>
+                  </block>
+                </view>
+              </view>
+            </view>
+
+            <!-- 空 assistant 占位（等待首个事件） -->
+            <view wx:if="{{item.segments.length === 0 && streaming}}" class="seg__typing">
+              <view class="dot"></view>
+              <view class="dot"></view>
+              <view class="dot"></view>
+            </view>
+          </view>
+          <text wx:if="{{item.timeText}}" class="msg__time">{{item.timeText}}</text>
+          </view>
+        </block>
+      </view>
+    </view>
+    <view class="chat__bottom-space"></view>
+  </scroll-view>
+
+  <!-- 工具确认条 -->
+  <view wx:if="{{pendingConfirm}}" class="confirm-bar">
+    <view class="confirm-bar__text">
+      Agent 请求调用 {{pendingConfirm.tools.length}} 个工具，是否允许？
+    </view>
+    <view class="confirm-bar__actions">
+      <t-button class="confirm-bar__btn confirm-bar__btn--reject" size="small" theme="default" variant="outline" bindtap="onConfirmTools" data-ok="false">拒绝</t-button>
+      <t-button class="confirm-bar__btn confirm-bar__btn--ok" size="small" theme="primary" bindtap="onConfirmTools" data-ok="true">允许</t-button>
+    </view>
+  </view>
+
+  <!-- 输入区 -->
+  <view class="input-area">
+    <!-- 会话参数开关 -->
+    <scroll-view class="opt-bar" scroll-x enhanced show-scrollbar="{{false}}">
+      <view
+        class="opt-chip {{enableThink ? 'opt-chip--active' : ''}} {{!modelSupportReasoning ? 'opt-chip--disabled' : ''}}"
+        bindtap="onToggleThink"
+      >
+        <t-icon name="lightbulb" size="30rpx" />
+        <text class="opt-chip__text">深度思考</text>
+      </view>
+      <view
+        class="opt-chip {{enableSearch ? 'opt-chip--active' : ''}} {{!modelSupportInternet ? 'opt-chip--disabled' : ''}}"
+        bindtap="onToggleSearch"
+      >
+        <t-icon name="search" size="30rpx" />
+        <text class="opt-chip__text">联网搜索</text>
+      </view>
+      <view
+        class="opt-chip {{enablePlan ? 'opt-chip--active' : ''}}"
+        bindtap="onTogglePlan"
+      >
+        <t-icon name="view-list" size="30rpx" />
+        <text class="opt-chip__text">计划模式</text>
+      </view>
+      <view
+        class="opt-chip {{permissionMode !== 'DEFAULT' ? 'opt-chip--active' : ''}}"
+        bindtap="onChoosePermission"
+      >
+        <t-icon name="lightning" size="30rpx" />
+        <text class="opt-chip__text">{{permissionText}}</text>
+        <t-icon name="chevron-down" size="26rpx" />
+      </view>
+    </scroll-view>
+
+    <!-- 待发送图片预览 -->
+    <view wx:if="{{pendingImages.length}}" class="img-strip">
+      <view class="img-strip__item" wx:for="{{pendingImages}}" wx:key="*this">
+        <image class="img-strip__img" src="{{item}}" mode="aspectFill" data-src="{{item}}" bindtap="onPreviewImage" />
+        <view class="img-strip__del" catchtap="onRemoveImage" data-index="{{index}}">
+          <t-icon name="close" size="22rpx" color="#FFFFFF" />
+        </view>
+      </view>
+    </view>
+
+    <view class="input-bar">
+      <view class="input-bar__img" bindtap="onChooseImage">
+        <t-icon name="image" size="44rpx" color="#86909C" />
+      </view>
+      <t-input
+        class="input-bar__input"
+        value="{{inputValue}}"
+        placeholder="输入消息…"
+        confirm-type="send"
+        bind:change="onInput"
+        bind:enter="onSend"
+        disabled="{{streaming || loading || loadError}}"
+      />
+      <view
+        wx:if="{{!streaming}}"
+        class="input-bar__send"
+        bindtap="onSend"
+      >
+        <t-icon name="send" size="40rpx" color="#FFFFFF" />
+      </view>
+      <view
+        wx:else
+        class="input-bar__send input-bar__send--stop"
+        bindtap="onStop"
+      >
+        <t-icon name="stop" size="40rpx" color="#FFFFFF" />
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,5 @@
+<t-empty description="{{text}}" class="empty-state">
+  <view wx:if="{{actionText}}" slot="extra">
+    <t-button theme="primary" size="small" bindtap="onAction">{{actionText}}</t-button>
+  </view>
+</t-empty>

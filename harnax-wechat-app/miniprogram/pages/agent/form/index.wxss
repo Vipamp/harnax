@@ -1,0 +1,222 @@
+/* ---- Agent Form — Modern Minimal ---- */
+.page {
+  padding-bottom: 160rpx;
+}
+
+.prompt-input {
+  min-height: 240rpx;
+}
+
+.form-item {
+  padding: 24rpx 32rpx;
+}
+
+.form-item--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-label {
+  font-size: 30rpx;
+  color: #1a1a1a;
+}
+
+.text-placeholder {
+  color: #b0b0b0;
+}
+
+/* ---- 配置分区 ---- */
+.section {
+  margin: 24rpx 24rpx 0;
+}
+
+.section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8rpx 8rpx 16rpx;
+}
+
+.section__title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.section__add {
+  font-size: 26rpx;
+  color: #4F46E5;
+  padding: 6rpx 20rpx;
+  border: 1rpx solid #4F46E5;
+  border-radius: 999rpx;
+}
+
+.cfg-empty {
+  padding: 32rpx;
+  text-align: center;
+  color: #b0b0b0;
+  font-size: 26rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+
+/* ---- 配置卡片 ---- */
+.cfg-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.cfg-card__row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.cfg-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.cfg-picker--full {
+  margin-top: 16rpx;
+}
+
+.cfg-picker__val {
+  height: 72rpx;
+  line-height: 72rpx;
+  padding: 0 24rpx;
+  background: #F7F8FA;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  color: #1a1a1a;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cfg-picker__val.is-ph {
+  color: #b0b0b0;
+}
+
+.is-disabled .cfg-picker__val {
+  opacity: 0.5;
+}
+
+.cfg-card__del {
+  font-size: 26rpx;
+  color: #ff4d4f;
+  padding: 0 8rpx;
+  flex-shrink: 0;
+}
+
+.cfg-switches {
+  display: flex;
+  gap: 48rpx;
+  margin-top: 20rpx;
+}
+
+.cfg-switch {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  font-size: 26rpx;
+  color: #4a4a4a;
+}
+
+/* ---- 环境参数绑定 ---- */
+.env-list {
+  margin-top: 20rpx;
+  padding-left: 20rpx;
+  border-left: 4rpx solid #4F46E5;
+}
+
+.env-list__title {
+  font-size: 24rpx;
+  color: #8a8a8a;
+  margin-bottom: 12rpx;
+}
+
+.env-row {
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.env-row:last-child {
+  border-bottom: none;
+}
+
+.env-row__key {
+  font-size: 26rpx;
+  color: #1a1a1a;
+  font-family: monospace;
+  margin-bottom: 10rpx;
+}
+
+.env-badge {
+  display: inline-block;
+  font-size: 20rpx;
+  line-height: 1;
+  padding: 4rpx 8rpx;
+  border-radius: 6rpx;
+  margin-left: 8rpx;
+  font-family: -apple-system, sans-serif;
+}
+
+.env-badge--req {
+  color: #ff4d4f;
+  background: #fff1f0;
+}
+
+.env-badge--sec {
+  color: #fa8c16;
+  background: #fff7e6;
+}
+
+.env-src__val {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 20rpx;
+  background: #F7F8FA;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  color: #1a1a1a;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.env-src__val.is-ph {
+  color: #b0b0b0;
+}
+
+.env-val-input {
+  margin-top: 10rpx;
+  height: 64rpx;
+  padding: 0 20rpx;
+  background: #F7F8FA;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  font-family: monospace;
+}
+
+.env-val-text {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  color: #8a8a8a;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+/* ---- 提交栏 ---- */
+.submit-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -2rpx 12rpx rgba(0, 0, 0, 0.04);
+}

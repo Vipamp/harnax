@@ -1,0 +1,54 @@
+/* ---- Search Bar — Modern Minimal ---- */
+.search-bar {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 28rpx;
+  background: #FFFFFF;
+  border-bottom: 1rpx solid #F2F3F5;
+}
+
+.search-bar__input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 72rpx;
+  padding: 0 24rpx;
+  background: #F2F3F5;
+  border-radius: 12rpx;
+  border: 1rpx solid transparent;
+}
+
+.search-bar__icon {
+  font-size: 26rpx;
+  margin-right: 14rpx;
+  color: #C9CDD4;
+}
+
+.search-bar__input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1D2129;
+}
+
+.search-bar__placeholder {
+  color: #C9CDD4;
+}
+
+.search-bar__clear {
+  font-size: 22rpx;
+  color: #ffffff;
+  background-color: #C9CDD4;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 34rpx;
+}
+
+.search-bar__action {
+  margin-left: 24rpx;
+  font-size: 28rpx;
+  color: #4F46E5;
+  white-space: nowrap;
+  font-weight: 600;
+}

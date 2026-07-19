@@ -58,6 +58,15 @@
 }
 
 /* ─── 消息列表 ─── */
+/* ─── 消息列表包裹层（用于定位回到底部按钮） ─── */
+.messageListWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .messageList {
   flex: 1;
   overflow-y: auto;
@@ -83,6 +92,47 @@
       border: 2px solid transparent;
       background-clip: padding-box;
     }
+  }
+}
+
+/* ─── 回到底部按钮 ─── */
+.scrollToBottomBtn {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--vip-border);
+  background: var(--vip-bg-card);
+  color: var(--vip-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s ease;
+  z-index: 10;
+  animation: btnFadeIn 0.2s ease;
+
+  &:hover {
+    background: var(--vip-bg-elevated);
+    color: var(--vip-primary);
+    border-color: var(--vip-primary);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  }
+}
+
+@keyframes btnFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 }
 
@@ -1021,6 +1071,8 @@
   font-size: 13px;
   color: var(--vip-text-primary);
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .planOutcome {
@@ -1280,6 +1332,10 @@
   font-size: 13px;
   color: var(--vip-text-secondary);
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .planProgressBadge {
@@ -1662,6 +1718,46 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
+}
+
+/* ─── 参数表格样式 ─── */
+.argsTable {
+  border: 1px solid var(--vip-border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.argsRow {
+  display: flex;
+  border-bottom: 1px solid var(--vip-border);
+  
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.argsKey {
+  flex: 0 0 130px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--vip-primary);
+  background: var(--vip-bg-elevated);
+  border-right: 1px solid var(--vip-border);
+  display: flex;
+  align-items: flex-start;
+}
+
+.argsValue {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--vip-text-primary);
+  min-width: 0;
+  overflow: hidden;
 }
 
 @keyframes slideDown {

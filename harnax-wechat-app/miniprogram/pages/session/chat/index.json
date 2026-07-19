@@ -1,0 +1,12 @@
+{
+  "navigationBarTitleText": "对话",
+  "usingComponents": {
+    "loading": "/components/loading/index",
+    "t-input": "tdesign-miniprogram/input/input",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-collapse": "tdesign-miniprogram/collapse/collapse",
+    "t-collapse-panel": "tdesign-miniprogram/collapse-panel/collapse-panel",
+    "md": "/components/md/index"
+  }
+}
