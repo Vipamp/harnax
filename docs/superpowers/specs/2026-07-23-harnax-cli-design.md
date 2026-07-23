@@ -2,7 +2,7 @@
 
 ## 概述
 
-harnax-cli 是一个 Go 编写的命令行工具，编译为单个可执行文件分发。它为 Harnax Admin REST API 提供完整的 CLI 接口，覆盖 Agent、模型、工具、技能（Skill）、MCP Server、会话、渠道、环境变量、定时任务、API Key、租户、用户等全部资源的管理操作。
+harnax-cli 是一个 Go 编写的命令行工具，编译为单个可执行文件分发。它为 Harnax Admin REST API 提供完整的 CLI 接口，覆盖 Agent、模型、工具、MCP Server、会话、渠道、环境变量、定时任务、API Key、租户、用户等全部资源的管理操作。
 
 ## 目标用户
 
@@ -59,8 +59,6 @@ harnax-cli/
 │   ├── model.go                     # model list/get/create/update/delete/toggle
 │   ├── model_provider.go            # model-provider list/get/create/update/delete/toggle/test/stats
 │   ├── tool.go                      # tool list/get/update/delete/toggle/available/builtin/env-params
-│   ├── skill.go                     # skill list/get/create/update/delete/toggle/batch
-│   ├── skill_repo.go                # skill-repo list/get/create/update/delete/toggle/active/fetch
 │   ├── mcp.go                       # mcp list/get/create/update/delete/toggle/test/list-tools
 │   ├── session.go                   # session list/get/create/update/delete/toggle/config
 │   ├── channel.go                   # channel list/get/create/update/delete/toggle
@@ -153,29 +151,6 @@ harnax
 │   ├── available [--type X]           #   GET /api/admin/tools/available
 │   ├── builtin                        #   GET /api/admin/tools/builtin
 │   └── env-params <id>                #   GET /api/admin/tools/{id}/required-env-params
-│
-├── skill                              # === 技能管理 ===
-│   ├── list [--name X] [--repository-id X] [--status N]
-│   │                                  #   GET /api/admin/skills/page
-│   ├── get <id>                       #   GET /api/admin/skills/{id}
-│   ├── create --name X --repository-id X [--description X] [--skillmd X]
-│   │                                  #   POST /api/admin/skills
-│   ├── update <id> [...]              #   PUT /api/admin/skills/update/{id}
-│   ├── delete <id>                    #   DELETE /api/admin/skills/{id}
-│   ├── toggle <id> --status N         #   PUT /api/admin/skills/toggle/{id}
-│   └── batch --repository-id X --names a,b,c
-│                                      #   POST /api/admin/skills/batch
-│
-├── skill-repo                         # === 技能仓库管理 ===
-│   ├── list [--name X] [--status N]   #   GET /api/admin/skill-repositories/page
-│   ├── get <id>                       #   GET /api/admin/skill-repositories/{id}
-│   ├── create --name X --url X [--branch X] [--description X]
-│   │                                  #   POST /api/admin/skill-repositories
-│   ├── update <id> [...]              #   PUT /api/admin/skill-repositories/update/{id}
-│   ├── delete <id>                    #   DELETE /api/admin/skill-repositories/{id}
-│   ├── toggle <id> --status N         #   PUT /api/admin/skill-repositories/toggle/{id}
-│   ├── active                         #   GET /api/admin/skill-repositories/active
-│   └── fetch <id>                     #   GET /api/admin/skill-repositories/fetch/{id}
 │
 ├── mcp                                # === MCP Server 管理 ===
 │   ├── list [--keyword X] [--type stdio|sse|streamablehttp] [--status N]
@@ -470,54 +445,6 @@ Error: Connection test failed (code: 500)
   Request: POST /api/admin/mcp/5/connectivity-test
 ```
 
-## Skill 管理
-
-CLI 提供完整的 Skill 和 Skill Repository 管理能力，覆盖 harnax 平台的技能市场功能：
-
-### Skill 操作
-
-| 命令 | API 端点 | 说明 |
-|------|----------|------|
-| `skill list` | `GET /api/admin/skills/page` | 分页查询技能列表 |
-| `skill get <id>` | `GET /api/admin/skills/{id}` | 查看技能详情（含 SKILL.md 内容） |
-| `skill create` | `POST /api/admin/skills` | 创建技能 |
-| `skill update <id>` | `PUT /api/admin/skills/update/{id}` | 更新技能 |
-| `skill delete <id>` | `DELETE /api/admin/skills/{id}` | 删除技能 |
-| `skill toggle <id>` | `PUT /api/admin/skills/toggle/{id}` | 启用/禁用 |
-| `skill batch` | `POST /api/admin/skills/batch` | 批量保存技能 |
-
-### Skill Repository 操作
-
-| 命令 | API 端点 | 说明 |
-|------|----------|------|
-| `skill-repo list` | `GET /api/admin/skill-repositories/page` | 分页查询仓库列表 |
-| `skill-repo get <id>` | `GET /api/admin/skill-repositories/{id}` | 查看仓库详情 |
-| `skill-repo create` | `POST /api/admin/skill-repositories` | 创建仓库（GIT/NPM/ZIP） |
-| `skill-repo update <id>` | `PUT /api/admin/skill-repositories/update/{id}` | 更新仓库 |
-| `skill-repo delete <id>` | `DELETE /api/admin/skill-repositories/{id}` | 删除仓库 |
-| `skill-repo toggle <id>` | `PUT /api/admin/skill-repositories/toggle/{id}` | 启用/禁用 |
-| `skill-repo active` | `GET /api/admin/skill-repositories/active` | 活跃仓库列表 |
-| `skill-repo fetch <id>` | `GET /api/admin/skill-repositories/fetch/{id}` | 拉取远程技能列表 |
-
-### 典型工作流
-
-```bash
-# 1. 创建技能仓库
-harnax skill-repo create --name "my-skills" --url "https://github.com/org/skills"
-
-# 2. 从远程仓库拉取可用技能
-harnax skill-repo fetch 1
-
-# 3. 批量导入技能
-harnax skill batch --repository-id 1 --names "code-review,doc-generator,test-helper"
-
-# 4. 查看已导入的技能
-harnax skill list --repository-id 1
-
-# 5. 查看某个技能的 SKILL.md 内容
-harnax skill get 5 --output json | jq -r '.data.skillmd'
-```
-
 ## Go Module 与构建
 
 ### go.mod
@@ -611,7 +538,6 @@ brew install agnetix/tap/harnax   # 可选：Homebrew tap
 
 - `model` + `model-provider`
 - `tool`
-- `skill` + `skill-repo`
 - `mcp`
 - `session`
 - `env-var`
