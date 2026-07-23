@@ -2,7 +2,7 @@
 
 ## 概述
 
-harnax-cli 是一个 TypeScript 编写的命令行工具，以 npm 包形式发布。它为 Harnax Admin REST API 提供完整的 CLI 接口，覆盖 Agent、模型、工具、技能（Skill）、MCP Server、会话、渠道、环境变量、定时任务、API Key、租户、用户等全部资源的管理操作。
+harnax-cli 是一个 Go 编写的命令行工具，编译为单个可执行文件分发。它为 Harnax Admin REST API 提供完整的 CLI 接口，覆盖 Agent、模型、工具、技能（Skill）、MCP Server、会话、渠道、环境变量、定时任务、API Key、租户、用户等全部资源的管理操作。
 
 ## 目标用户
 
@@ -13,21 +13,22 @@ harnax-cli 是一个 TypeScript 编写的命令行工具，以 npm 包形式发�
 
 | 维度 | 选型 | 版本 | 理由 |
 |------|------|------|------|
-| 语言 | TypeScript | 5.x | 类型安全，开发体验好 |
-| 运行时 | Node.js | >= 18 | 内置 fetch，无需额外 HTTP 库 |
-| CLI 框架 | commander.js | ^13 | 成熟、轻量、子命令支持好 |
-| 构建工具 | tsup | ^8 | 快速，ESM + CJS 双格式输出 |
-| 表格输出 | cli-table3 | ^0.6 | 终端表格渲染 |
-| 终端颜色 | chalk | ^5 | 终端着色 |
-| 配置管理 | 原生 fs | — | 读写 `~/.harnax/` 目录下的 JSON 文件 |
-| 测试 | vitest | ^3 | 快速，TS 原生支持 |
-| 代码风格 | ESLint + Prettier | — | 代码规范 |
+| 语言 | Go | >= 1.22 | 编译为单文件，跨平台，零运行时依赖 |
+| CLI 框架 | cobra | ^1.8 | Go CLI 标准框架，子命令、自动补全、文档生成 |
+| HTTP 客户端 | net/http | 标准库 | 零外部依赖 |
+| JSON 处理 | encoding/json | 标准库 | 零外部依赖 |
+| 表格输出 | tablewriter | ^0.0.5 | 终端表格渲染 |
+| 终端颜色 | fatih/color | ^1.18 | 终端着色 |
+| 配置管理 | viper | ^1.19 | 配置文件读写，与 cobra 深度集成 |
+| 构建发布 | goreleaser | — | 跨平台编译（linux/darwin/windows），GitHub Release |
+| 测试 | go test | 标准库 | 内置测试框架 |
+| 代码风格 | golangci-lint | — | 静态分析 + 格式化 |
 
 ## 项目位置
 
 ```
 harnax/                      ← 项目根目录
-├── harnax-cli/              ← 新建模块（与 harnax-admin、harnax-agent 同级）
+├── harnax-cli/              ← 新建 Go 模块（与 harnax-admin、harnax-agent 同级）
 ├── harnax-admin/
 ├── harnax-agent/
 ├── harnax-channel/
@@ -36,66 +37,60 @@ harnax/                      ← 项目根目录
 └── pom.xml
 ```
 
-注意：harnax-cli 是独立的 npm/TypeScript 项目，不参与 Maven 构建，与 Java/Kotlin 模块完全解耦。
+注意：harnax-cli 是独立的 Go module，不参与 Maven 构建，与 Java/Kotlin 模块完全解耦。
 
 ## 项目结构
 
 ```
 harnax-cli/
-├── package.json
-├── tsconfig.json
-├── tsup.config.ts
-├── vitest.config.ts
-├── .eslintrc.json
-├── .prettierrc
+├── go.mod
+├── go.sum
+├── main.go                          # 入口
+├── Makefile                         # build / test / lint
+├── .goreleaser.yml                  # 跨平台发布配置
+├── .golangci.yml                    # lint 配置
 ├── README.md
 │
-├── src/
-│   ├── index.ts                      # 入口文件（#!/usr/bin/env node）
-│   ├── commands/
-│   │   ├── auth.ts                   # login / logout / refresh-token
-│   │   ├── config.ts                 # config set/get/list/use-profile
-│   │   ├── agent.ts                  # agent list/get/create/update/delete/toggle
-│   │   ├── model.ts                  # model list/get/create/update/delete/toggle
-│   │   ├── model-provider.ts         # model-provider list/get/create/update/delete/toggle/test/stats
-│   │   ├── tool.ts                   # tool list/get/update/delete/toggle/available/builtin/env-params
-│   │   ├── skill.ts                  # skill list/get/create/update/delete/toggle/batch
-│   │   ├── skill-repo.ts             # skill-repo list/get/create/update/delete/toggle/active/fetch
-│   │   ├── mcp.ts                    # mcp list/get/create/update/delete/toggle/test/list-tools
-│   │   ├── session.ts                # session list/get/create/update/delete/toggle/config
-│   │   ├── channel.ts                # channel list/get/create/update/delete/toggle
-│   │   ├── envvar.ts                 # env-var list/get/create/update/delete/toggle
-│   │   ├── task.ts                   # task list/get/create/update/delete/toggle/start/pause/trigger/logs
-│   │   ├── apikey.ts                 # api-key list/get/create/update/delete/toggle/regenerate
-│   │   ├── tenant.ts                 # tenant list/get/create/delete/toggle/users/add-user/remove-user/update-role
-│   │   ├── user.ts                   # user list/get/create/update/delete/toggle
-│   │   └── health.ts                 # health / info
-│   ├── client/
-│   │   └── admin-api.ts             # Admin REST API HTTP 客户端
-│   ├── config/
-│   │   └── cli-config.ts            # 配置与凭证管理（~/.harnax/）
-│   └── output/
-│       ├── formatter.ts              # 输出格式化（json / table 切换）
-│       └── table.ts                  # 表格渲染工具
+├── cmd/                             # cobra 命令定义
+│   ├── root.go                      # 根命令 + 全局 flag
+│   ├── auth.go                      # login / logout
+│   ├── config.go                    # config set/get/list/use-profile
+│   ├── agent.go                     # agent list/get/create/update/delete/toggle
+│   ├── model.go                     # model list/get/create/update/delete/toggle
+│   ├── model_provider.go            # model-provider list/get/create/update/delete/toggle/test/stats
+│   ├── tool.go                      # tool list/get/update/delete/toggle/available/builtin/env-params
+│   ├── skill.go                     # skill list/get/create/update/delete/toggle/batch
+│   ├── skill_repo.go                # skill-repo list/get/create/update/delete/toggle/active/fetch
+│   ├── mcp.go                       # mcp list/get/create/update/delete/toggle/test/list-tools
+│   ├── session.go                   # session list/get/create/update/delete/toggle/config
+│   ├── channel.go                   # channel list/get/create/update/delete/toggle
+│   ├── envvar.go                    # env-var list/get/create/update/delete/toggle
+│   ├── task.go                      # task list/get/create/update/delete/toggle/start/pause/trigger/logs
+│   ├── apikey.go                    # api-key list/get/create/update/delete/toggle/regenerate
+│   ├── tenant.go                    # tenant list/get/create/delete/toggle/users/add-user/remove-user/update-role
+│   ├── user.go                      # user list/get/create/update/delete/toggle
+│   └── health.go                    # health / info
 │
-└── tests/
-    ├── commands/
-    │   ├── agent.test.ts
-    │   ├── model.test.ts
-    │   └── ...
-    ├── client/
-    │   └── admin-api.test.ts
-    └── config/
-        └── cli-config.test.ts
+├── internal/
+│   ├── client/
+│   │   └── admin.go                 # Admin REST API HTTP 客户端
+│   ├── config/
+│   │   └── config.go                # 配置与凭证管理（~/.harnax/）
+│   └── output/
+│       ├── formatter.go             # 输出格式化（json / table 切换）
+│       └── table.go                 # 表格渲染工具
+│
+└── internal/client/testdata/        # 测试用 mock 响应
+    └── ...
 ```
 
 ## 命令体系
 
-### 全局选项
+### 全局 Flag
 
-所有命令共享以下全局选项：
+所有命令共享以下全局 flag：
 
-| 选项 | 说明 | 默认值 |
+| Flag | 说明 | 默认值 |
 |------|------|--------|
 | `--server-url <url>` | 覆盖配置中的 Admin 服务地址 | 配置文件中的值 |
 | `--output <format>` | 输出格式：`json` 或 `table` | `table` |
@@ -286,28 +281,25 @@ harnax
 
 ```
 ~/.harnax/
-├── config.json           # 全局配置（权限 0644）
+├── config.yaml           # 全局配置（权限 0644）
 ├── credentials.json      # 凭证信息（权限 0600）
 └── profiles/             # 多环境 profile
-    ├── dev.json
-    └── prod.json
+    ├── dev.yaml
+    └── prod.yaml
 ```
 
-### config.json
+使用 viper 管理配置，支持 YAML 格式。凭证单独存储为 JSON，与 API 响应格式一致。
 
-```json
-{
-  "currentProfile": "default",
-  "defaultOutput": "table",
-  "profiles": {
-    "default": {
-      "serverUrl": "http://localhost:8080"
-    },
-    "prod": {
-      "serverUrl": "https://admin.harnax.com"
-    }
-  }
-}
+### config.yaml
+
+```yaml
+currentProfile: default
+defaultOutput: table
+profiles:
+  default:
+    serverUrl: http://localhost:8080
+  prod:
+    serverUrl: https://admin.harnax.com
 ```
 
 ### credentials.json
@@ -349,50 +341,60 @@ harnax --profile dev agent list       # 单次命令使用指定 profile
 
 ## AdminApiClient 设计
 
-### 核心接口
+### 核心结构
 
-```typescript
-class AdminApiClient {
-  constructor(private baseUrl: string, private token?: string)
+```go
+// internal/client/admin.go
 
-  // 通用 CRUD 封装
-  async list<T>(path: string, params?: Record<string, string>): Promise<ResultVo<Page<T>>>
-  async get<T>(path: string, id: string | number): Promise<ResultVo<T>>
-  async create<T>(path: string, body: unknown): Promise<ResultVo<T>>
-  async update<T>(path: string, id: string | number, body: unknown): Promise<ResultVo<T>>
-  async delete(path: string, id: string | number): Promise<ResultVo<void>>
-  async toggle(path: string, id: string | number, status?: number): Promise<ResultVo<void>>
-
-  // 自定义请求（用于非标准 CRUD 的接口）
-  async request<T>(method: string, path: string, options?: RequestOptions): Promise<ResultVo<T>>
+type AdminClient struct {
+    BaseURL    string
+    Token      string
+    HTTPClient *http.Client
 }
+
+func NewAdminClient(baseURL, token string) *AdminClient
+
+// 通用 CRUD 封装
+func (c *AdminClient) List(ctx context.Context, path string, params map[string]string) (*ResultVo, error)
+func (c *AdminClient) Get(ctx context.Context, path string, id any) (*ResultVo, error)
+func (c *AdminClient) Create(ctx context.Context, path string, body any) (*ResultVo, error)
+func (c *AdminClient) Update(ctx context.Context, path string, id any, body any) (*ResultVo, error)
+func (c *AdminClient) Delete(ctx context.Context, path string, id any) (*ResultVo, error)
+func (c *AdminClient) Toggle(ctx context.Context, path string, id any, status *int) (*ResultVo, error)
+
+// 自定义请求（用于非标准 CRUD 的接口）
+func (c *AdminClient) Request(ctx context.Context, method, path string, body any) (*ResultVo, error)
 ```
 
 ### ResultVo 响应结构
 
 与后端保持一致：
 
-```typescript
-interface ResultVo<T> {
-  code: number       // 200 = 成功
-  message: string
-  data: T | null
-  timestamp: number
+```go
+type ResultVo struct {
+    Code      int             `json:"code"`
+    Message   string          `json:"message"`
+    Data      json.RawMessage `json:"data"`
+    Timestamp int64           `json:"timestamp"`
 }
 
-interface Page<T> {
-  list: T[]
-  total: number
-  pageNum: number
-  pageSize: number
+type Page struct {
+    List     json.RawMessage `json:"list"`
+    Total    int             `json:"total"`
+    PageNum  int             `json:"pageNum"`
+    PageSize int             `json:"pageSize"`
 }
+
+func (r *ResultVo) IsSuccess() bool { return r.Code == 200 }
+func (r *ResultVo) DecodeData(v any) error { return json.Unmarshal(r.Data, v) }
+func (r *ResultVo) DecodeList(v any) error // 解析 Page.List
 ```
 
 ### 错误处理
 
-- `code !== 200`：抛出 `ApiError`，显示 `message`
-- 网络错误：抛出 `NetworkError`，显示连接失败信息
-- 401 响应：自动尝试刷新 token，失败则提示重新登录
+- `code != 200`：返回 `APIError`，包含 `Code` 和 `Message`
+- 网络错误：返回 `NetworkError`，包含底层 error
+- HTTP 401：自动尝试刷新 token，失败则返回 `AuthError` 提示重新登录
 
 ## 输出格式
 
@@ -400,13 +402,13 @@ interface Page<T> {
 
 ```
 $ harnax agent list
-┌──────────┬──────────────┬────────────┬──────────┬─────────────────────┐
-│ ID       │ Name         │ Model      │ Status   │ Created             │
-├──────────┼──────────────┼────────────┼──────────┼─────────────────────┤
-│ 1        │ 代码助手      │ gpt-4o     │ Active   │ 2024-01-15 10:30:00 │
-│ 2        │ 文档生成器    │ claude-3.5 │ Active   │ 2024-01-16 14:20:00 │
-│ 3        │ 测试助手      │ gpt-4o-m   │ Disabled │ 2024-01-17 09:15:00 │
-└──────────┴──────────────┴────────────┴──────────┴─────────────────────┘
++----+------------+------------+----------+----------------------+
+| ID | NAME       | MODEL      | STATUS   | CREATED              |
++----+------------+------------+----------+----------------------+
+|  1 | 代码助手    | gpt-4o     | Active   | 2024-01-15 10:30:00  |
+|  2 | 文档生成器  | claude-3.5 | Active   | 2024-01-16 14:20:00  |
+|  3 | 测试助手    | gpt-4o-m   | Disabled | 2024-01-17 09:15:00  |
++----+------------+------------+----------+----------------------+
 Showing 1-3 of 3 results (page 1/1)
 ```
 
@@ -500,8 +502,8 @@ CLI 提供完整的 Skill 和 Skill Repository 管理能力，覆盖 harnax 平�
 ### 典型工作流
 
 ```bash
-# 1. 创建 NPM 类型的技能仓库
-harnax skill-repo create --name "my-skills" --url "https://registry.npmjs.org/@harnax/my-skills"
+# 1. 创建技能仓库
+harnax skill-repo create --name "my-skills" --url "https://github.com/org/skills"
 
 # 2. 从远程仓库拉取可用技能
 harnax skill-repo fetch 1
@@ -513,51 +515,82 @@ harnax skill batch --repository-id 1 --names "code-review,doc-generator,test-hel
 harnax skill list --repository-id 1
 
 # 5. 查看某个技能的 SKILL.md 内容
-harnax skill get 5 --output json | jq '.data.skillmd'
+harnax skill get 5 --output json | jq -r '.data.skillmd'
 ```
 
-## package.json
+## Go Module 与构建
 
-```json
-{
-  "name": "@harnax/cli",
-  "version": "0.1.0",
-  "description": "Harnax Admin CLI - manage agents, models, tools, skills, MCP servers and more",
-  "type": "module",
-  "bin": {
-    "harnax": "./dist/index.js"
-  },
-  "files": [
-    "dist/"
-  ],
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "lint": "eslint src/ --ext .ts",
-    "format": "prettier --write src/",
-    "prepublishOnly": "npm run build"
-  },
-  "keywords": ["harnax", "cli", "agent", "admin"],
-  "license": "UNLICENSED",
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "commander": "^13.0.0",
-    "cli-table3": "^0.6.5",
-    "chalk": "^5.4.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.0",
-    "tsup": "^8.4.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0",
-    "eslint": "^9.0.0",
-    "prettier": "^3.4.0"
-  }
-}
+### go.mod
+
+```
+module github.com/agnetix/harnax-cli
+
+go 1.22
+
+require (
+    github.com/spf13/cobra v1.8.1
+    github.com/spf13/viper v1.19.0
+    github.com/olekukonko/tablewriter v0.0.5
+    github.com/fatih/color v1.18.0
+)
+```
+
+### Makefile
+
+```makefile
+.PHONY: build test lint clean
+
+BINARY := harnax
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS := -ldflags "-s -w -X main.version=$(VERSION)"
+
+build:
+	go build $(LDFLAGS) -o bin/$(BINARY) .
+
+test:
+	go test ./... -v -race
+
+lint:
+	golangci-lint run
+
+clean:
+	rm -rf bin/
+
+install: build
+	cp bin/$(BINARY) $(GOPATH)/bin/
+```
+
+### goreleaser 跨平台编译
+
+```yaml
+# .goreleaser.yml
+builds:
+  - binary: harnax
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+
+archives:
+  - format: tar.gz
+    name_template: "harnax_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+```
+
+### 分发方式
+
+```bash
+# 从源码安装
+go install github.com/agnetix/harnax-cli@latest
+
+# 下载预编译二进制（goreleaser 产出）
+# Linux amd64
+curl -L https://github.com/agnetix/harnax-cli/releases/download/v0.1.0/harnax_0.1.0_linux_amd64.tar.gz | tar xz
+sudo mv harnax /usr/local/bin/
+
+# macOS arm64
+brew install agnetix/tap/harnax   # 可选：Homebrew tap
 ```
 
 ## 实现优先级
@@ -566,11 +599,11 @@ harnax skill get 5 --output json | jq '.data.skillmd'
 
 ### Phase 1：基础框架 + 核心命令
 
-- 项目脚手架（tsup、tsconfig、eslint）
-- `AdminApiClient` 通用 CRUD
-- `CliConfig` 配置管理
+- 项目脚手架（go mod、cobra root、Makefile、golangci-lint）
+- `AdminClient` 通用 CRUD
+- `config` 配置与凭证管理（viper）
 - 输出格式化（table + json）
-- `login` / `logout` / `config`
+- `login` / `logout`
 - `agent` 全部子命令
 - `health`
 
@@ -590,11 +623,14 @@ harnax skill get 5 --output json | jq '.data.skillmd'
 - `tenant` + `user`
 - `channel`
 - 完善测试覆盖
+- goreleaser 发布配置
 - README 文档
 
 ## 非功能性约束
 
-- **零 Spring 依赖**：纯 Node.js/TypeScript，与 Java 后端完全解耦
+- **零 Java/Spring 依赖**：纯 Go，与后端完全解耦
+- **单文件分发**：`go build` 产出单个二进制文件，无运行时依赖
+- **跨平台**：通过 goreleaser 支持 Linux / macOS / Windows
 - **无外部状态**：所有状态存储在 `~/.harnax/` 本地目录
 - **幂等操作**：重复执行不会产生副作用（依赖后端幂等性）
 - **CI/CD 友好**：JSON 输出 + exit code + 环境变量配置支持
