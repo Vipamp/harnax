@@ -25,9 +25,11 @@ import {
   PlusOutlined,
   LinkOutlined,
   CloudServerOutlined,
+  WechatOutlined,
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
+import WechatLoginModal from './components/WechatLoginModal';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 import EditButton from '@/components/EditButton';
@@ -49,6 +51,8 @@ const ChannelManagement: React.FC = () => {
   ];
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
+  const [wechatLoginVisible, setWechatLoginVisible] = useState<boolean>(false);
+  const [wechatLoginChannelId, setWechatLoginChannelId] = useState<number>();
   const [currentRow, setCurrentRow] = useState<API.ChannelItem>();
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.ChannelItem[]>([]);
@@ -377,6 +381,19 @@ const ChannelManagement: React.FC = () => {
               onChange={(newStatus) => handleToggleStatus(record.id!, newStatus)}
               disabled={!canOperate}
             />
+            {record.type === 'wechat' && (
+              <Tooltip title={intl.formatMessage({ id: 'pages.channel.wechat.title', defaultMessage: 'WeChat Scan Login' })}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<WechatOutlined style={{ color: '#07C160' }} />}
+                  onClick={() => {
+                    setWechatLoginChannelId(record.id!);
+                    setWechatLoginVisible(true);
+                  }}
+                />
+              </Tooltip>
+            )}
             <EditButton onClick={() => {
               setCurrentRow(record);
               setUpdateModalVisible(true);
@@ -521,6 +538,20 @@ const ChannelManagement: React.FC = () => {
           }}
         />
       )}
+      {/* WeChat 扫码登录弹窗 */}
+      <WechatLoginModal
+        visible={wechatLoginVisible}
+        channelId={wechatLoginChannelId}
+        onCancel={() => {
+          setWechatLoginVisible(false);
+          setWechatLoginChannelId(undefined);
+        }}
+        onSuccess={() => {
+          setWechatLoginVisible(false);
+          setWechatLoginChannelId(undefined);
+          loadDataWithFilters();
+        }}
+      />
       {/* Workspace Drawer */}
       <WorkspaceDrawer
         visible={workspaceVisible}

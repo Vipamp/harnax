@@ -2,6 +2,7 @@ package com.agnetix.harnax.channel.wechat
 
 import com.github.wechat.ilink.sdk.ILinkClient
 import com.github.wechat.ilink.sdk.core.config.ILinkConfig
+import com.github.wechat.ilink.sdk.core.context.ResumeContext
 import com.github.wechat.ilink.sdk.core.listener.OnLoginListener
 import com.github.wechat.ilink.sdk.core.login.LoginContext
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
@@ -62,6 +63,40 @@ class WechatBotService {
 
                 override fun onLoginFailure(throwable: Throwable) {
                     logger.error("WeChat bot login failed: ${throwable.message}", throwable)
+                }
+            })
+            .build()
+    }
+
+    /**
+     * Build (or return cached) ILinkClient from previously obtained login credentials.
+     *
+     * Uses [ResumeContext] so the client connects directly with a stored
+     * [LoginContext] (botToken/userId/botId/baseUrl) — no QR scan required.
+     * The credentials are produced by the admin-side scan flow and persisted in
+     * the channel's configJson.
+     *
+     * @param channelId Channel ID
+     * @param loginContext Previously obtained login credentials
+     * @param config iLink configuration (only used on first creation)
+     * @return ILinkClient instance ready to poll
+     */
+    fun createClientFromCredentials(
+        channelId: Long,
+        loginContext: LoginContext,
+        config: ILinkConfig = ILinkConfig.builder().build(),
+    ): ILinkClient = clientMap.getOrPut(channelId) {
+        logger.info("Creating ILinkClient from stored credentials for channel $channelId, botId=${loginContext.botId}")
+        ILinkClient.builder()
+            .config(config)
+            .resumeContext(ResumeContext.of(loginContext))
+            .onLogin(object : OnLoginListener {
+                override fun onLoginSuccess(context: LoginContext) {
+                    logger.info("WeChat bot resumed session successfully, botId = ${context.botId}")
+                }
+
+                override fun onLoginFailure(throwable: Throwable) {
+                    logger.error("WeChat bot resume failed: ${throwable.message}", throwable)
                 }
             })
             .build()

@@ -42,6 +42,7 @@ object ChannelEntityConverter {
             .encodingAesKey(cfg.string("encodingAesKey"))
             .appId(cfg.string("appId"))
             .appSecret(cfg.string("appSecret"))
+            .configJson(entity.configJson)
             .build()
     }
 

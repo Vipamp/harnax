@@ -9,8 +9,10 @@ import com.agnetix.harnax.channel.sdk.message.MarkdownRichMessage
 import com.agnetix.harnax.channel.sdk.message.RichMessage
 import com.agnetix.harnax.channel.sdk.message.TextRichMessage
 import com.github.wechat.ilink.sdk.core.config.ILinkConfig
+import com.github.wechat.ilink.sdk.core.login.LoginContext
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
 import org.slf4j.LoggerFactory
+import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -34,6 +36,7 @@ class WechatLongPollingMode(
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(WechatLongPollingMode::class.java)
+    private val objectMapper = jacksonObjectMapper()
 
     // Tracks channels with active login/polling threads to prevent duplicate starts
     private val activeChannels = ConcurrentHashMap.newKeySet<Long>()
@@ -65,26 +68,43 @@ class WechatLongPollingMode(
         // Build iLink configuration
         val iLinkConfig = buildILinkConfig(channel)
 
-        // Create client
-        botService.getOrCreateClient(channelId, iLinkConfig)
+        val credentials = parseCredentials(channel.configJson)
 
-        // Execute login and polling in new thread
+        if (credentials != null) {
+            // Preferred path: connect with stored credentials obtained via the
+            // admin-side scan flow — no QR scan needed here.
+            val thread = Thread({
+                try {
+                    botService.createClientFromCredentials(channelId, credentials, iLinkConfig)
+                    logger.info("WeChat channel $channelId connecting with stored credentials, botId=${credentials.botId}")
+                    botService.startPolling(channelId) { messages ->
+                        handleMessages(messages, channel, messageHandler)
+                    }
+                } catch (e: Exception) {
+                    logger.error("WeChat resume-connect failed for channel $channelId: ${e.message}", e)
+                    activeChannels.remove(channelId)
+                }
+            }, "wechat-resume-$channelId")
+            thread.isDaemon = true
+            thread.start()
+            return
+        }
+
+        // Fallback path: no stored credentials, perform interactive QR login.
+        // Used mainly for local development; production should authenticate via admin.
+        botService.getOrCreateClient(channelId, iLinkConfig)
         val thread = Thread({
             try {
-                // Execute login
                 val qrCodeContent = botService.executeLogin(channelId)
                 logger.info("========================================")
                 logger.info("请使用微信扫描以下二维码内容登录：")
                 logger.info(qrCodeContent)
                 logger.info("========================================")
 
-                // Wait for login completion
                 val loginFuture = botService.getLoginFuture(channelId)
                 if (loginFuture != null) {
                     val context = loginFuture.get()
                     logger.info("WeChat bot login successful, botId = ${context.botId}")
-
-                    // Start message polling after successful login
                     botService.startPolling(channelId) { messages ->
                         handleMessages(messages, channel, messageHandler)
                     }
@@ -188,6 +208,27 @@ class WechatLongPollingMode(
             } catch (e: Exception) {
                 logger.error("Error handling WeChat message: ${e.message}", e)
             }
+        }
+    }
+
+    /**
+     * Parse stored WeChat login credentials from the channel configJson.
+     * Returns a [LoginContext] when a non-blank botToken is present (produced by
+     * the admin-side scan flow), or null when no credentials are configured yet.
+     */
+    private fun parseCredentials(configJson: String?): LoginContext? {
+        if (configJson.isNullOrBlank()) return null
+        return try {
+            @Suppress("UNCHECKED_CAST")
+            val map = objectMapper.readValue(configJson, Map::class.java) as Map<String, Any?>
+            val botToken = map["botToken"]?.toString()?.takeIf { it.isNotBlank() } ?: return null
+            val userId = map["userId"]?.toString().orEmpty()
+            val botId = map["botId"]?.toString().orEmpty()
+            val baseUrl = map["baseUrl"]?.toString().orEmpty()
+            LoginContext(botToken, userId, botId, baseUrl)
+        } catch (e: Exception) {
+            logger.warn("Failed to parse WeChat credentials from configJson: {}", e.message)
+            null
         }
     }
 

@@ -114,3 +114,33 @@ export async function getAgentList(
     ...(options || {}),
   });
 }
+
+/**
+ * 启动微信扫码登录，返回二维码（base64 PNG data URL）
+ */
+export async function startWechatLogin(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/channels/${id}/wechat/login`, {
+    method: 'POST',
+    ...(options || {}),
+  });
+}
+
+/**
+ * 查询微信扫码登录状态（WAITING/SCANNED/LOGGED_IN/EXPIRED/ERROR/NOT_LOGIN）
+ */
+export async function getWechatLoginStatus(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/channels/${id}/wechat/login/status`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/**
+ * 取消进行中的微信扫码登录
+ */
+export async function cancelWechatLogin(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/channels/${id}/wechat/login/cancel`, {
+    method: 'POST',
+    ...(options || {}),
+  });
+}

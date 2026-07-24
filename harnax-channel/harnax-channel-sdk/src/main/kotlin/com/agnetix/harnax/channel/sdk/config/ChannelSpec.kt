@@ -21,6 +21,7 @@ data class ChannelSpec(
     val sessionId: String = "",
     val status: Int = 1,
     val communicationMode: String = "webhook", // "webhook" or "websocket"
+    val configJson: String? = null, // raw channel-specific config JSON passthrough
 ) {
     companion object {
         @JvmStatic
@@ -42,6 +43,7 @@ class ChannelSpecBuilder {
     private var sessionId: String = ""
     private var status: Int = 1
     private var communicationMode: String = "webhook"
+    private var configJson: String? = null
 
     fun id(id: Long) = apply { this.id = id }
     fun name(name: String) = apply { this.name = name }
@@ -56,6 +58,7 @@ class ChannelSpecBuilder {
     fun sessionId(sessionId: String) = apply { this.sessionId = sessionId }
     fun status(status: Int) = apply { this.status = status }
     fun communicationMode(mode: String) = apply { this.communicationMode = mode }
+    fun configJson(configJson: String?) = apply { this.configJson = configJson }
 
     fun build() = ChannelSpec(
         id = id,
@@ -71,5 +74,6 @@ class ChannelSpecBuilder {
         sessionId = sessionId,
         status = status,
         communicationMode = communicationMode,
+        configJson = configJson,
     )
 }
