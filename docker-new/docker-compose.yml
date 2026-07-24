@@ -444,7 +444,9 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
     volumes:
+      - ./ssl:/etc/nginx/ssl:ro
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - admin

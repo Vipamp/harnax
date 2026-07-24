@@ -44,3 +44,9 @@ docker-new/data/
 .env
 .env.local
 .env.*.local
+
+# SSL certificates (self-signed, generated locally)
+ssl/
+*.key
+*.crt
+*.pem

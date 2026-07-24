@@ -7,6 +7,8 @@ import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.service.ModelProviderService
 import com.agnetix.harnax.admin.service.ModelService
 import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
@@ -24,12 +26,14 @@ class MpAgentService(
     private val skillService: SkillService,
     private val mcpBindingMapper: AgentMcpBindingMapper,
     private val skillBindingMapper: AgentSkillBindingMapper,
+    private val jwtUtil: JwtUtil,
 ) {
 
     private val log = LoggerFactory.getLogger(MpAgentService::class.java)
 
     fun listAgents(userId: Long): List<MpAgentResponse> {
-        val agents = agentMapper.selectAgentList(null, 1, "")
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val agents = agentMapper.selectAgentList(null, 1, currentUsername)
         return agents.filter { it.active == 1 }.map { agent ->
             val modelName = modelService.getModel(agent.modelId)?.modelName ?: ""
             val sessionCount = mpSessionMapper.countByUserIdAndAgentId(userId, agent.id)

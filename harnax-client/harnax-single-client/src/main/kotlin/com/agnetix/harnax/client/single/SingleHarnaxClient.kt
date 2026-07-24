@@ -283,6 +283,6 @@ class SingleHarnaxClient private constructor(
      * shut down when the client is no longer needed.
      */
     override fun close() {
-        httpClient.close()
+        (httpClient as AutoCloseable).close()
     }
 }

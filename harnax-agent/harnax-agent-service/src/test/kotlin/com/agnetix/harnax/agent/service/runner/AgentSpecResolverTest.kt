@@ -183,13 +183,13 @@ class AgentSpecResolverTest {
                     id = 10L, name = "file-read", displayName = "File Read",
                     displayNameZh = "文件读取", description = "Read files",
                     type = "BUILTIN", beanName = "file-read", methodName = "execute",
-                    enableSkip = "true", bindingNeedConfirm = 1,
+                    enableSkip = "true", bindingNeedConfirm = true,
                 ),
                 ToolDetailDto(
                     id = 20L, name = "http-call", displayName = "HTTP Call",
                     displayNameZh = "HTTP调用", description = "Make HTTP calls",
                     type = "BUILTIN", beanName = "http-call", methodName = "execute",
-                    enableSkip = "false", bindingNeedConfirm = 0,
+                    enableSkip = "false", bindingNeedConfirm = false,
                 ),
             )
             val spec = buildSpecResponse(toolDetails = tools)
