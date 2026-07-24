@@ -50,3 +50,6 @@ ssl/
 *.key
 *.crt
 *.pem
+
+# Local runtime PID files
+deploy/local/pids/
