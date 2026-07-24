@@ -82,6 +82,7 @@ class WechatLongPollingMode(
                     }
                 } catch (e: Exception) {
                     logger.error("WeChat resume-connect failed for channel $channelId: ${e.message}", e)
+                    runCatching { botService.closeClient(channelId) }
                     activeChannels.remove(channelId)
                 }
             }, "wechat-resume-$channelId")

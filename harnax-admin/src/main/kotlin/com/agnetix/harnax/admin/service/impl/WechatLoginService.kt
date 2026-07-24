@@ -7,6 +7,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import tools.jackson.module.kotlin.jacksonObjectMapper
@@ -15,6 +16,10 @@ import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import javax.imageio.ImageIO
 
 /**
@@ -36,8 +41,36 @@ class WechatLoginService(
     private val log = LoggerFactory.getLogger(WechatLoginService::class.java)
     private val objectMapper = jacksonObjectMapper()
 
-    /** channelId -> in-progress login client. */
-    private val loginClients = ConcurrentHashMap<Long, ILinkClient>()
+    /** channelId -> in-progress login (client + its timeout cleanup future). */
+    private val loginClients = ConcurrentHashMap<Long, PendingLogin>()
+
+    /** Fallback cleanup scheduler so abandoned logins (browser closed, no poll) don't leak. */
+    private val cleanupScheduler: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "wechat-login-cleanup").apply { isDaemon = true }
+        }
+
+    private class PendingLogin(
+        val client: ILinkClient,
+        @Volatile var cleanupFuture: ScheduledFuture<*>? = null,
+    )
+
+    companion object {
+        /** Max lifetime of an in-progress login before it is force-closed. */
+        private const val LOGIN_TIMEOUT_MINUTES = 5L
+    }
+
+    /**
+     * Remove and fully release the pending login for a channel: cancel its
+     * timeout task and close the underlying client. Safe to call repeatedly.
+     */
+    private fun removeAndClose(channelId: Long, cancelLogin: Boolean = false) {
+        loginClients.remove(channelId)?.let { pending ->
+            pending.cleanupFuture?.cancel(false)
+            if (cancelLogin) runCatching { pending.client.cancelLogin() }
+            runCatching { pending.client.close() }
+        }
+    }
 
     /**
      * Start (or restart) a QR login for the given channel and return the QR
@@ -45,12 +78,23 @@ class WechatLoginService(
      */
     fun startLogin(channelId: Long): String {
         // Close any previous in-progress login for this channel.
-        loginClients.remove(channelId)?.let { runCatching { it.close() } }
+        removeAndClose(channelId, cancelLogin = true)
 
         val client = ILinkClient.builder().build()
-        loginClients[channelId] = client
+        val pending = PendingLogin(client)
+        loginClients[channelId] = pending
 
         val qrContent = client.executeLogin()
+
+        // Fallback cleanup: if the user abandons the flow (closes the browser and
+        // never polls or cancels), force-close the client so it doesn't leak.
+        pending.cleanupFuture = cleanupScheduler.schedule({
+            if (loginClients[channelId] === pending) {
+                log.info("WeChat login for channel {} timed out, cleaning up", channelId)
+                removeAndClose(channelId, cancelLogin = true)
+            }
+        }, LOGIN_TIMEOUT_MINUTES, TimeUnit.MINUTES)
+
         log.info("WeChat login QR generated for channel {}", channelId)
         return toQrDataUrl(qrContent)
     }
@@ -61,8 +105,9 @@ class WechatLoginService(
      * "LOGGED_IN". Possible statuses: NOT_LOGIN/WAITING/SCANNED/LOGGED_IN/EXPIRED/ERROR.
      */
     fun queryStatus(channelId: Long): WechatLoginStatus {
-        val client = loginClients[channelId]
+        val pending = loginClients[channelId]
             ?: return WechatLoginStatus(status = "NOT_LOGIN", message = "No login in progress")
+        val client = pending.client
 
         val loginStatus = client.loginStatus
         val status = loginStatus.status
@@ -74,18 +119,19 @@ class WechatLoginService(
                     WechatLoginStatus(status = "ERROR", message = "Login context missing")
                 } else {
                     persistCredentials(channelId, ctx.botToken, ctx.userId, ctx.botId, ctx.baseUrl)
-                    loginClients.remove(channelId)?.let { runCatching { it.close() } }
+                    removeAndClose(channelId)
                     log.info("WeChat login succeeded for channel {}, botId={}", channelId, ctx.botId)
                     WechatLoginStatus(status = "LOGGED_IN", message = "Login successful")
                 }
             }
             LoginStatus.Status.EXPIRED -> {
-                loginClients.remove(channelId)?.let { runCatching { it.close() } }
+                removeAndClose(channelId)
                 WechatLoginStatus(status = "EXPIRED", message = "QR code expired, please refresh")
             }
             LoginStatus.Status.ERROR -> {
-                loginClients.remove(channelId)?.let { runCatching { it.close() } }
-                WechatLoginStatus(status = "ERROR", message = loginStatus.errorMessage ?: "Login error")
+                val msg = loginStatus.errorMessage ?: "Login error"
+                removeAndClose(channelId)
+                WechatLoginStatus(status = "ERROR", message = msg)
             }
             LoginStatus.Status.SCANNED -> WechatLoginStatus(status = "SCANNED", message = "Scanned, waiting for confirmation")
             else -> WechatLoginStatus(status = "WAITING", message = "Waiting for scan")
@@ -96,11 +142,17 @@ class WechatLoginService(
      * Cancel an in-progress login and release the temporary client.
      */
     fun cancelLogin(channelId: Long) {
-        loginClients.remove(channelId)?.let {
-            runCatching { it.cancelLogin() }
-            runCatching { it.close() }
-        }
+        removeAndClose(channelId, cancelLogin = true)
         log.info("WeChat login cancelled for channel {}", channelId)
+    }
+
+    /**
+     * Release all in-progress logins and shut down the scheduler on shutdown.
+     */
+    @PreDestroy
+    fun shutdown() {
+        loginClients.keys.toList().forEach { removeAndClose(it, cancelLogin = true) }
+        cleanupScheduler.shutdownNow()
     }
 
     /**
