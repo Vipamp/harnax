@@ -5,6 +5,7 @@ import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 
 /**
  * Channel Adapter Interface
@@ -150,4 +151,31 @@ interface ChannelAdaptor {
      * @param sessionId Session identifier
      */
     suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {}
+
+    /**
+     * Start this channel with AI Agent integration.
+     *
+     * Establishes the underlying communication (WebSocket long connection,
+     * long polling, Stream connection, etc.) and wires each incoming message
+     * through a ChannelChatService backed by [agentAdaptor] and [sessionManager].
+     *
+     * Webhook-style channels may treat this as a no-op (their messages arrive
+     * via an external HTTP controller).
+     *
+     * @param channel Channel configuration
+     * @param agentAdaptor AI Agent processor
+     * @param sessionManager Session manager for conversation history
+     */
+    fun startChannelWithAgent(
+        channel: ChannelSpec,
+        agentAdaptor: AgentAdaptor,
+        sessionManager: ChannelSessionManager,
+    )
+
+    /**
+     * Stop this channel and release the underlying communication resources.
+     *
+     * @param channel Channel configuration
+     */
+    fun stopChannel(channel: ChannelSpec)
 }

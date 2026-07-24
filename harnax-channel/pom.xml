@@ -18,6 +18,8 @@
     <modules>
         <module>harnax-channel-sdk</module>
         <module>harnax-channel-feishu</module>
+        <module>harnax-channel-dingtalk</module>
+        <module>harnax-channel-wecom</module>
         <module>harnax-channel-wechat</module>
         <module>harnax-channel-service</module>
     </modules>

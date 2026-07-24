@@ -229,7 +229,7 @@ class FeishuAdaptor(
      * @param agentAdaptor AI Agent processor
      * @param sessionManager Session manager for conversation history
      */
-    fun startChannelWithAgent(
+    override fun startChannelWithAgent(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
@@ -245,7 +245,7 @@ class FeishuAdaptor(
     /**
      * Stop channel (for WebSocket mode)
      */
-    fun stopChannel(channel: ChannelSpec) {
+    override fun stopChannel(channel: ChannelSpec) {
         getMode(channel).stop(channel)
     }
 

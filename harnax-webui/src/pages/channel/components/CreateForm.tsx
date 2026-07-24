@@ -28,6 +28,14 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
     { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
   ];
 
+  // 各渠道类型推荐的默认通信模式
+  const DEFAULT_COMMUNICATION_MODE: Record<string, string> = {
+    feishu: 'websocket',
+    dingtalk: 'stream',
+    wecom: 'websocket',
+    http: 'webhook',
+  };
+
   // 重置表单
   useEffect(() => {
     if (!visible) {
@@ -74,18 +82,18 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
         return (
           <>
             <Form.Item
-              label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Token' })}
-              name="token"
-              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.token', defaultMessage: 'Please enter verification token' }) }]}
+              label={intl.formatMessage({ id: 'pages.channel.form.label.wecomBotId', defaultMessage: 'Bot ID' })}
+              name="appId"
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.wecomBotId', defaultMessage: 'Please enter WeCom bot ID' }) }]}
             >
-              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'WeCom verification token' })} />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.wecomBotId', defaultMessage: 'WeCom smart-robot BotID' })} />
             </Form.Item>
             <Form.Item
-              label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'EncodingAESKey' })}
-              name="encodingAesKey"
-              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.encodingAesKey', defaultMessage: 'Please enter encryption key' }) }]}
+              label={intl.formatMessage({ id: 'pages.channel.form.label.wecomBotSecret', defaultMessage: 'Bot Secret' })}
+              name="appSecret"
+              rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.wecomBotSecret', defaultMessage: 'Please enter WeCom bot secret' }) }]}
             >
-              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'WeCom message encryption key' })} />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.wecomBotSecret', defaultMessage: 'WeCom smart-robot Secret' })} />
             </Form.Item>
           </>
         );
@@ -177,7 +185,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
           <Select
             placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.type', defaultMessage: 'Please select channel type' })}
             options={CHANNEL_TYPES}
-            onChange={(value) => setSelectedType(value)}
+            onChange={(value) => {
+              setSelectedType(value);
+              const recommended = DEFAULT_COMMUNICATION_MODE[value];
+              if (recommended) {
+                form.setFieldValue('communicationMode', recommended);
+              }
+            }}
           />
         </Form.Item>
 
@@ -207,6 +221,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
             options={[
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
             ]}
           />

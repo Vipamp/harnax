@@ -102,16 +102,16 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         return (
           <>
             <Form.Item
-              label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Token' })}
-              name="token"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.wecomBotId', defaultMessage: 'Bot ID' })}
+              name="appId"
             >
-              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'WeCom verification token' })} />
+              <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.wecomBotId', defaultMessage: 'WeCom smart-robot BotID' })} />
             </Form.Item>
             <Form.Item
-              label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'EncodingAESKey' })}
-              name="encodingAesKey"
+              label={intl.formatMessage({ id: 'pages.channel.form.label.wecomBotSecret', defaultMessage: 'Bot Secret' })}
+              name="appSecret"
             >
-              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'WeCom message encryption key' })} />
+              <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.wecomBotSecret', defaultMessage: 'WeCom smart-robot Secret' })} />
             </Form.Item>
           </>
         );
@@ -230,6 +230,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
             options={[
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
               { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
             ]}
           />

@@ -1,7 +1,6 @@
 package com.agnetix.harnax.channel.service.manager
 
 import com.agnetix.harnax.agent.protocol.AgentRequest
-import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.feishu.FeishuMessageParser
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
@@ -12,7 +11,6 @@ import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
 import com.agnetix.harnax.channel.service.client.RouterClient
-import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -30,8 +28,7 @@ import org.springframework.stereotype.Service
 class ChannelManager(
     private val routerClient: RouterClient,
     private val sessionManager: ChannelSessionManager,
-    private val wechatAdaptor: WechatAdaptor,
-    private val feishuAdaptor: FeishuAdaptor,
+    private val adaptorRegistry: ChannelAdaptorRegistry,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelManager::class.java)
@@ -46,6 +43,12 @@ class ChannelManager(
 
     /** Feishu-specific message parser */
     private val feishuMessageParser = FeishuMessageParser()
+
+    /** DingTalk-specific message parser */
+    private val dingtalkMessageParser = com.agnetix.harnax.channel.dingtalk.DingtalkMessageParser()
+
+    /** WeCom-specific message parser */
+    private val wecomMessageParser = com.agnetix.harnax.channel.wecom.WecomMessageParser()
 
     /**
      * Handle an incoming channel message.
@@ -75,11 +78,7 @@ class ChannelManager(
     /**
      * Get the appropriate ChannelAdaptor for the given channel type.
      */
-    private fun getAdaptor(type: ChannelType): ChannelAdaptor = when (type) {
-        ChannelType.WECHAT -> wechatAdaptor
-        ChannelType.FEISHU -> feishuAdaptor
-        else -> throw IllegalArgumentException("Unsupported channel type: $type")
-    }
+    private fun getAdaptor(type: ChannelType): ChannelAdaptor = adaptorRegistry.get(type)
 
     /**
      * Get the appropriate MessageParser for the given channel type.
@@ -88,6 +87,8 @@ class ChannelManager(
      */
     private fun getParser(type: ChannelType): MessageParser = when (type) {
         ChannelType.FEISHU -> feishuMessageParser
+        ChannelType.DINGTALK -> dingtalkMessageParser
+        ChannelType.WECOM -> wecomMessageParser
         else -> defaultMessageParser
     }
 

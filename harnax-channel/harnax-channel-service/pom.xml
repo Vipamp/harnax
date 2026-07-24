@@ -34,6 +34,16 @@
         </dependency>
         <dependency>
             <groupId>com.agnetix</groupId>
+            <artifactId>harnax-channel-dingtalk</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.agnetix</groupId>
+            <artifactId>harnax-channel-wecom</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.agnetix</groupId>
             <artifactId>harnax-entity</artifactId>
             <version>${project.version}</version>
         </dependency>

@@ -1,10 +1,12 @@
 package com.agnetix.harnax.channel.service.config
 
+import com.agnetix.harnax.channel.dingtalk.DingtalkAdaptor
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
+import com.agnetix.harnax.channel.wecom.WecomAdaptor
 import io.netty.channel.ChannelOption
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -97,6 +99,20 @@ class ChannelConfig(
      */
     @Bean
     fun feishuAdaptor(): FeishuAdaptor = FeishuAdaptor()
+
+    /**
+     * Registers the DingTalk adaptor Bean.
+     * DingtalkAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
+     */
+    @Bean
+    fun dingtalkAdaptor(): DingtalkAdaptor = DingtalkAdaptor()
+
+    /**
+     * Registers the WeCom adaptor Bean.
+     * WecomAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
+     */
+    @Bean
+    fun wecomAdaptor(): WecomAdaptor = WecomAdaptor()
 
     /**
      * In-memory implementation of ChannelSessionManager.

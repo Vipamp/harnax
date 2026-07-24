@@ -1,12 +1,11 @@
 package com.agnetix.harnax.channel.service.bootstrap
 
-import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
 import com.agnetix.harnax.channel.service.client.RouterClient
+import com.agnetix.harnax.channel.service.manager.ChannelAdaptorRegistry
 import com.agnetix.harnax.channel.service.mapper.ChannelEntityConverter
-import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.mapper.ChannelMapper
 import org.slf4j.LoggerFactory
@@ -36,8 +35,7 @@ import java.util.concurrent.ConcurrentHashMap
 @Component
 class ChannelBootstrapRunner(
     private val channelMapper: ChannelMapper,
-    private val wechatAdaptor: WechatAdaptor,
-    private val feishuAdaptor: FeishuAdaptor,
+    private val adaptorRegistry: ChannelAdaptorRegistry,
     private val routerClient: RouterClient,
     private val sessionManager: ChannelSessionManager,
 ) {
@@ -117,6 +115,7 @@ class ChannelBootstrapRunner(
                         runningChannels[channelId] = RunningChannel(
                             spec = ChannelEntityConverter.toSpec(entity),
                             updateTime = entity.updateTime,
+                            configFingerprint = configFingerprint(entity),
                         )
                     }
                 } catch (e: Exception) {
@@ -130,7 +129,10 @@ class ChannelBootstrapRunner(
             toCheck.forEach { channelId ->
                 val entity = dbMap[channelId] ?: return@forEach
                 val running = runningChannels[channelId] ?: return@forEach
-                if (entity.updateTime != running.updateTime) {
+                val newFingerprint = configFingerprint(entity)
+                val changed = entity.updateTime != running.updateTime ||
+                    newFingerprint != running.configFingerprint
+                if (changed) {
                     restartedCount++
                     log.info(
                         "Channel config changed, restarting listener: id={}, name={}, updateTime {} -> {}",
@@ -149,6 +151,7 @@ class ChannelBootstrapRunner(
                             runningChannels[channelId] = RunningChannel(
                                 spec = ChannelEntityConverter.toSpec(entity),
                                 updateTime = entity.updateTime,
+                                configFingerprint = newFingerprint,
                             )
                         } else {
                             // Changed to webhook mode, no longer needs active listening
@@ -182,49 +185,32 @@ class ChannelBootstrapRunner(
      */
     private fun startSingle(entity: Channel): Boolean {
         val spec = ChannelEntityConverter.toSpec(entity)
-        return when (entity.communicationMode.lowercase()) {
-            "websocket" -> {
-                log.info("Starting channel (WebSocket) id={}, name={}, type={}", entity.id, entity.name, entity.type)
-                feishuAdaptor.startChannelWithAgent(spec, routerAgentAdaptor, sessionManager)
-                true
-            }
-            "long_polling" -> {
-                log.info("Starting channel (LongPolling) id={}, name={}, type={}", entity.id, entity.name, entity.type)
-                wechatAdaptor.startChannelWithAgent(spec, routerAgentAdaptor, sessionManager)
-                true
-            }
-            "webhook" -> {
-                log.info("Channel id={} uses webhook callback mode, skipping active connection", entity.id)
-                false
-            }
-            else -> {
-                log.warn(
-                    "Channel id={} has unsupported communication mode: {}, skipping",
-                    entity.id,
-                    entity.communicationMode,
-                )
-                false
-            }
+        if (spec.communicationMode.equals("webhook", ignoreCase = true)) {
+            log.info("Channel id={} uses webhook callback mode, skipping active connection", entity.id)
+            return false
         }
+        val adaptor = adaptorRegistry.get(spec.type)
+        log.info(
+            "Starting channel id={}, name={}, type={}, mode={}",
+            entity.id,
+            entity.name,
+            entity.type,
+            entity.communicationMode,
+        )
+        adaptor.startChannelWithAgent(spec, routerAgentAdaptor, sessionManager)
+        return true
     }
 
     /**
      * Stops the channel listener based on the communication mode defined in [ChannelSpec].
      */
     private fun stopBySpec(spec: ChannelSpec) {
-        when (spec.communicationMode.lowercase()) {
-            "websocket" -> {
-                log.info("Stopping channel (WebSocket) id={}, name={}", spec.id, spec.name)
-                feishuAdaptor.stopChannel(spec)
-            }
-            "long_polling" -> {
-                log.info("Stopping channel (LongPolling) id={}, name={}", spec.id, spec.name)
-                wechatAdaptor.stopChannel(spec)
-            }
-            else -> {
-                log.debug("Channel id={} uses mode {}, no active stop required", spec.id, spec.communicationMode)
-            }
+        if (spec.communicationMode.equals("webhook", ignoreCase = true)) {
+            log.debug("Channel id={} uses webhook mode, no active stop required", spec.id)
+            return
         }
+        log.info("Stopping channel id={}, name={}, type={}", spec.id, spec.name, spec.type)
+        adaptorRegistry.get(spec.type).stopChannel(spec)
     }
 
     // ==================== Internal Data Structures ====================
@@ -235,5 +221,21 @@ class ChannelBootstrapRunner(
     private data class RunningChannel(
         val spec: ChannelSpec,
         val updateTime: LocalDateTime,
+        val configFingerprint: String,
     )
+
+    /**
+     * Builds a fingerprint of the config-relevant fields of a channel entity.
+     * Used as a secondary change signal alongside update_time, which has only
+     * second precision (MySQL DATETIME) and therefore cannot distinguish two
+     * edits made within the same second.
+     */
+    private fun configFingerprint(entity: Channel): String = listOf(
+        entity.type,
+        entity.communicationMode,
+        entity.agentId.toString(),
+        entity.enabled.toString(),
+        entity.status.toString(),
+        entity.configJson ?: "",
+    ).joinToString("|")
 }

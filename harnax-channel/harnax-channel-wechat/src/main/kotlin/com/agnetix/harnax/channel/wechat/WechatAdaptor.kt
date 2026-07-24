@@ -161,7 +161,7 @@ class WechatAdaptor(
      * @param agentAdaptor AI Agent processor (e.g., ReActAgentAdaptor)
      * @param sessionManager Session manager for conversation history
      */
-    fun startChannelWithAgent(
+    override fun startChannelWithAgent(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
@@ -175,7 +175,7 @@ class WechatAdaptor(
     /**
      * Stop WeChat channel
      */
-    fun stopChannel(channel: ChannelSpec) {
+    override fun stopChannel(channel: ChannelSpec) {
         longPollingMode.stop(channel)
     }
 
