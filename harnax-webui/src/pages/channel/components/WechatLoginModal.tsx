@@ -39,6 +39,7 @@ const WechatLoginModal: React.FC<WechatLoginModalProps> = ({
   const [qrImage, setQrImage] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const beginningRef = useRef<boolean>(false);
 
   const clearPoll = () => {
     if (pollTimerRef.current) {
@@ -49,6 +50,8 @@ const WechatLoginModal: React.FC<WechatLoginModalProps> = ({
 
   const beginLogin = async () => {
     if (!channelId) return;
+    if (beginningRef.current) return;
+    beginningRef.current = true;
     clearPoll();
     setPhase('loading');
     setQrImage('');
@@ -66,6 +69,8 @@ const WechatLoginModal: React.FC<WechatLoginModalProps> = ({
     } catch (e: any) {
       setPhase('error');
       setErrorMsg(e?.message || intl.formatMessage({ id: 'pages.channel.wechat.qrFailed', defaultMessage: 'Failed to generate QR code' }));
+    } finally {
+      beginningRef.current = false;
     }
   };
 
@@ -83,10 +88,10 @@ const WechatLoginModal: React.FC<WechatLoginModalProps> = ({
           clearPoll();
           setPhase('success');
           setTimeout(() => onSuccess(), 800);
-        } else if (status === 'EXPIRED') {
+        } else if (status === 'EXPIRED' || status === 'NOT_LOGIN') {
           clearPoll();
           setPhase('expired');
-        } else if (status === 'ERROR' || status === 'NOT_LOGIN') {
+        } else if (status === 'ERROR') {
           clearPoll();
           setPhase('error');
           setErrorMsg(res.data.message || intl.formatMessage({ id: 'pages.channel.wechat.loginError', defaultMessage: 'Login failed' }));
