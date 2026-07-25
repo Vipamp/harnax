@@ -45,6 +45,7 @@ const ChannelManagement: React.FC = () => {
   // Channel 类型选项
   const CHANNEL_TYPES = [
     { label: intl.formatMessage({ id: 'pages.channel.type.wecom', defaultMessage: 'WeCom' }), value: 'wecom' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.wechat', defaultMessage: 'WeChat' }), value: 'wechat' },
     { label: intl.formatMessage({ id: 'pages.channel.type.feishu', defaultMessage: 'Feishu' }), value: 'feishu' },
     { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
     { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
@@ -246,6 +247,7 @@ const ChannelManagement: React.FC = () => {
   const getTypeColor = (type: string) => {
     const colorMap: Record<string, string> = {
       wecom: 'green',
+      wechat: 'lime',
       feishu: 'blue',
       dingtalk: 'cyan',
       http: 'orange',

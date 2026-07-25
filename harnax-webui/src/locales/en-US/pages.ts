@@ -238,6 +238,8 @@ export default {
   'pages.channel.title': 'Channel Management',
   // Channel Management
   'pages.channel.type.wecom': 'WeCom',
+  'pages.channel.type.wechat': 'WeChat',
+  'pages.channel.form.wechatHint': 'No credentials needed. After creation, click the WeChat icon in the list to scan and log in.',
   'pages.channel.type.feishu': 'Feishu',
   'pages.channel.type.dingtalk': 'DingTalk',
   'pages.channel.type.http': 'HTTP',

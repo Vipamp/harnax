@@ -23,6 +23,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
   // Channel 类型选项
   const CHANNEL_TYPES = [
     { label: intl.formatMessage({ id: 'pages.channel.type.wecom', defaultMessage: 'WeCom' }), value: 'wecom' },
+    { label: intl.formatMessage({ id: 'pages.channel.type.wechat', defaultMessage: 'WeChat' }), value: 'wechat' },
     { label: intl.formatMessage({ id: 'pages.channel.type.feishu', defaultMessage: 'Feishu' }), value: 'feishu' },
     { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
     { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
@@ -33,6 +34,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
     feishu: 'websocket',
     dingtalk: 'stream',
     wecom: 'websocket',
+    wechat: 'long_polling',
     http: 'webhook',
   };
 
@@ -96,6 +98,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
               <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.wecomBotSecret', defaultMessage: 'WeCom smart-robot Secret' })} />
             </Form.Item>
           </>
+        );
+      case 'wechat':
+        return (
+          <Form.Item label=" " colon={false}>
+            <Text type="secondary">
+              {intl.formatMessage({
+                id: 'pages.channel.form.wechatHint',
+                defaultMessage: 'No credentials needed. After creation, click the WeChat icon in the list to scan and log in.',
+              })}
+            </Text>
+          </Form.Item>
         );
       case 'feishu':
         return (

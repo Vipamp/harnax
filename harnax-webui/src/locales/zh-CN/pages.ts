@@ -238,6 +238,8 @@ export default {
   'pages.channel.title': 'Channel 管理',
   // Channel Management
   'pages.channel.type.wecom': '企业微信',
+  'pages.channel.type.wechat': '个人微信',
+  'pages.channel.form.wechatHint': '无需填写凭证，创建后在列表中点击微信图标扫码登录即可',
   'pages.channel.type.feishu': '飞书',
   'pages.channel.type.dingtalk': '钉钉',
   'pages.channel.type.http': 'HTTP接口',
