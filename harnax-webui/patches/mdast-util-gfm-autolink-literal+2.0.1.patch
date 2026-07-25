@@ -1,0 +1,16 @@
+diff --git a/node_modules/mdast-util-gfm-autolink-literal/lib/index.js b/node_modules/mdast-util-gfm-autolink-literal/lib/index.js
+index c5ca771..fa851f4 100644
+--- a/node_modules/mdast-util-gfm-autolink-literal/lib/index.js
++++ b/node_modules/mdast-util-gfm-autolink-literal/lib/index.js
+@@ -132,7 +132,10 @@ function transformGfmAutolinkLiterals(tree) {
+     tree,
+     [
+       [/(https?:\/\/|www(?=\.))([-.\w]+)([^ \t\r\n]*)/gi, findUrl],
+-      [/(?<=^|\s|\p{P}|\p{S})([-.\w+]+)@([-\w]+(?:\.[-\w]+)+)/gu, findEmail]
++      // Lookbehind removed for old-WebKit compatibility (iPadOS < 16.4 throws
++      // "invalid group specifier name" at parse time). The boundary condition
++      // is re-validated in findEmail via `previous(match, true)`.
++      [/([-.\w+]+)@([-\w]+(?:\.[-\w]+)+)/gu, findEmail]
+     ],
+     {ignore: ['link', 'linkReference']}
+   )
