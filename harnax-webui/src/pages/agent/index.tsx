@@ -38,6 +38,7 @@ import {
 } from '@ant-design/icons';
 import CreateForm from './components/CreateForm';
 import UpdateForm from './components/UpdateForm';
+import AgentRefreshModal from './components/AgentRefreshModal';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 import EditButton from '@/components/EditButton';
@@ -373,6 +374,8 @@ const AgentManagement: React.FC = () => {
   const [createModalVisible, setCreateModalVisible] = useState<boolean>(false);
   const [updateModalVisible, setUpdateModalVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.AgentItem>();
+  const [refreshModalVisible, setRefreshModalVisible] = useState<boolean>(false);
+  const [refreshAgent, setRefreshAgent] = useState<{ id: number; name: string }>();
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.AgentItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -693,9 +696,14 @@ const AgentManagement: React.FC = () => {
               const response = await updateAgent(currentRow.id!, values);
               if (response.code === 200) {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
+                const savedId = currentRow.id!;
+                const savedName = currentRow.name || '';
                 setUpdateModalVisible(false);
                 setCurrentRow(undefined);
                 loadDataWithFilters()
+                // 保存成功后，弹出关联会话选择性刷新
+                setRefreshAgent({ id: savedId, name: savedName });
+                setRefreshModalVisible(true);
               } else {
                 messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' }));
               }
@@ -705,6 +713,16 @@ const AgentManagement: React.FC = () => {
           }}
         />
       )}
+      {/* 保存后选择性刷新关联会话 */}
+      <AgentRefreshModal
+        visible={refreshModalVisible}
+        agentId={refreshAgent?.id}
+        agentName={refreshAgent?.name}
+        onClose={() => {
+          setRefreshModalVisible(false);
+          setRefreshAgent(undefined);
+        }}
+      />
     </PageContainer>
   );
 };

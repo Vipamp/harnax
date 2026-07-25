@@ -6,6 +6,9 @@ import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.AgentService
+import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
+import com.agnetix.harnax.admin.service.impl.RelatedSessionInfo
+import com.agnetix.harnax.admin.service.impl.SessionRefreshResult
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Agent Management", description = "Agent related APIs")
 class AgentController(
     private val agentService: AgentService,
+    private val agentSessionRefreshService: AgentSessionRefreshService,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentController::class.java)
@@ -81,6 +85,32 @@ class AgentController(
         log.error("Failed to update agent", e)
         ResultVo.error(e.message ?: "Failed to update agent")
     }
+
+    @GetMapping("/{agentId}/related-sessions")
+    @Operation(summary = "List agent related sessions", description = "List channel/web sessions bound to the agent, for selective refresh after config changes")
+    fun relatedSessions(
+        @Parameter(description = "Agent ID") @PathVariable(name = "agentId") agentId: Long,
+    ): ResultVo<List<RelatedSessionInfo>> = try {
+        ResultVo.success(agentSessionRefreshService.listRelatedSessions(agentId))
+    } catch (e: Exception) {
+        log.error("Failed to list related sessions for agent {}", agentId, e)
+        ResultVo.error(e.message ?: "Failed to list related sessions")
+    }
+
+    @PostMapping("/refresh-sessions")
+    @Operation(summary = "Refresh agent sessions", description = "Push REFRESH command to the selected sessions so they rebuild with the latest agent configuration")
+    fun refreshSessions(
+        @RequestBody request: RefreshSessionsRequest,
+    ): ResultVo<List<SessionRefreshResult>> = try {
+        ResultVo.success(agentSessionRefreshService.refreshSessions(request.sessionIds))
+    } catch (e: Exception) {
+        log.error("Failed to refresh sessions", e)
+        ResultVo.error(e.message ?: "Failed to refresh sessions")
+    }
+
+    data class RefreshSessionsRequest(
+        val sessionIds: List<String> = emptyList(),
+    )
 
     @PutMapping("/toggle/{id}")
     @Operation(summary = "Toggle agent status", description = "Toggle agent status by agent ID")

@@ -181,3 +181,25 @@ export async function getModelList(
     ...(options || {}),
   });
 }
+
+/**
+ * 获取智能体关联的会话列表（渠道会话 + Web 会话），用于保存后选择性刷新
+ */
+export async function getAgentRelatedSessions(agentId: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/agents/${agentId}/related-sessions`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/**
+ * 对勾选的会话推送 REFRESH 命令，使其下一条消息使用最新智能体配置
+ */
+export async function refreshAgentSessions(sessionIds: string[], options?: { [key: string]: any }) {
+  return request('/api/admin/agents/refresh-sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    data: { sessionIds },
+    ...(options || {}),
+  });
+}
