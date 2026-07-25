@@ -167,8 +167,10 @@ class WechatAdaptor(
         sessionManager: ChannelSessionManager,
     ) {
         val chatService = ChannelChatService(sessionManager)
+        val messageParser = WechatMessageParser()
         startChannel(channel) { message ->
-            chatService.chat(message, channel, agentAdaptor, this)
+            val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
+            chatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
     }
 

@@ -50,6 +50,9 @@ class ChannelManager(
     /** WeCom-specific message parser */
     private val wecomMessageParser = com.agnetix.harnax.channel.wecom.WecomMessageParser()
 
+    /** WeChat-specific message parser */
+    private val wechatMessageParser = com.agnetix.harnax.channel.wechat.WechatMessageParser()
+
     /**
      * Handle an incoming channel message.
      * Routes the message through the session-router to agent-service
@@ -89,6 +92,7 @@ class ChannelManager(
         ChannelType.FEISHU -> feishuMessageParser
         ChannelType.DINGTALK -> dingtalkMessageParser
         ChannelType.WECOM -> wecomMessageParser
+        ChannelType.WECHAT -> wechatMessageParser
         else -> defaultMessageParser
     }
 

@@ -24,6 +24,8 @@ import io.agentscope.core.message.ImageBlock
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.ToolCallState
+import io.agentscope.core.message.ToolResultBlock
 import io.agentscope.core.message.ToolUseBlock
 import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionMode
@@ -339,7 +341,7 @@ class HarnessAgentWrapper(
                     if (error != null) {
                         log.warn("[harness] Late error after successful call for session={}, suppressed: {}", sessionId, error!!.message)
                     }
-                    val content = MsgExtractHelper.extractText(result!!) ?: ""
+                    val content = resolveReplyContent(result!!)
                     val thinking = MsgExtractHelper.extractThinking(result!!)
                     return ChatResponse(
                         sessionId = sessionId,
@@ -356,6 +358,14 @@ class HarnessAgentWrapper(
                     if (interrupted) {
                         log.info("[harness] Call interrupted for session={}, suppressed error: {}", sessionId, cause.message)
                         return ChatResponse(sessionId = sessionId, content = "", thinking = null)
+                    }
+                    // HITL pause: the agent stopped waiting for tool confirmation. Text-only
+                    // channels can't render a confirm dialog, so reply with an /approve
+                    // /deny prompt instead of surfacing the raw framework error.
+                    val pausePrompt = buildConfirmPromptIfPaused(cause)
+                    if (pausePrompt != null) {
+                        log.info("[harness] Call paused for tool confirmation for session={}", sessionId)
+                        return ChatResponse(sessionId = sessionId, content = pausePrompt, thinking = null)
                     }
                     throw cause
                 }
@@ -374,6 +384,127 @@ class HarnessAgentWrapper(
             }
         } finally {
             persistKeepAliveSnapshot(ctxResult)
+        }
+    }
+
+    /**
+     * Resolve the user-facing reply text from the final agent message.
+     *
+     * Some models end the turn immediately after a tool call without emitting a
+     * final text block. In that case fall back to the tool result output so the
+     * user always sees an outcome (success or failure) instead of an empty reply.
+     */
+    private fun resolveReplyContent(msg: Msg): String {
+        // HITL pause returned as a normal result: tool calls left in ASKING state.
+        val asking = msg.getContentBlocks(ToolUseBlock::class.java)
+            .filter { it.state == ToolCallState.ASKING }
+        if (asking.isNotEmpty()) {
+            pendingToolCalls = asking
+            log.info(
+                "[harness] Result msg carries {} ASKING tool call(s) for session={}, prompting for confirmation",
+                asking.size,
+                sessionId,
+            )
+            val toolLines = asking.mapIndexed { i, b -> "${i + 1}. ${b.name}" }.joinToString("\n") + "\n\n"
+            return "⚠️ AI 需要执行以下工具，请确认：\n\n${toolLines}回复 /approve 同意执行，或 /deny 拒绝。"
+        }
+
+        val text = MsgExtractHelper.extractText(msg)
+        if (!text.isNullOrBlank()) return text
+
+        val toolResults = msg.getContentBlocks(ToolResultBlock::class.java)
+        if (toolResults.isNotEmpty()) {
+            val toolOutput = toolResults.joinToString("\n") { MsgExtractHelper.extractToolOutput(it) }.trim()
+            if (toolOutput.isNotBlank()) {
+                log.info("[harness] Final msg has no text block, falling back to tool result output for session={}", sessionId)
+                return toolOutput
+            }
+        }
+
+        log.warn("[harness] Final msg has neither text nor tool output for session={}, returning completion notice", sessionId)
+        return "✅ 已执行完成，但模型未返回文本说明。"
+    }
+
+    /**
+     * If the throwable (or any of its causes) is the agentscope HITL pause —
+     * tool calls waiting in ASKING state for user confirmation — build a
+     * user-facing prompt asking for /approve or /deny. Returns null otherwise.
+     *
+     * The framework throws a plain IllegalStateException here (no tool call
+     * objects attached), so we parse "name (id=call_xxx)" pairs out of the
+     * message and rebuild minimal [ToolUseBlock]s into [pendingToolCalls];
+     * the confirm flow matches them against the persisted ASKING state by id.
+     */
+    private fun buildConfirmPromptIfPaused(error: Throwable): String? {
+        var t: Throwable? = error
+        var msg: String? = null
+        while (t != null) {
+            val m = t.message
+            if (m != null && (m.contains("human-in-the-loop confirmation") || m.contains("ASKING state"))) {
+                msg = m
+                break
+            }
+            t = t.cause
+        }
+        if (msg == null) return null
+
+        // Prefer the complete ToolUseBlocks (with full input args) from the
+        // persisted agent state. Confirming with a rebuilt block that has an
+        // empty input map would execute the tool with no arguments.
+        val askingBlocks = findAskingToolCallsFromState()
+        if (askingBlocks.isNotEmpty()) {
+            pendingToolCalls = askingBlocks
+            log.info(
+                "[harness] Recovered {} ASKING tool call(s) from persisted state for session={}: {}",
+                askingBlocks.size,
+                sessionId,
+                askingBlocks.joinToString(", ") { it.name },
+            )
+        } else {
+            // Fallback: rebuild minimal blocks from the message. The confirm may
+            // execute with empty args, but at least /approve will not 404.
+            val pairs = Regex("([\\w-]+)\\s*\\(id=([^)\\s]+)\\)").findAll(msg)
+                .map { it.groupValues[1] to it.groupValues[2] }
+                .toList()
+            if (pairs.isNotEmpty()) {
+                pendingToolCalls = pairs.map { (name, id) ->
+                    ToolUseBlock.builder().id(id).name(name).input(emptyMap()).build()
+                }
+                log.warn(
+                    "[harness] State recovery failed; cached {} minimal pending tool call(s) from pause message for session={}",
+                    pairs.size,
+                    sessionId,
+                )
+            }
+        }
+
+        val toolNames = pendingToolCalls.map { it.name }
+        val toolLines = if (toolNames.isEmpty()) {
+            ""
+        } else {
+            toolNames.mapIndexed { i, name -> "${i + 1}. $name" }.joinToString("\n") + "\n\n"
+        }
+        return "⚠️ AI 需要执行以下工具，请确认：\n\n${toolLines}回复 /approve 同意执行，或 /deny 拒绝。"
+    }
+
+    /**
+     * Recover the pending (ASKING) tool call blocks — including their full
+     * input arguments — from the persisted [AgentState] context, scanning from
+     * the most recent message backwards.
+     */
+    private fun findAskingToolCallsFromState(): List<ToolUseBlock> {
+        return try {
+            val delegate = harnessAgent.delegate ?: return emptyList()
+            val state = delegate.getAgentState(userId, sessionId) ?: return emptyList()
+            for (m in state.context.asReversed()) {
+                val asking = m.getContentBlocks(ToolUseBlock::class.java)
+                    .filter { it.state == ToolCallState.ASKING }
+                if (asking.isNotEmpty()) return asking
+            }
+            emptyList()
+        } catch (e: Exception) {
+            log.debug("[harness] findAskingToolCallsFromState failed for session={}: {}", sessionId, e.message)
+            emptyList()
         }
     }
 

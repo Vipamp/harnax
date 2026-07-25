@@ -15,6 +15,7 @@ import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
+import com.agnetix.harnax.agent.protocol.ToolResultChatEvent
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.service.runner.AgentRunner
@@ -556,12 +557,14 @@ class DefaultAgentRunner(
         val events = stream.collectList().block() ?: emptyList()
 
         val textContent = StringBuilder()
+        val toolResults = mutableListOf<ToolResultChatEvent>()
         var hasError = false
         var errorMessage = ""
 
         for (event in events) {
             when (event) {
                 is StreamTextChatEvent -> textContent.append(event.message)
+                is ToolResultChatEvent -> toolResults.add(event)
                 is ErrorChatEvent -> {
                     hasError = true
                     errorMessage = "[${event.code}] ${event.message}"
@@ -576,6 +579,14 @@ class DefaultAgentRunner(
             val output = textContent.toString()
             val message = if (output.isNotBlank()) {
                 output
+            } else if (toolResults.isNotEmpty()) {
+                // Model ended the turn right after tool execution without a final
+                // text; surface the tool outcomes so the user sees what happened.
+                toolResults.joinToString("\n") { tr ->
+                    val status = if (tr.success) "✅" else "❌"
+                    val detail = tr.message.trim().let { if (it.length > 500) it.take(500) + "…" else it }
+                    "$status ${tr.toolName}${if (detail.isBlank()) "" else ": $detail"}"
+                }
             } else if (isConfirmed) {
                 "Tools approved, agent resumed."
             } else {
