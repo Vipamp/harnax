@@ -47,6 +47,10 @@ class SandboxProperties {
     var isolationScope: String = "SESSION"
     var keepAlive: Boolean = false
     var network: String? = null
+    var cliPluginsEnabled: Boolean = false
+    var pluginImage: String = "harnax-sandbox:latest"
+    var pluginAdminUrl: String = ""
+    var pluginInternalSecret: String = ""
 }
 
 @ConfigurationProperties(prefix = "harness")
@@ -108,6 +112,10 @@ class HarnessAutoConfiguration {
                 .getOrDefault(IsolationScope.SESSION),
             keepAlive = sandboxProps.keepAlive,
             network = sandboxProps.network,
+            cliPluginsEnabled = sandboxProps.cliPluginsEnabled,
+            pluginImage = sandboxProps.pluginImage,
+            pluginAdminUrl = sandboxProps.pluginAdminUrl,
+            pluginInternalSecret = sandboxProps.pluginInternalSecret,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,

@@ -55,6 +55,7 @@ export default {
   'menu.context.mcp': 'MCP 服务',
   'menu.context.skill': '技能管理',
   'menu.context.tool': '工具管理',
+  'menu.context.cliPlugin': 'CLI 插件',
   'menu.context.channel': 'Channel 管理',
   
   // 智能体

@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.util
 
 import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
@@ -18,6 +19,8 @@ class UserContextUtil {
     companion object {
         private const val AUTHORIZATION_HEADER = "Authorization"
         private const val BEARER_PREFIX = "Bearer "
+        private const val INTERNAL_SERVICE_PRINCIPAL = "internal-service"
+        private const val INTERNAL_SERVICE_USERNAME = "SYSTEM"
 
         /**
          * Get current request
@@ -49,40 +52,56 @@ class UserContextUtil {
         }
 
         /**
-         * Get current logged-in username
+         * Get current logged-in username.
+         * Supports both JWT auth and internal service auth (shared secret).
          *
          * @param jwtUtil JWT utility
-         * @return Username, null if not logged in
+         * @return Username, throws if not authenticated
          */
-        fun getCurrentUsername(jwtUtil: JwtUtil): String = try {
-            val token = getToken()
-            if (token != null && jwtUtil.validateToken(token)) {
-                jwtUtil.getUsernameFromToken(token)
-            } else {
+        fun getCurrentUsername(jwtUtil: JwtUtil): String {
+            // Check if this is an internal service call (e.g. CLI in sandbox)
+            val auth = SecurityContextHolder.getContext().authentication
+            if (auth != null && auth.principal == INTERNAL_SERVICE_PRINCIPAL) {
+                return INTERNAL_SERVICE_USERNAME
+            }
+            return try {
+                val token = getToken()
+                if (token != null && jwtUtil.validateToken(token)) {
+                    jwtUtil.getUsernameFromToken(token)
+                } else {
+                    throw RuntimeException("Not logged in")
+                }
+            } catch (e: Exception) {
+                LoggerFactory.getLogger(UserContextUtil::class.java).warn("Failed to get current username: {}", e.message)
                 throw RuntimeException("Not logged in")
             }
-        } catch (e: Exception) {
-            LoggerFactory.getLogger(UserContextUtil::class.java).warn("Failed to get current username: {}", e.message)
-            throw RuntimeException("Not logged in")
         }
 
         /**
-         * Get current logged-in user ID
+         * Get current logged-in user ID.
+         * Supports both JWT auth and internal service auth (shared secret).
          *
          * @param jwtUtil JWT utility
          * @return User ID, null if not logged in
          */
-        fun getCurrentUserId(jwtUtil: JwtUtil): Long? = try {
-            val token = getToken()
-            val valid = token?.let { jwtUtil.validateToken(it) } ?: false
-            if (valid && token != null) {
-                jwtUtil.getUserIdFromToken(token)
-            } else {
+        fun getCurrentUserId(jwtUtil: JwtUtil): Long? {
+            // Internal service calls have no specific user ID
+            val auth = SecurityContextHolder.getContext().authentication
+            if (auth != null && auth.principal == INTERNAL_SERVICE_PRINCIPAL) {
+                return null
+            }
+            return try {
+                val token = getToken()
+                val valid = token?.let { jwtUtil.validateToken(it) } ?: false
+                if (valid && token != null) {
+                    jwtUtil.getUserIdFromToken(token)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                LoggerFactory.getLogger(UserContextUtil::class.java).error("Failed to get current user ID: {}", e.message)
                 null
             }
-        } catch (e: Exception) {
-            LoggerFactory.getLogger(UserContextUtil::class.java).error("Failed to get current user ID: {}", e.message)
-            null
         }
     }
 }

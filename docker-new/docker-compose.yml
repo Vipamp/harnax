@@ -310,7 +310,12 @@ services:
       SANDBOX_KEEP_ALIVE: "true"
       # Docker network for sandbox containers (default: bridge).
       # Set to a custom network name if sandbox needs to reach other services by DNS name.
-      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-bridge}
+      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-docker-new_harnax-network}
+      # CLI Plugin Configuration (sandbox plugin injection)
+      SANDBOX_CLI_PLUGINS_ENABLED: "true"
+      SANDBOX_PLUGIN_IMAGE: harnax-sandbox:latest
+      SANDBOX_PLUGIN_ADMIN_URL: http://admin:8080
+      SANDBOX_PLUGIN_INTERNAL_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}
@@ -455,7 +460,7 @@ services:
       - channel-service
       - scheduler
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
       interval: 30s
       timeout: 5s
       retries: 3

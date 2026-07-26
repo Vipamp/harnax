@@ -44,7 +44,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
         name: values.name,
         type: values.type,
         agentId: values.agentId,
-        communicationMode: values.communicationMode || 'webhook',
+        communicationMode: values.type === 'wechat' ? 'long_polling' : (values.communicationMode || 'webhook'),
         enabled: values.enabled === 1,
         token: config.token,
         encodingAesKey: config.encodingAesKey,
@@ -213,7 +213,12 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           <Select
             placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.type', defaultMessage: 'Please select channel type' })}
             options={CHANNEL_TYPES}
-            onChange={(value) => setSelectedType(value)}
+            onChange={(value) => {
+              setSelectedType(value);
+              if (value === 'wechat') {
+                form.setFieldValue('communicationMode', 'long_polling');
+              }
+            }}
           />
         </Form.Item>
 
@@ -233,20 +238,22 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           />
         </Form.Item>
 
-        <Form.Item
-          label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
-          name="communicationMode"
-        >
-          <Select
-            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
-            options={[
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
-            ]}
-          />
-        </Form.Item>
+        {selectedType !== 'wechat' && (
+          <Form.Item
+            label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
+            name="communicationMode"
+          >
+            <Select
+              placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
+              options={[
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
+              ]}
+            />
+          </Form.Item>
+        )}
 
         <Form.Item
           label={intl.formatMessage({ id: 'pages.channel.form.label.enabled', defaultMessage: 'Auto Listen' })}

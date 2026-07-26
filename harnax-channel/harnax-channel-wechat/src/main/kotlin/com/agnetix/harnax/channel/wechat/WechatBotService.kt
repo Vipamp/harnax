@@ -214,6 +214,33 @@ class WechatBotService {
     }
 
     /**
+     * Start typing indicator only (no message sent).
+     *
+     * Shows the "typing..." status to the user without sending any text.
+     * The indicator is cleared by a subsequent [stopTyping] or automatically
+     * when a real message is sent via [sendTextWithTyping].
+     *
+     * @param channelId Channel ID
+     * @param toUserId Target user ID
+     */
+    fun startTyping(channelId: Long, toUserId: String) {
+        val client = clientMap[channelId]
+            ?: throw IllegalStateException("ILinkClient not found for channel $channelId")
+        client.startTyping(toUserId)
+    }
+
+    /**
+     * Stop typing indicator.
+     *
+     * @param channelId Channel ID
+     * @param toUserId Target user ID
+     */
+    fun stopTyping(channelId: Long, toUserId: String) {
+        val client = clientMap[channelId] ?: return
+        client.stopTyping(toUserId)
+    }
+
+    /**
      * Send image message
      */
     fun sendImage(channelId: Long, toUserId: String, imageBytes: ByteArray, fileName: String, caption: String) {

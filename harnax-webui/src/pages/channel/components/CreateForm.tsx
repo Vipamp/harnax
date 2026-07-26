@@ -224,21 +224,23 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
           />
         </Form.Item>
 
-        <Form.Item
-          label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
-          name="communicationMode"
-          initialValue="webhook"
-        >
-          <Select
-            placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
-            options={[
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
-              { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
-            ]}
-          />
-        </Form.Item>
+        {selectedType !== 'wechat' && (
+          <Form.Item
+            label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
+            name="communicationMode"
+            initialValue="webhook"
+          >
+            <Select
+              placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
+              options={[
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
+                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
+              ]}
+            />
+          </Form.Item>
+        )}
 
         <Form.Item
           label={intl.formatMessage({ id: 'pages.channel.form.label.enabled', defaultMessage: 'Auto Listen' })}

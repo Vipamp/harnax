@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.CliPluginMapper">
+
+    <resultMap id="CliPluginResultMap" type="com.agnetix.harnax.entity.CliPlugin">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="name" property="name"/>
+        <result column="display_name" property="displayName"/>
+        <result column="display_name_zh" property="displayNameZh"/>
+        <result column="description" property="description"/>
+        <result column="version" property="version"/>
+        <result column="type" property="type"/>
+        <result column="binary_path" property="binaryPath"/>
+        <result column="init_script" property="initScript"/>
+        <result column="skill_doc_path" property="skillDocPath"/>
+        <result column="health_check" property="healthCheck"/>
+        <result column="status" property="status"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="CliPluginResultMap">
+        SELECT * FROM cli_plugin WHERE id = #{id} AND active = 1
+    </select>
+
+    <select id="selectByName" resultMap="CliPluginResultMap">
+        SELECT * FROM cli_plugin WHERE name = #{name} AND active = 1
+    </select>
+
+    <select id="selectAll" resultMap="CliPluginResultMap">
+        SELECT * FROM cli_plugin WHERE active = 1 ORDER BY id
+    </select>
+
+    <select id="selectByType" resultMap="CliPluginResultMap">
+        SELECT * FROM cli_plugin WHERE type = #{type} AND active = 1 ORDER BY id
+    </select>
+
+    <select id="selectAllEnabled" resultMap="CliPluginResultMap">
+        SELECT * FROM cli_plugin WHERE status = 1 AND active = 1 ORDER BY id
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO cli_plugin (tenant_id, name, display_name, display_name_zh, description, version,
+                                type, binary_path, init_script, skill_doc_path, health_check,
+                                status, creator, active, create_time, update_time)
+        VALUES (#{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{version},
+                #{type}, #{binaryPath}, #{initScript}, #{skillDocPath}, #{healthCheck},
+                #{status}, #{creator}, #{active}, #{createTime}, #{updateTime})
+    </insert>
+
+    <update id="updateById">
+        UPDATE cli_plugin
+        <set>
+            <if test="displayName != null">display_name = #{displayName},</if>
+            <if test="displayNameZh != null">display_name_zh = #{displayNameZh},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="version != null">version = #{version},</if>
+            <if test="binaryPath != null">binary_path = #{binaryPath},</if>
+            <if test="initScript != null">init_script = #{initScript},</if>
+            <if test="skillDocPath != null">skill_doc_path = #{skillDocPath},</if>
+            <if test="healthCheck != null">health_check = #{healthCheck},</if>
+            update_time = NOW(),
+        </set>
+        WHERE id = #{id} AND active = 1
+    </update>
+
+    <update id="updateStatus">
+        UPDATE cli_plugin SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <insert id="upsertSystemPlugin">
+        INSERT INTO cli_plugin (tenant_id, name, display_name, display_name_zh, description, version,
+                                type, binary_path, init_script, skill_doc_path, health_check,
+                                status, creator, active, create_time, update_time)
+        VALUES (#{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{version},
+                #{type}, #{binaryPath}, #{initScript}, #{skillDocPath}, #{healthCheck},
+                #{status}, #{creator}, #{active}, #{createTime}, #{updateTime})
+        ON DUPLICATE KEY UPDATE
+            display_name = VALUES(display_name),
+            display_name_zh = VALUES(display_name_zh),
+            description = VALUES(description),
+            version = VALUES(version),
+            binary_path = VALUES(binary_path),
+            init_script = VALUES(init_script),
+            skill_doc_path = VALUES(skill_doc_path),
+            health_check = VALUES(health_check),
+            update_time = NOW()
+    </insert>
+
+</mapper>

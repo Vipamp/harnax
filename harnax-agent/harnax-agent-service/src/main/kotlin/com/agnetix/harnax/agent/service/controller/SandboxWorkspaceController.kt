@@ -274,42 +274,21 @@ class SandboxWorkspaceController(
             log.info("[SandboxWorkspaceController] Getting sandbox status for ${ids.size} sessions: $ids")
             val result = mutableMapOf<String, Any>()
             for (id in ids) {
-                var sandbox = resolveSandbox(id)
-
-                // If not in memory, check if Docker container exists
-                if (sandbox == null) {
-                    try {
-                        val containerName = "agentscope-sandbox-$id"
-                        val process = ProcessBuilder("docker", "inspect", "--format", "{{.State.Running}}", containerName)
-                            .redirectErrorStream(true)
-                            .start()
-                        process.waitFor()
-                        val output = process.inputStream.bufferedReader().readText().trim()
-
-                        if (output == "true" || output == "false") {
-                            log.info("[SandboxWorkspaceController] Session $id - container exists (state=$output), but not in memory")
-                            // Container exists, report as active
-                            result[id] = mapOf(
-                                "active" to true,
-                                "containerName" to containerName,
-                                "image" to "unknown", // Can't get image without sandbox object
-                            )
-                            continue
-                        }
-                    } catch (e: Exception) {
-                        log.debug("[SandboxWorkspaceController] Failed to check container for session $id: ${e.message}")
-                    }
-                }
-
-                log.info("[SandboxWorkspaceController] Session $id - sandbox: ${if (sandbox != null) "found" else "null"}")
-                if (sandbox != null) {
-                    val state = sandbox.state as? DockerSandboxState
+                val containerName = "agentscope-sandbox-$id"
+                // Read-only check against the ACTUAL Docker container state.
+                // We must NOT call resolveSandbox()/attachToExisting() here: those would
+                // restart a stopped container as a side effect of a mere status query,
+                // which made a manually stopped sandbox keep showing up as "Running".
+                // A container is active ONLY when it is actually running.
+                val state = inspectContainerState(containerName)
+                if (state != null && state.running) {
                     result[id] = mapOf(
                         "active" to true,
-                        "containerName" to (state?.getContainerName() ?: "unknown"),
-                        "image" to (state?.getImage() ?: "unknown"),
+                        "containerName" to containerName,
+                        "image" to state.image,
                     )
                 } else {
+                    // Container stopped or does not exist -> inactive
                     result[id] = mapOf("active" to false)
                 }
             }
@@ -324,6 +303,38 @@ class SandboxWorkspaceController(
     }
 
     // ---- Helpers ----
+
+    /**
+     * Inspects the ACTUAL Docker container state in a strictly read-only manner.
+     * Returns (running, image) pair, or null if the container does not exist.
+     * A stopped container returns running=false (it exists but is NOT active).
+     * This must never start/attach to a container — status queries are side-effect free.
+     */
+    private fun inspectContainerState(containerName: String): ContainerState? = try {
+        val process = ProcessBuilder(
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Running}}|{{.Config.Image}}",
+            containerName,
+        )
+            .redirectErrorStream(true)
+            .start()
+        process.waitFor()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        if (output.contains("|")) {
+            val parts = output.split("|", limit = 2)
+            ContainerState(running = parts[0] == "true", image = parts[1])
+        } else {
+            null
+        }
+    } catch (e: Exception) {
+        log.debug("[SandboxWorkspaceController] docker inspect failed for $containerName: ${e.message}")
+        null
+    }
+
+    /** Simple holder for a container's runtime state. */
+    private data class ContainerState(val running: Boolean, val image: String)
 
     private fun getContainerName(sessionId: String): String? {
         val sandbox = resolveSandbox(sessionId) ?: return null

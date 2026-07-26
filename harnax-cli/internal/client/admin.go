@@ -12,16 +12,27 @@ import (
 )
 
 type AdminClient struct {
-	BaseURL    string
-	Token      string
-	HTTPClient *http.Client
-	Verbose    bool
+	BaseURL        string
+	Token          string
+	InternalSecret string
+	HTTPClient     *http.Client
+	Verbose        bool
 }
 
 func NewAdminClient(baseURL, token string) *AdminClient {
 	return &AdminClient{
 		BaseURL: baseURL,
 		Token:   token,
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+func NewAdminClientWithSecret(baseURL, internalSecret string) *AdminClient {
+	return &AdminClient{
+		BaseURL:        baseURL,
+		InternalSecret: internalSecret,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -131,7 +142,9 @@ func (c *AdminClient) request(ctx context.Context, method, path string, params m
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if c.Token != "" {
+	if c.InternalSecret != "" {
+		req.Header.Set("Authorization", "Bearer "+c.InternalSecret)
+	} else if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 

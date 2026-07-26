@@ -184,7 +184,12 @@ class WechatLongPollingMode(
     override suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {
         try {
             val channelId = channel.id
-            botService.sendTextWithTyping(channelId, sessionId, "", 2000L)
+            // Only start the typing indicator without sending any text.
+            // Previously this used sendTextWithTyping(channelId, sessionId, "", 2000L),
+            // which made the iLink SDK send an EMPTY message bubble to the user.
+            // The indicator is cleared by stopTyping() inside sendTextWithTyping()
+            // when the actual reply is sent via sendMessage().
+            botService.startTyping(channelId, sessionId)
         } catch (e: Exception) {
             logger.warn("Failed to send typing indicator for channel ${channel.id}: ${e.message}")
         }

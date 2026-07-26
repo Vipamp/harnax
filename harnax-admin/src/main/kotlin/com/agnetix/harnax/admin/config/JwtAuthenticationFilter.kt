@@ -7,6 +7,7 @@ import jakarta.servlet.ServletException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource
@@ -22,6 +23,7 @@ import java.io.IOException
 class JwtAuthenticationFilter(
     private val jwtUtil: JwtUtil,
     private val tokenBlacklistService: SysTokenBlacklistService,
+    @Value("\${admin.internal-api.secret:}") private val internalApiSecret: String,
 ) : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
@@ -52,6 +54,16 @@ class JwtAuthenticationFilter(
             val token = resolveToken(request)
             if (token == null) {
                 log.info("[JWT Filter] Request without token: {}", requestURI)
+            } else if (internalApiSecret.isNotBlank() && token == internalApiSecret) {
+                // Internal service authentication (e.g. CLI in sandbox via shared secret)
+                val authentication = UsernamePasswordAuthenticationToken(
+                    "internal-service",
+                    null,
+                    listOf(org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_INTERNAL")),
+                )
+                authentication.details = WebAuthenticationDetailsSource().buildDetails(request)
+                SecurityContextHolder.getContext().authentication = authentication
+                log.debug("[JWT Filter] Internal service authentication successful, URI: {}", requestURI)
             } else {
                 log.info("[JWT Filter] Start validating token, URI: {}, token prefix: {}", requestURI, token.take(20))
 

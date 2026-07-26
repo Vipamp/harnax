@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.RequireUserConfirmEvent
@@ -76,6 +77,9 @@ class HarnessAgentWrapper(
      * causing read-only tools like `glob_files` to skip the confirmation prompt.
      */
     val configuredPermissionContext: PermissionContextState? = null,
+    val pluginInitializers: List<SandboxPluginInitializer> = emptyList(),
+    val pluginAdminUrl: String = "",
+    val pluginInternalSecret: String = "",
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -86,6 +90,10 @@ class HarnessAgentWrapper(
      */
     @Volatile
     private var activeCallDisposable: Disposable? = null
+
+    /** Tracks whether CLI plugins have been initialized for this wrapper's sandbox. */
+    @Volatile
+    private var pluginsInitialized = false
 
     /**
      * Cached pending tool calls from the last [RequireUserConfirmEvent].
@@ -161,15 +169,19 @@ class HarnessAgentWrapper(
     fun readTodoContent(): String? = readWorkspaceFile("plans/todo.md")
 
     /**
-     * Reads structured Task list from AgentStateStore.
-     * This is the preferred way to get subtasks (vs parsing markdown).
+     * Reads structured Task list from the live in-memory AgentState.
+     * This is the preferred way to get subtasks (vs parsing markdown or reading from StateStore).
+     *
+     * Uses [HarnessAgent.getDelegate] → [ReActAgent.getAgentState] to access the same
+     * in-memory AgentState that the `todo_write` tool mutates during execution.
+     * This ensures real-time task states (PENDING/IN_PROGRESS/COMPLETED) are always current,
+     * unlike reading from AgentStateStore which only gets flushed after each ReAct iteration.
+     *
      * Returns null if no tasks are found or an error occurs.
      */
     fun readTasksFromState(): List<Task>? {
         return try {
-            val stateStore = harnessAgent.stateStore ?: return null
-            val state = stateStore.get(userId, sessionId, "agent_state", AgentState::class.java)
-                .orElse(null) ?: return null
+            val state = getLiveAgentState() ?: return null
             val tasks = state.tasksContext?.tasks ?: return null
             if (tasks.isEmpty()) null else tasks
         } catch (e: Exception) {
@@ -179,20 +191,21 @@ class HarnessAgentWrapper(
     }
 
     /**
-     * Reads the full plan data from AgentState in a single call.
+     * Reads the full plan data from the live in-memory AgentState in a single call.
      * Combines planModeContext (is plan active, plan file path) and tasksContext (structured tasks).
      *
-     * This is the preferred data source for the frontend plan panel — it uses structured
-     * [Task] objects with real-time execution states (PENDING/IN_PROGRESS/COMPLETED)
-     * instead of parsing markdown files.
+     * This is the preferred data source for the frontend plan panel — it reads from the same
+     * in-memory [AgentState] that the `todo_write` tool mutates via `tasksMutable()`,
+     * so task execution states (PENDING/IN_PROGRESS/COMPLETED) are always real-time.
+     *
+     * Previously this read from AgentStateStore, which only gets flushed after each ReAct
+     * iteration — causing stale task states during active agent execution.
      *
      * @return [AgentStatePlanData] if AgentState is available, null otherwise.
      */
     fun readFullPlanFromState(): AgentStatePlanData? {
         return try {
-            val stateStore = harnessAgent.stateStore ?: return null
-            val state = stateStore.get(userId, sessionId, "agent_state", AgentState::class.java)
-                .orElse(null) ?: return null
+            val state = getLiveAgentState() ?: return null
 
             val planCtx = state.planModeContext
             val tasks = state.tasksContext?.tasks
@@ -212,6 +225,38 @@ class HarnessAgentWrapper(
             )
         } catch (e: Exception) {
             log.debug("[harness] readFullPlanFromState failed for session={}: {}", sessionId, e.message)
+            null
+        }
+    }
+
+    /**
+     * Gets the live in-memory [AgentState] from the delegate [ReActAgent].
+     *
+     * This is the same object that `todo_write` and other state-injected tools mutate
+     * during agent execution. Reading from here (instead of AgentStateStore) ensures
+     * we always see the latest task states, even mid-iteration before the state is flushed.
+     *
+     * Falls back to AgentStateStore if the delegate is unavailable.
+     */
+    private fun getLiveAgentState(): AgentState? {
+        // Primary: read from the live in-memory state via delegate ReActAgent
+        try {
+            val delegate = harnessAgent.delegate
+            if (delegate != null) {
+                val state = delegate.getAgentState(userId, sessionId)
+                if (state != null) return state
+            }
+        } catch (e: Exception) {
+            log.debug("[harness] getLiveAgentState via delegate failed for session={}: {}", sessionId, e.message)
+        }
+
+        // Fallback: read from AgentStateStore (e.g. if delegate not yet initialized)
+        return try {
+            val stateStore = harnessAgent.stateStore ?: return null
+            stateStore.get(userId, sessionId, "agent_state", AgentState::class.java)
+                .orElse(null)
+        } catch (e: Exception) {
+            log.debug("[harness] getLiveAgentState via stateStore failed for session={}: {}", sessionId, e.message)
             null
         }
     }
@@ -686,6 +731,17 @@ class HarnessAgentWrapper(
                 keepAliveSnapshotSpec,
             )
             keepAliveSandbox = sandbox
+
+            // === CLI Plugin initialization (only once per wrapper lifecycle) ===
+            if (!pluginsInitialized && pluginInitializers.isNotEmpty() && pluginAdminUrl.isNotEmpty() && pluginInternalSecret.isNotEmpty()) {
+                pluginInitializers.forEach { initializer ->
+                    initializer.initialize(sandbox, pluginAdminUrl, pluginInternalSecret)
+                }
+                pluginsInitialized = true
+            } else if (!pluginsInitialized && pluginInitializers.isNotEmpty()) {
+                log.warn("[harness] CLI plugins configured but skipped: pluginAdminUrl or pluginInternalSecret is empty")
+            }
+
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)
                 .workspaceRoot(sandboxWorkspaceRoot)

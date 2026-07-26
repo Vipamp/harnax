@@ -51,21 +51,35 @@ func getOutputFormat() output.Format {
 }
 
 func newAdminClient() (*client.AdminClient, error) {
-	url := serverURL
-	if url == "" {
-		var err error
-		url, err = config.GetServerURL(profile)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	creds, err := config.LoadCredentials()
 	if err != nil {
 		return nil, err
 	}
 
-	c := client.NewAdminClient(url, creds.AccessToken)
+	var c *client.AdminClient
+
+	if creds.Mode == "internal" {
+		// Internal secret mode: serverUrl from credentials, --server-url flag overrides
+		url := creds.ServerURL
+		if serverURL != "" {
+			url = serverURL
+		}
+		if url == "" {
+			return nil, fmt.Errorf("internal mode requires serverUrl in credentials or --server-url flag")
+		}
+		c = client.NewAdminClientWithSecret(url, creds.InternalSecret)
+	} else {
+		// JWT mode (existing behavior)
+		url := serverURL
+		if url == "" {
+			url, err = config.GetServerURL(profile)
+			if err != nil {
+				return nil, err
+			}
+		}
+		c = client.NewAdminClient(url, creds.AccessToken)
+	}
+
 	c.Verbose = verbose
 	return c, nil
 }

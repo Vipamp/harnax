@@ -276,12 +276,19 @@ class DefaultAgentRunner(
 
         // ─── Step 1: Try structured plan data from AgentState (preferred) ───
         val wrapper = agentCache.getIfPresent(sessionId)
-        val statePlanData = wrapper?.readFullPlanFromState() ?: readFullPlanFromStateStore(sessionId)
+        // When wrapper exists, readFullPlanFromState() already falls back to StateStore internally
+        // via getLiveAgentState(), so readFullPlanFromStateStore() is only needed when wrapper is null
+        // (e.g. after service restart or cache eviction).
+        val statePlanData = if (wrapper != null) {
+            wrapper.readFullPlanFromState()
+        } else {
+            readFullPlanFromStateStore(sessionId)
+        }
 
-        if (statePlanData != null && statePlanData.tasks != null) {
+        val stateTasks = statePlanData?.tasks
+        if (stateTasks != null) {
             // AgentState has structured tasks — use them directly
-            val tasks = statePlanData.tasks ?: return null
-            val subtasks = convertStructuredTasks(tasks)
+            val subtasks = convertStructuredTasks(stateTasks)
 
             // For plan name/description, still read PLAN.md (AgentState doesn't store plan text)
             val planContent = wrapper?.readPlanContent() ?: readPlanFromSandbox(sessionId)
@@ -289,7 +296,7 @@ class DefaultAgentRunner(
 
             log.info(
                 "[loadCurrentPlan] Using AgentState: planActive={}, {} structured tasks, plan='{}' for session={}",
-                statePlanData.planActive,
+                statePlanData?.planActive,
                 subtasks.size,
                 name,
                 sessionId,
@@ -304,7 +311,7 @@ class DefaultAgentRunner(
                 createdAt = "",
                 finishedAt = null,
                 costTimeSeconds = 0L,
-                status = TaskState.IN_PROGRESS,
+                status = computePlanStatus(subtasks),
             )
         }
 
@@ -313,10 +320,9 @@ class DefaultAgentRunner(
 
         if (planContent == null) {
             log.info(
-                "[loadCurrentPlan] No plan content found for session={} (wrapper={}, sandbox={})",
+                "[loadCurrentPlan] No plan content found for session={} (wrapper={})",
                 sessionId,
                 wrapper != null,
-                launcher.keepAliveSandboxManager?.attachToExisting(sessionId) != null,
             )
             return null
         }
@@ -341,8 +347,23 @@ class DefaultAgentRunner(
             createdAt = "",
             finishedAt = null,
             costTimeSeconds = 0L,
-            status = TaskState.IN_PROGRESS,
+            status = computePlanStatus(subtasks),
         )
+    }
+
+    /**
+     * Computes the overall plan status from its subtask states.
+     * - All DONE → DONE
+     * - Any IN_PROGRESS → IN_PROGRESS
+     * - Otherwise → TODO
+     */
+    private fun computePlanStatus(subtasks: List<PlanSubTask>): TaskState {
+        if (subtasks.isEmpty()) return TaskState.IN_PROGRESS
+        return when {
+            subtasks.all { it.state == TaskState.DONE } -> TaskState.DONE
+            subtasks.any { it.state == TaskState.IN_PROGRESS } -> TaskState.IN_PROGRESS
+            else -> TaskState.TODO
+        }
     }
 
     /**
@@ -355,7 +376,7 @@ class DefaultAgentRunner(
         val lines = planContent.lines()
         val titleLineIdx = lines.indexOfFirst { it.startsWith("#") }
         val name = if (titleLineIdx >= 0) {
-            lines[titleLineIdx].replace(Regex("^#+\\s*"), "").trim()
+            lines[titleLineIdx].replace(HEADING_PREFIX_REGEX, "").trim()
         } else {
             "Plan"
         }
@@ -382,14 +403,14 @@ class DefaultAgentRunner(
             val trimmed = line.trim()
 
             // Extract section headers (## level)
-            val headerMatch = Regex("^##\\s+(.+)$").find(trimmed)
+            val headerMatch = HEADER_REGEX.find(trimmed)
             if (headerMatch != null) {
                 currentSection = headerMatch.groupValues[1].trim()
                 continue
             }
 
             // Extract checkbox items
-            val checkboxMatch = Regex("^-\\s+\\[([ xX])\\]\\s+(.+)$").find(trimmed)
+            val checkboxMatch = CHECKBOX_REGEX.find(trimmed)
             if (checkboxMatch != null) {
                 val isChecked = checkboxMatch.groupValues[1].lowercase() == "x"
                 val taskText = checkboxMatch.groupValues[2].trim()
@@ -415,7 +436,7 @@ class DefaultAgentRunner(
         if (subtasks.isEmpty()) {
             for (line in lines) {
                 val trimmed = line.trim()
-                val headerMatch = Regex("^##\\s+(.+)$").find(trimmed)
+                val headerMatch = HEADER_REGEX.find(trimmed)
                 if (headerMatch != null) {
                     subtasks.add(
                         PlanSubTask(
@@ -698,5 +719,8 @@ class DefaultAgentRunner(
     companion object {
         private val SUPPORTED_CAPABILITIES = setOf("search", "thinking", "plan", "bypass")
         private val VALID_PERMISSION_MODES = setOf("DEFAULT", "BYPASS", "ACCEPT_EDITS", "EXPLORE", "DONT_ASK")
+        private val HEADER_REGEX = Regex("^##\\s+(.+)$")
+        private val CHECKBOX_REGEX = Regex("^-\\s+\\[([ xX])\\]\\s+(.+)$")
+        private val HEADING_PREFIX_REGEX = Regex("^#+\\s*")
     }
 }

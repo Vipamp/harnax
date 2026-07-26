@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+# Base tools (shared by all plugins)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl jq git \
+    && rm -rf /var/lib/apt/lists/*
+
+# === Plugin: harnax-cli ===
+COPY harnax-cli/bin/harnax /usr/local/bin/harnax
+COPY harnax-cli/init.sh /opt/plugins/harnax-cli/init.sh
+COPY harnax-cli/SKILL.md /opt/plugins/harnax-cli/SKILL.md
+RUN chmod +x /usr/local/bin/harnax /opt/plugins/harnax-cli/init.sh
+
+RUN mkdir -p /workspace
+WORKDIR /workspace

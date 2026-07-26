@@ -4,9 +4,10 @@
 
 FROM eclipse-temurin:21-jre-alpine
 
-# Set timezone
+# Set timezone (use Aliyun mirror for Alpine packages)
 ENV TZ=Asia/Shanghai
-RUN apk add --no-cache tzdata wget \
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
+    && apk add --no-cache tzdata wget \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone
 

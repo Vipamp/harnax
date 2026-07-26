@@ -24,6 +24,8 @@ import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.sandbox.plugin.HarnaxCliPluginInitializer
+import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
 import com.agnetix.harnax.tools.sdk.HttpProxyToolBox
 import com.agnetix.harnax.tools.sdk.SessionMetaContext
 import com.agnetix.harnax.tools.sdk.ToolMeta
@@ -480,11 +482,14 @@ class HarnessAgentLauncher(
             sessionId = sessionId,
             keepAliveSandboxManager = keepAliveSandboxManager,
             keepAliveSnapshotSpec = snapshotSpec,
-            sandboxImage = harnessConfig.sandbox.image,
+            sandboxImage = if (harnessConfig.sandbox.cliPluginsEnabled) harnessConfig.sandbox.pluginImage else harnessConfig.sandbox.image,
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
             sandboxNetwork = harnessConfig.sandbox.network,
             permissionMode = chatSpec.permissionMode,
             configuredPermissionContext = builtPermCtx,
+            pluginInitializers = if (harnessConfig.sandbox.cliPluginsEnabled) listOf<SandboxPluginInitializer>(HarnaxCliPluginInitializer()) else emptyList(),
+            pluginAdminUrl = harnessConfig.sandbox.pluginAdminUrl,
+            pluginInternalSecret = harnessConfig.sandbox.pluginInternalSecret,
         )
     }
 
@@ -595,8 +600,13 @@ class HarnessAgentLauncher(
             }
 
             val keepAliveManager = if (harnessConfig.sandbox.enabled && harnessConfig.sandbox.keepAlive) {
+                val effectiveImage = if (harnessConfig.sandbox.cliPluginsEnabled) {
+                    harnessConfig.sandbox.pluginImage
+                } else {
+                    harnessConfig.sandbox.image
+                }
                 KeepAliveSandboxManager(
-                    image = harnessConfig.sandbox.image,
+                    image = effectiveImage,
                     workspaceRoot = harnessConfig.sandbox.workspaceRoot,
                     snapshotSpec = snapshotSpec,
                     network = harnessConfig.sandbox.network,

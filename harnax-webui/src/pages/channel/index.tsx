@@ -342,26 +342,6 @@ const ChannelManagement: React.FC = () => {
       },
     },
     {
-      title: intl.formatMessage({ id: 'pages.channel.table.callbackUrl', defaultMessage: 'Callback URL' }),
-      dataIndex: 'callbackUrl',
-      key: 'callbackUrl',
-      width: 280,
-      align: 'center' as const,
-      render: (url: string, record: API.ChannelItem) => (
-        url ? (
-          <Space>
-            <Paragraph 
-              copyable={{ text: url }} 
-              style={{ margin: 0, maxWidth: 240 }}
-              ellipsis
-            >
-              {url}
-            </Paragraph>
-          </Space>
-        ) : '-'
-      ),
-    },
-    {
       title: intl.formatMessage({ id: 'pages.channel.table.createTime', defaultMessage: 'Creation Time' }),
       dataIndex: 'createTime',
       key: 'createTime',

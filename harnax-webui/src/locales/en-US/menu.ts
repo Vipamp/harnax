@@ -55,6 +55,7 @@ export default {
   'menu.context.mcp': 'MCP Services',
   'menu.context.skill': 'Skill Management',
   'menu.context.tool': 'Tool Management',
+  'menu.context.cliPlugin': 'CLI Plugins',
   'menu.context.channel': 'Channel Management',
   
   // Agent

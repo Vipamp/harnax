@@ -56,6 +56,10 @@ harness:
     isolation-scope: ${SANDBOX_ISOLATION_SCOPE:SESSION}
     keep-alive: ${SANDBOX_KEEP_ALIVE:true}
     network: ${SANDBOX_NETWORK:}
+    cli-plugins-enabled: ${SANDBOX_CLI_PLUGINS_ENABLED:false}
+    plugin-image: ${SANDBOX_PLUGIN_IMAGE:harnax-sandbox:latest}
+    plugin-admin-url: ${SANDBOX_PLUGIN_ADMIN_URL:}
+    plugin-internal-secret: ${SANDBOX_PLUGIN_INTERNAL_SECRET:}
 
 # Logging Configuration
 logging:

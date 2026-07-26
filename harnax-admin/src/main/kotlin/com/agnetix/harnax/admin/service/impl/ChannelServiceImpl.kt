@@ -51,7 +51,7 @@ class ChannelServiceImpl(
             name = request.name!!
             type = request.type!!
             agentId = request.agentId!!
-            communicationMode = request.communicationMode ?: "webhook"
+            communicationMode = if (request.type == "wechat") "long_polling" else (request.communicationMode ?: "webhook")
             permissionMode = request.permissionMode ?: "DEFAULT"
             enabled = request.enabled ?: 1
             configJson = request.configJson
@@ -79,6 +79,10 @@ class ChannelServiceImpl(
         request.type?.let { channel.type = it }
         request.agentId?.let { channel.agentId = it }
         request.communicationMode?.let { channel.communicationMode = it }
+        // Personal WeChat only supports long-polling mode; force-correct it to prevent misconfiguration
+        if (channel.type == "wechat") {
+            channel.communicationMode = "long_polling"
+        }
         request.permissionMode?.let { channel.permissionMode = it }
         request.enabled?.let { channel.enabled = it }
         request.configJson?.let { channel.configJson = it }
@@ -114,9 +118,11 @@ class ChannelServiceImpl(
             }
         }
 
-        // Generate callback URL
-        channel.callbackKey.let { callbackKey ->
-            response.callbackUrl = "$baseUrl/api/channel/callback/$callbackKey"
+        // Only webhook mode receives messages via platform push, so the callback URL
+        // is meaningful only for webhook channels. websocket / long_polling channels
+        // actively pull messages and have no callback endpoint, so we don't expose it.
+        if (channel.communicationMode == "webhook") {
+            response.callbackUrl = "$baseUrl/api/channel/callback/${channel.callbackKey}"
         }
 
         return response

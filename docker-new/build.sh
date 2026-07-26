@@ -65,7 +65,7 @@ echo ""
 # ==========================================
 # Step 1: Build Admin JAR (harnax-admin)
 # ==========================================
-echo "Step 1/8: Building admin JAR (harnax-admin)..."
+echo "Step 1/9: Building admin JAR (harnax-admin)..."
 mvn spotless:apply
 mvn clean package -pl harnax-admin -am -Dmaven.test.skip=true
 
@@ -79,7 +79,7 @@ echo ""
 # Step 2: Build Router (harnax-session-router)
 # ==========================================
 if [ "$NATIVE_MODE" = true ]; then
-    echo "Step 2/8: Building router NATIVE IMAGE (harnax-session-router)..."
+    echo "Step 2/9: Building router NATIVE IMAGE (harnax-session-router)..."
     echo "Note: Native image build may take several minutes..."
     mvn clean package -Pnative -pl harnax-session-router -am -Dmaven.test.skip=true
 
@@ -88,7 +88,7 @@ if [ "$NATIVE_MODE" = true ]; then
     cp harnax-session-router/target/harnax-session-router docker-new/dist/router/
     echo "Router native image built successfully."
 else
-    echo "Step 2/8: Building router JAR (harnax-session-router)..."
+    echo "Step 2/9: Building router JAR (harnax-session-router)..."
     mvn clean package -pl harnax-session-router -am -Dmaven.test.skip=true
 
     echo "Copying JAR to docker-new/dist/router/..."
@@ -101,7 +101,7 @@ echo ""
 # ==========================================
 # Step 3: Build Agent-Service JAR
 # ==========================================
-echo "Step 3/8: Building agent-service JAR..."
+echo "Step 3/9: Building agent-service JAR..."
 mvn clean package -pl harnax-agent/harnax-agent-service -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/agent-service/..."
@@ -113,7 +113,7 @@ echo ""
 # ==========================================
 # Step 4: Build Channel-Service JAR
 # ==========================================
-echo "Step 4/8: Building channel-service JAR..."
+echo "Step 4/9: Building channel-service JAR..."
 mvn clean package -pl harnax-channel/harnax-channel-service -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/channel-service/..."
@@ -125,7 +125,7 @@ echo ""
 # ==========================================
 # Step 5: Build Scheduler JAR (harnax-scheduler)
 # ==========================================
-echo "Step 5/8: Building scheduler JAR (harnax-scheduler)..."
+echo "Step 5/9: Building scheduler JAR (harnax-scheduler)..."
 mvn clean package -pl harnax-scheduler -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/harnax-scheduler/..."
@@ -137,7 +137,7 @@ echo ""
 # ==========================================
 # Step 6: Build Frontend
 # ==========================================
-echo "Step 6/8: Building frontend (harnax-webui)..."
+echo "Step 6/9: Building frontend (harnax-webui)..."
 cd harnax-webui
 npm install
 npm run build
@@ -150,9 +150,22 @@ echo "Frontend built successfully."
 echo ""
 
 # ==========================================
-# Step 7: Build Docker Images
+# Step 7: Build Sandbox Image (CLI plugins)
 # ==========================================
-echo "Step 7/8: Building Docker images..."
+if command -v go &> /dev/null; then
+    echo "Step 7/9: Building sandbox image (harnax-sandbox)..."
+    bash sandbox-plugins/build.sh
+    echo "Sandbox image built successfully."
+else
+    echo "Step 7/9: SKIPPED sandbox image (Go not installed)."
+    echo "  Install Go and run: bash sandbox-plugins/build.sh"
+fi
+echo ""
+
+# ==========================================
+# Step 8: Build Docker Images
+# ==========================================
+echo "Step 8/9: Building Docker images..."
 docker build -f docker-new/Dockerfile.admin -t harnax-admin:latest .
 
 if [ "$NATIVE_MODE" = true ]; then
@@ -169,7 +182,7 @@ echo "Docker images built successfully."
 echo ""
 
 # ==========================================
-# Step 8: Summary
+# Step 9: Summary
 # ==========================================
 echo "=========================================="
 echo "  Build Complete!"

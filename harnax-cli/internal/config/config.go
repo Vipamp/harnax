@@ -25,11 +25,17 @@ type Profile struct {
 }
 
 type Credentials struct {
-	AccessToken  string `json:"accessToken"`
+	// JWT mode (existing)
+	AccessToken  string `json:"accessToken,omitempty"`
 	RefreshToken string `json:"refreshToken,omitempty"`
-	ExpiresAt    int64  `json:"expiresAt"`
-	TenantID     int64  `json:"tenantId"`
-	Username     string `json:"username"`
+	ExpiresAt    int64  `json:"expiresAt,omitempty"`
+	TenantID     int64  `json:"tenantId,omitempty"`
+	Username     string `json:"username,omitempty"`
+
+	// Internal Secret mode (new)
+	Mode           string `json:"mode,omitempty"`           // "" or "jwt" = JWT mode; "internal" = internal secret
+	InternalSecret string `json:"internalSecret,omitempty"`
+	ServerURL      string `json:"serverUrl,omitempty"`      // used in internal mode
 }
 
 func GetConfigDir() (string, error) {
