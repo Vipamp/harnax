@@ -369,13 +369,29 @@ class AgentServiceImpl(
             )
             list.map { entry ->
                 val envVarId = (entry["envVarId"] as? Number)?.toLong()
-                val envValue = entry["envValue"]?.toString()
+                val snapshotValue = entry["envValue"]?.toString()
                 val customValue = entry["customValue"]?.toString()
                 // Legacy compat: if no envVarId but envValue exists, treat as custom input
-                val effectiveCustomValue = customValue ?: if (envVarId == null && envValue != null) envValue else null
+                val effectiveCustomValue = customValue ?: if (envVarId == null && snapshotValue != null) snapshotValue else null
+
+                // Display the effective runtime value: for env-var references,
+                // resolve the LATEST value (runtime does the same via
+                // resolveEnvBindingsJson); fall back to the stored snapshot.
+                // Sensitive variables are masked for display.
+                val displayValue = if (envVarId != null) {
+                    val envVar = envVariableService.getEnvVariable(envVarId)
+                    if (envVar != null && envVar.sensitive == 1) {
+                        "******"
+                    } else {
+                        envVariableService.getDecryptedValue(envVarId) ?: snapshotValue
+                    }
+                } else {
+                    snapshotValue
+                }
+
                 EnvBinding(
                     envKey = entry["envKey"]?.toString() ?: "",
-                    envValue = if (effectiveCustomValue != null) null else envValue,
+                    envValue = if (effectiveCustomValue != null) null else displayValue,
                     envVarId = envVarId,
                     envVarName = entry["envVarName"]?.toString(),
                     customValue = effectiveCustomValue,
