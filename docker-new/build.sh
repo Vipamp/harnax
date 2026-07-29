@@ -71,7 +71,7 @@ mvn clean package -pl harnax-admin -am -Dmaven.test.skip=true
 
 echo "Copying JAR to docker-new/dist/harnax-admin/..."
 mkdir -p docker-new/dist/harnax-admin
-cp harnax-admin/target/harnax-admin-*.jar docker-new/dist/harnax-admin/
+cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
 echo "Admin JAR built successfully."
 echo ""
 

@@ -1,0 +1,24 @@
+{
+  "name": "harnax-ui-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UI automation tests for harnax-webui: LLM generates Playwright specs (reviewed & frozen), daily runs are pure Playwright. Includes a local dashboard for run status/results.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "gen": "tsx src/gen.ts",
+    "dashboard": "tsx src/dashboard/server.ts",
+    "install-browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.49.0",
+    "dotenv": "^16.4.5",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

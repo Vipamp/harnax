@@ -14,8 +14,8 @@ RUN addgroup -S harnax && adduser -S harnax -G harnax
 
 WORKDIR /app
 
-# Copy JAR file from docker-new/dist/harnax-admin/
-COPY docker-new/dist/harnax-admin/harnax-admin-*.jar app.jar
+# Copy JAR file from docker-new/dist/harnax-admin/ (executable fat jar has -exec classifier)
+COPY docker-new/dist/harnax-admin/harnax-admin-*-exec.jar app.jar
 
 # Create log directory, skill storage directory and set permissions
 RUN mkdir -p /app/logs /home/harnax/skills && chown -R harnax:harnax /app /home/harnax

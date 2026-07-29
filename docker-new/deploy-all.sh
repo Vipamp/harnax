@@ -32,7 +32,7 @@ echo ""
 echo "📋 步骤 3/6: 复制构建产物到部署目录..."
 
 mkdir -p docker-new/dist/harnax-admin/
-cp harnax-admin/target/harnax-admin-*.jar docker-new/dist/harnax-admin/
+cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
 echo "  ✓ harnax-admin"
 
 mkdir -p docker-new/dist/agent-service/

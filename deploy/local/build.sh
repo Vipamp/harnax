@@ -65,7 +65,7 @@ build_backend() {
     echo ""
     log "Built artifacts:"
     for jar in \
-        harnax-admin/target/harnax-admin-*.jar \
+        harnax-admin/target/harnax-admin-*-exec.jar \
         harnax-session-router/target/harnax-session-router-*.jar \
         harnax-agent/harnax-agent-service/target/harnax-agent-service-*.jar \
         harnax-channel/harnax-channel-service/target/harnax-channel-service-*.jar \

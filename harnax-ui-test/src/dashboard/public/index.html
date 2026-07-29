@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>harnax UI 测试看板</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2129; --border: #2c3540;
+    --text: #e6e8ea; --muted: #8b98a5;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922; --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", sans-serif; padding: 24px; }
+  h1 { font-size: 20px; margin-bottom: 16px; }
+  h2 { font-size: 15px; color: var(--muted); margin: 20px 0 8px; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .grow { flex: 1 1 420px; min-width: 0; }
+  button { background: var(--blue); border: 0; color: #fff; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  button:disabled { background: var(--border); cursor: not-allowed; }
+  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .idle    { background: var(--border); color: var(--muted); }
+  .running { background: var(--yellow); color: #000; }
+  .passed  { background: var(--green); color: #000; }
+  .failed, .error { background: var(--red); color: #fff; }
+  pre#log { background: #0a0d10; border: 1px solid var(--border); border-radius: 6px; padding: 10px; height: 300px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #212a34; }
+  .pass-count { color: var(--green); } .fail-count { color: var(--red); }
+  #detail .test-item { padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  #detail .test-item .err { color: var(--red); font-size: 12px; white-space: pre-wrap; margin-top: 4px; }
+  #detail img { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; margin-top: 8px; }
+  a { color: var(--blue); }
+  .meta { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>harnax UI 测试看板</h1>
+
+<div class="row">
+  <div class="card grow">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+      <button id="runBtn" onclick="triggerRun()">▶ 运行全部用例</button>
+      <span id="curStatus" class="status-badge idle">idle</span>
+      <span id="curMeta" class="meta"></span>
+    </div>
+    <h2>实时日志</h2>
+    <pre id="log"></pre>
+  </div>
+
+  <div class="card grow">
+    <h2>历史运行</h2>
+    <table>
+      <thead><tr><th>时间</th><th>状态</th><th>通过</th><th>失败</th><th>跳过</th></tr></thead>
+      <tbody id="runsBody"></tbody>
+    </table>
+    <div id="detail"></div>
+  </div>
+</div>
+
+<script>
+let polling = null;
+
+async function triggerRun() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  await fetch('/api/run', { method: 'POST' });
+  startPolling();
+}
+
+function setStatus(s) {
+  const el = document.getElementById('curStatus');
+  el.textContent = s.status;
+  el.className = 'status-badge ' + s.status;
+  document.getElementById('curMeta').textContent =
+    (s.startedAt ? '开始 ' + new Date(s.startedAt).toLocaleTimeString() : '') +
+    (s.finishedAt ? ' · 结束 ' + new Date(s.finishedAt).toLocaleTimeString() : '');
+  document.getElementById('runBtn').disabled = s.status === 'running';
+}
+
+async function poll() {
+  const s = await (await fetch('/api/status')).json();
+  setStatus(s);
+  const log = document.getElementById('log');
+  log.textContent = (s.log || []).join('\n');
+  log.scrollTop = log.scrollHeight;
+  if (s.status !== 'running') {
+    clearInterval(polling); polling = null;
+    loadRuns();
+  }
+}
+
+function startPolling() {
+  if (polling) return;
+  polling = setInterval(poll, 1500);
+  poll();
+}
+
+async function loadRuns() {
+  const runs = await (await fetch('/api/runs')).json();
+  const tbody = document.getElementById('runsBody');
+  tbody.innerHTML = '';
+  for (const r of runs) {
+    const tr = document.createElement('tr');
+    tr.className = 'clickable';
+    tr.onclick = () => showDetail(r.id);
+    tr.innerHTML =
+      '<td>' + (r.startedAt ? new Date(r.startedAt).toLocaleString() : r.id) + '</td>' +
+      '<td><span class="status-badge ' + r.status + '">' + r.status + '</span></td>' +
+      '<td class="pass-count">' + r.summary.passed + '</td>' +
+      '<td class="fail-count">' + r.summary.failed + '</td>' +
+      '<td>' + r.summary.skipped + '</td>';
+    tbody.appendChild(tr);
+  }
+}
+
+function collectTests(suite, out, prefix) {
+  for (const s of suite.suites || []) collectTests(s, out, prefix ? prefix + ' › ' + s.title : s.title);
+  for (const spec of suite.specs || []) {
+    for (const t of spec.tests || []) {
+      const result = (t.results || [])[0] || {};
+      out.push({
+        title: (prefix ? prefix + ' › ' : '') + spec.title,
+        status: t.status || result.status || 'unknown',
+        durationMs: result.duration || 0,
+        error: result.error ? (result.error.message || '') : '',
+        attachments: (result.attachments || []).filter(a => a.contentType && a.contentType.startsWith('image/')),
+      });
+    }
+  }
+}
+
+async function showDetail(id) {
+  const r = await (await fetch('/api/runs/' + id)).json();
+  const tests = [];
+  if (r.report) for (const suite of r.report.suites || []) collectTests(suite, tests, suite.title);
+  const el = document.getElementById('detail');
+  el.innerHTML = '<h2>运行详情 · ' + id + '</h2>' + (tests.length === 0 ? '<div class="meta">无报告数据(可能运行出错,见日志)</div>' : '');
+  for (const t of tests) {
+    const ok = t.status === 'expected' || t.status === 'passed';
+    const div = document.createElement('div');
+    div.className = 'test-item';
+    let html = (ok ? '✅' : t.status === 'skipped' ? '⏭️' : '❌') + ' ' + t.title +
+      ' <span class="meta">' + (t.durationMs / 1000).toFixed(1) + 's</span>';
+    if (t.error) html += '<div class="err">' + escapeHtml(t.error.slice(0, 800)) + '</div>';
+    for (const a of t.attachments) {
+      if (a.path) {
+        const rel = a.path.substring(a.path.indexOf('artifacts'));
+        html += '<div><img src="/' + rel.replace(/\\\\/g, '/') + '" loading="lazy" /></div>';
+      }
+    }
+    div.innerHTML = html;
+    el.appendChild(div);
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+loadRuns();
+poll();
+</script>
+</body>
+</html>
