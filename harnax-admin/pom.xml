@@ -17,6 +17,11 @@
     <name>harnax-admin</name>
     <description>Harnax Admin Backend Service</description>
 
+    <properties>
+        <!-- Integration tests (src/test/kotlin/**/it/*IT.kt) are skipped by default; enable via -Pintegration-test -->
+        <skipITs>true</skipITs>
+    </properties>
+
     <dependencies>
         <!-- Spring Boot Web -->
         <dependency>
@@ -268,6 +273,8 @@
                 <configuration>
                     <!-- Native 构建已禁用，始终执行 repackage -->
                     <skip>false</skip>
+                    <!-- Fat jar 使用 exec classifier，保留普通 jar 供下游模块依赖 -->
+                    <classifier>exec</classifier>
                 </configuration>
             </plugin>
             <plugin>
@@ -327,6 +334,36 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+            <!-- Unit test phase: exclude integration tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.class</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!-- Integration tests (Testcontainers MySQL) run via failsafe; enable with -Pintegration-test -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                    <includes>
+                        <include>**/*IT.class</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Native Maven Plugin - Temporarily Disabled -->
             <plugin>
                 <groupId>org.graalvm.buildtools</groupId>
@@ -341,6 +378,13 @@
     </build>
 
     <profiles>
+        <!-- Run integration tests: mvn -Pintegration-test verify -->
+        <profile>
+            <id>integration-test</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
         <!-- Native 构建 Profile - Temporarily Disabled -->
         <profile>
             <id>native</id>

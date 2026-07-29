@@ -58,9 +58,8 @@ class SkillController(
         @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SkillResponse?> = try {
         val skill = skillService.getSkill(id)
-        // Get repository information
-        val repository = skillRepositoryService.getSkillRepository(skill!!.repositoryId)
-        ResultVo.success(SkillResponse.fromEntity(skill, repository))
+        // Get repository information; missing skill returns data=null like other modules
+        ResultVo.success(skill?.let { SkillResponse.fromEntity(it, skillRepositoryService.getSkillRepository(it.repositoryId)) })
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
         ResultVo.error(e.message ?: "Failed to get skill details")

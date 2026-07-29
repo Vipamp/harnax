@@ -55,12 +55,10 @@ class SkillServiceImpl(
         return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername, tenantId))
     }
 
-    override fun getSkill(id: Long): Skill {
+    override fun getSkill(id: Long): Skill? {
         log.info("Querying skill details, id: {}", id)
 
-        val skill = skillMapper.selectById(id)
-            ?: throw BizException("Skill not found")
-        return skill
+        return skillMapper.selectById(id)
     }
 
     @Transactional(rollbackFor = [Exception::class])
