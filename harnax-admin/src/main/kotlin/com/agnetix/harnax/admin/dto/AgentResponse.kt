@@ -39,6 +39,9 @@ data class AgentResponse(
     @Schema(description = "Tool list")
     var toolList: List<ToolItem>? = null,
 
+    @Schema(description = "CLI list")
+    var cliList: List<CliItem>? = null,
+
     @Schema(description = "Session list")
     var sessionList: List<SessionItem>? = null,
 
@@ -153,6 +156,27 @@ data class AgentResponse(
 
         @Schema(description = "Environment variable bindings")
         var envBindings: List<EnvBinding>? = null,
+    )
+
+    @Schema(description = "CLI item")
+    data class CliItem(
+        @Schema(description = "CLI ID", example = "1")
+        var cliId: Long? = null,
+
+        @Schema(description = "CLI name", example = "kubectl")
+        var cliName: String? = null,
+
+        @Schema(description = "CLI description")
+        var cliDescription: String? = null,
+
+        @Schema(description = "CLI version", example = "1.30.0")
+        var version: String? = null,
+
+        @Schema(description = "Environment variable bindings")
+        var envBindings: List<EnvBinding>? = null,
+
+        @Schema(description = "Skills associated with this CLI")
+        var skillList: List<SkillItem>? = null,
     )
 
     @Schema(description = "Session item")

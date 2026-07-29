@@ -28,6 +28,14 @@
         SELECT * FROM skill WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
+    <!-- selectByIds -->
+    <select id="selectByIds" resultMap="SkillResultMap">
+        SELECT * FROM skill WHERE active = 1 AND id IN
+        <foreach collection="ids" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </select>
+
     <!-- deleteById -->
     <update id="deleteById">
         UPDATE skill SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1

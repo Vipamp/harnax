@@ -11,13 +11,17 @@ import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentToolBinding
+import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.CliMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -46,6 +50,9 @@ class AgentServiceImpl(
     private val toolBindingMapper: AgentToolBindingMapper,
     private val mcpBindingMapper: AgentMcpBindingMapper,
     private val skillBindingMapper: AgentSkillBindingMapper,
+    private val cliBindingMapper: AgentCliBindingMapper,
+    private val cliMapper: CliMapper,
+    private val cliSkillBindingMapper: CliSkillBindingMapper,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -85,6 +92,7 @@ class AgentServiceImpl(
         saveToolBindings(agent.id, request.toolList)
         saveMcpBindings(agent.id, request.mcpList)
         saveSkillBindings(agent.id, request.skillList)
+        saveCliBindings(agent.id, request.cliList)
 
         true
     } catch (e: Exception) {
@@ -119,6 +127,9 @@ class AgentServiceImpl(
         if (request.skillList != null) {
             saveSkillBindings(agent.id, request.skillList)
         }
+        if (request.cliList != null) {
+            saveCliBindings(agent.id, request.cliList)
+        }
 
         true
     } catch (e: Exception) {
@@ -137,6 +148,7 @@ class AgentServiceImpl(
         toolBindingMapper.deleteByAgentId(id)
         mcpBindingMapper.deleteByAgentId(id)
         skillBindingMapper.deleteByAgentId(id)
+        cliBindingMapper.deleteByAgentId(id)
         return agentMapper.deleteById(id) > 0
     }
 
@@ -243,6 +255,37 @@ class AgentServiceImpl(
             response.skillList = skillItems
         }
 
+        // Read CLI bindings from normalized table
+        val cliBindings = cliBindingMapper.selectByAgentId(agent.id)
+        if (cliBindings.isNotEmpty()) {
+            val cliIds = cliBindings.map { it.cliId }.distinct()
+            val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
+            val skillBindingsByCli = cliSkillBindingMapper.selectByCliIds(cliIds).groupBy { it.cliId }
+            val cliItems = mutableListOf<AgentResponse.CliItem>()
+            for (binding in cliBindings) {
+                val cli = clisById[binding.cliId] ?: continue
+                val item = AgentResponse.CliItem()
+                item.cliId = cli.id
+                item.cliName = cli.name
+                item.cliDescription = cli.description
+                item.version = cli.version
+                item.envBindings = parseEnvBindingsJson(binding.envBindings)
+                val cliSkills = skillBindingsByCli[cli.id].orEmpty().mapNotNull { skillBinding ->
+                    val skill = skillService.getSkill(skillBinding.skillId) ?: return@mapNotNull null
+                    AgentResponse.SkillItem().apply {
+                        skillId = skill.id
+                        skillName = skill.name
+                        skillDescription = skill.description
+                    }
+                }
+                if (cliSkills.isNotEmpty()) {
+                    item.skillList = cliSkills
+                }
+                cliItems.add(item)
+            }
+            response.cliList = cliItems
+        }
+
         return response
     }
 
@@ -323,6 +366,29 @@ class AgentServiceImpl(
         }
         if (bindings.isNotEmpty()) {
             skillBindingMapper.batchInsert(bindings)
+        }
+    }
+
+    /**
+     * Save CLI bindings: delete old + insert new.
+     */
+    private fun saveCliBindings(agentId: Long, cliList: List<AgentCreateRequest.CliConfig>?) {
+        cliBindingMapper.deleteByAgentId(agentId)
+        if (cliList.isNullOrEmpty()) return
+
+        val now = LocalDateTime.now()
+        val bindings = cliList.mapNotNull { config ->
+            val cliId = config.id ?: return@mapNotNull null
+            AgentCliBinding().apply {
+                this.agentId = agentId
+                this.cliId = cliId
+                this.envBindings = serializeEnvBindings(config.envBindings)
+                this.createTime = now
+                this.updateTime = now
+            }
+        }
+        if (bindings.isNotEmpty()) {
+            cliBindingMapper.batchInsert(bindings)
         }
     }
 

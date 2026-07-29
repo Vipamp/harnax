@@ -170,12 +170,17 @@ class KeepAliveSandboxManager(
      * @param sessionId session identifier, used as both the sandbox session ID and cache key
      * @param workspaceSpec workspace specification (projection, entries) for initial workspace init
      * @param snapshotSpec optional snapshot spec for workspace persistence on crash recovery
+     * @param imageOverride optional per-session image (e.g. agent CLI image); falls back to the default image
+     * @param env environment variables injected into newly created containers (docker run -e)
      */
     fun getOrCreate(
         sessionId: String,
         workspaceSpec: WorkspaceSpec?,
         snapshotSpec: SandboxSnapshotSpec?,
+        imageOverride: String? = null,
+        env: Map<String, String> = emptyMap(),
     ): DockerSandbox {
+        val effectiveImage = imageOverride?.takeIf { it.isNotBlank() } ?: image
         // Cleanup idle sandboxes before creating new ones
         cleanupIdle()
 
@@ -194,8 +199,25 @@ class KeepAliveSandboxManager(
             } else {
                 // Scenario 2/3: Check if Docker container already exists for this session
                 val existingContainerInfo = inspectExistingContainer(sessionId)
-                if (existingContainerInfo != null) {
-                    val (containerId, isRunning) = existingContainerInfo
+                val staleImage = existingContainerInfo != null &&
+                    existingContainerInfo.third.isNotBlank() &&
+                    existingContainerInfo.third != effectiveImage
+                if (staleImage) {
+                    // Agent's CLI set changed → container runs an outdated image; recreate.
+                    log.info(
+                        "[keepAlive] Existing container image '{}' differs from required '{}' for session={}, recreating",
+                        existingContainerInfo!!.third,
+                        effectiveImage,
+                        sessionId,
+                    )
+                    // Persist workspace before removal so the new container restores it from snapshot
+                    if (this.snapshotSpec != null) {
+                        persistFromOrphanedContainer(sessionId)
+                    }
+                    dockerExecutor.execute(listOf("docker", "rm", "-f", "agentscope-sandbox-$sessionId"))
+                }
+                if (existingContainerInfo != null && !staleImage) {
+                    val (containerId, isRunning, _) = existingContainerInfo
                     log.info(
                         "[keepAlive] Found existing container for session={}, containerId={}, running={}, attaching",
                         sessionId,
@@ -243,15 +265,18 @@ class KeepAliveSandboxManager(
                 }
 
                 // Scenario 1: No existing container -> create new
-                log.info("[keepAlive] Creating new sandbox for session={}, image={}, workspaceRoot={}, network={}", sessionId, image, workspaceRoot, network ?: "default")
+                log.info("[keepAlive] Creating new sandbox for session={}, image={}, workspaceRoot={}, network={}", sessionId, effectiveImage, workspaceRoot, network ?: "default")
                 val state = DockerSandboxState()
                 state.setSessionId(sessionId)
-                state.setImage(image)
+                state.setImage(effectiveImage)
                 state.setWorkspaceRoot(workspaceRoot)
                 state.setContainerOwned(true)
                 state.setWorkspaceRootReady(false)
                 if (network != null) {
                     state.setNetwork(network)
+                }
+                if (env.isNotEmpty()) {
+                    state.setAdditionalRunArgs(env.flatMap { (k, v) -> listOf("-e", "$k=$v") })
                 }
                 if (workspaceSpec != null) {
                     state.setWorkspaceSpec(workspaceSpec)
@@ -263,12 +288,12 @@ class KeepAliveSandboxManager(
                 // Diagnostic + reflection fallback for image field
                 val imageViaGetter = state.getImage()
                 if (imageViaGetter == null) {
-                    log.warn("[keepAlive] getImage() returned null after setImage('{}'), using reflection fallback", image)
+                    log.warn("[keepAlive] getImage() returned null after setImage('{}'), using reflection fallback", effectiveImage)
                     try {
                         val field = DockerSandboxState::class.java.getDeclaredField("image")
                         field.trySetAccessible()
-                        field.set(state, image)
-                        log.info("[keepAlive] Reflection set image={}, getImage()={}", image, state.getImage())
+                        field.set(state, effectiveImage)
+                        log.info("[keepAlive] Reflection set image={}, getImage()={}", effectiveImage, state.getImage())
                     } catch (e: Exception) {
                         log.error("[keepAlive] Reflection fallback failed", e)
                         throw RuntimeException("Cannot set DockerSandboxState.image", e)
@@ -290,19 +315,19 @@ class KeepAliveSandboxManager(
 
     /**
      * Inspects Docker for an existing container matching the session ID.
-     * Returns (containerId, isRunning) pair, or null if no container exists.
+     * Returns (containerId, isRunning, image) triple, or null if no container exists.
      */
-    private fun inspectExistingContainer(sessionId: String): Pair<String, Boolean>? {
+    private fun inspectExistingContainer(sessionId: String): Triple<String, Boolean, String>? {
         val containerName = "agentscope-sandbox-$sessionId"
         return try {
             val result = dockerExecutor.execute(
-                listOf("docker", "inspect", "--format", "{{.Id}}|{{.State.Running}}", containerName),
+                listOf("docker", "inspect", "--format", "{{.Id}}|{{.State.Running}}|{{.Config.Image}}", containerName),
             )
             val output = result.output
 
             if (output.contains("|")) {
                 val parts = output.split("|")
-                Pair(parts[0], parts[1] == "true")
+                Triple(parts[0], parts[1] == "true", parts.getOrElse(2) { "" })
             } else {
                 null
             }
@@ -377,7 +402,7 @@ class KeepAliveSandboxManager(
      */
     private fun persistFromOrphanedContainer(sessionId: String) {
         val containerInfo = inspectExistingContainer(sessionId) ?: return
-        val (containerId, isRunning) = containerInfo
+        val (containerId, isRunning, _) = containerInfo
 
         log.info("[keepAlive] Found orphaned container for session={}, running={}, attempting snapshot persist", sessionId, isRunning)
         try {

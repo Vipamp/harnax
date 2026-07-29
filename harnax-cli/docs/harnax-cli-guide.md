@@ -119,6 +119,29 @@ harnax tool builtin
 harnax tool env-params <id>
 ```
 
+### CLI 工具管理
+
+CLI 工具（如 kubectl、gh、awscli）会在构建 agent sandbox 镜像时自动安装，关联的 skill 会在运行时自动加载到 agent。
+
+```bash
+harnax cli list [--name X] [--status N] [--page N] [--size N]
+harnax cli get <id>
+harnax cli create --name X --install-script X [--version X] [--check-command X] [--skill-ids 1,2] [--public]
+harnax cli update <id> [--name X] [--install-script X] [--skill-ids 1,2]
+harnax cli delete <id>
+harnax cli toggle <id> [--status 0|1]
+```
+
+示例：
+
+```bash
+# 注册 kubectl，并关联 id=5 的使用教学 skill
+harnax cli create --name kubectl --version 1.30.0 \
+  --install-script 'curl -LO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl" && install -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl' \
+  --check-command 'kubectl version --client' \
+  --skill-ids 5
+```
+
 ### MCP Server 管理
 
 ```bash

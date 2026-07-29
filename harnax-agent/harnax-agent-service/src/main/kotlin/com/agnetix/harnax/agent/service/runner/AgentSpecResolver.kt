@@ -3,6 +3,7 @@ package com.agnetix.harnax.agent.service.runner
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
+import com.agnetix.harnax.agent.CliSpec
 import com.agnetix.harnax.agent.McpSpec
 import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
@@ -106,8 +107,28 @@ class AgentSpecResolver(
         }
 
         // ── Skill details (full config from admin, no SkillMapper needed) ──
+        // Note: admin already merges CLI-associated skills into skillDetails (dedup by id)
         for (skill in specInfo.skillDetails) {
             builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
+        }
+
+        // ── CLI details (install scripts for sandbox image + env bindings) ──
+        for (cli in specInfo.cliDetails) {
+            builder.addCliSpec(
+                CliSpec(
+                    cliId = cli.id,
+                    name = cli.name,
+                    version = cli.version,
+                    installScript = cli.installScript,
+                    checkCommand = cli.checkCommand,
+                    envBindings = cli.envBindings.mapNotNull { binding ->
+                        val key = binding["envKey"] ?: return@mapNotNull null
+                        val value = binding["envValue"] ?: return@mapNotNull null
+                        key to value
+                    }.toMap(),
+                    skillIds = cli.skillIds,
+                ),
+            )
         }
 
         // ── Tool details (full config from admin) ──
