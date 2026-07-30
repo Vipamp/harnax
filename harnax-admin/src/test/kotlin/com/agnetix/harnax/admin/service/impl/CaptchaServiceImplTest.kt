@@ -36,9 +36,9 @@ class CaptchaServiceImplTest {
 
         // A real captcha generated before the bypass is still usable afterwards
         val generated = service.generateCaptcha()
-        assertTrue(service.validateCaptcha(generated.captchaKey, "UI_TEST_2026"))
+        assertTrue(service.validateCaptcha(generated.captchaKey!!, "UI_TEST_2026"))
         // Stored captcha not consumed by the master-code path: wrong code now fails normally
-        assertFalse(service.validateCaptcha(generated.captchaKey, "XXXX"))
+        assertFalse(service.validateCaptcha(generated.captchaKey!!, "XXXX"))
     }
 
     @Test
@@ -50,12 +50,12 @@ class CaptchaServiceImplTest {
         val storeField = CaptchaServiceImpl::class.java.getDeclaredField("captchaStore")
         storeField.isAccessible = true
         val store = storeField.get(service) as java.util.concurrent.ConcurrentHashMap<*, *>
-        val info = store[generated.captchaKey]!!
+        val info = store[generated.captchaKey!!]!!
         val codeField = info.javaClass.getDeclaredField("code")
         codeField.isAccessible = true
         val code = codeField.get(info) as String
 
-        assertTrue(service.validateCaptcha(generated.captchaKey, code.lowercase()))
-        assertFalse(service.validateCaptcha(generated.captchaKey, code), "captcha must be one-time use")
+        assertTrue(service.validateCaptcha(generated.captchaKey!!, code.lowercase()))
+        assertFalse(service.validateCaptcha(generated.captchaKey!!, code), "captcha must be one-time use")
     }
 }
