@@ -87,6 +87,36 @@ CLI 配套 skill 统一存放于内置仓库 `builtin-cli-skills`，该仓库由
 约束违规统一抛 `BizException`（code=400，携带违规对象名）；AgentServiceImpl 的外层
 try-catch 增加 BizException 透传分支，避免被包装成 RuntimeException 丢失业务码。
 
+### 2.4 CLI 生命周期守护（2026-07-30）
+
+CLI 被 agent 引用期间，禁用/删除会让 agent 在下一次刷新时静默丢失工具，因此：
+
+| 操作 | 拦截规则 | 说明 |
+|------|----------|------|
+| 禁用（toggle→0） | 仍被**启用中**（status=1）的 agent 绑定时拒绝 | 禁用可逆，只拦活跃使用方 |
+| 删除 | 被**任何**存活 agent 绑定时拒绝 | 删除不可逆，必须先删除 agent 或在 agent 编辑中解绑 |
+
+- 实现：`AgentCliBindingMapper.selectByCliId` 反查 →
+  `AgentSessionRefreshService.listAgentsByCli`（经 agentMapper 过滤已删 agent）→
+  `CliServiceImpl.toggleCliStatus / deleteCli` 校验，错误信息携带占用 agent 名称列表
+- 前端拦截提示用 `Modal.error` 弹窗展示完整 agent 列表（message 提示会截断长文本）
+- 配套约束：agent 绑定 CLI 时校验存在性（saveCliBindings selectByIds），拒绝悬空绑定；
+  agent-spec 下发时跳过已禁用（status=0）的 CLI 及其 skill，与 tool 禁用语义对齐
+
+### 2.5 配置变更的会话刷新（2026-07-30）
+
+agent 实例在 agent-service 侧按 sessionId 缓存（Caffeine，30 分钟 TTL），CLI/agent 配置
+变更后活跃会话不会立即感知。复用 agent 保存后的刷新链路（admin → session-router 推
+REFRESH 命令 → agent-service 失效缓存重建）：
+
+- 后端：`CliController` 新增 `GET /{id}/related-agents`（禁用前提示用）与
+  `GET /{id}/related-sessions`（`listSessionsByCli` 跨 agent 汇总、按 sessionId 去重，
+  RelatedSessionInfo 增加 agentName 标识归属）；推送仍走已有
+  `POST /api/admin/agents/refresh-sessions`，不重复实现
+- 前端：`AgentRefreshModal` 泛化为 `source: 'agent' | 'cli'` 两种来源；CLI 管理页
+  两处入口——编辑保存后自动弹出、操作列手动"刷新会话"按钮
+- 未勾选刷新的会话在缓存 TTL（约 30 分钟）内自然生效
+
 ## 3. 运行时（harnax-agent）
 
 ### AgentSpec 扩展
@@ -195,6 +225,8 @@ try-catch 增加 BizException 透传分支，避免被包装成 RuntimeException
   仓库列表内置只读展示、中英文国际化（见第 4 节）
 - 内置数据（07-30）：builtin-cli-skills 仓库 + harnax-cli skill + harnax CLI + 二进制发布（见第 5 节）
 - 约束与加固（07-30）：内置仓库六条防绕过规则、跨租户写保护、BizException 统一（见 2.1~2.3 节）
+- 全链路检查与守护（07-30）：五段链路（配置→绑定→下发→skill 加载→sandbox 携带）逐段验证通畅；
+  修复禁用 CLI 仍下发、agent 绑定无存在性校验两处问题；新增生命周期守护与会话刷新（见 2.4~2.5 节）
 
 代码 review 后的优化（相对初版实现）：
 - 三处 N+1 批量化：InternalApiController CLI 段、AgentServiceImpl.convertToResponse CLI 段、
@@ -205,11 +237,14 @@ try-catch 增加 BizException 透传分支，避免被包装成 RuntimeException
   CliConfigPanel options 显式 data 字段 + 空 id 过滤、EntityCard 统计网格自适应
 
 相关 commit（kotlin-dev）：`3d365b3`（设计文档）→ `ff242d7`（后端+CLI 主体）→
-`7f182e6`（webui）→ `9f992b2`（约束+租户保护）→ `2f37490`（测试修复）
+`7f182e6`（webui）→ `9f992b2`（约束+租户保护）→ `2f37490`（测试修复）→
+`ad74615`（会话刷新+禁用/删除校验）
 
 已知事项 / 后续可选：
 - `docker build` 在首次使用某 CLI 组合时同步执行（agent 创建阻塞至构建完成，fail-fast 设计）；
   如需异步预构建，可在 agent 保存时触发
+- `cli.env_params` 字段（CLI 声明所需环境变量）已建模但运行时暂无消费方，按需保留；
+  后续可实现"agent 绑定 CLI 时按声明提示填写 envBindings"
 - 内置数据初始化目前是手工 SQL，建议做成 Flyway 数据迁移或启动期 initializer，
   并将 installScript 的下载地址参数化（当前指向本地 nginx）
 - 内置仓库名前后端各有一份常量（BuiltinRepository.kt / builtinRepository.ts），改名需同步；
@@ -217,5 +252,8 @@ try-catch 增加 BizException 透传分支，避免被包装成 RuntimeException
 - 跨租户写保护只覆盖了仓库/skill/CLI；mcp/tool/model 等实体的同类历史问题待系统性治理
 - InternalApiController 中 tool/mcp/skill 段仍是存量的逐条 selectById 模式（预存在）；
   env 变量解析（resolveEnvBindingsJson）逐条查询同为预存在问题
+- 禁用 CLI 后已构建的组合镜像不回收（仅磁盘占用，无正确性影响）
+- CLI 管理页修改 skill 关联后同样可用"刷新会话"入口推送生效；CLI skill 内容本身的修改
+  经 skillDetails 实时合并下发，刷新会话后即生效
 - 端到端验证（第 6.3 节）未完成：admin 登录含验证码，命令行实测受阻；
   需在页面创建绑定 CLI 的 agent 发起会话验证镜像构建与 skill 加载
