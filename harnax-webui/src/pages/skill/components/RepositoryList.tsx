@@ -9,6 +9,7 @@ import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
 import SyncButton from '@/components/SyncButton';
 import StatusSwitch from '@/components/StatusSwitch';
+import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 
 const { Text, Paragraph } = Typography;
 
@@ -117,8 +118,13 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                     style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}>
                     {repository.sourceType || 'GIT'}
                   </Tag>
+                  {repository.name === BUILTIN_CLI_SKILL_REPO && (
+                    <Tag color="purple" style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}>
+                      {intl.formatMessage({ id: 'pages.skill.repository.builtin', defaultMessage: 'Built-in' })}
+                    </Tag>
+                  )}
                 </Space>
-                {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
+                {repository.name !== BUILTIN_CLI_SKILL_REPO && hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <StatusSwitch
                     status={repository.status}
                     onChange={(newStatus) => {
@@ -166,7 +172,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 {repository.isPublic === 1 && (
                   <Tag color="blue" style={{ fontSize: '11px' }}>{intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' })}</Tag>
                 )}
-                {hasOperationPermission(isAdmin, currentUser, repository.creator) && (
+                {repository.name !== BUILTIN_CLI_SKILL_REPO && hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>
                     <SyncButton 
                       onClick={(e) => {

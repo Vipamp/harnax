@@ -395,7 +395,8 @@ const EntityCard: React.FC<EntityCardProps> = ({
           <div 
             style={{
               display: 'grid',
-              gridTemplateColumns: `repeat(${stats.length}, 1fr)`,
+              // auto-fit + minmax：窄屏自动换行，避免多指标（如 5 个）被挤压变形
+              gridTemplateColumns: `repeat(auto-fit, minmax(64px, 1fr))`,
               gap: '8px',
               marginBottom: '12px',
             }}

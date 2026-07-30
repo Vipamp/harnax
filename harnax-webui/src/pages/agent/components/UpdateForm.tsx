@@ -5,12 +5,15 @@ import React, { useState, useEffect } from 'react';
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
 import { getAvailableTools } from '@/services/ant-design-pro/tool';
 import { getEnvVariableList } from '@/services/ant-design-pro/envVariable';
+import { getCliPage } from '@/services/ant-design-pro/cli';
 import { RocketOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
+import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import ToolConfigPanel, { ToolConfigState, EnvVarOption } from './ToolConfigPanel';
 import McpConfigPanel, { McpConfigState } from './McpConfigPanel';
 import SkillConfigPanel, { SkillConfigState } from './SkillConfigPanel';
+import CliConfigPanel from './CliConfigPanel';
 
 const { TextArea } = Input;
 const { Step } = Steps;
@@ -40,6 +43,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const [skillConfigs, setSkillConfigs] = useState<SkillConfigState[]>([{}]);
   const [tools, setTools] = useState<any[]>([]);
   const [toolConfigs, setToolConfigs] = useState<ToolConfigState[]>([{}]);
+  const [clis, setClis] = useState<API.CliItem[]>([]);
+  const [selectedCliIds, setSelectedCliIds] = useState<number[]>([]);
   const [envVarOptions, setEnvVarOptions] = useState<EnvVarOption[]>([]);
   const [toolEnvCollapsed, setToolEnvCollapsed] = useState<Set<number>>(new Set());
   const [mcpEnvCollapsed, setMcpEnvCollapsed] = useState<Set<number>>(new Set());
@@ -117,11 +122,15 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         setToolConfigs([{}]);
       }
 
+      // Initialize CLI selection
+      setSelectedCliIds((values.cliList || []).map(item => item.cliId!).filter(Boolean));
+
       loadMcpServers();
       loadRepositories();
       loadModels();
       loadTools();
       loadEnvVarOptions();
+      loadClis();
     }
   }, [visible, values]);
 
@@ -166,6 +175,13 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     if (changed) { setMcpConfigs(updated); }
   }, [mcpServers]);
 
+  const loadClis = async () => {
+    try {
+      const res = await getCliPage({ pageNum: 1, pageSize: 100, status: 1 });
+      setClis(res.data?.records || []);
+    } catch (error) { console.error('加载 CLI 列表失败', error); }
+  };
+
   const loadMcpServers = async () => {
     try {
       const res = await getMcpServerList({ pageNum: 1, pageSize: 100, status: 1 });
@@ -176,7 +192,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   const loadRepositories = async () => {
     try {
       const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100, status: 1 });
-      setRepositories(res.data?.records || []);
+      // 内置 CLI 仓库的技能只能通过 CLI 关联，不允许 agent 直接绑定
+      setRepositories((res.data?.records || []).filter((repo: any) => repo.name !== BUILTIN_CLI_SKILL_REPO));
     } catch (error) { console.error('加载技能仓库列表失败', error); }
   };
 
@@ -216,7 +233,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     try {
       if (currentStep === 0) {
         await form.validateFields(['name', 'description', 'systemPrompt']);
-      } else if (currentStep === 3) {
+      } else if (currentStep === 4) {
         const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId', 'owner']);
 
         const submitData: API.AgentUpdateRequest = {
@@ -247,6 +264,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               ...(b.envVarId && !customInput ? { envVarId: b.envVarId } : {}),
             })),
           })),
+          cliList: selectedCliIds.map(id => ({ id })),
         };
         await onSubmit(submitData);
         form.resetFields();
@@ -254,6 +272,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         setMcpConfigs([{}]);
         setSkillConfigs([{}]);
         setToolConfigs([{}]);
+        setSelectedCliIds([]);
         return;
       }
       setCurrentStep(currentStep + 1);
@@ -269,6 +288,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     setMcpConfigs([{}]);
     setSkillConfigs([{}]);
     setToolConfigs([{}]);
+    setSelectedCliIds([]);
     onCancel();
   };
 
@@ -290,6 +310,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         <Step title={intl.formatMessage({ id: 'pages.agent.toolConfig', defaultMessage: 'Tool Config' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.mcpConfig', defaultMessage: 'MCP Config' })} />
         <Step title={intl.formatMessage({ id: 'pages.agent.skillConfig', defaultMessage: 'Skill Config' })} />
+        <Step title={intl.formatMessage({ id: 'pages.agent.cliConfig', defaultMessage: 'CLI Config' })} />
       </Steps>
 
       <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto', paddingRight: 4 }}>
@@ -379,6 +400,14 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             onLoadSkills={loadSkills}
           />
         )}
+
+        {currentStep === 4 && (
+          <CliConfigPanel
+            selectedCliIds={selectedCliIds}
+            setSelectedCliIds={setSelectedCliIds}
+            clis={clis}
+          />
+        )}
       </Form>
       </div>
 
@@ -387,7 +416,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           {intl.formatMessage({ id: 'pages.common.previous', defaultMessage: 'Previous' })}
         </Button>
         <Button type="primary" onClick={handleNext}>
-          {currentStep === 3 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
+          {currentStep === 4 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
     </FormModal>

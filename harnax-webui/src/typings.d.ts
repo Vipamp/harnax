@@ -361,6 +361,7 @@ message?: string;
     mcpList?: AgentMcpConfig[];
     skillList?: AgentSkillConfig[];
     toolList?: AgentToolConfig[];
+    cliList?: AgentCliConfig[];
     sessionList?: SessionItem[];  // 会话列表
     sessionCount?: number;  // 关联会话数量
     owner?: string;
@@ -422,6 +423,62 @@ message?: string;
   };
 
   /**
+   * @zh-CN 智能体 CLI 配置对象
+   */
+  export type AgentCliConfig = {
+    cliId?: number;
+    cliName?: string;
+    cliDescription?: string;
+    version?: string;
+    skillList?: AgentSkillConfig[];
+  };
+
+  /**
+   * @zh-CN CLI 工具对象
+   */
+  export type CliItem = {
+    id?: number;
+    name: string;
+    description?: string;
+    version?: string;
+    installScript?: string;
+    checkCommand?: string;
+    skillList?: { skillId?: number; skillName?: string; skillDescription?: string }[];
+    status?: number;
+    isPublic?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  /**
+   * @zh-CN CLI 创建请求
+   */
+  export type CliCreateRequest = {
+    name: string;
+    description?: string;
+    version?: string;
+    installScript: string;
+    checkCommand?: string;
+    skillIds?: number[];
+    status?: number;
+    isPublic?: number;
+  };
+
+  /**
+   * @zh-CN CLI 更新请求
+   */
+  export type CliUpdateRequest = {
+    name?: string;
+    description?: string;
+    version?: string;
+    installScript?: string;
+    checkCommand?: string;
+    skillIds?: number[];
+    isPublic?: number;
+  };
+
+  /**
    * @zh-CN 智能体创建请求
    */
   export type AgentCreateRequest = {
@@ -432,6 +489,7 @@ message?: string;
     mcpList?: AgentMcpConfig[];
     toolList?: { id?: number; enableSkip?: string; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string;
+    cliList?: { id?: number }[];
     owner?: string;
     status?: number;
     isPublic?: number;
@@ -449,6 +507,7 @@ message?: string;
     mcpList?: AgentMcpConfig[];
     toolList?: { id?: number; enableSkip?: string; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // 逗号分隔的字符串 "1,2,3"
+    cliList?: { id?: number }[];
     owner?: string;
     status?: number;
     isPublic?: number;

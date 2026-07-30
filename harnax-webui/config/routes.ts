@@ -92,6 +92,12 @@ export default [
         hideInMenu: true,
       },
       {
+        name: 'cli',
+        icon: 'code',
+        path: '/context/cli',
+        component: './cli',
+      },
+      {
         name: 'channel',
         icon: 'api',
         path: '/context/channel',

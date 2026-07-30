@@ -67,6 +67,7 @@ const AgentCard: React.FC<{
   const mcpCount = item.mcpList?.length || 0;
   const toolCount = item.toolList?.length || 0;
   const skillCount = item.skillList?.length || 0;
+  const cliCount = item.cliList?.length || 0;
   const sessionCount = item.sessionCount || 0;
 
   // 构建 tags：模型名称和价格
@@ -85,7 +86,7 @@ const AgentCard: React.FC<{
     });
   }
 
-  // 构建 stats：Tools、MCP、Skill、Session 统计（带 Popover 列表）
+  // 构建 stats：Tools、MCP、Skill、CLI、Session 统计（带 Popover 列表）
   const stats = [
     {
       label: 'Tools',
@@ -268,6 +269,78 @@ const AgentCard: React.FC<{
                       <div style={{ paddingLeft: 12 }}>
                         <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
                           {skill.skillDescription}
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </List.Item>
+              )}
+            />
+          )}
+        </div>
+      ),
+    },
+    {
+      label: 'CLIs',
+      value: cliCount,
+      color: '#722ed1',
+      popoverContent: (
+        <div style={{ maxWidth: 320 }}>
+          {cliCount === 0 ? (
+            <div style={{ padding: '8px 0', textAlign: 'center' }}>
+              <Text type="secondary">{intl.formatMessage({ id: 'pages.agent.cli.noConfig', defaultMessage: 'No CLI configuration' })}</Text>
+            </div>
+          ) : (
+            <List
+              size="small"
+              dataSource={item.cliList || []}
+              renderItem={(cli) => (
+                <List.Item
+                  style={{
+                    padding: '8px 12px',
+                    background: 'var(--vip-bg-container)',
+                    transition: 'all 0.2s ease',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => window.open(`/context/cli`, '_blank')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-primary-light)';
+                    e.currentTarget.style.paddingLeft = '16px';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--vip-bg-container)';
+                    e.currentTarget.style.paddingLeft = '12px';
+                  }}
+                >
+                  <div style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: '#722ed1',
+                        flexShrink: 0,
+                      }} />
+                      <Text strong style={{ fontSize: '12px', color: 'var(--vip-text-primary)' }}>
+                        {cli.cliName || `CLI #${cli.cliId}`}
+                        {cli.version && (
+                          <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)', marginLeft: 6, fontWeight: 400 }}>
+                            {cli.version}
+                          </Text>
+                        )}
+                      </Text>
+                    </div>
+                    {cli.cliDescription && (
+                      <div style={{ paddingLeft: 12 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-secondary)' }}>
+                          {cli.cliDescription}
+                        </Text>
+                      </div>
+                    )}
+                    {cli.skillList && cli.skillList.length > 0 && (
+                      <div style={{ paddingLeft: 12, marginTop: 2 }}>
+                        <Text style={{ fontSize: '11px', color: 'var(--vip-text-tertiary)' }}>
+                          {intl.formatMessage({ id: 'pages.agent.cli.skills', defaultMessage: 'Skills' })}: {cli.skillList.map((s) => s.skillName).join(', ')}
                         </Text>
                       </div>
                     )}
