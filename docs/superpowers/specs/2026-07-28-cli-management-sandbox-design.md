@@ -25,6 +25,8 @@ Agent 在 Docker sandbox 中执行任务时，经常需要调用通用命令行�
 | 多 CLI 组合 | 平台自动拼 Dockerfile 构建，tag = `harnax-sandbox:cli-<hash>` |
 | agent-CLI 基数 | 0..N，0 个时用基础镜像、跳过构建 |
 | skill 关联 | CLI 实体引用 skill（`cli_skill_binding`），运行时动态合并，不写入 agent_skill_binding |
+| CLI↔skill 配置入口 | 只在 CLI 管理页维护；agent 侧只选 CLI，skill 由后台自动带出（2026-07-29 补充） |
+| CLI skill 归属 | CLI 只能绑定内置仓库 `builtin-cli-skills` 的 skill；该仓库对 agent 不可选、管理端只读（2026-07-30 补充） |
 
 ## 1. 数据模型（harnax-entity）
 
@@ -53,6 +55,37 @@ DDL 追加到迁移脚本（V1__init_schema.sql 同目录新增迁移文件）�
   - AgentCreateRequest / AgentUpdateRequest 增加 `cliList: List<CliConfig>`（id + envBindings）
   - AgentServiceImpl 增加 `saveCliBindings()`（delete-then-insert，同现有三个 saveXxxBindings）
   - AgentResponse 增加 cliList 嵌套信息（含每个 CLI 关联的 skill）
+
+### 2.1 内置技能仓库约束（BuiltinRepository.CLI_SKILLS = "builtin-cli-skills"）
+
+CLI 配套 skill 统一存放于内置仓库 `builtin-cli-skills`，该仓库由平台管理，后端强制以下规则
+（常量定义 `constant/BuiltinRepository.kt`，前端镜像常量 `src/constants/builtinRepository.ts`，
+两端改名需同步）：
+
+| 规则 | 实现位置 |
+|------|----------|
+| CLI 只能绑定该仓库的 skill（逐条校验 repositoryId） | CliServiceImpl.saveSkillBindings |
+| agent 不能直接绑定该仓库的 skill（经 CLI 自动加载） | AgentServiceImpl.saveSkillBindings |
+| 仓库本身 update/toggle/delete 只读 | SkillRepositoryServiceImpl.requireNotBuiltin |
+| 禁止创建/改名为保留名（防伪造同名仓库绕过校验） | createSkillRepository / updateSkillRepository |
+| 该仓库下 skill 禁止 create/update/toggle/delete/batchSave | SkillServiceImpl.requireNotBuiltinRepo |
+| skill 不可移入/移出该仓库（updateSkill 校验新旧 repositoryId） | SkillServiceImpl.updateSkill |
+
+防绕过设计要点：约束按"仓库名"匹配，因此必须同时封住"把 skill 改挂到内置仓库"（混入合法来源）、
+"把内置 skill 移出"（绕过 agent 禁绑）、"创建同名假仓库"（自造合法来源，且会误锁真仓库）三条路径。
+
+### 2.2 跨租户写保护
+
+仓库/skill/CLI 的写操作（update/toggle/delete 等）在 service 层校验资源 `tenantId` 与
+`TenantContext` 一致，不一致抛 BizException；上下文为 null（内部/系统调用）跳过。
+选择 service 层而非 mapper SQL 层：改 SQL 会影响无租户上下文的内部链路
+（InternalApiController、agent-service），service 层只拦写路径、不影响读。
+（mcp/tool/model 等其他实体存在同样历史问题，属系统性治理，不在本期范围。）
+
+### 2.3 错误处理约定
+
+约束违规统一抛 `BizException`（code=400，携带违规对象名）；AgentServiceImpl 的外层
+try-catch 增加 BizException 透传分支，避免被包装成 RuntimeException 丢失业务码。
 
 ## 3. 运行时（harnax-agent）
 
@@ -97,11 +130,43 @@ DDL 追加到迁移脚本（V1__init_schema.sql 同目录新增迁移文件）�
 
 ## 4. 管理入口
 
-- webui：CLI 管理页 + agent 编辑页 CLI 多选（本期后端优先，webui 可后补）
-- harnax-cli(Go)：新增 `cmd/cli_resource.go`，命令 `harnax cli list/get/create/update/delete/toggle`，
-  参考 cmd/tool.go 模式
+### webui（已实现）
+- **CLI 管理页** `/context/cli`（菜单：上下文管理 → CLI 工具）：
+  - `src/pages/cli/index.tsx`：列表（名称/版本/描述/关联技能 Tag/状态开关/创建人）+ 搜索 + 增删改
+  - `src/pages/cli/components/CliForm.tsx`：创建/编辑共用表单；关联技能多选**仅加载内置仓库**下的 skill
+- **agent 表单**（CreateForm/UpdateForm）：向导新增第 5 步 "CLI 配置"（`CliConfigPanel`，纯多选，
+  选项内预览 CLI 的版本/描述/关联技能，不可编辑关联）；技能仓库下拉过滤内置仓库
+- **智能体卡片**（`pages/agent/index.tsx`）：新增 CLIs 统计子卡片（紫色 #722ed1，位于 Skills 与
+  Sessions 之间），Popover 列出 CLI 明细；`EntityCard` 统计网格改为
+  `repeat(auto-fit, minmax(64px, 1fr))` 自适应，避免 5 项在窄屏挤压
+- **仓库列表页**（`RepositoryList.tsx`）：内置仓库显示"内置"Tag，隐藏状态开关/同步/编辑/删除，仅可查看
+- 基础设施：`services/ant-design-pro/cli.ts`、typings（CliItem 等 + AgentItem.cliList）、
+  路由 `config/routes.ts`、中英文国际化（menu + pages）
 
-## 5. 验证
+### harnax-cli(Go)
+- `cmd/cli_resource.go`：`harnax cli list/get/create/update/delete/toggle`，参考 cmd/tool.go 模式
+- 使用文档：`harnax-cli/docs/harnax-cli-guide.md` "CLI 工具管理" 节（含 kubectl 注册示例）
+
+## 5. 内置数据初始化（本地环境已执行，2026-07-30）
+
+平台自身的 harnax CLI 已作为示例/自举数据入库：
+
+| 数据 | 内容 |
+|------|------|
+| skill_repository | `builtin-cli-skills`（source_type=ZIP，平台内置，只读） |
+| skill `harnax-cli` | skillmd = 使用前提（配置/登录/输出格式）+ 完整 harnax-cli-guide.md（约 9KB） |
+| cli `harnax` | installScript 用 python3 urllib 下载二进制到 /usr/local/bin（基础镜像无 curl，curl 方案实测失败）；checkCommand = `harnax --version`；经 cli_skill_binding 关联上述 skill |
+| 安装包 | linux/amd64 静态二进制（CGO_ENABLED=0，约 7.2MB），放 `harnax-webui/public/downloads/` 随前端构建发布（产物 gitignore，重建命令见 .gitignore 注释） |
+
+注意：
+- installScript 中的下载地址当前指向本地 nginx（`http://<host>:3389/downloads/...`），
+  换环境需同步修改 cli 表该字段
+- 新环境初始化步骤：建内置仓库 → 插入 skill → 插入 cli + 绑定 →（可选）发布二进制。
+  后续可做成 Flyway 数据迁移或启动期 initializer（见"已知事项"）
+- agent 在沙箱内实际使用 harnax 还需登录凭证（serverUrl + token），可经 CLI 的
+  envBindings 注入或在 skill 中指导 agent 登录
+
+## 6. 验证
 
 1. 单测：CliImageBuilder hash 稳定性、Dockerfile 生成、0-CLI 短路；CliService CRUD；
    saveCliBindings delete-then-insert
@@ -116,7 +181,7 @@ DDL 追加到迁移脚本（V1__init_schema.sql 同目录新增迁移文件）�
 - 镜像的跨节点分发/registry 推送（本期仅构建到本机 docker）
 - 旧 agent 表遗留 JSON 列（mcp_list/skill_list/tool_list）清理
 
-## 实现状态（2026-07-29）
+## 实现状态（更新至 2026-07-30）
 
 已完成：
 - 数据层：Cli / AgentCliBinding / CliSkillBinding 实体 + Mapper（含 selectByIds/selectByCliIds 批量方法）+
@@ -126,17 +191,31 @@ DDL 追加到迁移脚本（V1__init_schema.sql 同目录新增迁移文件）�
 - 运行时：CliImageBuilder（单测 10 例通过）、KeepAliveSandboxManager 镜像覆盖 + 过期重建、
   HarnessAgentLauncher/Wrapper 全链路传递
 - Go CLI：`harnax cli` 命令组；文档 harnax-cli-guide.md 已更新
+- webui（07-29~30）：CLI 管理页、agent 表单 CLI 步骤、智能体卡片 CLIs 统计、
+  仓库列表内置只读展示、中英文国际化（见第 4 节）
+- 内置数据（07-30）：builtin-cli-skills 仓库 + harnax-cli skill + harnax CLI + 二进制发布（见第 5 节）
+- 约束与加固（07-30）：内置仓库六条防绕过规则、跨租户写保护、BizException 统一（见 2.1~2.3 节）
 
 代码 review 后的优化（相对初版实现）：
 - 三处 N+1 批量化：InternalApiController CLI 段、AgentServiceImpl.convertToResponse CLI 段、
-  CliServiceImpl.convertToResponse
+  CliServiceImpl.convertToResponse；AgentServiceImpl 约束校验批量化
 - CliImageBuilder 增加 knownImages 内存缓存
 - keep-alive 容器镜像过期检测与快照保全重建（初版会一直沿用旧镜像）
+- 前端：内置仓库名抽共享常量（消除 8 处硬编码）、CreateForm 提交前全量校验、
+  CliConfigPanel options 显式 data 字段 + 空 id 过滤、EntityCard 统计网格自适应
+
+相关 commit（kotlin-dev）：`3d365b3`（设计文档）→ `ff242d7`（后端+CLI 主体）→
+`7f182e6`（webui）→ `9f992b2`（约束+租户保护）→ `2f37490`（测试修复）
 
 已知事项 / 后续可选：
 - `docker build` 在首次使用某 CLI 组合时同步执行（agent 创建阻塞至构建完成，fail-fast 设计）；
   如需异步预构建，可在 agent 保存时触发
-- InternalApiController 中 tool/mcp/skill 段仍是存量的逐条 selectById 模式（预存在，未在本期范围）
-- env 变量解析（resolveEnvBindingsJson）内部逐条查询为预存在问题
-- webui 管理页未实现（本期后端优先）
-- 端到端验证（第 5.3 节）待起服务后执行
+- 内置数据初始化目前是手工 SQL，建议做成 Flyway 数据迁移或启动期 initializer，
+  并将 installScript 的下载地址参数化（当前指向本地 nginx）
+- 内置仓库名前后端各有一份常量（BuiltinRepository.kt / builtinRepository.ts），改名需同步；
+  彻底方案是经 API 下发
+- 跨租户写保护只覆盖了仓库/skill/CLI；mcp/tool/model 等实体的同类历史问题待系统性治理
+- InternalApiController 中 tool/mcp/skill 段仍是存量的逐条 selectById 模式（预存在）；
+  env 变量解析（resolveEnvBindingsJson）逐条查询同为预存在问题
+- 端到端验证（第 6.3 节）未完成：admin 登录含验证码，命令行实测受阻；
+  需在页面创建绑定 CLI 的 agent 发起会话验证镜像构建与 skill 加载
