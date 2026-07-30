@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
@@ -70,6 +71,7 @@ class SkillServiceImpl(
         if (existSkill != null) {
             throw BizException("Skill name already exists")
         }
+        requireNotBuiltinRepo(request.repositoryId)
 
         val skill = Skill()
         skill.name = request.name
@@ -104,9 +106,14 @@ class SkillServiceImpl(
         val skill = skillMapper.selectById(id)
             ?: throw BizException("Skill not found")
 
+        // Builtin repository skills are read-only, and skills cannot be moved in/out of it
+        requireNotBuiltinRepo(skill.repositoryId)
+        request.repositoryId?.let { requireNotBuiltinRepo(it) }
+
         // If request contains skill name and it's different from current name, check if new name is already in use
+        val targetRepositoryId = request.repositoryId ?: skill.repositoryId
         if (request.name != null && request.name != skill.name) {
-            val existSkill = skillMapper.selectByNameAndRepo(request.name, skill.repositoryId)
+            val existSkill = skillMapper.selectByNameAndRepo(request.name, targetRepositoryId)
             if (existSkill != null) {
                 throw BizException("Skill name already exists")
             }
@@ -130,6 +137,7 @@ class SkillServiceImpl(
 
         val skill = skillMapper.selectById(id)
             ?: throw BizException("Skill not found")
+        requireNotBuiltinRepo(skill.repositoryId)
 
         return skillMapper.updateStatus(id, status) > 0
     }
@@ -140,8 +148,25 @@ class SkillServiceImpl(
 
         val skill = skillMapper.selectById(id)
             ?: throw BizException("Skill not found")
+        requireNotBuiltinRepo(skill.repositoryId)
 
         return skillMapper.deleteById(id) > 0
+    }
+
+    /**
+     * Rejects mutations targeting the builtin CLI skill repository — its skills are
+     * provisioned with the platform and only reachable through CLI bindings.
+     * Also rejects cross-tenant writes (null context = internal invocation, skipped).
+     */
+    private fun requireNotBuiltinRepo(repositoryId: Long) {
+        val repository = skillRepositoryService.getSkillRepository(repositoryId) ?: return
+        if (BuiltinRepository.isBuiltin(repository.name)) {
+            throw BizException("Repository '${BuiltinRepository.CLI_SKILLS}' is read-only, its skills cannot be created/modified/deleted")
+        }
+        val currentTenantId = TenantContext.getTenantId()
+        if (currentTenantId != null && repository.tenantId != currentTenantId) {
+            throw BizException("Skill repository belongs to another tenant")
+        }
     }
 
     override fun getByNameAndRepo(repositoryId: Long, name: String): Skill? = skillMapper.selectByNameAndRepo(name, repositoryId)
@@ -149,6 +174,7 @@ class SkillServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int {
         log.info("Batch saving skills, repositoryId: {}, count: {}", repositoryId, skills.size)
+        requireNotBuiltinRepo(repositoryId)
 
         if (skills.isEmpty()) {
             return 0

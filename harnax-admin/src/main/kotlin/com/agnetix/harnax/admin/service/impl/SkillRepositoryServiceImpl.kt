@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillRepositoryCreateRequest
@@ -63,6 +64,10 @@ class SkillRepositoryServiceImpl(
     override fun createSkillRepository(request: SkillRepositoryCreateRequest): Boolean {
         log.info("Creating skill repository, name: {}", request.name)
 
+        if (BuiltinRepository.isBuiltin(request.name)) {
+            throw BizException("Repository name '${BuiltinRepository.CLI_SKILLS}' is reserved for the platform")
+        }
+
         // Check if repository name already exists
         val tenantId = TenantContext.getTenantId() ?: 1
         val existRepository = skillRepositoryMapper.selectByName(request.name!!, tenantId)
@@ -94,9 +99,13 @@ class SkillRepositoryServiceImpl(
 
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill repository not found")
+        requireNotBuiltin(repository)
 
         // If request contains repository name and it's different from current name, check if new name is already in use
         if (request.name != null && request.name != repository.name) {
+            if (BuiltinRepository.isBuiltin(request.name)) {
+                throw BizException("Repository name '${BuiltinRepository.CLI_SKILLS}' is reserved for the platform")
+            }
             val existRepository = skillRepositoryMapper.selectByName(request.name!!, repository.tenantId)
             if (existRepository != null) {
                 throw BizException("Repository name already exists")
@@ -120,6 +129,7 @@ class SkillRepositoryServiceImpl(
 
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill repository not found")
+        requireNotBuiltin(repository)
 
         return skillRepositoryMapper.updateStatus(id, status) > 0
     }
@@ -127,7 +137,27 @@ class SkillRepositoryServiceImpl(
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteSkillRepository(id: Long): Boolean {
         log.info("Deleting skill repository, id: {}", id)
+        val repository = skillRepositoryMapper.selectById(id) ?: return false
+        requireNotBuiltin(repository)
         return skillRepositoryMapper.deleteById(id) > 0
+    }
+
+    private fun requireNotBuiltin(repository: SkillRepository) {
+        if (repository.name == BuiltinRepository.CLI_SKILLS) {
+            throw BizException("Builtin repository '${BuiltinRepository.CLI_SKILLS}' is read-only")
+        }
+        requireSameTenant(repository.tenantId)
+    }
+
+    /**
+     * Write operations must target the caller's own tenant.
+     * A null context (internal/system invocation) skips the check.
+     */
+    private fun requireSameTenant(resourceTenantId: Long) {
+        val currentTenantId = TenantContext.getTenantId() ?: return
+        if (resourceTenantId != currentTenantId) {
+            throw BizException("Skill repository belongs to another tenant")
+        }
     }
 
     override fun getByName(name: String): SkillRepository? {

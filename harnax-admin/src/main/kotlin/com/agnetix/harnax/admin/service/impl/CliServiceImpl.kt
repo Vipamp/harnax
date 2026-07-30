@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.CliCreateRequest
 import com.agnetix.harnax.admin.dto.CliResponse
@@ -14,6 +15,7 @@ import com.agnetix.harnax.entity.CliSkillBinding
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -30,6 +32,7 @@ class CliServiceImpl(
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val skillMapper: SkillMapper,
+    private val skillRepositoryMapper: SkillRepositoryMapper,
 ) : CliService {
 
     private val log = LoggerFactory.getLogger(CliServiceImpl::class.java)
@@ -79,6 +82,7 @@ class CliServiceImpl(
 
         val cli = cliMapper.selectById(id)
             ?: throw BizException("CLI not found")
+        requireSameTenant(cli.tenantId)
 
         if (request.name != null && request.name != cli.name) {
             val exist = cliMapper.selectByName(request.name, cli.tenantId)
@@ -104,15 +108,28 @@ class CliServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun toggleCliStatus(id: Long, status: Int): Boolean {
-        cliMapper.selectById(id) ?: throw BizException("CLI not found")
+        val cli = cliMapper.selectById(id) ?: throw BizException("CLI not found")
+        requireSameTenant(cli.tenantId)
         return cliMapper.updateStatus(id, status) > 0
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteCli(id: Long): Boolean {
-        cliMapper.selectById(id) ?: throw BizException("CLI not found")
+        val cli = cliMapper.selectById(id) ?: throw BizException("CLI not found")
+        requireSameTenant(cli.tenantId)
         cliSkillBindingMapper.deleteByCliId(id)
         return cliMapper.deleteById(id) > 0
+    }
+
+    /**
+     * Write operations must target the caller's own tenant.
+     * A null context (internal/system invocation) skips the check.
+     */
+    private fun requireSameTenant(resourceTenantId: Long) {
+        val currentTenantId = TenantContext.getTenantId() ?: return
+        if (resourceTenantId != currentTenantId) {
+            throw BizException("CLI belongs to another tenant")
+        }
     }
 
     override fun convertToResponse(cli: Cli): CliResponse {
@@ -134,13 +151,32 @@ class CliServiceImpl(
 
     /**
      * Save skill bindings: delete old + insert new.
+     * CLI skills must all come from the builtin CLI skill repository.
      */
     private fun saveSkillBindings(cliId: Long, skillIds: List<Long>?) {
         cliSkillBindingMapper.deleteByCliId(cliId)
         if (skillIds.isNullOrEmpty()) return
 
+        val distinctIds = skillIds.distinct()
+        val skills = skillMapper.selectByIds(distinctIds)
+        if (skills.size != distinctIds.size) {
+            throw BizException("Some skills not found: ${distinctIds - skills.map { it.id }.toSet()}")
+        }
+        val tenantId = TenantContext.getTenantId() ?: 1
+        val builtinRepo = skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, tenantId)
+            ?: run {
+                log.error("Builtin repository '{}' missing for tenant {}, aborting CLI skill binding", BuiltinRepository.CLI_SKILLS, tenantId)
+                throw BizException("Builtin repository '${BuiltinRepository.CLI_SKILLS}' not found")
+            }
+        val invalid = skills.filter { it.repositoryId != builtinRepo.id }
+        if (invalid.isNotEmpty()) {
+            throw BizException(
+                "CLI skills must belong to the '${BuiltinRepository.CLI_SKILLS}' repository, invalid: ${invalid.joinToString(",") { it.name }}",
+            )
+        }
+
         val now = LocalDateTime.now()
-        val bindings = skillIds.distinct().map { skillId ->
+        val bindings = distinctIds.map { skillId ->
             CliSkillBinding().apply {
                 this.cliId = cliId
                 this.skillId = skillId

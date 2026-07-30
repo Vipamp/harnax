@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
@@ -7,6 +8,7 @@ import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.EnvBinding
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.ToolConfig
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
@@ -23,6 +25,7 @@ import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -53,6 +56,7 @@ class AgentServiceImpl(
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
+    private val skillMapper: SkillMapper,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -95,6 +99,8 @@ class AgentServiceImpl(
         saveCliBindings(agent.id, request.cliList)
 
         true
+    } catch (e: BizException) {
+        throw e
     } catch (e: Exception) {
         log.error("Failed to create agent", e)
         throw RuntimeException("Failed to create agent: ${e.message}")
@@ -132,6 +138,8 @@ class AgentServiceImpl(
         }
 
         true
+    } catch (e: BizException) {
+        throw e
     } catch (e: Exception) {
         log.error("Failed to update agent", e)
         throw RuntimeException("Failed to update agent: ${e.message}")
@@ -349,14 +357,30 @@ class AgentServiceImpl(
 
     /**
      * Save skill bindings: delete old + insert new.
+     * Skills from the builtin CLI repository cannot be bound directly —
+     * they are loaded automatically via the agent's CLI bindings.
      */
     private fun saveSkillBindings(agentId: Long, skillList: String?) {
         skillBindingMapper.deleteByAgentId(agentId)
         if (skillList.isNullOrBlank()) return
 
+        val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }
+        if (skillIds.isEmpty()) return
+
+        val builtinRepo = skillRepositoryService.getByName(BuiltinRepository.CLI_SKILLS)
+        if (builtinRepo == null) {
+            log.warn("Builtin repository '{}' not found, skipping agent skill constraint", BuiltinRepository.CLI_SKILLS)
+        } else {
+            val invalid = skillMapper.selectByIds(skillIds).filter { it.repositoryId == builtinRepo.id }
+            if (invalid.isNotEmpty()) {
+                throw BizException(
+                    "Skills from '${BuiltinRepository.CLI_SKILLS}' cannot be bound directly (auto-loaded via CLI): ${invalid.joinToString(",") { it.name }}",
+                )
+            }
+        }
+
         val now = LocalDateTime.now()
-        val bindings = skillList.split(",").mapNotNull { idStr ->
-            val skillId = idStr.trim().toLongOrNull() ?: return@mapNotNull null
+        val bindings = skillIds.map { skillId ->
             AgentSkillBinding().apply {
                 this.agentId = agentId
                 this.skillId = skillId
