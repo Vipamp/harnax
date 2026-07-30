@@ -1047,6 +1047,10 @@ export default {
   'pages.cli.deleteConfirm': 'Are you sure to delete this CLI tool?',
   'pages.cli.searchPlaceholder': 'Search CLI name',
   'pages.cli.noData': 'No CLI tools',
+  'pages.cli.refreshSessions': 'Refresh affected sessions',
+  'pages.cli.toggleBlocked': 'Cannot change CLI status',
+  'pages.cli.deleteBlocked': 'Cannot delete CLI',
+  'pages.cli.refresh.hint': 'CLI "{name}" was updated. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
 
   'pages.env.title': 'Env Variables',
   'pages.env.create': 'Create Env Variable',

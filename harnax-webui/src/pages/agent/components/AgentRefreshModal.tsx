@@ -3,6 +3,7 @@ import { useIntl } from '@umijs/max';
 import { Modal, Checkbox, Tag, Typography, Empty, Spin, message } from 'antd';
 import { SyncOutlined } from '@ant-design/icons';
 import { getAgentRelatedSessions, refreshAgentSessions } from '@/services/ant-design-pro/agent';
+import { getCliRelatedSessions } from '@/services/ant-design-pro/cli';
 
 const { Text } = Typography;
 
@@ -10,22 +11,28 @@ interface RelatedSession {
   sessionId: string;
   sourceType: 'channel' | 'session';
   sourceName: string;
+  /** 仅按 CLI 查询时返回，用于区分会话所属 agent */
+  agentName?: string;
 }
 
 interface AgentRefreshModalProps {
   visible: boolean;
+  /** 触发来源：保存 agent 后（默认），或修改 CLI 后 */
+  source?: 'agent' | 'cli';
+  /** source=agent 时为 agentId，source=cli 时为 cliId */
   agentId?: number;
+  /** 展示用名称（agent 名或 CLI 名） */
   agentName?: string;
   onClose: () => void;
 }
 
 /**
- * After saving an agent, list its related sessions (channels + web sessions)
+ * List the sessions affected by a configuration change (agent save or CLI update)
  * and let the user pick which ones to refresh. Checked sessions receive a
  * REFRESH command so their next message uses the new configuration;
  * unchecked ones keep the old cached agent until it naturally expires.
  */
-const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, agentId, agentName, onClose }) => {
+const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, source = 'agent', agentId, agentName, onClose }) => {
   const intl = useIntl();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -38,7 +45,8 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, agentId,
       setLoading(true);
       setSessions([]);
       setChecked([]);
-      getAgentRelatedSessions(agentId)
+      const fetch = source === 'cli' ? getCliRelatedSessions(agentId) : getAgentRelatedSessions(agentId);
+      fetch
         .then((res) => {
           if (res.code === 200 && res.data) {
             setSessions(res.data);
@@ -49,7 +57,7 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, agentId,
         .catch(() => {})
         .finally(() => setLoading(false));
     }
-  }, [visible, agentId]);
+  }, [visible, agentId, source]);
 
   const handleRefresh = async () => {
     if (checked.length === 0) {
@@ -113,14 +121,23 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, agentId,
     >
       {contextHolder}
       <Text type="secondary">
-        {intl.formatMessage(
-          {
-            id: 'pages.agent.refresh.hint',
-            defaultMessage:
-              'Agent "{name}" was saved. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
-          },
-          { name: agentName || '' },
-        )}
+        {source === 'cli'
+          ? intl.formatMessage(
+              {
+                id: 'pages.cli.refresh.hint',
+                defaultMessage:
+                  'CLI "{name}" was updated. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
+              },
+              { name: agentName || '' },
+            )
+          : intl.formatMessage(
+              {
+                id: 'pages.agent.refresh.hint',
+                defaultMessage:
+                  'Agent "{name}" was saved. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
+              },
+              { name: agentName || '' },
+            )}
       </Text>
       <div style={{ marginTop: 16, maxHeight: 320, overflowY: 'auto' }}>
         {loading ? (
@@ -146,6 +163,11 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, agentId,
                     : intl.formatMessage({ id: 'pages.agent.refresh.typeSession', defaultMessage: 'Session' })}
                 </Tag>
                 {s.sourceName}
+                {s.agentName && (
+                  <Tag color="geekblue" style={{ marginLeft: 6, fontSize: 11 }}>
+                    {s.agentName}
+                  </Tag>
+                )}
                 <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
                   {s.sessionId.length > 24 ? s.sessionId.slice(0, 24) + '…' : s.sessionId}
                 </Text>

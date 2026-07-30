@@ -6,6 +6,9 @@ import com.agnetix.harnax.admin.dto.CliUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.CliService
+import com.agnetix.harnax.admin.service.impl.AgentSessionRefreshService
+import com.agnetix.harnax.admin.service.impl.RelatedAgentInfo
+import com.agnetix.harnax.admin.service.impl.RelatedSessionInfo
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "CLI Management", description = "CLI tool related APIs")
 class CliController(
     private val cliService: CliService,
+    private val agentSessionRefreshService: AgentSessionRefreshService,
 ) {
 
     private val log = LoggerFactory.getLogger(CliController::class.java)
@@ -105,5 +109,30 @@ class CliController(
     } catch (e: Exception) {
         log.error("Failed to delete CLI", e)
         ResultVo.error(e.message ?: "Failed to delete CLI")
+    }
+
+    @GetMapping("/{id}/related-agents")
+    @Operation(summary = "List agents bound to a CLI", description = "Used to warn before disabling/deleting a CLI still in use")
+    fun relatedAgents(
+        @Parameter(description = "CLI ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<List<RelatedAgentInfo>> = try {
+        ResultVo.success(agentSessionRefreshService.listAgentsByCli(id))
+    } catch (e: Exception) {
+        log.error("Failed to list agents for CLI {}", id, e)
+        ResultVo.error(e.message ?: "Failed to list related agents")
+    }
+
+    @GetMapping("/{id}/related-sessions")
+    @Operation(
+        summary = "List sessions affected by a CLI",
+        description = "Sessions of all agents bound to this CLI; push REFRESH via /api/admin/agents/refresh-sessions so they pick up the new CLI config",
+    )
+    fun relatedSessions(
+        @Parameter(description = "CLI ID") @PathVariable(name = "id") id: Long,
+    ): ResultVo<List<RelatedSessionInfo>> = try {
+        ResultVo.success(agentSessionRefreshService.listSessionsByCli(id))
+    } catch (e: Exception) {
+        log.error("Failed to list sessions for CLI {}", id, e)
+        ResultVo.error(e.message ?: "Failed to list related sessions")
     }
 }

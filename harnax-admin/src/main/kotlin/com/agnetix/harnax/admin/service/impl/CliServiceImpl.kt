@@ -33,6 +33,7 @@ class CliServiceImpl(
     private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val skillMapper: SkillMapper,
     private val skillRepositoryMapper: SkillRepositoryMapper,
+    private val agentSessionRefreshService: AgentSessionRefreshService,
 ) : CliService {
 
     private val log = LoggerFactory.getLogger(CliServiceImpl::class.java)
@@ -110,6 +111,19 @@ class CliServiceImpl(
     override fun toggleCliStatus(id: Long, status: Int): Boolean {
         val cli = cliMapper.selectById(id) ?: throw BizException("CLI not found")
         requireSameTenant(cli.tenantId)
+
+        // Disabling a CLI that enabled agents still depend on would silently drop it
+        // from their sandbox on the next refresh — block it and let the user unbind first.
+        if (status == 0) {
+            val blocking = agentSessionRefreshService.listAgentsByCli(id).filter { it.status == 1 }
+            if (blocking.isNotEmpty()) {
+                throw BizException(
+                    "CLI '${cli.name}' is still used by ${blocking.size} enabled agent(s): " +
+                        blocking.joinToString(", ") { it.agentName } +
+                        ". Unbind it from these agents before disabling.",
+                )
+            }
+        }
         return cliMapper.updateStatus(id, status) > 0
     }
 
@@ -117,6 +131,15 @@ class CliServiceImpl(
     override fun deleteCli(id: Long): Boolean {
         val cli = cliMapper.selectById(id) ?: throw BizException("CLI not found")
         requireSameTenant(cli.tenantId)
+
+        val bound = agentSessionRefreshService.listAgentsByCli(id)
+        if (bound.isNotEmpty()) {
+            throw BizException(
+                "CLI '${cli.name}' is still bound to ${bound.size} agent(s): " +
+                    bound.joinToString(", ") { it.agentName } +
+                    ". Unbind it from these agents before deleting.",
+            )
+        }
         cliSkillBindingMapper.deleteByCliId(id)
         return cliMapper.deleteById(id) > 0
     }

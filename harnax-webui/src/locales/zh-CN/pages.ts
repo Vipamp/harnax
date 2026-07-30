@@ -1053,6 +1053,10 @@ export default {
   'pages.cli.deleteConfirm': '确定删除该 CLI 工具吗？',
   'pages.cli.searchPlaceholder': '搜索 CLI 名称',
   'pages.cli.noData': '暂无 CLI 工具',
+  'pages.cli.refreshSessions': '刷新受影响的会话',
+  'pages.cli.toggleBlocked': '无法变更 CLI 状态',
+  'pages.cli.deleteBlocked': '无法删除 CLI',
+  'pages.cli.refresh.hint': 'CLI「{name}」已更新。勾选需要立即应用新配置的会话；未勾选的会话约 30 分钟内自动生效。',
 
   // 环境变量管理
   'pages.env.title': '环境变量管理',

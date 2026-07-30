@@ -18,6 +18,7 @@ import {
   PlusOutlined,
   DeleteOutlined,
   EditOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, ActionButton } from '@/components/SearchFilterBar';
 import {
@@ -29,6 +30,7 @@ import {
 } from '@/services/ant-design-pro/cli';
 import StatusSwitch from '@/components/StatusSwitch';
 import CliForm from './components/CliForm';
+import AgentRefreshModal from '@/pages/agent/components/AgentRefreshModal';
 
 const { Text } = Typography;
 
@@ -37,6 +39,7 @@ const CliManagement: React.FC = () => {
 
   const [formVisible, setFormVisible] = useState<boolean>(false);
   const [currentRow, setCurrentRow] = useState<API.CliItem | undefined>();
+  const [refreshTarget, setRefreshTarget] = useState<API.CliItem | undefined>();
   const [loading, setLoading] = useState<boolean>(false);
   const [data, setData] = useState<API.CliItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -104,10 +107,21 @@ const CliManagement: React.FC = () => {
         );
         loadData(pageNum, pageSize);
       } else {
-        messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
+        // 禁用被关联 agent 阻塞时错误信息较长，用弹窗展示完整内容
+        Modal.error({
+          title: intl.formatMessage({ id: 'pages.cli.toggleBlocked', defaultMessage: 'Cannot change CLI status' }),
+          content: response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }),
+          okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+        });
+        loadData(pageNum, pageSize);
       }
     } catch (error: any) {
-      messageApi.error(error?.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
+      Modal.error({
+        title: intl.formatMessage({ id: 'pages.cli.toggleBlocked', defaultMessage: 'Cannot change CLI status' }),
+        content: error?.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }),
+        okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      });
+      loadData(pageNum, pageSize);
     }
   };
 
@@ -125,10 +139,18 @@ const CliManagement: React.FC = () => {
             messageApi.success(intl.formatMessage({ id: 'pages.message.deleteSuccess', defaultMessage: 'Deleted successfully' }));
             loadData(pageNum, pageSize);
           } else {
-            messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }));
+            Modal.error({
+              title: intl.formatMessage({ id: 'pages.cli.deleteBlocked', defaultMessage: 'Cannot delete CLI' }),
+              content: response.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }),
+              okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+            });
           }
         } catch (error: any) {
-          messageApi.error(error?.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }));
+          Modal.error({
+            title: intl.formatMessage({ id: 'pages.cli.deleteBlocked', defaultMessage: 'Cannot delete CLI' }),
+            content: error?.message || intl.formatMessage({ id: 'pages.message.deleteFailed', defaultMessage: 'Delete failed' }),
+            okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+          });
         }
       },
     });
@@ -136,18 +158,23 @@ const CliManagement: React.FC = () => {
 
   const handleSubmit = async (values: API.CliCreateRequest | API.CliUpdateRequest) => {
     try {
-      const response = currentRow?.id
-        ? await updateCli(currentRow.id, values)
+      const editing = currentRow;
+      const response = editing?.id
+        ? await updateCli(editing.id, values)
         : await createCli(values as API.CliCreateRequest);
       if (response.code === 200) {
         messageApi.success(
-          currentRow?.id
+          editing?.id
             ? intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' })
             : intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }),
         );
         setFormVisible(false);
         setCurrentRow(undefined);
         loadData(pageNum, pageSize);
+        // 编辑已有 CLI 会影响绑定它的 agent，提示刷新受影响会话
+        if (editing?.id) {
+          setRefreshTarget(editing);
+        }
       } else {
         messageApi.error(response.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed' }));
       }
@@ -230,10 +257,18 @@ const CliManagement: React.FC = () => {
     {
       title: intl.formatMessage({ id: 'pages.common.actions', defaultMessage: 'Actions' }),
       key: 'actions',
-      width: 120,
+      width: 150,
       align: 'center',
       render: (_: any, record) => (
         <Space>
+          <Tooltip title={intl.formatMessage({ id: 'pages.cli.refreshSessions', defaultMessage: 'Refresh affected sessions' })}>
+            <Button
+              type="text"
+              size="small"
+              icon={<SyncOutlined />}
+              onClick={() => setRefreshTarget(record)}
+            />
+          </Tooltip>
           <Tooltip title={intl.formatMessage({ id: 'pages.common.edit', defaultMessage: 'Edit' })}>
             <Button
               type="text"
@@ -336,6 +371,14 @@ const CliManagement: React.FC = () => {
           setCurrentRow(undefined);
         }}
         onSubmit={handleSubmit}
+      />
+
+      <AgentRefreshModal
+        visible={!!refreshTarget}
+        source="cli"
+        agentId={refreshTarget?.id}
+        agentName={refreshTarget?.name}
+        onClose={() => setRefreshTarget(undefined)}
       />
     </PageContainer>
   );

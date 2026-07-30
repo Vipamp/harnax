@@ -400,6 +400,15 @@ class AgentServiceImpl(
         cliBindingMapper.deleteByAgentId(agentId)
         if (cliList.isNullOrEmpty()) return
 
+        val cliIds = cliList.mapNotNull { it.id }.distinct()
+        if (cliIds.isEmpty()) return
+
+        val existingIds = cliMapper.selectByIds(cliIds).map { it.id }.toSet()
+        val missing = cliIds - existingIds
+        if (missing.isNotEmpty()) {
+            throw BizException("CLI not found: $missing")
+        }
+
         val now = LocalDateTime.now()
         val bindings = cliList.mapNotNull { config ->
             val cliId = config.id ?: return@mapNotNull null

@@ -15,6 +15,10 @@
         SELECT * FROM agent_cli_binding WHERE agent_id = #{agentId} ORDER BY id
     </select>
 
+    <select id="selectByCliId" resultMap="AgentCliBindingResultMap">
+        SELECT * FROM agent_cli_binding WHERE cli_id = #{cliId} ORDER BY id
+    </select>
+
     <insert id="batchInsert">
         INSERT INTO agent_cli_binding (agent_id, cli_id, env_bindings, create_time, update_time)
         VALUES

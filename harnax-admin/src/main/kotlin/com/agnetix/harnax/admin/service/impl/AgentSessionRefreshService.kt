@@ -1,6 +1,8 @@
 package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.mapper.AgentCliBindingMapper
+import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
 import com.agnetix.harnax.mapper.SessionMapper
@@ -26,6 +28,8 @@ class AgentSessionRefreshService(
     private val channelMapper: ChannelMapper,
     private val sessionMapper: SessionMapper,
     private val apiKeyMapper: ApiKeyMapper,
+    private val agentMapper: AgentMapper,
+    private val cliBindingMapper: AgentCliBindingMapper,
     private val aesUtil: AesUtil,
     @Value("\${harnax.router.url:http://localhost:8081}")
     private val routerUrl: String,
@@ -118,12 +122,42 @@ class AgentSessionRefreshService(
         log.error("Failed to resolve system API key: {}", e.message)
         null
     }
+
+    /**
+     * Agents that reference the given CLI. Used both for the "disable guard"
+     * (a CLI bound to enabled agents cannot be disabled) and for listing the
+     * sessions to refresh after a CLI configuration change.
+     */
+    fun listAgentsByCli(cliId: Long): List<RelatedAgentInfo> = cliBindingMapper.selectByCliId(cliId)
+        .map { it.agentId }
+        .distinct()
+        .mapNotNull { agentId ->
+            val agent = agentMapper.selectById(agentId) ?: return@mapNotNull null
+            RelatedAgentInfo(agentId = agent.id, agentName = agent.name, status = agent.status)
+        }
+
+    /**
+     * Sessions of every agent bound to the given CLI, so a CLI change can be
+     * pushed to all affected conversations in one step.
+     */
+    fun listSessionsByCli(cliId: Long): List<RelatedSessionInfo> = listAgentsByCli(cliId).flatMap { agent ->
+        listRelatedSessions(agent.agentId).map { it.copy(agentName = agent.agentName) }
+    }.distinctBy { it.sessionId }
 }
+
+data class RelatedAgentInfo(
+    val agentId: Long,
+    val agentName: String,
+    /** 0: disabled, 1: enabled */
+    val status: Int,
+)
 
 data class RelatedSessionInfo(
     val sessionId: String,
     val sourceType: String, // "channel" | "session"
     val sourceName: String,
+    /** Owning agent name — only populated when listing by CLI. */
+    val agentName: String? = null,
 )
 
 data class SessionRefreshResult(

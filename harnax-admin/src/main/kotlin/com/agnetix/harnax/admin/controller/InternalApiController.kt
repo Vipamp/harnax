@@ -368,6 +368,9 @@ class InternalApiController(
                 if (cli == null) {
                     log.warn("CLI not found: cliId={}", binding.cliId)
                     null
+                } else if (cli.status == 0) {
+                    log.info("CLI '{}' (id={}) is disabled, skipping", cli.name, cli.id)
+                    null
                 } else {
                     CliDetailDto(
                         id = cli.id,

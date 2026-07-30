@@ -79,3 +79,19 @@ export async function deleteCli(id: number, options?: { [key: string]: any }) {
     ...(options || {}),
   });
 }
+
+/** 获取绑定该 CLI 的 agent 列表 GET /api/admin/clis/${id}/related-agents */
+export async function getCliRelatedAgents(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/clis/${id}/related-agents`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
+
+/** 获取受该 CLI 影响的会话列表 GET /api/admin/clis/${id}/related-sessions */
+export async function getCliRelatedSessions(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/clis/${id}/related-sessions`, {
+    method: 'GET',
+    ...(options || {}),
+  });
+}
