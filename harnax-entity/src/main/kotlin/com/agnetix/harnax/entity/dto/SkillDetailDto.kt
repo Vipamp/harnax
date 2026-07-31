@@ -20,9 +20,6 @@ data class SkillDetailDto(
     @Schema(description = "skill.md content")
     val skillmd: String = "",
 
-    @Schema(description = "Content storage path")
-    val storagePath: String = "",
-
     @Schema(description = "Resource information (JSON)")
     val resources: String = "",
 

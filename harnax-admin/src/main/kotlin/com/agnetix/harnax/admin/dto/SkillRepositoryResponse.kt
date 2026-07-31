@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.dto
 
+import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.entity.SkillRepository
 import io.swagger.v3.oas.annotations.media.Schema
 import java.time.LocalDateTime
@@ -17,6 +18,10 @@ data class SkillRepositoryResponse(
     val url: String? = null,
     @Schema(description = "Branch name", example = "main")
     val branch: String? = null,
+    @Schema(description = "Source type (GIT | NPM | ZIP)", example = "GIT")
+    val sourceType: String? = null,
+    @Schema(description = "Source configuration")
+    val sourceConfig: Map<String, Any>? = null,
     @Schema(description = "Repository description")
     val description: String? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
@@ -37,6 +42,9 @@ data class SkillRepositoryResponse(
             name = entity.name,
             url = entity.url,
             branch = entity.branch,
+            sourceType = entity.sourceType,
+            // zipPath is an internal server path, not for API consumers
+            sourceConfig = SkillSourceConfigs.parse(entity).filterKeys { it != "zipPath" },
             description = entity.description,
             status = entity.status,
             isPublic = entity.isPublic,

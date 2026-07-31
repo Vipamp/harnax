@@ -249,12 +249,44 @@ message?: string;
     name: string;
     url?: string;
     branch?: string;
+    sourceType?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
     description?: string;
     status: number;
     isPublic?: number;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+  };
+
+  /**
+   * @zh-CN 技能源创建请求
+   */
+  export type SkillSourceCreateRequest = {
+    name: string;
+    sourceType: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
+    description?: string;
+    status?: number;
+    isPublic?: number;
+    url?: string;
+    branch?: string;
+  };
+
+  /**
+   * @zh-CN 技能源更新请求
+   */
+  export type SkillSourceUpdateRequest = {
+    name?: string;
+    sourceConfig?: Record<string, any>;
+    version?: string;
+    description?: string;
+    status?: number;
+    isPublic?: number;
+    url?: string;
+    branch?: string;
   };
 
   /**

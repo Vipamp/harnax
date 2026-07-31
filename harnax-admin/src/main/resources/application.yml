@@ -105,10 +105,3 @@ harnax:
     secret-key: ${HARNAX_AES_SECRET_KEY:change-me-32-chars-secret-key!!}
   scheduler:
     url: ${HARNAX_SCHEDULER_URL:http://localhost:8084}
-
-# Skill content storage configuration
-skill:
-  storage:
-    type: ${SKILL_STORAGE_TYPE:local}
-    base-path: ${SKILL_STORAGE_BASE_PATH:./data/skill-store}
-    bucket: ${SKILL_STORAGE_BUCKET:harnax-skills}

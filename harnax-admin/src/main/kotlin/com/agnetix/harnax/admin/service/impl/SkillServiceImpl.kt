@@ -9,10 +9,13 @@ import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
-import com.agnetix.harnax.admin.util.GitSkillLoader.loadSkillsFromGit
+import com.agnetix.harnax.admin.skill.SkillSourceConfigs
+import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -20,6 +23,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import tools.jackson.databind.ObjectMapper
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Skill service implementation
@@ -29,6 +34,9 @@ class SkillServiceImpl(
     private val jwtUtil: JwtUtil,
     private val skillMapper: SkillMapper,
     private val skillRepositoryService: SkillRepositoryService,
+    private val agentSkillBindingMapper: AgentSkillBindingMapper,
+    private val cliSkillBindingMapper: CliSkillBindingMapper,
+    private val skillLoaderRegistry: SkillLoaderRegistry,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
 ) : SkillService {
 
@@ -66,33 +74,33 @@ class SkillServiceImpl(
     override fun createSkill(request: SkillCreateRequest): Boolean {
         log.info("Creating skill, name: {}", request.name)
 
+        val name = request.name?.takeIf { it.isNotBlank() }
+            ?: throw BizException("Skill name cannot be empty")
+        val repositoryId = request.repositoryId
+            ?: throw BizException("Repository ID cannot be empty")
+
         // Check if skill name already exists (need to validate active field)
-        val existSkill = getByNameAndRepo(request.repositoryId!!, request.name!!)
+        val existSkill = getByNameAndRepo(repositoryId, name)
         if (existSkill != null) {
             throw BizException("Skill name already exists")
         }
-        requireNotBuiltinRepo(request.repositoryId)
+        requireNotBuiltinRepo(repositoryId)
 
         val skill = Skill()
-        skill.name = request.name
-        skill.repositoryId = request.repositoryId
-        skill.description = request.description!!
-        skill.skillmd = request.skillmd!!
-        skill.resources = request.resources!!
+        skill.name = name
+        skill.repositoryId = repositoryId
+        skill.description = request.description ?: ""
+        skill.skillmd = request.skillmd ?: ""
+        skill.resources = request.resources ?: ""
         skill.status = request.status ?: 1 // Default enabled
         skill.active = 1 // Default active
+        skill.isPublic = 0
 
         // Set tenant ID
         skill.tenantId = TenantContext.getTenantId() ?: 1
 
         // Set creator
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        skill.creator = currentUsername!!
-
-        // Default not public
-        if (skill.isPublic == null) {
-            skill.isPublic = 0
-        }
+        skill.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
 
         val success = this.skillMapper.insert(skill) > 0
         log.info("Skill creation {}, skillId: {}", if (success) "successful" else "failed", skill.id)
@@ -150,6 +158,10 @@ class SkillServiceImpl(
             ?: throw BizException("Skill not found")
         requireNotBuiltinRepo(skill.repositoryId)
 
+        // Remove agent/cli references so no dangling bindings survive the delete
+        agentSkillBindingMapper.deleteBySkillIds(listOf(id))
+        cliSkillBindingMapper.deleteBySkillIds(listOf(id))
+
         return skillMapper.deleteById(id) > 0
     }
 
@@ -180,38 +192,52 @@ class SkillServiceImpl(
             return 0
         }
 
+        val skillRepository = skillRepositoryService.getSkillRepository(repositoryId)
+            ?: throw BizException("Skill repository not found")
+
+        // Load once via the source-type-aware loader (GIT/NPM/ZIP), then pick the requested ones
+        val config = SkillSourceConfigs.parse(skillRepository)
+        val loader = skillLoaderRegistry.getLoader(skillRepository.sourceType)
+        val tmpDir = Files.createTempDirectory(Path.of(localTmpDir).also { Files.createDirectories(it) }, "skill-sync-")
         var savedCount = 0
-        for (skillName in skills) {
-            try {
-                // Check if skill name already exists
-                val existSkill = getByNameAndRepo(repositoryId, skillName)
-                val skillRepository =
-                    skillRepositoryService.getSkillRepository(repositoryId) ?: throw BizException("Skill repository not found")
-                if (existSkill != null) {
-                    // If skill already exists, keep as is, do not update
-                    log.info("Skill already exists, skipping: {}", skillName)
-                    savedCount++
-                } else {
-                    log.info("Skill does not exist, creating: {}", skillName)
-                    loadSkillsFromGit(skillRepository.url, skillRepository.branch, localTmpDir, skillRepository.name)
-                        .filter { it.name == skillName }
-                        .map {
-                            val skill = Skill()
-                            skill.name = skillName
-                            skill.repositoryId = repositoryId
-                            skill.description = it.description
-                            skill.skillmd = it.skillContent
-                            skill.resources = objectMapper.writeValueAsString(it.resources)
-                            skill.status = 1 // Default enabled
-                            skill.active = 1 // Default active
-                            skill
-                        }
-                        .forEach { this.skillMapper.insert(it) }
-                    savedCount++
+        try {
+            val loaded = loader.loadSkills(config, tmpDir).associateBy { it.name }
+            for (skillName in skills) {
+                val agentSkill = loaded[skillName]
+                if (agentSkill == null) {
+                    log.warn("Skill '{}' not found in source, skipping", skillName)
+                    continue
                 }
+
+                val existing = getByNameAndRepo(repositoryId, skillName)
+                if (existing != null) {
+                    // Selected duplicates are overwritten, as promised by the sync dialog
+                    existing.description = agentSkill.description ?: ""
+                    existing.skillmd = agentSkill.skillContent ?: ""
+                    existing.resources = objectMapper.writeValueAsString(agentSkill.resources ?: emptyMap<String, String>())
+                    existing.version = skillRepository.version
+                    skillMapper.updateById(existing)
+                } else {
+                    val skill = Skill()
+                    skill.tenantId = TenantContext.getTenantId() ?: 1
+                    skill.name = skillName
+                    skill.repositoryId = repositoryId
+                    skill.description = agentSkill.description ?: ""
+                    skill.skillmd = agentSkill.skillContent ?: ""
+                    skill.resources = objectMapper.writeValueAsString(agentSkill.resources ?: emptyMap<String, String>())
+                    skill.version = skillRepository.version
+                    skill.status = 1
+                    skill.active = 1
+                    skill.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: skillRepository.creator
+                    skillMapper.insert(skill)
+                }
+                savedCount++
+            }
+        } finally {
+            try {
+                tmpDir.toFile().deleteRecursively()
             } catch (e: Exception) {
-                log.error("Failed to save skill: {}", skillName, e)
-                // Continue processing next skill, do not interrupt the entire process
+                log.warn("Failed to cleanup tmp dir: {}", tmpDir, e)
             }
         }
 
@@ -222,5 +248,12 @@ class SkillServiceImpl(
     override fun convertToResponse(skill: Skill): SkillResponse {
         val repository = skillRepositoryService.getSkillRepository(skill.repositoryId)
         return SkillResponse.fromEntity(skill, repository)
+    }
+
+    override fun convertToResponses(skills: List<Skill>): List<SkillResponse> {
+        // Cache repository lookups so a page of skills triggers one query per distinct repository
+        val repositories = skills.map { it.repositoryId }.distinct()
+            .associateWith { skillRepositoryService.getSkillRepository(it) }
+        return skills.map { SkillResponse.fromEntity(it, repositories[it.repositoryId]) }
     }
 }

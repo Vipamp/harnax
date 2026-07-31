@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { List, Space, Typography, Tag, message, Tooltip } from 'antd';
 import { GithubOutlined, LinkOutlined, CloudOutlined, FileZipOutlined } from '@ant-design/icons';
-import { toggleSkillRepositoryStatus } from '@/services/ant-design-pro/skillRepository';
-import { deleteSkillSource } from '@/services/ant-design-pro/skillSource';
+import { deleteSkillSource, toggleSkillSourceStatus } from '@/services/ant-design-pro/skillSource';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
 import { useIntl } from '@umijs/max';
 import EditButton from '@/components/EditButton';
@@ -54,7 +53,7 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
 
   const handleToggle = async (id: number, status: number) => {
     try {
-      const response = await toggleSkillRepositoryStatus(id, status);
+      const response = await toggleSkillSourceStatus(id, status);
       if (response.code === 200) {
         message.success(intl.formatMessage({ id: 'pages.skill.repository.toggle.success', defaultMessage: 'Status toggled successfully' }));
         onToggle(id, status);
@@ -174,13 +173,16 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 )}
                 {repository.name !== BUILTIN_CLI_SKILL_REPO && hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>
-                    <SyncButton 
-                      onClick={(e) => {
-                        e?.stopPropagation();
-                        onSelect(repository);
-                        onSync(repository);
-                      }} 
-                    />
+                    {/* ZIP uploads keep no source archive, so they cannot be re-synced */}
+                    {repository.sourceType !== 'ZIP' && (
+                      <SyncButton
+                        onClick={(e) => {
+                          e?.stopPropagation();
+                          onSelect(repository);
+                          onSync(repository);
+                        }}
+                      />
+                    )}
                     <EditButton 
                       onClick={(e) => {
                         e?.stopPropagation();

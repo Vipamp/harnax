@@ -18,6 +18,12 @@ data class SkillSourceUpdateRequest(
     @Schema(description = "Description")
     val description: String? = null,
 
+    @Schema(description = "Status (0:disabled, 1:enabled)")
+    val status: Int? = null,
+
+    @Schema(description = "Public status (0:no, 1:yes)")
+    val isPublic: Int? = null,
+
     @Schema(description = "Git URL (for GIT type)")
     val url: String? = null,
 

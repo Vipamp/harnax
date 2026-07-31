@@ -9,10 +9,12 @@ import com.agnetix.harnax.admin.dto.SkillRepositoryUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
-import com.agnetix.harnax.admin.util.GitSkillLoader.loadSkillsFromGit
+import com.agnetix.harnax.admin.skill.SkillSourceConfigs
+import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -20,7 +22,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.nio.file.Files
-import java.util.stream.Collectors
+import java.nio.file.Path
 
 /**
  * Skill repository service implementation
@@ -29,6 +31,8 @@ import java.util.stream.Collectors
 class SkillRepositoryServiceImpl(
     private val jwtUtil: JwtUtil,
     private val skillRepositoryMapper: SkillRepositoryMapper,
+    private val skillMapper: SkillMapper,
+    private val skillLoaderRegistry: SkillLoaderRegistry,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String?,
 ) : SkillRepositoryService {
 
@@ -169,21 +173,31 @@ class SkillRepositoryServiceImpl(
         log.info("Fetching remote skill list, repositoryId: {}", repositoryId)
         val repository = skillRepositoryMapper.selectById(repositoryId)
             ?: throw BizException("Skill repository not found")
-        val tmpDir = localTmpDir ?: Files.createTempDirectory("git-repo-").toFile().absolutePath
-        val allSkills = loadSkillsFromGit(
-            repository.url,
-            repository.branch,
-            tmpDir,
-            repository.name,
-        ).stream().map {
-            SyncSkillResponse(
-                name = it.name,
-                description = it.description,
-                skillmd = it.skillContent,
-                resources = it.resources,
-            )
-        }.collect(Collectors.toList())
-        return allSkills
+
+        val config = SkillSourceConfigs.parse(repository)
+        val loader = skillLoaderRegistry.getLoader(repository.sourceType)
+        val base = Path.of(localTmpDir ?: System.getProperty("java.io.tmpdir"))
+        Files.createDirectories(base)
+        val tmpDir = Files.createTempDirectory(base, "skill-fetch-")
+        val existingNames = skillMapper.selectByRepositoryId(repositoryId).map { it.name }.toSet()
+
+        return try {
+            loader.loadSkills(config, tmpDir).map {
+                SyncSkillResponse(
+                    name = it.name,
+                    description = it.description,
+                    skillmd = it.skillContent,
+                    resources = it.resources,
+                    exists = existingNames.contains(it.name),
+                )
+            }
+        } finally {
+            try {
+                tmpDir.toFile().deleteRecursively()
+            } catch (e: Exception) {
+                log.warn("Failed to cleanup tmp dir: {}", tmpDir, e)
+            }
+        }
     }
 
     override fun convertToResponse(skillRepository: SkillRepository): SkillRepositoryResponse = SkillRepositoryResponse.fromEntity(skillRepository)

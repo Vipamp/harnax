@@ -347,7 +347,6 @@ class InternalApiController(
                     name = skill.name,
                     description = skill.description,
                     skillmd = skill.skillmd,
-                    storagePath = skill.storagePath,
                     resources = skill.resources,
                     version = skill.version,
                 )
@@ -403,7 +402,6 @@ class InternalApiController(
                         name = skill.name,
                         description = skill.description,
                         skillmd = skill.skillmd,
-                        storagePath = skill.storagePath,
                         resources = skill.resources,
                         version = skill.version,
                     ),

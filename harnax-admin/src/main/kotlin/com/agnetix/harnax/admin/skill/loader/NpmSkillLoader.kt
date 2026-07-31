@@ -33,11 +33,14 @@ class NpmSkillLoader : SkillLoader {
         }
 
         log.info("Installing npm skill package: {} in {}", packageName, installDir)
+        // Redirect output to a file: reading stdout inline would block until process
+        // exit and defeat the waitFor timeout below
+        val outputFile = Files.createTempFile(installDir, "npm-output-", ".log")
         val process = ProcessBuilder(command)
             .redirectErrorStream(true)
+            .redirectOutput(outputFile.toFile())
             .start()
 
-        val output = process.inputStream.bufferedReader().readText()
         val finished = process.waitFor(120, TimeUnit.SECONDS)
 
         if (!finished) {
@@ -45,6 +48,11 @@ class NpmSkillLoader : SkillLoader {
             throw RuntimeException("npm install timed out after 120s for package: $packageName")
         }
         if (process.exitValue() != 0) {
+            val output = try {
+                Files.readString(outputFile)
+            } catch (e: Exception) {
+                ""
+            }
             log.error("npm install failed for package {}: {}", packageName, output)
             throw RuntimeException("npm install failed for package $packageName: $output")
         }
@@ -117,25 +125,7 @@ class NpmSkillLoader : SkillLoader {
         return skills
     }
 
-    private fun extractDescription(skillmd: String): String {
-        val lines = skillmd.lines()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("#")) continue
-            if (trimmed.isNotEmpty()) return trimmed.take(500)
-        }
-        return ""
-    }
+    private fun extractDescription(skillmd: String): String = SkillFileParser.extractDescription(skillmd)
 
-    private fun loadResources(resourcesDir: Path): Map<String, String> {
-        if (!resourcesDir.isDirectory()) return emptyMap()
-        val resources = mutableMapOf<String, String>()
-        resourcesDir.toFile().walkTopDown().forEach { file ->
-            if (file.isFile) {
-                val relativePath = resourcesDir.relativize(file.toPath()).toString()
-                resources[relativePath] = file.readText()
-            }
-        }
-        return resources
-    }
+    private fun loadResources(resourcesDir: Path): Map<String, String> = SkillFileParser.loadResources(resourcesDir)
 }

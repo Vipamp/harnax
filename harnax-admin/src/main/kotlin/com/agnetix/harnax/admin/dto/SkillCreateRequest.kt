@@ -8,8 +8,10 @@ import jakarta.validation.constraints.*
  */
 @Schema(description = "Skill creation request object")
 data class SkillCreateRequest(
-    @Size(min = 1, max = 100, message = "Skill name length must be between 1-100")
+    @field:NotBlank(message = "Skill name cannot be empty")
+    @field:Size(min = 1, max = 100, message = "Skill name length must be between 1-100")
     val name: String? = null,
+    @field:NotNull(message = "Repository ID cannot be empty")
     @Schema(description = "Repository ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     val repositoryId: Long? = null,
     @Schema(description = "Skill description")

@@ -1,16 +1,18 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillSourceService
+import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
-import com.agnetix.harnax.admin.skill.store.SkillContent
-import com.agnetix.harnax.admin.skill.store.SkillContentStore
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.github.pagehelper.PageHelper
@@ -28,7 +30,8 @@ class SkillSourceServiceImpl(
     private val skillRepositoryMapper: SkillRepositoryMapper,
     private val skillMapper: SkillMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
-    private val skillContentStore: SkillContentStore,
+    private val agentSkillBindingMapper: AgentSkillBindingMapper,
+    private val cliSkillBindingMapper: CliSkillBindingMapper,
     @Value("\${local.tmp-dir}") private val localTmpDir: String?,
 ) : SkillSourceService {
 
@@ -100,8 +103,12 @@ class SkillSourceServiceImpl(
 
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill source not found")
+        requireWritable(repository)
 
         if (request.name != null && request.name != repository.name) {
+            if (BuiltinRepository.isBuiltin(request.name)) {
+                throw BizException("Repository name '${BuiltinRepository.CLI_SKILLS}' is reserved for the platform")
+            }
             val existing = skillRepositoryMapper.selectByName(request.name, repository.tenantId)
             if (existing != null) {
                 throw BizException("Source name already exists")
@@ -113,9 +120,29 @@ class SkillSourceServiceImpl(
         request.version?.let { repository.version = it }
         request.url?.let { repository.url = it }
         request.branch?.let { repository.branch = it }
+        request.isPublic?.let { repository.isPublic = it }
+
+        // status is not part of the updateById statement; it has a dedicated update
+        request.status?.let { newStatus ->
+            if (newStatus != repository.status) {
+                skillRepositoryMapper.updateStatus(id, newStatus)
+            }
+        }
 
         request.sourceConfig?.let { config ->
-            repository.sourceConfig = objectMapper.writeValueAsString(config)
+            // Empty config means the client didn't edit it (e.g. ZIP edit form)
+            if (config.isNotEmpty()) {
+                // Preserve internal keys that are filtered out of API responses
+                val existing = SkillSourceConfigs.parse(repository)
+                val merged = config.toMutableMap()
+                for (key in listOf("zipPath", "originalFilename")) {
+                    if (!merged.containsKey(key)) {
+                        existing[key]?.let { merged[key] = it }
+                    }
+                }
+                skillLoaderRegistry.getLoader(repository.sourceType).validateConfig(merged)
+                repository.sourceConfig = objectMapper.writeValueAsString(merged)
+            }
         }
 
         return skillRepositoryMapper.updateById(repository) > 0
@@ -127,20 +154,43 @@ class SkillSourceServiceImpl(
 
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill source not found")
+        requireWritable(repository)
 
         val skills = skillMapper.selectByRepositoryId(id)
-        skills.forEach { skill ->
-            if (skill.storagePath.isNotBlank()) {
-                try {
-                    skillContentStore.delete(skill.storagePath)
-                } catch (e: Exception) {
-                    log.warn("Failed to delete skill content for {}: {}", skill.name, e.message)
-                }
-            }
-            skillMapper.deleteById(skill.id)
+        // Remove agent/cli references first so no dangling bindings survive the delete
+        val skillIds = skills.map { it.id }
+        if (skillIds.isNotEmpty()) {
+            agentSkillBindingMapper.deleteBySkillIds(skillIds)
+            cliSkillBindingMapper.deleteBySkillIds(skillIds)
         }
+        skills.forEach { skill -> skillMapper.deleteById(skill.id) }
 
         return skillRepositoryMapper.deleteById(id) > 0
+    }
+
+    /**
+     * The builtin CLI skill repository is platform-managed and read-only;
+     * other repositories may only be written by their own tenant.
+     */
+    private fun requireWritable(repository: SkillRepository) {
+        if (BuiltinRepository.isBuiltin(repository.name)) {
+            throw BizException("Builtin repository '${BuiltinRepository.CLI_SKILLS}' is read-only")
+        }
+        val currentTenantId = TenantContext.getTenantId()
+        if (currentTenantId != null && repository.tenantId != currentTenantId) {
+            throw BizException("Skill repository belongs to another tenant")
+        }
+    }
+
+    @Transactional(rollbackFor = [Exception::class])
+    override fun toggleStatus(id: Long, status: Int): Boolean {
+        log.info("Toggling skill source status, id: {}, status: {}", id, status)
+
+        val repository = skillRepositoryMapper.selectById(id)
+            ?: throw BizException("Skill source not found")
+        requireWritable(repository)
+
+        return skillRepositoryMapper.updateStatus(id, status) > 0
     }
 
     override fun fetchSkills(id: Long): List<SyncSkillResponse> {
@@ -149,9 +199,10 @@ class SkillSourceServiceImpl(
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill source not found")
 
-        val config = parseConfig(repository)
+        val config = SkillSourceConfigs.parse(repository)
         val loader = skillLoaderRegistry.getLoader(repository.sourceType)
         val tmpDir = getTmpDir()
+        val existingNames = skillMapper.selectByRepositoryId(id).map { it.name }.toSet()
 
         return try {
             val agentSkills = loader.loadSkills(config, tmpDir)
@@ -161,6 +212,7 @@ class SkillSourceServiceImpl(
                     description = skill.description,
                     skillmd = skill.skillContent,
                     resources = skill.resources,
+                    exists = existingNames.contains(skill.name),
                 )
             }
         } finally {
@@ -177,6 +229,8 @@ class SkillSourceServiceImpl(
             throw BizException("Source name already exists")
         }
 
+        // The ZIP is only a transport: its skills are persisted into MySQL below and the
+        // uploaded temp file is discarded by the caller, so no path is recorded here
         val config = mapOf<String, Any>(
             "zipPath" to zipPath,
             "originalFilename" to originalFilename,
@@ -212,17 +266,10 @@ class SkillSourceServiceImpl(
                 try {
                     val existingSkill = skillMapper.selectByNameAndRepo(agentSkill.name, repository.id)
 
-                    val content = SkillContent(
-                        skillmd = agentSkill.skillContent ?: "",
-                        resources = agentSkill.resources?.mapValues { it.value.toByteArray() } ?: emptyMap(),
-                    )
-                    val storagePath = skillContentStore.save(repository.id, agentSkill.name, content)
-
                     if (existingSkill != null) {
                         existingSkill.description = agentSkill.description ?: ""
                         existingSkill.skillmd = agentSkill.skillContent ?: ""
                         existingSkill.resources = objectMapper.writeValueAsString(agentSkill.resources ?: emptyMap<String, String>())
-                        existingSkill.storagePath = storagePath
                         existingSkill.version = repository.version
                         skillMapper.updateById(existingSkill)
                         log.info("Updated skill: {}", agentSkill.name)
@@ -234,7 +281,6 @@ class SkillSourceServiceImpl(
                         skill.description = agentSkill.description ?: ""
                         skill.skillmd = agentSkill.skillContent ?: ""
                         skill.resources = objectMapper.writeValueAsString(agentSkill.resources ?: emptyMap<String, String>())
-                        skill.storagePath = storagePath
                         skill.version = repository.version
                         skill.status = 1
                         skill.active = 1
@@ -247,7 +293,6 @@ class SkillSourceServiceImpl(
                 }
             }
 
-            repository.storagePath = "${repository.id}"
             skillRepositoryMapper.updateById(repository)
         } finally {
             cleanupTmpDir(tmpDir)
@@ -266,21 +311,6 @@ class SkillSourceServiceImpl(
             "GIT" -> mapOf("url" to url, "branch" to (branch.ifBlank { "main" }))
             else -> sourceConfig
         }
-    }
-
-    private fun parseConfig(repository: SkillRepository): Map<String, Any> {
-        if (repository.sourceConfig.isNotBlank()) {
-            return try {
-                objectMapper.readValue(
-                    repository.sourceConfig,
-                    object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {},
-                )
-            } catch (e: Exception) {
-                log.warn("Failed to parse sourceConfig, falling back to url/branch", e)
-                mapOf("url" to repository.url, "branch" to repository.branch)
-            }
-        }
-        return mapOf("url" to repository.url, "branch" to repository.branch)
     }
 
     private fun getTmpDir(): Path {

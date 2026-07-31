@@ -7,9 +7,9 @@ import { useIsMobile } from '@/utils/responsive';
 import RepositoryList from './components/RepositoryList';
 import RepositoryForm from './components/RepositoryForm';
 import SkillList from './components/SkillList';
+import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import SyncSkillModal from './components/SyncSkillModal';
-import { getSkillRepositoryPage } from '@/services/ant-design-pro/skillRepository';
-import { fetchSkillSourceSkills } from '@/services/ant-design-pro/skillSource';
+import { getSkillSourcePage, fetchSkillSourceSkills } from '@/services/ant-design-pro/skillSource';
 
 const SkillManagement: React.FC = () => {
   const intl = useIntl();
@@ -36,18 +36,30 @@ const SkillManagement: React.FC = () => {
     status: undefined as number | undefined,
   });
 
-  // 加载仓库列表
+  // 加载仓库列表（分页拉取全部）
   const loadRepositories = async () => {
     setRepositoryLoading(true);
     try {
-      const response = await getSkillRepositoryPage({ pageNum: 1, pageSize: 50 });
-      if (response.data) {
-        setRepositories(response.data.records || []);
-        // 默认选中第一个仓库
-        if (response.data.records && response.data.records.length > 0 && !selectedRepository) {
-          setSelectedRepository(response.data.records[0]);
-        }
-      }
+      const pageSize = 50;
+      const maxPages = 50;
+      let pageNum = 1;
+      const all: API.SkillRepositoryItem[] = [];
+      let total = 0;
+      do {
+        const response = await getSkillSourcePage({ pageNum, pageSize });
+        const records = response.data?.records || [];
+        total = response.data?.total || 0;
+        all.push(...records);
+        if (records.length === 0) break;
+        pageNum += 1;
+      } while (all.length < total && pageNum <= maxPages);
+
+      setRepositories(all);
+      setSelectedRepository((prev) => {
+        // Drop a stale selection (e.g. the repository was just deleted)
+        if (prev && all.some((r) => r.id === prev.id)) return prev;
+        return all.length > 0 ? all[0] : null;
+      });
     } catch (error) {
       message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
@@ -252,6 +264,7 @@ const SkillManagement: React.FC = () => {
                 repositoryId={selectedRepository.id}
                 filters={filters}
                 onRefresh={() => setSkillListKey((prev) => prev + 1)}
+                readOnly={selectedRepository.name === BUILTIN_CLI_SKILL_REPO}
               />
             ) : (
               <Empty description={intl.formatMessage({ id: 'pages.skill.selectRepository', defaultMessage: "Please select a repository" })} />

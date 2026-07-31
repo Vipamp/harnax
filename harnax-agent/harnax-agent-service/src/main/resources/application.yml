@@ -97,10 +97,3 @@ agent:
   service:
     instance-id: ${AGENT_INSTANCE_ID:agent-service-1}
     heartbeat-interval-ms: ${AGENT_HEARTBEAT_INTERVAL:10000}
-
-# Skill content storage configuration
-skill:
-  storage:
-    type: ${SKILL_STORAGE_TYPE:local}
-    base-path: ${SKILL_STORAGE_BASE_PATH:./data/skill-store}
-    bucket: ${SKILL_STORAGE_BUCKET:harnax-skills}
