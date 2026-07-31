@@ -41,7 +41,9 @@ class CliServiceImpl(
     override fun page(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<Cli> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val tenantId = TenantContext.getTenantId() ?: 1
-        PageHelper.startPage<Cli>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Cli>(safePageNum, safePageSize)
         return Page.fromPageInfo(cliMapper.selectCliList(name, status, currentUsername ?: "", tenantId))
     }
 

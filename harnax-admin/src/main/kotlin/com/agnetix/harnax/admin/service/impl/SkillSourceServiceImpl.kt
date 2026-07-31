@@ -47,7 +47,9 @@ class SkillSourceServiceImpl(
     ): Page<SkillSourceResponse> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val tenantId = TenantContext.getTenantId() ?: 1
-        PageHelper.startPage<SkillRepository>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<SkillRepository>(safePageNum, safePageSize)
         val entityPage = Page.fromPageInfo(
             skillRepositoryMapper.selectRepositoryList(name, status, currentUsername, tenantId),
         )

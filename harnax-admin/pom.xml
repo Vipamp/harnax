@@ -210,6 +210,13 @@
             <version>1.21.4</version>
             <scope>test</scope>
         </dependency>
+        <!-- MockWebServer - stubs the harnax-scheduler HTTP service in AgentTaskSchedulerIT -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
             <artifactId>mybatis-spring-boot-starter-test</artifactId>
@@ -237,7 +244,6 @@
             <artifactId>okhttp</artifactId>
             <version>4.12.0</version>
         </dependency>
-
         <!-- ZXing for QR code image generation -->
         <dependency>
             <groupId>com.google.zxing</groupId>

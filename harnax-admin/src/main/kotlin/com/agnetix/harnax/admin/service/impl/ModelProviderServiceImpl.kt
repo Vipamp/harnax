@@ -35,7 +35,9 @@ class ModelProviderServiceImpl(
     override fun page(name: String?, type: String?, status: Int?, isPublic: Int?, pageNum: Int, pageSize: Int): Page<ModelProvider> {
         // Get current user
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<Agent>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Agent>(safePageNum, safePageSize)
         return Page.fromPageInfo(modelProviderMapper.selectModelProviderList(name, type, status, isPublic, currentUsername))
     }
 

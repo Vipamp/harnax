@@ -15,7 +15,7 @@ data class Page<T>(
     /**
      * Total pages
      */
-    var pages: Long = 0
+    val pages: Long
         get() = if (pageSize > 0) (total + pageSize - 1) / pageSize else 0
 
     /**

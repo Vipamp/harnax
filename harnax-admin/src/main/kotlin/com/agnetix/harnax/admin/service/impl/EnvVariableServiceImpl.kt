@@ -28,7 +28,7 @@ class EnvVariableServiceImpl(
 
     override fun page(keyword: String?, pageNum: Int, pageSize: Int): Page<EnvVariable> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val boundedPageSize = pageSize.coerceIn(1, 100)
+        val boundedPageSize = pageSize.coerceIn(1, 1000)
         val boundedPageNum = pageNum.coerceAtLeast(1)
         PageHelper.startPage<EnvVariable>(boundedPageNum, boundedPageSize)
         return Page.fromPageInfo(envVariableMapper.selectEnvVariableList(keyword, currentUsername))

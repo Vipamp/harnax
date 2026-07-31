@@ -53,7 +53,9 @@ class ModelServiceImpl(
             null
         }
 
-        PageHelper.startPage<Model>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Model>(safePageNum, safePageSize)
         return Page.fromPageInfo(
             modelMapper.selectModelList(
                 name,

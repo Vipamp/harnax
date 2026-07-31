@@ -38,7 +38,9 @@ class AgentTaskServiceImpl(
         pageSize: Int,
     ): Page<AgentTask> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<AgentTask>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<AgentTask>(safePageNum, safePageSize)
         return Page.fromPageInfo(agentTaskMapper.selectTaskList(name, agentId, taskStatus, currentUsername))
     }
 

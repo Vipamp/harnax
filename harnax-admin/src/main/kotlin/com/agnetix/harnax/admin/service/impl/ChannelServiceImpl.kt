@@ -39,7 +39,9 @@ class ChannelServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<Channel> {
-        PageHelper.startPage<Agent>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Agent>(safePageNum, safePageSize)
         return Page.fromPageInfo(channelMapper.selectChannelList(keyword, type, status))
     }
 

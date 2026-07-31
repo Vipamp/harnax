@@ -60,7 +60,9 @@ class SkillServiceImpl(
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         val tenantId = TenantContext.getTenantId() ?: 1
-        PageHelper.startPage<Skill>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Skill>(safePageNum, safePageSize)
         return Page.fromPageInfo(skillMapper.selectSkillList(name, repositoryId, status, currentUsername, tenantId))
     }
 

@@ -63,7 +63,9 @@ class UserTenantServiceImpl(
 
     override fun getUsersByTenantId(tenantId: Long, pageNum: Int, pageSize: Int): Any {
         // Use PageHelper for pagination
-        PageHelper.startPage<UserTenantEntity>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<UserTenantEntity>(safePageNum, safePageSize)
 
         // Query user associations under tenant
         val userTenants = userTenantMapper.selectByTenantId(tenantId)
