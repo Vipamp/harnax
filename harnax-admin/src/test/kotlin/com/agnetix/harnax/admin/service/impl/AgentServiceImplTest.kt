@@ -11,10 +11,14 @@ import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.CliMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -85,6 +89,18 @@ class AgentServiceImplTest {
 
     @Mock
     private lateinit var skillBindingMapper: AgentSkillBindingMapper
+
+    @Mock
+    private lateinit var cliBindingMapper: AgentCliBindingMapper
+
+    @Mock
+    private lateinit var cliMapper: CliMapper
+
+    @Mock
+    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
+
+    @Mock
+    private lateinit var skillMapper: SkillMapper
 
     @Captor
     private lateinit var agentCaptor: ArgumentCaptor<Agent>
@@ -531,6 +547,25 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("toggleAgentStatus - Idempotent: repeated calls with same status both succeed")
+        fun `toggleAgentStatus should be idempotent for repeated calls with same status`() {
+            // Given - agent is already disabled (status = 0)
+            testAgent.status = 0
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateStatus(1L, 0)).thenReturn(1)
+
+            // When - call twice with the same target status
+            val firstResult = agentService.toggleAgentStatus(1L, 0)
+            val secondResult = agentService.toggleAgentStatus(1L, 0)
+
+            // Then - both calls succeed, mapper update invoked each time (idempotent semantics)
+            assertTrue(firstResult, "First call should succeed")
+            assertTrue(secondResult, "Repeated call with same status should also succeed")
+            verify(agentMapper, times(2)).selectById(1L)
+            verify(agentMapper, times(2)).updateStatus(1L, 0)
+        }
+
+        @Test
         @DisplayName("toggleAgentStatus - Throw RuntimeException when agent not found")
         fun `toggleAgentStatus should throw RuntimeException when agent not found`() {
             // Given
@@ -561,6 +596,11 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).deleteById(1L)
+            // Verify cascade cleanup of all binding tables
+            verify(toolBindingMapper).deleteByAgentId(1L)
+            verify(mcpBindingMapper).deleteByAgentId(1L)
+            verify(skillBindingMapper).deleteByAgentId(1L)
+            verify(cliBindingMapper).deleteByAgentId(1L)
         }
 
         @Test

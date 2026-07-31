@@ -152,6 +152,26 @@ class ApiKeyServiceImplTest {
                 argThat { entity -> entity.tenantId == null },
             )
         }
+
+        @Test
+        @DisplayName("generateRawKey产物 - 长度足够substring(0,12)且前缀格式正确（防御性）")
+        fun `generated rawKey should be long enough for prefix substring and have expected format`() {
+            // 防御性用例：keyPrefix 逻辑依赖 rawKey.substring(0, 12)，
+            // 通过公开的 createPermanentKeyForUser 流程捕获内部 generateRawKey 的产物进行断言
+            `when`(aesUtil.encrypt(anyString())).thenReturn("encrypted_value")
+            `when`(apiKeyMapper.insert(any<ApiKeyEntity>())).thenReturn(1)
+
+            val result = apiKeyService.createPermanentKeyForUser(100L, "testuser", 1L)
+
+            val rawKey = result.rawKey
+            assertTrue(rawKey.length >= 12, "rawKey 长度应至少为 12，以保证 substring(0, 12) 安全")
+            assertTrue(rawKey.startsWith("hnx_sk_live_"), "rawKey 应以 hnx_sk_live_ 前缀开头")
+            // 前缀恰好 12 字符，且前缀之后应有随机部分（32字节 Base64URL 无填充编码为 43 字符）
+            assertEquals("hnx_sk_live_", rawKey.substring(0, 12))
+            assertTrue(rawKey.length > 12, "rawKey 前缀之后应包含随机部分")
+            // keyPrefix 格式：前12字符 + "..." + 末4字符
+            assertEquals(rawKey.substring(0, 12) + "..." + rawKey.takeLast(4), result.keyPrefix)
+        }
     }
 
     @Nested

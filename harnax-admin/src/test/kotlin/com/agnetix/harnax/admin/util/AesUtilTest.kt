@@ -128,4 +128,50 @@ class AesUtilTest {
             }
         }
     }
+
+    @Nested
+    @DisplayName("密钥长度分支测试（copyOf(32) 补零/截断语义）")
+    inner class KeyLengthTests {
+
+        @Test
+        @DisplayName("短密钥（<32字节）被补零 - 加密解密往返成功")
+        fun `short key should be zero-padded and round-trip successfully`() {
+            val shortKeyAesUtil = AesUtil("short-key")
+            val plainText = "hnx_sk_live_short_key_data"
+
+            val encrypted = shortKeyAesUtil.encrypt(plainText)
+            val decrypted = shortKeyAesUtil.decrypt(encrypted)
+
+            assertEquals(plainText, decrypted)
+        }
+
+        @Test
+        @DisplayName("超长密钥（>32字节）被截断 - 前32字节相同的两个密钥可互相解密")
+        fun `over-long keys sharing first 32 bytes should decrypt each other`() {
+            // 记录现状：copyOf(32) 只保留前 32 字节，超出部分被静默丢弃。
+            // 因此前 32 字节相同、后缀不同的两个密钥实际上是同一个 AES 密钥。
+            val prefix32 = "0123456789abcdef0123456789abcdef" // 恰好 32 字节
+            val aesUtilA = AesUtil(prefix32 + "-suffix-A")
+            val aesUtilB = AesUtil(prefix32 + "-completely-different-suffix-B")
+            val plainText = "hnx_sk_live_truncation_semantics"
+
+            val encryptedByA = aesUtilA.encrypt(plainText)
+            val encryptedByB = aesUtilB.encrypt(plainText)
+
+            assertEquals(plainText, aesUtilB.decrypt(encryptedByA), "B 应能解密 A 的密文（截断后密钥相同）")
+            assertEquals(plainText, aesUtilA.decrypt(encryptedByB), "A 应能解密 B 的密文（截断后密钥相同）")
+        }
+
+        @Test
+        @DisplayName("空字符串密钥不抛异常 - 补零后仍可加解密")
+        fun `empty string key should not throw and remain usable`() {
+            val emptyKeyAesUtil = AesUtil("")
+            val plainText = "hnx_sk_live_empty_key_data"
+
+            val encrypted = emptyKeyAesUtil.encrypt(plainText)
+            val decrypted = emptyKeyAesUtil.decrypt(encrypted)
+
+            assertEquals(plainText, decrypted)
+        }
+    }
 }

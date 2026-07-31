@@ -295,6 +295,24 @@ class TenantServiceImplTest {
         }
 
         @Test
+        @DisplayName("toggleStatus - Idempotent: repeated calls on same persisted state both succeed")
+        fun `toggleStatus should be idempotent for repeated calls on same state`() {
+            // Given - 租户持久化状态保持为 1（mock 不会因 updateStatus 而变化）
+            `when`(tenantMapper.selectById(1L)).thenReturn(testTenant)
+            `when`(tenantMapper.updateStatus(1L, 0)).thenReturn(1)
+
+            // When - 对同一状态重复调用两次
+            val firstResult = tenantService.toggleStatus(1L)
+            val secondResult = tenantService.toggleStatus(1L)
+
+            // Then - 两次都成功，且每次都基于当前状态计算目标状态并调用 mapper（锁死幂等语义）
+            assertTrue(firstResult, "第一次调用应成功")
+            assertTrue(secondResult, "同一状态下重复调用也应成功")
+            verify(tenantMapper, times(2)).selectById(1L)
+            verify(tenantMapper, times(2)).updateStatus(1L, 0)
+        }
+
+        @Test
         @DisplayName("toggleStatus - Throw exception when tenant not found")
         fun `toggleStatus should throw exception when tenant not found`() {
             // Given

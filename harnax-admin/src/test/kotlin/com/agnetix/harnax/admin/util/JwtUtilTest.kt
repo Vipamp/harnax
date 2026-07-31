@@ -5,7 +5,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 
 /**
@@ -214,14 +213,43 @@ class JwtUtilTest {
         }
 
         @Test
-        @DisplayName("getIsAdminFromToken - 有效token提取时不抛异常")
-        fun `getIsAdminFromToken should not throw for valid token`() {
+        @DisplayName("getIsAdminFromToken - isAdmin=1的token精确返回1")
+        fun `getIsAdminFromToken should return 1 for admin token`() {
             val token = jwtUtil.generateToken(1L, "admin", isAdmin = 1)
 
-            // 方法内部对类型转换异常做了容错处理（捕获后返回 null），
-            // 因此只断言不抛异常，且结果为 null 或期望值
-            val result = assertDoesNotThrow { jwtUtil.getIsAdminFromToken(token) }
-            assertTrue(result == null || result == 1)
+            assertEquals(1, jwtUtil.getIsAdminFromToken(token))
+        }
+
+        @Test
+        @DisplayName("getIsAdminFromToken - isAdmin=0的token精确返回0")
+        fun `getIsAdminFromToken should return 0 for non-admin token`() {
+            val token = jwtUtil.generateToken(1L, "user", isAdmin = 0)
+
+            assertEquals(0, jwtUtil.getIsAdminFromToken(token))
+        }
+
+        @Test
+        @DisplayName("getIsAdminFromToken - 默认参数（不传isAdmin）返回0")
+        fun `getIsAdminFromToken should return 0 when isAdmin not specified`() {
+            val token = jwtUtil.generateToken(1L, "user")
+
+            assertEquals(0, jwtUtil.getIsAdminFromToken(token))
+        }
+
+        @Test
+        @DisplayName("getUserIdFromToken - userId为Long最大值时正确提取")
+        fun `getUserIdFromToken should return Long MAX_VALUE userId`() {
+            val token = jwtUtil.generateToken(Long.MAX_VALUE, "admin")
+
+            assertEquals(Long.MAX_VALUE, jwtUtil.getUserIdFromToken(token))
+        }
+
+        @Test
+        @DisplayName("getUserIdFromToken - 普通小值userId仍正确提取（回归）")
+        fun `getUserIdFromToken should return small userId`() {
+            val token = jwtUtil.generateToken(42L, "admin")
+
+            assertEquals(42L, jwtUtil.getUserIdFromToken(token))
         }
     }
 
