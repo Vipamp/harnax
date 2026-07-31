@@ -14,4 +14,6 @@ interface CliSkillBindingMapper {
     fun batchInsert(@Param("list") list: List<CliSkillBinding>): Int
 
     fun deleteByCliId(@Param("cliId") cliId: Long): Int
+
+    fun deleteBySkillIds(@Param("skillIds") skillIds: List<Long>): Int
 }

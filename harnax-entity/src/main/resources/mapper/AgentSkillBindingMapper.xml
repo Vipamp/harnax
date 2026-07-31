@@ -27,4 +27,11 @@
         DELETE FROM agent_skill_binding WHERE agent_id = #{agentId}
     </delete>
 
+    <delete id="deleteBySkillIds">
+        DELETE FROM agent_skill_binding WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </delete>
+
 </mapper>

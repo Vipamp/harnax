@@ -12,9 +12,11 @@ interface SkillListProps {
   repositoryId: number;
   filters: { name: string; status: number | undefined };
   onRefresh: () => void;
+  /** 内置仓库（builtin-cli-skills）的技能只读，隐藏状态开关 */
+  readOnly?: boolean;
 }
 
-const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh }) => {
+const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh, readOnly = false }) => {
   const intl = useIntl();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<API.SkillItem[]>([]);
@@ -69,12 +71,19 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh 
       title: intl.formatMessage({ id: 'pages.skill.list.status', defaultMessage: 'Status' }),
       key: 'status',
       width: 120,
-      render: (_, record) => (
-        <StatusSwitch
-          status={record.status}
-          onChange={(newStatus) => handleToggle(record.id, newStatus)}
-        />
-      ),
+      render: (_, record) =>
+        readOnly ? (
+          record.status === 1 ? (
+            <Tag color="green">{intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}</Tag>
+          ) : (
+            <Tag>{intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}</Tag>
+          )
+        ) : (
+          <StatusSwitch
+            status={record.status}
+            onChange={(newStatus) => handleToggle(record.id, newStatus)}
+          />
+        ),
     },
   ];
 

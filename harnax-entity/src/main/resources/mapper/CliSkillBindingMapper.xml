@@ -34,4 +34,11 @@
         DELETE FROM cli_skill_binding WHERE cli_id = #{cliId}
     </delete>
 
+    <delete id="deleteBySkillIds">
+        DELETE FROM cli_skill_binding WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </delete>
+
 </mapper>
