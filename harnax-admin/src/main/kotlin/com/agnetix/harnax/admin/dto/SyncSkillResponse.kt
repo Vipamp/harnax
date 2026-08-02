@@ -15,4 +15,6 @@ data class SyncSkillResponse(
     var skillmd: String? = null,
     @Schema(description = "Resource information")
     var resources: Map<String, String> = mapOf(),
+    @Schema(description = "Whether the skill already exists in the repository")
+    var exists: Boolean = false,
 )

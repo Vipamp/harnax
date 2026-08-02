@@ -89,6 +89,19 @@ class SkillSourceController(
         ResultVo.error("Failed to delete skill source: ${e.message}")
     }
 
+    @Operation(summary = "Toggle skill source status")
+    @PutMapping("/toggle/{id}")
+    fun toggleStatus(@PathVariable id: Long, @RequestParam status: Int): ResultVo<Void> = try {
+        if (skillSourceService.toggleStatus(id, status)) {
+            ResultVo.success()
+        } else {
+            ResultVo.error("Toggle failed")
+        }
+    } catch (e: Exception) {
+        log.error("Failed to toggle skill source status", e)
+        ResultVo.error("Failed to toggle skill source status: ${e.message}")
+    }
+
     @Operation(summary = "Fetch skills from source")
     @GetMapping("/{id}/fetch")
     fun fetchSkills(@PathVariable id: Long): ResultVo<List<SyncSkillResponse>> = try {

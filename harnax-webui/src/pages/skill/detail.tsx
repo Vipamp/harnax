@@ -1,6 +1,6 @@
 import { useIntl } from '@umijs/max';
 import { PageContainer } from '@ant-design/pro-components';
-import { Card, Descriptions, Tag, Typography, Spin, Empty, Tabs, Tree, Breadcrumb } from 'antd';
+import { Card, Descriptions, Tag, Typography, Spin, Empty, Tabs, Tree, Breadcrumb, message } from 'antd';
 import { 
   ThunderboltOutlined, 
   FileOutlined, 
@@ -211,9 +211,11 @@ const SkillDetail: React.FC = () => {
             // resources 解析失败，忽略
           }
         }
+      } else {
+        message.error(res.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
       }
     } catch (error) {
-      // 加载技能详情失败
+      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
     } finally {
       setLoading(false);
     }

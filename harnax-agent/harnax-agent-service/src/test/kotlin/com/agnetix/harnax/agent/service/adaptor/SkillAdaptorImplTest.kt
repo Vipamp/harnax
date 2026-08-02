@@ -1,8 +1,6 @@
 package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
-import com.agnetix.harnax.agent.skill.store.SkillContentData
-import com.agnetix.harnax.agent.skill.store.SkillContentReader
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.SkillDetailDto
@@ -18,14 +16,13 @@ import java.time.LocalDateTime
 
 /**
  * Unit tests for SkillAdaptorImpl.
- * Tests the skill loading logic with fallback from ContentStore to DB fields.
+ * Skill content lives in MySQL, so content comes from the skillmd/resources columns.
  */
 class SkillAdaptorImplTest {
 
     private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var skillMapper: SkillMapper
     private lateinit var objectMapper: ObjectMapper
-    private lateinit var skillContentReader: SkillContentReader
     private lateinit var adaptor: SkillAdaptorImpl
 
     private lateinit var testSkill: Skill
@@ -35,8 +32,7 @@ class SkillAdaptorImplTest {
         specContextHolder = mock(AgentSpecContextHolder::class.java)
         skillMapper = mock(SkillMapper::class.java)
         objectMapper = ObjectMapper()
-        skillContentReader = mock(SkillContentReader::class.java)
-        adaptor = SkillAdaptorImpl(specContextHolder, skillMapper, objectMapper, skillContentReader)
+        adaptor = SkillAdaptorImpl(specContextHolder, skillMapper, objectMapper)
 
         testSkill = Skill().apply {
             id = 1L
@@ -46,7 +42,6 @@ class SkillAdaptorImplTest {
             description = "A test skill"
             skillmd = "# Test Skill\n\nDB content."
             resources = """{"config.yaml":"key: value"}"""
-            storagePath = "1/test-skill"
             version = "1.0.0"
             status = 1
             active = 1
@@ -80,93 +75,31 @@ class SkillAdaptorImplTest {
             assertNull(result)
             verify(skillMapper).selectById(999L)
         }
-    }
-
-    @Nested
-    @DisplayName("Get Skill - ContentStore Loading")
-    inner class ContentStoreLoading {
 
         @Test
-        fun `getSkill should load from ContentStore when storagePath is set`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(
-                    skillmd = "# Store Content\n\nFrom ContentStore.",
-                    resources = mapOf("data.json" to """{"loaded":true}"""),
-                ),
-            )
+        fun `getSkill should return null when skillMapper throws exception`() {
+            `when`(skillMapper.selectById(1L)).thenThrow(RuntimeException("Database connection failed"))
 
             val result = adaptor.getSkill(1L)
 
-            assertNotNull(result)
-            assertEquals("test-skill", result!!.name)
-            assertEquals("# Store Content\n\nFrom ContentStore.", result.skillContent)
-            assertEquals("A test skill", result.description)
-            assertTrue(result.resources.containsKey("data.json"))
-            verify(skillContentReader).load("1/test-skill")
-        }
-
-        @Test
-        fun `getSkill should use ContentStore resources over DB resources`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(
-                    skillmd = "# Store Content",
-                    resources = mapOf("store-file.txt" to "from store"),
-                ),
-            )
-
-            val result = adaptor.getSkill(1L)
-
-            assertNotNull(result)
-            assertEquals(1, result!!.resources.size)
-            assertTrue(result.resources.containsKey("store-file.txt"))
-            assertFalse(result.resources.containsKey("config.yaml"))
+            assertNull(result)
         }
     }
 
     @Nested
-    @DisplayName("Get Skill - Fallback to DB Fields")
-    inner class FallbackToDb {
+    @DisplayName("Get Skill - Content From DB Columns")
+    inner class ContentFromDb {
 
         @Test
-        fun `getSkill should fall back to DB fields when storagePath is blank`() {
-            val skillNoStorage = Skill().apply {
-                id = 2L
-                name = "old-skill"
-                repositoryId = 1L
-                description = "Old skill"
-                skillmd = "# Old Skill\n\nFrom DB."
-                resources = """{"db-file.txt":"from db"}"""
-                storagePath = ""
-                status = 1
-                active = 1
-                createTime = LocalDateTime.now()
-                updateTime = LocalDateTime.now()
-            }
-
-            `when`(skillMapper.selectById(2L)).thenReturn(skillNoStorage)
-
-            val result = adaptor.getSkill(2L)
-
-            assertNotNull(result)
-            assertEquals("old-skill", result!!.name)
-            assertEquals("# Old Skill\n\nFrom DB.", result.skillContent)
-            assertTrue(result.resources.containsKey("db-file.txt"))
-            verify(skillContentReader, never()).load(anyString())
-        }
-
-        @Test
-        fun `getSkill should fall back when ContentStore load fails`() {
+        fun `getSkill should build skill from DB columns`() {
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill"))
-                .thenThrow(RuntimeException("ContentStore unavailable"))
 
             val result = adaptor.getSkill(1L)
 
             assertNotNull(result)
             assertEquals("test-skill", result!!.name)
             assertEquals("# Test Skill\n\nDB content.", result.skillContent)
+            assertEquals("A test skill", result.description)
             assertTrue(result.resources.containsKey("config.yaml"))
         }
 
@@ -179,7 +112,6 @@ class SkillAdaptorImplTest {
                 description = "No resources"
                 skillmd = "# No Resources"
                 resources = ""
-                storagePath = ""
                 status = 1
                 active = 1
                 createTime = LocalDateTime.now()
@@ -204,7 +136,6 @@ class SkillAdaptorImplTest {
                 description = "Bad JSON"
                 skillmd = "# Bad JSON"
                 resources = "not valid json{{{"
-                storagePath = ""
                 status = 1
                 active = 1
                 createTime = LocalDateTime.now()
@@ -220,154 +151,51 @@ class SkillAdaptorImplTest {
             assertEquals("# Bad JSON", result.skillContent)
             assertTrue(result.resources.isEmpty())
         }
-    }
-
-    @Nested
-    @DisplayName("Get Skill - ContentStore with Empty Storage Path Edge Cases")
-    inner class EdgeCases {
 
         @Test
-        fun `getSkill should not try ContentStore when storagePath is whitespace only`() {
-            val skillWhitespace = Skill().apply {
+        fun `getSkill should treat empty JSON object as no resources`() {
+            val skillEmptyJson = Skill().apply {
                 id = 5L
-                name = "whitespace-path"
+                name = "empty-json"
                 repositoryId = 1L
-                description = "Whitespace path"
-                skillmd = "# Whitespace"
+                description = "Empty JSON"
+                skillmd = "# Empty JSON"
                 resources = "{}"
-                storagePath = "   "
                 status = 1
                 active = 1
                 createTime = LocalDateTime.now()
                 updateTime = LocalDateTime.now()
             }
 
-            `when`(skillMapper.selectById(5L)).thenReturn(skillWhitespace)
+            `when`(skillMapper.selectById(5L)).thenReturn(skillEmptyJson)
 
             val result = adaptor.getSkill(5L)
 
             assertNotNull(result)
-            verify(skillContentReader, never()).load(anyString())
-        }
-
-        @Test
-        fun `getSkill should load from ContentStore with empty resources`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(
-                    skillmd = "# Empty Resources",
-                    resources = emptyMap(),
-                ),
-            )
-
-            val result = adaptor.getSkill(1L)
-
-            assertNotNull(result)
-            assertEquals("# Empty Resources", result!!.skillContent)
-            assertTrue(result.resources.isEmpty())
-        }
-
-        @Test
-        fun `getSkill should correctly pass description from entity not from content`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# Store", resources = emptyMap()),
-            )
-
-            val result = adaptor.getSkill(1L)
-
-            assertNotNull(result)
-            assertEquals("A test skill", result!!.description)
-        }
-
-        @Test
-        fun `getSkill should return null when skillMapper throws exception`() {
-            `when`(skillMapper.selectById(1L)).thenThrow(RuntimeException("Database connection failed"))
-
-            val result = adaptor.getSkill(1L)
-
-            assertNull(result)
-        }
-
-        @Test
-        fun `getSkill should return null when AgentSkill builder fails`() {
-            val skillMissingName = Skill().apply {
-                id = 6L
-                name = ""
-                repositoryId = 1L
-                description = "Missing name"
-                skillmd = "# No Name"
-                resources = ""
-                storagePath = ""
-                status = 1
-                active = 1
-                createTime = LocalDateTime.now()
-                updateTime = LocalDateTime.now()
-            }
-
-            `when`(skillMapper.selectById(6L)).thenReturn(skillMissingName)
-
-            // Builder may or may not throw depending on AgentSkill implementation
-            val result = adaptor.getSkill(6L)
-
-            // Should handle gracefully, either return null or valid object
-            if (result != null) {
-                assertEquals("", result.name)
-            }
-        }
-
-        @Test
-        fun `getSkill should handle skill with both empty storagePath and minimal skillmd`() {
-            val skillAllEmpty = Skill().apply {
-                id = 7L
-                name = "all-empty"
-                repositoryId = 1L
-                description = "All empty"
-                skillmd = "# Minimal"
-                resources = ""
-                storagePath = ""
-                status = 1
-                active = 1
-                createTime = LocalDateTime.now()
-                updateTime = LocalDateTime.now()
-            }
-
-            `when`(skillMapper.selectById(7L)).thenReturn(skillAllEmpty)
-
-            val result = adaptor.getSkill(7L)
-
-            assertNotNull(result)
-            assertEquals("all-empty", result!!.name)
-            assertEquals("# Minimal", result.skillContent)
-            assertTrue(result.resources.isEmpty())
-            verify(skillContentReader, never()).load(anyString())
-        }
-
-        @Test
-        fun `getSkill should handle ContentStore returning empty skillmd`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# FromStore", resources = emptyMap()),
-            )
-
-            val result = adaptor.getSkill(1L)
-
-            assertNotNull(result)
-            assertEquals("# FromStore", result!!.skillContent)
+            assertTrue(result!!.resources.isEmpty())
         }
 
         @Test
         fun `getSkill should handle very large resources map`() {
             val largeResources = (1..100).associate { i ->
-                "file$i.txt" to "content $i".repeat(1000)
+                "file$i.txt" to "content $i"
+            }
+            val skillLarge = Skill().apply {
+                id = 9L
+                name = "large-skill"
+                repositoryId = 1L
+                description = "Large"
+                skillmd = "# Large"
+                resources = ObjectMapper().writeValueAsString(largeResources)
+                status = 1
+                active = 1
+                createTime = LocalDateTime.now()
+                updateTime = LocalDateTime.now()
             }
 
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# Large", resources = largeResources),
-            )
+            `when`(skillMapper.selectById(9L)).thenReturn(skillLarge)
 
-            val result = adaptor.getSkill(1L)
+            val result = adaptor.getSkill(9L)
 
             assertNotNull(result)
             assertEquals(100, result!!.resources.size)
@@ -383,31 +211,27 @@ class SkillAdaptorImplTest {
                 "file-with-dashes.txt" to "content",
                 "file_with_underscores.txt" to "content",
             )
+            val skillSpecial = Skill().apply {
+                id = 10L
+                name = "special-skill"
+                repositoryId = 1L
+                description = "Special"
+                skillmd = "# Special"
+                resources = ObjectMapper().writeValueAsString(specialResources)
+                status = 1
+                active = 1
+                createTime = LocalDateTime.now()
+                updateTime = LocalDateTime.now()
+            }
 
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# Special", resources = specialResources),
-            )
+            `when`(skillMapper.selectById(10L)).thenReturn(skillSpecial)
 
-            val result = adaptor.getSkill(1L)
+            val result = adaptor.getSkill(10L)
 
             assertNotNull(result)
             assertEquals(4, result!!.resources.size)
             assertTrue(result.resources.containsKey("path/with/slashes.txt"))
             assertTrue(result.resources.containsKey("file with spaces.txt"))
-        }
-
-        @Test
-        fun `getSkill should use skillmd from ContentStore`() {
-            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# Store Content", resources = emptyMap()),
-            )
-
-            val result = adaptor.getSkill(1L)
-
-            assertNotNull(result)
-            assertEquals("# Store Content", result!!.skillContent)
         }
 
         @Test
@@ -419,7 +243,6 @@ class SkillAdaptorImplTest {
                 description = "Minimal desc"
                 skillmd = "# Minimal"
                 resources = ""
-                storagePath = ""
                 status = 1
                 active = 1
                 createTime = LocalDateTime.now()
@@ -433,6 +256,33 @@ class SkillAdaptorImplTest {
             assertNotNull(result)
             assertEquals("minimal-skill", result!!.name)
             assertEquals("Minimal desc", result.description)
+            assertTrue(result.resources.isEmpty())
+        }
+
+        @Test
+        fun `getSkill should handle skill with blank name gracefully`() {
+            val skillMissingName = Skill().apply {
+                id = 6L
+                name = ""
+                repositoryId = 1L
+                description = "Missing name"
+                skillmd = "# No Name"
+                resources = ""
+                status = 1
+                active = 1
+                createTime = LocalDateTime.now()
+                updateTime = LocalDateTime.now()
+            }
+
+            `when`(skillMapper.selectById(6L)).thenReturn(skillMissingName)
+
+            // Builder may or may not throw depending on AgentSkill implementation
+            val result = adaptor.getSkill(6L)
+
+            // Should handle gracefully, either return null or valid object
+            if (result != null) {
+                assertEquals("", result.name)
+            }
         }
     }
 
@@ -459,7 +309,6 @@ class SkillAdaptorImplTest {
                 name = "ctx-skill",
                 description = "From context",
                 skillmd = "# Context Skill",
-                storagePath = "",
                 resources = "",
                 version = "1.0.0",
             )
@@ -474,12 +323,28 @@ class SkillAdaptorImplTest {
         }
 
         @Test
+        fun `getSkill should parse context DTO resources`() {
+            val dto = SkillDetailDto(
+                id = 11L,
+                name = "ctx-resources",
+                description = "With resources",
+                skillmd = "# Context",
+                resources = """{"ctx.txt":"from context"}""",
+                version = "1.0.0",
+            )
+            stubContext(listOf(dto))
+
+            val result = adaptor.getSkill(11L)
+
+            assertNotNull(result)
+            assertEquals(1, result!!.resources.size)
+            assertEquals("from context", result.resources["ctx.txt"])
+        }
+
+        @Test
         fun `getSkill should fallback to DB when context has no matching skill`() {
             stubContext(emptyList())
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# DB", resources = emptyMap()),
-            )
 
             val result = adaptor.getSkill(1L)
 
@@ -491,9 +356,6 @@ class SkillAdaptorImplTest {
         fun `getSkill should fallback to DB when context is null`() {
             `when`(specContextHolder.get()).thenReturn(null)
             `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
-            `when`(skillContentReader.load("1/test-skill")).thenReturn(
-                SkillContentData(skillmd = "# DB", resources = emptyMap()),
-            )
 
             val result = adaptor.getSkill(1L)
 

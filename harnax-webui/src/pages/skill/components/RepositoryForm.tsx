@@ -84,6 +84,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           sourceConfig,
           version: formValues.version || '',
           description: formValues.description || '',
+          status: formValues.status ?? 1,
           isPublic: formValues.isPublic ? 1 : 0,
           url: formValues.url || '',
           branch: formValues.branch || '',
@@ -95,6 +96,8 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
             sourceConfig: data.sourceConfig,
             version: data.version,
             description: data.description,
+            status: data.status,
+            isPublic: data.isPublic,
             url: data.url,
             branch: data.branch,
           });

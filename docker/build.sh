@@ -36,7 +36,7 @@ mvn clean package -pl harnax-admin -am -DskipTests
 # Copy JAR to docker/dist/backend/
 echo "📋 Copying JAR to docker/dist/backend/..."
 mkdir -p docker/dist/backend
-cp harnax-admin/target/harnax-admin-*.jar docker/dist/backend/
+cp harnax-admin/target/harnax-admin-*-exec.jar docker/dist/backend/
 echo "✅ Backend JAR built successfully."
 
 # Step 1.5: Build router JAR

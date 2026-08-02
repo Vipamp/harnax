@@ -2,7 +2,6 @@ package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.adaptor.SkillAdaptor
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
-import com.agnetix.harnax.agent.skill.store.SkillContentReader
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.mapper.SkillMapper
@@ -23,7 +22,6 @@ class SkillAdaptorImpl(
     private val specContextHolder: AgentSpecContextHolder,
     private val skillMapper: SkillMapper,
     private val objectMapper: ObjectMapper,
-    private val skillContentReader: SkillContentReader,
 ) : SkillAdaptor {
 
     private val log = LoggerFactory.getLogger(SkillAdaptorImpl::class.java)
@@ -60,13 +58,12 @@ class SkillAdaptorImpl(
     }
 
     private fun buildFromDto(dto: SkillDetailDto): AgentSkill? = try {
-        val (skillmd, resources) = loadSkillContent(dto.storagePath, dto.skillmd, dto.resources)
-
         val builder = AgentSkill.builder()
             .name(dto.name)
-            .skillContent(skillmd)
+            .skillContent(dto.skillmd)
             .description(dto.description)
 
+        val resources = parseResources(dto.resources)
         if (resources.isNotEmpty()) {
             builder.resources(resources)
         }
@@ -78,13 +75,12 @@ class SkillAdaptorImpl(
     }
 
     private fun buildFromEntity(skill: Skill): AgentSkill? = try {
-        val (skillmd, resources) = loadSkillContent(skill.storagePath, skill.skillmd, skill.resources)
-
         val builder = AgentSkill.builder()
             .name(skill.name)
-            .skillContent(skillmd)
+            .skillContent(skill.skillmd)
             .description(skill.description)
 
+        val resources = parseResources(skill.resources)
         if (resources.isNotEmpty()) {
             builder.resources(resources)
         }
@@ -95,32 +91,13 @@ class SkillAdaptorImpl(
         null
     }
 
-    private fun loadSkillContent(storagePath: String, fallbackSkillmd: String, resourcesJson: String): Pair<String, Map<String, String>> {
-        // Try loading from external storage first (MinIO/local)
-        if (storagePath.isNotBlank()) {
-            try {
-                val content = skillContentReader.load(storagePath)
-                return content.skillmd to content.resources
-            } catch (e: Exception) {
-                log.warn("Failed to load skill content from store (path=$storagePath), falling back to inline fields", e)
-            }
-        }
-
-        // Parse resources JSON
-        val resources = if (resourcesJson.isNotBlank()) {
-            try {
-                objectMapper.readValue(
-                    resourcesJson,
-                    object : TypeReference<Map<String, String>>() {},
-                )
-            } catch (e: Exception) {
-                log.warn("Failed to parse resources JSON", e)
-                emptyMap()
-            }
-        } else {
+    private fun parseResources(resourcesJson: String): Map<String, String> {
+        if (resourcesJson.isBlank()) return emptyMap()
+        return try {
+            objectMapper.readValue(resourcesJson, object : TypeReference<Map<String, String>>() {})
+        } catch (e: Exception) {
+            log.warn("Failed to parse resources JSON", e)
             emptyMap()
         }
-
-        return fallbackSkillmd to resources
     }
 }

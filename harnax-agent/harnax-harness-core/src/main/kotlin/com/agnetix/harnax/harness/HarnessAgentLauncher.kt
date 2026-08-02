@@ -23,6 +23,7 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
+import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.plugin.HarnaxCliPluginInitializer
 import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
@@ -93,6 +94,7 @@ class HarnessAgentLauncher(
     val mcpConfigDecryptor: McpConfigDecryptor? = null,
     val toolConfigAdaptor: ToolConfigAdaptor? = null,
     val toolRegistry: ToolRegistry? = null,
+    val cliImageBuilder: CliImageBuilder? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -355,13 +357,34 @@ class HarnessAgentLauncher(
             agentBuilder.enablePlan(true)
         }
 
+        // ----- CLI sandbox image (per-agent, built from CLI install scripts) -----
+        val cliEnv: Map<String, String> = agentSpec.cliSpecs
+            .flatMap { it.envBindings.entries }
+            .associate { it.key to it.value }
+        val resolvedSandboxImage: String = if (agentSpec.cliSpecs.isNotEmpty() && cliImageBuilder != null) {
+            val image = cliImageBuilder.resolveImage(agentSpec.cliSpecs)
+            log.info(
+                "Resolved CLI sandbox image '{}' for agent '{}' (CLIs: {})",
+                image,
+                agentSpec.name,
+                agentSpec.cliSpecs.joinToString(",") { it.name },
+            )
+            image
+        } else {
+            harnessConfig.sandbox.image
+        }
+
         // ----- Docker Sandbox + Snapshot (snapshotSpec pre-created in initLauncher) -----
         if (harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
             val dockerSpec = DockerFilesystemSpec()
-                .image(harnessConfig.sandbox.image)
+                .image(resolvedSandboxImage)
                 .workspaceRoot(harnessConfig.sandbox.workspaceRoot)
+            if (cliEnv.isNotEmpty()) {
+                dockerSpec.environment(cliEnv)
+            }
+            dockerSpec
                 .isolationScope(harnessConfig.sandbox.isolationScope)
                 .snapshotSpec(snapshotSpec)
 
@@ -482,7 +505,8 @@ class HarnessAgentLauncher(
             sessionId = sessionId,
             keepAliveSandboxManager = keepAliveSandboxManager,
             keepAliveSnapshotSpec = snapshotSpec,
-            sandboxImage = if (harnessConfig.sandbox.cliPluginsEnabled) harnessConfig.sandbox.pluginImage else harnessConfig.sandbox.image,
+            sandboxImage = resolvedSandboxImage,
+            sandboxEnv = cliEnv,
             sandboxWorkspaceRoot = harnessConfig.sandbox.workspaceRoot,
             sandboxNetwork = harnessConfig.sandbox.network,
             permissionMode = chatSpec.permissionMode,
@@ -614,6 +638,11 @@ class HarnessAgentLauncher(
             } else {
                 null
             }
+            val cliImageBuilder = if (harnessConfig.sandbox.enabled) {
+                CliImageBuilder(baseImage = harnessConfig.sandbox.image)
+            } else {
+                null
+            }
             return HarnessAgentLauncher(
                 chatModelConfigAdaptor = chatModelConfigAdaptor,
                 mcpConfigAdaptor = mcpConfigAdaptor,
@@ -631,6 +660,7 @@ class HarnessAgentLauncher(
                 mcpConfigDecryptor = mcpConfigDecryptor,
                 toolConfigAdaptor = toolConfigAdaptor,
                 toolRegistry = toolRegistry,
+                cliImageBuilder = cliImageBuilder,
             )
         }
     }

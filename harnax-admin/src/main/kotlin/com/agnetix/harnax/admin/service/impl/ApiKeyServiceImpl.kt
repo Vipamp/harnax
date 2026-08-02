@@ -45,7 +45,9 @@ class ApiKeyServiceImpl(
         pageNum: Int,
         pageSize: Int,
     ): Page<ApiKeyEntity> {
-        PageHelper.startPage<ApiKeyEntity>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<ApiKeyEntity>(safePageNum, safePageSize)
         return Page.fromPageInfo(apiKeyMapper.selectTemporaryKeys(keyword, enabled, creator, tenantId))
     }
 

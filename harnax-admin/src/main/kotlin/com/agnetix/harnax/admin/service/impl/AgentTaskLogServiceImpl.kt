@@ -42,7 +42,9 @@ class AgentTaskLogServiceImpl(
             startTimeTo,
             keyword,
         )
-        PageHelper.startPage<AgentTaskLog>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<AgentTaskLog>(safePageNum, safePageSize)
         return Page.fromPageInfo(agentTaskLogMapper.selectLogList(taskId, taskName, status, startTimeFrom, startTimeTo, keyword))
     }
 

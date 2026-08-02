@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.CaptchaResponse
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.CaptchaService
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.awt.Color
 import java.awt.Graphics2D
@@ -17,7 +18,10 @@ import javax.imageio.ImageIO
  * Captcha service implementation
  */
 @Service
-class CaptchaServiceImpl : CaptchaService {
+class CaptchaServiceImpl(
+    // Test-only master code for UI automation; empty (default) = disabled. Never set in production.
+    @Value("\${captcha.test-master-code:}") private val testMasterCode: String,
+) : CaptchaService {
 
     private val log = LoggerFactory.getLogger(CaptchaServiceImpl::class.java)
 
@@ -67,6 +71,11 @@ class CaptchaServiceImpl : CaptchaService {
     }
 
     override fun validateCaptcha(captchaKey: String, code: String): Boolean {
+        if (testMasterCode.isNotBlank() && code == testMasterCode) {
+            log.warn("Captcha bypassed via test master code, captchaKey: {}", captchaKey)
+            return true
+        }
+
         val captchaInfo = captchaStore[captchaKey]
             ?: run {
                 log.warn("Captcha not found, captchaKey: {}", captchaKey)

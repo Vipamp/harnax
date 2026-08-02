@@ -15,6 +15,8 @@ interface SkillSourceService {
 
     fun deleteSkillSource(id: Long): Boolean
 
+    fun toggleStatus(id: Long, status: Int): Boolean
+
     fun fetchSkills(id: Long): List<SyncSkillResponse>
 
     fun uploadAndInstall(zipPath: String, originalFilename: String, name: String): SkillRepository

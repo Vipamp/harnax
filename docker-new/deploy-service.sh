@@ -58,7 +58,7 @@ case $SERVICE in
 
         echo "📋 步骤 2/4: 复制 jar 包..."
         mkdir -p docker-new/dist/harnax-admin
-        cp harnax-admin/target/harnax-admin-*.jar docker-new/dist/harnax-admin/
+        cp harnax-admin/target/harnax-admin-*-exec.jar docker-new/dist/harnax-admin/
 
         echo "🐳 步骤 3/4: 构建 Docker 镜像..."
         docker rmi -f harnax-admin:latest 2>/dev/null || true

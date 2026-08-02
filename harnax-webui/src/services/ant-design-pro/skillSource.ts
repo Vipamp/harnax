@@ -61,6 +61,20 @@ export async function deleteSkillSource(id: number, options?: { [key: string]: a
   });
 }
 
+export async function toggleSkillSourceStatus(
+  id: number,
+  status: number,
+  options?: { [key: string]: any },
+) {
+  return request(`/api/admin/skill-sources/toggle/${id}`, {
+    method: 'PUT',
+    params: {
+      status,
+    },
+    ...(options || {}),
+  });
+}
+
 export async function fetchSkillSourceSkills(id: number, options?: { [key: string]: any }) {
   return request(`/api/admin/skill-sources/${id}/fetch`, {
     method: 'GET',

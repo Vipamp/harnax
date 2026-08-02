@@ -32,6 +32,9 @@ data class AgentCreateRequest(
     @Schema(description = "Tool configuration list")
     val toolList: List<ToolConfig>? = null,
 
+    @Schema(description = "CLI configuration list")
+    val cliList: List<CliConfig>? = null,
+
     @Schema(description = "Owner")
     val owner: String? = null,
 
@@ -53,6 +56,18 @@ data class AgentCreateRequest(
         val enableSkip: String? = null,
 
         @Schema(description = "Environment variable bindings for MCP")
+        val envBindings: List<EnvBinding>? = null,
+    )
+
+    /**
+     * CLI configuration
+     */
+    @Schema(description = "CLI configuration")
+    data class CliConfig(
+        @Schema(description = "CLI ID", example = "1")
+        val id: Long? = null,
+
+        @Schema(description = "Environment variable bindings for CLI")
         val envBindings: List<EnvBinding>? = null,
     )
 

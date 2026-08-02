@@ -12,4 +12,6 @@ interface AgentSkillBindingMapper {
     fun batchInsert(@Param("list") list: List<AgentSkillBinding>): Int
 
     fun deleteByAgentId(@Param("agentId") agentId: Long): Int
+
+    fun deleteBySkillIds(@Param("skillIds") skillIds: List<Long>): Int
 }

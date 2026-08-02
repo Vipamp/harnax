@@ -73,7 +73,9 @@ class TenantServiceImpl(
     }
 
     override fun getTenantList(name: String?, status: Int?, pageNum: Int, pageSize: Int): Page<TenantResponse> {
-        PageHelper.startPage<TenantEntity>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<TenantEntity>(safePageNum, safePageSize)
         val tenants = tenantMapper.selectList(name, status)
         val pageInfo = PageInfo(tenants)
 
@@ -110,7 +112,9 @@ class TenantServiceImpl(
     }
 
     override fun getTenantUsers(tenantId: Long, pageNum: Int, pageSize: Int): Page<UserTenantResponse> {
-        PageHelper.startPage<UserTenantEntity>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<UserTenantEntity>(safePageNum, safePageSize)
         val userTenants = userTenantMapper.selectByTenantId(tenantId)
         val pageInfo = PageInfo(userTenants)
 

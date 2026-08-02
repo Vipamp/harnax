@@ -66,6 +66,7 @@ class HarnessAgentWrapper(
     val keepAliveSandboxManager: KeepAliveSandboxManager? = null,
     val keepAliveSnapshotSpec: SandboxSnapshotSpec? = null,
     val sandboxImage: String = "python:3.11-slim",
+    val sandboxEnv: Map<String, String> = emptyMap(),
     val sandboxWorkspaceRoot: String = "/workspace",
     val sandboxNetwork: String? = null,
     val permissionMode: String = "DEFAULT",
@@ -729,6 +730,8 @@ class HarnessAgentWrapper(
                 sessionId,
                 WorkspaceSpec(),
                 keepAliveSnapshotSpec,
+                imageOverride = sandboxImage,
+                env = sandboxEnv,
             )
             keepAliveSandbox = sandbox
 
@@ -745,6 +748,9 @@ class HarnessAgentWrapper(
             val clientOptions = DockerSandboxClientOptions()
                 .image(sandboxImage)
                 .workspaceRoot(sandboxWorkspaceRoot)
+            if (sandboxEnv.isNotEmpty()) {
+                clientOptions.environment = sandboxEnv
+            }
             if (sandboxNetwork != null) {
                 clientOptions.network(sandboxNetwork)
             }

@@ -80,4 +80,7 @@ data class AgentSpecInfoResponse(
 
     @Schema(description = "Full skill configurations")
     val skillDetails: List<SkillDetailDto> = emptyList(),
+
+    @Schema(description = "Full CLI configurations (with binding env overrides)")
+    val cliDetails: List<CliDetailDto> = emptyList(),
 )

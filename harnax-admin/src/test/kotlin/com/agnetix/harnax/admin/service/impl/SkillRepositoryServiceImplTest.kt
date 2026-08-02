@@ -43,6 +43,12 @@ class SkillRepositoryServiceImplTest {
     @Mock
     private lateinit var skillRepositoryMapper: SkillRepositoryMapper
 
+    @Mock
+    private lateinit var skillMapper: com.agnetix.harnax.mapper.SkillMapper
+
+    @Mock
+    private lateinit var skillLoaderRegistry: com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
+
     private lateinit var service: SkillRepositoryServiceImpl
 
     private lateinit var testRepository: SkillRepository
@@ -52,6 +58,8 @@ class SkillRepositoryServiceImplTest {
         service = SkillRepositoryServiceImpl(
             jwtUtil = jwtUtil,
             skillRepositoryMapper = skillRepositoryMapper,
+            skillMapper = skillMapper,
+            skillLoaderRegistry = skillLoaderRegistry,
             localTmpDir = "/tmp/harnax-test",
         )
 

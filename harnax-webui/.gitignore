@@ -38,3 +38,6 @@ screenshot
 .firebase
 
 build
+
+# Locally built CLI binaries served via /downloads (rebuild: cd harnax-cli && GOOS=linux CGO_ENABLED=0 go build)
+/public/downloads/

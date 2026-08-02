@@ -113,25 +113,7 @@ class ZipSkillLoader : SkillLoader {
         return skills
     }
 
-    private fun extractDescription(skillmd: String): String {
-        val lines = skillmd.lines()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("#")) continue
-            if (trimmed.isNotEmpty()) return trimmed.take(500)
-        }
-        return ""
-    }
+    private fun extractDescription(skillmd: String): String = SkillFileParser.extractDescription(skillmd)
 
-    private fun loadResources(resourcesDir: Path): Map<String, String> {
-        if (!resourcesDir.isDirectory()) return emptyMap()
-        val resources = mutableMapOf<String, String>()
-        resourcesDir.toFile().walkTopDown().forEach { file ->
-            if (file.isFile) {
-                val relativePath = resourcesDir.relativize(file.toPath()).toString()
-                resources[relativePath] = file.readText()
-            }
-        }
-        return resources
-    }
+    private fun loadResources(resourcesDir: Path): Map<String, String> = SkillFileParser.loadResources(resourcesDir)
 }

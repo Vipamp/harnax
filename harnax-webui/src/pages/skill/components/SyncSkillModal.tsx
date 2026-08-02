@@ -52,11 +52,9 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
 
   // 单个技能选中状态变化
   const handleSkillSelect = (index: number, checked: boolean) => {
-    setSelectedSkills((prev) => {
-      const updated = [...prev];
-      updated[index].selected = checked;
-      return updated;
-    });
+    setSelectedSkills((prev) =>
+      prev.map((skill, i) => (i === index ? { ...skill, selected: checked } : skill))
+    );
   };
 
   // 获取选中的技能
@@ -88,7 +86,12 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
     {
       title: (
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <Checkbox onChange={handleSelectAll} style={{ marginRight: 8 }} />
+          <Checkbox
+            checked={selectedSkills.length > 0 && selectedSkills.every((s) => s.selected)}
+            indeterminate={selectedSkills.some((s) => s.selected) && !selectedSkills.every((s) => s.selected)}
+            onChange={handleSelectAll}
+            style={{ marginRight: 8 }}
+          />
           {intl.formatMessage({ id: "pages.skill.sync.selectAll", defaultMessage: "Select All" })}
         </div>
       ),

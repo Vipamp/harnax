@@ -1,0 +1,43 @@
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
+# Reduce SQL console noise during integration tests
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    root: WARN
+    com.agnetix.harnax: INFO
+    org.springframework.web: WARN
+
+# Fixed JWT secret so that tokens signed by the injected JwtUtil are accepted
+jwt:
+  secret: harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication
+  expiration: 7200000
+
+# Skill storage points to a throwaway temp directory
+local:
+  tmp-dir: ${java.io.tmpdir}/harnax-it/skills
+
+skill:
+  storage:
+    type: local
+    base-path: ${java.io.tmpdir}/harnax-it/skill-store
+
+# Fixed internal API secret so InternalApiIT can call /api/admin/internal/**
+admin:
+  internal-api:
+    secret: it-internal-api-secret-0123456789abcdef
+
+# Disable swagger to speed up context startup
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

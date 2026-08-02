@@ -5,11 +5,13 @@ import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.CliDetailDto
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
 import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
 import com.agnetix.harnax.entity.dto.ToolDetailDto
+import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
@@ -18,6 +20,8 @@ import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
+import com.agnetix.harnax.mapper.CliMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
@@ -46,6 +50,9 @@ class InternalApiController(
     private val agentToolMapper: AgentToolMapper,
     private val mcpServerMapper: McpServerMapper,
     private val skillMapper: SkillMapper,
+    private val cliBindingMapper: AgentCliBindingMapper,
+    private val cliMapper: CliMapper,
+    private val cliSkillBindingMapper: CliSkillBindingMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -340,9 +347,64 @@ class InternalApiController(
                     name = skill.name,
                     description = skill.description,
                     skillmd = skill.skillmd,
-                    storagePath = skill.storagePath,
                     resources = skill.resources,
                     version = skill.version,
+                )
+            }
+        }.toMutableList()
+
+        // ── CLI bindings (full detail DTOs + merge CLI skills into skillDetails) ──
+        val cliBindings = cliBindingMapper.selectByAgentId(agentId)
+        val cliDetails = if (cliBindings.isEmpty()) {
+            emptyList()
+        } else {
+            val cliIds = cliBindings.map { it.cliId }.distinct()
+            val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
+            val skillIdsByCli = cliSkillBindingMapper.selectByCliIds(cliIds)
+                .groupBy({ it.cliId }, { it.skillId })
+            cliBindings.mapNotNull { binding ->
+                val cli = clisById[binding.cliId]
+                if (cli == null) {
+                    log.warn("CLI not found: cliId={}", binding.cliId)
+                    null
+                } else if (cli.status == 0) {
+                    log.info("CLI '{}' (id={}) is disabled, skipping", cli.name, cli.id)
+                    null
+                } else {
+                    CliDetailDto(
+                        id = cli.id,
+                        name = cli.name,
+                        description = cli.description,
+                        version = cli.version,
+                        installScript = cli.installScript,
+                        checkCommand = cli.checkCommand,
+                        envBindings = resolveEnvBindingsJson(binding.envBindings),
+                        skillIds = skillIdsByCli[cli.id].orEmpty(),
+                    )
+                }
+            }
+        }
+
+        // Merge CLI-associated skills into skillDetails (dedup by skillId)
+        val boundSkillIds = skillDetails.map { it.id }.toHashSet()
+        val cliSkillIdsToAdd = cliDetails.flatMap { it.skillIds }.distinct().filter { it !in boundSkillIds }
+        if (cliSkillIdsToAdd.isNotEmpty()) {
+            val skillsById = skillMapper.selectByIds(cliSkillIdsToAdd).associateBy { it.id }
+            for (skillId in cliSkillIdsToAdd) {
+                val skill = skillsById[skillId]
+                if (skill == null) {
+                    log.warn("CLI-associated skill not found: skillId={}", skillId)
+                    continue
+                }
+                skillDetails.add(
+                    SkillDetailDto(
+                        id = skill.id,
+                        name = skill.name,
+                        description = skill.description,
+                        skillmd = skill.skillmd,
+                        resources = skill.resources,
+                        version = skill.version,
+                    ),
                 )
             }
         }
@@ -386,6 +448,7 @@ class InternalApiController(
             toolDetails = toolDetails,
             mcpDetails = mcpDetails,
             skillDetails = skillDetails,
+            cliDetails = cliDetails,
         )
     }
 

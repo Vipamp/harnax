@@ -70,7 +70,7 @@ class JwtUtil {
      */
     fun getUserIdFromToken(token: String): Long {
         val claims = getClaimsFromToken(token)
-        return claims["userId", Integer::class.java].toLong()
+        return claims["userId", Number::class.java].toLong()
     }
 
     /**
@@ -142,7 +142,7 @@ class JwtUtil {
      */
     fun getIsAdminFromToken(token: String): Int? = try {
         val claims = getClaimsFromToken(token)
-        claims["isAdmin", Int::class.java]
+        claims["isAdmin", Number::class.java]?.toInt()
     } catch (e: Exception) {
         null
     }

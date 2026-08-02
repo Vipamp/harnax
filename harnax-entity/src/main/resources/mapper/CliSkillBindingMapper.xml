@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.CliSkillBindingMapper">
+
+    <resultMap id="CliSkillBindingResultMap" type="com.agnetix.harnax.entity.CliSkillBinding">
+        <id column="id" property="id"/>
+        <result column="cli_id" property="cliId"/>
+        <result column="skill_id" property="skillId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectByCliId" resultMap="CliSkillBindingResultMap">
+        SELECT * FROM cli_skill_binding WHERE cli_id = #{cliId} ORDER BY id
+    </select>
+
+    <select id="selectByCliIds" resultMap="CliSkillBindingResultMap">
+        SELECT * FROM cli_skill_binding WHERE cli_id IN
+        <foreach collection="cliIds" item="cliId" open="(" separator="," close=")">
+            #{cliId}
+        </foreach>
+        ORDER BY id
+    </select>
+
+    <insert id="batchInsert">
+        INSERT INTO cli_skill_binding (cli_id, skill_id, create_time, update_time)
+        VALUES
+        <foreach collection="list" item="b" separator=",">
+            (#{b.cliId}, #{b.skillId}, #{b.createTime}, #{b.updateTime})
+        </foreach>
+    </insert>
+
+    <delete id="deleteByCliId">
+        DELETE FROM cli_skill_binding WHERE cli_id = #{cliId}
+    </delete>
+
+    <delete id="deleteBySkillIds">
+        DELETE FROM cli_skill_binding WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+    </delete>
+
+</mapper>

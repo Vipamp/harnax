@@ -52,6 +52,8 @@ data class SkillSourceResponse(
             val configMap: Map<String, Any>? = try {
                 if (entity.sourceConfig.isNotBlank()) {
                     objectMapper.readValue(entity.sourceConfig, object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {})
+                        // zipPath is an internal server path, not for API consumers
+                        .filterKeys { it != "zipPath" }
                 } else {
                     null
                 }

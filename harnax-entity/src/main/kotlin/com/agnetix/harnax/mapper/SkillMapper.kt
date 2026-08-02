@@ -14,6 +14,8 @@ interface SkillMapper {
 
     fun selectById(@Param("id") id: Long): Skill?
 
+    fun selectByIds(@Param("ids") ids: List<Long>): List<Skill>
+
     fun insert(skill: Skill): Int
 
     fun updateById(skill: Skill): Int

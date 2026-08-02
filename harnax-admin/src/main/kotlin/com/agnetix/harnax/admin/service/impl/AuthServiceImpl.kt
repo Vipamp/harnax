@@ -102,8 +102,19 @@ class AuthServiceImpl(
             .build()
 
         // 7. Get the user's permanent router API key (no longer creates new key per login)
-        val rawKey = apiKeyService.getPermanentRawKey(user.id)
-            ?: throw BizException("Permanent API Key not found for user: ${user.username}")
+        // Self-heal: if the permanent key is missing (e.g. initializer failed or data was cleaned),
+        // create one on the fly so the user can still log in.
+        val rawKey = apiKeyService.getPermanentRawKey(user.id) ?: run {
+            log.warn("Permanent API Key missing for user: {}, creating one on the fly", user.username)
+            try {
+                apiKeyService.createPermanentKeyForUser(user.id, user.username, user.tenantId).rawKey
+            } catch (e: Exception) {
+                // Possibly created concurrently by another login/startup initializer: retry lookup once
+                log.error("Failed to create permanent API Key for user: {}, error: {}", user.username, e.message)
+                apiKeyService.getPermanentRawKey(user.id)
+                    ?: throw BizException("Permanent API Key not found for user: ${user.username}")
+            }
+        }
 
         val response = LoginResponse.builder()
             .accessToken(accessToken)

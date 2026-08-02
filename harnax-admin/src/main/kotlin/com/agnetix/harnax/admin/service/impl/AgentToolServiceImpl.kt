@@ -35,7 +35,9 @@ class AgentToolServiceImpl(
 
     override fun page(keyword: String?, status: Int?, type: String?, pageNum: Int, pageSize: Int): Page<AgentTool> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<AgentTool>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<AgentTool>(safePageNum, safePageSize)
         return Page.fromPageInfo(agentToolMapper.selectAgentToolList(keyword, status, type, currentUsername))
     }
 

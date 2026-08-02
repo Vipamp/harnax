@@ -84,4 +84,9 @@ interface SkillService {
     fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int
 
     fun convertToResponse(skill: Skill): SkillResponse
+
+    /**
+     * Batch convert skills to responses with repository lookups deduplicated
+     */
+    fun convertToResponses(skills: List<Skill>): List<SkillResponse>
 }

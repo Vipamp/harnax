@@ -234,22 +234,52 @@ class AuthServiceImplTest {
         }
 
         @Test
-        @DisplayName("login - 永久Key不存在抛出异常")
-        fun `login should throw exception when permanent key not found`() {
+        @DisplayName("login - 永久Key缺失时自愈补建后登录成功")
+        fun `login should self-heal by creating permanent key when missing`() {
             // Given
             `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
             `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
             `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
             `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
             `when`(apiKeyService.getPermanentRawKey(1L)).thenReturn(null)
+            `when`(apiKeyService.createPermanentKeyForUser(anyLong(), anyString(), org.mockito.kotlin.anyOrNull())).thenReturn(
+                com.agnetix.harnax.admin.dto.ApiKeyCreatedResponse(
+                    id = 100L,
+                    name = "permanent_testuser",
+                    rawKey = "hnx_sk_live_recreated_key",
+                    keyPrefix = "hnx_sk_live_...key",
+                ),
+            )
+
+            // When
+            val response = authService.login(loginRequest)
+
+            // Then
+            assertNotNull(response)
+            assertEquals("hnx_sk_live_recreated_key", response.routerApiKey)
+            verify(apiKeyService, times(1)).createPermanentKeyForUser(org.mockito.kotlin.eq(1L), org.mockito.kotlin.eq("testuser"), org.mockito.kotlin.anyOrNull())
+        }
+
+        @Test
+        @DisplayName("login - 永久Key缺失且补建失败抛出异常")
+        fun `login should throw exception when permanent key not found and creation fails`() {
+            // Given
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+            `when`(apiKeyService.getPermanentRawKey(1L)).thenReturn(null)
+            `when`(apiKeyService.createPermanentKeyForUser(anyLong(), anyString(), org.mockito.kotlin.anyOrNull()))
+                .thenThrow(RuntimeException("insert failed"))
 
             // When & Then
             assertThrows<BizException> {
                 authService.login(loginRequest)
             }
 
-            // 验证查询了永久 key
-            verify(apiKeyService, times(1)).getPermanentRawKey(1L)
+            // 验证查询了永久 key（初查一次 + 补建失败后重查一次）
+            verify(apiKeyService, times(2)).getPermanentRawKey(1L)
+            verify(apiKeyService, times(1)).createPermanentKeyForUser(org.mockito.kotlin.eq(1L), org.mockito.kotlin.eq("testuser"), org.mockito.kotlin.anyOrNull())
         }
 
         @Test
@@ -271,6 +301,244 @@ class AuthServiceImplTest {
 
             // 验证尝试更新登录时间（即使失败也不影响登录）
             verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any())
+        }
+
+        @Test
+        @DisplayName("login - 验证码为空抛出异常且不调用验证码服务")
+        fun `login should throw exception when captcha is blank`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+
+            val ex = assertThrows<BizException> {
+                authService.login(loginRequest.copy(captcha = "  "))
+            }
+            assertEquals("error.captcha.required", ex.message)
+            verify(captchaService, never()).validateCaptcha(anyString(), anyString())
+        }
+
+        @Test
+        @DisplayName("login - 验证码key为空抛出异常")
+        fun `login should throw exception when captcha key is blank`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+
+            val ex = assertThrows<BizException> {
+                authService.login(loginRequest.copy(captchaKey = null))
+            }
+            assertEquals("error.captcha.key_required", ex.message)
+            verify(captchaService, never()).validateCaptcha(anyString(), anyString())
+        }
+
+        @Test
+        @DisplayName("login - 普通用户无租户抛出异常")
+        fun `login should throw exception when non-admin user has no tenant`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
+            `when`(userTenantService.getUserTenants(1L)).thenReturn(emptyList())
+
+            val ex = assertThrows<BizException> {
+                authService.login(loginRequest)
+            }
+            assertEquals("error.user.no_tenant", ex.message)
+            verify(jwtUtil, never()).generateToken(anyLong(), anyString(), any(), anyInt())
+        }
+
+        @Test
+        @DisplayName("login - admin无租户可登录且token的tenantId为null")
+        fun `login should succeed for admin without tenant using null tenantId`() {
+            val adminUser = testUser.apply { isAdmin = 1 }
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(adminUser)
+            `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
+            `when`(userTenantService.getUserTenants(1L)).thenReturn(emptyList())
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), org.mockito.kotlin.anyOrNull(), anyInt())).thenReturn("admin-token")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+
+            val response = authService.login(loginRequest)
+
+            assertEquals("admin-token", response.accessToken)
+            assertNull(response.currentTenantId)
+            verify(jwtUtil).generateToken(eq(1L), eq("testuser"), org.mockito.kotlin.isNull(), eq(1))
+        }
+
+        @Test
+        @DisplayName("login - 补建冲突后重查成功(并发自愈)")
+        fun `login should recover via retry lookup when concurrent creation conflicts`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(captchaService.validateCaptcha("captcha-key-123", "ABCD")).thenReturn(true)
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mock-jwt-token")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+            // 初查 null → 补建抛唯一键冲突 → 重查命中(另一并发请求已创建)
+            `when`(apiKeyService.getPermanentRawKey(1L))
+                .thenReturn(null)
+                .thenReturn("hnx_sk_live_created_by_concurrent_login")
+            `when`(apiKeyService.createPermanentKeyForUser(anyLong(), anyString(), org.mockito.kotlin.anyOrNull()))
+                .thenThrow(RuntimeException("Duplicate entry uk_user_permanent"))
+
+            val response = authService.login(loginRequest)
+
+            assertEquals("hnx_sk_live_created_by_concurrent_login", response.routerApiKey)
+            verify(apiKeyService, times(2)).getPermanentRawKey(1L)
+        }
+    }
+
+    @Nested
+    @DisplayName("移动端登录测试")
+    inner class MobileLoginTests {
+
+        @Test
+        @DisplayName("mobileLogin - 免验证码登录成功")
+        fun `mobileLogin should succeed without captcha`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(jwtUtil.generateToken(anyLong(), anyString(), any(), anyInt())).thenReturn("mobile-token")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+
+            // 不带验证码字段
+            val response = authService.mobileLogin(loginRequest.copy(captcha = null, captchaKey = null))
+
+            assertEquals("mobile-token", response.accessToken)
+            assertEquals("Bearer", response.tokenType)
+            assertEquals("testuser", response.userInfo?.username)
+            // 免验证码:不调用验证码服务
+            verify(captchaService, never()).validateCaptcha(anyString(), anyString())
+            verify(sysUserMapper, times(1)).updateLastLoginTime(eq(1L), any())
+        }
+
+        @Test
+        @DisplayName("mobileLogin - 用户不存在抛出异常")
+        fun `mobileLogin should throw exception when user not found`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(null)
+
+            val ex = assertThrows<BizException> {
+                authService.mobileLogin(loginRequest)
+            }
+            assertEquals("error.user.notfound", ex.message)
+        }
+
+        @Test
+        @DisplayName("mobileLogin - 密码错误抛出异常")
+        fun `mobileLogin should throw exception when password is wrong`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+
+            val ex = assertThrows<BizException> {
+                authService.mobileLogin(loginRequest.copy(password = "wrongpassword"))
+            }
+            assertEquals("error.user.invalid_credentials", ex.message)
+        }
+
+        @Test
+        @DisplayName("mobileLogin - 用户被禁用抛出异常")
+        fun `mobileLogin should throw exception when user is disabled`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser.apply { status = 0 })
+
+            val ex = assertThrows<BizException> {
+                authService.mobileLogin(loginRequest)
+            }
+            assertEquals("error.user.disabled", ex.message)
+        }
+
+        @Test
+        @DisplayName("mobileLogin - 普通用户无租户抛出异常")
+        fun `mobileLogin should throw exception when non-admin user has no tenant`() {
+            `when`(sysUserService.getByUsername("testuser")).thenReturn(testUser)
+            `when`(userTenantService.getUserTenants(1L)).thenReturn(emptyList())
+
+            val ex = assertThrows<BizException> {
+                authService.mobileLogin(loginRequest)
+            }
+            assertEquals("error.user.no_tenant", ex.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("退出登录测试")
+    inner class LogoutTests {
+
+        @org.junit.jupiter.api.AfterEach
+        fun tearDown() {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes()
+        }
+
+        private fun mockRequestWithAuth(header: String?) {
+            val request = org.springframework.mock.web.MockHttpServletRequest()
+            if (header != null) request.addHeader("Authorization", header)
+            org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
+                org.springframework.web.context.request.ServletRequestAttributes(request),
+            )
+        }
+
+        @Test
+        @DisplayName("logout - 合法token加入黑名单")
+        fun `logout should add token to blacklist`() {
+            mockRequestWithAuth("Bearer valid-token")
+            `when`(jwtUtil.getUserIdFromToken("valid-token")).thenReturn(1L)
+            `when`(jwtUtil.getUsernameFromToken("valid-token")).thenReturn("testuser")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L)
+
+            authService.logout()
+
+            verify(tokenBlacklistService, times(1))
+                .addToBlacklist(eq("valid-token"), eq("testuser"), eq(1L), any(), eq("logout"))
+        }
+
+        @Test
+        @DisplayName("logout - 无Authorization头时不加黑名单且不抛异常")
+        fun `logout without token should not touch blacklist`() {
+            mockRequestWithAuth(null)
+
+            authService.logout()
+
+            verify(tokenBlacklistService, never()).addToBlacklist(anyString(), anyString(), anyLong(), any(), anyString())
+        }
+
+        @Test
+        @DisplayName("logout - 非Bearer前缀视为无token")
+        fun `logout with non-bearer header should not touch blacklist`() {
+            mockRequestWithAuth("Basic dXNlcjpwYXNz")
+
+            authService.logout()
+
+            verify(tokenBlacklistService, never()).addToBlacklist(anyString(), anyString(), anyLong(), any(), anyString())
+        }
+
+        @Test
+        @DisplayName("logout - token解析失败被吞掉不抛异常")
+        fun `logout should swallow token parse errors`() {
+            mockRequestWithAuth("Bearer expired-token")
+            `when`(jwtUtil.getUserIdFromToken("expired-token")).thenThrow(RuntimeException("expired"))
+
+            org.junit.jupiter.api.assertDoesNotThrow {
+                authService.logout()
+            }
+            verify(tokenBlacklistService, never()).addToBlacklist(anyString(), anyString(), anyLong(), any(), anyString())
+        }
+
+        @Test
+        @DisplayName("logout - 黑名单过期时间约为当前时间加token有效期")
+        fun `logout should pass expire time near now plus expiration`() {
+            mockRequestWithAuth("Bearer valid-token")
+            `when`(jwtUtil.getUserIdFromToken("valid-token")).thenReturn(1L)
+            `when`(jwtUtil.getUsernameFromToken("valid-token")).thenReturn("testuser")
+            `when`(jwtUtil.getExpirationTime()).thenReturn(3600000L) // 1小时
+
+            val before = java.time.LocalDateTime.now()
+            authService.logout()
+            val after = java.time.LocalDateTime.now()
+
+            val captor = org.mockito.kotlin.argumentCaptor<java.time.LocalDateTime>()
+            verify(tokenBlacklistService).addToBlacklist(eq("valid-token"), eq("testuser"), eq(1L), captor.capture(), eq("logout"))
+            val expireTime = captor.firstValue
+            // expireTime ∈ [before+1h, after+1h]
+            assertFalse(expireTime.isBefore(before.plusHours(1)), "expireTime too early: $expireTime")
+            assertFalse(expireTime.isAfter(after.plusHours(1)), "expireTime too late: $expireTime")
+        }
+
+        @Test
+        @DisplayName("logout - 无请求上下文时不抛异常")
+        fun `logout outside request context should not throw`() {
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes()
+
+            org.junit.jupiter.api.assertDoesNotThrow {
+                authService.logout()
+            }
+            verify(tokenBlacklistService, never()).addToBlacklist(anyString(), anyString(), anyLong(), any(), anyString())
         }
     }
 }

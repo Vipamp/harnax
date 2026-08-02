@@ -23,6 +23,7 @@ data class AgentSpec(
     val mcpServices: List<McpSpec>,
 
     val skills: List<SkillSpec>,
+    val cliSpecs: List<CliSpec> = emptyList(),
     val planSpec: PlanSpec,
 ) {
 
@@ -46,6 +47,7 @@ class AgentSpecBuilder {
     private var mcpServices: MutableList<McpSpec> = mutableListOf()
 
     private var skills: MutableList<SkillSpec> = mutableListOf()
+    private var cliSpecs: MutableList<CliSpec> = mutableListOf()
     private var planSpec: PlanSpec = PlanSpec(false)
 
     fun id(id: Long) = apply { this.id = id }
@@ -61,6 +63,7 @@ class AgentSpecBuilder {
     fun addMcpService(mcpService: McpSpec) = apply { this.mcpServices.add(mcpService) }
 
     fun addSkill(skill: SkillSpec) = apply { this.skills.add(skill) }
+    fun addCliSpec(cliSpec: CliSpec) = apply { this.cliSpecs.add(cliSpec) }
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
 
     fun build(): AgentSpec {
@@ -79,6 +82,7 @@ class AgentSpecBuilder {
             toolSpecs = toolSpecs,
             mcpServices = mcpServices,
             skills = skills,
+            cliSpecs = cliSpecs,
             planSpec = planSpec,
         )
     }
@@ -94,6 +98,16 @@ data class SkillSpec(
     val skillId: Long,
     val skillName: String,
     val skipIfMissing: Boolean = true,
+)
+
+data class CliSpec(
+    val cliId: Long,
+    val name: String,
+    val version: String = "",
+    val installScript: String,
+    val checkCommand: String = "",
+    val envBindings: Map<String, String> = emptyMap(),
+    val skillIds: List<Long> = emptyList(),
 )
 
 data class PlanSpec(

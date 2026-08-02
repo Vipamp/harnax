@@ -92,10 +92,10 @@ export default [
         hideInMenu: true,
       },
       {
-        name: 'cliPlugin',
+        name: 'cli',
         icon: 'code',
-        path: '/context/cli-plugin',
-        component: './cli-plugin',
+        path: '/context/cli',
+        component: './cli',
       },
       {
         name: 'channel',

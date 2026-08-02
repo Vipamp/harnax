@@ -33,6 +33,9 @@ data class AgentUpdateRequest(
     @Schema(description = "Tool configuration list")
     val toolList: List<ToolConfig>? = null,
 
+    @Schema(description = "CLI configuration list")
+    val cliList: List<AgentCreateRequest.CliConfig>? = null,
+
     @Schema(description = "Owner")
     val owner: String? = null,
 

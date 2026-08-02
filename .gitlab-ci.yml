@@ -29,7 +29,7 @@ build-backend-personal:
     - cd harnax-admin
     - mvn clean package -Ppersonal -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/personal
-    - cp target/harnax-admin-*.jar ../dist/personal/
+    - cp target/harnax-admin-*-exec.jar ../dist/personal/
   artifacts:
     paths:
       - dist/personal/
@@ -45,7 +45,7 @@ build-backend-enterprise:
     - cd harnax-admin
     - mvn clean package -Penterprise -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/enterprise
-    - cp target/harnax-admin-*.jar ../dist/enterprise/
+    - cp target/harnax-admin-*-exec.jar ../dist/enterprise/
   artifacts:
     paths:
       - dist/enterprise/
@@ -61,7 +61,7 @@ build-backend-public:
     - cd harnax-admin
     - mvn clean package -Ppublic -DskipTests $MAVEN_OPTS
     - mkdir -p ../dist/public
-    - cp target/harnax-admin-*.jar ../dist/public/
+    - cp target/harnax-admin-*-exec.jar ../dist/public/
   artifacts:
     paths:
       - dist/public/

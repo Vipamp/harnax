@@ -8,7 +8,6 @@ import com.agnetix.harnax.admin.skill.loader.GitSkillLoader
 import com.agnetix.harnax.admin.skill.loader.NpmSkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.skill.loader.ZipSkillLoader
-import com.agnetix.harnax.admin.skill.store.SkillContentStore
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
@@ -56,9 +55,6 @@ class SkillSourceServiceImplTest {
     @Mock
     private lateinit var skillMapper: SkillMapper
 
-    @Mock
-    private lateinit var skillContentStore: SkillContentStore
-
     private lateinit var skillSourceService: SkillSourceServiceImpl
 
     private lateinit var testRepository: SkillRepository
@@ -85,7 +81,8 @@ class SkillSourceServiceImplTest {
             skillRepositoryMapper = skillRepositoryMapper,
             skillMapper = skillMapper,
             skillLoaderRegistry = registry,
-            skillContentStore = skillContentStore,
+            agentSkillBindingMapper = org.mockito.kotlin.mock(),
+            cliSkillBindingMapper = org.mockito.kotlin.mock(),
             localTmpDir = "/tmp/harnax-test",
         )
 
@@ -98,7 +95,6 @@ class SkillSourceServiceImplTest {
             sourceType = "GIT"
             sourceConfig = """{"url":"https://github.com/test/skills","branch":"main"}"""
             version = "1.0.0"
-            storagePath = "1"
             description = "Test repository"
             status = 1
             isPublic = 1
@@ -116,7 +112,6 @@ class SkillSourceServiceImplTest {
             description = "A test skill"
             skillmd = "# Test Skill"
             resources = "{}"
-            storagePath = "1/test-skill"
             version = "1.0.0"
             status = 1
             isPublic = 1
@@ -384,7 +379,7 @@ class SkillSourceServiceImplTest {
         }
 
         @Test
-        fun `deleteSkillSource should delete skills and content`() {
+        fun `deleteSkillSource should delete skills and repository`() {
             val skills = listOf(testSkill)
             `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
             `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(skills)
@@ -394,42 +389,8 @@ class SkillSourceServiceImplTest {
             val result = skillSourceService.deleteSkillSource(1L)
 
             assertTrue(result)
-            verify(skillContentStore).delete("1/test-skill")
             verify(skillMapper).deleteById(testSkill.id)
             verify(skillRepositoryMapper).deleteById(1L)
-        }
-
-        @Test
-        fun `deleteSkillSource should handle skills without storagePath`() {
-            val skillNoStorage = Skill().apply {
-                id = 2L
-                name = "old-skill"
-                repositoryId = 1L
-                storagePath = ""
-            }
-            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
-            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(skillNoStorage))
-            `when`(skillMapper.deleteById(any<Long>())).thenReturn(1)
-            `when`(skillRepositoryMapper.deleteById(1L)).thenReturn(1)
-
-            val result = skillSourceService.deleteSkillSource(1L)
-
-            assertTrue(result)
-            verify(skillContentStore, never()).delete(any())
-        }
-
-        @Test
-        fun `deleteSkillSource should continue when content delete fails`() {
-            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
-            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(testSkill))
-            `when`(skillContentStore.delete(any())).thenThrow(RuntimeException("IO error"))
-            `when`(skillMapper.deleteById(any<Long>())).thenReturn(1)
-            `when`(skillRepositoryMapper.deleteById(1L)).thenReturn(1)
-
-            val result = skillSourceService.deleteSkillSource(1L)
-
-            assertTrue(result)
-            verify(skillMapper).deleteById(testSkill.id)
         }
     }
 
@@ -477,7 +438,8 @@ class SkillSourceServiceImplTest {
             `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
             `when`(skillRepositoryMapper.updateById(any())).thenReturn(1)
 
-            val result = skillSourceService.uploadAndInstall("/tmp/test.zip", "test.zip", "new-zip")
+            val zip = java.nio.file.Files.createTempFile("test-upload-", ".zip")
+            val result = skillSourceService.uploadAndInstall(zip.toString(), "test.zip", "new-zip")
 
             assertEquals("ZIP", result.sourceType)
             assertEquals("new-zip", result.name)
@@ -493,7 +455,8 @@ class SkillSourceServiceImplTest {
             `when`(skillRepositoryMapper.updateById(any())).thenReturn(1)
 
             val captor = argumentCaptor<SkillRepository>()
-            val result = skillSourceService.uploadAndInstall("/tmp/test.zip", "test.zip", "tenant-zip")
+            val zip = java.nio.file.Files.createTempFile("test-upload-", ".zip")
+            val result = skillSourceService.uploadAndInstall(zip.toString(), "test.zip", "tenant-zip")
 
             verify(skillRepositoryMapper).insert(captor.capture())
             assertEquals(7L, captor.firstValue.tenantId)
@@ -555,7 +518,8 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = SkillLoaderRegistry(emptyList()),
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = null,
             )
 
@@ -588,7 +552,8 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
 
@@ -619,7 +584,8 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
 
@@ -660,18 +626,13 @@ class SkillSourceServiceImplTest {
             }
             val registry = SkillLoaderRegistry(listOf(loader))
 
-            // First save succeeds, second fails
-            `when`(skillContentStore.save(any(), eq("skill-1"), any()))
-                .thenReturn("1/skill-1")
-            `when`(skillContentStore.save(any(), eq("skill-2"), any()))
-                .thenThrow(RuntimeException("Disk full"))
-
             val service = SkillSourceServiceImpl(
                 jwtUtil = jwtUtil,
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
 
@@ -685,14 +646,17 @@ class SkillSourceServiceImplTest {
             `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
             `when`(skillRepositoryMapper.updateById(any())).thenReturn(1)
             `when`(skillMapper.selectByNameAndRepo(any(), any())).thenReturn(null)
-            `when`(skillMapper.insert(any())).thenReturn(1)
+            // First insert succeeds, second fails
+            `when`(skillMapper.insert(any()))
+                .thenReturn(1)
+                .thenThrow(RuntimeException("Insert failed"))
 
             val result = service.createSkillSource(request)
 
             // Should complete without throwing
             assertNotNull(result)
-            // First skill should be inserted
-            verify(skillMapper, org.mockito.Mockito.atLeastOnce()).insert(any())
+            // Both skills attempted despite the second failing
+            verify(skillMapper, org.mockito.Mockito.times(2)).insert(any())
         }
 
         @Test
@@ -725,7 +689,6 @@ class SkillSourceServiceImplTest {
 
             assertTrue(result)
             verify(skillMapper, never()).deleteById(any<Long>())
-            verify(skillContentStore, never()).delete(any())
         }
 
         @Test
@@ -747,7 +710,8 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
 
@@ -774,7 +738,8 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                skillContentStore = skillContentStore,
+                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
 
@@ -782,7 +747,8 @@ class SkillSourceServiceImplTest {
             `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
             `when`(skillRepositoryMapper.updateById(any())).thenReturn(1)
 
-            val result = service.uploadAndInstall("/tmp/empty.zip", "empty.zip", "empty-zip")
+            val zip = java.nio.file.Files.createTempFile("test-empty-", ".zip")
+            val result = service.uploadAndInstall(zip.toString(), "empty.zip", "empty-zip")
 
             assertNotNull(result)
             assertEquals("empty-zip", result.name)

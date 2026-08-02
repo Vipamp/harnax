@@ -231,7 +231,6 @@ class AgentSpecResolverTest {
                     name = "code-review",
                     description = "Review code",
                     skillmd = "# Code Review",
-                    storagePath = "1/code-review",
                     resources = "",
                 ),
                 SkillDetailDto(
@@ -239,7 +238,6 @@ class AgentSpecResolverTest {
                     name = "git-commit",
                     description = "Commit changes",
                     skillmd = "# Git Commit",
-                    storagePath = "2/git-commit",
                     resources = "",
                 ),
             )

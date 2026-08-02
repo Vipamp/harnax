@@ -50,7 +50,9 @@ class SessionServiceImpl(
             status,
         )
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        PageHelper.startPage<Session>(pageNum, pageSize)
+        val safePageNum = pageNum.coerceAtLeast(1)
+        val safePageSize = pageSize.coerceIn(1, 1000)
+        PageHelper.startPage<Session>(safePageNum, safePageSize)
         return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername))
     }
 

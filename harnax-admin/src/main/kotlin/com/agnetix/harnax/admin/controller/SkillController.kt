@@ -4,7 +4,6 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
-import com.agnetix.harnax.admin.dto.mapRecords
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.common.dto.ResultVo
@@ -45,7 +44,13 @@ class SkillController(
         @Parameter(description = "Status filter") @RequestParam(name = "status", required = false) status: Int?,
     ): ResultVo<Page<SkillResponse>> = try {
         val page = skillService.page(name, repositoryId, status, pageNum ?: 1, pageSize ?: 10)
-        val responsePage = page.mapRecords { skillService.convertToResponse(it) }
+        val responses = skillService.convertToResponses(page.records)
+        val responsePage = Page(
+            pageNum = page.pageNum,
+            pageSize = page.pageSize,
+            total = page.total,
+            records = responses,
+        )
         ResultVo.success(responsePage)
     } catch (e: Exception) {
         log.error("Failed to get skill list", e)
@@ -58,9 +63,8 @@ class SkillController(
         @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SkillResponse?> = try {
         val skill = skillService.getSkill(id)
-        // Get repository information
-        val repository = skillRepositoryService.getSkillRepository(skill!!.repositoryId)
-        ResultVo.success(SkillResponse.fromEntity(skill, repository))
+        // Get repository information; missing skill returns data=null like other modules
+        ResultVo.success(skill?.let { SkillResponse.fromEntity(it, skillRepositoryService.getSkillRepository(it.repositoryId)) })
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
         ResultVo.error(e.message ?: "Failed to get skill details")
