@@ -77,6 +77,14 @@ session:
 local:
   tmp-dir: ${LOCAL_TMP_DIR:/home/harnax/skills}
 
+# MinIO configuration (for output file download proxy)
+minio:
+  enabled: ${MINIO_ENABLED:false}
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}
+
 # Captcha test master code for UI automation (harnax-ui-test).
 # Empty (default) = disabled. Only set CAPTCHA_TEST_MASTER_CODE in test environments, NEVER in production.
 captcha:

@@ -86,7 +86,8 @@ class PaginationBoundaryIT : BaseAdminIT() {
     @Test
     @Order(2)
     fun `missing pageNum and pageSize fall back to defaults 1 and 10`() {
-        val data = assertPageShape(assertOk(userPage("keyword=$prefix" /* no pageNum/pageSize */)))
+        // no pageNum/pageSize
+        val data = assertPageShape(assertOk(userPage("keyword=$prefix")))
         assertEquals(1, data["pageNum"].asInt(), "default pageNum should be 1")
         assertEquals(10, data["pageSize"].asInt(), "default pageSize should be 10")
         assertEquals(3, data["total"].asInt())

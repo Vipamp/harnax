@@ -47,6 +47,7 @@ harness:
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     snapshot-bucket: ${MINIO_SNAPSHOT_BUCKET:harnax-snapshots}
     store-bucket: ${MINIO_STORE_BUCKET:harnax-store}
+    output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}
     snapshot-prefix: ${MINIO_SNAPSHOT_PREFIX:snapshots/}
     store-prefix: ${MINIO_STORE_PREFIX:store/}
   sandbox:
@@ -60,6 +61,11 @@ harness:
     plugin-image: ${SANDBOX_PLUGIN_IMAGE:harnax-sandbox:latest}
     plugin-admin-url: ${SANDBOX_PLUGIN_ADMIN_URL:}
     plugin-internal-secret: ${SANDBOX_PLUGIN_INTERNAL_SECRET:}
+  output-detection:
+    enabled: ${OUTPUT_DETECTION_ENABLED:true}
+    max-file-size: ${OUTPUT_MAX_FILE_SIZE:52428800}
+    max-files-per-response: ${OUTPUT_MAX_FILES:5}
+    admin-base-url: ${OUTPUT_ADMIN_BASE_URL:}
 
 # Logging Configuration
 logging:

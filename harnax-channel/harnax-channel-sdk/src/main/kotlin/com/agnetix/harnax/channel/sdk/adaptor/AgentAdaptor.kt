@@ -1,6 +1,7 @@
 package com.agnetix.harnax.channel.sdk.adaptor
 
 import com.agnetix.harnax.agent.protocol.AgentRequest
+import com.agnetix.harnax.agent.protocol.FileAttachment
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.message.AgentMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
@@ -249,4 +250,10 @@ data class AgentResponse(
      * Can be used to pass additional processing result information (e.g., token usage, model name, etc.)
      */
     val metadata: Map<String, Any> = emptyMap(),
+
+    /**
+     * File attachments produced during agent execution.
+     * Channel adaptors should download and send these files via platform API.
+     */
+    val attachments: List<FileAttachment> = emptyList(),
 )

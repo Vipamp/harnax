@@ -92,7 +92,7 @@ class RouterClient(
             return ChatResponse(sessionId = sessionId, content = "[Router Error] $errorMsg")
         }
         val data = resultVo.data
-        log.info("[Channel←Router] Chat response for session={}, contentLength={}", sessionId, data?.content?.length ?: 0)
+        log.info("[Channel←Router] Chat response for session={}, contentLength={}, attachments={}", sessionId, data?.content?.length ?: 0, data?.attachments?.size ?: 0)
         return data ?: ChatResponse(sessionId = sessionId, content = "")
     }
 
@@ -285,5 +285,32 @@ class RouterClient(
                 )
             }
             .asFlow()
+    }
+
+    // ==================== Workspace ====================
+
+    /**
+     * Download a file from the sandbox workspace via router proxy.
+     *
+     * @param sessionId Session ID (used to locate the sandbox)
+     * @param filePath  Absolute path inside the container (e.g. /workspace/output/report.pptx)
+     * @return File bytes, or null if download failed
+     */
+    fun downloadWorkspaceFile(sessionId: String, filePath: String): ByteArray? {
+        val uri = org.springframework.web.util.UriComponentsBuilder
+            .fromUriString("$routerUrl/api/router/agent/workspace/$sessionId/download")
+            .queryParam("path", filePath)
+            .encode()
+            .build()
+            .toUri()
+        return try {
+            restClient.get()
+                .uri(uri)
+                .retrieve()
+                .body(ByteArray::class.java)
+        } catch (e: Exception) {
+            log.error("[Channel←Router] Workspace download failed for session={}, path={}: {}", sessionId, filePath, e.message)
+            null
+        }
     }
 }

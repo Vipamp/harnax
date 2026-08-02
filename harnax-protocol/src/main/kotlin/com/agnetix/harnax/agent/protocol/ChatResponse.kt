@@ -6,16 +6,18 @@ package com.agnetix.harnax.agent.protocol
  * Used when the caller prefers a single aggregated response
  * instead of Flux<ChatEvent> streaming.
  *
- * @property sessionId Session identifier
- * @property content   Aggregated text content from the agent
- * @property thinking  Aggregated thinking content (if available)
- * @property tokenUsage Token usage statistics (if available)
+ * @property sessionId   Session identifier
+ * @property content     Aggregated text content from the agent (includes download links)
+ * @property thinking    Aggregated thinking content (if available)
+ * @property tokenUsage  Token usage statistics (if available)
+ * @property attachments File attachments produced during execution (for channel delivery)
  */
 data class ChatResponse(
     val sessionId: String,
     val content: String,
     val thinking: String? = null,
     val tokenUsage: TokenUsage? = null,
+    val attachments: List<FileAttachment> = emptyList(),
 ) {
 
     companion object {

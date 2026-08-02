@@ -33,8 +33,7 @@ class InternalApiAuthFilterTest {
 
     private val objectMapper = ObjectMapper()
 
-    private fun createFilter(secret: String = CORRECT_SECRET): InternalApiAuthFilter =
-        InternalApiAuthFilter(objectMapper, secret)
+    private fun createFilter(secret: String = CORRECT_SECRET): InternalApiAuthFilter = InternalApiAuthFilter(objectMapper, secret)
 
     private fun buildRequest(uri: String, authHeader: String? = null): MockHttpServletRequest {
         val request = MockHttpServletRequest("GET", uri)

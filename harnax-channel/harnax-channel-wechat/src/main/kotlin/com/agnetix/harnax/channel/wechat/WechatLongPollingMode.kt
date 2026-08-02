@@ -168,6 +168,26 @@ class WechatLongPollingMode(
     }
 
     /**
+     * Send file message
+     *
+     * Sends file via ILinkClient's sendFile API
+     */
+    suspend fun sendFile(channel: ChannelSpec, sessionId: String, fileBytes: ByteArray, fileName: String, caption: String) {
+        try {
+            val channelId = channel.id
+            botService.sendFile(channelId, sessionId, fileBytes, fileName, caption)
+            logger.debug("File $fileName sent to $sessionId via WeChat")
+        } catch (e: Exception) {
+            throw ChannelSendException(
+                channelType = ChannelType.WECHAT,
+                platformErrorCode = null,
+                message = "Failed to send WeChat file: ${e.message}",
+                cause = e,
+            )
+        }
+    }
+
+    /**
      * WeChat long polling mode does not support streaming output
      */
     override fun supportsStreamingOutput(): Boolean = false

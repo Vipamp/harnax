@@ -47,6 +47,17 @@ open class ChannelChatService(
      * The caller (e.g. ChannelManager) can use this to persist the pending confirm state.
      */
     protected val onPendingConfirm: ((sessionId: String, tools: List<PendingToolInfo>) -> Unit)? = null,
+    /**
+     * Optional resolver for downloading file content from internal storage (e.g. MinIO).
+     * If null, falls back to HTTP download from attachment URL.
+     */
+    protected val fileContentResolver: FileContentResolver? = null,
+    /**
+     * Optional downloader for fetching files directly from sandbox workspace.
+     * Used for channel sessions where files are not uploaded to MinIO.
+     * Parameters: (sessionId, filePath) -> file bytes or null.
+     */
+    protected val workspaceFileDownloader: ((sessionId: String, filePath: String) -> ByteArray?)? = null,
 ) {
 
     private val logger = LoggerFactory.getLogger(ChannelChatService::class.java)
@@ -214,11 +225,90 @@ open class ChannelChatService(
                     logger.error("[Batch] Failed to send fallback message for session=${message.sessionId}: ${e.message}", e)
                 }
             }
+
             // Save AI reply to session
             saveAssistantMessage(message, responseText, channel)
             // Call post-processing hook
             agentAdaptor.onAfterProcess(context, response)
         }
+
+        // Deliver file attachments regardless of shouldReply
+        // (agent may generate files without text reply)
+        if (response.attachments.isNotEmpty()) {
+            deliverFileAttachments(channel, context.channelSpec.sessionId, message.sessionId, response.attachments, channelAdaptor)
+        }
+    }
+
+    /**
+     * Deliver file attachments to the channel user.
+     * Downloads file bytes from workspace/MinIO and sends via channelAdaptor.sendFile().
+     *
+     * @param agentSessionId Channel session ID (chn-xxx) for workspace download
+     * @param userSessionId  Platform user ID for sending the file message
+     */
+    protected open suspend fun deliverFileAttachments(
+        channel: ChannelSpec,
+        agentSessionId: String,
+        userSessionId: String,
+        attachments: List<com.agnetix.harnax.agent.protocol.FileAttachment>,
+        channelAdaptor: ChannelAdaptor,
+    ) {
+        for (attachment in attachments) {
+            try {
+                val fileBytes = resolveFileBytes(agentSessionId, attachment)
+                    ?: throw IllegalStateException("Unable to resolve file content for '${attachment.fileName}'")
+                channelAdaptor.sendFile(
+                    channel = channel,
+                    sessionId = userSessionId,
+                    fileBytes = fileBytes,
+                    fileName = attachment.fileName,
+                    caption = "AI 生成的文件",
+                )
+                logger.info("[Batch] File '{}' ({} bytes) delivered to user={}", attachment.fileName, fileBytes.size, userSessionId)
+            } catch (e: Exception) {
+                logger.error("[Batch] Failed to deliver file '{}' for user={}: {}", attachment.fileName, userSessionId, e.message)
+                // Degrade: send text notification
+                try {
+                    channelAdaptor.sendMessage(channel, userSessionId, "\uD83D\uDCCE 文件 ${attachment.fileName} 发送失败，请通过 WebUI 下载")
+                } catch (e2: Exception) {
+                    logger.error("[Batch] Failed to send file failure notification: {}", e2.message)
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve file bytes using the best available strategy:
+     * 1. Workspace download (channel sessions: filePath present, objectKey empty)
+     * 2. MinIO resolver (web/task sessions: objectKey present)
+     * 3. HTTP URL fallback
+     *
+     * Returns null if all strategies fail or return empty content.
+     */
+    private fun resolveFileBytes(sessionId: String, attachment: com.agnetix.harnax.agent.protocol.FileAttachment): ByteArray? {
+        // Strategy 1: Direct workspace download (no MinIO round-trip)
+        if (attachment.filePath.isNotBlank() && attachment.objectKey.isBlank()) {
+            val bytes = workspaceFileDownloader?.invoke(sessionId, attachment.filePath)
+            if (bytes != null && bytes.isNotEmpty()) {
+                logger.info("[Batch] File '{}' resolved via workspace download ({} bytes)", attachment.fileName, bytes.size)
+                return bytes
+            }
+            logger.warn("[Batch] Workspace download failed for '{}', trying fallbacks", attachment.fileName)
+        }
+
+        // Strategy 2: MinIO internal resolver
+        val resolved = fileContentResolver?.resolve(attachment)
+        if (resolved != null && resolved.isNotEmpty()) return resolved
+
+        // Strategy 3: HTTP URL fallback
+        if (attachment.url.isNotBlank()) {
+            val url = java.net.URL(attachment.url)
+            require(url.protocol == "http" || url.protocol == "https") { "Unsafe URL scheme: ${url.protocol}" }
+            val downloaded = url.readBytes()
+            if (downloaded.isNotEmpty()) return downloaded
+        }
+
+        return null
     }
 
     /**

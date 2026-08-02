@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, message, Tag } from 'antd';
+import { Table, message, Tag, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { getSkillPage, toggleSkillStatus } from '@/services/ant-design-pro/skill';
 // @ts-ignore
@@ -43,8 +43,18 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
       title: intl.formatMessage({ id: 'pages.skill.list.description', defaultMessage: 'Description' }),
       dataIndex: 'description',
       key: 'description',
-      ellipsis: true,
-      render: (text: string) => text || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' }),
+      width: 300,
+      ellipsis: {
+        showTitle: false,
+      },
+      render: (text: string) => {
+        const content = text || intl.formatMessage({ id: 'pages.common.noDescription', defaultMessage: 'No description' });
+        return (
+          <Tooltip placement="topLeft" title={content}>
+            <span style={{ display: 'block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{content}</span>
+          </Tooltip>
+        );
+      },
     },
     {
       title: intl.formatMessage({ id: 'pages.skill.list.isPublic', defaultMessage: 'Is Public' }),

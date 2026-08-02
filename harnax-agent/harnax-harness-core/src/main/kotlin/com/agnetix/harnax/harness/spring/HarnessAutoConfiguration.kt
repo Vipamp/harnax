@@ -12,6 +12,9 @@ import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
+import com.agnetix.harnax.harness.output.MinioOutputFileStore
+import com.agnetix.harnax.harness.output.OutputFileDetector
+import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
@@ -35,6 +38,7 @@ class MinioProperties {
     var secretKey: String = "minioadmin"
     var snapshotBucket: String = "harnax-snapshots"
     var storeBucket: String = "harnax-store"
+    var outputBucket: String = "harnax-output"
     var snapshotPrefix: String = "snapshots/"
     var storePrefix: String = "store/"
 }
@@ -60,10 +64,26 @@ class HarnessProperties {
     var enableSessionPersistence: Boolean = true
 }
 
+@ConfigurationProperties(prefix = "harness.output-detection")
+class OutputDetectionProperties {
+    var enabled: Boolean = true
+    var maxFileSize: Long = 50 * 1024 * 1024 // 50MB
+    var maxFilesPerResponse: Int = 5
+    var allowedExtensions: List<String> = listOf(
+        "pptx", "ppt", "xlsx", "xls", "csv",
+        "docx", "doc", "pdf",
+        "png", "jpg", "jpeg", "gif", "svg",
+        "zip", "tar", "gz",
+        "mp3", "mp4", "wav",
+        "html", "json",
+    )
+    var adminBaseUrl: String = "" // e.g. "http://localhost" or empty for relative URLs
+}
+
 // ===== Auto-Configuration =====
 
 @AutoConfiguration
-@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class)
+@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class, OutputDetectionProperties::class)
 class HarnessAutoConfiguration {
 
     /**
@@ -89,12 +109,42 @@ class HarnessAutoConfiguration {
             secretKey = props.secretKey,
             snapshotBucket = props.snapshotBucket,
             storeBucket = props.storeBucket,
+            outputBucket = props.outputBucket,
             snapshotPrefix = props.snapshotPrefix,
             storePrefix = props.storePrefix,
         )
         config.ensureBuckets(client)
         return config
     }
+
+    /**
+     * [OutputFileDetector] bean — detects new files in sandbox workspace.
+     * Only created when output detection is enabled and MinIO is available.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "harness.output-detection", name = ["enabled"], havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "harness.minio", name = ["enabled"], havingValue = "true")
+    fun outputFileDetector(props: OutputDetectionProperties): OutputFileDetector = OutputFileDetector(
+        allowedExtensions = props.allowedExtensions.toSet(),
+        maxFileSize = props.maxFileSize,
+        maxFiles = props.maxFilesPerResponse,
+    )
+
+    /**
+     * [OutputFileStore] bean — MinIO-backed file persistence.
+     * Only created when MinIO is enabled.
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "harness.minio", name = ["enabled"], havingValue = "true")
+    fun outputFileStore(
+        minioClient: MinioClient,
+        minioConfig: MinioConfig,
+        outputProps: OutputDetectionProperties,
+    ): OutputFileStore = MinioOutputFileStore(
+        minioClient = minioClient,
+        bucketName = minioConfig.outputBucket,
+        adminBaseUrl = outputProps.adminBaseUrl,
+    )
 
     /**
      * [HarnessConfig] bean — always available.
@@ -144,6 +194,8 @@ class HarnessAutoConfiguration {
         harnessConfig: HarnessConfig,
         @Value("\${local.tmp-dir:/tmp/harnax-agent}") tmpDir: String,
         minioConfig: MinioConfig?,
+        outputFileDetectorProvider: ObjectProvider<OutputFileDetector>,
+        outputFileStoreProvider: ObjectProvider<OutputFileStore>,
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
@@ -165,6 +217,8 @@ class HarnessAutoConfiguration {
             mcpConfigDecryptor = mcpConfigDecryptor,
             toolConfigAdaptor = toolConfigAdaptor,
             toolRegistry = toolRegistry,
+            outputFileDetector = outputFileDetectorProvider.ifAvailable,
+            outputFileStore = outputFileStoreProvider.ifAvailable,
         )
     }
 }

@@ -12,6 +12,7 @@ import io.minio.MinioClient
  * @param secretKey secret key (S3 compatible)
  * @param snapshotBucket bucket for sandbox workspace snapshot tar archives
  * @param storeBucket bucket for distributed KV store (RemoteFilesystem)
+ * @param outputBucket bucket for agent output files (channel file delivery)
  * @param snapshotPrefix key prefix for snapshot objects
  * @param storePrefix key prefix for store objects
  */
@@ -21,6 +22,7 @@ data class MinioConfig(
     val secretKey: String,
     val snapshotBucket: String = "harnax-snapshots",
     val storeBucket: String = "harnax-store",
+    val outputBucket: String = "harnax-output",
     val snapshotPrefix: String = "snapshots/",
     val storePrefix: String = "store/",
 ) {
@@ -39,6 +41,7 @@ data class MinioConfig(
     fun ensureBuckets(minioClient: MinioClient = createMinioClient()) {
         ensureBucket(minioClient, snapshotBucket)
         ensureBucket(minioClient, storeBucket)
+        ensureBucket(minioClient, outputBucket)
     }
 
     private fun ensureBucket(client: MinioClient, bucket: String) {

@@ -233,12 +233,13 @@ class FeishuAdaptor(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
+        chatService: ChannelChatService?,
     ) {
-        val chatService = ChannelChatService(sessionManager)
+        val effectiveChatService = chatService ?: ChannelChatService(sessionManager)
         val messageParser = FeishuMessageParser()
         startChannel(channel) { message ->
             val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
-            chatService.chat(message, channel, agentAdaptor, this, agentRequest)
+            effectiveChatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
     }
 

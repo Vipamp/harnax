@@ -12,6 +12,7 @@ import ResponsiveCardGrid from '@/components/ResponsiveCardGrid';
 import CardPagination from '@/components/CardPagination';
 import SearchFilterBar, { SearchInput, FilterSelect, ActionButton } from '@/components/SearchFilterBar';
 import BackButton from '@/components/BackButton';
+import { useIsMobile } from '@/utils/responsive';
 
 // 标签选项
 const TAG_OPTIONS = [
@@ -24,6 +25,7 @@ const TAG_OPTIONS = [
 
 const ModelManagement: React.FC = () => {
   const intl = useIntl();
+  const isMobile = useIsMobile();
   
   // 视图模式: 'providers' | 'models'
   const [viewMode, setViewMode] = useState<'providers' | 'models'>('providers');
@@ -560,6 +562,7 @@ const ModelManagement: React.FC = () => {
                 value={filters.minPrice}
                 onChange={(e) => setFilters({ ...filters, minPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
                 suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
+                style={{ width: isMobile ? '100%' : 140, flex: isMobile ? 1 : undefined }}
               />
               
               {/* 价格范围 - 最高价 */}
@@ -569,6 +572,7 @@ const ModelManagement: React.FC = () => {
                 value={filters.maxPrice}
                 onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value ? parseFloat(e.target.value) : undefined })}
                 suffix={intl.formatMessage({ id: 'pages.model.priceUnit', defaultMessage: '元' })}
+                style={{ width: isMobile ? '100%' : 140, flex: isMobile ? 1 : undefined }}
               />
             </SearchFilterBar>
 

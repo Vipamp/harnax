@@ -7,7 +7,6 @@ import com.github.wechat.ilink.sdk.core.listener.OnLoginListener
 import com.github.wechat.ilink.sdk.core.login.LoginContext
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
 import org.slf4j.LoggerFactory
-import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -155,16 +154,26 @@ class WechatBotService {
 
         val thread = Thread({
             logger.info("Starting message polling for channel $channelId")
+            var consecutiveFailures = 0
             while (flag.get() && client.isLoggedIn) {
                 try {
                     val messages = client.getUpdates()
+                    consecutiveFailures = 0 // Reset on success
                     if (messages.isNotEmpty()) {
                         messageHandler(messages)
                     }
-                } catch (e: IOException) {
-                    logger.error("Error polling messages for channel $channelId: ${e.message}", e)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                } catch (e: Exception) {
+                    consecutiveFailures++
+                    // Exponential backoff: 3s, 6s, 12s, 24s, ... capped at 60s
+                    val delayMs = (3000L * (1L shl minOf(consecutiveFailures - 1, 4))).coerceAtMost(60_000L)
+                    logger.warn(
+                        "Polling error for channel $channelId (attempt $consecutiveFailures), retrying in ${delayMs}ms: ${e.message}",
+                    )
                     try {
-                        Thread.sleep(3000) // Brief wait after error before retry
+                        Thread.sleep(delayMs)
                     } catch (_: InterruptedException) {
                         Thread.currentThread().interrupt()
                         break

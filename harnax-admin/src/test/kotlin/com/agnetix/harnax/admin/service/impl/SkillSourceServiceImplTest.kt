@@ -518,7 +518,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = SkillLoaderRegistry(emptyList()),
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = null,
             )
@@ -552,7 +552,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
@@ -584,7 +584,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
@@ -631,7 +631,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
@@ -710,7 +710,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )
@@ -738,7 +738,7 @@ class SkillSourceServiceImplTest {
                 skillRepositoryMapper = skillRepositoryMapper,
                 skillMapper = skillMapper,
                 skillLoaderRegistry = registry,
-                    agentSkillBindingMapper = org.mockito.kotlin.mock(),
+                agentSkillBindingMapper = org.mockito.kotlin.mock(),
                 cliSkillBindingMapper = org.mockito.kotlin.mock(),
                 localTmpDir = "/tmp/harnax-test",
             )

@@ -43,3 +43,11 @@ harnax:
     internal:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
       token-ttl-seconds: 300
+
+# MinIO configuration (internal network access for file delivery)
+minio:
+  enabled: ${MINIO_ENABLED:true}
+  endpoint: ${MINIO_ENDPOINT:http://172.20.10.5:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  output-bucket: ${MINIO_OUTPUT_BUCKET:harnax-output}

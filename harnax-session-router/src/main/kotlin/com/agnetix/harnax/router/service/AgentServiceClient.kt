@@ -63,7 +63,8 @@ class AgentServiceClient(
         log.info(
             "[Router←Agent] Received agent response for session=${request.sessionId}, " +
                 "code=${result.code}, success=${result.isSuccess()}, " +
-                "contentLength=${result.data?.content?.length ?: 0}, elapsed=${elapsed}ms",
+                "contentLength=${result.data?.content?.length ?: 0}, " +
+                "attachments=${result.data?.attachments?.size ?: 0}, elapsed=${elapsed}ms",
         )
         return result
     }

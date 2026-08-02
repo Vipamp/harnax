@@ -69,16 +69,15 @@ class AgentSessionRefreshServiceTest {
         server.shutdown()
     }
 
-    private fun createService(routerUrl: String = server.url("/").toString().removeSuffix("/")): AgentSessionRefreshService =
-        AgentSessionRefreshService(
-            channelMapper,
-            sessionMapper,
-            apiKeyMapper,
-            agentMapper,
-            cliBindingMapper,
-            aesUtil,
-            routerUrl,
-        )
+    private fun createService(routerUrl: String = server.url("/").toString().removeSuffix("/")): AgentSessionRefreshService = AgentSessionRefreshService(
+        channelMapper,
+        sessionMapper,
+        apiKeyMapper,
+        agentMapper,
+        cliBindingMapper,
+        aesUtil,
+        routerUrl,
+    )
 
     /** stub 出一个可正常解密的 SYSTEM key */
     private fun stubSystemApiKey(rawKey: String = "system-raw-api-key") {
@@ -401,7 +400,12 @@ class AgentSessionRefreshServiceTest {
         fun `listSessionsByCli should aggregate sessions of bound agents with agent name`() {
             // Given
             `when`(cliBindingMapper.selectByCliId(5L)).thenReturn(
-                listOf(AgentCliBinding().apply { agentId = 10L; cliId = 5L }),
+                listOf(
+                    AgentCliBinding().apply {
+                        agentId = 10L
+                        cliId = 5L
+                    },
+                ),
             )
             `when`(agentMapper.selectById(10L)).thenReturn(
                 Agent().apply {
@@ -444,12 +448,30 @@ class AgentSessionRefreshServiceTest {
             // Given: 两个 Agent 关联了同一个 sessionId 的渠道
             `when`(cliBindingMapper.selectByCliId(5L)).thenReturn(
                 listOf(
-                    AgentCliBinding().apply { agentId = 10L; cliId = 5L },
-                    AgentCliBinding().apply { agentId = 11L; cliId = 5L },
+                    AgentCliBinding().apply {
+                        agentId = 10L
+                        cliId = 5L
+                    },
+                    AgentCliBinding().apply {
+                        agentId = 11L
+                        cliId = 5L
+                    },
                 ),
             )
-            `when`(agentMapper.selectById(10L)).thenReturn(Agent().apply { id = 10L; name = "A1"; status = 1 })
-            `when`(agentMapper.selectById(11L)).thenReturn(Agent().apply { id = 11L; name = "A2"; status = 1 })
+            `when`(agentMapper.selectById(10L)).thenReturn(
+                Agent().apply {
+                    id = 10L
+                    name = "A1"
+                    status = 1
+                },
+            )
+            `when`(agentMapper.selectById(11L)).thenReturn(
+                Agent().apply {
+                    id = 11L
+                    name = "A2"
+                    status = 1
+                },
+            )
             val sharedChannel = Channel().apply {
                 name = "共享渠道"
                 type = "http"

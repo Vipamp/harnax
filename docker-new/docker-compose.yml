@@ -24,7 +24,7 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD:-harnax123}
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "23306:3306"
     volumes:
       # MySQL data directory
       - ${MYSQL_DATA_DIR:-./data/mysql}:/var/lib/mysql
@@ -56,7 +56,7 @@ services:
     restart: always
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
-      - "6379:6379"
+      - "26379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -81,8 +81,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console
+      - "29000:9000"   # API
+      - "29001:9001"   # Console
     volumes:
       - minio-data:/data
     command: server /data --console-address ":9001"
@@ -135,13 +135,18 @@ services:
       # Scheduler URL (for task trigger/start/pause)
       HARNAX_SCHEDULER_URL: http://scheduler:8084
       # Router External URL (returned to frontend/mobile apps)
-      HARNAX_ROUTER_EXTERNAL_URL: http://localhost:8081
+      HARNAX_ROUTER_EXTERNAL_URL: http://localhost:28081
+      # MinIO Configuration (output file download proxy)
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "8080:8080"
+      - "28080:8080"
     volumes:
       - admin-logs:/app/logs
       - admin-skills:/home/harnax/skills
@@ -197,7 +202,7 @@ services:
       # JVM
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
-      - "8081:8081"
+      - "28081:8081"
     volumes:
       - router-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
@@ -253,7 +258,7 @@ services:
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
-      - "8084:8084"
+      - "28084:8084"
     volumes:
       - scheduler-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
@@ -331,8 +336,11 @@ services:
       JAVA_OPTS: -Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Workspace context reads AGENTS.md via sandbox filesystem, but sandbox is only
+      # active during acting phase — causes noisy SandboxConfigurationException logs.
+      HARNESS_ENABLE_WORKSPACE_CONTEXT: "false"
     ports:
-      - "8082:8082"
+      - "28082:8082"
     volumes:
       - agent-service-logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for sandbox management
@@ -384,12 +392,17 @@ services:
       # Auth Configuration
       SERVICE_ID: ${CHANNEL_SERVICE_ID:-channel-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # MinIO Configuration (internal file access for channel delivery)
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "8083:8083"
+      - "28083:8083"
     volumes:
       - channel-service-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
@@ -427,7 +440,7 @@ services:
     container_name: harnax-mcp-server
     restart: always
     ports:
-      - "9002:9002"   # MCP server listens on 9002
+      - "29002:9002"   # MCP server listens on 9002
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import socket; s=socket.socket(); s.settimeout(3); s.connect(('127.0.0.1', 9002)); s.close()\" || exit 1"]
       interval: 30s

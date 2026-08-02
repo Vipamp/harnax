@@ -8,8 +8,11 @@ import com.agnetix.harnax.agent.protocol.ChatEventConverter
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
+import com.agnetix.harnax.agent.protocol.FileAttachment
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.harness.output.OutputFileDetector
+import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
 import io.agentscope.core.agent.RuntimeContext
@@ -21,10 +24,12 @@ import io.agentscope.core.event.ToolResultEndEvent
 import io.agentscope.core.event.ToolResultTextDeltaEvent
 import io.agentscope.core.message.Base64Source
 import io.agentscope.core.message.ContentBlock
+import io.agentscope.core.message.GenerateReason
 import io.agentscope.core.message.ImageBlock
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.TextBlock
+import io.agentscope.core.message.ThinkingBlock
 import io.agentscope.core.message.ToolCallState
 import io.agentscope.core.message.ToolResultBlock
 import io.agentscope.core.message.ToolUseBlock
@@ -81,6 +86,8 @@ class HarnessAgentWrapper(
     val pluginInitializers: List<SandboxPluginInitializer> = emptyList(),
     val pluginAdminUrl: String = "",
     val pluginInternalSecret: String = "",
+    val outputFileDetector: OutputFileDetector? = null,
+    val outputFileStore: OutputFileStore? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -348,11 +355,14 @@ class HarnessAgentWrapper(
     }
 
     fun call(msgs: List<Msg>): ChatResponse {
+        val callStartTime = System.currentTimeMillis()
         val ctxResult = buildRuntimeContext()
         // Ensure configured permission rules are merged into loaded state before setting mode
         ensurePermissionRulesMerged()
-        // Set permission mode from session configuration (defaults to DEFAULT if not configured)
-        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
+        // Channel sessions (chn-*) cannot support interactive tool approval (no /approve /deny UI),
+        // so force BYPASS to prevent PERMISSION_ASKING from blocking tool execution.
+        val effectiveMode = if (sessionId.startsWith("chn-")) "BYPASS" else permissionMode
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(effectiveMode))
         try {
             val mono = harnessAgent.call(msgs, ctxResult.runtimeContext)
                 .timeout(Duration.ofMinutes(5))
@@ -387,12 +397,22 @@ class HarnessAgentWrapper(
                     if (error != null) {
                         log.warn("[harness] Late error after successful call for session={}, suppressed: {}", sessionId, error!!.message)
                     }
-                    val content = resolveReplyContent(result!!)
+                    var content = resolveReplyContent(result!!)
                     val thinking = MsgExtractHelper.extractThinking(result!!)
+
+                    // Detect and persist output files generated during this call
+                    val attachments = detectAndPersistOutputFiles(callStartTime)
+                    if (attachments.isNotEmpty() && !sessionId.startsWith("chn-")) {
+                        // Only append download links for WebUI sessions.
+                        // Channel sessions receive files via sendFile() directly.
+                        content = appendDownloadLinks(content, attachments)
+                    }
+
                     return ChatResponse(
                         sessionId = sessionId,
                         content = content,
                         thinking = thinking?.ifEmpty { null },
+                        attachments = attachments,
                     )
                 }
                 if (error != null) {
@@ -467,7 +487,37 @@ class HarnessAgentWrapper(
             }
         }
 
-        log.warn("[harness] Final msg has neither text nor tool output for session={}, returning completion notice", sessionId)
+        // Defensive: PERMISSION_ASKING with empty content means the permission gate blocked
+        // tool execution but no ToolUseBlocks were surfaced. Prompt user to approve.
+        if (msg.generateReason == GenerateReason.PERMISSION_ASKING) {
+            log.warn(
+                "[harness] PERMISSION_ASKING with no ASKING blocks in content for session={}, " +
+                    "prompting for confirmation",
+                sessionId,
+            )
+            return "⚠️ AI 需要执行工具操作，请回复 /approve 同意执行，或 /deny 拒绝。"
+        }
+
+        // Detailed diagnostic: dump all content block types so we can see exactly what the
+        // ReAct loop returned (e.g. tool_use blocks in ALLOWED state = tool was approved but
+        // never executed; empty ThinkingBlock = model returned empty completion, etc.)
+        val allBlocks = msg.content ?: emptyList()
+        val blockSummary = allBlocks.joinToString(", ") { b ->
+            when (b) {
+                is ToolUseBlock -> "ToolUse(name=${b.name}, id=${b.id}, state=${b.state})"
+                is ToolResultBlock -> "ToolResult(id=${b.id}, state=${b.state})"
+                is TextBlock -> "Text(len=${b.text?.length ?: 0})"
+                is ThinkingBlock -> "Thinking(len=${b.thinking?.length ?: 0})"
+                else -> "${b.javaClass.simpleName}"
+            }
+        }
+        log.warn(
+            "[harness] Final msg has neither text nor tool output for session={}, returning completion notice. " +
+                "generateReason={}, contentBlocks=[{}]",
+            sessionId,
+            msg.generateReason,
+            blockSummary,
+        )
         return "✅ 已执行完成，但模型未返回文本说明。"
     }
 
@@ -591,8 +641,10 @@ class HarnessAgentWrapper(
         val ctxResult = buildRuntimeContext()
         // Ensure configured permission rules are merged into loaded state before setting mode
         ensurePermissionRulesMerged()
-        // Set permission mode from session configuration (defaults to DEFAULT if not configured)
-        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
+        // Channel sessions (chn-*) cannot support interactive tool approval (no /approve /deny UI),
+        // so force BYPASS to prevent PERMISSION_ASKING from blocking tool execution.
+        val effectiveMode = if (sessionId.startsWith("chn-")) "BYPASS" else permissionMode
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(effectiveMode))
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
             .doOnNext { agentEvent ->
                 // Intercept RequireUserConfirmEvent BEFORE flatMap to cache pending tool calls
@@ -716,6 +768,147 @@ class HarnessAgentWrapper(
             }
         } catch (e: Exception) {
             log.warn("[keepAlive] Failed to persist snapshot for session={}: {}", sessionId, e.message)
+        }
+    }
+
+    /**
+     * Detect new files in the sandbox workspace and persist them to MinIO.
+     * Returns a list of [FileAttachment] with stable download URLs.
+     *
+     * This method is best-effort: any failure is logged and an empty list is returned,
+     * so it never affects the main text reply.
+     */
+    private fun detectAndPersistOutputFiles(callStartTime: Long): List<FileAttachment> {
+        val detector = outputFileDetector ?: return emptyList()
+        val sandboxManager = keepAliveSandboxManager ?: return emptyList()
+
+        // Channel sessions download directly from sandbox workspace; no MinIO needed.
+        val isChannelSession = sessionId.startsWith("chn-")
+        val store = outputFileStore
+        if (!isChannelSession && store == null) return emptyList()
+
+        return try {
+            val sandbox = sandboxManager.getSandbox(sessionId) ?: run {
+                log.debug("[outputFiles] No sandbox available for session={}, skipping file detection", sessionId)
+                return emptyList()
+            }
+
+            val detectedFiles = detector.detect(sandbox, sandboxWorkspaceRoot, callStartTime)
+            if (detectedFiles.isEmpty()) return emptyList()
+
+            val attachments = mutableListOf<FileAttachment>()
+            for (file in detectedFiles) {
+                try {
+                    val mimeType = guessMimeType(file.fileName)
+
+                    if (isChannelSession) {
+                        // Channel: return workspace path only, channel-service downloads via workspace API
+                        attachments.add(
+                            FileAttachment(
+                                fileId = java.util.UUID.randomUUID().toString(),
+                                fileName = file.fileName,
+                                filePath = file.path,
+                                fileSize = file.size,
+                                mimeType = mimeType,
+                                url = "",
+                                objectKey = "",
+                            ),
+                        )
+                    } else {
+                        // Web/Task: persist to MinIO for stable download URL
+                        val fileBytes = extractFileFromSandbox(sandbox, file.path) ?: continue
+                        val stored = store!!.persist(
+                            sessionId = sessionId,
+                            fileName = file.fileName,
+                            data = fileBytes,
+                            mimeType = mimeType,
+                        )
+                        attachments.add(
+                            FileAttachment(
+                                fileId = stored.fileId,
+                                fileName = file.fileName,
+                                filePath = file.path,
+                                fileSize = file.size,
+                                mimeType = mimeType,
+                                url = stored.url,
+                                objectKey = stored.objectKey,
+                            ),
+                        )
+                    }
+                } catch (e: Exception) {
+                    log.warn("[outputFiles] Failed to process file '{}' for session={}: {}", file.fileName, sessionId, e.message)
+                }
+            }
+
+            if (attachments.isNotEmpty()) {
+                log.info("[outputFiles] Detected {} file(s) for session={}: {}", attachments.size, sessionId, attachments.joinToString { it.fileName })
+            }
+            attachments
+        } catch (e: Exception) {
+            log.warn("[outputFiles] Output file detection/persistence failed for session={}: {}", sessionId, e.message)
+            emptyList()
+        }
+    }
+
+    /**
+     * Extract file bytes from sandbox using base64 encoding.
+     */
+    private fun extractFileFromSandbox(sandbox: io.agentscope.harness.agent.sandbox.Sandbox, filePath: String): ByteArray? {
+        return try {
+            val result = sandbox.exec(null, "base64 '$filePath'", 30)
+            val base64Str = result.stdout().trim()
+            if (base64Str.isBlank()) {
+                log.warn("[outputFiles] Empty base64 output for file: {}", filePath)
+                return null
+            }
+            Base64.getMimeDecoder().decode(base64Str)
+        } catch (e: Exception) {
+            log.warn("[outputFiles] Failed to extract file '{}': {}", filePath, e.message)
+            null
+        }
+    }
+
+    /**
+     * Append download links to the reply text so WebUI users can click to download.
+     */
+    private fun appendDownloadLinks(content: String, attachments: List<FileAttachment>): String {
+        val sb = StringBuilder(content)
+        sb.appendLine()
+        sb.appendLine()
+        sb.appendLine("\uD83D\uDCCE **生成的文件：**")
+        attachments.forEach { file ->
+            sb.appendLine("- [${file.fileName}](${file.url})")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Guess MIME type from file extension.
+     */
+    private fun guessMimeType(fileName: String): String {
+        val ext = fileName.substringAfterLast(".", "").lowercase()
+        return when (ext) {
+            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            "ppt" -> "application/vnd.ms-powerpoint"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "xls" -> "application/vnd.ms-excel"
+            "csv" -> "text/csv"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "doc" -> "application/msword"
+            "pdf" -> "application/pdf"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "svg" -> "image/svg+xml"
+            "zip" -> "application/zip"
+            "tar" -> "application/x-tar"
+            "gz" -> "application/gzip"
+            "mp3" -> "audio/mpeg"
+            "mp4" -> "video/mp4"
+            "wav" -> "audio/wav"
+            "html" -> "text/html"
+            "json" -> "application/json"
+            else -> "application/octet-stream"
         }
     }
 

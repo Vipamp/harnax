@@ -56,7 +56,7 @@ class RouterAgentAdaptor(
                 } else {
                     log.info("[Adaptor] Batch process completed for session=$sessionId, responseLength={}", chatResponse.content.length)
                 }
-                AgentResponse(content = chatResponse.content, shouldReply = true)
+                AgentResponse(content = chatResponse.content, shouldReply = true, attachments = chatResponse.attachments)
             }
             is CommandAgentRequest -> {
                 val commandResponse = routerClient.sendCommand(
@@ -77,7 +77,7 @@ class RouterAgentAdaptor(
                     agentId = agentId,
                     message = context.message.content,
                 )
-                AgentResponse(content = chatResponse.content, shouldReply = true)
+                AgentResponse(content = chatResponse.content, shouldReply = true, attachments = chatResponse.attachments)
             }
         }
     }

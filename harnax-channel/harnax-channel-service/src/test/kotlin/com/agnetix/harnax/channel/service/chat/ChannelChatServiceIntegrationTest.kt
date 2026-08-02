@@ -139,14 +139,15 @@ class ChannelChatServiceIntegrationTest {
         }
 
         @Test
-        fun `batch mode skips sending when response is blank`() = runBlocking {
+        fun `batch mode sends fallback when response is blank`() = runBlocking {
             `when`(agentAdaptor.process(any())).thenReturn(
                 AgentResponse(content = "   ", shouldReply = true),
             )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
-            verify(channelAdaptor, never()).sendMessage(any(), any(), any())
+            // Blank response triggers fallback notification instead of silent no-op
+            verify(channelAdaptor).sendMessage(any(), any(), argThat { contains("no content") })
         }
     }
 

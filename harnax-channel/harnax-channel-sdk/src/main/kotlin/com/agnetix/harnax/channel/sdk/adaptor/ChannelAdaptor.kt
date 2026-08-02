@@ -76,6 +76,29 @@ interface ChannelAdaptor {
     }
 
     /**
+     * Send a file to the platform user.
+     *
+     * Default implementation logs a warning (channel doesn't support file sending).
+     * Channels that support file messages (WeChat, Feishu) should override this.
+     *
+     * @param channel   Channel configuration
+     * @param sessionId Session identifier (maps to platform user/chat ID)
+     * @param fileBytes File content bytes
+     * @param fileName  Original file name
+     * @param caption   Optional caption/description
+     */
+    suspend fun sendFile(
+        channel: ChannelSpec,
+        sessionId: String,
+        fileBytes: ByteArray,
+        fileName: String,
+        caption: String = "",
+    ) {
+        // Default: degrade to text notification
+        sendMessage(channel, sessionId, "\uD83D\uDCCE \u6587\u4EF6\u5DF2\u751F\u6210: $fileName\uFF08\u5F53\u524D\u6E20\u9053\u4E0D\u652F\u6301\u6587\u4EF6\u53D1\u9001\uFF09")
+    }
+
+    /**
      * Handle URL verification request (verification on initial configuration)
      * @param request Platform-agnostic request object
      * @param channel Channel configuration
@@ -170,6 +193,7 @@ interface ChannelAdaptor {
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
+        chatService: com.agnetix.harnax.channel.sdk.service.ChannelChatService? = null,
     )
 
     /**

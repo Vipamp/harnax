@@ -213,7 +213,12 @@ class MpAgentServiceTest {
                 },
             )
             `when`(mcpBindingMapper.selectByAgentId(10L)).thenReturn(
-                listOf(AgentMcpBinding().apply { agentId = 10L; mcpId = 300L }),
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 10L
+                        mcpId = 300L
+                    },
+                ),
             )
             `when`(mcpServerService.getMcpServer(300L)).thenReturn(
                 McpServer().apply {
@@ -223,7 +228,12 @@ class MpAgentServiceTest {
                 },
             )
             `when`(skillBindingMapper.selectByAgentId(10L)).thenReturn(
-                listOf(AgentSkillBinding().apply { agentId = 10L; skillId = 400L }),
+                listOf(
+                    AgentSkillBinding().apply {
+                        agentId = 10L
+                        skillId = 400L
+                    },
+                ),
             )
             `when`(skillService.getSkill(400L)).thenReturn(
                 Skill().apply {
@@ -316,11 +326,21 @@ class MpAgentServiceTest {
             `when`(modelService.getModel(anyLong())).thenReturn(null)
             `when`(modelProviderService.getModelProvider(anyLong())).thenReturn(null)
             `when`(mcpBindingMapper.selectByAgentId(10L)).thenReturn(
-                listOf(AgentMcpBinding().apply { agentId = 10L; mcpId = 300L }),
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 10L
+                        mcpId = 300L
+                    },
+                ),
             )
             `when`(mcpServerService.getMcpServer(300L)).thenReturn(null)
             `when`(skillBindingMapper.selectByAgentId(10L)).thenReturn(
-                listOf(AgentSkillBinding().apply { agentId = 10L; skillId = 400L }),
+                listOf(
+                    AgentSkillBinding().apply {
+                        agentId = 10L
+                        skillId = 400L
+                    },
+                ),
             )
             `when`(skillService.getSkill(400L)).thenReturn(null)
 

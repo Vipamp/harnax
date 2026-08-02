@@ -23,6 +23,8 @@ import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
 import com.agnetix.harnax.harness.minio.MinioSnapshotClient
+import com.agnetix.harnax.harness.output.OutputFileDetector
+import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.plugin.HarnaxCliPluginInitializer
@@ -95,6 +97,8 @@ class HarnessAgentLauncher(
     val toolConfigAdaptor: ToolConfigAdaptor? = null,
     val toolRegistry: ToolRegistry? = null,
     val cliImageBuilder: CliImageBuilder? = null,
+    val outputFileDetector: OutputFileDetector? = null,
+    val outputFileStore: OutputFileStore? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -137,11 +141,24 @@ class HarnessAgentLauncher(
     ): HarnessAgentWrapper {
         val needConfirmedTools = mutableSetOf<String>()
         val dangerousInputTools = mutableSetOf<String>()
+
+        // When internet search is enabled, append a capability hint so the model knows
+        // it can answer real-time questions directly without spawning subagents or
+        // executing shell commands to fetch web pages.
+        val effectivePrompt = if (chatSpec.enableSearch) {
+            agentSpec.systemPrompt + "\n\n" +
+                "[能力提示] 你已具备联网搜索能力，可以直接回答实时信息相关问题（如新闻、价格、天气等），" +
+                "无需通过工具抓取网页或派遣子智能体。请优先利用自身联网知识直接作答。\n\n" +
+                OUTPUT_FILE_INSTRUCTION
+        } else {
+            agentSpec.systemPrompt + "\n\n" + OUTPUT_FILE_INSTRUCTION
+        }
+
         val agentBuilder = HarnessAgentBuilder()
             .name(agentSpec.name)
             .description(agentSpec.description)
             .maxIters(agentSpec.maxIterNum)
-            .systemPrompt(agentSpec.systemPrompt)
+            .systemPrompt(effectivePrompt)
             .workspace(workspaceRoot.resolve(agentSpec.name).resolve(sessionId))
             .stateStore(stateStore)
 
@@ -514,6 +531,8 @@ class HarnessAgentLauncher(
             pluginInitializers = if (harnessConfig.sandbox.cliPluginsEnabled) listOf<SandboxPluginInitializer>(HarnaxCliPluginInitializer()) else emptyList(),
             pluginAdminUrl = harnessConfig.sandbox.pluginAdminUrl,
             pluginInternalSecret = harnessConfig.sandbox.pluginInternalSecret,
+            outputFileDetector = outputFileDetector,
+            outputFileStore = outputFileStore,
         )
     }
 
@@ -568,6 +587,13 @@ class HarnessAgentLauncher(
 
     companion object {
         /**
+         * Prompt instruction: instruct the agent to save generated output files to /workspace/output/.
+         */
+        private const val OUTPUT_FILE_INSTRUCTION =
+            "[文件输出规范] 当你生成结果文件（如报告、图表、数据文件等）时，必须将最终交付文件保存到 /workspace/output/ 目录下。" +
+                "系统会自动检测该目录中的新文件并提供给用户下载。中间过程文件请勿放在此目录。"
+
+        /**
          * Scans a ToolBox class for methods annotated with `@ToolMeta(dangerousInput=true)`.
          * Collects the framework tool names (@Tool.name or method name) into the target set.
          */
@@ -600,6 +626,8 @@ class HarnessAgentLauncher(
             mcpConfigDecryptor: McpConfigDecryptor? = null,
             toolConfigAdaptor: ToolConfigAdaptor? = null,
             toolRegistry: ToolRegistry? = null,
+            outputFileDetector: OutputFileDetector? = null,
+            outputFileStore: OutputFileStore? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -661,6 +689,8 @@ class HarnessAgentLauncher(
                 toolConfigAdaptor = toolConfigAdaptor,
                 toolRegistry = toolRegistry,
                 cliImageBuilder = cliImageBuilder,
+                outputFileDetector = outputFileDetector,
+                outputFileStore = outputFileStore,
             )
         }
     }

@@ -12,7 +12,9 @@ import io.agentscope.core.event.ToolResultTextDeltaEvent
 import io.agentscope.core.middleware.ActingInput
 import io.agentscope.core.middleware.AgentInput
 import io.agentscope.core.middleware.MiddlewareBase
+import org.slf4j.LoggerFactory
 import reactor.core.publisher.Flux
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.Function
 
 /**
@@ -26,6 +28,8 @@ import java.util.function.Function
  * Priority: 500 (same as the old ProcessLogHook)
  */
 class ProcessLogMiddleware : MiddlewareBase {
+
+    private val log = LoggerFactory.getLogger(ProcessLogMiddleware::class.java)
 
     private lateinit var adaptor: ProcessLogAdaptor
     private lateinit var builder: ProcessLogBuilder
@@ -85,6 +89,48 @@ class ProcessLogMiddleware : MiddlewareBase {
         input.toolCalls.forEach { toolCall ->
             adaptor.emitLog(builder.info("[Processing] Call tool: '${toolCall.name}' with input '${toolCall.input}'"))
         }
+        // Diagnostic: trace whether the downstream acting chain actually emits events or
+        // completes empty (which would indicate executeToolCalls was never invoked).
+        val eventCount = AtomicInteger(0)
+        val toolNames = input.toolCalls.joinToString(",") { it.name }
+        log.info("[acting-debug] {} onActing ENTER: tools=[{}]", agent.name, toolNames)
         return next.apply(input)
+            .doOnNext { event ->
+                eventCount.incrementAndGet()
+                log.debug("[acting-debug] {} onActing event #{}: {}", agent.name, eventCount.get(), event.javaClass.simpleName)
+            }
+            .doOnComplete {
+                log.info(
+                    "[acting-debug] {} onActing COMPLETE: totalEvents={}, tools=[{}]",
+                    agent.name,
+                    eventCount.get(),
+                    toolNames,
+                )
+                if (eventCount.get() == 0) {
+                    log.warn(
+                        "[acting-debug] {} onActing completed with ZERO events! " +
+                            "Tool execution was likely never invoked. tools=[{}]",
+                        agent.name,
+                        toolNames,
+                    )
+                }
+            }
+            .doOnError { err ->
+                log.error(
+                    "[acting-debug] {} onActing ERROR after {} events: {}: {}",
+                    agent.name,
+                    eventCount.get(),
+                    err.javaClass.simpleName,
+                    err.message,
+                )
+            }
+            .doOnCancel {
+                log.warn(
+                    "[acting-debug] {} onActing CANCELLED after {} events! tools=[{}]",
+                    agent.name,
+                    eventCount.get(),
+                    toolNames,
+                )
+            }
     }
 }
