@@ -78,6 +78,8 @@ echo "✅ Frontend built successfully."
 # Step 3: Build Docker images
 echo ""
 echo "🐳 Step 3: Building Docker images..."
+echo "📦 Building sandbox images (harnax-cli plugin + default sandbox harnax-sandbox:py-node)..."
+bash sandbox-plugins/build.sh
 docker build -f docker/Dockerfile.backend -t harnax-backend:latest .
 docker build -f docker/Dockerfile.router -t harnax-router:latest .
 docker build -f docker/Dockerfile.agent-service -t harnax-agent-service:latest .

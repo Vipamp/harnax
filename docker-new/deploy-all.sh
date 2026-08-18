@@ -59,6 +59,9 @@ echo "  ✓ harnax-frontend"
 echo ""
 echo "🐳 步骤 4/6: 构建 Docker 镜像..."
 
+echo "  构建沙箱镜像 (harnax-cli 打包 + 默认沙箱 harnax-sandbox:py-node)..."
+bash sandbox-plugins/build.sh
+
 echo "  构建 harnax-admin..."
 docker rmi -f harnax-admin:latest 2>/dev/null || true
 docker build --no-cache -f docker-new/Dockerfile.admin -t harnax-admin:latest .

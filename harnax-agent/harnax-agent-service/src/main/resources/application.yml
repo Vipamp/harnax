@@ -52,13 +52,13 @@ harness:
     store-prefix: ${MINIO_STORE_PREFIX:store/}
   sandbox:
     enabled: ${SANDBOX_ENABLED:false}
-    image: ${SANDBOX_IMAGE:python:3.11-slim}
+    image: ${SANDBOX_IMAGE:harnax-sandbox:py-node}
     workspace-root: ${SANDBOX_WORKSPACE_ROOT:/workspace}
     isolation-scope: ${SANDBOX_ISOLATION_SCOPE:SESSION}
     keep-alive: ${SANDBOX_KEEP_ALIVE:true}
     network: ${SANDBOX_NETWORK:}
     cli-plugins-enabled: ${SANDBOX_CLI_PLUGINS_ENABLED:false}
-    plugin-image: ${SANDBOX_PLUGIN_IMAGE:harnax-sandbox:latest}
+    plugin-image: ${SANDBOX_PLUGIN_IMAGE:harnax-sandbox:py-node}
     plugin-admin-url: ${SANDBOX_PLUGIN_ADMIN_URL:}
     plugin-internal-secret: ${SANDBOX_PLUGIN_INTERNAL_SECRET:}
   output-detection:

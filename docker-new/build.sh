@@ -150,16 +150,11 @@ echo "Frontend built successfully."
 echo ""
 
 # ==========================================
-# Step 7: Build Sandbox Image (CLI plugins)
+# Step 7: Build Sandbox Images (harnax-cli plugin + default sandbox)
 # ==========================================
-if command -v go &> /dev/null; then
-    echo "Step 7/9: Building sandbox image (harnax-sandbox)..."
-    bash sandbox-plugins/build.sh
-    echo "Sandbox image built successfully."
-else
-    echo "Step 7/9: SKIPPED sandbox image (Go not installed)."
-    echo "  Install Go and run: bash sandbox-plugins/build.sh"
-fi
+echo "Step 7/9: Building sandbox images (harnax-sandbox:latest + harnax-sandbox:py-node)..."
+bash sandbox-plugins/build.sh
+echo "Sandbox images built successfully."
 echo ""
 
 # ==========================================

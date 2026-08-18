@@ -83,7 +83,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?MINIO_SECRET_KEY is required in production}
       # Sandbox Configuration
       SANDBOX_ENABLED: "true"
-      SANDBOX_IMAGE: python:3.11-slim
+      SANDBOX_IMAGE: harnax-sandbox:py-node
       SANDBOX_KEEP_ALIVE: "true"
       # Router Configuration
       ROUTER_SERVICE_URL: http://router:8081
