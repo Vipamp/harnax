@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,14 @@ import (
 
 const cliBasePath = "/api/admin/clis"
 
+type CliEnvParam struct {
+	EnvParamName string `json:"envParamName"`
+	Description  string `json:"description"`
+	Required     bool   `json:"required"`
+	Secret       bool   `json:"secret"`
+	DefaultValue string `json:"defaultValue"`
+}
+
 type CliTool struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
@@ -19,6 +28,7 @@ type CliTool struct {
 	Version       string `json:"version"`
 	InstallScript string `json:"installScript"`
 	CheckCommand  string `json:"checkCommand"`
+	EnvParams     []CliEnvParam `json:"envParams"`
 	Status        int    `json:"status"`
 	IsPublic      int    `json:"isPublic"`
 	Creator       string `json:"creator"`
@@ -35,6 +45,31 @@ func (c CliTool) skillNames() string {
 		names[i] = s.SkillName
 	}
 	return strings.Join(names, ",")
+}
+
+func (c CliTool) envParamsText() string {
+	if len(c.EnvParams) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(c.EnvParams))
+	for i, e := range c.EnvParams {
+		var flags []string
+		if e.Required {
+			flags = append(flags, "required")
+		}
+		if e.Secret {
+			flags = append(flags, "secret")
+		}
+		s := e.EnvParamName
+		if len(flags) > 0 {
+			s += "(" + strings.Join(flags, ",") + ")"
+		}
+		if e.DefaultValue != "" {
+			s += "=" + e.DefaultValue
+		}
+		parts[i] = s
+	}
+	return strings.Join(parts, "; ")
 }
 
 var cliCmd = &cobra.Command{
@@ -87,7 +122,7 @@ var cliListCmd = &cobra.Command{
 			exitError("Failed to decode list: " + err.Error())
 		}
 
-		headers := []string{"ID", "Name", "Version", "Status", "Skills", "Creator"}
+		headers := []string{"ID", "Name", "Version", "Status", "Envs", "Skills", "Creator"}
 		rows := make([][]string, len(clis))
 		for i, t := range clis {
 			rows[i] = []string{
@@ -95,6 +130,7 @@ var cliListCmd = &cobra.Command{
 				t.Name,
 				t.Version,
 				output.StatusText(t.Status),
+				strconv.Itoa(len(t.EnvParams)),
 				t.skillNames(),
 				t.Creator,
 			}
@@ -139,6 +175,7 @@ var cliGetCmd = &cobra.Command{
 			{"Version", cli.Version},
 			{"Install Script", cli.InstallScript},
 			{"Check Command", cli.CheckCommand},
+			{"Env Params", cli.envParamsText()},
 			{"Status", output.StatusText(cli.Status)},
 			{"Skills", cli.skillNames()},
 			{"Creator", cli.Creator},
@@ -177,6 +214,13 @@ var cliCreateCmd = &cobra.Command{
 		}
 		if v, _ := cmd.Flags().GetString("skill-ids"); v != "" {
 			body["skillIds"] = parseIDList(v)
+		}
+		if v, _ := cmd.Flags().GetString("env-params"); v != "" {
+			var parsed any
+			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
+				exitError("invalid --env-params JSON: " + err.Error())
+			}
+			body["envParams"] = parsed
 		}
 		if cmd.Flags().Changed("public") {
 			v, _ := cmd.Flags().GetBool("public")
@@ -224,6 +268,13 @@ var cliUpdateCmd = &cobra.Command{
 		}
 		if v, _ := cmd.Flags().GetString("skill-ids"); cmd.Flags().Changed("skill-ids") {
 			body["skillIds"] = parseIDList(v)
+		}
+		if v, _ := cmd.Flags().GetString("env-params"); cmd.Flags().Changed("env-params") {
+			var parsed any
+			if err := json.Unmarshal([]byte(v), &parsed); err != nil {
+				exitError("invalid --env-params JSON: " + err.Error())
+			}
+			body["envParams"] = parsed
 		}
 		if cmd.Flags().Changed("public") {
 			v, _ := cmd.Flags().GetBool("public")
@@ -309,6 +360,7 @@ func init() {
 	cliCreateCmd.Flags().String("install-script", "", "Dockerfile RUN fragment that installs this CLI (required)")
 	cliCreateCmd.Flags().String("check-command", "", "Command to verify installation")
 	cliCreateCmd.Flags().String("skill-ids", "", "Associated skill IDs (comma separated)")
+	cliCreateCmd.Flags().String("env-params", "", `Environment params as JSON array, e.g. '[{"envParamName":"API_KEY","required":true,"secret":true,"defaultValue":"sk-xxx"}]'`)
 	cliCreateCmd.Flags().Bool("public", false, "Make CLI public")
 
 	cliUpdateCmd.Flags().String("name", "", "CLI name")
@@ -317,6 +369,7 @@ func init() {
 	cliUpdateCmd.Flags().String("install-script", "", "Dockerfile RUN fragment that installs this CLI")
 	cliUpdateCmd.Flags().String("check-command", "", "Command to verify installation")
 	cliUpdateCmd.Flags().String("skill-ids", "", "Associated skill IDs (comma separated)")
+	cliUpdateCmd.Flags().String("env-params", "", `Environment params as JSON array, e.g. '[{"envParamName":"API_KEY","required":true,"secret":true,"defaultValue":"sk-xxx"}]'`)
 	cliUpdateCmd.Flags().Bool("public", false, "Make CLI public")
 
 	cliToggleCmd.Flags().Int("status", 1, "Target status (0:disabled, 1:enabled)")

@@ -27,8 +27,8 @@ data class CliCreateRequest(
     @Schema(description = "Command to verify installation", example = "kubectl version --client")
     val checkCommand: String? = null,
 
-    @Schema(description = "Environment variable declarations (JSON)")
-    val envParams: String? = null,
+    @Schema(description = "Environment variable declarations")
+    val envParams: List<ToolEnvParamEntry>? = null,
 
     @Schema(description = "Associated skill ID list")
     val skillIds: List<Long>? = null,

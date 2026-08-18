@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Select } from 'antd';
+import { Form, Input, Select, message } from 'antd';
 import { useIntl } from '@umijs/max';
 import { CodeOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import { getSkillPage } from '@/services/ant-design-pro/skill';
 import { getSkillRepositoryList } from '@/services/ant-design-pro/agent';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
+import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
 
 const { TextArea } = Input;
 
@@ -33,6 +34,7 @@ const CliForm: React.FC<CliFormProps> = ({ visible, values, onCancel, onSubmit }
           version: values.version,
           installScript: values.installScript,
           checkCommand: values.checkCommand,
+          envParams: values.envParams || [],
           skillIds: (values.skillList || []).map((s) => s.skillId).filter((v): v is number => v != null),
         });
       } else {
@@ -78,7 +80,23 @@ const CliForm: React.FC<CliFormProps> = ({ visible, values, onCancel, onSubmit }
         labelCol={{ span: 5 }}
         wrapperCol={{ span: 19 }}
         style={{ marginTop: 12 }}
-        onFinish={(formValues) => onSubmit(formValues)}
+        onFinish={(formValues) => {
+          const envParams: any[] = formValues.envParams || [];
+          const invalidEnv = envParams.find((e: any) => e.required && !e.defaultValue?.trim());
+          if (invalidEnv) {
+            message.error(
+              intl.formatMessage(
+                {
+                  id: 'pages.cli.envRequiredError',
+                  defaultMessage: 'Required environment parameter "{name}" must have a default value',
+                },
+                { name: invalidEnv.envParamName || '' },
+              ),
+            );
+            return;
+          }
+          onSubmit(formValues);
+        }}
       >
         <Form.Item
           name="name"
@@ -130,6 +148,17 @@ const CliForm: React.FC<CliFormProps> = ({ visible, values, onCancel, onSubmit }
           })}
         >
           <Input style={{ fontFamily: 'monospace' }} placeholder="kubectl version --client" />
+        </Form.Item>
+
+        <Form.Item
+          name="envParams"
+          label={intl.formatMessage({ id: 'pages.cli.envParams', defaultMessage: 'Environment Params' })}
+          extra={intl.formatMessage({
+            id: 'pages.cli.envParamsHint',
+            defaultMessage: 'Environment variables this CLI needs at runtime, e.g. API keys or endpoints',
+          })}
+        >
+          <ToolEnvEntriesEditor />
         </Form.Item>
 
         <Form.Item

@@ -1,7 +1,9 @@
 package com.agnetix.harnax.admin.dto
 
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Cli
 import io.swagger.v3.oas.annotations.media.Schema
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -21,8 +23,8 @@ data class CliResponse(
     val installScript: String? = null,
     @Schema(description = "Command to verify installation")
     val checkCommand: String? = null,
-    @Schema(description = "Environment variable declarations (JSON)")
-    val envParams: String? = null,
+    @Schema(description = "Environment variable declarations (masked for secret values)")
+    val envParams: List<ToolEnvParamEntry>? = null,
     @Schema(description = "Associated skills")
     var skillList: List<SkillItem>? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
@@ -48,19 +50,66 @@ data class CliResponse(
 
     companion object {
         @JvmStatic
-        fun fromEntity(cli: Cli): CliResponse = CliResponse(
+        fun fromEntity(
+            cli: Cli,
+            objectMapper: ObjectMapper? = null,
+            encryptor: SecretFieldEncryptor? = null,
+        ): CliResponse = CliResponse(
             id = cli.id,
             name = cli.name,
             description = cli.description,
             version = cli.version,
             installScript = cli.installScript,
             checkCommand = cli.checkCommand,
-            envParams = cli.envParams,
+            envParams = deserializeAndMaskToolEnvParams(cli.envParams, objectMapper, encryptor),
             status = cli.status,
             isPublic = cli.isPublic,
             creator = cli.creator,
             createTime = cli.createTime,
             updateTime = cli.updateTime,
         )
+
+        /**
+         * 反序列化 ToolEnvParamEntry JSON 并对敏感值做掩码处理
+         */
+        private fun deserializeAndMaskToolEnvParams(
+            json: String?,
+            objectMapper: ObjectMapper?,
+            encryptor: SecretFieldEncryptor?,
+        ): List<ToolEnvParamEntry>? {
+            if (json.isNullOrBlank() || objectMapper == null) return null
+            return try {
+                val entries = objectMapper.readValue(
+                    json,
+                    objectMapper.typeFactory.constructCollectionType(List::class.java, ToolEnvParamEntry::class.java),
+                ) as List<ToolEnvParamEntry>
+                entries.map { entry ->
+                    if (entry.secret && entry.defaultValue != null) {
+                        entry.copy(defaultValue = maskValue(entry.defaultValue!!, encryptor))
+                    } else {
+                        entry
+                    }
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        /**
+         * 对敏感值做掩码处理，保留前 3 后 4 字符
+         */
+        private fun maskValue(encryptedValue: String, encryptor: SecretFieldEncryptor?): String {
+            if (encryptor == null) return "******"
+            return try {
+                val plain = encryptor.decrypt(encryptedValue)
+                if (plain.length <= 7) {
+                    "******"
+                } else {
+                    "${plain.take(3)}****${plain.takeLast(4)}"
+                }
+            } catch (e: Exception) {
+                "******"
+            }
+        }
     }
 }

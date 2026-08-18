@@ -9,6 +9,7 @@ import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.CliService
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.CliSkillBinding
@@ -20,6 +21,7 @@ import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -34,6 +36,8 @@ class CliServiceImpl(
     private val skillMapper: SkillMapper,
     private val skillRepositoryMapper: SkillRepositoryMapper,
     private val agentSessionRefreshService: AgentSessionRefreshService,
+    private val secretFieldEncryptor: SecretFieldEncryptor,
+    private val objectMapper: ObjectMapper,
 ) : CliService {
 
     private val log = LoggerFactory.getLogger(CliServiceImpl::class.java)
@@ -64,7 +68,7 @@ class CliServiceImpl(
         cli.version = request.version ?: ""
         cli.installScript = request.installScript!!
         cli.checkCommand = request.checkCommand ?: ""
-        cli.envParams = request.envParams
+        cli.envParams = secretFieldEncryptor.serializeToolEnvParams(request.envParams)
         cli.status = request.status ?: 1
         cli.isPublic = request.isPublic ?: 0
         cli.tenantId = tenantId
@@ -99,7 +103,7 @@ class CliServiceImpl(
         request.version?.let { cli.version = it }
         request.installScript?.let { cli.installScript = it }
         request.checkCommand?.let { cli.checkCommand = it }
-        request.envParams?.let { cli.envParams = it }
+        request.envParams?.let { cli.envParams = secretFieldEncryptor.serializeToolEnvParams(it) }
         request.isPublic?.let { cli.isPublic = it }
 
         val success = cliMapper.updateById(cli) > 0
@@ -158,7 +162,7 @@ class CliServiceImpl(
     }
 
     override fun convertToResponse(cli: Cli): CliResponse {
-        val response = CliResponse.fromEntity(cli)
+        val response = CliResponse.fromEntity(cli, objectMapper, secretFieldEncryptor)
         val bindings = cliSkillBindingMapper.selectByCliId(cli.id)
         if (bindings.isNotEmpty()) {
             val skillsById = skillMapper.selectByIds(bindings.map { it.skillId }).associateBy { it.id }

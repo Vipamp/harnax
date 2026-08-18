@@ -211,6 +211,25 @@ const CliManagement: React.FC = () => {
       render: (text: string) => text || <Text type="secondary">-</Text>,
     },
     {
+      title: intl.formatMessage({ id: 'pages.cli.envParams', defaultMessage: 'Environment Params' }),
+      dataIndex: 'envParams',
+      key: 'envParams',
+      width: 140,
+      render: (envParams: API.CliItem['envParams']) =>
+        envParams && envParams.length > 0 ? (
+          <Space size={[0, 4]} wrap>
+            <Tag>{`${envParams.length}`}</Tag>
+            {envParams.some((e) => e.secret) && (
+              <Tag color="orange">
+                {intl.formatMessage({ id: 'pages.cli.envSecret', defaultMessage: 'Secret' })}
+              </Tag>
+            )}
+          </Space>
+        ) : (
+          <Text type="secondary">-</Text>
+        ),
+    },
+    {
       title: intl.formatMessage({ id: 'pages.cli.skills', defaultMessage: 'Skills' }),
       dataIndex: 'skillList',
       key: 'skillList',

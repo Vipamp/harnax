@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.CliCreateRequest
 import com.agnetix.harnax.admin.dto.CliUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.CliSkillBinding
 import com.agnetix.harnax.entity.Skill
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mock
+import org.mockito.Spy
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -36,6 +38,7 @@ import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
+import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
 /**
@@ -67,6 +70,12 @@ class CliServiceImplTest {
 
     @Mock
     private lateinit var agentSessionRefreshService: AgentSessionRefreshService
+
+    @Spy
+    private var objectMapper: ObjectMapper = ObjectMapper()
+
+    @Mock
+    private lateinit var secretFieldEncryptor: SecretFieldEncryptor
 
     private lateinit var testCli: Cli
     private lateinit var testSkill: Skill
@@ -132,6 +141,8 @@ class CliServiceImplTest {
         skillMapper = skillMapper,
         skillRepositoryMapper = skillRepositoryMapper,
         agentSessionRefreshService = agentSessionRefreshService,
+        secretFieldEncryptor = secretFieldEncryptor,
+        objectMapper = objectMapper,
     )
 
     @Nested
