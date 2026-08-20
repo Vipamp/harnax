@@ -77,18 +77,18 @@ class AgentServiceImpl(
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createAgent(request: AgentCreateRequest): Boolean = try {
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+
         val agent = Agent()
         agent.name = request.name!!
         agent.description = request.description!!
         agent.systemPrompt = request.systemPrompt!!
         agent.modelId = request.modelId!!
-        agent.owner = request.owner!!
+        agent.owner = currentUsername
         agent.status = request.status ?: 1
         agent.isPublic = request.isPublic ?: 0
         agent.tenantId = TenantContext.getTenantId() ?: 1
-
-        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        agent.creator = currentUsername!!
+        agent.creator = currentUsername
 
         agent.createTime = LocalDateTime.now()
         agent.updateTime = LocalDateTime.now()
@@ -119,7 +119,6 @@ class AgentServiceImpl(
         request.description?.let { agent.description = it }
         request.systemPrompt?.let { agent.systemPrompt = it }
         request.modelId?.let { agent.modelId = it }
-        request.owner?.let { agent.owner = it }
         request.isPublic?.let { agent.isPublic = it }
 
         agent.updateTime = LocalDateTime.now()

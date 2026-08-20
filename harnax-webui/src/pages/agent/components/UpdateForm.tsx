@@ -1,5 +1,5 @@
 import { useIntl, useModel } from '@umijs/max';
-import { Steps, Form, Input, Button, Select, Switch, Alert } from 'antd';
+import { Steps, Form, Input, Button, Select, Switch, Alert, message } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
@@ -51,6 +51,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
   // Track selected model's capabilities (persistent across step navigation)
   const [selectedModelId, setSelectedModelId] = useState<number | undefined>();
+  const [submitting, setSubmitting] = useState(false);
   const selectedModel = models.find(m => m.id === selectedModelId);
   const modelSupportsTool = selectedModel?.supportTool === 1;
   const modelSupportsMcp = selectedModel?.supportMcp === 1;
@@ -229,19 +230,62 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   };
 
 
+  const validateConfigStep = (): boolean => {
+    if (currentStep === 1) {
+      for (const c of toolConfigs) {
+        if (!c.toolId && (!c.envBindings || c.envBindings.length === 0)) continue;
+        if (!c.toolId) {
+          message.error(intl.formatMessage({ id: 'pages.agent.tool.notSelected', defaultMessage: 'Please select a tool or remove the empty row' }));
+          return false;
+        }
+        for (const entry of (c.envEntries || []).filter((e: any) => e.required)) {
+          const binding = (c.envBindings || []).find(b => b.envKey === entry.envParamName);
+          if (!binding?.envValue) {
+            message.error(intl.formatMessage({ id: 'pages.agent.tool.envRequired', defaultMessage: 'Required env param is empty: ' }) + entry.envParamName);
+            return false;
+          }
+        }
+      }
+    } else if (currentStep === 2) {
+      for (const c of mcpConfigs) {
+        if (!c.mcpId && (!c.envBindings || c.envBindings.length === 0)) continue;
+        if (!c.mcpId) {
+          message.error(intl.formatMessage({ id: 'pages.agent.mcp.notSelected', defaultMessage: 'Please select an MCP service or remove the empty row' }));
+          return false;
+        }
+        for (const entry of (c.envEntries || []).filter((e: any) => e.required)) {
+          const binding = (c.envBindings || []).find(b => b.envKey === entry.envParamName);
+          if (!binding?.envValue) {
+            message.error(intl.formatMessage({ id: 'pages.agent.mcp.envRequired', defaultMessage: 'Required env param is empty: ' }) + entry.envParamName);
+            return false;
+          }
+        }
+      }
+    } else if (currentStep === 3) {
+      for (const c of skillConfigs) {
+        if (!c.repositoryId && !c.skillId) continue;
+        if (!c.skillId) {
+          message.error(intl.formatMessage({ id: 'pages.agent.skill.notSelected', defaultMessage: 'Please select a skill or remove the empty row' }));
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
   const handleNext = async () => {
     try {
       if (currentStep === 0) {
-        await form.validateFields(['name', 'description', 'systemPrompt']);
+        await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
       } else if (currentStep === 4) {
-        const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId', 'owner']);
+        if (submitting) return;
+        const formValues = await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
 
         const submitData: API.AgentUpdateRequest = {
           name: formValues.name,
           description: formValues.description,
           systemPrompt: formValues.systemPrompt,
           modelId: formValues.modelId,
-          owner: formValues.owner,
           status: 1,
           isPublic: isPublic ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
@@ -266,13 +310,21 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           })),
           cliList: selectedCliIds.map(id => ({ id })),
         };
-        await onSubmit(submitData);
+        setSubmitting(true);
+        try {
+          await onSubmit(submitData);
+        } finally {
+          setSubmitting(false);
+        }
         form.resetFields();
         setCurrentStep(0);
         setMcpConfigs([{}]);
         setSkillConfigs([{}]);
         setToolConfigs([{}]);
         setSelectedCliIds([]);
+        return;
+      }
+      if (currentStep >= 1 && currentStep <= 3 && !validateConfigStep()) {
         return;
       }
       setCurrentStep(currentStep + 1);
@@ -415,7 +467,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         <Button disabled={currentStep === 0} onClick={handlePrev}>
           {intl.formatMessage({ id: 'pages.common.previous', defaultMessage: 'Previous' })}
         </Button>
-        <Button type="primary" onClick={handleNext}>
+        <Button type="primary" onClick={handleNext} loading={submitting} disabled={submitting}>
           {currentStep === 4 ? intl.formatMessage({ id: 'pages.common.save', defaultMessage: 'Save' }) : intl.formatMessage({ id: 'pages.agent.nextStep', defaultMessage: 'Next' })}
         </Button>
       </div>
