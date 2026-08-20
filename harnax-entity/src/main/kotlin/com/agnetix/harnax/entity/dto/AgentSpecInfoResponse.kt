@@ -65,6 +65,9 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Model supports reasoning/thinking (0:no, 1:yes)")
     val modelSupportReasoning: Int = 0,
 
+    @Schema(description = "Model thinking mode (0:not supported, 1:optional, 2:required)")
+    val modelThinkingMode: Int = 0,
+
     // ──────────────────────────────────────────────
     // Full configuration details (populated by admin)
     // ──────────────────────────────────────────────

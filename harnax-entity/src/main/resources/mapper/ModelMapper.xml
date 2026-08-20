@@ -12,6 +12,7 @@
         <result column="model_type" property="modelType"/>
         <result column="support_internet" property="supportInternet"/>
         <result column="support_reasoning" property="supportReasoning"/>
+        <result column="thinking_mode" property="thinkingMode"/>
         <result column="support_tool" property="supportTool"/>
         <result column="support_mcp" property="supportMcp"/>
         <result column="support_vision" property="supportVision"/>
@@ -64,11 +65,11 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO model (
-        name, model_name, provider_id, description, model_type, support_internet, support_reasoning, support_tool,
+        name, model_name, provider_id, description, model_type, support_internet, support_reasoning, thinking_mode, support_tool,
         support_mcp, support_vision, price, status, is_public, creator, active, create_time, update_time
         ) VALUES (
         #{name}, #{modelName}, #{providerId}, #{description}, #{modelType}, #{supportInternet}, #{supportReasoning},
-        #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
+        #{thinkingMode}, #{supportTool}, #{supportMcp}, #{supportVision}, #{price}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime},
         #{updateTime}
         )
     </insert>
@@ -83,6 +84,7 @@
         model_type = #{modelType},
         support_internet = #{supportInternet},
         support_reasoning = #{supportReasoning},
+        thinking_mode = #{thinkingMode},
         support_tool = #{supportTool},
         support_mcp = #{supportMcp},
         support_vision = #{supportVision},

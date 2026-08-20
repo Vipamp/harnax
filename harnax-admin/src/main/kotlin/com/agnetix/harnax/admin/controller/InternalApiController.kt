@@ -444,6 +444,7 @@ class InternalApiController(
             permissionMode = permissionMode,
             modelSupportInternet = model?.supportInternet ?: 0,
             modelSupportReasoning = model?.supportReasoning ?: 0,
+            modelThinkingMode = model?.thinkingMode ?: 0,
             modelConfig = modelConfig,
             toolDetails = toolDetails,
             mcpDetails = mcpDetails,
@@ -550,6 +551,9 @@ class InternalApiController(
             if (sessionId.startsWith("chn-")) {
                 val channel = channelMapper.selectBySessionId(sessionId)
                     ?: return ResultVo.error("Channel not found: $sessionId")
+                if (capability == "thinking" && flag == 0 && isThinkingRequired(agentMapper.selectById(channel.agentId)?.modelId)) {
+                    return ResultVo.error("Current model requires Deep Thinking and it cannot be turned off.")
+                }
                 when (capability) {
                     "search" -> channel.enableSearch = flag
                     "thinking" -> channel.enableThink = flag
@@ -562,6 +566,9 @@ class InternalApiController(
             } else {
                 val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
                     ?: return ResultVo.error("Session not found: $sessionId")
+                if (capability == "thinking" && flag == 0 && isThinkingRequired(session.modelId)) {
+                    return ResultVo.error("Current model requires Deep Thinking and it cannot be turned off.")
+                }
                 when (capability) {
                     "search" -> session.enableSearch = flag
                     "thinking" -> session.enableThink = flag
@@ -579,6 +586,12 @@ class InternalApiController(
             log.error("Failed to toggle capability: sessionId={}", sessionId, e)
             ResultVo.error("Failed to toggle capability: ${e.message}")
         }
+    }
+
+    private fun isThinkingRequired(modelId: Long?): Boolean {
+        if (modelId == null) return false
+        val model = modelMapper.selectById(modelId) ?: return false
+        return model.thinkingMode == 2
     }
 
     /**

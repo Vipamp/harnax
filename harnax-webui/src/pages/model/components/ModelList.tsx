@@ -140,9 +140,10 @@ const ModelList: React.FC<ModelListProps> = ({ providerId, onEdit, filters }) =>
       );
     }
     if (model.supportReasoning) {
+      const thinkingRequired = model.thinkingMode === 2;
       capabilities.push(
-        <Tooltip key="reasoning" title={intl.formatMessage({ id: 'pages.model.supportReasoning', defaultMessage: 'Support Reasoning' })}>
-          <Tag icon={<ThunderboltOutlined />} color="orange">{intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })}</Tag>
+        <Tooltip key="reasoning" title={intl.formatMessage({ id: thinkingRequired ? 'pages.model.thinkingMode.required' : 'pages.model.supportReasoning', defaultMessage: thinkingRequired ? 'Required Thinking' : 'Support Reasoning' })}>
+          <Tag icon={<ThunderboltOutlined />} color={thinkingRequired ? 'red' : 'orange'}>{intl.formatMessage({ id: thinkingRequired ? 'pages.model.thinkingMode.required' : 'pages.model.tag.reasoning', defaultMessage: thinkingRequired ? 'Required Thinking' : 'Reasoning' })}</Tag>
         </Tooltip>
       );
     }

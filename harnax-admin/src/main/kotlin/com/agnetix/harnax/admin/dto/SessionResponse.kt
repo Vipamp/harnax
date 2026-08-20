@@ -32,6 +32,8 @@ data class SessionResponse(
     var modelPrice: Double? = null,
     @Schema(description = "Model supports reasoning/thinking (0:no, 1:yes)", example = "1")
     var modelSupportReasoning: Int? = null,
+    @Schema(description = "Model thinking mode (0:not supported, 1:optional, 2:required)", example = "1")
+    var modelThinkingMode: Int? = null,
     @Schema(description = "Model supports internet search (0:no, 1:yes)", example = "1")
     var modelSupportInternet: Int? = null,
     @Schema(description = "Model supports vision/image input (0:no, 1:yes)", example = "1")

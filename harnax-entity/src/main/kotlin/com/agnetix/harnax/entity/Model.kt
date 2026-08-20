@@ -41,6 +41,9 @@ class Model : Serializable {
     @Schema(description = "Reasoning support (0:no, 1:yes)")
     var supportReasoning: Int = 0
 
+    @Schema(description = "Thinking mode (0:not supported, 1:optional, 2:required)")
+    var thinkingMode: Int = 0
+
     @Schema(description = "Tool support (0:no, 1:yes)")
     var supportTool: Int = 0
 

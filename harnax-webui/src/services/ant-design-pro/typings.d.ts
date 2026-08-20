@@ -163,6 +163,7 @@ declare namespace API {
     modelType: string;
     supportInternet: number;
     supportReasoning: number;
+    thinkingMode?: number;
     supportTool: number;
     supportMcp: number;
     supportVision: number;
@@ -180,6 +181,7 @@ declare namespace API {
     modelType: string;
     supportInternet?: number;
     supportReasoning?: number;
+    thinkingMode?: number;
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;
@@ -196,6 +198,7 @@ declare namespace API {
     modelType?: string;
     supportInternet?: number;
     supportReasoning?: number;
+    thinkingMode?: number;
     supportTool?: number;
     supportMcp?: number;
     supportVision?: number;

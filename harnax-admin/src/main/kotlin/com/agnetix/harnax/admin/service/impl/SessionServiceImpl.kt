@@ -77,6 +77,7 @@ class SessionServiceImpl(
                 response.modelName = it.modelName
                 response.modelPrice = it.price
                 response.modelSupportReasoning = it.supportReasoning
+                response.modelThinkingMode = it.thinkingMode
                 response.modelSupportInternet = it.supportInternet
                 response.modelSupportVision = it.supportVision
             }
@@ -190,6 +191,10 @@ class SessionServiceImpl(
         session.owner = agent.owner
         session.status = 1
 
+        // Default enable_think based on model thinking mode (optional/required -> on)
+        val model = modelService.getModel(agent.modelId)
+        session.enableThink = if ((model?.thinkingMode ?: 0) >= 1) 1 else 0
+
         // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         session.creator = currentUsername
@@ -231,7 +236,14 @@ class SessionServiceImpl(
             ?: throw BizException("Session not found or disabled")
 
         // Update configuration fields (only update non-null fields)
-        request.enableThink?.let { session.enableThink = if (it) 1 else 0 }
+        request.enableThink?.let {
+            // Model with required thinking mode (thinkingMode=2) cannot have thinking disabled
+            val model = modelService.getModel(session.modelId)
+            if (!it && (model?.thinkingMode ?: 0) == 2) {
+                throw BizException("Current model requires Deep Thinking and it cannot be turned off.")
+            }
+            session.enableThink = if (it) 1 else 0
+        }
         request.enableSearch?.let { session.enableSearch = if (it) 1 else 0 }
         request.enablePlan?.let { session.enablePlan = if (it) 1 else 0 }
         request.permissionMode?.let { session.permissionMode = it }

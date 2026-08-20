@@ -29,6 +29,8 @@ data class ModelResponse(
     var supportInternet: Int? = null,
     @Schema(description = "Whether supports reasoning", example = "0")
     var supportReasoning: Int? = null,
+    @Schema(description = "Thinking mode (0:not supported, 1:optional, 2:required)", example = "1")
+    var thinkingMode: Int? = null,
     @Schema(description = "Whether supports tools", example = "0")
     var supportTool: Int? = null,
     @Schema(description = "Whether supports MCP", example = "0")
@@ -59,6 +61,7 @@ data class ModelResponse(
             tags = calculateTags(model),
             supportInternet = model.supportInternet,
             supportReasoning = model.supportReasoning,
+            thinkingMode = model.thinkingMode,
             supportTool = model.supportTool,
             supportMcp = model.supportMcp,
             supportVision = model.supportVision,

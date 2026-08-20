@@ -31,6 +31,11 @@ data class ModelUpdateRequest(
     @Schema(description = "Whether supports reasoning", example = "0")
     val supportReasoning: Int? = null,
 
+    @Schema(description = "Thinking mode (0:not supported, 1:optional, 2:required)", example = "0")
+    @field:Min(value = 0, message = "Thinking mode must be between 0 and 2")
+    @field:Max(value = 2, message = "Thinking mode must be between 0 and 2")
+    val thinkingMode: Int? = null,
+
     @Schema(description = "Whether supports tools", example = "0")
     val supportTool: Int? = null,
 

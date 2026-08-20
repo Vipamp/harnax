@@ -647,20 +647,30 @@ class DefaultAgentRunner(
 
         val display = capability.replaceFirstChar { it.uppercase() }
 
-        // When enabling a capability, validate that the model supports it
-        if (enable) {
+        // Validate capability against model constraints:
+        // - enabling requires model support
+        // - disabling thinking is blocked when model requires thinking (thinkingMode=2)
+        if (enable || capability == "thinking") {
             try {
                 val specInfo = adminApiClient.getAgentSpec(sessionId)
-                val unsupported = when (capability) {
-                    "thinking" -> specInfo.modelSupportReasoning != 1
-                    "search" -> specInfo.modelSupportInternet != 1
-                    else -> false
-                }
-                if (unsupported) {
+                if (!enable && capability == "thinking" && specInfo.modelThinkingMode == 2) {
                     return CommandResponse.failure(
                         sessionId,
-                        "Current model does not support $display. Please switch to a model that supports this capability.",
+                        "Current model requires Deep Thinking and it cannot be turned off.",
                     )
+                }
+                if (enable) {
+                    val unsupported = when (capability) {
+                        "thinking" -> specInfo.modelSupportReasoning != 1 && specInfo.modelThinkingMode < 1
+                        "search" -> specInfo.modelSupportInternet != 1
+                        else -> false
+                    }
+                    if (unsupported) {
+                        return CommandResponse.failure(
+                            sessionId,
+                            "Current model does not support $display. Please switch to a model that supports this capability.",
+                        )
+                    }
                 }
             } catch (e: Exception) {
                 log.warn("Failed to validate model capability for session=$sessionId: ${e.message}")

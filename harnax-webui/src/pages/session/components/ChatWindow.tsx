@@ -508,6 +508,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const [enableSearch, setEnableSearch] = useState(false);
   const [enablePlan, setEnablePlan] = useState(false);
   const [modelSupportReasoning, setModelSupportReasoning] = useState(true); // 模型是否支持深度思考
+  const [modelThinkingMode, setModelThinkingMode] = useState<number | undefined>(undefined); // 0:不支持 1:可选 2:强制
   const [modelSupportInternet, setModelSupportInternet] = useState(true); // 模型是否支持联网搜索
   const [modelSupportVision, setModelSupportVision] = useState(true); // 模型是否支持视觉
     const [permissionMode, setPermissionMode] = useState('DEFAULT'); // 权限模式：DEFAULT/BYPASS/ACCEPT_EDITS/EXPLORE/DONT_ASK
@@ -641,6 +642,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           setEnablePlan(config.enablePlan || false);
           setPermissionMode(config.permissionMode || 'DEFAULT');
           setModelSupportReasoning(config.modelSupportReasoning !== 0);
+          setModelThinkingMode(
+            config.modelThinkingMode != null
+              ? config.modelThinkingMode
+              : config.modelSupportReasoning !== 0 ? 1 : 0,
+          );
+          if ((config.modelThinkingMode ?? 0) === 2) {
+            setEnableThink(true);
+          }
           setModelSupportInternet(config.modelSupportInternet !== 0);
           setModelSupportVision(config.modelSupportVision !== 0);
         }
@@ -2847,10 +2856,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 )}
               >
                 <div
-                  className={`${styles.optionItem} ${enableThink ? styles.optionActive : ''} ${!modelSupportReasoning ? styles.optionDisabled : ''}`}
+                  className={`${styles.optionItem} ${enableThink || modelThinkingMode === 2 ? styles.optionActive : ''} ${!modelSupportReasoning ? styles.optionDisabled : ''}`}
                   onClick={() => {
                     if (!modelSupportReasoning) {
                       message.warning(intl.formatMessage({ id: 'pages.session.modelNotSupportReasoning', defaultMessage: 'Current model does not support Deep Thinking' }));
+                      return;
+                    }
+                    if (modelThinkingMode === 2) {
+                      message.info(intl.formatMessage({ id: 'pages.session.thinkingRequired', defaultMessage: 'Current model requires Deep Thinking, it cannot be turned off' }));
                       return;
                     }
                     const newValue = !enableThink;

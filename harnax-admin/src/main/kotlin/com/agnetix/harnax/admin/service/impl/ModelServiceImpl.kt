@@ -94,7 +94,10 @@ class ModelServiceImpl(
         model.description = request.description
         model.modelType = request.modelType
         model.supportInternet = request.supportInternet ?: 0
-        model.supportReasoning = request.supportReasoning ?: 0
+        val createThinkingMode = request.thinkingMode
+            ?: if ((request.supportReasoning ?: 0) >= 1) 1 else 0
+        model.thinkingMode = createThinkingMode
+        model.supportReasoning = if (createThinkingMode >= 1) 1 else 0
         model.supportTool = request.supportTool ?: 0
         model.supportMcp = request.supportMcp ?: 0
         model.supportVision = request.supportVision ?: 0
@@ -141,7 +144,15 @@ class ModelServiceImpl(
         request.description?.let { model.description = it }
         request.modelType?.let { model.modelType = it }
         request.supportInternet?.let { model.supportInternet = it }
-        request.supportReasoning?.let { model.supportReasoning = it }
+        if (request.thinkingMode != null) {
+            model.thinkingMode = request.thinkingMode
+            model.supportReasoning = if (request.thinkingMode >= 1) 1 else 0
+        } else {
+            request.supportReasoning?.let {
+                model.supportReasoning = it
+                model.thinkingMode = if (it >= 1) 1 else 0
+            }
+        }
         request.supportTool?.let { model.supportTool = it }
         request.supportMcp?.let { model.supportMcp = it }
         request.supportVision?.let { model.supportVision = it }

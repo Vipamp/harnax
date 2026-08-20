@@ -41,7 +41,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           modelType: values.modelType,
           price: values.price,
           supportInternet: values.supportInternet === 1,
-          supportReasoning: values.supportReasoning === 1,
+          thinkingMode: values.thinkingMode ?? (values.supportReasoning === 1 ? 1 : 0),
           supportTool: values.supportTool === 1,
           supportMcp: values.supportMcp === 1,
           supportVision: values.supportVision === 1,
@@ -55,6 +55,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
           providerId: providerId,
           modelType: 'chat',
           price: 0,
+          thinkingMode: 0,
           status: 1,
           isPublic: false,
         });
@@ -68,7 +69,7 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
     if (value !== 'chat') {
       form.setFieldsValue({
         supportInternet: false,
-        supportReasoning: false,
+        thinkingMode: 0,
         supportTool: false,
         supportMcp: false,
         supportVision: false,
@@ -88,7 +89,8 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
         modelType: formValues.modelType,
         price: formValues.price ? parseFloat(formValues.price) : null,
         supportInternet: formValues.supportInternet ? 1 : 0,
-        supportReasoning: formValues.supportReasoning ? 1 : 0,
+        thinkingMode: formValues.thinkingMode ?? 0,
+        supportReasoning: (formValues.thinkingMode ?? 0) >= 1 ? 1 : 0,
         supportTool: formValues.supportTool ? 1 : 0,
         supportMcp: formValues.supportMcp ? 1 : 0,
         supportVision: formValues.supportVision ? 1 : 0,
@@ -195,11 +197,6 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item name="supportReasoning" valuePropName="checked" noStyle>
-                  <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.reasoning', defaultMessage: 'Reasoning' })} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
                 <Form.Item name="supportTool" valuePropName="checked" noStyle>
                   <Switch checkedChildren={intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })} unCheckedChildren={intl.formatMessage({ id: 'pages.model.tag.tool', defaultMessage: 'Tool' })} />
                 </Form.Item>
@@ -217,6 +214,23 @@ const ModelForm: React.FC<ModelFormProps> = ({ visible, values, providerId, onCa
                 </Form.Item>
               </Col>
             </Row>
+          </Form.Item>
+        )}
+
+        {modelType === 'chat' && (
+          <Form.Item
+            name="thinkingMode"
+            label={intl.formatMessage({ id: 'pages.model.thinkingMode', defaultMessage: 'Thinking Mode' })}
+            initialValue={0}
+            tooltip={intl.formatMessage({ id: 'pages.model.thinkingMode.tooltip', defaultMessage: 'Optional: user can toggle thinking in session; Required: thinking is always on' })}
+          >
+            <Select
+              options={[
+                { label: intl.formatMessage({ id: 'pages.model.thinkingMode.none', defaultMessage: 'No Thinking' }), value: 0 },
+                { label: intl.formatMessage({ id: 'pages.model.thinkingMode.optional', defaultMessage: 'Optional Thinking' }), value: 1 },
+                { label: intl.formatMessage({ id: 'pages.model.thinkingMode.required', defaultMessage: 'Required Thinking' }), value: 2 },
+              ]}
+            />
           </Form.Item>
         )}
 

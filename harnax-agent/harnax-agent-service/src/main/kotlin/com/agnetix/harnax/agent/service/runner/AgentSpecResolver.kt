@@ -65,14 +65,21 @@ class AgentSpecResolver(
         // Mask session-level enable flags with model capabilities.
         // If the model doesn't support a feature, force it off regardless of session config.
         val effectiveSearch = specInfo.enableSearch == 1 && specInfo.modelSupportInternet == 1
-        val effectiveThinking = specInfo.enableThink == 1 && specInfo.modelSupportReasoning == 1
+        val effectiveThinking = when (specInfo.modelThinkingMode) {
+            2 -> true // required: model only supports thinking mode, ignore session toggle
+            1 -> specInfo.enableThink == 1 // optional: honor session toggle
+            else -> specInfo.enableThink == 1 && specInfo.modelSupportReasoning == 1 // legacy fallback
+        }
         val effectivePlan = specInfo.enablePlan == 1
 
         if (specInfo.enableSearch == 1 && specInfo.modelSupportInternet != 1) {
             log.warn("Session requests enableSearch but model does not support internet search: sessionId={}, modelId={}", sessionId, specInfo.modelId)
         }
-        if (specInfo.enableThink == 1 && specInfo.modelSupportReasoning != 1) {
+        if (specInfo.enableThink == 1 && specInfo.modelThinkingMode != 2 && specInfo.modelSupportReasoning != 1) {
             log.warn("Session requests enableThink but model does not support reasoning: sessionId={}, modelId={}", sessionId, specInfo.modelId)
+        }
+        if (specInfo.enableThink == 0 && specInfo.modelThinkingMode == 2) {
+            log.info("Model requires thinking mode, forcing enableThinking=true: sessionId={}, modelId={}", sessionId, specInfo.modelId)
         }
 
         val chatSpec = ChatSpecBuilder()
