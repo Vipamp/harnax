@@ -361,10 +361,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
+          cpus: '2.0'
           memory: 2048M
         reservations:
-          cpus: '2.0'
+          cpus: '1.0'
           memory: 1024M
       restart_policy:
         condition: on-failure
@@ -461,7 +461,7 @@ services:
     container_name: harnax-frontend
     restart: always
     ports:
-      - "80:80"
+      - "3389:80"
       - "443:443"
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
