@@ -39,6 +39,13 @@ class AuthController(
     fun login(@Valid @RequestBody request: @Valid LoginRequest): ResultVo<LoginResponse> = ResultVo.success(authService.login(request))
 
     /**
+     * CLI login — no captcha, plain password (hashed server-side)
+     */
+    @PostMapping("/cli-login")
+    @Operation(summary = "CLI login", description = "Username and password login for harnax CLI (no captcha)")
+    fun cliLogin(@Valid @RequestBody request: @Valid LoginRequest): ResultVo<LoginResponse> = ResultVo.success(authService.cliLogin(request))
+
+    /**
      * Logout
      */
     @PostMapping("/logout")

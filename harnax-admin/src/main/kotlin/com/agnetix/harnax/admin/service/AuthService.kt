@@ -23,6 +23,14 @@ interface AuthService {
     fun mobileLogin(request: LoginRequest): LoginResponse
 
     /**
+     * CLI login (no captcha; password arrives in plain text and is
+     * SHA-256 hashed server-side before BCrypt verification)
+     * @param request Login request with plain password
+     * @return Login response
+     */
+    fun cliLogin(request: LoginRequest): LoginResponse
+
+    /**
      * Logout
      */
     fun logout()

@@ -37,6 +37,7 @@ class JwtAuthenticationFilter(
         val path = request.requestURI
         return path.startsWith("/api/admin/internal") ||
             path.startsWith("/api/admin/auth/login") ||
+            path.startsWith("/api/admin/auth/cli-login") ||
             path.startsWith("/api/admin/auth/logout") ||
             path.startsWith("/api/admin/auth/captcha") ||
             path.startsWith("/api/admin/auth/login-methods") ||

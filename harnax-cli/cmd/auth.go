@@ -26,14 +26,12 @@ var loginCmd = &cobra.Command{
 		}
 
 		body := map[string]string{
-			"username":    username,
-			"password":    password,
-			"captchaKey":  "",
-			"captchaCode": "",
+			"username": username,
+			"password": password,
 		}
 
 		ctx := context.Background()
-		result, err := c.Create(ctx, "/api/admin/auth/login", body)
+		result, err := c.Create(ctx, "/api/admin/auth/cli-login", body)
 		if err != nil {
 			exitAPIError(err)
 		}

@@ -189,6 +189,78 @@ class AuthServiceImpl(
         return response
     }
 
+    override fun cliLogin(request: LoginRequest): LoginResponse {
+        log.info("CLI login, username: {}", request.username)
+
+        // 1. Validate username and password (no captcha — CLI has no interactive UI).
+        // CLI sends the plain password; the DB stores BCrypt(SHA-256(plain)),
+        // so hash server-side to match the web-login verification chain.
+        val user: SysUser = sysUserService.getByUsername(request.username)
+            ?: throw BizException(messageUtil.getMessage("error.user.notfound"))
+
+        if (!BCrypt.checkpw(sha256Hex(request.password ?: ""), user.password)) {
+            throw BizException(messageUtil.getMessage("error.user.invalid_credentials"))
+        }
+
+        // 2. Check user status
+        if (user.status == 0) {
+            throw BizException(messageUtil.getMessage("error.user.disabled"))
+        }
+
+        // 3. Check tenant
+        val userTenants = userTenantService.getUserTenants(user.id)
+        if (userTenants.isEmpty() && user.isAdmin != 1) {
+            throw BizException(messageUtil.getMessage("error.user.no_tenant"))
+        }
+
+        // 4. Generate JWT Token
+        val defaultTenantId = if (userTenants.isNotEmpty()) userTenants[0].id else null
+        val accessToken = jwtUtil.generateToken(user.id, user.username, defaultTenantId, user.isAdmin)
+        val expiresAt = System.currentTimeMillis() + jwtUtil.getExpirationTime()
+
+        val userInfo = UserInfo.builder()
+            .userId(user.id).username(user.username).nickname(user.nickname)
+            .avatar(user.avatar).email(user.email).phone(user.phone)
+            .gender(user.gender).isAdmin(user.isAdmin).build()
+
+        // 5. Get the user's permanent router API key (self-heal like web login)
+        val rawKey = apiKeyService.getPermanentRawKey(user.id) ?: run {
+            log.warn("Permanent API Key missing for user: {}, creating one on the fly", user.username)
+            try {
+                apiKeyService.createPermanentKeyForUser(user.id, user.username, user.tenantId).rawKey
+            } catch (e: Exception) {
+                log.error("Failed to create permanent API Key for user: {}, error: {}", user.username, e.message)
+                apiKeyService.getPermanentRawKey(user.id)
+                    ?: throw BizException("Permanent API Key not found for user: ${user.username}")
+            }
+        }
+
+        val response = LoginResponse.builder()
+            .accessToken(accessToken).tokenType("Bearer")
+            .expiresIn(jwtUtil.getExpirationTime() / 1000)
+            .expiresAt(expiresAt).userInfo(userInfo)
+            .tenants(userTenants).currentTenantId(defaultTenantId)
+            .routerApiKey(rawKey).build()
+
+        // 6. Update last login time
+        try {
+            sysUserMapper.updateLastLoginTime(user.id, LocalDateTime.now())
+        } catch (e: Exception) {
+            log.error("Failed to update CLI user login time: {}", e.message)
+        }
+
+        log.info("CLI login successful, userId: {}, username: {}", user.id, user.username)
+        return response
+    }
+
+    /**
+     * SHA-256 lowercase hex — matches the web frontend's CryptoJS.SHA256(pwd).toString().
+     */
+    private fun sha256Hex(input: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(input.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
     override fun logout() {
         // Get current request (need to get from RequestContextHolder)
         val token = getCurrentToken()

@@ -30,7 +30,7 @@ class SecurityConfig(
             .httpBasic { it.disable() }
             .cors { it.configurationSource(corsConfigurationSource()) }
             .authorizeHttpRequests { auth ->
-                auth.requestMatchers("/api/admin/auth/login", "/api/admin/auth/logout", "/api/admin/auth/captcha", "/api/admin/auth/login-methods")
+                auth.requestMatchers("/api/admin/auth/login", "/api/admin/auth/cli-login", "/api/admin/auth/logout", "/api/admin/auth/captcha", "/api/admin/auth/login-methods")
                     .permitAll()
                     // Mobile auth endpoints (login/logout/captcha) do not require JWT
                     .requestMatchers("/api/admin/mp/auth/**")
