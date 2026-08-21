@@ -901,6 +901,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     let activeTextIdx = -1; // 当前活跃的 text segment 索引
     let activeThinkIdx = -1; // 当前活跃的 thinking segment 索引
     let currentEventType: 'text' | 'thinking' | null = null; // 当前事件类型
+    let streamTerminated = false; // 是否收到 EndEvent/ErrorEvent（用于检测流中途断连）
     let toolCallMap = new Map<string, number>(); // toolId -> segment index 映射
     let currentMsgs = [...messages, userMessage, assistantMessage];
     let currentAssistantMessageId = assistantMessageId; // 可变的 assistant message ID
@@ -1219,11 +1220,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               currentSegs = [...currentSegs, { type: 'text', content: errText }];
               message.error(errText, 8);
               setLoading(false);
+              streamTerminated = true;
               changed = true;
 
             } else if (data.eventType === 'EndEvent') {
               // 收到结束事件，表示 AI 输出已完成
               console.log('[EndEvent] AI output completed');
+              streamTerminated = true;
               currentEventType = null;
               accText = '';
               accThinking = '';
@@ -1341,6 +1344,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               if (!confirmReader) throw new Error('无法读取响应流');
               
               let confirmBuffer = '';
+              let confirmTerminated = false; // 是否收到 EndEvent/ErrorEvent
               
               while (true) {
                 const { done, value } = await confirmReader.read();
@@ -1545,10 +1549,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       currentSegs = [...currentSegs, { type: 'text', content: errText }];
                       message.error(errText, 8);
                       setLoading(false);
+                      confirmTerminated = true;
                       confirmChanged = true;
                     } else if (confirmData.eventType === 'EndEvent') {
                       // 收到结束事件，表示 AI 输出已完成
                       console.log('[Confirm EndEvent] AI output completed');
+                      confirmTerminated = true;
                       currentEventType = null;
                       accText = '';
                       accThinking = '';
@@ -1648,6 +1654,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       if (!nestedConfirmReader) throw new Error('无法读取响应流');
                       
                       let nestedConfirmBuffer = '';
+                      let nestedTerminated = false; // 是否收到 EndEvent/ErrorEvent
                       
                       while (true) {
                         const { done: nestedDone, value: nestedValue } = await nestedConfirmReader.read();
@@ -1852,10 +1859,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               currentSegs = [...currentSegs, { type: 'text', content: errText }];
                               message.error(errText, 8);
                               setLoading(false);
+                              nestedTerminated = true;
                               confirmChanged = true;
                             } else if (nestedData.eventType === 'EndEvent') {
                               // 收到结束事件，表示 AI 输出已完成
                               console.log('[Nested EndEvent] AI output completed');
+                              nestedTerminated = true;
                               currentEventType = null;
                               accText = '';
                               accThinking = '';
@@ -1873,6 +1882,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         if (confirmChanged) {
                           flushUI();
                         }
+
+                        // 断连检测：嵌套 confirm 流读完但从未收到 EndEvent/ErrorEvent
+                        if (!nestedTerminated) {
+                          message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
+                          setLoading(false);
+                        }
                       }
                     }
                   } catch (err) {
@@ -1882,6 +1897,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 
                 if (confirmChanged) {
                   flushUI();
+                }
+
+                // 断连检测：confirm 流读完但从未收到 EndEvent/ErrorEvent
+                if (!confirmTerminated) {
+                  message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
+                  setLoading(false);
                 }
               }
             }
@@ -1894,6 +1915,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
         if (changed) {
           flushUI();
         }
+      }
+
+      // 断连检测：流正常读完但从未收到 EndEvent/ErrorEvent，且没有任何输出，提示用户
+      if (!streamTerminated && currentSegs.length === 0) {
+        const errText = intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' });
+        currentSegs = [...currentSegs, { type: 'text', content: errText }];
+        message.error(errText, 8);
+        flushUI();
       }
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
