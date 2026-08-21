@@ -38,6 +38,7 @@ class AgentSpecResolver(
     private val adminApiClient: AdminApiClient,
     private val specContextHolder: AgentSpecContextHolder,
     private val objectMapper: ObjectMapper,
+    private val builtinSkillRegistry: BuiltinSkillRegistry,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentSpecResolver::class.java)
@@ -50,8 +51,17 @@ class AgentSpecResolver(
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
 
+        // Inject built-in skills: loaded first (before spec-defined skills), dedup by id.
+        val builtinSkills = builtinSkillRegistry.getSkills()
+        val specSkillIds = specInfo.skillDetails.map { it.id }.toSet()
+        val mergedSkillDetails = builtinSkills.filter { it.id !in specSkillIds } + specInfo.skillDetails
+        val effectiveSpecInfo = specInfo.copy(skillDetails = mergedSkillDetails)
+        if (builtinSkills.isNotEmpty()) {
+            log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", builtinSkills.size, sessionId, builtinSkills.map { it.name })
+        }
+
         // Store full spec in context so adaptors can read during agent creation
-        specContextHolder.set(specInfo)
+        specContextHolder.set(effectiveSpecInfo)
 
         log.info(
             "Resolved agent spec from admin: sessionId={}, agentId={}, agentName={}",
@@ -60,7 +70,7 @@ class AgentSpecResolver(
             specInfo.agentName,
         )
 
-        val agentSpec = buildAgentSpec(specInfo, sessionId)
+        val agentSpec = buildAgentSpec(effectiveSpecInfo, sessionId)
 
         // Mask session-level enable flags with model capabilities.
         // If the model doesn't support a feature, force it off regardless of session config.

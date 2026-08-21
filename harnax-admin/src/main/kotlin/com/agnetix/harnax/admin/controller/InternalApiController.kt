@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.common.dto.ResultVo
@@ -27,6 +28,7 @@ import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 import tools.jackson.core.type.TypeReference
@@ -50,6 +52,7 @@ class InternalApiController(
     private val agentToolMapper: AgentToolMapper,
     private val mcpServerMapper: McpServerMapper,
     private val skillMapper: SkillMapper,
+    private val skillRepositoryMapper: SkillRepositoryMapper,
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
@@ -82,6 +85,29 @@ class InternalApiController(
     data class SystemKeyRequest(val serviceName: String)
 
     data class SystemKeyResponse(val rawKey: String, val keyPrefix: String)
+
+    /**
+     * List all active skills from the built-in skill repository.
+     * Used by agent-service to preload built-in skills at startup.
+     */
+    @GetMapping("/builtin-skills")
+    fun getBuiltinSkills(): ResultVo<List<SkillDetailDto>> {
+        val repo = skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS)
+            ?: return ResultVo.success(emptyList())
+        val skills = skillMapper.selectByRepositoryId(repo.id).filter { it.status == 1 }
+        return ResultVo.success(
+            skills.map { skill ->
+                SkillDetailDto(
+                    id = skill.id,
+                    name = skill.name,
+                    description = skill.description,
+                    skillmd = skill.skillmd,
+                    resources = skill.resources,
+                    version = skill.version,
+                )
+            },
+        )
+    }
 
     @PostMapping("/api-keys/validate")
     fun validateApiKey(@RequestBody request: ApiKeyValidateRequest): ResultVo<ApiKeyValidateResponse?> {
