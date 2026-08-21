@@ -76,7 +76,7 @@ class ProcessLogMiddleware : MiddlewareBase {
                 }
             }
             .doOnError { error ->
-                adaptor.emitLog(builder.error(message = "[Processing] Error.", throwable = error))
+                adaptor.emitLog(builder.error(message = "[Processing] Error: ${error.message ?: error.javaClass.simpleName}", throwable = error))
             }
     }
 

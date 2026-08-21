@@ -877,6 +877,7 @@ export default {
   'pages.session.internetSearch': 'Internet Search',
   'pages.session.modelNotSupportReasoning': 'Current model does not support Deep Thinking',
   'pages.session.thinkingRequired': 'Current model requires Deep Thinking, it cannot be turned off',
+  'pages.session.errorOccurred': 'An error occurred',
   'pages.session.modelNotSupportInternet': 'Current model does not support Internet Search',
   'pages.session.modelNotSupportVision': 'Current model does not support image input',
   'pages.session.enablePlan': 'Enable Plan',

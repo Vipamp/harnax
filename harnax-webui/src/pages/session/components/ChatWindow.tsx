@@ -1207,6 +1207,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               }
               changed = true;
               
+            } else if (data.eventType === 'ErrorEvent') {
+              // 后端错误事件：把错误信息展示给用户，避免静默无响应
+              console.error('[ErrorEvent]', data.code, data.message);
+              currentEventType = null;
+              accText = '';
+              accThinking = '';
+              activeTextIdx = -1;
+              activeThinkIdx = -1;
+              const errText = `${intl.formatMessage({ id: 'pages.session.errorOccurred', defaultMessage: 'An error occurred' })}: ${data.message || data.code || 'Unknown error'}`;
+              currentSegs = [...currentSegs, { type: 'text', content: errText }];
+              message.error(errText, 8);
+              setLoading(false);
+              changed = true;
+
             } else if (data.eventType === 'EndEvent') {
               // 收到结束事件，表示 AI 输出已完成
               console.log('[EndEvent] AI output completed');
@@ -1519,6 +1533,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         console.log('[Confirm ToolResultEvent] Tool not found, ignoring result');
                       }
                       confirmChanged = true;
+                    } else if (confirmData.eventType === 'ErrorEvent') {
+                      // 后端错误事件：把错误信息展示给用户，避免静默无响应
+                      console.error('[Confirm ErrorEvent]', confirmData.code, confirmData.message);
+                      currentEventType = null;
+                      accText = '';
+                      accThinking = '';
+                      activeTextIdx = -1;
+                      activeThinkIdx = -1;
+                      const errText = `${intl.formatMessage({ id: 'pages.session.errorOccurred', defaultMessage: 'An error occurred' })}: ${confirmData.message || confirmData.code || 'Unknown error'}`;
+                      currentSegs = [...currentSegs, { type: 'text', content: errText }];
+                      message.error(errText, 8);
+                      setLoading(false);
+                      confirmChanged = true;
                     } else if (confirmData.eventType === 'EndEvent') {
                       // 收到结束事件，表示 AI 输出已完成
                       console.log('[Confirm EndEvent] AI output completed');
@@ -1812,6 +1839,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               } else {
                                 console.log('[Nested ToolResultEvent] Tool not found, ignoring result');
                               }
+                              confirmChanged = true;
+                            } else if (nestedData.eventType === 'ErrorEvent') {
+                              // 后端错误事件：把错误信息展示给用户，避免静默无响应
+                              console.error('[Nested ErrorEvent]', nestedData.code, nestedData.message);
+                              currentEventType = null;
+                              accText = '';
+                              accThinking = '';
+                              activeTextIdx = -1;
+                              activeThinkIdx = -1;
+                              const errText = `${intl.formatMessage({ id: 'pages.session.errorOccurred', defaultMessage: 'An error occurred' })}: ${nestedData.message || nestedData.code || 'Unknown error'}`;
+                              currentSegs = [...currentSegs, { type: 'text', content: errText }];
+                              message.error(errText, 8);
+                              setLoading(false);
                               confirmChanged = true;
                             } else if (nestedData.eventType === 'EndEvent') {
                               // 收到结束事件，表示 AI 输出已完成

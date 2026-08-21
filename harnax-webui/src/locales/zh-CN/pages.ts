@@ -884,6 +884,7 @@ export default {
   'pages.session.internetSearch': '联网搜索',
   'pages.session.modelNotSupportReasoning': '当前模型不支持深度思考',
   'pages.session.thinkingRequired': '当前模型强制开启深度思考，无法关闭',
+  'pages.session.errorOccurred': '处理出错',
   'pages.session.modelNotSupportInternet': '当前模型不支持联网搜索',
   'pages.session.modelNotSupportVision': '当前模型不支持图片输入',
   'pages.session.enablePlan': '开启计划',

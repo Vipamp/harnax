@@ -358,12 +358,13 @@ open class ChannelChatService(
     /**
      * Format error message for user-facing output.
      *
-     * Format: `[error-code][request-id][user-readable message]`
+     * Format: `⚠️ AI processing failed: message (code: error-code, requestId: request-id)`
      * - error-code: from HarnaxErrorCode (e.g., "6001")
      * - request-id: short request identifier for tracing (e.g., "req-a1b2c3d4")
      * - message: user-readable error description
      */
-    private fun formatErrorMessage(code: String, requestId: String, message: String): String = "[$code][$requestId][$message]"
+    private fun formatErrorMessage(code: String, requestId: String, message: String): String =
+        "\u26a0\ufe0f AI processing failed: $message (code: $code, requestId: $requestId)"
 
     /**
      * Build a plain-text confirmation message from pending tool info.
