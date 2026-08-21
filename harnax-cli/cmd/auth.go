@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agnetix/harnax-cli/internal/client"
 	"github.com/agnetix/harnax-cli/internal/config"
 	"github.com/agnetix/harnax-cli/internal/output"
 	"github.com/spf13/cobra"
@@ -20,10 +21,18 @@ var loginCmd = &cobra.Command{
 			exitError("--username and --password are required")
 		}
 
-		c, err := newAdminClient()
-		if err != nil {
-			exitError(err.Error())
+		// Login must work without existing credentials, so resolve the
+		// server URL directly instead of using newAdminClient().
+		url := serverURL
+		if url == "" {
+			var err error
+			url, err = config.GetServerURL(profile)
+			if err != nil {
+				exitError(err.Error())
+			}
 		}
+		c := client.NewAdminClient(url, "")
+		c.Verbose = verbose
 
 		body := map[string]string{
 			"username": username,
@@ -37,9 +46,10 @@ var loginCmd = &cobra.Command{
 		}
 
 		var loginData struct {
-			AccessToken   string `json:"accessToken"`
-			RouterApiKey  string `json:"routerApiKey"`
-			CurrentTenantID int64 `json:"currentTenantId"`
+			AccessToken     string `json:"accessToken"`
+			RouterApiKey    string `json:"routerApiKey"`
+			CurrentTenantID int64  `json:"currentTenantId"`
+			ExpiresAt       int64  `json:"expiresAt"`
 		}
 		if err := result.DecodeData(&loginData); err != nil {
 			exitError(fmt.Sprintf("failed to parse login response: %v", err))
@@ -49,6 +59,7 @@ var loginCmd = &cobra.Command{
 			AccessToken: loginData.AccessToken,
 			Username:    username,
 			TenantID:    loginData.CurrentTenantID,
+			ExpiresAt:   loginData.ExpiresAt,
 		}
 
 		if err := config.SaveCredentials(creds); err != nil {

@@ -15,8 +15,18 @@ const apikeyPath = "/api/admin/api-keys"
 type APIKey struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
-	Enabled    bool   `json:"enabled"`
+	KeyPrefix  string `json:"keyPrefix"`
+	Scopes     string `json:"scopes"`
+	Enabled    int    `json:"enabled"`
+	ExpiresAt  string `json:"expiresAt"`
 	CreateTime string `json:"createTime"`
+}
+
+type APIKeyCreated struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	RawKey    string `json:"rawKey"`
+	KeyPrefix string `json:"keyPrefix"`
 }
 
 var apikeyCmd = &cobra.Command{
@@ -67,13 +77,14 @@ var apikeyListCmd = &cobra.Command{
 			exitAPIError(err)
 		}
 
-		headers := []string{"ID", "Name", "Enabled", "Created"}
+		headers := []string{"ID", "Name", "Scopes", "Enabled", "Created"}
 		rows := make([][]string, 0, len(items))
 		for _, item := range items {
 			rows = append(rows, []string{
 				fmt.Sprintf("%d", item.ID),
 				item.Name,
-				output.BoolText(item.Enabled),
+				item.Scopes,
+				output.BoolText(item.Enabled == 1),
 				item.CreateTime,
 			})
 		}
@@ -111,7 +122,10 @@ var apikeyGetCmd = &cobra.Command{
 		output.PrintKeyValue([][]string{
 			{"ID", fmt.Sprintf("%d", item.ID)},
 			{"Name", item.Name},
-			{"Enabled", output.BoolText(item.Enabled)},
+			{"Key Prefix", item.KeyPrefix},
+			{"Scopes", item.Scopes},
+			{"Enabled", output.BoolText(item.Enabled == 1)},
+			{"Expires At", item.ExpiresAt},
 			{"Created", item.CreateTime},
 		})
 	},
@@ -131,6 +145,15 @@ var apikeyCreateCmd = &cobra.Command{
 		if cmd.Flags().Changed("name") {
 			body["name"], _ = cmd.Flags().GetString("name")
 		}
+		if cmd.Flags().Changed("scopes") {
+			body["scopes"], _ = cmd.Flags().GetString("scopes")
+		}
+		if cmd.Flags().Changed("rate-limit") {
+			body["rateLimit"], _ = cmd.Flags().GetInt("rate-limit")
+		}
+		if cmd.Flags().Changed("expires-at") {
+			body["expiresAt"], _ = cmd.Flags().GetString("expires-at")
+		}
 
 		result, err := c.Create(ctx, apikeyPath, body)
 		if err != nil {
@@ -143,12 +166,14 @@ var apikeyCreateCmd = &cobra.Command{
 			return
 		}
 
-		output.PrintSuccess("API key created successfully.")
-		if result.Data != nil {
-			var keyData any
-			if err := result.DecodeData(&keyData); err == nil {
-				fmt.Printf("Key: %v\n", keyData)
-			}
+		output.PrintSuccess("API key created successfully. Save the key now -- it will not be shown again:")
+		var created APIKeyCreated
+		if err := result.DecodeData(&created); err == nil {
+			output.PrintKeyValue([][]string{
+				{"ID", fmt.Sprintf("%d", created.ID)},
+				{"Name", created.Name},
+				{"Key", created.RawKey},
+			})
 		}
 	},
 }
@@ -165,8 +190,17 @@ var apikeyUpdateCmd = &cobra.Command{
 		ctx := context.Background()
 
 		body := map[string]any{}
-		if cmd.Flags().Changed("name") {
-			body["name"], _ = cmd.Flags().GetString("name")
+		if cmd.Flags().Changed("scopes") {
+			body["scopes"], _ = cmd.Flags().GetString("scopes")
+		}
+		if cmd.Flags().Changed("rate-limit") {
+			body["rateLimit"], _ = cmd.Flags().GetInt("rate-limit")
+		}
+		if cmd.Flags().Changed("enabled") {
+			body["enabled"], _ = cmd.Flags().GetInt("enabled")
+		}
+		if cmd.Flags().Changed("expires-at") {
+			body["expiresAt"], _ = cmd.Flags().GetString("expires-at")
 		}
 
 		_, err = c.Update(ctx, apikeyPath+"/update", args[0], body)
@@ -207,7 +241,24 @@ var apikeyToggleCmd = &cobra.Command{
 		}
 		ctx := context.Background()
 
-		_, err = c.Toggle(ctx, apikeyPath, args[0], nil)
+		enabled := 1
+		if cmd.Flags().Changed("enabled") {
+			enabled, _ = cmd.Flags().GetInt("enabled")
+		} else {
+			result, err := c.Get(ctx, apikeyPath, args[0])
+			if err != nil {
+				exitAPIError(err)
+			}
+			var current APIKey
+			if err := result.DecodeData(&current); err != nil {
+				exitAPIError(err)
+			}
+			if current.Enabled == 1 {
+				enabled = 0
+			}
+		}
+
+		_, err = c.Request(ctx, "PUT", fmt.Sprintf("%s/toggle/%s", apikeyPath, args[0]), map[string]string{"enabled": strconv.Itoa(enabled)}, nil)
 		if err != nil {
 			exitAPIError(err)
 		}
@@ -238,9 +289,13 @@ var apikeyRegenerateCmd = &cobra.Command{
 		}
 
 		output.PrintSuccess("API key regenerated successfully. Save the key now -- it will not be shown again:")
-		var key string
-		if err := result.DecodeData(&key); err == nil {
-			fmt.Println(key)
+		var created APIKeyCreated
+		if err := result.DecodeData(&created); err == nil {
+			output.PrintKeyValue([][]string{
+				{"ID", fmt.Sprintf("%d", created.ID)},
+				{"Name", created.Name},
+				{"Key", created.RawKey},
+			})
 		} else {
 			output.PrintJSON(result.Data)
 		}
@@ -268,10 +323,14 @@ var apikeyPermanentCmd = &cobra.Command{
 			return
 		}
 
-		var key string
-		if err := result.DecodeData(&key); err == nil {
+		var item APIKey
+		if err := result.DecodeData(&item); err == nil {
 			output.PrintKeyValue([][]string{
-				{"Permanent Key", key},
+				{"ID", fmt.Sprintf("%d", item.ID)},
+				{"Name", item.Name},
+				{"Key Prefix", item.KeyPrefix},
+				{"Scopes", item.Scopes},
+				{"Enabled", output.BoolText(item.Enabled == 1)},
 			})
 		} else {
 			output.PrintJSON(result.Data)
@@ -286,8 +345,17 @@ func init() {
 
 	apikeyCreateCmd.Flags().String("name", "", "API key name")
 	apikeyCreateCmd.MarkFlagRequired("name")
+	apikeyCreateCmd.Flags().String("scopes", "", "Comma-separated scopes (e.g. api:chat,api:session)")
+	apikeyCreateCmd.MarkFlagRequired("scopes")
+	apikeyCreateCmd.Flags().Int("rate-limit", 0, "Rate limit per minute")
+	apikeyCreateCmd.Flags().String("expires-at", "", "Expiration time in ISO format (e.g. 2026-12-31T23:59:59)")
 
-	apikeyUpdateCmd.Flags().String("name", "", "API key name")
+	apikeyUpdateCmd.Flags().String("scopes", "", "Comma-separated scopes")
+	apikeyUpdateCmd.Flags().Int("rate-limit", 0, "Rate limit per minute")
+	apikeyUpdateCmd.Flags().Int("enabled", 0, "Enabled status (0/1)")
+	apikeyUpdateCmd.Flags().String("expires-at", "", "Expiration time in ISO format")
+
+	apikeyToggleCmd.Flags().Int("enabled", 0, "Target enabled status (0/1); defaults to flipping current status")
 
 	apikeyCmd.AddCommand(apikeyListCmd)
 	apikeyCmd.AddCommand(apikeyGetCmd)

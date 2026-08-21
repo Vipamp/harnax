@@ -18,7 +18,7 @@ type Tool struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
 	Status     int    `json:"status"`
-	ReadOnly   bool   `json:"readOnly"`
+	ReadOnly   int    `json:"readOnly"`
 	CreateTime string `json:"createTime"`
 }
 
@@ -83,7 +83,7 @@ var toolListCmd = &cobra.Command{
 				t.Name,
 				t.Type,
 				output.StatusText(t.Status),
-				output.BoolText(t.ReadOnly),
+				output.BoolText(t.ReadOnly == 1),
 			}
 		}
 		output.PrintTable(headers, rows)
@@ -124,7 +124,7 @@ var toolGetCmd = &cobra.Command{
 			{"Name", tool.Name},
 			{"Type", tool.Type},
 			{"Status", output.StatusText(tool.Status)},
-			{"Read Only", output.BoolText(tool.ReadOnly)},
+			{"Read Only", output.BoolText(tool.ReadOnly == 1)},
 			{"Created", tool.CreateTime},
 		})
 	},
@@ -243,7 +243,7 @@ var toolAvailableCmd = &cobra.Command{
 				t.Name,
 				t.Type,
 				output.StatusText(t.Status),
-				output.BoolText(t.ReadOnly),
+				output.BoolText(t.ReadOnly == 1),
 			}
 		}
 		output.PrintTable(headers, rows)
@@ -285,7 +285,7 @@ var toolBuiltinCmd = &cobra.Command{
 				t.Name,
 				t.Type,
 				output.StatusText(t.Status),
-				output.BoolText(t.ReadOnly),
+				output.BoolText(t.ReadOnly == 1),
 			}
 		}
 		output.PrintTable(headers, rows)

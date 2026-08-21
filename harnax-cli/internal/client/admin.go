@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -59,16 +60,21 @@ func (r *ResultVo) DecodeData(v any) error {
 
 type Page struct {
 	List     json.RawMessage `json:"list"`
+	Records  json.RawMessage `json:"records"`
 	Total    int             `json:"total"`
 	PageNum  int             `json:"pageNum"`
 	PageSize int             `json:"pageSize"`
 }
 
 func (p *Page) DecodeList(v any) error {
-	if p.List == nil {
+	data := p.Records
+	if data == nil {
+		data = p.List
+	}
+	if data == nil {
 		return nil
 	}
-	return json.Unmarshal(p.List, v)
+	return json.Unmarshal(data, v)
 }
 
 type APIError struct {
@@ -101,10 +107,25 @@ func (c *AdminClient) Delete(ctx context.Context, path string, id any) (*ResultV
 }
 
 func (c *AdminClient) Toggle(ctx context.Context, path string, id any, status *int) (*ResultVo, error) {
-	params := map[string]string{}
+	target := 1
 	if status != nil {
-		params["status"] = fmt.Sprintf("%d", *status)
+		target = *status
+	} else {
+		result, err := c.Get(ctx, path, id)
+		if err != nil {
+			return nil, err
+		}
+		var entity struct {
+			Status int `json:"status"`
+		}
+		if err := result.DecodeData(&entity); err != nil {
+			return nil, err
+		}
+		if entity.Status == 1 {
+			target = 0
+		}
 	}
+	params := map[string]string{"status": fmt.Sprintf("%d", target)}
 	return c.request(ctx, http.MethodPut, fmt.Sprintf("%s/toggle/%v", path, id), params, nil)
 }
 
@@ -149,7 +170,7 @@ func (c *AdminClient) request(ctx context.Context, method, path string, params m
 	}
 
 	if c.Verbose {
-		fmt.Fprintf(io.Discard, "→ %s %s\n", method, u.String())
+		fmt.Fprintf(os.Stderr, "→ %s %s\n", method, u.String())
 	}
 
 	resp, err := c.HTTPClient.Do(req)
@@ -164,7 +185,7 @@ func (c *AdminClient) request(ctx context.Context, method, path string, params m
 	}
 
 	if c.Verbose {
-		fmt.Fprintf(io.Discard, "← %d %s\n", resp.StatusCode, string(respBody))
+		fmt.Fprintf(os.Stderr, "← %d %s\n", resp.StatusCode, string(respBody))
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {

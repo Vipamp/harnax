@@ -11,18 +11,31 @@ import (
 
 const modelBasePath = "/api/admin/models"
 
+// thinkingModeText maps the model three-state thinking mode to readable text.
+func thinkingModeText(mode int) string {
+	switch mode {
+	case 2:
+		return "Required"
+	case 1:
+		return "Optional"
+	default:
+		return "Not Supported"
+	}
+}
+
 type Model struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	ProviderID        int64  `json:"providerId"`
-	ModelType         string `json:"modelType"`
-	SupportInternet   bool   `json:"supportInternet"`
-	SupportReasoning  bool   `json:"supportReasoning"`
-	SupportTool       bool   `json:"supportTool"`
-	SupportMcp        bool   `json:"supportMcp"`
-	SupportVision     bool   `json:"supportVision"`
-	Status            int    `json:"status"`
-	CreateTime        string `json:"createTime"`
+	ID               int64  `json:"id"`
+	Name             string `json:"name"`
+	ProviderID       int64  `json:"providerId"`
+	ModelType        string `json:"modelType"`
+	SupportInternet  int    `json:"supportInternet"`
+	SupportReasoning int    `json:"supportReasoning"`
+	SupportTool      int    `json:"supportTool"`
+	SupportMcp       int    `json:"supportMcp"`
+	SupportVision    int    `json:"supportVision"`
+	ThinkingMode     int    `json:"thinkingMode"`
+	Status           int    `json:"status"`
+	CreateTime       string `json:"createTime"`
 }
 
 var modelCmd = &cobra.Command{
@@ -132,11 +145,12 @@ var modelGetCmd = &cobra.Command{
 			{"Name", model.Name},
 			{"Provider ID", strconv.FormatInt(model.ProviderID, 10)},
 			{"Model Type", model.ModelType},
-			{"Support Internet", output.BoolText(model.SupportInternet)},
-			{"Support Reasoning", output.BoolText(model.SupportReasoning)},
-			{"Support Tool", output.BoolText(model.SupportTool)},
-			{"Support MCP", output.BoolText(model.SupportMcp)},
-			{"Support Vision", output.BoolText(model.SupportVision)},
+			{"Support Internet", output.BoolText(model.SupportInternet == 1)},
+			{"Support Reasoning", output.BoolText(model.SupportReasoning == 1)},
+			{"Support Tool", output.BoolText(model.SupportTool == 1)},
+			{"Support MCP", output.BoolText(model.SupportMcp == 1)},
+			{"Support Vision", output.BoolText(model.SupportVision == 1)},
+			{"Thinking Mode", thinkingModeText(model.ThinkingMode)},
 			{"Status", output.StatusText(model.Status)},
 			{"Created", model.CreateTime},
 		})

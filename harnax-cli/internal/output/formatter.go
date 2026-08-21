@@ -66,6 +66,10 @@ func PrintError(msg string) {
 }
 
 func PrintPageInfo(total, pageNum, pageSize int) {
+	if total == 0 {
+		fmt.Println("No results")
+		return
+	}
 	start := (pageNum-1)*pageSize + 1
 	end := pageNum * pageSize
 	if end > total {

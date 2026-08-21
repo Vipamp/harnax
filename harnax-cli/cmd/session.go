@@ -16,8 +16,8 @@ type Session struct {
 	ID         int64  `json:"id"`
 	Title      string `json:"title"`
 	SessionID  string `json:"sessionId"`
-	AgentID    string `json:"agentId"`
-	ModelID    string `json:"modelId"`
+	AgentID    int64  `json:"agentId"`
+	ModelID    int64  `json:"modelId"`
 	Status     int    `json:"status"`
 	CreateTime string `json:"createTime"`
 }
@@ -79,7 +79,7 @@ var sessionListCmd = &cobra.Command{
 				strconv.FormatInt(item.ID, 10),
 				item.Title,
 				item.SessionID,
-				item.AgentID,
+				strconv.FormatInt(item.AgentID, 10),
 				output.StatusText(item.Status),
 				item.CreateTime,
 			})
@@ -119,8 +119,8 @@ var sessionGetCmd = &cobra.Command{
 			{"ID", strconv.FormatInt(item.ID, 10)},
 			{"Title", item.Title},
 			{"Session ID", item.SessionID},
-			{"Agent ID", item.AgentID},
-			{"Model ID", item.ModelID},
+			{"Agent ID", strconv.FormatInt(item.AgentID, 10)},
+			{"Model ID", strconv.FormatInt(item.ModelID, 10)},
 			{"Status", output.StatusText(item.Status)},
 			{"Created", item.CreateTime},
 		})

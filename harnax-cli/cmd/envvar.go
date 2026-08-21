@@ -16,8 +16,8 @@ type EnvVar struct {
 	ID         int64  `json:"id"`
 	EnvKey     string `json:"envKey"`
 	EnvValue   string `json:"envValue"`
-	Sensitive  bool   `json:"sensitive"`
-	Enabled    bool   `json:"enabled"`
+	Sensitive  int    `json:"sensitive"`
+	Enabled    int    `json:"enabled"`
 	CreateTime string `json:"createTime"`
 }
 
@@ -75,8 +75,8 @@ var envVarListCmd = &cobra.Command{
 			rows = append(rows, []string{
 				fmt.Sprintf("%d", item.ID),
 				item.EnvKey,
-				output.BoolText(item.Sensitive),
-				output.BoolText(item.Enabled),
+				output.BoolText(item.Sensitive == 1),
+				output.BoolText(item.Enabled == 1),
 				item.CreateTime,
 			})
 		}
@@ -115,8 +115,8 @@ var envVarGetCmd = &cobra.Command{
 			{"ID", fmt.Sprintf("%d", item.ID)},
 			{"Key", item.EnvKey},
 			{"Value", item.EnvValue},
-			{"Sensitive", output.BoolText(item.Sensitive)},
-			{"Enabled", output.BoolText(item.Enabled)},
+			{"Sensitive", output.BoolText(item.Sensitive == 1)},
+			{"Enabled", output.BoolText(item.Enabled == 1)},
 			{"Created", item.CreateTime},
 		})
 	},
