@@ -48,13 +48,8 @@ open class ChannelChatService(
      */
     protected val onPendingConfirm: ((sessionId: String, tools: List<PendingToolInfo>) -> Unit)? = null,
     /**
-     * Optional resolver for downloading file content from internal storage (e.g. MinIO).
-     * If null, falls back to HTTP download from attachment URL.
-     */
-    protected val fileContentResolver: FileContentResolver? = null,
-    /**
      * Optional downloader for fetching files directly from sandbox workspace.
-     * Used for channel sessions where files are not uploaded to MinIO.
+     * Channel sessions download files via workspace API (no MinIO round-trip).
      * Parameters: (sessionId, filePath) -> file bytes or null.
      */
     protected val workspaceFileDownloader: ((sessionId: String, filePath: String) -> ByteArray?)? = null,
@@ -280,8 +275,7 @@ open class ChannelChatService(
     /**
      * Resolve file bytes using the best available strategy:
      * 1. Workspace download (channel sessions: filePath present, objectKey empty)
-     * 2. MinIO resolver (web/task sessions: objectKey present)
-     * 3. HTTP URL fallback
+     * 2. HTTP URL fallback
      *
      * Returns null if all strategies fail or return empty content.
      */
@@ -296,11 +290,7 @@ open class ChannelChatService(
             logger.warn("[Batch] Workspace download failed for '{}', trying fallbacks", attachment.fileName)
         }
 
-        // Strategy 2: MinIO internal resolver
-        val resolved = fileContentResolver?.resolve(attachment)
-        if (resolved != null && resolved.isNotEmpty()) return resolved
-
-        // Strategy 3: HTTP URL fallback
+        // Strategy 2: HTTP URL fallback
         if (attachment.url.isNotBlank()) {
             val url = java.net.URL(attachment.url)
             require(url.protocol == "http" || url.protocol == "https") { "Unsafe URL scheme: ${url.protocol}" }
@@ -363,8 +353,7 @@ open class ChannelChatService(
      * - request-id: short request identifier for tracing (e.g., "req-a1b2c3d4")
      * - message: user-readable error description
      */
-    private fun formatErrorMessage(code: String, requestId: String, message: String): String =
-        "\u26a0\ufe0f AI processing failed: $message (code: $code, requestId: $requestId)"
+    private fun formatErrorMessage(code: String, requestId: String, message: String): String = "\u26a0\ufe0f AI processing failed: $message (code: $code, requestId: $requestId)"
 
     /**
      * Build a plain-text confirmation message from pending tool info.

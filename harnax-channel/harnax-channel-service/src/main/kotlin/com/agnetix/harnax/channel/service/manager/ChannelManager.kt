@@ -8,12 +8,10 @@ import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.parser.MessageParser
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
-import com.agnetix.harnax.channel.sdk.service.FileContentResolver
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
 import com.agnetix.harnax.channel.service.client.RouterClient
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Service
 
 /**
@@ -31,7 +29,6 @@ class ChannelManager(
     private val routerClient: RouterClient,
     private val sessionManager: ChannelSessionManager,
     private val adaptorRegistry: ChannelAdaptorRegistry,
-    fileContentResolverProvider: ObjectProvider<FileContentResolver>,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelManager::class.java)
@@ -39,7 +36,6 @@ class ChannelManager(
     /** ChannelChatService instance for processing channel messages */
     private val chatService = ChannelChatService(
         sessionManager = sessionManager,
-        fileContentResolver = fileContentResolverProvider.ifAvailable,
         workspaceFileDownloader = { sessionId, filePath ->
             routerClient.downloadWorkspaceFile(sessionId, filePath)
         },

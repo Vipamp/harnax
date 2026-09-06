@@ -87,13 +87,6 @@
             <version>${mybatis-spring-boot.version}</version>
         </dependency>
 
-        <!-- MinIO (internal file access for channel delivery) -->
-        <dependency>
-            <groupId>io.minio</groupId>
-            <artifactId>minio</artifactId>
-            <version>8.5.17</version>
-        </dependency>
-
         <!-- MySQL Driver -->
         <dependency>
             <groupId>com.mysql</groupId>

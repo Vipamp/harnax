@@ -38,17 +38,15 @@ class ChannelBootstrapRunner(
     private val adaptorRegistry: ChannelAdaptorRegistry,
     private val routerClient: RouterClient,
     private val sessionManager: ChannelSessionManager,
-    fileContentResolverProvider: org.springframework.beans.factory.ObjectProvider<com.agnetix.harnax.channel.sdk.service.FileContentResolver>,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelBootstrapRunner::class.java)
 
     private val routerAgentAdaptor by lazy { RouterAgentAdaptor(routerClient) }
 
-    /** Pre-configured ChannelChatService with file delivery support (workspace + MinIO) */
+    /** Pre-configured ChannelChatService with workspace file delivery support */
     private val chatService = com.agnetix.harnax.channel.sdk.service.ChannelChatService(
         sessionManager = sessionManager,
-        fileContentResolver = fileContentResolverProvider.ifAvailable,
         workspaceFileDownloader = { sessionId, filePath ->
             routerClient.downloadWorkspaceFile(sessionId, filePath)
         },

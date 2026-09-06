@@ -10,7 +10,6 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageRole
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
-import com.agnetix.harnax.channel.sdk.service.FileContentResolver
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
@@ -29,10 +28,9 @@ import org.mockito.kotlin.whenever
 /**
  * Unit tests for file attachment delivery in ChannelChatService.
  *
- * Tests the three-strategy file resolution:
+ * Tests the two-strategy file resolution:
  * 1. Workspace download (channel sessions: filePath present, objectKey empty)
- * 2. MinIO resolver (web/task sessions: objectKey present)
- * 3. HTTP URL fallback
+ * 2. HTTP URL fallback
  *
  * Also verifies correct session ID usage:
  * - agentSessionId (chn-xxx) for workspace download
@@ -187,13 +185,11 @@ class FileDeliveryTest {
         }
 
         @Test
-        fun `falls back to MinIO when workspace download fails`() = runBlocking {
-            val minioBytes = "minio-content".toByteArray()
-            val minioResolver = FileContentResolver { minioBytes }
+        fun `falls back to HTTP URL when workspace download fails`() = runBlocking {
+            val urlBytes = "url-content".toByteArray()
 
             val chatService = ChannelChatService(
                 sessionManager = sessionManager,
-                fileContentResolver = minioResolver,
                 workspaceFileDownloader = { _, _ -> null }, // Workspace fails
             )
 
@@ -201,76 +197,22 @@ class FileDeliveryTest {
                 AgentResponse(
                     content = "Done",
                     shouldReply = true,
-                    attachments = listOf(buildAttachment(objectKey = "channel/sess/file-123")),
+                    attachments = listOf(buildAttachment(url = "http://localhost/api/output-files/web/sess/file-123")),
                 ),
             )
 
+            // HTTP URL fallback uses java.net.URL which can't be easily mocked,
+            // so we just verify the workspace failure path leads to fallback attempt
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
-            verify(channelAdaptor).sendFile(
+            // sendFile not called because HTTP fallback will fail in test env
+            verify(channelAdaptor, never()).sendFile(any(), any(), any(), any(), any())
+            // Failure notification sent
+            verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                eq(minioBytes),
-                eq("report.pptx"),
-                any(),
+                argThat { contains("report.pptx") && contains("失败") },
             )
-        }
-    }
-
-    // ==================== MinIO resolver strategy ====================
-
-    @Nested
-    inner class MinioResolverStrategy {
-
-        @Test
-        fun `uses MinIO resolver when objectKey is present`() = runBlocking {
-            val minioBytes = "minio-file-data".toByteArray()
-            val minioResolver = FileContentResolver { attachment ->
-                assertEquals("web/sess-1/file-456", attachment.objectKey)
-                minioBytes
-            }
-
-            val chatService = ChannelChatService(
-                sessionManager = sessionManager,
-                fileContentResolver = minioResolver,
-            )
-
-            val attachment = buildAttachment(
-                filePath = "/workspace/output/report.pptx",
-                objectKey = "web/sess-1/file-456",
-                url = "http://localhost/api/output-files/web/sess-1/file-456",
-            )
-
-            whenever(agentAdaptor.process(any())).thenReturn(
-                AgentResponse(content = "Done", shouldReply = true, attachments = listOf(attachment)),
-            )
-
-            chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
-
-            verify(channelAdaptor).sendFile(eq(channel), eq(userSessionId), eq(minioBytes), eq("report.pptx"), any())
-        }
-
-        @Test
-        fun `skips workspace download when objectKey is present`() = runBlocking {
-            var workspaceCalled = false
-            val chatService = ChannelChatService(
-                sessionManager = sessionManager,
-                fileContentResolver = FileContentResolver { "minio".toByteArray() },
-                workspaceFileDownloader = { _, _ ->
-                    workspaceCalled = true
-                    "workspace".toByteArray()
-                },
-            )
-
-            val attachment = buildAttachment(objectKey = "web/sess/file-id")
-
-            whenever(agentAdaptor.process(any())).thenReturn(
-                AgentResponse(content = "Done", shouldReply = true, attachments = listOf(attachment)),
-            )
-
-            chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
-
-            assertFalse(workspaceCalled, "Workspace downloader should not be called when objectKey is present")
         }
     }
 
@@ -284,7 +226,6 @@ class FileDeliveryTest {
             val chatService = ChannelChatService(
                 sessionManager = sessionManager,
                 workspaceFileDownloader = { _, _ -> null },
-                fileContentResolver = null,
             )
 
             whenever(agentAdaptor.process(any())).thenReturn(
@@ -468,30 +409,30 @@ class FileDeliveryTest {
         }
 
         @Test
-        fun `workspace downloader not configured falls through to MinIO`() = runBlocking {
-            val minioBytes = "from-minio".toByteArray()
+        fun `workspace downloader not configured falls through to failure`() = runBlocking {
             val chatService = ChannelChatService(
                 sessionManager = sessionManager,
-                fileContentResolver = FileContentResolver { minioBytes },
                 workspaceFileDownloader = null, // Not configured
             )
 
-            val attachment = buildAttachment(objectKey = "channel/sess/file-123")
-
             whenever(agentAdaptor.process(any())).thenReturn(
-                AgentResponse(content = "Done", shouldReply = true, attachments = listOf(attachment)),
+                AgentResponse(content = "Done", shouldReply = true, attachments = listOf(buildAttachment())),
             )
 
             chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
 
-            verify(channelAdaptor).sendFile(eq(channel), eq(userSessionId), eq(minioBytes), eq("report.pptx"), any())
+            // No resolver available → failure notification
+            verify(channelAdaptor).sendMessage(
+                eq(channel),
+                eq(userSessionId),
+                argThat { contains("report.pptx") && contains("失败") },
+            )
         }
 
         @Test
         fun `all resolvers null results in failure notification`() = runBlocking {
             val chatService = ChannelChatService(
                 sessionManager = sessionManager,
-                fileContentResolver = null,
                 workspaceFileDownloader = null,
             )
 
