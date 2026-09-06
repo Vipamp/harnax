@@ -126,7 +126,7 @@ export async function getSkillRepositoryList(
   },
   options?: { [key: string]: any },
 ) {
-  return request(`/api/admin/skill-repositories/page`, {
+  return request(`/api/admin/skill-sources/page`, {
     method: 'GET',
     params: {
       pageNum: 1,

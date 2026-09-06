@@ -9,6 +9,7 @@ import {
   toggleSkill,
   deleteSkill,
 } from '../../../services/skill';
+import { describeSkillInstall, showSkillInstallToast } from '../../../utils/skillInstall';
 import { PAGE_SIZE } from '../../../utils/constants';
 
 Page({
@@ -60,9 +61,11 @@ Page({
     const id = e.currentTarget.dataset.id as number;
     wx.showLoading({ title: '拉取中' });
     try {
-      const names = await fetchRemoteSkills(id);
+      const remoteSkills = await fetchRemoteSkills(id);
       wx.hideLoading();
-      if (!names || !names.length) {
+      // fetch 返回的是技能对象，batch 接口只收技能名
+      const names = (remoteSkills || []).map((item) => item.name).filter((name): name is string => !!name);
+      if (names.length === 0) {
         wx.showToast({ title: '未发现可导入技能', icon: 'none' });
         return;
       }
@@ -73,12 +76,15 @@ Page({
           if (!res.confirm) return;
           wx.showLoading({ title: '导入中' });
           try {
-            await batchSaveSkills(id, names);
+            const result = await batchSaveSkills(id, names);
             wx.hideLoading();
-            wx.showToast({ title: '已导入', icon: 'success' });
+            // 接口成功不等于全部落库，拿发现数量报「已导入」会掩盖丢技能；分级文案与
+            // 创建仓库那个入口共用一份，免得两边对同一个结果说法不一
+            showSkillInstallToast(describeSkillInstall(result, '已导入'));
             this.setData({ tab: 'skill' });
             this.reload();
           } catch (e) {
+            // request 已经弹过后端返回的具体原因
             wx.hideLoading();
           }
         },

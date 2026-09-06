@@ -1,11 +1,17 @@
-import React, { useMemo } from 'react';
-import { List, Space, Typography, Tag, message, Tooltip } from 'antd';
-import { GithubOutlined, LinkOutlined, CloudOutlined, FileZipOutlined } from '@ant-design/icons';
-import { deleteSkillSource, toggleSkillSourceStatus } from '@/services/ant-design-pro/skillSource';
+import React, { useMemo, useState } from 'react';
+import { List, Space, Typography, Tag, message, Modal } from 'antd';
+import { AppstoreOutlined, GithubOutlined, LinkOutlined, CloudOutlined, FileZipOutlined } from '@ant-design/icons';
+import {
+  deleteSkillSource,
+  installSkillSource,
+  toggleSkillSourceStatus,
+} from '@/services/ant-design-pro/skillSource';
 import { getCurrentUserInfo, hasOperationPermission } from '@/utils/permissionUtil';
+import { describeSkillInstall, showSkillInstallFeedback } from '@/utils/skillInstall';
 import { useIntl } from '@umijs/max';
 import EditButton from '@/components/EditButton';
 import DeleteButton from '@/components/DeleteButton';
+import InstallButton from '@/components/InstallButton';
 import SyncButton from '@/components/SyncButton';
 import StatusSwitch from '@/components/StatusSwitch';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
@@ -20,6 +26,8 @@ interface RepositoryListProps {
   onToggle: (id: number, status: number) => void;
   onDelete: (id: number) => void;
   onSync: (repository: API.SkillRepositoryItem) => void;
+  /** 重装落库后刷新右侧技能列表 */
+  onInstalled: () => void;
 }
 
 const RepositoryList: React.FC<RepositoryListProps> = ({
@@ -30,41 +38,70 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
   onToggle,
   onDelete,
   onSync,
+  onInstalled,
 }) => {
   // 获取当前用户信息
   const { username: currentUser, isAdmin } = useMemo(() => getCurrentUserInfo(), []);
   const intl = useIntl();
+  // 正在重装的仓库 id，用于单独给该行的按钮上 loading
+  const [installingId, setInstallingId] = useState<number | null>(null);
 
+  // 请求失败时全局 errorHandler 已经弹出后端的具体原因，这里再弹一次会重复提示；
+  // 同理，code !== 200 的分支不可达（errorThrower 会先抛异常），故不再判断。
   const handleDelete = async (id: number) => {
     try {
-      const response = await deleteSkillSource(id);
-      if (response.code === 200) {
-        message.success(intl.formatMessage({ id: 'pages.skill.repository.delete.success', defaultMessage: 'Delete successful' }));
-        onDelete(id);
-      } else {
-        const errorMsg = response.message || intl.formatMessage({ id: 'pages.skill.repository.delete.failed', defaultMessage: 'Delete failed' });
-        message.error(errorMsg);
-      }
-    } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.skill.repository.delete.failed', defaultMessage: 'Delete failed' });
-      message.error(errorMsg);
+      await deleteSkillSource(id);
+      message.success(
+        intl.formatMessage({ id: 'pages.skill.repository.delete.success', defaultMessage: 'Delete successful' }),
+      );
+      onDelete(id);
+    } catch {
+      // 交给全局 errorHandler
     }
   };
 
   const handleToggle = async (id: number, status: number) => {
     try {
-      const response = await toggleSkillSourceStatus(id, status);
-      if (response.code === 200) {
-        message.success(intl.formatMessage({ id: 'pages.skill.repository.toggle.success', defaultMessage: 'Status toggled successfully' }));
-        onToggle(id, status);
-      } else {
-        const errorMsg = response.message || intl.formatMessage({ id: 'pages.skill.repository.toggle.failed', defaultMessage: 'Status toggle failed' });
-        message.error(errorMsg);
-      }
-    } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.skill.repository.toggle.failed', defaultMessage: 'Status toggle failed' });
-      message.error(errorMsg);
+      await toggleSkillSourceStatus(id, status);
+      message.success(
+        intl.formatMessage({ id: 'pages.skill.repository.toggle.success', defaultMessage: 'Status toggled successfully' }),
+      );
+      onToggle(id, status);
+    } catch {
+      // 交给全局 errorHandler
     }
+  };
+
+  // 全量重装：修改 url / branch / packageName 只更新了配置，必须再走一次安装才会刷新库里的技能
+  const doInstall = async (repository: API.SkillRepositoryItem) => {
+    setInstallingId(repository.id);
+    try {
+      const response = await installSkillSource(repository.id);
+      const feedback = describeSkillInstall(response.data, intl.formatMessage);
+      showSkillInstallFeedback(feedback);
+      // 全部失败时库里没有任何变化，不必刷新
+      if (feedback.level !== 'error') {
+        onInstalled();
+      }
+    } catch {
+      // 交给全局 errorHandler
+    } finally {
+      setInstallingId(null);
+    }
+  };
+
+  // 重装会覆盖同名技能，先确认再动手
+  const handleInstall = (repository: API.SkillRepositoryItem) => {
+    Modal.confirm({
+      title: intl.formatMessage({ id: 'pages.skill.repository.install', defaultMessage: 'Reinstall from source' }),
+      content: intl.formatMessage({
+        id: 'pages.skill.repository.confirmInstall',
+        defaultMessage: 'Reinstall every skill from this source? Existing skills with the same name will be overwritten.',
+      }),
+      okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
+      cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
+      onOk: () => doInstall(repository),
+    });
   };
 
   return (
@@ -100,7 +137,9 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-            {repository.sourceType === 'NPM' ? (
+            {repository.sourceType === 'BUILTIN' ? (
+              <AppstoreOutlined style={{ fontSize: '20px', color: '#722ed1', marginRight: 12 }} />
+            ) : repository.sourceType === 'NPM' ? (
               <CloudOutlined style={{ fontSize: '20px', color: '#cb3837', marginRight: 12 }} />
             ) : repository.sourceType === 'ZIP' ? (
               <FileZipOutlined style={{ fontSize: '20px', color: '#faad14', marginRight: 12 }} />
@@ -113,8 +152,18 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                   <Text strong style={{ fontSize: '14px' }}>
                     {repository.name}
                   </Text>
-                  <Tag color={repository.sourceType === 'NPM' ? 'red' : repository.sourceType === 'ZIP' ? 'orange' : 'blue'}
-                    style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}>
+                  <Tag
+                    color={
+                      repository.sourceType === 'BUILTIN'
+                        ? 'purple'
+                        : repository.sourceType === 'NPM'
+                          ? 'red'
+                          : repository.sourceType === 'ZIP'
+                            ? 'orange'
+                            : 'blue'
+                    }
+                    style={{ fontSize: '10px', lineHeight: '16px', padding: '0 4px' }}
+                  >
                     {repository.sourceType || 'GIT'}
                   </Tag>
                   {repository.name === BUILTIN_CLI_SKILL_REPO && (
@@ -173,22 +222,30 @@ const RepositoryList: React.FC<RepositoryListProps> = ({
                 )}
                 {repository.name !== BUILTIN_CLI_SKILL_REPO && hasOperationPermission(isAdmin, currentUser, repository.creator) && (
                   <Space size={8} style={{ marginLeft: 'auto' }}>
-                    {/* ZIP uploads keep no source archive, so they cannot be re-synced */}
-                    {repository.sourceType !== 'ZIP' && (
+                    {/* ZIP 源不留存压缩包、内置仓库平台只读，两者都无法重装 */}
+                    {repository.sourceType !== 'ZIP' && repository.sourceType !== 'BUILTIN' && (
+                      <InstallButton
+                        loading={installingId === repository.id}
+                        onClick={() => {
+                          onSelect(repository);
+                          handleInstall(repository);
+                        }}
+                      />
+                    )}
+                    {/* ZIP 源不留存压缩包、内置仓库没有远端，两者都拉不到技能清单 */}
+                    {repository.sourceType !== 'ZIP' && repository.sourceType !== 'BUILTIN' && (
                       <SyncButton
-                        onClick={(e) => {
-                          e?.stopPropagation();
+                        onClick={() => {
                           onSelect(repository);
                           onSync(repository);
                         }}
                       />
                     )}
-                    <EditButton 
-                      onClick={(e) => {
-                        e?.stopPropagation();
+                    <EditButton
+                      onClick={() => {
                         onSelect(repository);
                         onEdit(repository);
-                      }} 
+                      }}
                     />
                     <DeleteButton 
                       onConfirm={() => handleDelete(repository.id)}

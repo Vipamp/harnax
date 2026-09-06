@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Button, message, Switch, Input, Form, Select } from 'antd';
-import {
-  ProFormSelect,
-  ProFormText,
-} from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
@@ -61,7 +57,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
-  ].filter(opt => opt.value !== 'stdio');
+  ];
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
@@ -178,6 +174,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
 
         {(mcpType === 'sse' || mcpType === 'streamablehttp') && (
           <>
+            {/* 网络型只给 Headers：envParams 是 stdio 进程环境，运行时对网络型不会消费（McpHelper.buildMcpConfig）；
+                存量记录里已配的 envParams 不在表单中时，后端保持原值不动 */}
             <Form.Item
               name="url"
               label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
@@ -203,14 +201,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               <ConfigEntriesEditor
                 placeholder={{ key: 'Authorization', value: 'Bearer sk-xxx' }}
               />
-            </Form.Item>
-
-            <Form.Item
-              name="envParams"
-              label={intl.formatMessage({ id: 'pages.mcp.envParams', defaultMessage: '环境参数' })}
-              extra={intl.formatMessage({ id: 'pages.mcp.envParamsExtraHttp', defaultMessage: 'MCP 服务连接的环境参数配置' })}
-            >
-              <ToolEnvEntriesEditor />
             </Form.Item>
           </>
         )}

@@ -82,6 +82,19 @@ export async function fetchSkillSourceSkills(id: number, options?: { [key: strin
   });
 }
 
+/**
+ * 全量重装：用源里的最新内容覆盖已落库的技能 POST /api/admin/skill-sources/${id}/install
+ *
+ * 修改 url / branch / packageName 只会更新配置，不会重新拉取，必须再调一次本接口。
+ * ZIP 源不留存压缩包，调用会被后端拒绝。
+ */
+export async function installSkillSource(id: number, options?: { [key: string]: any }) {
+  return request(`/api/admin/skill-sources/${id}/install`, {
+    method: 'POST',
+    ...(options || {}),
+  });
+}
+
 export async function uploadSkillSourceZip(
   file: File,
   name: string,

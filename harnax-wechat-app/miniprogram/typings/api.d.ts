@@ -370,11 +370,25 @@ declare namespace API {
     updateTime?: string;
   };
 
-  type SkillRepositoryCreateRequest = {
+  /**
+   * 技能来源创建请求，对应后端 SkillSourceCreateRequest。
+   *
+   * 旧版 skill-repositories 的 DTO 只有 name / url / branch，sourceType 与 sourceConfig 会被
+   * 静默丢掉，所以 NPM 来源只能走 skill-sources。
+   */
+  type SkillSourceCreateRequest = {
     name: string;
-    url?: string;
-    branch?: string;
-    sourceType?: string;
+    sourceType: string;
+    sourceConfig: Record<string, any>;
+    version?: string;
+    description?: string;
+    status?: number;
+    isPublic?: number;
+  };
+
+  /** 技能来源更新请求，对应后端 SkillSourceUpdateRequest。只写配置，不会重新拉取 */
+  type SkillSourceUpdateRequest = {
+    name?: string;
     sourceConfig?: Record<string, any>;
     version?: string;
     description?: string;
@@ -382,7 +396,11 @@ declare namespace API {
     isPublic?: number;
   };
 
-  type SkillRepositoryUpdateRequest = Partial<SkillRepositoryCreateRequest> & { id?: number };
+  /** 创建即安装：HTTP 成功只代表来源建好了，技能有没有落库要看 install */
+  type SkillSourceInstallResult = {
+    source?: SkillRepositoryItem;
+    install?: SkillInstallResult;
+  };
 
   type SkillItem = {
     id: number;
@@ -396,6 +414,32 @@ declare namespace API {
     status: number;
     createTime?: string;
     updateTime?: string;
+  };
+
+  /** 远端技能清单里的一项（同步弹窗用），对应后端 SyncSkillResponse */
+  type SkillSyncItem = {
+    name?: string;
+    description?: string;
+    skillmd?: string;
+    resources?: Record<string, string>;
+    exists?: boolean;
+  };
+
+  /**
+   * 技能安装结果，对应后端 SkillInstallResponse。
+   *
+   * 接口返回成功不代表技能全部落库：源里已删除、内容为空、写库异常都会进 failed，
+   * 被内容安全扫描拦下的进 flagged。提示文案必须由这些字段决定。
+   */
+  type SkillInstallResult = {
+    installed?: string[];
+    updated?: string[];
+    failed?: { name: string; reason: string }[];
+    flagged?: { name: string; reasons?: string[] }[];
+    savedCount?: number;
+    failedCount?: number;
+    complete?: boolean;
+    summary?: string;
   };
 
   // ---- Channel ----

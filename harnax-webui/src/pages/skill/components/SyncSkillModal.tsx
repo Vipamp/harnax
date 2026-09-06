@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Table, Tag, Button, message, Checkbox } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { batchSaveSkills } from '@/services/ant-design-pro/skill';
+import { describeSkillInstall, showSkillInstallFeedback } from '@/utils/skillInstall';
 import { useIntl } from '@umijs/max';
 import { SyncOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
@@ -72,11 +73,18 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
     setSaving(true);
     try {
       const skillNames = selectedSkillsList.map((skill) => skill.name!);
-      await batchSaveSkills(repositoryId, skillNames);
-      message.success(intl.formatMessage({ id: 'pages.skill.sync.success', defaultMessage: 'Sync successful, saved {count} skills' }, { count: selectedSkillsList.length }));
-      onSuccess();
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.skill.sync.error', defaultMessage: 'Sync failed, please try again' }));
+      // 返回的是安装结果而不是勾选数量：源里已删除、内容为空、写库异常都会让
+      // 部分技能没能落库，拿勾选数报「已保存 N 个」就是谎报
+      const response = await batchSaveSkills(repositoryId, skillNames);
+      const feedback = describeSkillInstall(response.data, intl.formatMessage);
+      showSkillInstallFeedback(feedback);
+      // 全部失败时库里没有任何变化。关掉弹窗会让 6 秒后消失的失败明细无处可查，
+      // 用户也没法改选重试，所以只在有东西落库时才收起
+      if (feedback.level !== 'error') {
+        onSuccess();
+      }
+    } catch {
+      // 请求失败时全局 errorHandler 已经弹出后端的具体原因，这里再弹一次会重复提示
     } finally {
       setSaving(false);
     }

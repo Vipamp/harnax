@@ -1,5 +1,6 @@
 // pages/skill/repo-form/index.ts
 import { getRepoById, createRepo, updateRepo } from '../../../services/skill';
+import { describeSkillInstall, showSkillInstallToast } from '../../../utils/skillInstall';
 
 const SOURCE_TYPES = ['GIT', 'NPM'];
 
@@ -34,7 +35,18 @@ Page({
         const d = await getRepoById(id);
         const sc = d.sourceConfig || {};
         const sourceType = d.sourceType || 'GIT';
-        const sourceTypeIndex = Math.max(0, SOURCE_TYPES.indexOf(sourceType));
+        const sourceTypeIndex = SOURCE_TYPES.indexOf(sourceType);
+        if (sourceTypeIndex < 0) {
+          // ZIP 来源的内容在上传时就固定了，内置仓库是平台只读的，两者在这个表单里都改不了。
+          // 按 GIT 展示只会得到一个填不满的地址栏，所以直接说明原因并退回
+          wx.showModal({
+            title: '无法编辑',
+            content: `${sourceType} 类型的仓库不支持在小程序里编辑`,
+            showCancel: false,
+            complete: () => wx.navigateBack(),
+          });
+          return;
+        }
         this.setData({
           sourceTypeIndex,
           form: {
@@ -90,9 +102,9 @@ Page({
       }
       sourceConfig = { packageName: form.packageName.trim(), registry: form.registry || '' };
     }
-    const payload: API.SkillRepositoryCreateRequest = {
+    // 两个接口共用的字段；sourceType 只在创建时发送，更新接口换不了来源类型
+    const payload = {
       name: form.name.trim(),
-      sourceType: form.sourceType,
       sourceConfig,
       version: form.version || undefined,
       description: form.description || undefined,
@@ -101,13 +113,26 @@ Page({
     this.setData({ submitting: true });
     try {
       if (this.data.isEdit) {
-        await updateRepo(this.data.id, { ...payload, id: this.data.id });
-      } else {
-        await createRepo(payload);
+        await updateRepo(this.data.id, payload);
+        // PUT 只写配置、不重新拉取。先返回列表再提示，toast 才不会随页面一起销毁；
+        // 报「已保存」会让用户以为改完地址就已经生效了
+        wx.navigateBack({
+          complete: () =>
+            wx.showToast({
+              title: '配置已保存，地址或包名变更后要在列表里重新同步才会生效',
+              icon: 'none',
+              duration: 6000,
+            }),
+        });
+        return;
       }
-      wx.showToast({ title: '已保存', icon: 'success' });
-      setTimeout(() => wx.navigateBack(), 600);
+      // 创建即安装，返回 { source, install }：HTTP 成功不等于技能全部落库
+      const result = await createRepo({ ...payload, sourceType: form.sourceType });
+      wx.navigateBack({
+        complete: () => showSkillInstallToast(describeSkillInstall(result?.install, '已导入')),
+      });
     } catch (e) {
+      // request 已经弹过后端返回的具体原因
     } finally {
       this.setData({ submitting: false });
     }

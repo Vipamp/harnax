@@ -368,7 +368,8 @@ message?: string;
     name: string;
     description?: string;
     skillmd?: string;
-    resources?: string;
+    /** 后端 SyncSkillResponse 里是「相对路径 -> 内容」的映射，不是字符串 */
+    resources?: Record<string, string>;
     exists?: boolean;
   };
 
@@ -377,6 +378,31 @@ message?: string;
    */
   export type SkillResponse = {
     records: SkillSyncItem[];
+  };
+
+  /**
+   * @zh-CN 技能安装结果（对应后端 SkillInstallResponse）
+   *
+   * 安装是「部分成功」语义：接口返回 200 也可能有技能没落库（源里已删除、内容为空、
+   * 写库异常），或被内容安全扫描拦下置为禁用。前端必须按 failed / flagged 决定提示级别。
+   */
+  export type SkillInstallResult = {
+    installed?: string[];
+    updated?: string[];
+    failed?: { name: string; reason?: string }[];
+    flagged?: { name: string; reasons?: string[] }[];
+    savedCount?: number;
+    failedCount?: number;
+    complete?: boolean;
+    summary?: string;
+  };
+
+  /**
+   * @zh-CN 技能源及本次安装结果（对应后端 SkillSourceInstallResponse）
+   */
+  export type SkillSourceInstallResult = {
+    source: SkillRepositoryItem;
+    install: SkillInstallResult;
   };
 
   /**

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Form, Input, Select, Switch, Upload, message, Button } from 'antd';
 import { createSkillSource, updateSkillSource, uploadSkillSourceZip } from '@/services/ant-design-pro/skillSource';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
+import { describeSkillInstall, showSkillInstallFeedback } from '@/utils/skillInstall';
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, UploadOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
@@ -52,74 +53,85 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
     }
   }, [visible, values, form]);
 
-  const handleSubmit = async () => {
-    try {
-      const formValues = await form.validateFields();
-      setLoading(true);
+  // 安装类提示可能带上失败明细，停留时间与工具函数里的 6 秒保持一致
+  const HINT_DURATION = 6;
 
+  // 表单校验失败同样会 reject，但那不是请求错误，全局 errorHandler 管不到；
+  // 这里自己吞掉，否则会弹出与表单红字重复的「操作失败」。
+  const handleSubmit = async () => {
+    let formValues: any;
+    try {
+      formValues = await form.validateFields();
+    } catch {
+      return;
+    }
+
+    setLoading(true);
+    try {
       if (sourceType === 'ZIP' && isCreate) {
         if (!zipFile) {
-          message.error(intl.formatMessage({ id: 'pages.skill.repository.selectZip', defaultMessage: '请选择一个 ZIP 文件' }));
-          setLoading(false);
+          message.error(
+            intl.formatMessage({ id: 'pages.skill.repository.selectZip', defaultMessage: 'Please select a ZIP file' }),
+          );
           return;
         }
+        // 上传即安装，返回 { source, install }：HTTP 200 不等于技能全部落库
         const response = await uploadSkillSourceZip(zipFile, formValues.name);
-        if (response.code === 200) {
-          message.success(intl.formatMessage({ id: 'pages.skill.repository.upload.success', defaultMessage: '上传安装成功' }));
-          onSuccess();
-        } else {
-          message.error(response.message || intl.formatMessage({ id: 'pages.skill.repository.upload.failed', defaultMessage: '上传失败' }));
-        }
-      } else {
-        let sourceConfig: Record<string, any> = {};
-        if (sourceType === 'GIT') {
-          sourceConfig = { url: formValues.url || '', branch: formValues.branch || 'main' };
-        } else if (sourceType === 'NPM') {
-          sourceConfig = { packageName: formValues.packageName, registry: formValues.registry || '' };
-        }
-
-        const data = {
-          name: formValues.name,
-          sourceType,
-          sourceConfig,
-          version: formValues.version || '',
-          description: formValues.description || '',
-          status: formValues.status ?? 1,
-          isPublic: formValues.isPublic ? 1 : 0,
-          url: formValues.url || '',
-          branch: formValues.branch || '',
-        };
-
-        if (values) {
-          const response = await updateSkillSource(values.id, {
-            name: data.name,
-            sourceConfig: data.sourceConfig,
-            version: data.version,
-            description: data.description,
-            status: data.status,
-            isPublic: data.isPublic,
-            url: data.url,
-            branch: data.branch,
-          });
-          if (response.code === 200) {
-            message.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: '更新成功' }));
-            onSuccess();
-          } else {
-            message.error(response.message || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: '更新失败' }));
-          }
-        } else {
-          const response = await createSkillSource(data);
-          if (response.code === 200) {
-            message.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: '创建成功' }));
-            onSuccess();
-          } else {
-            message.error(response.message || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: '创建失败' }));
-          }
-        }
+        showSkillInstallFeedback(describeSkillInstall(response.data?.install, intl.formatMessage));
+        onSuccess();
+        return;
       }
-    } catch (error: any) {
-      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: '操作失败' });
-      message.error(errorMsg);
+
+      let sourceConfig: Record<string, any> = {};
+      if (sourceType === 'GIT') {
+        sourceConfig = { url: formValues.url || '', branch: formValues.branch || 'main' };
+      } else if (sourceType === 'NPM') {
+        sourceConfig = { packageName: formValues.packageName, registry: formValues.registry || '' };
+      }
+
+      const data = {
+        name: formValues.name,
+        sourceType,
+        sourceConfig,
+        version: formValues.version || '',
+        description: formValues.description || '',
+        status: formValues.status ?? 1,
+        isPublic: formValues.isPublic ? 1 : 0,
+        url: formValues.url || '',
+        branch: formValues.branch || '',
+      };
+
+      if (values) {
+        // 不带 url / branch：这两个字段只是旧版列的兼容入口，sourceConfig 才是唯一的载体，
+        // 服务端会自己把它们镜像回旧版列。NPM / ZIP 下它们是空串，发过去等于请求写脏数据
+        await updateSkillSource(values.id, {
+          name: data.name,
+          sourceConfig: data.sourceConfig,
+          version: data.version,
+          description: data.description,
+          status: data.status,
+          isPublic: data.isPublic,
+        });
+        // PUT 只写配置、不重新拉取。这里给警告而不是「更新成功」，
+        // 否则用户会以为改完地址就已经生效了
+        message.warning(
+          intl.formatMessage({
+            id: 'pages.skill.repository.updateHint',
+            defaultMessage:
+              'Configuration saved. Reinstall from the list to refresh the persisted skills.',
+          }),
+          HINT_DURATION,
+        );
+        onSuccess();
+        return;
+      }
+
+      // 创建即安装，返回 { source, install }
+      const response = await createSkillSource(data);
+      showSkillInstallFeedback(describeSkillInstall(response.data?.install, intl.formatMessage));
+      onSuccess();
+    } catch {
+      // 请求失败时全局 errorHandler 已经弹出后端的具体原因，这里再弹一次会重复提示
     } finally {
       setLoading(false);
     }
@@ -161,7 +173,7 @@ const RepositoryForm: React.FC<RepositoryFormProps> = ({ visible, values, onCanc
           : intl.formatMessage({ id: 'pages.skill.repository.edit', defaultMessage: 'Edit Skill Source' }),
         subtitle: isCreate
           ? intl.formatMessage({ id: 'pages.skill.repository.create.subtitle', defaultMessage: 'Configure skill source connection and parameters' })
-          : intl.formatMessage({ id: 'pages.skill.repository.edit.subtitle', defaultMessage: 'Modify source configuration, changes take effect immediately' }),
+          : intl.formatMessage({ id: 'pages.skill.repository.edit.subtitle', defaultMessage: 'Modify the source configuration. Reinstall after changing the URL, branch or package name to refresh the skills' }),
         icon: <ThunderboltOutlined />,
         iconGradient: 'linear-gradient(135deg, var(--vip-primary) 0%, var(--vip-primary-light) 100%)',
         iconShadowColor: 'rgba(79, 110, 247, 0.25)',

@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
 import { Button, message, Switch, Input, Form, Select } from 'antd';
-import {
-  ProFormSelect,
-  ProFormText,
-} from '@ant-design/pro-components';
 import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
-import { getCurrentUserInfo } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
 import ConfigEntriesEditor from './ConfigEntriesEditor';
 import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
@@ -23,16 +18,15 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   const [mcpType, setMcpType] = useState<string>('sse');
   const [form] = Form.useForm();
   const [testing, setTesting] = useState(false);
-  const { isAdmin } = getCurrentUserInfo();
   const [isPublic, setIsPublic] = useState(false);
   const [status, setStatus] = useState<number>(1);
 
-  // MCP 类型选项 - stdio 仅个人版可用
+  // MCP 类型选项 - 后端与运行时均支持 stdio（McpHelper.buildMcpConfig），不再屏蔽
   const mcpTypeOptions = [
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
-  ].filter(opt => opt.value !== 'stdio');
+  ];
 
   /** 连通性测试 */
   const handleConnectivityTest = async () => {
@@ -149,6 +143,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
 
         {(mcpType === 'sse' || mcpType === 'streamablehttp') && (
           <>
+            {/* 网络型只给 Headers：envParams 是 stdio 进程环境，运行时对网络型不会消费（McpHelper.buildMcpConfig） */}
             <Form.Item
               name="url"
               label={intl.formatMessage({ id: 'pages.mcp.url', defaultMessage: 'Service URL' })}
@@ -174,14 +169,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
               <ConfigEntriesEditor
                 placeholder={{ key: 'Authorization', value: 'Bearer sk-xxx' }}
               />
-            </Form.Item>
-
-            <Form.Item
-              name="envParams"
-              label={intl.formatMessage({ id: 'pages.mcp.envParams', defaultMessage: '环境参数' })}
-              extra={intl.formatMessage({ id: 'pages.mcp.envParamsExtraHttp', defaultMessage: 'MCP 服务连接的环境参数配置' })}
-            >
-              <ToolEnvEntriesEditor />
             </Form.Item>
           </>
         )}

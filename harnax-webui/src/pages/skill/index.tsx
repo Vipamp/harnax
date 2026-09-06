@@ -60,8 +60,8 @@ const SkillManagement: React.FC = () => {
         if (prev && all.some((r) => r.id === prev.id)) return prev;
         return all.length > 0 ? all[0] : null;
       });
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+    } catch {
+      // 请求失败时全局 errorHandler 已经弹出后端的具体原因，这里再弹一次会重复提示
     } finally {
       setRepositoryLoading(false);
     }
@@ -115,25 +115,29 @@ const SkillManagement: React.FC = () => {
     loadRepositories();
   };
 
-  // 同步仓库
+  // 同步仓库：先拉远端技能清单，再由弹窗勾选落库
   const handleSyncRepository = async (repository: API.SkillRepositoryItem) => {
     setSyncingRepository(repository);
     setSyncLoading(true);
     try {
-      // 调用获取远程技能列表的接口
-      const response: any = await fetchSkillSourceSkills(repository.id!);
-      if (response.data && Array.isArray(response.data)) {
-        setRemoteSkills(response.data);
-        setSyncModalVisible(true);
-      } else if (response.data && response.data.records) {
-        // 兼容分页格式
-        setRemoteSkills(response.data.records);
-        setSyncModalVisible(true);
-      } else {
-        message.warning(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      const response = await fetchSkillSourceSkills(repository.id!);
+      const skills: API.SkillSyncItem[] = response.data || [];
+      if (skills.length === 0) {
+        // 接口成功但源里没有可同步的技能，弹窗打开也是空的，直接提示更有意义
+        message.warning(
+          intl.formatMessage({ id: 'pages.skill.sync.empty', defaultMessage: 'No skill found in this source' }),
+        );
+        // 弹窗不会打开，得把仓库清掉：它既是弹窗的渲染开关，也会残留上一次拉到的技能列表
+        setSyncingRepository(null);
+        setRemoteSkills([]);
+        return;
       }
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+      setRemoteSkills(skills);
+      setSyncModalVisible(true);
+    } catch {
+      // 交给全局 errorHandler；拉取失败同样不该把隐藏的弹窗留在树上
+      setSyncingRepository(null);
+      setRemoteSkills([]);
     } finally {
       setSyncLoading(false);
     }
@@ -198,6 +202,7 @@ const SkillManagement: React.FC = () => {
                   onToggle={handleRepositoryToggle}
                   onDelete={handleRepositoryChange}
                   onSync={handleSyncRepository}
+                  onInstalled={() => setSkillListKey((prev) => prev + 1)}
                 />
               )}
             </Spin>
