@@ -125,12 +125,10 @@ class MinioOutputFileStore(
 
     /**
      * Resolve session type from session ID prefix.
-     * - "chn-*" → channel
      * - "task-*" → task
      * - otherwise → web
      */
     private fun resolveSessionType(sessionId: String): String = when {
-        sessionId.startsWith("chn-") -> "channel"
         sessionId.startsWith("task-") -> "task"
         else -> "web"
     }

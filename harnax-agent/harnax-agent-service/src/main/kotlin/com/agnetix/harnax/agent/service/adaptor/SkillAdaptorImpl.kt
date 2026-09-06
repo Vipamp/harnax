@@ -50,6 +50,13 @@ class SkillAdaptorImpl(
                 log.warn("Skill not found: $skillId")
                 return null
             }
+            if (skill.status == 0) {
+                // selectById only filters `active`, so the disable flag has to be honoured here: admin
+                // applies it on every delivery path (`/builtin-skills` and both branches of the agent
+                // spec), and this fallback must not be the one route that loads a switched-off skill
+                log.info("Skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
+                return null
+            }
             buildFromEntity(skill)
         } catch (e: Exception) {
             log.error("Failed to load skill: $skillId", e)

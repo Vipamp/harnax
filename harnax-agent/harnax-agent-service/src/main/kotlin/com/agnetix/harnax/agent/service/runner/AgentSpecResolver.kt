@@ -51,13 +51,27 @@ class AgentSpecResolver(
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
 
-        // Inject built-in skills: loaded first (before spec-defined skills), dedup by id.
+        // Inject built-in skills: loaded first (before spec-defined skills), dedup by id and by name.
         val builtinSkills = builtinSkillRegistry.getSkills()
         val specSkillIds = specInfo.skillDetails.map { it.id }.toSet()
-        val mergedSkillDetails = builtinSkills.filter { it.id !in specSkillIds } + specInfo.skillDetails
+        // Skill names are only unique per repository, so a tenant's own repository can hold a skill
+        // named like a built-in one. The harness keys skills by name (`AgentSkill.getSkillId()` is
+        // `name + "_" + source`), so delivering both would let the registry and the in-memory
+        // repository disagree on which copy is live; the operator's explicit binding wins.
+        val specSkillNames = specInfo.skillDetails.map { it.name }.toSet()
+        val (injectedSkills, shadowedSkills) = builtinSkills.filter { it.id !in specSkillIds }
+            .partition { it.name !in specSkillNames }
+        val mergedSkillDetails = injectedSkills + specInfo.skillDetails
         val effectiveSpecInfo = specInfo.copy(skillDetails = mergedSkillDetails)
-        if (builtinSkills.isNotEmpty()) {
-            log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", builtinSkills.size, sessionId, builtinSkills.map { it.name })
+        if (shadowedSkills.isNotEmpty()) {
+            log.info(
+                "Built-in skills not injected, a spec-defined skill already uses the name: sessionId={}, skills={}",
+                sessionId,
+                shadowedSkills.map { it.name },
+            )
+        }
+        if (injectedSkills.isNotEmpty()) {
+            log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", injectedSkills.size, sessionId, injectedSkills.map { it.name })
         }
 
         // Store full spec in context so adaptors can read during agent creation

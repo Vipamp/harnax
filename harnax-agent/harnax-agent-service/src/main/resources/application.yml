@@ -22,6 +22,9 @@ mybatis:
   type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
+    # Pinned on purpose. Entities declare non-null Kotlin properties with defaults, so nullable
+    # columns must stay unset rather than being pushed through a setter as null.
+    call-setters-on-nulls: false
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
 # Session Configuration (separate database for agent state)

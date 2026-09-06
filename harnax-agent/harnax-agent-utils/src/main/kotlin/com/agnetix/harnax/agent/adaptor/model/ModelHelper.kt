@@ -1,11 +1,12 @@
 package com.agnetix.harnax.agent.adaptor.model
 
 import io.agentscope.core.model.ChatModelBase
-import io.agentscope.core.model.DashScopeChatModel
-import io.agentscope.core.model.OllamaChatModel
-import io.agentscope.core.model.OpenAIChatModel
-import io.agentscope.core.model.ollama.OllamaOptions
-import io.agentscope.core.model.ollama.ThinkOption
+import io.agentscope.extensions.model.dashscope.DashScopeChatModel
+import io.agentscope.extensions.model.dashscope.EndpointType
+import io.agentscope.extensions.model.ollama.OllamaChatModel
+import io.agentscope.extensions.model.ollama.options.OllamaOptions
+import io.agentscope.extensions.model.ollama.options.ThinkOption
+import io.agentscope.extensions.model.openai.OpenAIChatModel
 
 /**
  * 模型辅助工具类
@@ -54,6 +55,11 @@ object ModelHelper {
             .stream(config.stream)
             .enableThinking(enableThinking ?: config.enableThinking)
             .enableSearch(enableSearch ?: config.enableSearch)
+        // SDK 未将部分多模态模型（如 qwen3.7-max）纳入自动识别，
+        // 需根据模型 vision 标记强制指定多模态端点，避免 DashScope 返回 url error
+        if (config.forceMultimodalEndpoint) {
+            builder.endpointType(EndpointType.MULTIMODAL)
+        }
         config.baseUrl?.let { builder.baseUrl(it) }
         config.httpTransport?.let { builder.httpTransport(it) }
         config.options?.let { builder.defaultOptions(it) }

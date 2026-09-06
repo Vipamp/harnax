@@ -77,6 +77,19 @@ class SkillAdaptorImplTest {
         }
 
         @Test
+        fun `getSkill should return null when the DB fallback lands on a disabled skill`() {
+            // selectById 只过滤 active，不看 status，停用标记只能在这里认。admin 的每条下发路径
+            // （/builtin-skills、agent 直接绑定、CLI 关联合并）都拦了停用技能，DB 回退不能成为
+            // 唯一一条把已停用技能装进 harness 的路
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill.apply { status = 0 })
+
+            val result = adaptor.getSkill(1L)
+
+            assertNull(result)
+            verify(skillMapper).selectById(1L)
+        }
+
+        @Test
         fun `getSkill should return null when skillMapper throws exception`() {
             `when`(skillMapper.selectById(1L)).thenThrow(RuntimeException("Database connection failed"))
 
@@ -360,6 +373,29 @@ class SkillAdaptorImplTest {
             val result = adaptor.getSkill(1L)
 
             assertNotNull(result)
+            verify(skillMapper).selectById(1L)
+        }
+
+        @Test
+        fun `getSkill should still honour the disable flag when falling back past a non-empty context`() {
+            // 上下文非空但未命中是常见情况（例如 CLI 合并阶段已把停用技能丢掉，skillDetails 里没它，
+            // 而 harness 仍按 skillId 来取），回退到 DB 时不能把刚被丢掉的那一个又装回来
+            stubContext(
+                listOf(
+                    SkillDetailDto(
+                        id = 11L,
+                        name = "other-skill",
+                        description = "",
+                        skillmd = "# Other",
+                        resources = "",
+                    ),
+                ),
+            )
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill.apply { status = 0 })
+
+            val result = adaptor.getSkill(1L)
+
+            assertNull(result)
             verify(skillMapper).selectById(1L)
         }
     }

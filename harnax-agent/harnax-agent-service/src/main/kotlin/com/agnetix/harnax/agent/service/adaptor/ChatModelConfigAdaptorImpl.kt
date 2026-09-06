@@ -68,6 +68,7 @@ class ChatModelConfigAdaptorImpl(
             httpTransport = null,
             options = null,
             encrypt = false,
+            forceMultimodalEndpoint = cfg.supportVision == 1,
         )
         "openai" -> OpenAIChatModelConfig(
             cfg.modelName,
@@ -101,6 +102,7 @@ class ChatModelConfigAdaptorImpl(
             httpTransport = null,
             options = null,
             encrypt = false,
+            forceMultimodalEndpoint = model.supportVision == 1,
         )
         "openai" -> OpenAIChatModelConfig(
             model.modelName,

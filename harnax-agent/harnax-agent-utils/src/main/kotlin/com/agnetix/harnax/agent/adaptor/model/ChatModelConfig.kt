@@ -1,8 +1,8 @@
 package com.agnetix.harnax.agent.adaptor.model
 
 import io.agentscope.core.model.GenerateOptions
-import io.agentscope.core.model.ollama.OllamaOptions
 import io.agentscope.core.model.transport.HttpTransport
+import io.agentscope.extensions.model.ollama.options.OllamaOptions
 
 /**
  * 模型配置接口
@@ -31,6 +31,13 @@ data class DashScopeChatModelConfig(
     val httpTransport: HttpTransport? = null,
     val options: GenerateOptions? = null,
     val encrypt: Boolean = false,
+    /**
+     * 强制使用多模态端点（multimodal-generation）。
+     * 部分多模态模型（如 qwen3.7-max）未被 SDK 自动识别为多模态，
+     * 走 text-generation 端点时 DashScope 会返回 "url error"，
+     * 此时需由模型的 support_vision 标记驱动强制切换。
+     */
+    val forceMultimodalEndpoint: Boolean = false,
 ) : ChatModelConfig
 
 /**

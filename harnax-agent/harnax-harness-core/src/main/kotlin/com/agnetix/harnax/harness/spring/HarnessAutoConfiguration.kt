@@ -12,6 +12,7 @@ import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
+import com.agnetix.harnax.harness.mcp.PlaintextMcpConfigDecryptor
 import com.agnetix.harnax.harness.output.MinioOutputFileStore
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
@@ -199,7 +200,11 @@ class HarnessAutoConfiguration {
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
+        // Never null: a missing bean used to leave headers and stdio env params silently empty.
+        // agent-service has no AES key — admin delivers those fields decrypted — so the fallback
+        // parses plain text rather than decrypting. A real decryptor elsewhere still wins.
         val mcpConfigDecryptor = mcpConfigDecryptorProvider.ifAvailable
+            ?: PlaintextMcpConfigDecryptor()
         val toolConfigAdaptor = toolConfigAdaptorProvider.ifAvailable
         val toolRegistry = toolRegistryProvider.ifAvailable
         return HarnessAgentLauncher.initLauncher(

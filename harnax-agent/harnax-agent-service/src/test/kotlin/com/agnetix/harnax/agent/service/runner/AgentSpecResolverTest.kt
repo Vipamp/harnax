@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.mockito.Mockito.*
+import org.mockito.kotlin.whenever
 import tools.jackson.databind.ObjectMapper
 
 class AgentSpecResolverTest {
@@ -22,6 +23,7 @@ class AgentSpecResolverTest {
     private lateinit var adminApiClient: AdminApiClient
     private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var objectMapper: ObjectMapper
+    private lateinit var builtinSkillRegistry: BuiltinSkillRegistry
     private lateinit var resolver: AgentSpecResolver
 
     @BeforeEach
@@ -29,7 +31,9 @@ class AgentSpecResolverTest {
         adminApiClient = mock(AdminApiClient::class.java)
         specContextHolder = AgentSpecContextHolder()
         objectMapper = ObjectMapper()
-        resolver = AgentSpecResolver(adminApiClient, specContextHolder, objectMapper)
+        builtinSkillRegistry = mock(BuiltinSkillRegistry::class.java)
+        whenever(builtinSkillRegistry.getSkills()).thenReturn(emptyList())
+        resolver = AgentSpecResolver(adminApiClient, specContextHolder, objectMapper, builtinSkillRegistry)
     }
 
     private fun buildSpecResponse(
@@ -200,9 +204,11 @@ class AgentSpecResolverTest {
             assertEquals(2, agentSpec.toolSpecs.size)
             assertEquals(10L, agentSpec.toolSpecs[0].toolId)
             assertTrue(agentSpec.toolSpecs[0].skipIfMissing)
-            assertEquals(1, agentSpec.toolSpecs[0].needConfirm)
+            // ToolSpec.needConfirm 是 Boolean（来自 DTO 的 bindingNeedConfirm），不是实体里的 0/1
+            assertTrue(agentSpec.toolSpecs[0].needConfirm)
             assertEquals(20L, agentSpec.toolSpecs[1].toolId)
             assertFalse(agentSpec.toolSpecs[1].skipIfMissing)
+            assertFalse(agentSpec.toolSpecs[1].needConfirm)
         }
 
         @Test
@@ -250,6 +256,63 @@ class AgentSpecResolverTest {
             assertEquals(1L, agentSpec.skills[0].skillId)
             assertEquals("code-review", agentSpec.skills[0].skillName)
             assertEquals(2L, agentSpec.skills[1].skillId)
+        }
+    }
+
+    @Nested
+    @DisplayName("内置技能注入")
+    inner class BuiltinSkillInjection {
+
+        private fun skill(id: Long, name: String) = SkillDetailDto(
+            id = id,
+            name = name,
+            description = name,
+            skillmd = "# $name",
+            resources = "",
+        )
+
+        @Test
+        @DisplayName("内置技能排在 spec 自带技能之前注入")
+        fun `resolve should inject built-in skills ahead of the spec-defined ones`() {
+            whenever(builtinSkillRegistry.getSkills()).thenReturn(listOf(skill(90L, "harnax-cli")))
+            val spec = buildSpecResponse(skillDetails = listOf(skill(1L, "code-review")))
+            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
+
+            val (agentSpec, _) = resolver.resolve("web-1")
+
+            assertEquals(listOf(90L, 1L), agentSpec.skills.map { it.skillId })
+        }
+
+        @Test
+        @DisplayName("spec 已按 id 带过同一个技能时，内置那份不重复注入")
+        fun `resolve should not inject a built-in skill the spec already carries by id`() {
+            whenever(builtinSkillRegistry.getSkills()).thenReturn(listOf(skill(1L, "code-review")))
+            val spec = buildSpecResponse(skillDetails = listOf(skill(1L, "code-review")))
+            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
+
+            val (agentSpec, _) = resolver.resolve("web-1")
+
+            assertEquals(listOf(1L), agentSpec.skills.map { it.skillId })
+        }
+
+        @Test
+        @DisplayName("内置技能与 spec 自带技能同名时不注入，保留运维显式绑定的那一个")
+        fun `resolve should skip a built-in skill whose name collides with a spec-defined one`() {
+            // 技能名只在仓库内唯一，租户自己的仓库完全可以放一个和内置技能同名的技能。而 harness
+            // 按 name 归并技能（AgentSkill.getSkillId() 是 name + "_" + source），两份都下发会让
+            // SkillRegistry（后者替换前者）和 InMemorySkillRepository（取第一个）对「谁生效」判断相反
+            whenever(builtinSkillRegistry.getSkills()).thenReturn(
+                listOf(skill(90L, "code-review"), skill(91L, "harnax-cli")),
+            )
+            val spec = buildSpecResponse(skillDetails = listOf(skill(1L, "code-review")))
+            `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
+
+            val (agentSpec, _) = resolver.resolve("web-1")
+
+            // 同名的 90 被让位，不同名的 91 照常注入且仍排在前面
+            assertEquals(listOf(91L, 1L), agentSpec.skills.map { it.skillId })
+            // 上下文里存的也必须是合并后的结果，否则 SkillAdaptor 回退到 DB 又会把 90 捞回来
+            assertEquals(listOf(91L, 1L), specContextHolder.get()?.skillDetails?.map { it.id })
         }
     }
 
