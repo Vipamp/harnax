@@ -1,0 +1,436 @@
+# Harnax Skill Management Flow (English)
+
+> 中文版本见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)
+>
+> For the overall tool system design, see [tool-capability.en-US.md](./tool-capability.en-US.md); for MCP server management, see [mcp-management.en-US.md](./mcp-management.en-US.md). This document covers the full chain of Skill data model, repository categories, sync-into-DB, agent configuration, config delivery and runtime assembly, ending with the issues found during the full-chain walkthrough, their fixes, and what is still pending.
+
+## 1. Overview
+
+A Skill is a capability package following the `SKILL.md` convention: one Markdown instruction file plus optional attached resources (scripts, templates). It is the fourth capability source of an agent, alongside built-in tools (`BUILTIN`), HTTP proxy tools (`HTTP`) and MCP servers.
+
+Key design: **skill content is persisted directly into the database** — `skill.skillmd` stores the full SKILL.md, `skill.resources` stores a JSON `Map<relativePath, fileContent>`. The runtime never reads repository files, so skills keep working even if the remote source becomes unreachable after sync.
+
+Installation has **partial-success semantics**: only some of the skills in a source may make it into the DB (parse failure, empty content, quota exceeded, write exception), so an HTTP 200 does not mean everything succeeded. The response carries a `SkillInstallResponse` that puts every skill into exactly one of four buckets — `installed` / `updated` / `failed` (with reason) / `flagged` (content scan hit, stored disabled) — and callers must surface it. The earlier implementation only logged and continued, which produced "the API succeeded, the list is empty" with no hint at all.
+
+Layering matches the tool / MCP system:
+
+- **harnax-entity**: `skill_repository` / `skill` / `agent_skill_binding` / `cli_skill_binding` entities and mappers;
+- **harnax-admin**: repository CRUD, multi-source loaders, sync-into-DB, binding management, internal API delivery;
+- **harnax-agent-service**: spec fetching, built-in skill cache, runtime assembly;
+- **harnax-harness-core**: hands `AgentSkill` instances to agentscope (wrapped in `InMemorySkillRepository`);
+- **agentscope**: skill catalog prompt injection and on-demand loading.
+
+## 2. Data Model
+
+### 2.1 skill_repository (skill source repository)
+
+Entity: `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`
+
+| Field | Description |
+|-------|-------------|
+| `name` | Repository name, **unique per tenant** (`selectByName(name, tenantId)` plus the unique index `uk_skill_repository_tenant_active_name`); `builtin-cli-skills` is a platform-reserved name (`uk_skill_repository_builtin_guard` additionally guarantees a single built-in repository DB-wide) |
+| `sourceType` | Source type: `GIT` / `NPM` / `ZIP` / `BUILTIN` (`BUILTIN` is platform-provisioned, has no loader, and can be neither fetched nor re-installed) |
+| `sourceConfig` | Source config JSON (new format), e.g. `{"url": "...", "branch": "main"}` or `{"packageName": "..."}` |
+| `url` / `branch` | Legacy columns, only written back redundantly for GIT type for old code paths |
+| `version` | Version identifier, propagated into `skill.version` on sync |
+| `storagePath` | Reserved field with no writer today (see TODO-1) |
+| `status` / `isPublic` / `creator` / `tenantId` / `active` | Enable flag, visibility, ownership, logical delete |
+
+There are two config accessors with deliberately different semantics:
+
+- `SkillSourceConfigs.parse(repository)` (**for loaders**): parses the `sourceConfig` JSON first; on failure only GIT falls back to the legacy `url` / `branch` columns, while NPM / ZIP throw `IllegalStateException` — synthesizing a Git-shaped config for them would hide the real cause (a corrupt `sourceConfig`) behind "requires 'packageName'";
+- `SkillSourceConfigs.forApi(repository)` (**for response DTOs**): a pure projection of `sourceConfig` — `null` when blank, transport-only keys such as `zipPath` filtered out, nothing synthesized from the legacy columns. Both response DTOs share it, so the two skill APIs cannot drift apart again.
+
+### 2.2 skill (skill main table)
+
+Entity: `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Skill.kt`
+
+| Field | Description |
+|-------|-------------|
+| `name` | Skill name, **unique within a repository** (`selectByNameAndRepo(name, repositoryId)` plus the unique index `uk_skill_repo_active_name`), used as the upsert key on sync |
+| `repositoryId` | Owning repository |
+| `description` | Taken from the YAML frontmatter of SKILL.md first, falling back to the first meaningful body line (truncated to 500 chars), then to the skill name |
+| `skillmd` | Full SKILL.md content (`MEDIUMTEXT`, see `V9__skill_content_in_mysql.sql`) |
+| `resources` | Attached resources JSON: `{"scripts/foo.sh": "content...", "templates/bar.md": "content..."}` (`MEDIUMTEXT`) |
+| `version` | Follows the repository version |
+| `isPublic` | **Inherited from the owning repository** (refreshed on both insert and update). The list query filters on `(is_public=1 OR creator=currentUser)`; the earlier implementation hard-coded 0, so making a repository public let other users see the repository but none of its skills |
+| `status` | 0 disabled / 1 enabled (disabled skills are excluded from delivery and built-in injection); forced to 0 pending review when the content scan hits |
+
+### 2.3 Binding tables
+
+- `agent_skill_binding`: `agentId` + `skillId`, direct agent-to-skill binding; the `envBindings` column exists but is never written (see TODO-1);
+- `cli_skill_binding`: `cliId` + `skillId`, CLI-to-skill association, semantically "teach the agent how to use this CLI".
+
+### 2.4 SkillDetailDto (internal API delivery carrier)
+
+`harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/dto/SkillDetailDto.kt`: carries `id` / `name` / `description` / `skillmd` / `resources` (`Map<String, String>`), enough for the agent side to rebuild an `AgentSkill` without querying the DB.
+
+## 3. Repository Categories
+
+### 3.1 User repositories
+
+Created via the management API, fully editable; every write path goes through `requireWritable` / `requireSameTenant` for tenant isolation.
+
+### 3.2 Built-in repository `builtin-cli-skills` (platform-managed, read-only)
+
+Constant: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/constant/BuiltinRepository.kt`
+
+- Seeded by Flyway `V12__seed_builtin_cli_skills.sql` (containing the `harnax-cli` skill), with its SKILL.md updated by `V14` and its source semantics corrected by `V15` (`source_type` changed from `ZIP` to `BUILTIN`, `source_config` / `url` changed from NULL to empty strings);
+- Located deterministically: `SkillRepositoryMapper.selectBuiltinRepository(name)` queries by `name` + `active = 1` with `ORDER BY id ASC LIMIT 1` and **does not depend on the caller's tenant**. The `source_type` filter is deliberately absent: `V15`'s `uk_skill_repository_builtin_guard` already guarantees at most one row carries that name, and layering a type filter on top would make a database where `V15` has not run return nothing, silently dropping the skills that are meant to reach every session. Built-in skills are injected into every session; the earlier tenant-scoped `selectByName` both returned an undefined row when duplicates existed and made non-tenant-1 callers miss the repository entirely, which silently skipped the binding constraint check;
+- **Read-only through the management API**: writes are blocked by `requireNotBuiltinRepo` / `requireWritable`, and the name is rejected by the reserved-name check at all three entry points (create, upload, rename);
+- Three dedicated flow rules:
+  1. CLI bindings may only reference skills from this repository (`CliServiceImpl.saveSkillBindings` validation);
+  2. Agents may **not** bind skills from this repository directly (`AgentServiceImpl.saveSkillBindings` throws, hinting "auto-loaded via CLI");
+  3. All `status=1` skills of this repository are delivered via `/api/admin/internal/builtin-skills`, cached by agent-service at startup and **injected into every session** (see section 7).
+
+### 3.3 Source loaders (three types)
+
+Dispatch: `SkillLoaderRegistry.getLoader(sourceType)`.
+
+| Loader | Mechanism | Key details |
+|--------|-----------|-------------|
+| `GitSkillLoader` | Delegates to agentscope's `GitSkillRepository(url, branch, tmpDir)`, clones then parses | The clone runs on a dedicated daemon pool `git-skill-loader` with a 180 s timeout (`shutdownNow()` in `@PreDestroy`); URL protocol whitelist `https://` / `http://` / `ssh://` / `git://` / `git@`, rejecting a leading `-` (argument injection) and `file://` / `ext::` (probing local and intranet repos); `branch` validated against `^[A-Za-z0-9._/-]+$`, defaulting to `main`; temp dir removed after use |
+| `NpmSkillLoader` | `npm install <pkg> --prefix <dir> --ignore-scripts --no-audit --no-fund [--registry <r>]` | **`--ignore-scripts` disables lifecycle scripts** — npm otherwise runs the target package's and its dependencies' `preinstall` / `install` / `postinstall`, which amounts to arbitrary code execution inside the admin process; 120 s timeout with subprocess output redirected to a file to avoid blocking; package name regex `^(?:@[a-z0-9~][a-z0-9._~-]*/)?[a-z0-9~][a-z0-9._~-]*$` (no consecutive dots), max length 214, explicit rejection of `..`; registry validated against `^https?://[^\s]+$`; the resolved package dir must stay inside `installDir` (defence in depth); scans subdirectories for SKILL.md first, falls back to the package root |
+| `ZipSkillLoader` | Extracts a local zip then parses | **Zip-Slip protection** (normalized entry paths must stay inside the target dir) plus **extraction quotas**: ≤ 5,000 entries, ≤ 20 MB per file, ≤ 200 MB total, ≤ 512 chars per entry name, with both the declared size and the bytes actually written verified (zip bomb defence); `Files.copy` uses `REPLACE_EXISTING` so duplicate entries no longer throw `FileAlreadyExistsException`; auto-descends a single root folder; reports "installed once at upload time" when the zip is gone |
+
+Unified parsing rule (`SkillFileParser`): a directory containing `SKILL.md` is one skill; the name and description come from the **YAML frontmatter** first (supporting `key: value`, block scalars `|` / `>` / `|-` / `>-`, indented continuations and quote stripping), with the name falling back to the directory name and the description falling back to the first meaningful body line (skipping blank lines, `#` headings, separator lines made of `-` / `*` / `_` / `=`, and `|` table rows, truncated to 500 chars) and then to the skill name; files under `resources/` are read into `Map<relativePath, textContent>` with strict UTF-8 decoding — a file that fails to decode (binary) or exceeds the quota (512 KB per file, 4 MB total) is skipped on its own instead of taking the whole skill down, and relative path separators are normalized to `/`; the result is agentscope `AgentSkill` objects.
+
+> Frontmatter must win: the agentscope SKILL.md convention requires the file to start with frontmatter, and the earlier in-house parser did not recognize it, storing `---` as the description. The runtime never re-parses through `MarkdownSkillParser`, so `SkillBox.getSkillPrompt()` injected that description straight into the prompt, leaving the LLM no way to decide when to use the skill — ZIP / NPM skills were effectively broken. All three sources now share one metadata rule.
+
+Before persisting, every skill goes through `SkillContentScanner` (9 high-risk command rules: recursive root delete, Windows drive wipe, disk overwrite, remote pipe-to-shell, reverse shell, fork bomb, root privilege escalation, history and audit tampering, credential harvest and upload). Command boundaries use `(?:^|[^\w-])` / `(?:[^\w]|$)`, so inline Markdown code is matched too. A hit does **not** reject the import; the skill is stored with `status=0` pending manual review and reported in the `flagged` list.
+
+## 4. Admin Management APIs (two generations coexist)
+
+### 4.1 Legacy: repository and skill separated, two-step sync
+
+- `SkillRepositoryController` (`/api/admin/skill-repositories`): `/page`, `/active`, `/{id}`, create, `/update/{id}`, `/toggle/{id}`, `/{id}` (DELETE), plus `GET /fetch/{id}` — fetches the **remote skill list as a preview**, returning `SyncSkillResponse` items flagged with `exists` (whether the name is already in the DB); the temp dir is cleaned right after loading;
+- `SkillController` (`/api/admin/skills`): `/page`, `/{id}`, create, `/update/{id}`, `/toggle/{id}`, `/{id}` (DELETE), plus `POST /batch?repositoryId=` — **selective sync-into-DB**: loads everything through the loader again (outside the transaction), hands the names checked by the UI to `SkillInstaller.persist` for upsert (same name overwrites `description` / `skillmd` / `resources` / `version` / `isPublic`; names missing from the source land in `failed`), and returns a `SkillInstallResponse`; the legacy signature `batchSaveSkills(...)` is kept as `savedCount`.
+
+So legacy sync is a two-step flow: "fetch preview → manual selection → batch persist".
+
+### 4.2 New: SkillSource (install on create, full set)
+
+`SkillSourceController` (`/api/admin/skill-sources`) + `SkillSourceServiceImpl`:
+
+| Endpoint | Returns | Behavior |
+|----------|---------|----------|
+| `POST /` | `SkillSourceInstallResponse` | Reserved-name check → `loader.validateConfig` → load outside the transaction → `SkillInstaller.createWithSkills` in a short transaction; GIT type also writes back `url` / `branch` |
+| `POST /upload` | `SkillSourceInstallResponse` | Accepts multipart → saves a temp zip → creates a ZIP repository → installs immediately → deletes the temp zip in `finally`; `sourceConfig` records `originalFilename` only, never a server path |
+| `POST /{id}/install` | `SkillInstallResponse` | **Re-install**: `requireWritable` + `requireRefreshable` + `loader.validateConfig` → load outside the transaction → `SkillInstaller.persist` full upsert; ZIP and BUILTIN are rejected by `requireRefreshable` |
+| `GET /{id}/fetch` | `List<SyncSkillResponse>` | Remote preview equivalent to the legacy endpoint (a plain array, not a page object), each item flagged with `exists`; ZIP and BUILTIN are rejected |
+| `PUT /{id}` | `Void` | Updates the repository record only (name uniqueness check, reserved-name check, cascades a refresh of installed skills when `isPublic` changes); **does not re-install skills** — after changing the URL, branch or package name the caller must invoke `POST /{id}/install` itself |
+| `DELETE /{id}` | `Void` | Cascading cleanup (see 4.3) |
+| `PUT /toggle/{id}` | `Void` | Toggle repository status |
+
+The two install endpoints (`POST /` and `POST /upload`) return `SkillSourceInstallResponse`, i.e. `{ source, install }`, where `install` is the `SkillInstallResponse` described above. A failure does not roll back the part that already succeeded, so callers must grade their feedback by `savedCount` and `failed`.
+
+### 4.3 Cascading delete
+
+Deleting a repository: the new `deleteSkillSource` and the legacy `deleteSkillRepository` share `SkillInstaller.deleteWithSkills(repository)` — load all its skill IDs → `agentSkillBindingMapper.deleteBySkillIds` + `cliSkillBindingMapper.deleteBySkillIds` → delete skills one by one → delete the repository, leaving no dangling bindings. Single skill deletion (`SkillController.deleteSkill`) clears bindings the same way.
+
+## 5. Agent and CLI Skill Configuration
+
+- When saving an agent, `skillList` (comma-separated skill IDs) goes to `AgentServiceImpl.saveSkillBindings`, which **deletes then re-inserts** `agent_skill_binding`; before inserting it rejects two things: direct binding of built-in repository skills, and binding two skills that share a name to one agent (skill names are unique per repository only, while the harness merges skills by name — see R5-3). Both checks run inside the transaction, so a rejection rolls the whole write back;
+- Saving a CLI writes `cli_skill_binding` and accepts built-in repository skills only;
+- Detail rendering (`convertToResponse`): skill items carry their repository name; CLI items embed their associated skill list (so the UI can show "which skills this CLI brings along").
+
+## 6. Config Delivery (Admin → agent-service)
+
+Three skill-related payloads in `InternalApiController.buildAgentSpecResponse` (`GET /api/admin/internal/agent-spec/{sessionId}`):
+
+1. `skillList`: comma-separated bound IDs (legacy field, kept for compatibility);
+2. `skillDetails`: full `SkillDetailDto` list assembled by querying the `skill` table per ID;
+3. **CLI skill merge**: read the agent's CLI bindings → `cliSkillBindingMapper.selectByCliIds` for each CLI's skill IDs → dedupe and append into `skillDetails`; **disabled CLIs are skipped entirely**, so their skills are not delivered either; the merge now honours both the skill `status` and its name (see R5-1 and R5-3);
+4. A separate endpoint `GET /api/admin/internal/builtin-skills` returns all `status=1` skills of the built-in repository (empty list when the repository does not exist); the repository is located deterministically via `selectBuiltinRepository` without a tenant context.
+
+## 7. Runtime Assembly (agent-service → HarnessAgent → agentscope)
+
+```
+BuiltinSkillRegistry
+    ├─ On ApplicationReadyEvent, fetches /builtin-skills and caches it (@Volatile List)
+    └─ Admin unreachable → empty cache, lazy retry inside getSkills()
+        ▼
+AgentSpecResolver.resolve(sessionId)
+    ├─ Built-in injection: builtinSkills first, deduped against specInfo.skillDetails by skillId
+    │     a built-in skill whose name is already used by a spec-defined skill stands down (two copies
+    │     under one name make the two harness layers disagree — see R5-3)
+    │     → effectiveSpecInfo (copy(skillDetails = merged))
+    ├─ specContextHolder.set(effectiveSpecInfo)        ← read by SkillAdaptor
+    └─ builder.addSkill(SkillSpec(skillId, skillName))  // skipIfMissing defaults to true
+        ▼
+HarnessAgentLauncher.createAgentBase()  iterates agentSpec.skills:
+    ├─ skillAdaptor.getSkill(skillId)
+    │     preferred: skillDetails in the context (DTO → AgentSkill, resources deserialized into a Map)
+    │     fallback:  SkillMapper.selectById direct DB read (that statement filters `active` only, so the
+    │                disable flag is honoured here — see R5-2)
+    ├─ found → agentBuilder.addSkill(AgentSkill)
+    └─ missing → throws AGENT_SKILL_NOT_FOUND when skipIfMissing=false; warn + skip when true (default)
+        ▼
+HarnessAgentBuilder.build()
+    └─ skills wrapped into the private InMemorySkillRepository (read-only: save/delete return false, isWriteable=false)
+       → HarnessAgent.Builder.skillRepository(...)
+        ▼
+agentscope consumer (inside HarnessAgent)
+    ├─ HarnessSkillMiddleware orchestrates multiple skill repositories (workspace skills can stack)
+    ├─ SkillBox.getSkillPrompt(): the system prompt receives only the skill catalog
+    │     (name + description + skill-id) — progressive disclosure, no full SKILL.md
+    ├─ SkillToolFactory: registers the load_skill_through_path tool,
+    │     the LLM loads SKILL.md or a resource script/template only when needed
+    └─ autoUploadSkill=true: skill files are uploaded into the workspace subtree skills/<skillId>/,
+        so shell / file tools can execute bundled scripts directly
+```
+
+**How skills take effect**: not by stuffing full SKILL.md into the context, but "catalog into the prompt + on-demand full-text loading tool + resource files materialized in the workspace". Context cost scales roughly linearly with the number of skills and is nearly independent of their size.
+
+## 8. Three Paths for a Skill to Reach an Agent
+
+| Path | Binding table | Source restriction | Merge point |
+|------|---------------|--------------------|-------------|
+| Direct agent binding | `agent_skill_binding` | Built-in repository skills forbidden | Admin delivers `skillDetails` |
+| CLI association | `cli_skill_binding` | Built-in repository skills only | Merged into `skillDetails` by Admin (disabled CLIs skipped) |
+| Global built-in injection | none (full cache) | All enabled skills of the built-in repository | `AgentSpecResolver` injects into every session |
+
+All three converge into `skillDetails` → `SkillSpec` → `AgentSkill`, deduplicated by skillId / name. The two dedup sites must agree: both the admin merge and the resolver injection keep the copy the operator bound explicitly (see R5-3), otherwise a built-in skill would overwrite the agent's own skill of the same name.
+
+## 9. Issues and Fix Record
+
+> A full-chain walkthrough in 2026-09 covered "webui / WeChat mini program → admin Controller / Service / Loader / parser → Mapper XML → Flyway DDL → harnax-cli callers" and found 24 issues (5 P0, 10 P1, 9 P2), **all of them now fixed**; see section 9.6 for the verification details. Five residual and carry-over items surfaced while fixing them; TODO-4 was fixed in round three, TODO-2 in round four and TODO-3 was closed in round five, leaving two items in section 9.5 that are **still open**.
+>
+> The chain was then walked twice more against the question "does the flow hold together, and are the boundaries handled": the second pass focused on write paths and source-config boundaries, the third on normalisation, DTO validation and read gates, and then on whether the tightened validation blocks any of the three callers (webui, harnax-cli, the WeChat mini program). They found 19 further issues, **likewise all fixed**, itemised in section 9.4.
+>
+> The highest-priority backlog item in section 9.5 was then closed as well: the loaders dropping skills silently (formerly TODO-2, now R4-1). Section 9.4 therefore totals 20 items.
+>
+> Round five cut the review differently: instead of slicing by write path, it aligned the **management paths** and the **agent loading paths** of the skill feature one by one — UI call ↔ Controller mapping, mapper method ↔ XML statement ↔ entity field ↔ Flyway column, delivery ↔ resolution ↔ assembly. It found 5 new issues (R5-1 to R5-5) and closed one backlog item (formerly TODO-3, now R5-6), so section 9.4 now totals 26 items.
+
+### 9.1 P0: data corruption or security impact (all fixed)
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P0-1 | **The NPM / ZIP parser did not recognize YAML frontmatter, so `description` was always `---`**: `extractDescription` skipped `#` lines and returned the first non-blank line, which for a standard SKILL.md is `---`; the skill name came from the directory instead of the frontmatter `name`. Once stored, `SkillAdaptorImpl` turns the DTO straight into an `AgentSkill` (the runtime never re-parses through `MarkdownSkillParser`) and `SkillBox.getSkillPrompt()` injects that description into the prompt → the LLM could not tell when to use the skill, so ZIP / NPM skills were effectively broken and inconsistent with GIT | `SkillFileParser` gained frontmatter parsing (`key: value`, block scalars `\|` / `>` / `\|-` / `>-`, indented continuations, quote stripping); `parseMeta(skillmd, fallbackName)` now takes name / description from the frontmatter first, with the description falling back to frontmatter → first meaningful body line → skill name, so all three sources agree. (The review suggested reusing agentscope's `SkillUtil.createFrom` directly; extending the existing parser was chosen instead to avoid tying admin's persistence rules to a framework-internal utility class) |
+| P0-2 | **Large skill packages were lost silently**: `loadResources` used `file.readText()` (strict UTF-8) on every file under `resources/`, throwing `MalformedInputException` on png / pdf / xlsx; the surrounding catch only logged and continued → the API returned 200, not a single skill reached the DB, and the UI showed an empty list after refresh | ① `loadResources` now skips a file that fails to decode (instead of dropping the whole skill) and enforces quotas: 512 KB per file, 4 MB total; ② persistence is no longer silent — `SkillInstaller` puts every skill into `installed` / `updated` / `failed` / `flagged`, with reasons returned in the response; ③ the UI grades its feedback by `savedCount` / `failed`. Note: the review's claim that both columns were `text` (64 KB) was wrong — `V9__skill_content_in_mysql.sql` had already made them `MEDIUMTEXT` |
+| P0-3 | **`npm install` ran without `--ignore-scripts`**: npm executes the target package's and its dependencies' `preinstall` / `install` / `postinstall` by default, so anyone able to create an NPM source (or a poisoned public package) could run arbitrary commands on the admin server, which holds DB credentials for every database and the internal API shared secret. In addition the package regex `^[a-z0-9@/._-]+$` allowed `..`, and `registry` was not validated at all | The command is now `npm install <pkg> --prefix <dir> --ignore-scripts --no-audit --no-fund [--registry <r>]`; the package regex tightened to `^(?:@[a-z0-9~][a-z0-9._~-]*/)?[a-z0-9~][a-z0-9._~-]*$` with a 214-char cap and explicit rejection of `..`; registry validated against `^https?://[^\s]+$`; the resolved package dir must stay inside `installDir` |
+| P0-4 | **The create endpoints lacked a reserved-name check, so `builtin-cli-skills` could be forged**: neither `createSkillSource` nor `uploadAndInstall` blocked it, and dedup used the tenant-scoped `selectByName` while the seed lives in `tenant_id=1` → tenant 2 could create a repository with that name and then could not delete it either (judged platform read-only), leaving permanent garbage. Worse: `getBuiltinSkills` used `selectByName` without a tenantId and with no `ORDER BY` + `LIMIT 1`, so with duplicates the returned row was undefined — and it is injected into every session; `AgentServiceImpl.saveSkillBindings` used the tenant-scoped `getByName`, so tenant 2 could not find the built-in repository and fell into the `log.warn` branch that skips the constraint check | ① All three entry points (create, upload, rename) go through `requireNotBuiltinName`; ② added `SkillRepositoryMapper.selectBuiltinRepository(name)`, locating the repository deterministically by `name` + `active = 1` + `ORDER BY id ASC LIMIT 1` (no `source_type` filter, see 3.2 for why); `getBuiltinRepository()`, `getBuiltinSkills` and the binding constraint check all use it and no longer depend on the tenant context; ③ `V15` adds the unique index `uk_skill_repository_builtin_guard` so a second built-in repository is impossible at the DB level |
+| P0-5 | **ZIP had no extraction quota and the import path bypassed the security scan**: the Zip-Slip protection was correct, but there was no cap on total bytes, per-file size or entry count, so a few dozen KB of zip bomb could fill the disk; `Files.copy` did not pass `REPLACE_EXISTING`, so duplicate entries threw `FileAlreadyExistsException`. Meanwhile agentscope's own skill write path runs `SkillSecurityScanner.scan`, while admin's import did no scanning at all — and stored skills are later uploaded into the workspace by `autoUploadSkill` where shell tools can execute them | ① Extraction quotas: ≤ 5,000 entries, ≤ 20 MB per file, ≤ 200 MB total, ≤ 512 chars per entry name, verifying both the declared size and the bytes actually written; `Files.copy` now uses `REPLACE_EXISTING`; ② added `SkillContentScanner` (9 high-risk command rules whose boundaries also match inline Markdown code) — a hit does not reject the import but stores the skill with `status=0` pending review and reports it in `flagged` |
+
+### 9.2 P1: authorization, consistency and capacity (all fixed)
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| P1-6 | **No tenant filtering on ID-based reads and writes**: `fetchSkills` / `fetchRemoteSkills` checked neither the tenant nor `requireWritable` → cross-tenant git clone / npm install (SSRF plus resource burn); `getSkillSource(id)` / `getSkillRepository(id)` / `getSkill(id)` were bare lookups too → reading another tenant's repository config and full `skillmd` | Fixed at the service layer: every read/update/toggle/delete in `SkillServiceImpl` goes through `requireReadable` (tenant check plus a built-in-repository exemption, a null context meaning an internal call); `fetchRemoteSkills` / `fetchSkills` / `installSkills` / `getSkillSource` gained `requireSameTenant` / `requireReadable`, and writes gained `requireWritable`. **The mapper layer is still a bare lookup, now recorded as an explicit contract rather than a gap (R5-6); `getSkillRepository(id)` gained its check in R3-5** |
+| P1-7 | **Long transactions**: `createSkillSource` and `batchSaveSkills` both ran git clone / npm install inside `@Transactional` (NPM timeout up to 120 s) → DB connections held for minutes, pool exhaustion under concurrency | Extracted a dedicated `@Service SkillInstaller` (which also fixes self-invocation of a private `@Transactional` method not taking effect); all loading moved outside the transaction, persistence goes through the three short transactions `createWithSkills` / `persist` / `deleteWithSkills` |
+| P1-8 | **Skill `is_public` was always 0, so public sharing did not work**: `installSkills` / `createSkill` hard-coded 0 and the UI has no editor for it, while the list filter is `(is_public=1 OR creator=currentUser)` → making a repository public let other users see the repository but none of its skills | `SkillInstaller.persist` sets `isPublic = repository.isPublic` on insert and refreshes it on update; `createSkill` inherits from the repository; `updateSkillSource` cascades to installed skills when `isPublic` changes; `V15` backfills existing rows |
+| P1-9 | **No unique indexes**: `skill_repository` lacked `(tenant_id, name)` and `skill` lacked `(repository_id, name)` → the application-level dedup check races, concurrent creates produce duplicates, and the later `LIMIT 1` becomes non-deterministic | `V15__skill_source_integrity.sql`: existing duplicates are first renamed to `LEFT(CONCAT(SUBSTRING(name,1,80),'#dup-',id),100)` (keeping the oldest row, deleting nothing), then a generated column `active_name = IF(active=1, name, NULL)` plus three unique indexes are added; the generated column keeps logically deleted rows out of the constraint |
+| P1-10 | **`PUT /skill-sources/{id}` did not re-install**: after changing url / branch / packageName the DB still held the old content with no hint; and the UI always sent `url` / `branch` on update (empty strings for NPM / ZIP), overwriting the legacy columns | Added `POST /skill-sources/{id}/install`; the KDoc of `applySourceConfigChange` states that changing the config does not re-install and the caller must trigger install itself; the UI list gained a "Re-install" button (hidden for ZIP and BUILTIN), saving an edit now shows a warning, and `RepositoryForm` no longer sends empty `url` / `branch` for NPM / ZIP |
+| P1-11 | **Two failure semantics for the same job**: `installSkills` continued after a single skill failed, `batchSaveSkills` rolled the whole batch back | Both entry points converge on `SkillInstaller.persist`, unified as "one skill's failure never blocks the others + return a failure list"; `batchSaveSkillsDetailed` returns a `SkillInstallResponse` |
+| P1-12 | **The ZIP `zipPath` pointed at a deleted file**: the controller removed the temp file in `finally` while the service still wrote `sourceConfig.zipPath`, and the comment claimed "no path is recorded here" — comment contradicting code; the API layer did not block it either, so a second fetch / batch always failed with `ZIP file not found` | `uploadAndInstall` writes only `originalFilename` into `sourceConfig`; both `persistableConfig` and `forApi` treat `zipPath` as a server-internal key; `requireRefreshable` / `fetchRemoteSkills` answer by `sourceType` with "ZIP is install-once, please upload again"; the UI hides the sync entry for ZIP and BUILTIN |
+| P1-13 | **Legacy delete did not cascade**: `deleteSkillRepository` removed only the repository, leaving orphan skills that could still be delivered | Changed to `skillInstaller.deleteWithSkills(repository)`, sharing the new flow's cascade |
+| P1-14 | **Legacy create defaulted to public**: `createSkillRepository` set neither `isPublic` / `sourceType` / `sourceConfig`, so the entity default `isPublic = 1` applied — repositories created through harnax-cli were public to the whole tenant, the opposite of the UI default | Explicit `isPublic = 0`, and `sourceType = "GIT"` plus `sourceConfig` are written together so the legacy columns and the JSON config no longer diverge |
+| P1-15 | **The built-in repository seed had wrong semantics**: `source_type='ZIP'`, `source_config=NULL`, `url=NULL`, and `tenant_id=1` meant other tenants could not see the repository in the UI at all even though its `harnax-cli` skill was injected into their sessions and they could not bind it to their own CLIs → the CLI skill feature was unusable in a multi-tenant setup | `V15` sets `source_type='BUILTIN'`, `source_config=''`, `url=''` (not NULL, since the Kotlin entity properties are non-null); `SkillLoaderRegistry` has no BUILTIN loader, and fetch / install reject it explicitly with "platform-provisioned, no source to fetch"; cross-tenant visibility is solved by `OR repository_id = #{builtinRepositoryId}` in `selectSkillList` plus the built-in exemption in `requireReadable` |
+
+### 9.3 P2: robustness and cleanup (all fixed)
+
+| Issue | Fix |
+|-------|-----|
+| The trailing `skillRepositoryMapper.updateById(repository)` in `installSkills` was a no-field-change write that also overwrote every column (risking clobbering concurrent edits) | Removed |
+| `requireNotBuiltinRepo` silently passed when the repository did not exist (`?: return`) → skills could be created for a non-existent `repositoryId`, producing orphans; `createSkill` also checked duplicates before authorizing | `requireWritableRepo` now throws when the repository is missing (no longer disabling both checks at once); `createSkill` authorizes first and dedups second, so probing whether a skill name is taken is impossible |
+| `SkillSourceConfigs.parse` unconditionally fell back to `{url, branch}` on a parse failure, which is a wrong config for NPM / ZIP → it reported "requires 'packageName'" instead of the real cause | Non-GIT types now throw `IllegalStateException` (carrying the repository ID and sourceType); `forApi` was added as a pure projection shared by both response DTOs |
+| `GitSkillLoader` had no timeout, no URL protocol whitelist (JGit supports `file://`, allowing local and intranet probing) and no `branch` validation | Dedicated daemon pool + `future.get(180s)` + `@PreDestroy shutdownNow()`; protocol whitelist and leading-`-` rejection; `branch` regex validation |
+| The empty `SKILL.md` skip existed only on the ZIP side, missing for NPM → inconsistent behavior | Handled uniformly by `SkillInstaller`: empty content lands in `failed` with reason `SKILL.md is empty`, consistent across sources and no longer silent |
+| The two response DTOs disagreed: `SkillSourceResponse.sourceConfig` returned `null` when empty while `SkillRepositoryResponse` returned `{url:"",branch:""}` (never null) | Both share `SkillSourceConfigs.forApi`, so empty is always `null` |
+| MyBatis did not set `call-setters-on-nulls` explicitly (default false), which happened to keep the seeded NULL columns from triggering Kotlin non-null setter failures — an implicit dependency: turning the setting on would NPE on every built-in repository query | Pinned to `false` explicitly in both `application.yml` files, with the reason documented |
+| Dead code and leftovers: `harnax-webui/src/services/ant-design-pro/skillRepository.ts` had no references; `updateSkillFields` in `SkillMapper.xml` had no callers; two Controller comments still said "Available only for public edition" | All cleaned up. `SkillRepositoryController` was **not** deleted — harnax-cli and two integration tests still use it |
+| Duplicated frontend toasts and unreachable branches: `errorThrower` already raises a `BizError` when `code !== 200` and `errorHandler` already shows a global toast, so a component's own `message.error` and its `response.code === 200` `else` branch were dead code | Removed from the three webui components; form validation failures are now separated from request failures (validation fails silently); added `src/utils/skillInstall.ts` as the single place deciding the feedback level. The mini program side also had a real functional bug fixed: `fetchRemoteSkills` was declared `request<string[]>` while the backend returns an array of objects, and the page posted those objects straight to `/skills/batch`, which only accepts `List<String>` — sync could never work; it is now `API.SkillSyncItem[]` with the page extracting `name` before submitting |
+
+### 9.4 Rounds two to five: newly found and fixed (26 items)
+
+#### Round two: write paths and source-config boundaries
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| R2-1 | **A ZIP source could be created through `POST /skill-sources` with a server-local `zipPath`**: the controller deletes the temp file before the response returns, so the stored config pointed at a path that no longer existed and every later sync failed with `ZIP file not found`. The error at the time came from the loader — "ZIP source config requires 'zipPath'" — which neither named the endpoint to use nor hinted that the input had been rejected on purpose | `createSkillSource` refuses `sourceType == "ZIP"` outright and names `POST /api/admin/skill-sources/upload` in the message; the refusal happens before config validation, so it does not depend on what `sourceConfig` contains |
+| R2-2 | **Validation and cloning did not use the same value**: `validateConfig` trimmed before matching the transport whitelist while `loadSkills` cloned the raw value, so `" https://host/repo "` passed validation and then failed inside JGit with an address nobody had typed | `loadSkills` now derives `url` / `branch` exactly the way validation does (trim, blank branch falling back to `main`), with a comment stating that the two must stay in step |
+| R2-3 | **Credentials embedded in a Git URL reached logs and error messages**: a private skill repository is commonly cloned as `https://user:token@host/repo`, and JGit quotes the full URI in its transport errors, so the token landed in log files and API responses | Added `redact()`, replacing the `user:password` part of every URL found in a text with `***`; the timeout, clone-failure and invalid-URL messages all go through it. The scp-like `git@host:org/repo` form carries no credentials and no scheme, so the regex never matches it |
+| R2-4 | **Skill names were normalised by three different rules in three places**: the preview endpoint echoed the raw name from the source, `SkillInstaller` stored the trimmed one, and batch submit resolved the raw one → for a padded name the preview's `exists` flag was wrong, so a user who ticked what the preview showed submitted a selection that could not be resolved | The preview (`fetchSkills`) and the batch selection (`batchSaveSkills`) both use the trimmed name now, so preview, selection and persistence agree |
+| R2-5 | **A ZIP upload was stopped by Spring's default 1 MB multipart limit before it reached the loader**: `ZipSkillLoader` has its own quotas of 20 MB per file and 200 MB in total, yet an ordinary skill package carrying a few resources was rejected by the multipart resolver with "File size exceeds limit" | `application.yml` now sets `spring.servlet.multipart` explicitly (`max-file-size` 200 MB, `max-request-size` 205 MB, overridable through `SKILL_UPLOAD_MAX_FILE_SIZE` / `SKILL_UPLOAD_MAX_REQUEST_SIZE`), the request limit leaving room for the form fields that travel with the archive |
+
+#### Round three: normalisation, DTO validation and read gates
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| R3-1 | **The stored config was never normalised**: `createSkillSource`, `applySourceConfigChange` and the legacy create / update all wrote what arrived, so URLs and branches kept the padding they had been pasted with. The loaders' trimming only made such a source *work* — the list page still showed an address nobody typed, the edit form handed it back for editing, and the legacy columns and the JSON config each kept their own copy | Added `SkillSourceConfigs.normalized()` and wired it into all five write points (new create, both branches of the new update, legacy create, legacy update); the loaders' trimming stays as a fallback for rows written before this change |
+| R3-2 | **Git url / branch had no length bound**: `sourceConfig` is a free-form map that no `@Size` annotation reaches, so an over-long URL was accepted, stored, and answered by MySQL with a data-truncation error naming a column instead of the field the caller got wrong | `GitSkillLoader.validateConfig` gained `MAX_URL_LENGTH = 500` / `MAX_BRANCH_LENGTH = 100`, mirroring the `skill_repository.url` / `branch` column widths; this is the point every write path funnels through. The length checks run before any branch that echoes the URL back, and their messages do not contain the URL itself — an over-long value is exactly the case most likely to carry credentials |
+| R3-3 | **The legacy `createSkillRepository` validated nothing**: the new create, the new update and the legacy update all call `validateConfig`, but this one did not, so harnax-cli could create a repository it could never fetch from, with the real cause ("Unsupported Git URL") surfacing at the first sync — far from the input that produced it. It also assigned `repository.branch = request.branch` without `ifBlank { "main" }`, leaving `""` in the legacy column and `"main"` in the JSON config | Validation now runs before anything is written, and the legacy columns and the JSON config are both derived from the same validated, normalised map |
+| R3-4 | **Every `@Size` on the five Skill DTOs was dead code**: on a Kotlin data class a bare annotation on a constructor parameter lands on the param (precedence param > property > field), bean validation reads fields and getters only, and Spring MVC's `@Valid @RequestBody` does not validate constructor parameters → not one of the declared bounds took effect; they existed in the OpenAPI doc alone. The project has 51 `@field:` annotations against 56 bare ones, and `ModelProviderCreateRequest` uses `@field:` throughout with its validation tests green — the counter-evidence | The five Skill DTOs (`SkillRepositoryCreateRequest` / `SkillRepositoryUpdateRequest` / `SkillSourceCreateRequest` / `SkillSourceUpdateRequest` / `SkillUpdateRequest`) now use `@field:Size`, and `version` gained a varchar(100) bound (it is copied onto every installed skill, and `skill.version` is varchar(100) too); a new `SkillRequestValidationTest` (16 cases) pins the convention. **The ~50 bare annotations in other modules were deliberately left alone** — outside the Skill scope |
+| R3-5 | **The legacy `GET /skill-repositories/{id}` was readable cross-tenant** (the former TODO-4): `getSkillRepository` returned `selectById` as-is, and a repository config holds the Git URL, branch, NPM package name and private registry address — the Git URL possibly with a clone token embedded | `getSkillRepository` now runs the row through `requireSameTenant` (builtin exempt, a null context meaning an internal call), matching the new API's `requireReadable`; the duplicated check inside `fetchRemoteSkills` was replaced by a call to this method. It throws rather than returning null so that `requireWritableRepo` keeps its existing "belongs to another tenant" wording and the assertions depending on it. All 7 callers were checked and none gains a new rejection: `AgentServiceImpl` and `SessionServiceImpl` both go through `skillService.getSkill()`, which already applies `requireReadable` |
+| R3-6 | **Agent config delivery did not filter skills by `status`**: `/builtin-skills` filters on `status == 1` and the CLI branch of the same function skips a disabled CLI, but agent-bound skills were sent regardless → a skill an operator had switched off, or one a re-import stored disabled because `SkillContentScanner` flagged it, still reached the harness, which defeats the point of the review gate. `skillList` in the same response also listed the IDs just dropped, so the two halves of one answer disagreed | Added the `status == 0` skip with a log line, written the way the neighbouring branches already are; `skillListStr` is now derived from the resolved `skillDetails`. The CLI merge point got **no** such filter at the time: `saveSkillBindings` restricts CLI bindings to the builtin repository and builtin skills cannot be toggled, so a filter there looked like dead code — that judgement was reversed in round five, see R5-1 |
+| R3-7 | **nginx's default 1 MB `client_max_body_size` answered a ZIP upload with a bare 413**: an HTML page that never reaches the frontend's error handler, leaving the user with no readable reason | The nginx config (`docker-new/nginx.conf`, the only deployment entry in the repo) now sets `client_max_body_size 205m;` on the location proxying the admin API, aligning the three layers with the R2-5 multipart limit and the `ZipSkillLoader` quotas; the frontend upload component has no client-side size limit, so there was nothing to change there |
+| R3-8 | **Both integration tests encoded a contract that no longer exists**: they created a ZIP source by POSTing a server-local `zipPath` (refused since R2-1), asserted that `sourceConfig.zipPath` is echoed (`persistableConfig` and `forApi` both strip it), called `/fetch` on a ZIP source (`requireRefreshable` refuses), and read `SkillSourceInstallResponse` as a flat object (it is `{source, install}`) → 10 failures. `*IT` sits outside surefire's default includes (the admin pom excludes it explicitly and failsafe only runs with `-DskipITs=false`), so a test filter is what dragged them in — they had never been exposed before | `BaseAdminIT` gained a shared `uploadSkillZip()` (multipart cannot go through `exchange`, which always serialises as JSON); both ITs now create their source by upload, read fields out of `{source, install}`, and replaced assertions about removed behaviour with assertions about the current contract: the JSON endpoint refuses a ZIP and names the upload one, fetch / install on a ZIP explain the one-shot rule, `status = 99` is refused and stores nothing, the builtin repository is read-only, and `zipPath` never leaves the server |
+| R3-9 | **`InternalApiControllerTest` was red as a whole**: the controller uses constructor injection with 19 parameters while the test declared 11 `@Mock` fields; Mockito passes null for the undeclared ones and Kotlin's non-null parameters check their arguments at construction time → `InjectMocksException`, so none of the 14 cases ever ran (this predates the round; see the pre-existing failure table in 9.6) | Added the 8 missing `@Mock` fields plus a note that the list must follow the controller constructor; this also gave the R3-6 gate unit-test coverage (a disabled skill is not delivered, and a dangling binding does not affect the rest) |
+| R3-10 | **harnax-cli's `skill-repo create` did not agree with the server on what is required**: neither `--name` nor `--url` carried `MarkFlagRequired` (every other create command in the CLI does), and `SKILL.md` documented `--url` as optional — while the legacy endpoint creates a Git repository only and, since R3-3, refuses a missing url. So `harnax skill-repo create --name x` paid a round trip to be told what cobra could have said locally. The opposite reading was checked as well: "a repository with no URL as a container for hand-written skills" is not a supported use — the webui marks the Git url required, the new `createSkillSource` throws on an empty url for GIT too, and the legacy endpoint hard-codes `sourceType = "GIT"` | `skillRepoCreateCmd` gained `MarkFlagRequired("name")` / `MarkFlagRequired("url")` with `(required)` in the usage strings, matching `mcp create` and friends; `SKILL.md` now writes `--url <url>` instead of `[--url <url>]` and states that the command creates a Git repository only, that `--branch` defaults to `main`, and that the URL is validated on create |
+| R3-11 | **Every cobra-level error in the CLI was silent**: `rootCmd` sets `SilenceErrors: true`, and `main.go` took the error returned by `cmd.Execute()` and did nothing but `os.Exit(1)`, discarding the message → a missing required flag, a misspelled subcommand or a wrong argument count all produced "exit code 1, no output". Commands reporting through `exitError` / `exitAPIError` were unaffected (they `os.Exit` directly and never return to main), so cobra's own layer was the only mute one — and the required flags added by R3-10 land exactly there | `main.go` now calls `output.PrintError(err.Error())` before exiting, the same output helper `exitError` uses. The CLI has no `RunE` and no `return err` inside any `Run`, so nothing can be printed twice. Verified against four cases: a missing `--url`, a missing `--repository-id` and a wrong argument count all went from no output to a readable error, while `--help` and the happy paths keep their exit codes |
+| R3-12 | **The WeChat mini program's repository form posted fields the legacy DTO cannot hold**: the form is written against the new data model (a GIT / NPM source-type picker, `sourceConfig`, `version`, and an `onLoad` that repopulates from `sourceConfig`) but POSTed to the legacy `/skill-repositories`, whose DTO has only `name` / `url` / `branch` / `description` / `status`. Jackson silently dropped `sourceType`, `sourceConfig` and `version`, and the top-level `url` the service actually reads was never sent. Before R3-3 that meant "silently create a Git repository with an empty url that can never be fetched", the NPM option being unable to work at all; after R3-3 it became a blanket "Git source config requires 'url'". Editing was broken the same way: url / branch are never sent, so changing the address stored nothing while the UI reported "saved" | `createRepo` / `updateRepo` now target `skill-sources`: the new create accepts `sourceType` + `sourceConfig` and installs in the same call, the PUT writes configuration only. The two legacy request types in `typings/api.d.ts` were replaced by `SkillSourceCreateRequest` / `SkillSourceUpdateRequest` / `SkillSourceInstallResult`; the create timeout was raised to 190 s (the server clones synchronously under a 180 s ceiling, so the 30 s default would time out first); the create answer is graded by `install`, and a successful edit now says "configuration saved, re-sync to make an address or package change take effect", matching the webui's `updateHint`; `onLoad` explains that a ZIP or BUILTIN repository cannot be edited here and navigates back instead of degrading into a Git form (the server already ignores ZIP config updates and refuses to write the builtin repository — this only names the dead end earlier). A new `utils/skillInstall.ts` gives the sync and create entrances one shared grading, and picks up the `flagged` branch the inline version missed |
+| R3-13 | **The P1-10 claim in section 9.2 — "`RepositoryForm` no longer sends empty `url` / `branch` for NPM / ZIP" — was not true in the code**: the update call kept sending both, as empty strings for NPM, and for ZIP `sourceConfig` is an empty object on top of that → the server would take the `incoming == null` branch of `applySourceConfigChange` and write `""` into `repository.url` / `branch`. Nothing broke only because those two columns are already empty strings on a ZIP row (the entity default), while a non-empty `sourceConfig` for GIT / NPM makes the server prefer the other branch — safety by coincidence rather than by design | The update call no longer sends `url` / `branch`: `sourceConfig` is the single carrier and the server mirrors it back into the legacy columns itself (for GIT only). The create call is unchanged — in `SkillSourceCreateRequest` those two fields are documented as backward-compat entries |
+| R3-14 | **`harnax skill sync` reported success using the submitted count** — a regression this very review introduced: when P1-11 changed the answer of `POST /skills/batch` from `ResultVo<Int>` to `ResultVo<SkillInstallResponse>` in round one, the webui and the mini program were updated and the CLI was missed. `batchResult.DecodeData(&count)` cannot unmarshal a JSON object into an int, so the fallback ran every single time and printed a green "Synced N skills" from `len(names)` — the number submitted, not the number stored — then exited 0. A partial failure, a total failure and a content-scan hold all looked like success, which is exactly the "reported saved, skills missing" class this whole review set out to remove | Decoded into `SkillInstallResult` (declaring only what the CLI reads: `failed` / `flagged` / `savedCount` / `summary`) and graded by outcome: with failures it prints the server's `summary` plus the first three "name: reason" lines (`... and N more` beyond that) and exits 1, so a pipeline depending on the sync can notice; with `flagged` only it warns but exits 0 (the skills are stored, just pending review); `savedCount == 0` no longer reports "Synced 0". `internal/output` gained `PrintWarning`, having had only success and error levels. An undecodable body is no longer papered over either — the truncated raw body is printed, which is exactly the shape of "the server is still an older build returning a plain integer". All six answers were exercised against a local stub service: all saved, partial failure, total failure, flagged only, nothing saved, legacy integer |
+
+#### Round four: closing a backlog item (1 item)
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| R4-1 | **Parse failures inside a loader still dropped skills silently** (the former TODO-2): `NpmSkillLoader.buildSkill` and `ZipSkillLoader.buildSkill` both did `catch (e: Exception) { log.warn(...); null }`, and a `SKILL.md` that exists but is empty returned null as well, so a directory that failed to parse simply vanished from the result. The `failed` list in `SkillInstaller` only covers "loaded fine but could not be persisted", not this layer → a directory with a corrupt SKILL.md made the API answer 200 and the `summary` report "1 saved" while the source held 2 directories. Since R3-14 the CLI relays that smaller number faithfully, but it still cannot say which skill went missing or why | `SkillLoader.loadSkills` now returns `SkillLoadResult(skills, failures)` instead of `List<AgentSkill>`, a failure being `SkillLoadFailure(name, reason)` whose `name` is the **directory** name — parsing is exactly what failed, so the name declared in the frontmatter cannot be trusted. Both loaders record a failure only when there **really is a `SKILL.md` that cannot be read**: a directory holding no `SKILL.md` at all stays silent, because an npm package or an archive routinely contains directories that were never meant to be skills (`node_modules`, shared assets, a `docs` folder) and reporting all of them would bury the handful of real problems. `SkillInstaller.persist` / `createWithSkills` gained a `loadFailures` parameter and folds them into the same `failed` list; the merge runs *before* the selection is resolved, so an unreadable directory is reported with its real reason rather than degenerating into "Not present in the source anymore", and rather than being reported twice. A selective sync echoes only the selected names: the failures are keyed on the directory name, which need not match the name the preview showed, so listing all of them would blame skills nobody asked for. The reason goes through `SkillFileParser.failureReason()`, capped at 200 characters (an exception message can embed a whole file) and falling back to the exception type when the message is empty. Git sources cannot be attributed the same way — per-directory parsing happens inside agentscope's `GitSkillRepository`, and the code says so |
+
+#### Round five: management paths and agent loading paths, aligned one by one (6 items)
+
+| ID | Issue | Fix |
+|----|-------|-----|
+| R5-1 | **The CLI merge branch ignored the skill `status`**: R3-6 gated direct bindings, but the CLI merge in the same function still deduped by skillId only, while `/builtin-skills` and the direct-binding branch both already dropped disabled skills → the three delivery paths disagreed about the same gate. **This is not reproducible data corruption today**: `CliServiceImpl.saveSkillBindings` restricts CLI bindings to builtin-repository skills and `toggleSkillStatus` runs `requireWritableRepo`, which refuses that repository, so no existing write path can disable a CLI-associated skill | The `status == 0` skip was added anyway (info log, same wording as the direct-binding branch). Three reasons: rows written by Flyway in `V12` / `V14` are not bound by the service layer, so a single `status = 0` in a seed puts a disabled skill into the builtin repository; historical bindings can be left dangling by direct DB edits; and once one path stops filtering, the next relaxation of the CLI constraint quietly opens the hole. This reverses R3-6's "dead code" judgement: one rule shared by three paths is worth more than three per-path derivations of whether a line can be skipped |
+| R5-2 | **The DB fallback in `SkillAdaptorImpl` ignored the `status`**: when `getSkill(skillId)` misses the spec context it falls back to `SkillMapper.selectById`, a statement that filters `active` only (the isolation contract is R5-6) → a disabled skill rejected by all three admin delivery paths could still be installed into `InMemorySkillRepository`, simply because the harness asked with a skillId the context does not carry | The fallback branch now checks `status == 0` and returns null (which takes the default `skipIfMissing` path). The unit tests cover both ways in: an empty context, and a non-empty context that misses — the common case, since it is usually the CLI merge that just dropped the skill |
+| R5-3 | **Which copy of a same-named skill wins was undefined in the harness**: `skill.name` is unique per repository only (`uk_skill_repo_active_name (repository_id, active_name)`), so a tenant may legitimately keep a skill named like a built-in one; agentscope's `SkillRegistry` stores by `AgentSkill.getSkillId()`, which is `getName() + "_" + source`, and `source` defaults to `"custom"` and is never set here → both copies take the same key and the later registration replaces the earlier, while harnax's own `InMemorySkillRepository.getSkill(name)` returns `skills.first { it.name == name }`. The two layers disagree | Three sites each arbitrate, with one rule: **the admin merge** (`InternalApiController`) keeps the agent's own binding and skips the CLI's same-named copy with a log; **the resolver injection** (`AgentSpecResolver`) keeps the spec-defined name and lets the built-in skill stand down with a log, writing the merged list into both `specContextHolder` and `buildAgentSpec` — otherwise the adaptor's DB fallback would fetch back the skill that just stood down; **the binding write** (`AgentServiceImpl.saveSkillBindings`) rejects duplicates outright with a `BizException` naming them, because the operator can see both rows in the config panel and fix it on the spot |
+| R5-4 | **Two update endpoints accepted `status` and never read it**: both `SkillUpdateRequest` and `SkillRepositoryUpdateRequest` declare `status` and Swagger documents it as "0:disabled 1:enabled", yet `SkillServiceImpl.updateSkill` and `SkillRepositoryServiceImpl.updateSkillRepository` never reference the field, and the `updateById` statements deliberately have no `status` column (enable/disable goes through `updateStatus`, so that an ordinary edit cannot re-open a skill the scanner demoted to pending review) → the API answers 200, `harnax skill update <id> --status 0` prints "Skill updated successfully", and the row keeps its old value | Both now follow the pattern `updateSkillSource` already used: when the request carries a `status` different from the stored one, call `updateStatus`; when it omits it, leave the value alone (preserving the scanner's demotion). **The webui is unaffected** (its page only calls `toggleSkillStatus` and never sends an update); the victims are `harnax skill update`, `harnax skill-repo update` and anyone calling the API directly |
+| R5-5 | **None of the three create paths validated the `status` value**: `createSkill`, `createSkillRepository` and `createSkillSource` all wrote `request.status ?: 1`, accepting any integer; `status` is TINYINT, so storing 7 raises no error, while every reader tests `status == 1` (`/builtin-skills`, direct bindings, the CLI merge, the `SkillAdaptorImpl` fallback) — producing a row that can neither be switched in the UI nor ever gets loaded. The three toggle paths had already converged on `SkillSourcePolicy.requireStatus`; the same field had two standards | All three creates and both updates (the branch added by R5-4) call `requireStatus`, checked before any DB access or remote fetch: for `createSkillSource` that matters most, since cloning is the most expensive step in the request, and it also stops a malformed probe from learning whether a repository or name exists. `uploadAndInstall` hard-codes `status = 1` and the paging query's `status` is a read filter, so neither needed changing |
+| R5-6 | **TODO-3 (ID-based mapper queries lack `tenant_id`) closed: no SQL push-down**. The original suggestion was an optional `tenantId` parameter on the ID-based queries, pushed down conditionally in the XML. Checking the callers ruled it out: internal callers (`InternalApiController` delivery, `SkillAdaptorImpl` assembly) have no tenant context at all, and the cross-tenant-visible builtin repository skills depend on these being unscoped; more importantly the service-layer checks *throw* ("Skill belongs to another tenant"), while an SQL filter would turn the same request into an empty result and the answer into a plain "not found", erasing the difference between "not yours" and "does not exist" | The contract is written down instead: the class-level KDoc on `SkillMapper` states that isolation is not this layer's job, that the decision belongs to `requireReadable` / `requireSameTenant`, and that a new call site must go through a service or reuse the existing check (or it reopens cross-tenant reads of the full SKILL.md); `SkillRepositoryMapper` carries the same note |
+
+### 9.5 Still pending
+
+> These 2 items are not part of the 26 above; both are carry-overs recorded by an earlier revision of this document. The former TODO-2 (a loader dropping skills silently) was fixed in round four — see R4-1; the former TODO-4 (no tenant check in `getSkillRepository(id)`) was fixed in round three — see R3-5; the former TODO-3 (no `tenant_id` in the mapper layer) was closed in round five — see R5-6. The numbering is kept as it was so that it still matches earlier discussions.
+
+#### TODO-1 (low): reserved fields never implemented
+
+- `SkillRepository.storagePath` and `Skill.storagePath`: no writer outside test seed data, and redundant given the "content in DB" design;
+- `AgentSkillBinding.envBindings`: `saveSkillBindings` writes `agentId` / `skillId` / `createTime` only, so per-skill environment variables do not work today (tools and MCP have such a channel; skills do not).
+- **Suggested fix**: confirm whether per-skill env vars are on the roadmap; if not, drop the redundant columns to avoid misleading readers.
+
+#### TODO-3 (closed — see R5-6)
+
+#### TODO-5 (low, refactor): duplicated skill management entry points
+
+- **Symptom**: `SkillRepositoryController` + `SkillController` (legacy) and `SkillSourceController` (new) overlap heavily (two sets of CRUD / toggle / fetch paths and DTOs). This round unified the failure semantics and the install implementation (P1-11), but both path sets and both DTO sets remain.
+- **Suggested fix**: converge on `skill-sources` as the single entry, mark legacy endpoints deprecated with a transition window — harnax-cli and the WeChat mini program still depend on them, so delete only after both sides have migrated.
+- **Caller migration status**: the mini program's create and edit paths moved to `skill-sources` in R3-12, leaving 6 call sites (page, detail, toggle, delete, fetch preview, batch save) on the legacy API; mini program development is now paused, and the itemised migration list — including the `batch` → `install` semantic difference — is recorded in chapter five of `harnax-wechat-app/DESIGN.md`. The CLI has not started migrating, and it uses all 8 endpoints of `SkillRepositoryController` (`/page`, `/active`, `/{id}` read and delete, create, `/update/{id}`, `/toggle/{id}`, `/fetch/{id}`), which is the main reason the legacy API cannot go first.
+
+### 9.6 Verification Record
+
+#### V15 migration exercised against a real MySQL 8.0
+
+The `harnax-entity` mapper tests run against a hand-maintained `src/test/resources/schema-test.sql` and **never touch Flyway**, so "mapper tests are green" does not prove the migration executes. V15 was verified separately: the `skill` / `skill_repository` structure and data of the live database were copied into a throwaway database, then the migration was applied. Results:
+
+- **Structural changes**: both generated columns (`active_name` / `builtin_guard`) and all three unique indexes were created; the builtin repository was corrected from `source_type='ZIP'` with `source_config=NULL` to `BUILTIN` with empty strings; the count of `is_public` mismatches dropped to zero.
+- **Constraint behaviour** (8 cases): a duplicate repository name within a tenant is rejected, the same name across tenants is allowed, a second `builtin-cli-skills` forged by another tenant is rejected by `builtin_guard`, reusing a name after a soft delete is allowed, a duplicate skill name within a repository is rejected, the same skill name across repositories is allowed, and reusing a skill name after a soft delete is allowed.
+- **Pre-existing duplicates**: a second database seeded with duplicate names verified the rename logic of 3a/3b — the oldest row keeps its name, the rest become `name#dup-<id>`, rows of other tenants and soft-deleted rows are untouched, and not one of the 7 repository / 5 skill rows was deleted.
+
+#### One regression found and fixed during re-verification
+
+`CliServiceImplTest` still mocked the old `selectByName(name, tenantId)` while `CliServiceImpl` had moved to `selectBuiltinRepository(name)` per P0-4: 2 cases failed with "builtin repository not found", and 2 more passed **for the wrong reason** because the null return made them throw earlier than intended. The mocks now target the new method and all 34 cases in that class are green.
+
+#### Frontend type checks
+
+- Mini program: `tsc --noEmit` reports zero errors (including the repository form changed by R3-12 and the new `utils/skillInstall.ts`).
+- webui: the root `tsconfig.json` is an incomplete config (`watch: true`, no `paths`), so `npm run tsc` is broken project-wide; checking with the umi-generated `src/.umi/tsconfig.json` instead, the skill-related files report zero errors. The remaining 54 project-wide errors are pre-existing and sit in `token-monitor` / `model` / `user` / `session` / `mcp`.
+- There are also 9 pre-existing i18n key gaps (`pages.skill.source.type`, `npm.package`, `npm.registry`, `zip.file`, `zip.select`, `version`, `selectRepository`, `noRepository`, `repository.confirmDelete`) — undefined in both locales and falling back to the English `defaultMessage`. They predate this round.
+
+#### Pre-existing test failures unrelated to Skill (out of scope)
+
+| Scope | Result | Attribution |
+|-------|--------|--------------|
+| `harnax-admin` full suite | 1475 tests, 14 failures / 27 errors | Seven classes: `AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor` / `InternalApi`; every Skill and Cli class is green |
+| `harnax-entity` full suite | 203 tests, 2 failures / 142 errors | 140 errors are CGLIB being unable to proxy final Kotlin test classes (`AopConfigException`, never reaching any SQL), 2 are `AgentToolMapperTest` reporting `Unknown column 'is_required'`; the 2 failures are two assertions in that same class (a logically deleted row still returned, and `selectById` returning a different row). Both Skill classes are green (35 tests) |
+
+Attribution was checked class by class: neither these test files nor the code under test was touched by the first round. `InternalApiControllerTest` fails because the test declares only 11 `@Mock` fields and lacks `modelProviderMapper`, a constructor parameter that already existed before that round — **fixed in round three**, see R3-9.
+
+> **Attribution corrected**: an earlier revision of this section blamed the 142 `harnax-entity` errors on "`schema-test.sql` drifting from the migrations". Rerunning the suite and counting entry by entry: 140 of them are the test classes being final Kotlin classes, which the Spring test context cannot CGLIB-proxy (`AopConfigException`, no SQL executed at all) and have nothing to do with the schema; only the 2 `agent_tool` errors about the missing `is_required` column from V5, plus that class's 2 assertion failures, come from the drift. The `skill` / `skill_repository` part of the drift was closed in round five (`skillmd` / `resources` moved to `MEDIUMTEXT`, the `active_name` / `builtin_guard` generated columns and the three unique indexes from `V15` added, `BUILTIN` added to the `source_type` comment); the drift in `agent_tool` and other non-Skill tables is out of this round's scope, and the `final` modifier change across those 13 test classes is test infrastructure beyond the Skill scope, so it was reverted.
+
+Worth noting as well: on the pre-change HEAD baseline the `harnax-admin` test sources **do not even compile** (`JwtAuthenticationFilterTest` misses the `internalApiSecret` argument, `SecurityUtilsTest` has a type mismatch). The working tree already fixes both, so no HEAD admin test baseline was available for a case-by-case comparison.
+
+#### Verification after rounds two and three
+
+| Scope | Result |
+|-------|--------|
+| `harnax-admin` Skill + Cli unit tests | 317 green (283 Skill + 34 Cli) |
+| `harnax-entity` Skill mapper tests | 35 green (`SkillMapperTest` + `SkillRepositoryMapperTest`) |
+| `InternalApiControllerTest` | 16 green (the original 14 + 2 new); before the fix the whole class was red with `InjectMocksException` |
+| Integration tests (`-DskipITs=false`) | 17 green: 11 in `SkillSourceCrudIT` + 6 in `SkillSourceExtraIT`, running against a real MySQL 8.0 in Testcontainers with Flyway applied through V15 |
+| harnax-cli | `go build ./...`, `go vet ./...` and `gofmt -l` all produce no output; the project has no Go test files, so `make test` is a no-op. The four cobra error paths behind R3-10 / R3-11 were exercised one by one; for R3-14 a local stub service stood in for the admin API and all six `/skills/batch` answers (all saved, partial failure, total failure, flagged only, nothing saved, legacy integer) were run through the CLI with their output and exit codes checked, plus a `--names` subset and a name absent from the fetch result. The stub and its temporary credentials were deleted afterwards. The 15 call sites in `cmd/skill.go` were also matched one by one against both Controllers' mappings and response DTOs (including `var` fields such as `SkillResponse.repositoryName` and the field names of `SyncSkillResponse`): apart from R3-14 there is no further contract drift |
+| WeChat mini program | `npm run tsc` (that is, `tsc --noEmit`) reports zero errors, covering the form and service layer changed by R3-12 plus the new `utils/skillInstall.ts` |
+
+Walking the callers at the end of round three touched harnax-cli and the mini program only (R3-10 through R3-14); no Kotlin code changed, so the backend numbers above still stand.
+
+Tests added or extended in these rounds:
+
+- `SkillRequestValidationTest` (new, 16 cases): pins that the DTOs' `@field:Size` bounds actually take effect. Without the R3-4 fix every over-limit assertion on URL / branch / name / version would fail;
+- `SkillLoaderTest` (+3): the Git url / branch length bounds, and that the bound is measured on the trimmed value;
+- `SkillSourceServiceImplTest` (+3): config normalisation on the new create and on both branches of the new update;
+- `SkillRepositoryServiceImplTest` (+5): config validation on the legacy create, one canonical value in both the legacy columns and the JSON config, cross-tenant reads refused, builtin repository and internal calls still allowed;
+- `InternalApiControllerTest` (+2): a disabled skill reaches neither `skillDetails` nor `skillList`, and a dangling binding leaves the remaining skills untouched. At the time the CLI merge point was deliberately left unfiltered ("`saveSkillBindings` restricts CLI bindings to the builtin repository and builtin skills cannot be toggled, so a filter there would be dead code") — round five reversed that, see R5-1;
+- `SkillSourceCrudIT` / `SkillSourceExtraIT` (rewritten, 17 cases): they now go through the multipart upload and assert the current contract, adding regression cover for "the JSON endpoint refuses a ZIP", "fetch / install on a ZIP are one-shot", "`status = 99` stores nothing", "the builtin repository is read-only" and "`zipPath` never leaves the server".
+
+Pre-existing failures **not** addressed here (unrelated to Skill): the six classes `AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor`; the `harnax-entity` mapper errors are mostly the final-test-class CGLIB problem (see the attribution correction above), not the `schema-test.sql` drift.
+
+#### Verification after round four (R4-1)
+
+| Scope | Result |
+|-------|--------|
+| `harnax-admin` Skill unit tests (`-Dtest='Skill*'`) | 328 green, 4 of them new in this round |
+| Integration tests (`-DskipITs=false`) | 17 green, the same cases as in rounds two and three (`SkillSourceCrudIT` 11 + `SkillSourceExtraIT` 6), going through a real ZIP upload → install → persistence |
+| Frontend and CLI | Untouched: the shape of `SkillInstallResponse` did not change, `failed` merely gained one more source of entries, so the graded display in the webui, the mini program and harnax-cli covers them automatically |
+
+Tests added or adjusted in this round:
+
+- `SkillLoaderTest` (+1 case, 2 assertions rewritten): a `SKILL.md` holding invalid UTF-8 puts only its own directory into `failures` while a normal skill in the same archive still parses; "there is a SKILL.md but it is empty" moved from "skipped silently" to asserting the directory name and the reason of the failure; "the directory has no SKILL.md" gained an assertion that `failures` is empty, pinning the boundary that a non-skill directory is not a failure;
+- `SkillSourceServiceImplTest` (+1): `installSkills` folds the loader failures into `failed` and turns `complete` false;
+- `SkillServiceImplTest` (+2): a selective sync reports the selected unreadable directory, with the parse failure as the reason rather than "Not present in the source anymore", and a directory nobody selected stays out of the report.
+
+The very first run exposed a duplicate report this round had introduced: when the selection held both a readable skill and an unreadable directory, that directory was reported twice — once as a parse failure, once as "not present in the source anymore". The fix moves the merging of the loader failures ahead of the selection resolution and lets the "not present" branch skip names already reported: the real reason wins, and it is reported once.
+
+#### Management and loading paths, cross-checked (round five)
+
+- **Frontend ↔ backend**: the webui's 9 `skill-sources` calls against `SkillSourceController`'s 9 mappings, and its 7 `skills` calls against `SkillController`'s 7, line up one to one; `agent.ts` uses only `skill-repositories/page` and `skills/page`; the remaining endpoints of `SkillRepositoryController` are used by harnax-cli. **No missing endpoint, and no endpoint without a caller**;
+- **Backend management layer**: `SkillMapper`'s 9 methods against `SkillMapper.xml`'s 9 statements, `SkillRepositoryMapper` 9 ↔ 9 (the only difference being the `resultMap` definitions); entity fields ↔ `resultMap` properties identical in both directions (`Skill` 15, `SkillRepository` 16); DDL columns ↔ entity fields identical in both directions, with `V15`'s `active_name` / `builtin_guard` correctly absent from the entities since they are VIRTUAL generated columns; `insert` covers every writable column, and `updateById` deliberately omits `status` / `tenant_id` / `create_time` — `tenant_id` is an ownership column that must not migrate, `create_time` should not be treated as an ordinary column to be rewritten, and `status` has its own `updateStatus` statement, so all three absences are by design; the defect was that the DTO declared `status` while the implementation never read it (R5-4);
+- **Agent loading chain**: delivery (`InternalApiController`, three paths) → resolution (`AgentSpecResolver`) → assembly (`SkillAdaptorImpl` → `InMemorySkillRepository`) checked link by link, which surfaced three issues (R5-1 / R5-2 / R5-3).
+
+#### Verification after round five (R5-1 to R5-6)
+
+| Scope | Result |
+|-------|--------|
+| `harnax-admin` (`Skill*` + `InternalApiControllerTest` + `AgentServiceImplTest` + `CliServiceImplTest`) | 426 tests green |
+| `harnax-agent-service` (`AgentSpecResolverTest` + `SkillAdaptorImplTest`) | 38 tests, 1 failure — the failing case is unrelated to Skill, see below |
+| `harnax-entity` Skill mapper tests | 35 tests green |
+| Integration tests (`-Pintegration-test -DskipITs=false`) | 17 green (`SkillSourceCrudIT` 11 + `SkillSourceExtraIT` 6), running against a real MySQL 8.0 from Testcontainers with Flyway applied through V15 |
+
+18 cases were added in this round (the first 7 covering R5-1 / R5-3, the remaining 11 covering R5-4 / R5-5):
+
+- `InternalApiControllerTest$AgentSkillDeliveryTests` (+2, now 4): a disabled CLI-associated skill is not delivered, and a CLI skill colliding in name with a direct binding keeps the latter;
+- `AgentServiceImplTest` (new `SkillBindingConstraintTests`, 5 cases): a builtin-repository skill is refused, a duplicate name is refused with the name in the message, distinct names are written normally, the duplicate check still holds when the builtin repository is missing (`getBuiltinRepository()` returns null), and `selectByIds` returning one row short (a soft-deleted ID) neither throws nor drops the write;
+- `SkillServiceImplTest` (+5): an update carrying `status` goes through the dedicated `updateStatus`, an update without it never touches the column, an out-of-range value is refused without writing; a create with an out-of-range value is refused **before any DB access**, and an explicit `status = 0` is stored as disabled;
+- `SkillRepositoryServiceImplTest` (+4) and `SkillSourceServiceImplTest` (+2): the same set of assertions; `SkillSourceServiceImplTest` additionally pins that an invalid `status` must be refused before the fetch, since cloning is the most expensive step of the request;
+- `AgentSpecResolverTest` (new `BuiltinSkillInjection`, 3 cases, on the agent loading side): built-in skills are injected ahead of the spec's own, one already carried by ID is not injected twice, and a name collision makes the built-in one stand down — the last case also asserts that `specContextHolder` holds the merged list, or the adaptor's DB fallback would fetch the skill back;
+- `SkillAdaptorImplTest` (+2): the DB fallback returns null for a disabled skill, reached both through an empty context and through a non-empty context that misses.
+
+A build pitfall worth recording: `mvn -o -pl harnax-admin test` **without `-am`** compiles against the stale `harnax-entity` jar in the local repository and produces a batch of phantom errors (`Unresolved reference 'selectBuiltinRepository'`, `Too many arguments for 'fun selectRepositoryList(...)'`) that look exactly like a contract this round broke.
+
+#### Found in round five, recorded but not changed
+
+- **The single `harnax-agent-service` failure belongs to the tool scope**: `resolve should build tool specs from toolDetails` asserts `assertEquals(1, agentSpec.toolSpecs[0].needConfirm)` while `ToolSpec.needConfirm` is a `Boolean = false` (`harnax-tools-sdk/.../ToolSpec.kt`), so the assertion can never pass. `git diff` confirms this round only changed the built-in skill injection in `AgentSpecResolver.kt` and never touched the tool mapping, and `ToolSpec.kt` is not in the change list — a pre-existing test error outside the Skill and agent-loading scope, recorded rather than fixed.
+- **`V15` aborts the migration on a database already polluted across tenants**: step 3a dedupes names partitioned by `(tenant_id, name)` and keeps the oldest row per tenant, so if tenant 1 and tenant 2 each have a `builtin-cli-skills` row, both survive; the following `uk_skill_repository_builtin_guard` then fails to build because two rows have `builtin_guard = 1`, and the migration stops at V15. The reserved-name check from P0-4 only guards writes made after it, not duplicates already stored. `V15` cannot be edited in place on a database where it already ran: `spring.flyway.validate-on-migrate: true` is in effect, so a checksum mismatch blocks startup — and `spring.flyway.repair-on-migrate: true` in `application.yml` is a **dead setting**: decompiling shows Spring Boot 4.0.1's `FlywayProperties` has no `repairOnMigrate` field (only `validateOnMigrate` and `validateMigrationNaming`), and `@ConfigurationProperties` ignores unknown fields by default, so it neither fails nor repairs anything. **No migration script was changed in this round**; fixing such a database needs a new `V16` that renames the surplus builtin rows before adding the index.
+
+## 10. Key File Index
+
+| Step | File |
+|------|------|
+| Entities | `harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/SkillRepository.kt`, `Skill.kt`, `AgentSkillBinding.kt`, `CliSkillBinding.kt`, `dto/SkillDetailDto.kt` |
+| Mappers | `harnax-entity/src/main/kotlin/com/agnetix/harnax/mapper/SkillMapper.kt`, `SkillRepositoryMapper.kt`, `AgentSkillBindingMapper.kt`, `CliSkillBindingMapper.kt` (XMLs with the same names under `harnax-entity/src/main/resources/mapper/`) |
+| Management APIs | `harnax-admin/.../controller/SkillSourceController.kt` (new), `SkillController.kt`, `SkillRepositoryController.kt` (legacy) |
+| Management services | `harnax-admin/.../service/impl/SkillSourceServiceImpl.kt` (new), `SkillServiceImpl.kt`, `SkillRepositoryServiceImpl.kt` (legacy) |
+| Loaders | `harnax-admin/.../skill/loader/`: `SkillLoader.kt`, `SkillLoadResult.kt`, `SkillLoaderRegistry.kt`, `SkillFileParser.kt`, `GitSkillLoader.kt`, `NpmSkillLoader.kt`, `ZipSkillLoader.kt` |
+| Install and content safety | `harnax-admin/.../skill/SkillInstaller.kt` (short-transaction persistence + failure list), `SkillContentScanner.kt` (high-risk command scan) |
+| Install result DTOs | `harnax-admin/.../dto/SkillInstallResponse.kt`, `SkillSourceInstallResponse.kt` |
+| Source config and policy | `harnax-admin/.../skill/SkillSourceConfigs.kt` (`parse` for loaders, `forApi` for DTOs, `normalized` for write paths), `SkillSourcePolicy.kt` (the single place deciding reserved names, the two-state status and non-refreshable sources), `harnax-admin/.../constant/BuiltinRepository.kt` |
+| Built-in skill seeds | `harnax-admin/src/main/resources/db/migration/V12__seed_builtin_cli_skills.sql`, `V14__*.sql` |
+| Integrity migration | `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql` (built-in semantics fix + `is_public` inheritance + duplicate renaming + three unique indexes), `V9__skill_content_in_mysql.sql` (`MEDIUMTEXT`) |
+| Binding save / delivery | `harnax-admin/.../service/impl/AgentServiceImpl.kt`, `CliServiceImpl.kt`, `controller/InternalApiController.kt` |
+| Built-in skill cache | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/BuiltinSkillRegistry.kt`, `client/AdminApiClient.kt` |
+| Spec resolution | `harnax-agent/harnax-agent-service/.../runner/AgentSpecResolver.kt`, `harnax-harness-core/.../agent/AgentSpec.kt` (`SkillSpec`) |
+| Skill adaptor | `harnax-agent/harnax-agent-service/.../adaptor/SkillAdaptorImpl.kt`, `harnax-harness-core/.../agent/adaptor/SkillAdaptor.kt` |
+| Runtime assembly | `harnax-harness-core/.../HarnessAgentLauncher.kt`, `HarnessAgentBuilder.kt` (`InMemorySkillRepository`) |
+| Frontend (webui) | `harnax-webui/src/pages/skill/`: `index.tsx`, `components/RepositoryForm.tsx`, `RepositoryList.tsx`, `SyncSkillModal.tsx`; `harnax-webui/src/utils/skillInstall.ts` (the single place deciding install feedback) |
+| Frontend (mini program) | `harnax-wechat-app/miniprogram/services/skill.ts`, `pages/skill/list/index.ts`, `pages/skill/repo-form/index.ts`, `utils/skillInstall.ts` (the single place deciding install feedback), `typings/api.d.ts` |
+| Command-line caller | `harnax-cli/cmd/skill.go` (the `skill` and `skill-repo` command groups), `harnax-cli/main.go` (the only exit for cobra errors), `harnax-cli/internal/output/formatter.go` (the new warning level), `harnax-cli/SKILL.md` |
+| Consumer (reference) | `/Users/heqingsong/code/opensource/agentscope-java`: `agentscope-core/.../skill/SkillBox.java`, `SkillToolFactory.java`, `agentscope-harness/.../HarnessAgent.java` |

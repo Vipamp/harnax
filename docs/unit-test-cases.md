@@ -192,9 +192,9 @@
 | SKL-02 | 更新改名重名 | 新名在同仓库已存在 | BizException `Skill name already exists` |
 | SKL-03 | 更新不改名不查重 | request.name=原名 | 不调用 getByNameAndRepo 查重 |
 | SKL-04 | 更新不存在 skill | selectById=null | BizException `Skill not found` |
-| SKL-05 | batchSaveSkills 空列表 | [] | 返回 0,不触发任何 mapper |
-| SKL-06 | batchSaveSkills 已存在计数 | 名称已存在 | 跳过插入但 savedCount+1(现状行为,建议评审是否合理) |
-| SKL-07 | batchSaveSkills 单条失败不中断 | 第 1 条抛异常,第 2 条正常 | 第 2 条仍插入;返回 1 |
+| SKL-05 | batchSaveSkillsDetailed 空列表 | [] | 返回空的 SkillInstallResponse(savedCount=0),不触发任何 mapper |
+| SKL-06 | batchSaveSkillsDetailed 已存在的技能 | 名称已存在 | 从源覆盖写入并记入 updated,不再静默计数 |
+| SKL-07 | batchSaveSkillsDetailed 单条失败不中断 | 第 1 条抛异常,第 2 条正常 | 第 2 条仍插入;失败项进 failed 并带原因,complete=false |
 | SKL-10 | 仓库创建重名 | selectByName 非 null | BizException `Repository name already exists` |
 | SKL-11 | fetchRemoteSkills 仓库不存在 | selectById=null | BizException `Skill repository not found` |
 | SKL-20 | SkillSource 创建重名 | selectByName 非 null | BizException `Source name already exists` |
@@ -364,7 +364,7 @@
 1. **TokenStatsServiceImpl**:多处 `!!` 断言(TS-11/TS-12),mapper 返回 null 或维度无数据时 NPE,应改为空集合兜底。
 2. **AgentServiceImpl.updateAgent**:"Agent not found" 抛 RuntimeException 而非 BizException,HTTP 层语义变成 500;建议统一为 BizException(AGT-03)。
 3. **UserTenantServiceImpl.updateUserRole 与 TenantServiceImpl.updateUserRole 行为不一致**:前者无"唯一管理员降级保护"(TEN-12),存在绕过风险,建议收敛为一处实现。
-4. **SkillServiceImpl.batchSaveSkills**:git 拉取后过滤不到目标 skill 时不报错且 savedCount 仍 +1,调用方无法感知失败(SKL-06)。
+4. ~~**SkillServiceImpl.batchSaveSkills**:git 拉取后过滤不到目标 skill 时不报错且 savedCount 仍 +1,调用方无法感知失败(SKL-06)。~~ **已修复**:接口改为返回 `SkillInstallResponse`(installed / updated / failed / flagged 四个桶),源里找不到的名字进 `failed` 并带原因,webui、小程序与 harnax-cli 三个调用方均已按该结构分级提示,详见 `prod_doc/skill-management.zh-CN.md` 的 P1-11 与 R3-14。
 5. **AuthServiceImpl.login 校验顺序**:先校验用户/密码、后校验验证码,使验证码无法防护用户名枚举与密码爆破;建议验证码前置(AUTH-15 固化现状,调整后同步改用例)。
 6. **AuthServiceImpl.logout expireTime**:`plusNanos(expiration * 1_000_000)` 换算易错,建议改 `plusSeconds(expiration / 1000)` 或 Duration.ofMillis,配合 AUTH-25。
 7. **JwtUtil 默认 secret 仅 23 字节**:HS256 要求 ≥32 字节,默认配置下启动即抛 WeakKeyException;建议在配置校验时显式给出提示(JWT-08)。
