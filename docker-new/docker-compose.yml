@@ -1,6 +1,13 @@
 # Harnax Docker Compose - Cluster Mode Deployment
 # Includes: MySQL + Redis + MinIO + Admin + Router + Agent-Service + Channel-Service + Frontend
 #
+# Host port convention: the two public entry points are the standard 80 / 443 (nginx — the only
+# service users open in a browser, hence no port in the URL). Every other published port is
+# 20000 + the service's well-known port (five digits, leading 2), so `28080:8080` / `23306:3306`.
+# Container-internal ports and the service-to-service URLs below stay unchanged — the shift only
+# matters for access from the host machine, and the 2xxxx band keeps this stack clear of locally
+# installed services that already hold 3306 / 6379 / 1xxxx from other projects.
+#
 # Usage:
 #   Build images first: ./build.sh
 #   Start services:     docker-compose up -d
@@ -155,7 +162,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider --timeout=5 http://localhost:8080/health 2>/dev/null || wget -q -O /dev/null --timeout=5 http://localhost:8080/health 2>/dev/null; exit 0"]
+      test: ["CMD-SHELL", "code=$$(wget -q -O /dev/null --timeout=5 --server-response http://localhost:8080/api/admin/health 2>&1 | awk '/HTTP/{print $$2}' | tail -1); [ \"$$code\" = \"200\" ] || [ \"$$code\" = \"401\" ] || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -197,8 +204,12 @@ services:
       # Admin service (for API key validation + session info)
       ADMIN_SERVICE_URL: http://admin:8080
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
-      # CORS
-      ROUTER_CORS_ALLOWED_ORIGINS: ${ROUTER_CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*}
+      # CORS — both scheme forms are needed and, crucially, the port-less ones too: nginx now
+      # serves the SPA on the standard 443, so the browser sends `Origin: https://localhost`
+      # without a port, and Spring's `https://localhost:*` pattern does NOT match that. The
+      # port-wildcard entries stay for clients that hit a service directly (app / mini-program
+      # against 28081). A rejected Origin gets a bare 403 from CorsFilter before any auth runs.
+      ROUTER_CORS_ALLOWED_ORIGINS: ${ROUTER_CORS_ALLOWED_ORIGINS:-http://localhost,https://localhost,http://127.0.0.1,https://127.0.0.1,http://localhost:*,https://localhost:*,http://127.0.0.1:*,https://127.0.0.1:*}
       # JVM
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
@@ -353,7 +364,7 @@ services:
       router:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider --timeout=5 http://localhost:8082/health 2>/dev/null || wget -q -O /dev/null --timeout=5 http://localhost:8082/health 2>/dev/null; exit 0"]
+      test: ["CMD-SHELL", "code=$$(wget -q -O /dev/null --timeout=5 --server-response http://localhost:8082/api/agent/health 2>&1 | awk '/HTTP/{print $$2}' | tail -1); [ \"$$code\" = \"200\" ] || [ \"$$code\" = \"401\" ] || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -392,11 +403,6 @@ services:
       # Auth Configuration
       SERVICE_ID: ${CHANNEL_SERVICE_ID:-channel-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
-      # MinIO Configuration (internal file access for channel delivery)
-      MINIO_ENABLED: "true"
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
@@ -461,7 +467,8 @@ services:
     container_name: harnax-frontend
     restart: always
     ports:
-      - "3389:80"
+      # Standard ports on purpose: the browser opens this service without a port in the URL.
+      - "80:80"
       - "443:443"
     volumes:
       - ./ssl:/etc/nginx/ssl:ro
@@ -473,7 +480,7 @@ services:
       - channel-service
       - scheduler
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
       interval: 30s
       timeout: 5s
       retries: 3

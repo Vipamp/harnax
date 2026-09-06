@@ -54,7 +54,10 @@ class RouterConfig(
     private val pendingAcquireTimeoutMs: Int,
     @Value($$"${router.proxy.write-timeout-seconds:30}")
     private val writeTimeoutSeconds: Int,
-    @Value($$"${router.cors.allowed-origins:http://localhost:*}")
+    // Port-less origins must be listed separately: the SPA is served on the standard 443, so the
+    // browser sends `https://localhost`, which `https://localhost:*` does not match. An Origin that
+    // matches nothing here is rejected by CorsFilter with 403 before any auth happens.
+    @Value($$"${router.cors.allowed-origins:http://localhost,https://localhost,http://127.0.0.1,https://127.0.0.1,http://localhost:*,https://localhost:*,http://127.0.0.1:*,https://127.0.0.1:*}")
     private val corsAllowedOrigins: String,
     private val tokenProvider: InternalTokenProvider,
 ) {
