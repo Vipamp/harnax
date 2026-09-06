@@ -1,6 +1,6 @@
 # Harnax Admin CLI
 
-通过 `harnax` 命令行管理 Harnax 平台的全部资源。支持 Agent、模型、工具、MCP Server、会话、渠道、环境变量、定时任务、API Key、租户、用户的增删改查操作。
+通过 `harnax` 命令行管理 Harnax 平台的全部资源。支持 Agent、模型、工具、MCP Server、Skill、会话、渠道、环境变量、定时任务、API Key、租户、用户、CLI 工具的增删改查操作。
 
 ## 前置条件
 
@@ -45,6 +45,18 @@ harnax logout
 ```
 
 清除本地凭证。
+
+### whoami
+
+```bash
+harnax whoami [--output json]
+```
+
+查看当前登录用户信息和登录状态：
+
+- 未登录 → 提示并退出码 1
+- token 过期/无效 → 提示重新登录并退出码 2
+- 登录有效 → 展示 Username、Nickname、Email、Role、Tenant ID、Token 过期时间等
 
 ## 配置命令
 
@@ -320,6 +332,90 @@ harnax mcp list-tools <id>
 
 输出表格：Name、Description。列出该 MCP Server 暴露的所有工具。
 
+## Skill 管理
+
+### 查询 Skill 列表
+
+```bash
+harnax skill list [--name <name>] [--repository-id <id>] [--status <0|1>] [--page <n>] [--size <n>]
+```
+
+输出表格：ID、Name、Repository、Status、Created
+
+### 查看 Skill 详情
+
+```bash
+harnax skill get <id>
+```
+
+输出包含 skill.md 内容和 Resources 信息。
+
+### 创建 Skill
+
+```bash
+harnax skill create --name <name> --repository-id <id> \
+  [--description <desc>] [--skillmd <content> | --skillmd-file <path>] [--resources <resources>] [--status <0|1>]
+```
+
+- `--name`（必需）：Skill 名称
+- `--repository-id`（必需）：所属仓库 ID
+- `--skillmd-file`：从文件读取 skill.md 内容（推荐，避免命令行转义问题）
+
+### 更新/删除/切换
+
+```bash
+harnax skill update <id> [--name <name>] [--description <desc>] [--skillmd-file <path>] [--status <0|1>]
+harnax skill delete <id>
+harnax skill toggle <id>
+```
+
+仅更新指定的字段。
+
+### 从仓库同步 Skill
+
+```bash
+# 同步仓库中所有可同步的 skill（重复的会被覆盖）
+harnax skill sync <repository-id>
+
+# 只同步指定名称的 skill
+harnax skill sync <repository-id> --names "skill-a,skill-b"
+```
+
+自动完成 fetch + 批量保存两步操作。名称不在可同步列表中时会报错。
+
+同步结果按**实际落库情况**汇报，而不是按提交数量：
+
+- 全部保存成功时打印服务端返回的统计（如 `2 saved (1 new) (1 updated)`），退出码 0；
+- 有技能保存失败时打印统计与前 3 条失败原因（更多的以 `... and N more` 收尾），退出码 1，脚本与流水线据此判断；
+- 只有技能命中内容扫描被置为待审核（`flagged`）时打印警告，退出码仍为 0——技能已经落库，只是处于停用状态，需要在管理后台审核后启用。
+
+## Skill 仓库管理
+
+```bash
+harnax skill-repo list [--name <name>] [--status <0|1>] [--page <n>] [--size <n>]
+harnax skill-repo get <id>
+harnax skill-repo create --name <name> --url <url> [--branch <branch>] [--description <desc>]
+harnax skill-repo update <id> [--name <name>] [--url <url>] [--branch <branch>]
+harnax skill-repo delete <id>
+harnax skill-repo toggle <id>
+```
+
+`skill-repo create` 只会创建 Git 仓库，因此 `--name` 与 `--url` 必填，`--branch` 缺省为 `main`。URL 在创建时就会校验（协议白名单、长度、是否内嵌凭据），写错立刻报错，不会拖到首次 `skill-repo fetch` 才暴露。
+
+### 查看启用中的仓库
+
+```bash
+harnax skill-repo active
+```
+
+### 查看仓库中可同步的 Skill
+
+```bash
+harnax skill-repo fetch <id>
+```
+
+输出表格：Name、Description、Exists（是否已存在于本地）。
+
 ## 会话管理
 
 ### 查询会话列表
@@ -477,6 +573,25 @@ harnax user delete <id>
 harnax user toggle <id>
 ```
 
+## CLI 工具管理
+
+管理安装到 Agent 沙箱镜像中的 CLI 工具：
+
+```bash
+harnax cli list [--page <n>] [--size <n>]
+harnax cli get <id>
+harnax cli create --name <name> --install-script <dockerfile-run-fragment> \
+  [--version <ver>] [--description <desc>] [--check-command <cmd>] \
+  [--env-params '<json>'] [--skill-ids <id1,id2>] [--public]
+harnax cli update <id> [--name <name>] [--install-script <fragment>] [--version <ver>]
+harnax cli delete <id>
+harnax cli toggle <id>
+```
+
+- `--install-script`（创建时必需）：Dockerfile 中安装该 CLI 的 RUN 片段
+- `--env-params`：JSON 数组格式的环境参数，如 `'[{"envParamName":"API_KEY","required":true,"secret":true}]'`
+- `--skill-ids`：关联的 Skill ID，逗号分隔
+
 ## 健康检查
 
 ```bash
@@ -570,4 +685,27 @@ harnax env-var create --key LOG_LEVEL --value debug --enabled
 
 # 查看已配置的环境变量
 harnax env-var list
+```
+
+### 场景 5：从远程仓库同步 Skill
+
+```bash
+# 1. 创建 skill 仓库
+harnax skill-repo create --name "official-skills" --url "https://github.com/example/skills.git" --branch main
+
+# 2. 查看仓库中可同步的 skill
+harnax skill-repo fetch 1
+
+# 3. 一键同步全部（或 --names 指定部分）
+harnax skill sync 1
+
+# 4. 确认同步结果
+harnax skill list --repository-id 1
+```
+
+### 场景 6：检查登录状态
+
+```bash
+# 脚本中先确认登录有效再执行操作
+harnax whoami || harnax login --username admin --password your-password
 ```

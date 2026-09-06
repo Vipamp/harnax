@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/agnetix/harnax-cli/internal/client"
 	"github.com/agnetix/harnax-cli/internal/config"
@@ -93,6 +95,89 @@ var logoutCmd = &cobra.Command{
 	},
 }
 
+var whoamiCmd = &cobra.Command{
+	Use:   "whoami",
+	Short: "Show current logged-in user info and login status",
+	Run: func(cmd *cobra.Command, args []string) {
+		creds, err := config.LoadCredentials()
+		if err != nil {
+			output.PrintError("Login status: not logged in. Please run 'harnax login' first")
+			os.Exit(1)
+		}
+
+		c, err := newAdminClient()
+		if err != nil {
+			exitError(err.Error())
+		}
+
+		ctx := context.Background()
+		result, err := c.List(ctx, "/api/admin/auth/me", nil)
+		if err != nil {
+			if apiErr, ok := err.(*client.APIError); ok && apiErr.Code == 401 {
+				output.PrintError("Login status: token expired or invalid. Please run 'harnax login' to re-authenticate.")
+				os.Exit(2)
+			}
+			exitAPIError(err)
+		}
+
+		var me struct {
+			ID        int64  `json:"id"`
+			Username  string `json:"username"`
+			Nickname  string `json:"nickname"`
+			Email     string `json:"email"`
+			Phone     string `json:"phone"`
+			IsAdmin   int    `json:"isAdmin"`
+			TenantID  int64  `json:"tenantId"`
+			AuthMode  string `json:"authMode"`
+			ExpiresAt int64  `json:"expiresAt"`
+		}
+		if err := result.DecodeData(&me); err != nil {
+			exitError(fmt.Sprintf("failed to parse user info: %v", err))
+		}
+
+		format := getOutputFormat()
+		if format == output.FormatJSON {
+			output.PrintJSON(result)
+			return
+		}
+
+		mode := "jwt"
+		if creds.Mode == "internal" {
+			mode = "internal secret"
+		}
+
+		rows := [][]string{
+			{"Login Status", "logged in (token valid)"},
+			{"Auth Mode", mode},
+			{"Username", me.Username},
+		}
+		if me.AuthMode != "internal" {
+			role := "user"
+			if me.IsAdmin == 1 {
+				role = "admin"
+			}
+			tenantID := "-"
+			if me.TenantID > 0 {
+				tenantID = fmt.Sprintf("%d", me.TenantID)
+			}
+			rows = append(rows,
+				[]string{"User ID", fmt.Sprintf("%d", me.ID)},
+				[]string{"Nickname", me.Nickname},
+				[]string{"Email", me.Email},
+				[]string{"Phone", me.Phone},
+				[]string{"Role", role},
+				[]string{"Tenant ID", tenantID},
+			)
+			if me.ExpiresAt > 0 {
+				expires := time.UnixMilli(me.ExpiresAt)
+				rows = append(rows, []string{"Token Expires",
+					fmt.Sprintf("%s (in %s)", expires.Format("2006-01-02 15:04:05"), time.Until(expires).Round(time.Second))})
+			}
+		}
+		output.PrintKeyValue(rows)
+	},
+}
+
 func init() {
 	loginCmd.Flags().String("username", "", "Username (required)")
 	loginCmd.Flags().String("password", "", "Password (required)")
@@ -101,4 +186,5 @@ func init() {
 
 	rootCmd.AddCommand(loginCmd)
 	rootCmd.AddCommand(logoutCmd)
+	rootCmd.AddCommand(whoamiCmd)
 }

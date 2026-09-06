@@ -8,16 +8,16 @@ import (
 )
 
 const (
-	configDir      = ".harnax"
-	configFile     = "config.yaml"
+	configDir       = ".harnax"
+	configFile      = "config.yaml"
 	credentialsFile = "credentials.json"
-	profilesDir    = "profiles"
+	profilesDir     = "profiles"
 )
 
 type Config struct {
-	CurrentProfile string              `yaml:"currentProfile" json:"currentProfile"`
-	DefaultOutput  string              `yaml:"defaultOutput" json:"defaultOutput"`
-	Profiles       map[string]Profile  `yaml:"profiles" json:"profiles"`
+	CurrentProfile string             `yaml:"currentProfile" json:"currentProfile"`
+	DefaultOutput  string             `yaml:"defaultOutput" json:"defaultOutput"`
+	Profiles       map[string]Profile `yaml:"profiles" json:"profiles"`
 }
 
 type Profile struct {
@@ -33,9 +33,9 @@ type Credentials struct {
 	Username     string `json:"username,omitempty"`
 
 	// Internal Secret mode (new)
-	Mode           string `json:"mode,omitempty"`           // "" or "jwt" = JWT mode; "internal" = internal secret
+	Mode           string `json:"mode,omitempty"` // "" or "jwt" = JWT mode; "internal" = internal secret
 	InternalSecret string `json:"internalSecret,omitempty"`
-	ServerURL      string `json:"serverUrl,omitempty"`      // used in internal mode
+	ServerURL      string `json:"serverUrl,omitempty"` // used in internal mode
 }
 
 func GetConfigDir() (string, error) {

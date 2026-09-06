@@ -22,17 +22,17 @@ type CliEnvParam struct {
 }
 
 type CliTool struct {
-	ID            int64  `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Version       string `json:"version"`
-	InstallScript string `json:"installScript"`
-	CheckCommand  string `json:"checkCommand"`
+	ID            int64         `json:"id"`
+	Name          string        `json:"name"`
+	Description   string        `json:"description"`
+	Version       string        `json:"version"`
+	InstallScript string        `json:"installScript"`
+	CheckCommand  string        `json:"checkCommand"`
 	EnvParams     []CliEnvParam `json:"envParams"`
-	Status        int    `json:"status"`
-	IsPublic      int    `json:"isPublic"`
-	Creator       string `json:"creator"`
-	CreateTime    string `json:"createTime"`
+	Status        int           `json:"status"`
+	IsPublic      int           `json:"isPublic"`
+	Creator       string        `json:"creator"`
+	CreateTime    string        `json:"createTime"`
 	SkillList     []struct {
 		SkillID   int64  `json:"skillId"`
 		SkillName string `json:"skillName"`

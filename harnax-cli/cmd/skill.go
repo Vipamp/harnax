@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/agnetix/harnax-cli/internal/client"
 	"github.com/agnetix/harnax-cli/internal/output"
@@ -44,6 +47,26 @@ type SyncSkill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Exists      bool   `json:"exists"`
+}
+
+// SkillInstallResult mirrors the per-skill report returned by POST /skills/batch. Only the fields
+// the CLI acts on are declared; installed, updated, failedCount and complete arrive too and are
+// ignored, since savedCount and summary already fold them in.
+type SkillInstallResult struct {
+	Failed     []SkillInstallFailure `json:"failed"`
+	Flagged    []SkillInstallFlagged `json:"flagged"`
+	SavedCount int                   `json:"savedCount"`
+	Summary    string                `json:"summary"`
+}
+
+type SkillInstallFailure struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+type SkillInstallFlagged struct {
+	Name    string   `json:"name"`
+	Reasons []string `json:"reasons"`
 }
 
 var skillCmd = &cobra.Command{
@@ -288,6 +311,96 @@ var skillDeleteCmd = &cobra.Command{
 		}
 
 		output.PrintSuccess("Skill deleted successfully")
+	},
+}
+
+var skillSyncCmd = &cobra.Command{
+	Use:   "sync <repository-id>",
+	Short: "Sync skills from a repository (fetch + batch save)",
+	Long:  "Fetch syncable skills from a remote repository and batch save them. Duplicates are overwritten.",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		c, err := newAdminClient()
+		if err != nil {
+			exitError(err.Error())
+		}
+
+		ctx := context.Background()
+
+		// Step 1: fetch syncable skills from the repository
+		result, err := c.Get(ctx, skillRepoBasePath+"/fetch", args[0])
+		if err != nil {
+			exitAPIError(err)
+		}
+
+		var fetchable []SyncSkill
+		if err := result.DecodeData(&fetchable); err != nil {
+			exitError("Failed to decode fetch response: " + err.Error())
+		}
+		if len(fetchable) == 0 {
+			output.PrintSuccess("No syncable skills found in repository " + args[0])
+			return
+		}
+
+		// Step 2: determine which skills to sync
+		var names []string
+		if namesFlag, _ := cmd.Flags().GetString("names"); namesFlag != "" {
+			available := map[string]bool{}
+			for _, s := range fetchable {
+				available[s.Name] = true
+			}
+			for _, n := range strings.Split(namesFlag, ",") {
+				n = strings.TrimSpace(n)
+				if n == "" {
+					continue
+				}
+				if !available[n] {
+					exitError(fmt.Sprintf("Skill '%s' is not syncable from repository %s. Run 'harnax skill-repo fetch %s' to list available skills", n, args[0], args[0]))
+				}
+				names = append(names, n)
+			}
+		} else {
+			for _, s := range fetchable {
+				names = append(names, s.Name)
+			}
+		}
+		if len(names) == 0 {
+			exitError("No skills selected for sync")
+		}
+
+		// Step 3: batch save
+		params := map[string]string{"repositoryId": args[0]}
+		batchResult, err := c.Request(ctx, http.MethodPost, skillBasePath+"/batch", params, names)
+		if err != nil {
+			exitAPIError(err)
+		}
+
+		// A 200 here only means the request was accepted: the endpoint answers with a per-skill
+		// report because individual skills can still fail to persist. Falling back to len(names)
+		// prints a green success while the repository may be empty, so an unreadable body is an
+		// error rather than something to paper over.
+		var install SkillInstallResult
+		if err := batchResult.DecodeData(&install); err != nil {
+			exitError(fmt.Sprintf("Failed to decode batch save response: %s", truncateText(string(batchResult.Data), 200)))
+		}
+
+		switch {
+		case len(install.Failed) > 0:
+			// Part or all of the selection was lost. The count alone is not enough to act on, so the
+			// reasons follow, and the exit code is 1 to fail a pipeline that depends on the sync.
+			output.PrintWarning(fmt.Sprintf("repository %s: %s", args[0], install.Summary))
+			fmt.Println(describeSkillFailures(install.Failed))
+			os.Exit(1)
+		case len(install.Flagged) > 0:
+			// Everything was stored, but flagged skills stay disabled until someone reviews them.
+			output.PrintWarning(fmt.Sprintf("repository %s: %s; flagged skills stay disabled until reviewed", args[0], install.Summary))
+		case install.SavedCount == 0:
+			// Nothing failed and nothing was stored: the source holds no installable skill. Saying
+			// "synced 0" in green would read as success next to an empty repository.
+			output.PrintWarning(fmt.Sprintf("repository %s: no skills were saved", args[0]))
+		default:
+			output.PrintSuccess(fmt.Sprintf("repository %s: %s", args[0], install.Summary))
+		}
 	},
 }
 
@@ -589,12 +702,36 @@ var skillRepoFetchCmd = &cobra.Command{
 		for i, s := range skills {
 			rows[i] = []string{
 				s.Name,
-				s.Description,
+				truncateText(s.Description, 80),
 				output.BoolText(s.Exists),
 			}
 		}
 		output.PrintTable(headers, rows)
 	},
+}
+
+// describeSkillFailures renders the detail lines below a partial-sync summary. Only the first few
+// are listed: a repository full of broken skills would otherwise push the counts off the screen.
+func describeSkillFailures(failed []SkillInstallFailure) string {
+	const limit = 3
+	lines := make([]string, 0, len(failed))
+	for i, f := range failed {
+		if i == limit {
+			lines = append(lines, fmt.Sprintf("  ... and %d more", len(failed)-limit))
+			break
+		}
+		lines = append(lines, fmt.Sprintf("  - %s: %s", f.Name, truncateText(f.Reason, 120)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// truncateText shortens long text for table display, collapsing whitespace.
+func truncateText(s string, max int) string {
+	runes := []rune(strings.Join(strings.Fields(s), " "))
+	if len(runes) <= max {
+		return string(runes)
+	}
+	return string(runes[:max-3]) + "..."
 }
 
 func init() {
@@ -622,16 +759,23 @@ func init() {
 	skillUpdateCmd.Flags().String("resources", "", "Resource information")
 	skillUpdateCmd.Flags().Int("status", -1, "Status (0/1)")
 
+	skillSyncCmd.Flags().String("names", "", "Comma-separated skill names to sync (default: all syncable skills)")
+
 	skillRepoListCmd.Flags().String("name", "", "Filter by repository name")
 	skillRepoListCmd.Flags().Int("status", -1, "Filter by status")
 	skillRepoListCmd.Flags().Int("page", 1, "Page number")
 	skillRepoListCmd.Flags().Int("size", 10, "Page size")
 
-	skillRepoCreateCmd.Flags().String("name", "", "Repository name")
-	skillRepoCreateCmd.Flags().String("url", "", "Repository URL")
+	skillRepoCreateCmd.Flags().String("name", "", "Repository name (required)")
+	skillRepoCreateCmd.Flags().String("url", "", "Repository URL (required)")
 	skillRepoCreateCmd.Flags().String("branch", "", "Branch name")
 	skillRepoCreateCmd.Flags().String("description", "", "Repository description")
 	skillRepoCreateCmd.Flags().Int("status", 1, "Status (0/1)")
+	// This endpoint creates a Git repository only, and the server validates the URL on create, so
+	// a missing --url is answered there rather than here. Failing locally keeps the cause next to
+	// the command line that produced it.
+	skillRepoCreateCmd.MarkFlagRequired("name")
+	skillRepoCreateCmd.MarkFlagRequired("url")
 
 	skillRepoUpdateCmd.Flags().String("name", "", "Repository name")
 	skillRepoUpdateCmd.Flags().String("url", "", "Repository URL")
@@ -645,6 +789,7 @@ func init() {
 	skillCmd.AddCommand(skillUpdateCmd)
 	skillCmd.AddCommand(skillToggleCmd)
 	skillCmd.AddCommand(skillDeleteCmd)
+	skillCmd.AddCommand(skillSyncCmd)
 
 	skillRepoCmd.AddCommand(skillRepoListCmd)
 	skillRepoCmd.AddCommand(skillRepoGetCmd)

@@ -65,6 +65,12 @@ func PrintError(msg string) {
 	color.Red("Error: " + msg)
 }
 
+// PrintWarning reports an operation that partly succeeded. It is deliberately not an Error:
+// callers pair it with their own exit code when the shortfall should fail a script.
+func PrintWarning(msg string) {
+	color.Yellow("Warning: " + msg)
+}
+
 func PrintPageInfo(total, pageNum, pageSize int) {
 	if total == 0 {
 		fmt.Println("No results")

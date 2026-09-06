@@ -11,18 +11,18 @@ import (
 )
 
 var (
-	version    = "dev"
-	serverURL  string
-	outputFmt  string
-	profile    string
-	verbose    bool
+	version   = "dev"
+	serverURL string
+	outputFmt string
+	profile   string
+	verbose   bool
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "harnax",
-	Short: "Harnax Admin CLI",
-	Long:  "Command-line interface for managing Harnax platform resources.",
-	Version: version,
+	Use:           "harnax",
+	Short:         "Harnax Admin CLI",
+	Long:          "Command-line interface for managing Harnax platform resources.",
+	Version:       version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
