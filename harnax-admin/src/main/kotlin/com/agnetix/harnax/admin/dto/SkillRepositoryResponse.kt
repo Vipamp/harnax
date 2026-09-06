@@ -43,8 +43,7 @@ data class SkillRepositoryResponse(
             url = entity.url,
             branch = entity.branch,
             sourceType = entity.sourceType,
-            // zipPath is an internal server path, not for API consumers
-            sourceConfig = SkillSourceConfigs.parse(entity).filterKeys { it != "zipPath" },
+            sourceConfig = SkillSourceConfigs.forApi(entity),
             description = entity.description,
             status = entity.status,
             isPublic = entity.isPublic,

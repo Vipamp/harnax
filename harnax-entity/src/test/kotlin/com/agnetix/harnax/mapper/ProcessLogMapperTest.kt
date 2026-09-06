@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class ProcessLogMapperTest {
+open class ProcessLogMapperTest {
 
     companion object {
         @Container

@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class SessionMapperTest {
+open class SessionMapperTest {
 
     companion object {
         @Container

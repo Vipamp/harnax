@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
+import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -336,32 +337,54 @@ class SkillControllerTest {
     inner class BatchSaveEndpoint {
 
         @Test
-        @DisplayName("batchSaveSkills - 批量保存成功返回数量")
+        @DisplayName("batchSaveSkills - 批量保存成功返回明细结果")
         fun `batchSaveSkills should return saved count`() {
             val skills = listOf("skill-a", "skill-b")
-            `when`(skillService.batchSaveSkills(10L, skills)).thenReturn(2)
+            `when`(skillService.batchSaveSkillsDetailed(10L, skills))
+                .thenReturn(SkillInstallResponse(installed = listOf("skill-a", "skill-b")))
 
             val result = controller.batchSaveSkills(10L, skills)
 
             assertTrue(result.isSuccess())
-            assertEquals(2, result.data)
+            assertEquals(2, result.data?.savedCount)
+            assertTrue(result.data?.complete == true)
         }
 
         @Test
-        @DisplayName("batchSaveSkills - 空列表时返回 0")
+        @DisplayName("batchSaveSkills - 部分失败时把失败清单回传前端")
+        fun `batchSaveSkills should surface partial failures`() {
+            val skills = listOf("skill-a", "skill-b")
+            `when`(skillService.batchSaveSkillsDetailed(10L, skills)).thenReturn(
+                SkillInstallResponse(
+                    installed = listOf("skill-a"),
+                    failed = listOf(SkillInstallResponse.FailedSkill("skill-b", "Not present in the source anymore")),
+                ),
+            )
+
+            val result = controller.batchSaveSkills(10L, skills)
+
+            // 接口仍然 200，但失败明细必须可见，不能再静默丢失
+            assertTrue(result.isSuccess())
+            assertEquals(1, result.data?.savedCount)
+            assertTrue(result.data?.complete == false)
+            assertEquals(listOf("skill-b"), result.data?.failed?.map { it.name })
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - 空列表时返回空结果")
         fun `batchSaveSkills should return zero for empty list`() {
-            `when`(skillService.batchSaveSkills(10L, emptyList())).thenReturn(0)
+            `when`(skillService.batchSaveSkillsDetailed(10L, emptyList())).thenReturn(SkillInstallResponse())
 
             val result = controller.batchSaveSkills(10L, emptyList())
 
             assertTrue(result.isSuccess())
-            assertEquals(0, result.data)
+            assertEquals(0, result.data?.savedCount)
         }
 
         @Test
         @DisplayName("batchSaveSkills - service 抛异常返回 error")
         fun `batchSaveSkills should return error when service throws`() {
-            `when`(skillService.batchSaveSkills(any(), any())).thenThrow(BizException("Repository not found"))
+            `when`(skillService.batchSaveSkillsDetailed(any(), any())).thenThrow(BizException("Repository not found"))
 
             val result = controller.batchSaveSkills(999L, listOf("skill-a"))
 

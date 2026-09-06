@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class SysUserMapperTest {
+open class SysUserMapperTest {
 
     companion object {
         @Container

@@ -26,9 +26,9 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mock
-import org.mockito.Spy
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.mockito.Spy
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
@@ -324,7 +324,7 @@ class CliServiceImplTest {
             `when`(cliMapper.selectByName("gh", 1L)).thenReturn(null)
             `when`(cliMapper.insert(any())).thenReturn(1)
             `when`(skillMapper.selectByIds(listOf(100L))).thenReturn(listOf(testSkill))
-            `when`(skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, 1L)).thenReturn(builtinRepo)
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(builtinRepo)
             `when`(cliSkillBindingMapper.batchInsert(any())).thenReturn(1)
 
             // When
@@ -392,7 +392,7 @@ class CliServiceImplTest {
             `when`(cliMapper.selectByName("gh", 1L)).thenReturn(null)
             `when`(cliMapper.insert(any())).thenReturn(1)
             `when`(skillMapper.selectByIds(listOf(100L))).thenReturn(listOf(testSkill))
-            `when`(skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, 1L)).thenReturn(null)
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(null)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -421,7 +421,7 @@ class CliServiceImplTest {
             `when`(cliMapper.selectByName("gh", 1L)).thenReturn(null)
             `when`(cliMapper.insert(any())).thenReturn(1)
             `when`(skillMapper.selectByIds(listOf(200L))).thenReturn(listOf(outsideSkill))
-            `when`(skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, 1L)).thenReturn(builtinRepo)
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(builtinRepo)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -547,7 +547,7 @@ class CliServiceImplTest {
             `when`(cliMapper.selectById(1L)).thenReturn(testCli)
             `when`(cliMapper.updateById(any())).thenReturn(1)
             `when`(skillMapper.selectByIds(listOf(100L))).thenReturn(listOf(testSkill))
-            `when`(skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, 1L)).thenReturn(builtinRepo)
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(builtinRepo)
             `when`(cliSkillBindingMapper.batchInsert(any())).thenReturn(1)
 
             // When

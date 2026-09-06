@@ -21,17 +21,19 @@
 
     <!-- selectById -->
     <select id="selectById" resultMap="ToolCallLogEntityResultMap">
-        SELECT * FROM tool_call_log_entity WHERE id = #{id} LIMIT 1
+        SELECT * FROM tool_call_log WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- deleteById -->
-    <update id="deleteById">
-        UPDATE tool_call_log_entity SET active = 0 WHERE id = #{id}
-    </update>
+    <!-- deleteById: the table is an append-only log with no `active` column, so removal is a real
+         DELETE. The statement used to name the entity class (`tool_call_log_entity`) instead of the
+         table, which MySQL rejected outright -->
+    <delete id="deleteById">
+        DELETE FROM tool_call_log WHERE id = #{id}
+    </delete>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO tool_call_log_entity (
+        INSERT INTO tool_call_log (
         agent_id, session_id, tool_name, args, result, success, start_time, end_time, duration, ts
         ) VALUES (
         #{agentId}, #{sessionId}, #{toolName}, #{args}, #{result}, #{success}, #{startTime}, #{endTime}, #{duration},
@@ -41,7 +43,7 @@
 
     <!-- updateById -->
     <update id="updateById">
-        UPDATE tool_call_log_entity SET
+        UPDATE tool_call_log SET
         agent_id = #{agentId},
         session_id = #{sessionId},
         tool_name = #{toolName},
@@ -55,10 +57,10 @@
         WHERE id = #{id}
     </update>
 
-    <select id="selectBySessionId" resultType="com.agnetix.harnax.entity.ToolCallLogEntity">
-        SELECT * FROM tool_call_log_entity WHERE session_id = #{sessionId} AND active = 1
+    <select id="selectBySessionId" resultMap="ToolCallLogEntityResultMap">
+        SELECT * FROM tool_call_log WHERE session_id = #{sessionId}
     </select>
-    <select id="selectByToolName" resultType="com.agnetix.harnax.entity.ToolCallLogEntity">
-        SELECT * FROM tool_call_log_entity WHERE tool_name = #{toolName} AND active = 1
+    <select id="selectByToolName" resultMap="ToolCallLogEntityResultMap">
+        SELECT * FROM tool_call_log WHERE tool_name = #{toolName}
     </select>
 </mapper>

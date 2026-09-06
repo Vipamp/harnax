@@ -31,9 +31,6 @@ class Skill : Serializable {
     @Schema(description = "Resource information")
     var resources: String = ""
 
-    @Schema(description = "Content storage path")
-    var storagePath: String = ""
-
     @Schema(description = "Skill version")
     var version: String = ""
 

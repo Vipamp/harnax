@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class SysTokenBlacklistMapperTest {
+open class SysTokenBlacklistMapperTest {
 
     companion object {
         @Container

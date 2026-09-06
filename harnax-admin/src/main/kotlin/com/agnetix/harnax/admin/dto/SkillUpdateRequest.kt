@@ -11,7 +11,10 @@ data class SkillUpdateRequest(
     @Schema(description = "ID")
     val id: Long? = null,
     @Schema(description = "Skill name")
-    @Size(min = 1, max = 100, message = "Skill name length must be between 1-100")
+    // `@field:` is what makes the limit real: a bare annotation on a Kotlin data class lands on the
+    // constructor parameter, which bean validation never reads. `SkillCreateRequest` already spells
+    // it out, so a rename was the one path where an over-long name reached MySQL unchecked
+    @field:Size(min = 1, max = 100, message = "Skill name length must be between 1-100")
     val name: String? = null,
     @Schema(description = "Repository ID", example = "1")
     val repositoryId: Long? = null,

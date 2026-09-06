@@ -56,7 +56,7 @@ class SecurityUtilsTest {
     }
 
     private fun setAuthentication(principal: Any?) {
-        val authentication = UsernamePasswordAuthenticationToken(principal, null, ArrayList())
+        val authentication = UsernamePasswordAuthenticationToken(principal ?: "", null, ArrayList())
         SecurityContextHolder.getContext().authentication = authentication
     }
 

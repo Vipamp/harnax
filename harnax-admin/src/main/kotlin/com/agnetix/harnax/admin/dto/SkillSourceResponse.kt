@@ -1,8 +1,8 @@
 package com.agnetix.harnax.admin.dto
 
+import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.entity.SkillRepository
 import io.swagger.v3.oas.annotations.media.Schema
-import tools.jackson.databind.ObjectMapper
 
 @Schema(description = "Skill source response")
 data class SkillSourceResponse(
@@ -46,36 +46,20 @@ data class SkillSourceResponse(
     val updateTime: String = "",
 ) {
     companion object {
-        private val objectMapper = ObjectMapper()
-
-        fun fromEntity(entity: SkillRepository): SkillSourceResponse {
-            val configMap: Map<String, Any>? = try {
-                if (entity.sourceConfig.isNotBlank()) {
-                    objectMapper.readValue(entity.sourceConfig, object : tools.jackson.core.type.TypeReference<Map<String, Any>>() {})
-                        // zipPath is an internal server path, not for API consumers
-                        .filterKeys { it != "zipPath" }
-                } else {
-                    null
-                }
-            } catch (e: Exception) {
-                null
-            }
-
-            return SkillSourceResponse(
-                id = entity.id,
-                name = entity.name,
-                sourceType = entity.sourceType,
-                sourceConfig = configMap,
-                version = entity.version,
-                url = entity.url,
-                branch = entity.branch,
-                description = entity.description,
-                status = entity.status,
-                isPublic = entity.isPublic,
-                creator = entity.creator,
-                createTime = entity.createTime.toString(),
-                updateTime = entity.updateTime.toString(),
-            )
-        }
+        fun fromEntity(entity: SkillRepository): SkillSourceResponse = SkillSourceResponse(
+            id = entity.id,
+            name = entity.name,
+            sourceType = entity.sourceType,
+            sourceConfig = SkillSourceConfigs.forApi(entity),
+            version = entity.version,
+            url = entity.url,
+            branch = entity.branch,
+            description = entity.description,
+            status = entity.status,
+            isPublic = entity.isPublic,
+            creator = entity.creator,
+            createTime = entity.createTime.toString(),
+            updateTime = entity.updateTime.toString(),
+        )
     }
 }

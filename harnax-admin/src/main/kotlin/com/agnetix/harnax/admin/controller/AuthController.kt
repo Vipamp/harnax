@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.CaptchaResponse
 import com.agnetix.harnax.admin.dto.LoginRequest
 import com.agnetix.harnax.admin.dto.LoginResponse
@@ -13,8 +14,10 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.*
 
 /**
@@ -80,6 +83,44 @@ class AuthController(
         return ResultVo.success(
             mapOf(
                 "methods" to methods,
+            ),
+        )
+    }
+
+    /**
+     * Get current logged-in user info
+     */
+    @GetMapping("/me")
+    @Operation(summary = "Get current user info", description = "Get current logged-in user info and login state")
+    fun getCurrentUserInfo(request: HttpServletRequest): ResultVo<Map<String, Any?>> {
+        val authentication = SecurityContextHolder.getContext().authentication
+        if (authentication == null || authentication.name.isNullOrBlank() || authentication.name == "anonymousUser") {
+            return ResultVo.error("User not logged in")
+        }
+
+        // Internal secret mode (shared secret, no real user)
+        if (authentication.name == "internal-service") {
+            return ResultVo.success(mapOf("username" to "internal-service", "authMode" to "internal"))
+        }
+
+        val currentUser = SecurityUtils.getCurrentUser()
+            ?: return ResultVo.error("User not logged in")
+
+        val bearerToken = request.getHeader("Authorization")
+        val token = if (bearerToken != null && bearerToken.startsWith("Bearer ")) bearerToken.substring(7) else null
+        val expiresAt = token?.let { jwtUtil.getExpirationMillisFromToken(it) }
+
+        return ResultVo.success(
+            mapOf(
+                "id" to currentUser.id,
+                "username" to currentUser.username,
+                "nickname" to currentUser.nickname,
+                "email" to currentUser.email,
+                "phone" to currentUser.phone,
+                "isAdmin" to currentUser.isAdmin,
+                "tenantId" to (TenantContext.getTenantId() ?: currentUser.tenantId),
+                "authMode" to "jwt",
+                "expiresAt" to expiresAt,
             ),
         )
     }

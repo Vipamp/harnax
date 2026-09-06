@@ -212,6 +212,82 @@ open class SkillRepositoryMapperTest {
         }
 
         @Test
+        @DisplayName("selectRepositoryList - 按 sourceType 过滤")
+        fun `selectRepositoryList should filter by sourceType`() {
+            // Given: 种子数据全是 GIT，插一条 NPM 才能证明这个条件真的进了 SQL
+            skillRepositoryMapper.insert(
+                SkillRepository().apply {
+                    tenantId = 1L
+                    name = "Npm Skills"
+                    url = ""
+                    branch = ""
+                    sourceType = "NPM"
+                    sourceConfig = """{"packageName":"my-skills"}"""
+                    version = ""
+                    description = "npm 技能源"
+                    status = 1
+                    isPublic = 1
+                    creator = "admin"
+                    active = 1
+                    createTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+                    updateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+                },
+            )
+
+            // When
+            val npmOnly = skillRepositoryMapper.selectRepositoryList(
+                name = null,
+                status = null,
+                currentUsername = "admin",
+                tenantId = 1L,
+                builtinName = null,
+                sourceType = "NPM",
+            )
+            val gitOnly = skillRepositoryMapper.selectRepositoryList(
+                name = null,
+                status = null,
+                currentUsername = "admin",
+                tenantId = 1L,
+                builtinName = null,
+                sourceType = "GIT",
+            )
+            val unfiltered = skillRepositoryMapper.selectRepositoryList(
+                name = null,
+                status = null,
+                currentUsername = "admin",
+                tenantId = 1L,
+                builtinName = null,
+                sourceType = null,
+            )
+
+            // Then
+            assertEquals(1, npmOnly.size)
+            assertEquals("Npm Skills", npmOnly[0].name)
+            assertTrue(gitOnly.isNotEmpty())
+            assertTrue(gitOnly.none { it.sourceType == "NPM" })
+            // 不传 sourceType 时必须仍是全量，否则这个参数就变成了强制条件
+            assertEquals(npmOnly.size + gitOnly.size, unfiltered.size)
+        }
+
+        @Test
+        @DisplayName("selectRepositoryList - builtinName 为空时不把内置仓库当通配条件")
+        fun `selectRepositoryList should ignore a blank builtinName`() {
+            // When
+            val repositories = skillRepositoryMapper.selectRepositoryList(
+                name = null,
+                status = null,
+                currentUsername = "admin",
+                tenantId = 2L,
+                builtinName = "",
+                sourceType = null,
+            )
+
+            // Then
+            // 内置仓库是给租户 1 播种、但所有租户共享的；空字符串不能让它退化成 name = ''
+            assertTrue(repositories.none { it.tenantId != 2L })
+        }
+
+        @Test
         @DisplayName("selectActiveRepositories - 查询所有启用的仓库")
         fun `selectActiveRepositories should return active repositories`() {
             // When

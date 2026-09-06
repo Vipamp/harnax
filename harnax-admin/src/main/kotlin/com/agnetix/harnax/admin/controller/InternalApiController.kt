@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.controller
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -42,6 +43,7 @@ class InternalApiController(
     private val modelMapper: ModelMapper,
     private val modelProviderMapper: ModelProviderMapper,
     private val aesUtil: AesUtil,
+    private val secretFieldEncryptor: SecretFieldEncryptor,
     private val agentTaskMapper: AgentTaskMapper,
     private val agentMapper: AgentMapper,
     private val channelMapper: ChannelMapper,
@@ -89,10 +91,13 @@ class InternalApiController(
     /**
      * List all active skills from the built-in skill repository.
      * Used by agent-service to preload built-in skills at startup.
+     *
+     * The lookup is tenant-agnostic and ordered by id: this endpoint runs without a tenant
+     * context, and the builtin repository is a single platform-wide row shared by every tenant.
      */
     @GetMapping("/builtin-skills")
     fun getBuiltinSkills(): ResultVo<List<SkillDetailDto>> {
-        val repo = skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS)
+        val repo = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
             ?: return ResultVo.success(emptyList())
         val skills = skillMapper.selectByRepositoryId(repo.id).filter { it.status == 1 }
         return ResultVo.success(
@@ -309,7 +314,8 @@ class InternalApiController(
                     methodName = tool.methodName,
                     httpUrl = tool.httpUrl,
                     httpMethod = tool.httpMethod,
-                    httpHeaders = tool.httpHeaders,
+                    // Delivered decrypted: agent-service holds no AES key. See plainConfigJson().
+                    httpHeaders = plainConfigJson(tool.httpHeaders),
                     envParams = tool.envParams,
                     inputSchema = tool.inputSchema,
                     outputSchema = tool.outputSchema,
@@ -351,8 +357,9 @@ class InternalApiController(
                     type = mcp.type,
                     command = mcp.command,
                     url = mcp.url,
-                    headers = mcp.headers,
-                    envParams = mcp.envParams,
+                    // Delivered decrypted: agent-service holds no AES key. See plainConfigJson().
+                    headers = plainConfigJson(mcp.headers),
+                    envParams = plainToolEnvJson(mcp.envParams),
                     enableSkip = binding.enableSkip,
                 )
             }
@@ -360,12 +367,18 @@ class InternalApiController(
 
         // ── Skill bindings (comma-separated IDs + full detail DTOs) ──
         val skillBindings = skillBindingMapper.selectByAgentId(agentId)
-        val skillListStr = skillBindings.joinToString(",") { it.skillId.toString() }
 
         val skillDetails = skillBindings.mapNotNull { binding ->
             val skill = skillMapper.selectById(binding.skillId)
             if (skill == null) {
                 log.warn("Skill not found: skillId={}", binding.skillId)
+                null
+            } else if (skill.status == 0) {
+                // The gate `/builtin-skills` applies, and the one the CLI branch below applies to a
+                // disabled CLI. A skill an operator switched off — or that a re-import stored
+                // disabled because SkillContentScanner flagged it — must not reach the harness just
+                // because a binding still points at it; honouring the flag is the whole point of it
+                log.info("Skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
                 null
             } else {
                 SkillDetailDto(
@@ -378,6 +391,9 @@ class InternalApiController(
                 )
             }
         }.toMutableList()
+        // Derived from what was actually resolved. Built from the bindings instead, it listed the ID
+        // of every skill dropped just above, so the two halves of one answer disagreed
+        val skillListStr = skillDetails.joinToString(",") { it.id.toString() }
 
         // ── CLI bindings (full detail DTOs + merge CLI skills into skillDetails) ──
         val cliBindings = cliBindingMapper.selectByAgentId(agentId)
@@ -411,8 +427,13 @@ class InternalApiController(
             }
         }
 
-        // Merge CLI-associated skills into skillDetails (dedup by skillId)
+        // Merge CLI-associated skills into skillDetails (dedup by skillId and by name)
         val boundSkillIds = skillDetails.map { it.id }.toHashSet()
+        // Skill names are only unique per repository, and the harness keys skills by name
+        // (`AgentSkill.getSkillId()` is `name + "_" + source`, `source` always being "custom" here), so
+        // two entries sharing a name make the registry replace one with the other while the in-memory
+        // repository still resolves the first. The agent's own binding wins over a CLI's copy.
+        val boundSkillNames = skillDetails.map { it.name }.toMutableSet()
         val cliSkillIdsToAdd = cliDetails.flatMap { it.skillIds }.distinct().filter { it !in boundSkillIds }
         if (cliSkillIdsToAdd.isNotEmpty()) {
             val skillsById = skillMapper.selectByIds(cliSkillIdsToAdd).associateBy { it.id }
@@ -420,6 +441,22 @@ class InternalApiController(
                 val skill = skillsById[skillId]
                 if (skill == null) {
                     log.warn("CLI-associated skill not found: skillId={}", skillId)
+                    continue
+                }
+                if (skill.status == 0) {
+                    // The same gate the direct bindings above and `/builtin-skills` apply. Without it a
+                    // CLI binding smuggled a disabled skill — one an operator switched off, or one a
+                    // re-import stored disabled because SkillContentScanner flagged it — into skillDetails,
+                    // so the global injection path dropped it while the CLI path still loaded it
+                    log.info("CLI-associated skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
+                    continue
+                }
+                if (!boundSkillNames.add(skill.name)) {
+                    log.info(
+                        "CLI-associated skill '{}' (id={}) shares its name with an already bound skill, skipping",
+                        skill.name,
+                        skill.id,
+                    )
                     continue
                 }
                 skillDetails.add(
@@ -518,6 +555,34 @@ class InternalApiController(
             log.warn("Failed to resolve env bindings JSON: {}", e.message)
             emptyList()
         }
+    }
+
+    /**
+     * Deliver a stored `McpConfigEntry` array as a flat plain-text JSON object.
+     *
+     * Entries marked `secret` are encrypted at rest with [AesUtil], and that key lives in this
+     * service only — agent-service must not carry it. So decryption happens here, on the way out,
+     * exactly the way [resolveEnvBindingsJson] already resolves binding-level env values to plain
+     * text. The receiving end parses the object; see `PlaintextMcpConfigDecryptor` in harness-core.
+     *
+     * Blank stays null, so "nothing configured" remains distinguishable from "configured, empty".
+     */
+    private fun plainConfigJson(storedJson: String?): String? = storedJson?.takeIf { it.isNotBlank() }?.let {
+        serializeDecrypted(secretFieldEncryptor.decryptToMap(it), it)
+    }
+
+    /** Same as [plainConfigJson], for the `ToolEnvParamEntry` array shape (envParamName / defaultValue). */
+    private fun plainToolEnvJson(storedJson: String?): String? = storedJson?.takeIf { it.isNotBlank() }?.let {
+        serializeDecrypted(secretFieldEncryptor.decryptToolEnvParamsToMap(it), it)
+    }
+
+    private fun serializeDecrypted(values: Map<String, String>, storedJson: String): String {
+        // Both decrypt* helpers swallow parse and key failures into an empty map. Delivering "{}" is
+        // still the right answer for the caller, but it must not look like a clean "no headers".
+        if (values.isEmpty() && storedJson.trim() != "[]") {
+            log.warn("Stored config payload could not be resolved to plain values; delivering an empty object")
+        }
+        return objectMapper.writeValueAsString(values)
     }
 
     // ========================================

@@ -44,7 +44,7 @@ class JwtAuthenticationFilterTest {
 
     @BeforeEach
     fun setUp() {
-        filter = JwtAuthenticationFilter(jwtUtil, tokenBlacklistService)
+        filter = JwtAuthenticationFilter(jwtUtil, tokenBlacklistService, "")
         SecurityContextHolder.clearContext()
     }
 
@@ -247,7 +247,7 @@ class JwtAuthenticationFilterTest {
 
             val authentication = SecurityContextHolder.getContext().authentication
             assertNotNull(authentication, "应设置认证信息")
-            assertEquals("admin", authentication.principal)
+            assertEquals("admin", authentication!!.principal)
             assertNotNull(chain.request, "过滤器链应继续执行")
         }
 
@@ -266,7 +266,7 @@ class JwtAuthenticationFilterTest {
             filter.doFilter(request, response, chain)
 
             val authentication = SecurityContextHolder.getContext().authentication
-            assertNotNull(authentication.details)
+            assertNotNull(authentication!!.details)
         }
     }
 }

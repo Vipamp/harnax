@@ -11,7 +11,6 @@
         <result column="description" property="description"/>
         <result column="skillmd" property="skillmd"/>
         <result column="resources" property="resources"/>
-        <result column="storage_path" property="storagePath"/>
         <result column="version" property="version"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
@@ -59,9 +58,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO skill (
-        tenant_id, name, repository_id, description, skillmd, resources, storage_path, version, status, is_public, creator, active, create_time, update_time
+        tenant_id, name, repository_id, description, skillmd, resources, version, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{tenantId}, #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{storagePath}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        #{tenantId}, #{name}, #{repositoryId}, #{description}, #{skillmd}, #{resources}, #{version}, #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
 
@@ -73,7 +72,6 @@
         description = #{description},
         skillmd = #{skillmd},
         resources = #{resources},
-        storage_path = #{storagePath},
         version = #{version},
         is_public = #{isPublic},
         creator = #{creator},
@@ -88,7 +86,12 @@
         WHERE active = 1
         AND (is_public = 1 OR creator = #{currentUsername})
         <if test="tenantId != null">
-            AND tenant_id = #{tenantId}
+            <!-- Skills of the shared builtin repository are visible to every tenant -->
+            AND (tenant_id = #{tenantId}
+            <if test="builtinRepositoryId != null">
+                OR repository_id = #{builtinRepositoryId}
+            </if>
+            )
         </if>
         <if test='name != null and name != ""'>
             AND name LIKE CONCAT('%', #{name}, '%')
@@ -101,19 +104,5 @@
         </if>
         ORDER BY update_time DESC
     </select>
-
-    <!-- updateSkillFields -->
-    <update id="updateSkillFields">
-        UPDATE skill
-        <set>
-            <if test='description != null'>description = #{description},</if>
-            <if test='skillmd != null'>skillmd = #{skillmd},</if>
-            <if test='resources != null'>resources = #{resources},</if>
-            <if test='storagePath != null'>storage_path = #{storagePath},</if>
-            <if test='version != null'>version = #{version},</if>
-            update_time = NOW()
-        </set>
-        WHERE id = #{id} AND active = 1
-    </update>
 
 </mapper>

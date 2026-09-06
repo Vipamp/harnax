@@ -35,10 +35,14 @@
 
     <!-- ==================== Basic CRUD Methods ==================== -->
 
+    <!-- selectById filters on `active = 1` like every other read in this file. Without it a
+         soft-deleted channel stayed readable by id, so `ChannelServiceImpl.getChannel`,
+         `updateChannel` and `toggleChannelStatus` kept serving and editing a row the admin had
+         already deleted, while `selectChannelList` no longer showed it -->
     <select id="selectById" resultMap="ChannelResultMap">
         SELECT <include refid="BaseColumnList"/>
         FROM channel
-        WHERE id = #{id}
+        WHERE id = #{id} AND active = 1
         LIMIT 1
     </select>
 

@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class ToolCallLogMapperTest {
+open class ToolCallLogMapperTest {
 
     companion object {
         @Container

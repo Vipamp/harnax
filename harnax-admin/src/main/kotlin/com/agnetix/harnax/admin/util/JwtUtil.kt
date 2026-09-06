@@ -148,6 +148,18 @@ class JwtUtil {
     }
 
     /**
+     * Get expiration time (epoch milliseconds) from token
+     *
+     * @param token JWT Token
+     * @return Expiration time in epoch milliseconds, or null if parsing fails
+     */
+    fun getExpirationMillisFromToken(token: String): Long? = try {
+        getClaimsFromToken(token).expiration?.time
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * Get expiration time (milliseconds)
      *
      * @return Expiration time

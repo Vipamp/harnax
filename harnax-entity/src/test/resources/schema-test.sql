@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS `model` (
     `model_type` VARCHAR(20) NOT NULL DEFAULT 'chat' COMMENT '模型类型（chat/embedding）',
     `support_internet` TINYINT(1) DEFAULT 0 COMMENT '是否支持联网（0:否，1:是）',
     `support_reasoning` TINYINT(1) DEFAULT 0 COMMENT '是否支持推理（0:否，1:是）',
+    `thinking_mode` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Thinking mode (0:not supported, 1:optional, 2:required)',
     `support_tool` TINYINT(1) DEFAULT 0 COMMENT '是否支持工具（0:否，1:是）',
     `support_mcp` TINYINT(1) DEFAULT 0 COMMENT '是否支持MCP（0:否，1:是）',
     `support_vision` TINYINT(1) DEFAULT 0 COMMENT '是否支持视觉（0:否，1:是）',
@@ -128,10 +129,9 @@ CREATE TABLE IF NOT EXISTS `skill_repository` (
     `name` VARCHAR(100) NOT NULL COMMENT '仓库名称',
     `url` VARCHAR(500) DEFAULT NULL COMMENT '仓库 URL',
     `branch` VARCHAR(100) NOT NULL DEFAULT 'main' COMMENT '分支名称',
-    `source_type` VARCHAR(20) NOT NULL DEFAULT 'GIT' COMMENT 'Source type: GIT / NPM / ZIP',
+    `source_type` VARCHAR(20) NOT NULL DEFAULT 'GIT' COMMENT 'Source type: GIT / NPM / ZIP / BUILTIN',
     `source_config` TEXT DEFAULT NULL COMMENT 'Source configuration JSON',
     `version` VARCHAR(100) DEFAULT NULL COMMENT 'Version identifier',
-    `storage_path` VARCHAR(500) DEFAULT NULL COMMENT 'Content storage path',
     `description` TEXT DEFAULT NULL COMMENT '仓库描述',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 0 COMMENT '是否公开（0:否，1:是）',
@@ -139,8 +139,16 @@ CREATE TABLE IF NOT EXISTS `skill_repository` (
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    -- V15 uniqueness guards: a soft-deleted row keeps its name because the generated column turns
+    -- NULL and MySQL unique indexes ignore NULL, so re-creating a deleted name still works
+    `active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
+    `builtin_guard` TINYINT GENERATED ALWAYS AS (IF(active = 1 AND name = 'builtin-cli-skills', 1, NULL)) VIRTUAL,
     PRIMARY KEY (`id`),
-    KEY `idx_tenant_id` (`tenant_id`)
+    UNIQUE KEY `uk_skill_repository_tenant_active_name` (`tenant_id`, `active_name`),
+    UNIQUE KEY `uk_skill_repository_builtin_guard` (`builtin_guard`),
+    KEY `idx_tenant_id` (`tenant_id`),
+    -- V16: name lookups carry no tenant (selectBuiltinRepository), so the tenant-leading unique key above cannot serve them
+    KEY `idx_skill_repository_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能仓库表';
 
 INSERT INTO `skill_repository` (`tenant_id`, `name`, `url`, `branch`, `source_type`, `source_config`, `description`, `status`, `is_public`, `creator`, `active`) VALUES
@@ -159,9 +167,8 @@ CREATE TABLE IF NOT EXISTS `skill` (
     `name` VARCHAR(100) NOT NULL COMMENT '技能名称',
     `repository_id` BIGINT(20) NOT NULL COMMENT '所属仓库 ID',
     `description` TEXT DEFAULT NULL COMMENT '技能描述',
-    `skillmd` TEXT DEFAULT NULL COMMENT 'skill.md 内容',
-    `resources` TEXT DEFAULT NULL COMMENT '资源信息',
-    `storage_path` VARCHAR(500) DEFAULT NULL COMMENT 'Content storage path',
+    `skillmd` MEDIUMTEXT DEFAULT NULL COMMENT 'skill.md 内容',
+    `resources` MEDIUMTEXT DEFAULT NULL COMMENT '随包资源文件（JSON：路径 -> 内容）',
     `version` VARCHAR(100) DEFAULT NULL COMMENT 'Skill version',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 0 COMMENT '是否公开（0:否，1:是）',
@@ -169,16 +176,18 @@ CREATE TABLE IF NOT EXISTS `skill` (
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
     PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_skill_repo_active_name` (`repository_id`, `active_name`),
     KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='技能表';
 
-INSERT INTO `skill` (`tenant_id`, `name`, `repository_id`, `description`, `skillmd`, `resources`, `storage_path`, `version`, `status`, `is_public`, `creator`, `active`) VALUES
-(1, 'web-search', 1, '网络搜索技能', '# Web Search\n搜索网络信息', '{}', '1/web-search', '1.0.0', 1, 1, 'admin', 1),
-(1, 'code-review', 1, '代码审查技能', '# Code Review\n审查代码质量', '{}', '1/code-review', '1.0.0', 1, 1, 'admin', 1),
-(1, 'data-analysis', 2, '数据分析技能', '# Data Analysis\n分析数据', '{}', '2/data-analysis', '1.0.0', 1, 1, 'admin', 1),
-(1, 'deleted-skill', 1, '已删除技能', '# Deleted', '{}', '1/deleted-skill', '1.0.0', 1, 1, 'admin', 0),
-(2, 'tenant2-skill', 4, '租户2技能', '# Tenant2 Skill', '{}', '4/tenant2-skill', '1.0.0', 1, 1, 'user2', 1);
+INSERT INTO `skill` (`tenant_id`, `name`, `repository_id`, `description`, `skillmd`, `resources`, `version`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'web-search', 1, '网络搜索技能', '# Web Search\n搜索网络信息', '{}', '1.0.0', 1, 1, 'admin', 1),
+(1, 'code-review', 1, '代码审查技能', '# Code Review\n审查代码质量', '{}', '1.0.0', 1, 1, 'admin', 1),
+(1, 'data-analysis', 2, '数据分析技能', '# Data Analysis\n分析数据', '{}', '1.0.0', 1, 1, 'admin', 1),
+(1, 'deleted-skill', 1, '已删除技能', '# Deleted', '{}', '1.0.0', 1, 1, 'admin', 0),
+(2, 'tenant2-skill', 4, '租户 2 技能', '# Tenant2 Skill', '{}', '1.0.0', 1, 1, 'user2', 1);
 
 -- ============================================
 -- 7. 智能体表
@@ -221,6 +230,10 @@ CREATE TABLE IF NOT EXISTS `channel` (
     `callback_key`       VARCHAR(100) NOT NULL                                       COMMENT '回调标识(用于生成回调URL)',
     `session_id`         VARCHAR(64)  NOT NULL                                       COMMENT '不可变的会话ID(UUID), 创建时生成',
     `communication_mode` VARCHAR(20)  NOT NULL DEFAULT 'webhook'                     COMMENT '通信模式 webhook/websocket/long_polling',
+    `permission_mode`    VARCHAR(20)  NOT NULL DEFAULT 'DEFAULT'                      COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
+    `enable_think`       TINYINT      NOT NULL DEFAULT 0                              COMMENT 'Enable thinking mode (0:no, 1:yes)',
+    `enable_search`      TINYINT      NOT NULL DEFAULT 0                              COMMENT 'Enable web search (0:no, 1:yes)',
+    `enable_plan`        TINYINT      NOT NULL DEFAULT 0                              COMMENT 'Enable plan mode (0:no, 1:yes)',
     `enabled`            TINYINT(1)   NOT NULL DEFAULT 1                             COMMENT '是否随服务启动自动监听 (0:否,1:是)',
     `config_json`        TEXT         DEFAULT NULL                                   COMMENT '渠道差异化配置 JSON',
     `description`        TEXT         DEFAULT NULL                                   COMMENT '描述',
@@ -245,27 +258,40 @@ INSERT INTO `channel` (`name`, `type`, `agent_id`, `callback_key`, `session_id`,
 -- 9. 会话表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `session` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
-    `session_id` VARCHAR(100) NOT NULL COMMENT '会话 ID',
-    `agent_id` BIGINT(20) NOT NULL COMMENT '智能体 ID',
-    `title` VARCHAR(200) DEFAULT NULL COMMENT '会话标题',
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
+    `title` VARCHAR(100) NOT NULL COMMENT '会话标题',
     `session_description` TEXT DEFAULT NULL COMMENT '会话描述',
-    `user_id` BIGINT(20) DEFAULT NULL COMMENT '用户 ID',
+    `session_id` VARCHAR(100) NOT NULL COMMENT '会话唯一标识',
+    `agent_id` BIGINT DEFAULT NULL COMMENT '智能体 ID',
+    `name` VARCHAR(100) DEFAULT NULL COMMENT '会话名称',
+    `description` TEXT DEFAULT NULL COMMENT '会话说明',
+    `system_prompt` TEXT DEFAULT NULL COMMENT 'System prompt (Markdown format)',
+    `model_id` BIGINT DEFAULT NULL COMMENT '模型 ID',
+    `enable_think` TINYINT(1) DEFAULT 0 COMMENT '是否开启深度思考（0:否，1:是）',
+    `enable_search` TINYINT(1) DEFAULT 0 COMMENT '是否开启联网搜索（0:否，1:是）',
+    `enable_plan` TINYINT(1) DEFAULT 0 COMMENT '是否开启规划（0:否，1:是）',
+    `permission_mode` VARCHAR(20) NOT NULL DEFAULT 'DEFAULT' COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
+    `mcp_list` TEXT DEFAULT NULL COMMENT 'MCP 列表（JSON 格式）',
+    `skill_list` TEXT DEFAULT NULL COMMENT '技能列表（JSON 格式）',
+    `owner` VARCHAR(100) DEFAULT NULL COMMENT '归属人',
     `status` TINYINT(1) DEFAULT 1 COMMENT '状态（0:已结束，1:进行中）',
+    `is_public` TINYINT(1) DEFAULT 0 COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_session_id` (`session_id`),
-    KEY `idx_agent_id` (`agent_id`)
+    KEY `idx_creator` (`creator`),
+    KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话表';
 
-INSERT INTO `session` (`session_id`, `agent_id`, `title`, `session_description`, `user_id`, `status`, `active`) VALUES
-('session-001', 1, '测试会话1', '第一个测试会话', 1, 1, 1),
-('session-002', 1, '测试会话2', '第二个测试会话', 1, 1, 1),
-('session-003', 2, '测试会话3', '第三个测试会话', 2, 0, 1),
-('session-004', 3, '测试会话4', '第四个测试会话', 1, 1, 1),
-('session-deleted', 1, '已删除会话', '已删除', 1, 1, 0);
+INSERT INTO `session` (`tenant_id`, `session_id`, `agent_id`, `title`, `session_description`, `name`, `model_id`, `permission_mode`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'session-001', 1, '测试会话1', '第一个测试会话', 'session-001', 1, 'DEFAULT', 'admin', 1, 1, 'admin', 1),
+(1, 'session-002', 1, '测试会话2', '第二个测试会话', 'session-002', 1, 'DEFAULT', 'admin', 1, 1, 'admin', 1),
+(1, 'session-003', 2, '测试会话3', '第三个测试会话', 'session-003', 2, 'DEFAULT', 'admin', 0, 1, 'admin', 1),
+(1, 'session-004', 3, '测试会话4', '第四个测试会话', 'session-004', 3, 'DEFAULT', 'admin', 1, 1, 'admin', 1),
+(1, 'session-deleted', 1, '已删除会话', '已删除', 'session-deleted', 1, 'DEFAULT', 'admin', 1, 1, 'admin', 0);
 
 -- ============================================
 -- 12. PlanNote 表
@@ -515,6 +541,7 @@ CREATE TABLE IF NOT EXISTS `agent_tool` (
     `output_schema`            TEXT COMMENT 'Output JSON Schema',
     `read_only`                TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
     `need_confirm`             TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
+    `is_required`              TINYINT NOT NULL DEFAULT 0 COMMENT 'Is mandatory tool (0: optional, 1: required)',
     `timeout_seconds`          INT DEFAULT 30 COMMENT 'Timeout in seconds',
     `status`                   TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
     `is_public`                TINYINT(1) DEFAULT 1 COMMENT 'Public visibility',

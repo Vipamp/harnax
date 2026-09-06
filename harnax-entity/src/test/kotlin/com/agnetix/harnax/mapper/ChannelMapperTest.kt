@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 @MybatisTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
-class ChannelMapperTest {
+open class ChannelMapperTest {
 
     companion object {
         @Container

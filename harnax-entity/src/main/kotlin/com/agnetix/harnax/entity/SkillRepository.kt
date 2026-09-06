@@ -34,9 +34,6 @@ class SkillRepository : Serializable {
     @Schema(description = "Version identifier")
     var version: String = ""
 
-    @Schema(description = "Content storage path")
-    var storagePath: String = ""
-
     @Schema(description = "Repository description")
     var description: String = ""
 

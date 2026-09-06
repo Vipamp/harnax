@@ -71,18 +71,11 @@ class McpServerController(
     @Operation(summary = "Create MCP server", description = "Add new MCP server")
     fun createMcpServer(
         @Valid @RequestBody request: McpServerCreateRequest,
-    ): ResultVo<Void> {
-        return try {
-            // Enterprise and public editions do not support stdio mode
-            if (request.type == "stdio") {
-                return ResultVo.error("stdio mode is not supported in current edition")
-            }
-
-            if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("Failed to create MCP server")
-        } catch (e: Exception) {
-            log.error("Failed to create MCP server", e)
-            ResultVo.error(e.message ?: "Failed to create MCP server")
-        }
+    ): ResultVo<Void> = try {
+        if (mcpServerService.createMcpServer(request)) ResultVo.success() else ResultVo.error("Failed to create MCP server")
+    } catch (e: Exception) {
+        log.error("Failed to create MCP server", e)
+        ResultVo.error(e.message ?: "Failed to create MCP server")
     }
 
     @PutMapping("/update/{id}")
@@ -161,75 +154,5 @@ class McpServerController(
         log.error("Failed to get MCP tool list, mcpId: {}", id, e)
         val errorMessage = e.message ?: "Failed to get MCP tool list"
         ResultVo.error(errorMessage)
-    }
-
-    /**
-     * Get mock tool list
-     */
-    private fun getMockTools(): List<McpToolResponse> {
-        val tools = mutableListOf<McpToolResponse>()
-
-        // Tool 1: Read file
-        val readFile = McpToolResponse().apply {
-            name = "read_file"
-            parameters = listOf(
-                createParameter("file_path", "string", "File path, e.g.: /path/to/file.txt"),
-                createParameter("encoding", "string", "File encoding, default is utf-8"),
-            )
-        }
-        tools.add(readFile)
-
-        // Tool 2: Write file
-        val writeFile = McpToolResponse().apply {
-            name = "write_file"
-            parameters = listOf(
-                createParameter("file_path", "string", "File path, e.g.: /path/to/file.txt"),
-                createParameter("content", "string", "File content to write"),
-                createParameter("encoding", "string", "File encoding, default is utf-8"),
-            )
-        }
-        tools.add(writeFile)
-
-        // Tool 3: List directory
-        val listDirectory = McpToolResponse().apply {
-            name = "list_directory"
-            parameters = listOf(
-                createParameter("directory_path", "string", "Directory path, e.g.: /path/to/directory"),
-            )
-        }
-        tools.add(listDirectory)
-
-        // Tool 4: Search files
-        val searchFiles = McpToolResponse().apply {
-            name = "search_files"
-            parameters = listOf(
-                createParameter("directory_path", "string", "Directory path to search"),
-                createParameter("pattern", "string", "Search pattern, supports wildcards, e.g.: *.txt"),
-                createParameter("recursive", "boolean", "Whether to recursively search subdirectories, default is false"),
-            )
-        }
-        tools.add(searchFiles)
-
-        // Tool 5: Execute command
-        val executeCommand = McpToolResponse().apply {
-            name = "execute_command"
-            parameters = listOf(
-                createParameter("command", "string", "Command to execute, e.g.: ls -la"),
-                createParameter("working_directory", "string", "Working directory, default is current directory"),
-                createParameter("timeout", "integer", "Command execution timeout in seconds, default is 30"),
-            )
-        }
-        tools.add(executeCommand)
-
-        return tools
-    }
-
-    /**
-     * Create parameter object
-     */
-    private fun createParameter(name: String, type: String, description: String): McpToolResponse.McpToolParameter = McpToolResponse.McpToolParameter().apply {
-        this.name = name
-        this.type = type
-        this.description = description
     }
 }

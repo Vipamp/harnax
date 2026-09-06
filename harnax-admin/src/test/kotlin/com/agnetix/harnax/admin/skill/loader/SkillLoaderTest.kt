@@ -100,7 +100,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createTestSkillZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertEquals("test-skill", skills[0].name)
@@ -113,7 +113,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createMultiSkillZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertEquals(2, skills.size)
             assertTrue(skills.any { it.name == "skill-a" })
@@ -126,7 +126,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createSkillZipWithResources(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertTrue(skills[0].resources.isNotEmpty())
@@ -150,9 +150,12 @@ class SkillLoaderTest {
         ) {
             val zipFile = createEmptyZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val result = zipLoader.loadSkills(config, tmpDir)
 
-            assertTrue(skills.isEmpty())
+            assertTrue(result.skills.isEmpty())
+            // 目录里根本没有 SKILL.md 时不算失败：压缩包里放几个非技能目录是常态，
+            // 把它们全报成 failed 会淹掉真正读不出来的那几个
+            assertTrue(result.failures.isEmpty())
         }
 
         @Test
@@ -161,7 +164,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createTopLevelSkillZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertTrue(skills[0].skillContent.contains("# Top Level Skill"))
@@ -173,7 +176,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createNestedResourcesZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertTrue(skills[0].resources.containsKey("scripts/run.sh"))
@@ -181,14 +184,45 @@ class SkillLoaderTest {
         }
 
         @Test
-        fun `loadSkills should skip empty SKILL md content`(
+        fun `loadSkills should report empty SKILL md content as a failure`(
             @TempDir tmpDir: Path,
         ) {
             val zipFile = createEmptySkillMdZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val result = zipLoader.loadSkills(config, tmpDir)
 
-            assertTrue(skills.isEmpty())
+            assertTrue(result.skills.isEmpty())
+            // 有 SKILL.md 却读不出内容，必须带着目录名与原因回到 failed 清单：
+            // 改之前这里只打一条 warn 就把目录丢掉，接口照样答 200
+            assertEquals(1, result.failures.size)
+            assertEquals("empty-skill", result.failures[0].name)
+            assertEquals("SKILL.md is empty", result.failures[0].reason)
+        }
+
+        @Test
+        fun `loadSkills should report a SKILL md that cannot be decoded`(
+            @TempDir tmpDir: Path,
+        ) {
+            // SKILL.md 里塞进非法 UTF-8 字节，Files.readString 会抛 MalformedInputException；
+            // 同一个包里再放一个正常技能，确认坏目录只影响自己
+            val zipPath = tmpDir.resolve("undecodable.zip")
+            java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("broken-skill/SKILL.md"))
+                zos.write(byteArrayOf(0x23.toByte(), 0x20.toByte(), 0xFF.toByte(), 0xFE.toByte()))
+                zos.closeEntry()
+                zos.putNextEntry(java.util.zip.ZipEntry("good-skill/SKILL.md"))
+                zos.write("---\nname: good-skill\ndescription: readable\n---\n# Good Skill".toByteArray())
+                zos.closeEntry()
+            }
+
+            val config = mapOf<String, Any>("zipPath" to zipPath.toString())
+            val result = zipLoader.loadSkills(config, tmpDir)
+
+            assertEquals(1, result.skills.size)
+            assertEquals("good-skill", result.skills[0].name)
+            assertEquals(1, result.failures.size)
+            assertEquals("broken-skill", result.failures[0].name)
+            assertTrue(result.failures[0].reason.startsWith("SKILL.md could not be parsed:"))
         }
 
         @Test
@@ -197,12 +231,13 @@ class SkillLoaderTest {
         ) {
             val zipFile = createBinaryResourceZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
-            assertTrue(skills[0].resources.containsKey("image.png"))
-            // Binary content should be preserved as string
-            assertNotNull(skills[0].resources["image.png"])
+            // A strict UTF-8 decode would abort the whole import, so binary payloads are dropped
+            // instead of being stored as replacement-character garbage
+            assertFalse(skills[0].resources.containsKey("image.png"))
+            assertEquals("notes content", skills[0].resources["notes.md"])
         }
 
         @Test
@@ -222,7 +257,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createSpecialCharNameZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertEquals("my-skill_v2.0", skills[0].name)
@@ -234,7 +269,7 @@ class SkillLoaderTest {
         ) {
             val zipFile = createLargeSkillMdZip(tmpDir)
             val config = mapOf<String, Any>("zipPath" to zipFile.toString())
-            val skills = zipLoader.loadSkills(config, tmpDir)
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
 
             assertTrue(skills.isNotEmpty())
             assertTrue(skills[0].skillContent.length > 100000)
@@ -248,6 +283,26 @@ class SkillLoaderTest {
             Files.writeString(notZipFile, "This is not a ZIP file")
             val config = mapOf<String, Any>("zipPath" to notZipFile.toString())
             assertThrows<Exception> {
+                zipLoader.loadSkills(config, tmpDir)
+            }
+        }
+
+        @Test
+        fun `loadSkills should reject an entry beyond the per-entry size limit`(
+            @TempDir tmpDir: Path,
+        ) {
+            // 一个技能压缩包就是几个 Markdown 文件，超过 20 MB 的单个条目只可能是炸弹
+            val zipPath = tmpDir.resolve("oversized-entry.zip")
+            java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("bomb/SKILL.md"))
+                val chunk = ByteArray(64 * 1024)
+                // 321 * 64 KB = 20 MB + 64 KB，刚好越界
+                repeat(321) { zos.write(chunk) }
+                zos.closeEntry()
+            }
+
+            val config = mapOf<String, Any>("zipPath" to zipPath.toString())
+            assertThrows<SecurityException> {
                 zipLoader.loadSkills(config, tmpDir)
             }
         }
@@ -380,6 +435,71 @@ class SkillLoaderTest {
         fun `sourceType should be GIT`() {
             assertEquals("GIT", gitLoader.sourceType)
         }
+
+        @Test
+        fun `validateConfig should not echo credentials embedded in the url`() {
+            // 私有仓库常用「URL 里带 token」的方式克隆，而这句报错会一路走到前端和服务日志
+            val exception = assertThrows<IllegalArgumentException> {
+                gitLoader.validateConfig(mapOf("url" to "ftp://alice:s3cr3t@registry.example.com/skills.git"))
+            }
+            assertTrue(exception.message!!.contains("Unsupported Git URL"))
+            assertFalse(exception.message!!.contains("s3cr3t"))
+            assertTrue(exception.message!!.contains("***@registry.example.com"))
+        }
+
+        @Test
+        fun `validateConfig should leave the scp-like form readable`() {
+            // git@host:org/repo 既没有 scheme 也不带密码，脱敏它只会白白丢掉可调试信息
+            assertDoesNotThrow {
+                gitLoader.validateConfig(mapOf("url" to "git@github.com:org/skills.git"))
+            }
+        }
+
+        @Test
+        fun `validateConfig should accept a branch padded with whitespace`() {
+            // 从聊天窗口粘过来的分支名常带空格；校验 trim 了，克隆也必须用同一个值
+            assertDoesNotThrow {
+                gitLoader.validateConfig(
+                    mapOf(
+                        "url" to "https://github.com/example/skills",
+                        "branch" to "  release/1.0  ",
+                    ),
+                )
+            }
+        }
+
+        @Test
+        fun `validateConfig should reject a url longer than the column that stores it`() {
+            // `skill_repository.url` 是 varchar(500)。放过去只会让 MySQL 回一句「Data too long for
+            // column」，既不说是哪个字段，也不说是哪一条配置错了
+            val exception = assertThrows<IllegalArgumentException> {
+                gitLoader.validateConfig(mapOf("url" to "https://github.com/${"p".repeat(600)}/skills"))
+            }
+            assertTrue(exception.message!!.contains("longer than the 500 characters"))
+        }
+
+        @Test
+        fun `validateConfig should reject a branch longer than the column that stores it`() {
+            // `skill_repository.branch` 是 varchar(100)，而分支名的字符集校验本身不限长度
+            val exception = assertThrows<IllegalArgumentException> {
+                gitLoader.validateConfig(
+                    mapOf(
+                        "url" to "https://github.com/example/skills",
+                        "branch" to "b".repeat(120),
+                    ),
+                )
+            }
+            assertTrue(exception.message!!.contains("longer than the 100 characters"))
+        }
+
+        @Test
+        fun `validateConfig should measure the url after trimming`() {
+            // 长度限制量的是真正要存进 varchar(500) 的那一份，两边的空格不算进去
+            val url = "https://github.com/${"p".repeat(480)}"
+            assertDoesNotThrow {
+                gitLoader.validateConfig(mapOf("url" to "  $url  "))
+            }
+        }
     }
 
     // ==================== Helper: Create test ZIP files ====================
@@ -511,6 +631,9 @@ class SkillLoaderTest {
             zos.putNextEntry(java.util.zip.ZipEntry("binary-skill/resources/image.png"))
             // Simulate binary PNG header
             zos.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("binary-skill/resources/notes.md"))
+            zos.write("notes content".toByteArray())
             zos.closeEntry()
         }
         return zipPath

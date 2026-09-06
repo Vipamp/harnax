@@ -10,12 +10,13 @@ import java.nio.file.Path
 
 /**
  * SkillFileParser 单元测试
- * 覆盖 SKILL.md 描述提取（标题跳过、空内容、超长截断、frontmatter 边界）
- * 以及 resources 目录加载（不存在目录、嵌套文件、相对路径）
+ * 覆盖 SKILL.md 元信息解析（YAML frontmatter、描述回退）、描述提取
+ * （标题跳过、空内容、超长截断）以及 resources 目录加载（不存在目录、嵌套文件、相对路径）
  *
- * 说明：主代码 extractDescription 并不解析 YAML frontmatter，
- * 其语义是：跳过以 # 开头的标题行，返回第一个非空行（最多 500 字符），
- * 无有效内容时回退为空字符串。本测试按主代码实际语义锁定行为。
+ * 说明：extractDescription 只负责正文，会先剥离 frontmatter 再跳过标题、分隔线、
+ * 表格行与引用前缀，返回第一个有效行（最多 500 字符），无有效内容时回退为空字符串。
+ * parseMeta 在此之上叠加 frontmatter 优先级，并保证 description 永不为空——
+ * agentscope 的 AgentSkill.builder() 拒绝空描述，否则整个技能会被静默丢弃。
  *
  * @author agnetix
  * @since 2026-06-28
@@ -73,9 +74,9 @@ class SkillFileParserTest {
         }
 
         @Test
-        @DisplayName("extractDescription - 含 frontmatter 分隔符时返回首个非标题行（--- 行本身）")
-        fun `extractDescription should treat frontmatter delimiter as plain content`() {
-            // Given - 主代码不解析 YAML frontmatter，--- 是首个非空非标题行
+        @DisplayName("extractDescription - 剥离 frontmatter 后返回正文首个有效行")
+        fun `extractDescription should strip frontmatter before reading the body`() {
+            // Given - frontmatter 属于元信息，不应被当成正文描述
             val skillmd = """
                 ---
                 name: my-skill
@@ -87,8 +88,33 @@ class SkillFileParserTest {
             // When
             val description = SkillFileParser.extractDescription(skillmd)
 
-            // Then - 锁定当前语义：返回 "---" 而不是 YAML 中的 description
-            assertEquals("---", description)
+            // Then - 跳过 --- 块与 YAML 键值，取正文第一行
+            assertEquals("Body description", description)
+        }
+
+        @Test
+        @DisplayName("extractDescription - 跳过分隔线、表格行与引用前缀")
+        fun `extractDescription should skip rules table rows and quote markers`() {
+            // Given
+            val skillmd = """
+                # Title
+                ---
+                | col a | col b |
+                > quoted description
+            """.trimIndent()
+
+            // When & Then
+            assertEquals("quoted description", SkillFileParser.extractDescription(skillmd))
+        }
+
+        @Test
+        @DisplayName("extractDescription - frontmatter 未闭合时按普通正文处理")
+        fun `extractDescription should treat an unclosed frontmatter block as body`() {
+            // Given - 只有起始 --- 没有结束 ---
+            val skillmd = "---\nname: my-skill\n"
+
+            // When & Then - 无法定位结束分隔符，整篇视为正文；--- 又被分隔线规则跳过
+            assertEquals("name: my-skill", SkillFileParser.extractDescription(skillmd))
         }
 
         @Test
@@ -139,6 +165,122 @@ class SkillFileParserTest {
             // Then
             assertEquals(500, description.length)
             assertEquals("x".repeat(500), description)
+        }
+    }
+
+    @Nested
+    @DisplayName("parseMeta 元信息解析测试")
+    inner class ParseMetaTests {
+
+        @Test
+        @DisplayName("parseMeta - frontmatter 中的 name 与 description 优先生效")
+        fun `parseMeta should prefer frontmatter fields`() {
+            // Given
+            val skillmd = """
+                ---
+                name: declared-name
+                description: declared description
+                ---
+                # Heading
+
+                Body line
+            """.trimIndent()
+
+            // When
+            val meta = SkillFileParser.parseMeta(skillmd, "dir-name")
+
+            // Then
+            assertEquals("declared-name", meta.name)
+            assertEquals("declared description", meta.description)
+        }
+
+        @Test
+        @DisplayName("parseMeta - 无 frontmatter 时回退目录名与正文首行")
+        fun `parseMeta should fall back to directory name and body line`() {
+            // Given
+            val skillmd = "# Title\n\nBody description\n"
+
+            // When
+            val meta = SkillFileParser.parseMeta(skillmd, "dir-name")
+
+            // Then
+            assertEquals("dir-name", meta.name)
+            assertEquals("Body description", meta.description)
+        }
+
+        @Test
+        @DisplayName("parseMeta - 只有标题时 description 回退为技能名，保证不为空")
+        fun `parseMeta should never return a blank description`() {
+            // Given - agentscope 拒绝空 description，此前会导致整个技能被静默丢弃
+            val skillmd = "# Heading Only\n"
+
+            // When
+            val meta = SkillFileParser.parseMeta(skillmd, "heading-skill")
+
+            // Then
+            assertEquals("heading-skill", meta.name)
+            assertEquals("heading-skill", meta.description)
+        }
+
+        @Test
+        @DisplayName("parseMeta - frontmatter 的 description 为空串时回退正文")
+        fun `parseMeta should ignore a blank frontmatter description`() {
+            // Given
+            val skillmd = "---\nname: my-skill\ndescription:\n---\nBody description\n"
+
+            // When
+            val meta = SkillFileParser.parseMeta(skillmd, "dir-name")
+
+            // Then
+            assertEquals("my-skill", meta.name)
+            assertEquals("Body description", meta.description)
+        }
+
+        @Test
+        @DisplayName("parseMeta - 支持块标量与带引号的取值")
+        fun `parseMeta should read block scalars and quoted values`() {
+            // Given
+            val skillmd = """
+                ---
+                name: "quoted-name"
+                description: |
+                  first line
+                  second line
+                ---
+                Body
+            """.trimIndent()
+
+            // When
+            val meta = SkillFileParser.parseMeta(skillmd, "dir-name")
+
+            // Then
+            assertEquals("quoted-name", meta.name)
+            assertEquals("first line second line", meta.description)
+        }
+    }
+
+    @Nested
+    @DisplayName("stripFrontmatter 正文剥离测试")
+    inner class StripFrontmatterTests {
+
+        @Test
+        @DisplayName("stripFrontmatter - 移除起始 --- 块并保留正文")
+        fun `stripFrontmatter should remove the leading block`() {
+            // Given
+            val skillmd = "---\nname: my-skill\n---\nBody\n"
+
+            // When & Then
+            assertEquals("Body\n", SkillFileParser.stripFrontmatter(skillmd))
+        }
+
+        @Test
+        @DisplayName("stripFrontmatter - 无 frontmatter 时原样返回")
+        fun `stripFrontmatter should return input unchanged without frontmatter`() {
+            // Given
+            val skillmd = "# Title\nBody\n"
+
+            // When & Then
+            assertEquals(skillmd, SkillFileParser.stripFrontmatter(skillmd))
         }
     }
 
@@ -207,8 +349,8 @@ class SkillFileParserTest {
             // Then
             assertEquals(2, resources.size)
             assertEquals("template content", resources["template.md"])
-            val nestedKey = "sub${java.io.File.separator}config.json"
-            assertEquals("""{"key":"value"}""", resources[nestedKey])
+            // 键统一使用 / 分隔，与 agentscope 的资源路径保持一致
+            assertEquals("""{"key":"value"}""", resources["sub/config.json"])
         }
     }
 }

@@ -6,6 +6,9 @@ import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.loader.SkillLoadFailure
+import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
 import com.agnetix.harnax.admin.skill.loader.SkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -88,6 +91,8 @@ class SkillServiceImplTest {
             sourceType = "GIT"
             version = "v1.0.0"
             status = 1
+            // Set on purpose: skills inherit this value and the entity default is public
+            isPublic = 0
             creator = "admin"
             active = 1
         }
@@ -139,6 +144,14 @@ class SkillServiceImplTest {
         agentSkillBindingMapper = agentSkillBindingMapper,
         cliSkillBindingMapper = cliSkillBindingMapper,
         skillLoaderRegistry = skillLoaderRegistry,
+        // A real installer over the same mocked mappers, so the persistence assertions below still
+        // describe what actually gets written
+        skillInstaller = SkillInstaller(
+            skillMapper = skillMapper,
+            skillRepositoryMapper = org.mockito.kotlin.mock(),
+            agentSkillBindingMapper = agentSkillBindingMapper,
+            cliSkillBindingMapper = cliSkillBindingMapper,
+        ),
         localTmpDir = "/tmp/harnax-skill-test",
     )
 
@@ -223,6 +236,42 @@ class SkillServiceImplTest {
             // Then
             assertNull(result)
             verify(skillMapper).selectById(999L)
+        }
+
+        @Test
+        @DisplayName("getSkill - Throw BizException when skill belongs to another tenant")
+        fun `getSkill should throw BizException when skill belongs to another tenant`() {
+            // Given
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill) // tenantId = 1L
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().getSkill(1L)
+            }
+            assertEquals("Skill belongs to another tenant", exception.message)
+        }
+
+        @Test
+        @DisplayName("getSkill - Allow builtin repository skills across tenants")
+        fun `getSkill should allow builtin repository skills across tenants`() {
+            // Given
+            val builtinSkill = Skill().apply {
+                id = 7L
+                tenantId = 1L
+                name = "cli-skill"
+                repositoryId = 10L
+            }
+            TenantContext.setTenantId(2L)
+            `when`(skillMapper.selectById(7L)).thenReturn(builtinSkill)
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(builtinRepo)
+
+            // When
+            val result = createService().getSkill(7L)
+
+            // Then
+            assertEquals("cli-skill", result?.name)
         }
     }
 
@@ -334,6 +383,7 @@ class SkillServiceImplTest {
             )
 
             `when`(skillMapper.selectByNameAndRepo("code-review", 5L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
 
             // When & Then
             val exception = assertThrows<BizException> {
@@ -341,6 +391,57 @@ class SkillServiceImplTest {
             }
             assertEquals("Skill name already exists", exception.message)
             verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - Throw BizException when repository is missing")
+        fun `createSkill should throw BizException when repository is missing`() {
+            // Given
+            val request = SkillCreateRequest(
+                name = "orphan-skill",
+                repositoryId = 999L,
+            )
+
+            `when`(skillRepositoryService.getSkillRepository(999L)).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().createSkill(request)
+            }
+            assertEquals("Skill repository not found", exception.message)
+            verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - Inherit visibility from the repository")
+        fun `createSkill should inherit visibility from the repository`() {
+            // Given
+            val publicRepo = SkillRepository().apply {
+                id = 6L
+                tenantId = 1L
+                name = "public-skills"
+                sourceType = "GIT"
+                isPublic = 1
+                creator = "admin"
+                active = 1
+            }
+            val request = SkillCreateRequest(
+                name = "public-skill",
+                repositoryId = 6L,
+            )
+
+            `when`(skillRepositoryService.getSkillRepository(6L)).thenReturn(publicRepo)
+            `when`(skillMapper.selectByNameAndRepo("public-skill", 6L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When
+            assertTrue(createService().createSkill(request))
+
+            // Then
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).insert(captor.capture())
+            // A public repository whose skills stay private hides them from the list
+            assertEquals(1, captor.firstValue.isPublic)
         }
 
         @Test
@@ -382,6 +483,45 @@ class SkillServiceImplTest {
             }
             assertEquals("Skill repository belongs to another tenant", exception.message)
             verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - 带非法 status 时在查库之前就拒绝")
+        fun `createSkill should reject an out-of-range status before touching the database`() {
+            val request = SkillCreateRequest(
+                name = "bad-status-skill",
+                repositoryId = 5L,
+                status = 7,
+            )
+
+            val exception = assertThrows<BizException> {
+                createService().createSkill(request)
+            }
+
+            assertTrue(exception.message!!.contains("Status must be 0"))
+            // 入参校验要先于任何库访问，否则一个非法请求也能探到仓库与名字是否存在
+            verify(skillRepositoryService, never()).getSkillRepository(anyLong())
+            verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - 显式传 status = 0 时存成停用")
+        fun `createSkill should store an explicitly disabled skill`() {
+            val request = SkillCreateRequest(
+                name = "disabled-on-arrival",
+                repositoryId = 5L,
+                status = 0,
+            )
+
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.selectByNameAndRepo("disabled-on-arrival", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            assertTrue(createService().createSkill(request))
+
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).insert(captor.capture())
+            assertEquals(0, captor.firstValue.status)
         }
     }
 
@@ -514,6 +654,158 @@ class SkillServiceImplTest {
             assertTrue(exception.message?.contains("read-only") == true)
             verify(skillMapper, never()).updateById(any())
         }
+
+        @Test
+        @DisplayName("updateSkill - Throw BizException when the move collides in the destination")
+        fun `updateSkill should reject a move that collides with a name in the destination`() {
+            // Given: 只换仓库、不改名字，而目标仓库里已经有同名技能
+            val sharedRepo = SkillRepository().apply {
+                id = 6L
+                tenantId = 1L
+                name = "shared-skills"
+                sourceType = "GIT"
+                isPublic = 1
+            }
+            val clash = Skill().apply {
+                id = 9L
+                name = "code-review"
+                repositoryId = 6L
+            }
+            val request = SkillUpdateRequest(repositoryId = 6L)
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillRepositoryService.getSkillRepository(6L)).thenReturn(sharedRepo)
+            `when`(skillMapper.selectByNameAndRepo("code-review", 6L)).thenReturn(clash)
+
+            // When & Then
+            // 之前不改名字就完全不查重，最后由唯一索引拿原始 SQL 报错回结
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, request)
+            }
+            assertEquals("Skill name already exists", exception.message)
+            verify(skillMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSkill - Inherit the visibility of the destination repository")
+        fun `updateSkill should inherit the visibility of the destination repository`() {
+            // Given
+            val sharedRepo = SkillRepository().apply {
+                id = 6L
+                tenantId = 1L
+                name = "shared-skills"
+                sourceType = "GIT"
+                isPublic = 1
+            }
+            val request = SkillUpdateRequest(repositoryId = 6L)
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillRepositoryService.getSkillRepository(6L)).thenReturn(sharedRepo)
+            `when`(skillMapper.selectByNameAndRepo("code-review", 6L)).thenReturn(null)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            // When
+            val result = createService().updateSkill(1L, request)
+
+            // Then
+            assertTrue(result)
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).updateById(captor.capture())
+            // 创建和同步都按仓库继承可见性；换仓库时不继承，私有技能移进公开仓库后仍然看不见
+            assertEquals(6L, captor.firstValue.repositoryId)
+            assertEquals(1, captor.firstValue.isPublic)
+        }
+
+        @Test
+        @DisplayName("updateSkill - Trim the incoming name")
+        fun `updateSkill should trim the incoming name`() {
+            // Given
+            val request = SkillUpdateRequest(name = "  code-review-v2  ")
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.selectByNameAndRepo("code-review-v2", 5L)).thenReturn(null)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            // When
+            createService().updateSkill(1L, request)
+
+            // Then
+            // 名字要参与唯一索引比较，存进带空格的值会让同一个技能被存两次
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).updateById(captor.capture())
+            assertEquals("code-review-v2", captor.firstValue.name)
+        }
+
+        @Test
+        @DisplayName("updateSkill - Throw BizException when the incoming name is blank")
+        fun `updateSkill should reject a blank name`() {
+            // Given
+            val request = SkillUpdateRequest(name = "   ")
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, request)
+            }
+            assertEquals("Skill name cannot be empty", exception.message)
+            verify(skillMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSkill - 带 status 时走专用的 updateStatus")
+        fun `updateSkill should route a status change to the dedicated update statement`() {
+            // updateById 的 SQL 里没有 status 列（启停只能走 toggle），而 DTO 一直声明了这个字段。
+            // 之前不读它，接口回 200 而库里没变，`harnax skill update <id> --status 0` 就属于这种
+            val request = SkillUpdateRequest(status = 0)
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateStatus(1L, 0)).thenReturn(1)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(createService().updateSkill(1L, request))
+
+            verify(skillMapper).updateStatus(1L, 0)
+        }
+
+        @Test
+        @DisplayName("updateSkill - 请求不带 status 时不去动它")
+        fun `updateSkill should leave status alone when the request omits it`() {
+            // 重新导入时 SkillContentScanner 可能把技能降为待审核，一次改描述的编辑不应把它又打开
+            val request = SkillUpdateRequest(description = "Updated description")
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateById(any())).thenReturn(1)
+
+            assertTrue(createService().updateSkill(1L, request))
+
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("updateSkill - 带非法 status 时拒绝")
+        fun `updateSkill should reject an out-of-range status`() {
+            // status 存进 TINYINT 不报错，但全链路都用 status == 1 判断，写个 7 进去等于造出一个
+            // 既不能在页面切换、也永远不会被加载的技能
+            val request = SkillUpdateRequest(status = 7)
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, request)
+            }
+
+            assertTrue(exception.message!!.contains("Status must be 0"))
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+            verify(skillMapper, never()).updateById(any())
+        }
     }
 
     @Nested
@@ -585,6 +877,19 @@ class SkillServiceImplTest {
             }
             assertTrue(exception.message?.contains("read-only") == true)
             verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("toggleSkillStatus - Throw BizException when status is not 0 or 1")
+        fun `toggleSkillStatus should reject a status outside 0 and 1`() {
+            // When & Then
+            // status 是两态开关，消费方一律按 == 1 判断，写进 99 会让这一行永远显示为禁用
+            val exception = assertThrows<BizException> {
+                createService().toggleSkillStatus(1L, 99)
+            }
+
+            assertTrue(exception.message!!.contains("0 (disabled) or 1 (enabled)"))
+            verify(skillMapper, never()).selectById(anyLong())
         }
     }
 
@@ -752,7 +1057,7 @@ class SkillServiceImplTest {
 
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
             `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
-            `when`(skillLoader.loadSkills(any(), any())).thenReturn(listOf(agentSkill))
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(agentSkill)))
             `when`(skillMapper.selectByNameAndRepo("new-skill", 5L)).thenReturn(null)
             `when`(skillMapper.insert(any())).thenReturn(1)
 
@@ -783,7 +1088,7 @@ class SkillServiceImplTest {
 
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
             `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
-            `when`(skillLoader.loadSkills(any(), any())).thenReturn(listOf(agentSkill))
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(agentSkill)))
             `when`(skillMapper.selectByNameAndRepo("code-review", 5L)).thenReturn(testSkill)
             `when`(skillMapper.updateById(any())).thenReturn(1)
 
@@ -802,20 +1107,229 @@ class SkillServiceImplTest {
         }
 
         @Test
-        @DisplayName("batchSaveSkills - Skip skills not found in source")
-        fun `batchSaveSkills should skip skills not found in source`() {
+        @DisplayName("batchSaveSkills - Report skills not found in source")
+        fun `batchSaveSkills should report skills not found in source`() {
             // Given
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
             `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
-            `when`(skillLoader.loadSkills(any(), any())).thenReturn(emptyList())
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(emptyList()))
 
             // When
-            val result = createService().batchSaveSkills(5L, listOf("missing-skill"))
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("missing-skill"))
 
             // Then
-            assertEquals(0, result)
+            assertEquals(0, result.savedCount)
+            // Dropping a selection used to look like success; it is now reported back
+            assertFalse(result.complete)
+            assertEquals(listOf("missing-skill"), result.failed.map { it.name })
             verify(skillMapper, never()).insert(any())
             verify(skillMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Report a directory the loader could not parse")
+        fun `batchSaveSkills should report a directory the loader could not parse`() {
+            // Given：源里两个目录，一个能读、一个 SKILL.md 解析失败
+            val readable = AgentSkill.builder()
+                .name("readable")
+                .skillContent("# Readable")
+                .description("Readable skill")
+                .build()
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(
+                SkillLoadResult(
+                    listOf(readable),
+                    listOf(SkillLoadFailure("broken-dir", "SKILL.md could not be parsed: MalformedInputException")),
+                ),
+            )
+            `when`(skillMapper.selectByNameAndRepo("readable", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When：两个目录都在勾选清单里
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("readable", "broken-dir"))
+
+            // Then：读不出来的那个必须带原因回来，否则「勾了 2 个只落库 1 个」看起来像成功
+            assertEquals(listOf("readable"), result.installed)
+            assertEquals(listOf("broken-dir"), result.failed.map { it.name })
+            assertTrue(result.failed[0].reason.contains("could not be parsed"))
+            assertFalse(result.complete)
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Ignore load failures outside the selection")
+        fun `batchSaveSkills should not report load failures it was not asked about`() {
+            // Given：勾选清单里只有一个技能，源里另有一个目录解析失败
+            val wanted = AgentSkill.builder()
+                .name("wanted")
+                .skillContent("# Wanted")
+                .description("Wanted skill")
+                .build()
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(
+                SkillLoadResult(
+                    listOf(wanted),
+                    listOf(SkillLoadFailure("other-broken", "SKILL.md is empty")),
+                ),
+            )
+            `when`(skillMapper.selectByNameAndRepo("wanted", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("wanted"))
+
+            // Then：没勾的目录不该出现在报告里，否则操作者会以为自己选错了
+            assertEquals(listOf("wanted"), result.installed)
+            assertTrue(result.failed.isEmpty())
+            assertTrue(result.complete)
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Store flagged skills disabled for review")
+        fun `batchSaveSkills should store flagged skills disabled for review`() {
+            // Given
+            val dangerous = AgentSkill.builder()
+                .name("wiper")
+                .description("Wipes the disk")
+                .skillContent("# Wiper\n\nRun `rm -rf /` to clean up.")
+                .build()
+
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(dangerous)))
+            `when`(skillMapper.selectByNameAndRepo("wiper", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("wiper"))
+
+            // Then
+            assertEquals(1, result.savedCount)
+            assertEquals(listOf("wiper"), result.flagged.map { it.name })
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).insert(captor.capture())
+            assertEquals(0, captor.firstValue.status)
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Throw BizException when the repository is a ZIP source")
+        fun `batchSaveSkills should refuse a ZIP source`() {
+            // Given
+            val zipRepo = SkillRepository().apply {
+                id = 7L
+                tenantId = 1L
+                name = "uploaded-zip"
+                sourceType = "ZIP"
+                isPublic = 0
+            }
+            `when`(skillRepositoryService.getSkillRepository(7L)).thenReturn(zipRepo)
+
+            // When & Then
+            // ZIP 上传后不留档，之前这条路径只会回一句 ZIP loader 的 requires 'zipPath'
+            val exception = assertThrows<BizException> {
+                createService().batchSaveSkills(7L, listOf("any-skill"))
+            }
+            assertTrue(exception.message!!.contains("installed once"))
+            verify(skillLoaderRegistry, never()).getLoader(anyString())
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Throw BizException when the selection exceeds the ceiling")
+        fun `batchSaveSkills should refuse an oversized selection`() {
+            // Given
+            val oversized = (1..1001).map { "skill-$it" }
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+
+            // When & Then
+            // 源里没有的名字会逐个回到失败清单里，不设上限就能用一个请求撑爆响应体
+            val exception = assertThrows<BizException> {
+                createService().batchSaveSkills(5L, oversized)
+            }
+            assertTrue(exception.message!!.contains("at most 1000"))
+            verify(skillLoaderRegistry, never()).getLoader(anyString())
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Resolve a source skill whose declared name carries padding")
+        fun `batchSaveSkills should resolve a source name that carries padding`() {
+            // Given
+            // 源里声明的名字带空格，而落库存的是 trim 后的值。两边不一致时，明明在源里的技能
+            // 会被报成「源里已经没有它了」
+            val padded = AgentSkill.builder()
+                .name("  padded-skill  ")
+                .description("Declared with padding")
+                .skillContent("# Padded")
+                .build()
+
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(padded)))
+            `when`(skillMapper.selectByNameAndRepo("padded-skill", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When：调用方传的是 trim 之后的名字，也就是预览接口现在返回的那一个
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("padded-skill"))
+
+            // Then
+            assertEquals(1, result.savedCount)
+            assertTrue(result.complete)
+            val captor = argumentCaptor<Skill>()
+            verify(skillMapper).insert(captor.capture())
+            assertEquals("padded-skill", captor.firstValue.name)
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Accept a padded selection from a caller that did not trim")
+        fun `batchSaveSkills should trim the selection itself`() {
+            // Given
+            val skill = AgentSkill.builder()
+                .name("cli-skill")
+                .description("Picked by the CLI")
+                .skillContent("# CLI Skill")
+                .build()
+
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(skill)))
+            `when`(skillMapper.selectByNameAndRepo("cli-skill", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            // When：CLI 和小程序共用这个端点，不能假设它们都做过 trim
+            val result = createService().batchSaveSkillsDetailed(5L, listOf("  cli-skill  ", "", "cli-skill"))
+
+            // Then：三个选择项归一化后是同一个技能，只写一行
+            assertEquals(1, result.savedCount)
+            assertTrue(result.complete)
+            verify(skillMapper).insert(any())
+        }
+
+        @Test
+        @DisplayName("batchSaveSkills - Report an over-long name instead of a SQL truncation error")
+        fun `batchSaveSkills should report an over-long skill name`() {
+            // Given
+            // `skill.name` 是 varchar(100)，放过去只会让 MySQL 回一句「Data too long for column」
+            val longName = "s".repeat(150)
+            val oversized = AgentSkill.builder()
+                .name(longName)
+                .description("A skill whose name does not fit the column")
+                .skillContent("# Oversized")
+                .build()
+
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(oversized)))
+
+            // When
+            val result = createService().batchSaveSkillsDetailed(5L, listOf(longName))
+
+            // Then
+            assertEquals(0, result.savedCount)
+            assertFalse(result.complete)
+            assertTrue(result.failed[0].reason.contains("longer than the 100 characters"))
+            // 回报里也要短，否则一条失败明细就把通知撑满
+            assertEquals("s".repeat(100) + "...", result.failed[0].name)
+            verify(skillMapper, never()).insert(any())
         }
     }
 

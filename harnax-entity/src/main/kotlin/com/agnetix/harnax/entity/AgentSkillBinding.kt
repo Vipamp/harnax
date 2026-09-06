@@ -25,7 +25,16 @@ class AgentSkillBinding : Serializable {
     @Schema(description = "FK to skill.id")
     var skillId: Long = 0
 
-    @Schema(description = "Environment bindings JSON snapshot")
+    /**
+     * Not in effect: nothing writes or reads this column today.
+     *
+     * `AgentServiceImpl.saveSkillBindings` persists agentId / skillId only, and the skill delivery
+     * path never looks for per-skill env values — unlike [AgentToolBinding] and [AgentMcpBinding],
+     * whose same column is resolved into plaintext by `InternalApiController.resolveEnvBindingsJson`.
+     * Kept because the column is already there and a future skill-level env channel would use the
+     * same shape; do not read it as "per-skill environment variables are supported".
+     */
+    @Schema(description = "Environment bindings JSON snapshot (reserved, never written for skills)")
     var envBindings: String? = null
 
     @Schema(description = "Creation time")

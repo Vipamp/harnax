@@ -360,6 +360,10 @@ class AgentServiceImpl(
      * Save skill bindings: delete old + insert new.
      * Skills from the builtin CLI repository cannot be bound directly —
      * they are loaded automatically via the agent's CLI bindings.
+     *
+     * No `env_bindings` is written: per-skill environment variables have no consumer, unlike
+     * [saveToolBindings] / [saveMcpBindings] whose bindings are resolved on delivery. See the note
+     * on `AgentSkillBinding.envBindings`.
      */
     private fun saveSkillBindings(agentId: Long, skillList: String?) {
         skillBindingMapper.deleteByAgentId(agentId)
@@ -368,16 +372,31 @@ class AgentServiceImpl(
         val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }
         if (skillIds.isEmpty()) return
 
-        val builtinRepo = skillRepositoryService.getByName(BuiltinRepository.CLI_SKILLS)
+        val boundSkills = skillMapper.selectByIds(skillIds)
+
+        // Resolved without a tenant filter: the builtin repository is a single platform-wide row,
+        // so a tenant-scoped lookup missed it and silently dropped the constraint below
+        val builtinRepo = skillRepositoryService.getBuiltinRepository()
         if (builtinRepo == null) {
+            // No builtin repository means no builtin skills exist, so there is nothing to reject
             log.warn("Builtin repository '{}' not found, skipping agent skill constraint", BuiltinRepository.CLI_SKILLS)
         } else {
-            val invalid = skillMapper.selectByIds(skillIds).filter { it.repositoryId == builtinRepo.id }
+            val invalid = boundSkills.filter { it.repositoryId == builtinRepo.id }
             if (invalid.isNotEmpty()) {
                 throw BizException(
                     "Skills from '${BuiltinRepository.CLI_SKILLS}' cannot be bound directly (auto-loaded via CLI): ${invalid.joinToString(",") { it.name }}",
                 )
             }
+        }
+
+        // Skill names are unique per repository only, and the harness keys skills by name, so binding
+        // two skills that share a name leaves one silently replacing the other when the agent loads.
+        // Rejected here because the operator can still see both rows in the config panel and fix it
+        val duplicatedNames = boundSkills.groupBy { it.name }.filter { it.value.size > 1 }.keys
+        if (duplicatedNames.isNotEmpty()) {
+            throw BizException(
+                "Skills bound to one agent must have distinct names, duplicated: ${duplicatedNames.joinToString(",")}",
+            )
         }
 
         val now = LocalDateTime.now()

@@ -1,6 +1,8 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillSourceCreateRequest
+import com.agnetix.harnax.admin.dto.SkillSourceInstallResponse
 import com.agnetix.harnax.admin.dto.SkillSourceResponse
 import com.agnetix.harnax.admin.dto.SkillSourceUpdateRequest
 import com.agnetix.harnax.admin.dto.SyncSkillResponse
@@ -80,6 +82,15 @@ class SkillSourceControllerTest {
 
     private fun toJson(obj: Any): String = objectMapper.writeValueAsString(obj)
 
+    /** A source plus an install outcome that reports one stored and one failed skill. */
+    private fun installResponse(source: SkillSourceResponse = testResponse) = SkillSourceInstallResponse(
+        source = source,
+        install = SkillInstallResponse(
+            installed = listOf("skill-a"),
+            failed = listOf(SkillInstallResponse.FailedSkill("skill-b", "SKILL.md is empty")),
+        ),
+    )
+
     @Nested
     @DisplayName("GET /api/admin/skill-sources/page")
     inner class PageEndpoint {
@@ -154,8 +165,7 @@ class SkillSourceControllerTest {
                 sourceConfig = mapOf("url" to "https://github.com/new/skills", "branch" to "main"),
             )
 
-            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(testRepository)
-            `when`(skillSourceService.convertToResponse(testRepository)).thenReturn(testResponse)
+            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(installResponse())
 
             mockMvc.perform(
                 post("/api/admin/skill-sources")
@@ -164,6 +174,11 @@ class SkillSourceControllerTest {
             )
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.source.name").value("test-source"))
+                // A partial failure must reach the caller instead of hiding behind a 200
+                .andExpect(jsonPath("$.data.install.savedCount").value(1))
+                .andExpect(jsonPath("$.data.install.complete").value(false))
+                .andExpect(jsonPath("$.data.install.failed[0].name").value("skill-b"))
         }
 
         @Test
@@ -207,8 +222,7 @@ class SkillSourceControllerTest {
                 sourceConfig = mapOf("packageName" to "@harnax/skills"),
             )
 
-            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(npmRepo)
-            `when`(skillSourceService.convertToResponse(npmRepo)).thenReturn(npmResponse)
+            `when`(skillSourceService.createSkillSource(any<SkillSourceCreateRequest>())).thenReturn(installResponse(npmResponse))
 
             mockMvc.perform(
                 post("/api/admin/skill-sources")
@@ -216,7 +230,49 @@ class SkillSourceControllerTest {
                     .content(toJson(request)),
             )
                 .andExpect(status().isOk)
-                .andExpect(jsonPath("$.data.sourceType").value("NPM"))
+                .andExpect(jsonPath("$.data.source.sourceType").value("NPM"))
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/admin/skill-sources/{id}/install")
+    inner class InstallEndpoint {
+
+        @Test
+        fun `install should return the per-skill outcome`() {
+            `when`(skillSourceService.installSkills(1L)).thenReturn(
+                SkillInstallResponse(installed = listOf("skill-a"), updated = listOf("skill-b")),
+            )
+
+            mockMvc.perform(post("/api/admin/skill-sources/1/install"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.savedCount").value(2))
+                .andExpect(jsonPath("$.data.complete").value(true))
+        }
+
+        @Test
+        fun `install should report disabled skills flagged by the content scan`() {
+            `when`(skillSourceService.installSkills(1L)).thenReturn(
+                SkillInstallResponse(
+                    installed = listOf("wiper"),
+                    flagged = listOf(SkillInstallResponse.FlaggedSkill("wiper", listOf("SKILL.md: recursively deletes a root-level path"))),
+                ),
+            )
+
+            mockMvc.perform(post("/api/admin/skill-sources/1/install"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.data.flagged[0].name").value("wiper"))
+        }
+
+        @Test
+        fun `install should return error on failure`() {
+            `when`(skillSourceService.installSkills(1L)).thenThrow(BizException("Git clone failed"))
+
+            mockMvc.perform(post("/api/admin/skill-sources/1/install"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.message").value("Failed to install skills: Git clone failed"))
         }
     }
 
@@ -335,8 +391,7 @@ class SkillSourceControllerTest {
             )
 
             `when`(skillSourceService.uploadAndInstall(any(), any(), any()))
-                .thenReturn(testRepository)
-            `when`(skillSourceService.convertToResponse(testRepository)).thenReturn(testResponse)
+                .thenReturn(installResponse())
 
             mockMvc.perform(
                 multipart("/api/admin/skill-sources/upload")
@@ -345,6 +400,7 @@ class SkillSourceControllerTest {
             )
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.source.name").value("test-source"))
         }
 
         @Test

@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.service
 
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
+import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.entity.Skill
@@ -82,6 +83,14 @@ interface SkillService {
      * @return Number of saved skills
      */
     fun batchSaveSkills(repositoryId: Long, skills: List<String>): Int
+
+    /**
+     * Same selective sync as [batchSaveSkills], but reporting what happened to every skill.
+     *
+     * A skill that could not be stored used to disappear behind a warn log while the endpoint
+     * still answered 200 with a smaller count.
+     */
+    fun batchSaveSkillsDetailed(repositoryId: Long, skills: List<String>): SkillInstallResponse
 
     fun convertToResponse(skill: Skill): SkillResponse
 

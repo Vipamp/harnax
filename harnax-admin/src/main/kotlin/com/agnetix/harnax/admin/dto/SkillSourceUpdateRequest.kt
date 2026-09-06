@@ -6,13 +6,18 @@ import jakarta.validation.constraints.Size
 @Schema(description = "Skill source update request")
 data class SkillSourceUpdateRequest(
     @Schema(description = "Source name")
-    @Size(min = 1, max = 100, message = "Source name length must be between 1-100")
+    // `@field:` is what makes the limit real: a bare annotation on a Kotlin data class lands on the
+    // constructor parameter, which bean validation never reads
+    @field:Size(min = 1, max = 100, message = "Source name length must be between 1-100")
     val name: String? = null,
 
     @Schema(description = "Source configuration (JSON object)")
     val sourceConfig: Map<String, Any>? = null,
 
     @Schema(description = "Version identifier")
+    // Copied onto every installed skill, and both `skill_repository.version` and `skill.version`
+    // are varchar(100)
+    @field:Size(max = 100, message = "Version length cannot exceed 100")
     val version: String? = null,
 
     @Schema(description = "Description")

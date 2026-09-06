@@ -15,5 +15,13 @@ object BuiltinRepository {
      */
     const val CLI_SKILLS = "builtin-cli-skills"
 
+    /**
+     * `source_type` of the builtin row, set by `V15__skill_source_integrity.sql`.
+     *
+     * It is deliberately not one of GIT / NPM / ZIP: the repository is provisioned with the
+     * platform, has no remote to fetch from and no loader.
+     */
+    const val SOURCE_TYPE = "BUILTIN"
+
     fun isBuiltin(repositoryName: String?): Boolean = repositoryName == CLI_SKILLS
 }

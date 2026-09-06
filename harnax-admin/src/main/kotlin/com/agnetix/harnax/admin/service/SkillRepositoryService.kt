@@ -81,6 +81,14 @@ interface SkillRepositoryService {
     fun getByName(name: String): SkillRepository?
 
     /**
+     * The platform-managed builtin repository, resolved without a tenant filter.
+     *
+     * It is seeded once and shared by every tenant, so looking it up by the caller's tenant
+     * made built-in CLI skills unavailable outside the seeding tenant.
+     */
+    fun getBuiltinRepository(): SkillRepository?
+
+    /**
      * Get remote skill list (sync from Git repository)
      *
      * @param repositoryId Skill repository ID

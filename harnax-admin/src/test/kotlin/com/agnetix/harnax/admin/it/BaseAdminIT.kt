@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.core.io.FileSystemResource
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
@@ -14,12 +15,14 @@ import org.springframework.http.client.ClientHttpResponse
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.util.LinkedMultiValueMap
 import org.springframework.web.client.ResponseErrorHandler
 import org.springframework.web.client.RestTemplate
 import org.testcontainers.containers.MySQLContainer
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.nio.file.Path
 
 /**
  * Base class for harnax-admin integration tests.
@@ -110,6 +113,29 @@ abstract class BaseAdminIT {
     protected fun parseBody(response: ResponseEntity<String>): JsonNode {
         val body = response.body ?: error("Empty response body, status=${response.statusCode}")
         return json.readTree(body)
+    }
+
+    /**
+     * Uploads a ZIP archive to /api/admin/skill-sources/upload.
+     *
+     * A ZIP source *is* the archive, so this is the only way to create one; [exchange] cannot be
+     * used because it always serialises the body as JSON. The form converter adds the multipart
+     * boundary itself, and the shared [rest] instance is used so a rejected upload surfaces as a
+     * ResultVo body rather than an exception.
+     *
+     * @return the ResultVo node: `code`, plus `data.source` and `data.install` on success
+     */
+    protected fun uploadSkillZip(zip: Path, name: String): JsonNode {
+        val form = LinkedMultiValueMap<String, Any>()
+        form.add("file", FileSystemResource(zip))
+        form.add("name", name)
+        val headers = authHeaders().apply { contentType = MediaType.MULTIPART_FORM_DATA }
+        val response = rest.postForEntity(
+            url("/api/admin/skill-sources/upload"),
+            HttpEntity(form, headers),
+            String::class.java,
+        )
+        return parseBody(response)
     }
 
     /** Assert ResultVo code == 200 and return the data node. */

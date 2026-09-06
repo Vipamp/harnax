@@ -65,7 +65,8 @@ open class AgentToolMapperTest {
             // Then
             assertNotNull(agentTool)
             assertEquals(1L, agentTool.id)
-            assertEquals("time-tool-box", agentTool.name)
+            // 种子数据 id=1 的 name 是 getDate，bean_name 才是 time-tool-box
+            assertEquals("getDate", agentTool.name)
             assertEquals("BUILTIN", agentTool.type)
             assertEquals("time-tool-box", agentTool.beanName)
             assertEquals(0, agentTool.needConfirm)
@@ -87,7 +88,8 @@ open class AgentToolMapperTest {
         @DisplayName("selectById - Do not return deleted AgentTool")
         fun `selectById should not return deleted agent tool`() {
             // When
-            val agentTool = agentToolMapper.selectById(5L)
+            // 种子数据 id=6 是 deleted-tool（active=0）；id=5 是 disabled-tool，只是 status=0，仍然可查
+            val agentTool = agentToolMapper.selectById(6L)
 
             // Then
             assertNull(agentTool)

@@ -13,14 +13,6 @@
         <result column="expire_time" property="expireTime"/>
         <result column="create_time" property="createTime"/>
         <result column="create_ip" property="createIp"/>
-        <result column="token" property="token"/>
-        <result column="token_hash" property="tokenHash"/>
-        <result column="username" property="username"/>
-        <result column="user_id" property="userId"/>
-        <result column="reason" property="reason"/>
-        <result column="expire_time" property="expireTime"/>
-        <result column="create_time" property="createTime"/>
-        <result column="create_ip" property="createIp"/>
     </resultMap>
 
     <!-- ==================== Basic CRUD Methods ==================== -->
@@ -30,10 +22,11 @@
         SELECT * FROM sys_token_blacklist WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- deleteById -->
-    <update id="deleteById">
-        UPDATE sys_token_blacklist SET active = 0 WHERE id = #{id}
-    </update>
+    <!-- deleteById: this table has no `active` column (a revoked token entry is not a business
+         record worth keeping), so removal is a real DELETE, matching the production DDL -->
+    <delete id="deleteById">
+        DELETE FROM sys_token_blacklist WHERE id = #{id}
+    </delete>
 
     <!-- selectByTokenHash -->
     <select id="selectByTokenHash" resultMap="SysTokenBlacklistResultMap">
@@ -43,11 +36,9 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO sys_token_blacklist (
-        token, token_hash, username, user_id, reason, expire_time, create_time, create_ip, token_hash, user_id,
-        expire_time, create_time, create_ip
+        token, token_hash, username, user_id, reason, expire_time, create_time, create_ip
         ) VALUES (
-        #{token}, #{tokenHash}, #{username}, #{userId}, #{reason}, #{expireTime}, #{createTime}, #{createIp},
-        #{tokenHash}, #{userId}, #{expireTime}, #{createTime}, #{createIp}
+        #{token}, #{tokenHash}, #{username}, #{userId}, #{reason}, #{expireTime}, #{createTime}, #{createIp}
         )
     </insert>
 
@@ -59,10 +50,6 @@
         username = #{username},
         user_id = #{userId},
         reason = #{reason},
-        expire_time = #{expireTime},
-        create_ip = #{createIp},
-        token_hash = #{tokenHash},
-        user_id = #{userId},
         expire_time = #{expireTime},
         create_ip = #{createIp}
         WHERE id = #{id}

@@ -192,7 +192,9 @@ class CliServiceImpl(
             throw BizException("Some skills not found: ${distinctIds - skills.map { it.id }.toSet()}")
         }
         val tenantId = TenantContext.getTenantId() ?: 1
-        val builtinRepo = skillRepositoryMapper.selectByName(BuiltinRepository.CLI_SKILLS, tenantId)
+        // The builtin repository is one platform-wide row shared by every tenant; resolving it
+        // through the caller's tenant used to make CLI skill binding fail outside the seed tenant
+        val builtinRepo = skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)
             ?: run {
                 log.error("Builtin repository '{}' missing for tenant {}, aborting CLI skill binding", BuiltinRepository.CLI_SKILLS, tenantId)
                 throw BizException("Builtin repository '${BuiltinRepository.CLI_SKILLS}' not found")

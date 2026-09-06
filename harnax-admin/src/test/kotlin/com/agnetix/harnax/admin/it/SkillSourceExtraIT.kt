@@ -11,15 +11,19 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.random.Random
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
  * Skill source toggle regression: /api/admin/skill-sources/toggle/{id}
  *
- * SkillSourceCrudIT covers every other /api/admin/skill-sources endpoint
- * (page, detail, create, update, delete, fetch, upload); the status toggle is
- * the single one it misses, so it is exercised here against a ZIP source that
- * needs no network access.
+ * SkillSourceCrudIT covers every other /api/admin/skill-sources endpoint (page, detail, create,
+ * update, delete, fetch, install, upload); the status toggle is the one it misses, so it is
+ * exercised here against a ZIP source that needs no network access.
+ *
+ * The two boundary cases belong here rather than in a unit test because both are about what the
+ * endpoint stores: an out-of-range status would silently read as "disabled" forever, since every
+ * consumer compares with `== 1`, and the builtin repository is shared by all tenants.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
@@ -48,18 +52,13 @@ class SkillSourceExtraIT : BaseAdminIT() {
 
     @Test
     @Order(1)
-    fun `create ZIP skill source as toggle target`() {
-        val body = mapOf(
-            "name" to sourceName,
-            "sourceType" to "ZIP",
-            "sourceConfig" to mapOf("zipPath" to buildSkillZip().toString()),
-            "description" to "IT toggle skill source",
-            "status" to 1,
-        )
-        val data = assertOk(postJson("/api/admin/skill-sources", body))
-        sourceId = data["id"].asLong()
+    fun `upload a zip source to toggle`() {
+        val data = assertOk(uploadSkillZip(buildSkillZip(), sourceName))
+        val source = data["source"]
+        assertNotNull(source, "upload should answer with the source it created: $data")
+        sourceId = source["id"].asLong()
         assertTrue(sourceId > 0)
-        assertEquals(1, data["status"].asInt())
+        assertEquals(1, source["status"].asInt())
     }
 
     @Test
@@ -76,12 +75,44 @@ class SkillSourceExtraIT : BaseAdminIT() {
 
     @Test
     @Order(3)
+    fun `toggle with an out of range status is refused and stores nothing`() {
+        val node = putJson("/api/admin/skill-sources/toggle/$sourceId?status=99")
+        assertErr(node)
+        assertTrue(
+            node["message"].asText().contains("must be 0 (disabled) or 1 (enabled)"),
+            "the refusal should say what the two states are: ${node["message"].asText()}",
+        )
+        // A stored 99 would read as disabled everywhere without ever failing loudly, and the UI
+        // switch could no longer bring the row back
+        assertEquals(1, assertOk(getJson("/api/admin/skill-sources/$sourceId"))["status"].asInt())
+    }
+
+    @Test
+    @Order(4)
     fun `toggle unknown skill source fails`() {
         assertErr(putJson("/api/admin/skill-sources/toggle/99999999?status=0"))
     }
 
     @Test
-    @Order(4)
+    @Order(5)
+    fun `toggle the builtin repository is refused`() {
+        val builtin = findInPage("/api/admin/skill-sources/page", "name=builtin-cli-skills") {
+            it["name"]?.asText() == "builtin-cli-skills"
+        }
+        assertNotNull(builtin, "the platform seeds the builtin repository, so it should be listed")
+
+        val node = putJson("/api/admin/skill-sources/toggle/${builtin["id"].asLong()}?status=0")
+        assertErr(node)
+        assertTrue(
+            node["message"].asText().contains("read-only"),
+            "the refusal should say the repository is read-only: ${node["message"].asText()}",
+        )
+        // Switching it off would hide every CLI skill from every tenant at once
+        assertEquals(1, builtin["status"].asInt())
+    }
+
+    @Test
+    @Order(6)
     fun `cleanup delete skill source`() {
         assertOk(deleteJson("/api/admin/skill-sources/$sourceId"))
         assertErr(getJson("/api/admin/skill-sources/$sourceId"))

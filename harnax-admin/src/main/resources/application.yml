@@ -24,6 +24,17 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
+  # Multipart upload limits.
+  # The skill ZIP upload is the only multipart endpoint this service exposes, and ZipSkillLoader
+  # already guards a single entry at 20 MB and the whole archive at 200 MB. Left at the Spring Boot
+  # default of 1 MB, an ordinary skill package carrying a few resources was rejected by the
+  # multipart resolver before any of that code ran, answering "File size exceeds limit".
+  # max-request-size leaves room for the form fields that travel next to the archive.
+  servlet:
+    multipart:
+      max-file-size: ${SKILL_UPLOAD_MAX_FILE_SIZE:200MB}
+      max-request-size: ${SKILL_UPLOAD_MAX_REQUEST_SIZE:205MB}
+
   # Flyway Configuration
   flyway:
     enabled: ${FLYWAY_ENABLED:true}
@@ -43,6 +54,9 @@ mybatis:
   type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
+    # Pinned on purpose. Entities declare non-null Kotlin properties with defaults, so nullable
+    # columns must stay unset rather than being pushed through a setter as null.
+    call-setters-on-nulls: false
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
 # Springdoc OpenAPI (Swagger) configuration

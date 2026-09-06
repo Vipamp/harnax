@@ -300,7 +300,8 @@ class SkillRepositoryControllerTest {
             val result = controller.toggleSkillRepository(1L, 1)
 
             assertFalse(result.isSuccess())
-            assertEquals("Failed to update skill repository", result.message)
+            // 该端点是切换状态，文案不能沿用 update 那句复制过来的
+            assertEquals("Failed to toggle skill repository status", result.message)
         }
 
         @Test

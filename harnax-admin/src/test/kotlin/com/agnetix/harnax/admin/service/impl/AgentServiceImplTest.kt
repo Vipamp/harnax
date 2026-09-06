@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
@@ -10,6 +11,8 @@ import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -337,6 +340,108 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).insert(any())
+        }
+    }
+
+    @Nested
+    @DisplayName("Skill 绑定约束")
+    inner class SkillBindingConstraintTests {
+
+        private fun skill(id: Long, name: String, repositoryId: Long) = Skill().apply {
+            this.id = id
+            this.name = name
+            this.repositoryId = repositoryId
+            status = 1
+        }
+
+        private fun stubAgent() {
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+        }
+
+        private fun updateWithSkills(skillList: String) = agentService.updateAgent(1L, AgentUpdateRequest(skillList = skillList))
+
+        @Test
+        @DisplayName("updateAgent - 内置仓库的技能不允许直接绑定")
+        fun `updateAgent should reject a skill that lives in the builtin repository`() {
+            // 内置仓库的技能由 agent 关联的 CLI 自动下发，再绑一次就会在 skillDetails 里出现两份
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(
+                SkillRepository().apply {
+                    id = 9L
+                    name = "builtin-cli-skills"
+                },
+            )
+            `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(
+                listOf(skill(1L, "own-skill", 3L), skill(2L, "harnax-cli", 9L)),
+            )
+
+            val ex = assertThrows<BizException> { updateWithSkills("1,2") }
+
+            assertTrue(ex.message!!.contains("builtin-cli-skills"))
+            // 报错必须点名是哪个技能，否则运维面对一整面板的勾选无从下手
+            assertTrue(ex.message!!.contains("harnax-cli"))
+            verify(skillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 同一 agent 绑定两个同名技能时拒绝")
+        fun `updateAgent should reject two bound skills that share a name`() {
+            // 技能名只在仓库内唯一（uk_skill_repo_active_name），跳仓库同名完全合法，而 harness 按
+            // name 归并技能，两份都下发就会互相覆盖。写入时拦住比加载时默默丢一个可控得多
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(
+                listOf(skill(1L, "code-review", 3L), skill(2L, "code-review", 4L)),
+            )
+
+            val ex = assertThrows<BizException> { updateWithSkills("1,2") }
+
+            assertTrue(ex.message!!.contains("code-review"))
+            verify(skillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 名称互不相同时照常写入绑定")
+        fun `updateAgent should persist bindings when the skill names are distinct`() {
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(
+                SkillRepository().apply { id = 9L },
+            )
+            `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(
+                listOf(skill(1L, "code-review", 3L), skill(2L, "git-commit", 4L)),
+            )
+
+            assertTrue(updateWithSkills("1,2"))
+
+            verify(skillBindingMapper).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 同名拦截不能因为找不到内置仓库而跳过")
+        fun `updateAgent should still reject duplicated names when the builtin repository is missing`() {
+            // 内置仓库缺失（尚未播种）只应该放宽「不能绑内置技能」这一条，同名拦截与它无关
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(
+                listOf(skill(1L, "same", 3L), skill(2L, "same", 4L)),
+            )
+
+            assertThrows<BizException> { updateWithSkills("1,2") }
+        }
+
+        @Test
+        @DisplayName("updateAgent - 绑定的技能已被软删时不拦，仅写入传进来的 id")
+        fun `updateAgent should tolerate ids the skill table no longer returns`() {
+            // selectByIds 只返回 active = 1 的行，传了一个已删 id 时校验看到的行比请求少，
+            // 不应因此报错；真正的绑定仍按原 id 写入，与改动前的行为一致
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(listOf(skill(1L, "alive", 3L)))
+
+            assertTrue(updateWithSkills("1,2"))
+
+            verify(skillBindingMapper).batchInsert(any())
         }
     }
 

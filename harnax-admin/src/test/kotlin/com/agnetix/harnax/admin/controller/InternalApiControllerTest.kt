@@ -2,20 +2,38 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentCliBinding
+import com.agnetix.harnax.entity.AgentMcpBinding
+import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.entity.AgentTool
+import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.entity.Channel
+import com.agnetix.harnax.entity.Cli
+import com.agnetix.harnax.entity.CliSkillBinding
+import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
 import com.agnetix.harnax.mapper.ChannelMapper
+import com.agnetix.harnax.mapper.CliMapper
+import com.agnetix.harnax.mapper.CliSkillBindingMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.ModelMapper
+import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -23,6 +41,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
@@ -52,6 +71,9 @@ class InternalApiControllerTest {
     private lateinit var aesUtil: AesUtil
 
     @Mock
+    private lateinit var secretFieldEncryptor: SecretFieldEncryptor
+
+    @Mock
     private lateinit var agentTaskMapper: AgentTaskMapper
 
     @Mock
@@ -68,6 +90,34 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var skillBindingMapper: AgentSkillBindingMapper
+
+    @Mock
+    private lateinit var skillMapper: SkillMapper
+
+    // 下面几个 mapper 在本类的用例里并不被 stub，但必须声明：控制器是构造注入，而 Kotlin
+    // 的非空参数会在构造时校验实参，Mockito 对没声明的构造参数传的是 null，结果是整个类
+    // 以 InjectMocksException 全红（不是只红用到它的那一个用例）。控制器构造函数加参时
+    // 这里要同步补上。
+    @Mock
+    private lateinit var modelProviderMapper: ModelProviderMapper
+
+    @Mock
+    private lateinit var agentToolMapper: AgentToolMapper
+
+    @Mock
+    private lateinit var mcpServerMapper: McpServerMapper
+
+    @Mock
+    private lateinit var skillRepositoryMapper: SkillRepositoryMapper
+
+    @Mock
+    private lateinit var cliBindingMapper: AgentCliBindingMapper
+
+    @Mock
+    private lateinit var cliMapper: CliMapper
+
+    @Mock
+    private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
 
     @Mock
     private lateinit var envVariableService: EnvVariableService
@@ -383,6 +433,281 @@ class InternalApiControllerTest {
 
             assertFalse(result.isSuccess())
             assertTrue(result.message.contains("Session not found"))
+        }
+    }
+
+    /**
+     * 敏感配置的下发口径：agent-service 不持有 AES 密钥，所以 `mcp_server.headers`、
+     * `mcp_server.envParams`、`agent_tool.http_headers` 必须在下发前就解密成扁平明文对象。
+     * 早先这些字段是加密态原文直接给出，运行时解密器为 null，最终 headers 被静默置空。
+     */
+    @Nested
+    @DisplayName("敏感配置下发前解密")
+    inner class SecretConfigDeliveryTests {
+
+        private fun stubWebSession() {
+            val session = Session().apply {
+                sessionId = "web-secret"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-secret", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Secret Agent"
+                    systemPrompt = "You are a secret agent"
+                    modelId = 5L
+                    mcpList = "[]"
+                    skillList = ""
+                },
+            )
+        }
+
+        private fun stubMcp(storedHeaders: String?, storedEnvParams: String?) {
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 7L
+                        enableSkip = "false"
+                    },
+                ),
+            )
+            `when`(mcpServerMapper.selectById(7L)).thenReturn(
+                McpServer().apply {
+                    id = 7L
+                    name = "github-mcp"
+                    type = "sse"
+                    url = "https://example.com/sse"
+                    headers = storedHeaders
+                    envParams = storedEnvParams
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - MCP headers 解密为扁平明文对象")
+        fun `getAgentSpec should deliver MCP headers decrypted`() {
+            stubWebSession()
+            val storedHeaders = """[{"key":"Authorization","value":"ENC_B64","secret":true}]"""
+            stubMcp(storedHeaders, null)
+            `when`(secretFieldEncryptor.decryptToMap(storedHeaders))
+                .thenReturn(mapOf("Authorization" to "Bearer token-abc"))
+
+            val result = controller.getAgentSpec("web-secret")
+
+            assertTrue(result.isSuccess())
+            assertEquals("""{"Authorization":"Bearer token-abc"}""", result.data?.mcpDetails?.firstOrNull()?.headers)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - MCP envParams 按 ToolEnvParamEntry 形态解密")
+        fun `getAgentSpec should deliver MCP envParams decrypted`() {
+            stubWebSession()
+            val storedEnv = """[{"envParamName":"GITHUB_TOKEN","defaultValue":"ENC_B64","secret":true}]"""
+            stubMcp(null, storedEnv)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(storedEnv))
+                .thenReturn(mapOf("GITHUB_TOKEN" to "ghp_plain"))
+
+            val result = controller.getAgentSpec("web-secret")
+
+            assertTrue(result.isSuccess())
+            assertEquals("""{"GITHUB_TOKEN":"ghp_plain"}""", result.data?.mcpDetails?.firstOrNull()?.envParams)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 未配置凭证时保持 null，不输出空对象")
+        fun `getAgentSpec should keep blank config as null`() {
+            stubWebSession()
+            stubMcp("", "   ")
+
+            val result = controller.getAgentSpec("web-secret")
+
+            assertTrue(result.isSuccess())
+            val mcp = result.data?.mcpDetails?.firstOrNull()
+            assertNull(mcp?.headers)
+            assertNull(mcp?.envParams)
+            verifyNoInteractions(secretFieldEncryptor)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 工具 httpHeaders 同样解密下发")
+        fun `getAgentSpec should deliver tool httpHeaders decrypted`() {
+            stubWebSession()
+            val storedHeaders = """[{"key":"X-Api-Key","value":"ENC_B64","secret":true}]"""
+            `when`(toolBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentToolBinding().apply {
+                        agentId = 100L
+                        toolId = 9L
+                        enableSkip = "false"
+                    },
+                ),
+            )
+            `when`(agentToolMapper.selectById(9L)).thenReturn(
+                AgentTool().apply {
+                    id = 9L
+                    name = "http-call"
+                    type = "HTTP"
+                    httpUrl = "https://example.com/api"
+                    httpHeaders = storedHeaders
+                },
+            )
+            `when`(secretFieldEncryptor.decryptToMap(storedHeaders))
+                .thenReturn(mapOf("X-Api-Key" to "plain-key"))
+
+            val result = controller.getAgentSpec("web-secret")
+
+            assertTrue(result.isSuccess())
+            assertEquals("""{"X-Api-Key":"plain-key"}""", result.data?.toolDetails?.firstOrNull()?.httpHeaders)
+        }
+    }
+
+    @Nested
+    @DisplayName("Agent 技能下发过滤")
+    inner class AgentSkillDeliveryTests {
+
+        /** 让 web 会话解析到 agent 100，并把绑定关系与技能内容分别 stub 到两个 mapper 上 */
+        private fun stubAgentWithSkills(vararg skills: Skill) {
+            val session = Session().apply {
+                sessionId = "web-skill"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-skill", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Skill Agent"
+                    systemPrompt = "You are a skill agent"
+                    modelId = 5L
+                    mcpList = "[]"
+                    skillList = ""
+                },
+            )
+            `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(
+                skills.map {
+                    AgentSkillBinding().apply {
+                        agentId = 100L
+                        skillId = it.id
+                    }
+                },
+            )
+            skills.forEach { `when`(skillMapper.selectById(it.id)).thenReturn(it) }
+        }
+
+        private fun skill(id: Long, name: String, status: Int) = Skill().apply {
+            this.id = id
+            this.name = name
+            this.status = status
+            skillmd = "# $name"
+        }
+
+        /** 让 agent 100 额外绑定一个 CLI，并把该 CLI 关联的技能 ID stub 好 */
+        private fun stubCliWithSkills(cliId: Long, cliSkillIds: List<Long>) {
+            `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentCliBinding().apply {
+                        agentId = 100L
+                        this.cliId = cliId
+                    },
+                ),
+            )
+            `when`(cliMapper.selectByIds(listOf(cliId))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = cliId
+                        name = "cli-$cliId"
+                        status = 1
+                    },
+                ),
+            )
+            `when`(cliSkillBindingMapper.selectByCliIds(listOf(cliId))).thenReturn(
+                cliSkillIds.map {
+                    CliSkillBinding().apply {
+                        this.cliId = cliId
+                        skillId = it
+                    }
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("停用的技能既不进 skillDetails，也不进 skillList")
+        fun `getAgentSpec should drop a disabled skill from both halves of the answer`() {
+            // status = 0 有两个来源：运维在管理页手动停用，或重新导入时被 SkillContentScanner
+            // 命中高危命令后降级待审核。两种情况下绑定关系都还在，闸门只能在这里生效
+            stubAgentWithSkills(skill(11L, "enabled-skill", 1), skill(12L, "flagged-skill", 0))
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertNotNull(data)
+            assertEquals(listOf(11L), data?.skillDetails?.map { it.id })
+            // skillList 若从绑定关系拼出来，就会把刚被丢弃的 12 也列进去，同一个响应两半自相矛盾
+            assertEquals("11", data?.skillList)
+        }
+
+        @Test
+        @DisplayName("绑定指向已删除技能时，其余技能照常下发")
+        fun `getAgentSpec should keep the remaining skills when a binding points nowhere`() {
+            stubAgentWithSkills(skill(21L, "live-skill", 1))
+            // 悬空绑定：技能行已被删除，绑定表里还留着指向它的记录
+            `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentSkillBinding().apply {
+                        agentId = 100L
+                        skillId = 21L
+                    },
+                    AgentSkillBinding().apply {
+                        agentId = 100L
+                        skillId = 999L
+                    },
+                ),
+            )
+            `when`(skillMapper.selectById(999L)).thenReturn(null)
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertNotNull(data)
+            assertEquals(listOf(21L), data?.skillDetails?.map { it.id })
+            assertEquals("21", data?.skillList)
+        }
+
+        @Test
+        @DisplayName("CLI 关联的停用技能不下发")
+        fun `getAgentSpec should drop a disabled skill merged in from a CLI`() {
+            // 直接绑定那一路已有闸门，但技能还可以经 CLI 关联合并进 skillDetails；合并处不设同一
+            // 道闸门，就会出现「全局注入路径丢掉它、CLI 路径照样加载它」的矛盾
+            stubAgentWithSkills(skill(31L, "own-skill", 1))
+            stubCliWithSkills(7L, listOf(31L, 32L))
+            `when`(skillMapper.selectByIds(listOf(32L))).thenReturn(listOf(skill(32L, "cli-flagged", 0)))
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertNotNull(data)
+            assertEquals(listOf(31L), data?.skillDetails?.map { it.id })
+            assertEquals("31", data?.skillList)
+        }
+
+        @Test
+        @DisplayName("CLI 关联的技能与已绑定技能同名时，保留 agent 自己绑定的那一个")
+        fun `getAgentSpec should keep the bound skill when a CLI skill shares its name`() {
+            // 技能名只在仓库内唯一，而 harness 按 name 归并技能，两个同名技能都下发会让注册表
+            // 与内存仓库对「谁生效」的判断不一致
+            stubAgentWithSkills(skill(41L, "shared-name", 1))
+            stubCliWithSkills(8L, listOf(42L))
+            `when`(skillMapper.selectByIds(listOf(42L))).thenReturn(listOf(skill(42L, "shared-name", 1)))
+
+            val data = controller.getAgentSpec("web-skill").data
+
+            assertNotNull(data)
+            assertEquals(listOf(41L), data?.skillDetails?.map { it.id })
+            assertEquals("41", data?.skillList)
         }
     }
 }

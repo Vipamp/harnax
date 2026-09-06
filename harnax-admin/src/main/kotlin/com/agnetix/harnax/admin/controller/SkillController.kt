@@ -2,10 +2,12 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SkillCreateRequest
+import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
+import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -15,8 +17,10 @@ import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
 /**
- * Skill management controller
- * Available only for public edition (skill marketplace feature)
+ * Skill management controller (legacy entry point).
+ *
+ * New integrations should prefer `/api/admin/skill-sources`; this controller is still served
+ * because the CLI and the selective sync dialog depend on it.
  */
 @RestController
 @RequestMapping("/api/admin/skills")
@@ -54,7 +58,7 @@ class SkillController(
         ResultVo.success(responsePage)
     } catch (e: Exception) {
         log.error("Failed to get skill list", e)
-        ResultVo.error(e.message ?: "Failed to get skill list")
+        ResultVo.error(ApiErrors.message(e, "Failed to get skill list"))
     }
 
     @GetMapping("/{id}")
@@ -67,7 +71,7 @@ class SkillController(
         ResultVo.success(skill?.let { SkillResponse.fromEntity(it, skillRepositoryService.getSkillRepository(it.repositoryId)) })
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
-        ResultVo.error(e.message ?: "Failed to get skill details")
+        ResultVo.error(ApiErrors.message(e, "Failed to get skill details"))
     }
 
     @PostMapping
@@ -78,7 +82,7 @@ class SkillController(
         if (skillService.createSkill(request)) ResultVo.success() else ResultVo.error("Failed to create skill")
     } catch (e: Exception) {
         log.error("Failed to create skill", e)
-        ResultVo.error(e.message ?: "Failed to create skill")
+        ResultVo.error(ApiErrors.message(e, "Failed to create skill"))
     }
 
     @PutMapping("/update/{id}")
@@ -90,7 +94,7 @@ class SkillController(
         if (skillService.updateSkill(id, request)) ResultVo.success() else ResultVo.error("Failed to update skill")
     } catch (e: Exception) {
         log.error("Failed to update skill", e)
-        ResultVo.error(e.message ?: "Failed to update skill")
+        ResultVo.error(ApiErrors.message(e, "Failed to update skill"))
     }
 
     @PutMapping("/toggle/{id}")
@@ -101,8 +105,9 @@ class SkillController(
     ): ResultVo<Void> = try {
         if (skillService.toggleSkillStatus(id, status)) ResultVo.success() else ResultVo.error("Failed to toggle skill status")
     } catch (e: Exception) {
-        log.error("Failed to update skill", e)
-        ResultVo.error(e.message ?: "Failed to update skill")
+        // The log line said "update" too, which sent anyone debugging a toggle to the wrong handler
+        log.error("Failed to toggle skill status", e)
+        ResultVo.error(ApiErrors.message(e, "Failed to toggle skill status"))
     }
 
     @DeleteMapping("/{id}")
@@ -113,19 +118,18 @@ class SkillController(
         if (skillService.deleteSkill(id)) ResultVo.success() else ResultVo.error("Failed to delete skill")
     } catch (e: Exception) {
         log.error("Failed to delete skill", e)
-        ResultVo.error(e.message ?: "Failed to delete skill")
+        ResultVo.error(ApiErrors.message(e, "Failed to delete skill"))
     }
 
     @PostMapping("/batch")
-    @Operation(summary = "Batch save skills", description = "Batch save skills to specified repository, duplicate skills will be overwritten")
+    @Operation(summary = "Batch save skills", description = "Selectively sync skills into a repository; duplicates are overwritten and every skill is reported")
     fun batchSaveSkills(
         @Parameter(description = "Repository ID") @RequestParam(name = "repositoryId") repositoryId: Long,
         @Parameter(description = "Skill list") @RequestBody skills: List<String>,
-    ): ResultVo<Int> = try {
-        val count = skillService.batchSaveSkills(repositoryId, skills)
-        ResultVo.success(count)
+    ): ResultVo<SkillInstallResponse> = try {
+        ResultVo.success(skillService.batchSaveSkillsDetailed(repositoryId, skills))
     } catch (e: Exception) {
         log.error("Failed to batch save skills", e)
-        ResultVo.error(e.message ?: "Failed to batch save skills")
+        ResultVo.error(ApiErrors.message(e, "Failed to batch save skills"))
     }
 }
