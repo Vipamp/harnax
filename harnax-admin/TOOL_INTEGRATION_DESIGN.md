@@ -1,5 +1,7 @@
 # Harnax 工具（Tools）集成设计方案
 
+> 本文为早期设计方案，仅作历史归档，其中的字段与流程已被实现取代：工具绑定的 `enable_skip` 已由 `V17__drop_tool_binding_enable_skip.sql` 删除，内置工具的新增 / 更新 / 删除统一由 admin 启动时的代码注册收敛。当前设计见 `prod_doc/tool-integration-design.zh-CN.md`（英文 `prod_doc/tool-integration-design.en-US.md`），使用口径见 `prod_doc/tool-capability.zh-CN.md`（英文 `prod_doc/tool-capability.en-US.md`）。
+
 ## 一、背景与现状分析
 
 ### 1.1 agentscope-java 的工具体系

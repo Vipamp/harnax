@@ -62,10 +62,10 @@ data class ToolDetailDto(
     @Schema(description = "Timeout in seconds")
     val timeoutSeconds: Int = 30,
 
-    // ── Binding-level fields (from agent_tool_binding) ──
+    @Schema(description = "Tool status (0: disabled by admin, 1: enabled)")
+    val status: Int = 1,
 
-    @Schema(description = "Enable skip if tool unavailable")
-    val enableSkip: String? = null,
+    // ── Binding-level fields (from agent_tool_binding) ──
 
     @Schema(description = "Binding-level need_confirm override")
     val bindingNeedConfirm: Boolean = false,

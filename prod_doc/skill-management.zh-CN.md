@@ -2,7 +2,7 @@
 
 > 英文版本见 [skill-management.en-US.md](./skill-management.en-US.md)
 >
-> 工具体系整体设计见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)，MCP 服务管理见 [mcp-management.zh-CN.md](./mcp-management.zh-CN.md)。本文覆盖 Skill 的数据模型、仓库分类、同步落库、Agent 配置、配置下发与运行时装配全链路，文末附全链路走读发现的问题、修复记录与仍待办事项。
+> 工具体系整体设计见 [tool-integration-design.zh-CN.md](./tool-integration-design.zh-CN.md)，工具注解与注册机制见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)，MCP 服务管理见 [mcp-management.zh-CN.md](./mcp-management.zh-CN.md)。本文覆盖 Skill 的数据模型、仓库分类、同步落库、Agent 配置、配置下发与运行时装配全链路，文末附全链路走读发现的问题、修复记录与仍待办事项。
 
 ## 1. 概述
 

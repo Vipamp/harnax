@@ -27,13 +27,6 @@ class ToolSpecTest {
         }
 
         @Test
-        @DisplayName("should have default skipIfMissing as true")
-        fun `default skipIfMissing should be true`() {
-            val spec = ToolSpec(toolId = 1L)
-            assertTrue(spec.skipIfMissing)
-        }
-
-        @Test
         @DisplayName("should have default needConfirm as false")
         fun `default needConfirm should be false`() {
             val spec = ToolSpec(toolId = 1L)
@@ -51,20 +44,18 @@ class ToolSpecTest {
             val spec = ToolSpec(
                 toolId = 42L,
                 toolName = "my-tool",
-                skipIfMissing = false,
                 needConfirm = true,
             )
             assertEquals(42L, spec.toolId)
             assertEquals("my-tool", spec.toolName)
-            assertFalse(spec.skipIfMissing)
             assertTrue(spec.needConfirm)
         }
 
         @Test
         @DisplayName("should support structural equality")
         fun `should support structural equality`() {
-            val a = ToolSpec(toolId = 1L, toolName = "t", skipIfMissing = false, needConfirm = true)
-            val b = ToolSpec(toolId = 1L, toolName = "t", skipIfMissing = false, needConfirm = true)
+            val a = ToolSpec(toolId = 1L, toolName = "t", needConfirm = true)
+            val b = ToolSpec(toolId = 1L, toolName = "t", needConfirm = true)
             assertEquals(a, b)
             assertEquals(a.hashCode(), b.hashCode())
         }
@@ -77,7 +68,6 @@ class ToolSpecTest {
             assertEquals(1L, copied.toolId)
             assertEquals("copied", copied.toolName)
             assertTrue(copied.needConfirm)
-            assertTrue(copied.skipIfMissing) // default preserved
         }
     }
 }

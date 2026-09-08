@@ -25,9 +25,6 @@ class AgentToolBinding : Serializable {
     @Schema(description = "FK to agent_tool.id")
     var toolId: Long = 0
 
-    @Schema(description = "Whether to skip if tool is unavailable (true/false)")
-    var enableSkip: String = "false"
-
     @Schema(description = "Requires human confirmation (0: No, 1: Yes)")
     var needConfirm: Int = 0
 

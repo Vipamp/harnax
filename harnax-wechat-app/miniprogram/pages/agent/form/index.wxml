@@ -41,12 +41,8 @@
       </view>
       <view class="cfg-switches">
         <view class="cfg-switch">
-          <text>缺失即跳过</text>
-          <t-switch size="small" value="{{item.enableSkip}}" data-index="{{ti}}" bind:change="onToolEnableSkip" />
-        </view>
-        <view class="cfg-switch">
           <text>需要确认</text>
-          <t-switch size="small" value="{{item.needConfirm}}" disabled="{{item.entityNeedConfirm === 0}}" data-index="{{ti}}" bind:change="onToolNeedConfirm" />
+          <t-switch size="small" value="{{item.needConfirm}}" data-index="{{ti}}" bind:change="onToolNeedConfirm" />
         </view>
       </view>
       <view class="env-list" wx:if="{{item.envBindings.length}}">

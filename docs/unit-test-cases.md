@@ -172,8 +172,8 @@
 | AGT-05 | deleteAgent 级联 | 任意 id | 顺序验证:tool→mcp→skill 绑定删除,最后 agentMapper.deleteById |
 | AGT-06 | saveToolBindings 先删后插 | toolList=[{id:1}] | InOrder: deleteByAgentId → insert |
 | AGT-07 | toolList 条目缺 id 跳过 | [{id:null}, {id:2}] | 只插入 toolId=2 |
-| AGT-08 | needConfirm 合成规则 | 工具实体 needConfirm=0,binding 请求 needConfirm=true | 最终 binding.needConfirm=0(工具禁用确认优先);工具 needConfirm=1 时按请求值 |
-| AGT-09 | enableSkip 默认 | 不传 | 存 "false"(字符串) |
+| AGT-08 | needConfirm 透传 | binding 请求 needConfirm=true / false / null | 分别存 1 / 0 / 0;不再查工具实体(运行时取 `agent_tool.needConfirm` 与绑定值的或,绑定层只能加严) |
+| AGT-09 | 同一请求内重复 toolId 去重 | [{id:1}, {id:1}, {id:2}] | 只插入 toolId=1、2 各一条(取首次出现),配合 `V18` 的 (agent_id, tool_id) 唯一键 |
 | AGT-10 | skillList 解析 | "1,,x,3" | 只插入 1、3;空串与非数字跳过 |
 | AGT-11 | serializeEnvBindings 空入参 | null / 空列表 | 返回 null |
 | AGT-12 | serializeEnvBindings customValue 优先 | envVarId=5 且 customValue="abc" | JSON 中 customValue=abc |
@@ -181,6 +181,36 @@
 | AGT-14 | parseEnvBindingsJson 脏数据 | "not-json" | 返回 null,不抛 |
 | AGT-15 | parseEnvBindingsJson 敏感变量掩码 | envVar.sensitive=1 | displayValue="******" |
 | AGT-16 | parseEnvBindingsJson 变量已删除回退快照 | getEnvVariable=null | 使用存储的 snapshotValue |
+
+### 5.1 AgentToolServiceImpl(内置工具写入口守卫)
+
+> 内置工具只有「代码注册」这一个生命周期入口(见 prod_doc 工具文档 §5),因此四个写方法都必须拒绝 `type = 'BUILTIN'`。
+
+| 编号 | 用例 | 输入 | 期望 |
+|------|------|------|------|
+| TLS-01 | 创建拒绝内置类型 | request.type=BUILTIN | BizException,message 含 `Builtin tools are owned by the code sync`;不调用 insert |
+| TLS-02 | 更新拒绝内置行 | selectById 返回 type=BUILTIN | BizException,message 含 `Updating builtin tool`;不调用 updateById |
+| TLS-03 | 更新拒绝改成内置类型 | 库中 CUSTOM,请求 type=BUILTIN | BizException,message 含 `to builtin type`;不调用 updateById |
+| TLS-04 | 启停拒绝内置工具 | selectById 返回 type=BUILTIN | BizException;不调用 updateStatus(内置工具 status 由注册收敛强制为 1) |
+| TLS-05 | 删除先查后判 | selectById=null | RuntimeException `Agent tool not found`;不调用 deleteById |
+| TLS-06 | 删除拒绝内置工具 | selectById 返回 type=BUILTIN | BizException;deleteById 与 env param 级联都不执行 |
+| TLS-07 | 无行受影响时返回 false | selectById 有值,deleteById 返回 0 | 返回 false |
+| TLS-08 | 创建接口默认类型 | 不传 type | 默认 `CUSTOM`(原默认 BUILTIN 与「不可外部创建内置工具」矛盾) |
+
+### 5.2 BuiltinToolAutoRegistrar(启动全量收敛)
+
+> `upsertBuiltinTool` 的 `ON DUPLICATE KEY UPDATE` 会覆盖 `name`,所以只改 `@Tool(name = ...)` 是原地更新(`id` 与绑定不动);下面的删除用例都针对「代码不再声明那个 `beanName + methodName + name` 三元组」的残留行。
+
+| 编号 | 用例 | 输入 | 期望 |
+|------|------|------|------|
+| REG-01 | 库与代码一致时不删 | selectAllBuiltin 返回的行都在 liveKeys 里 | 一条 upsert / 方法,不调用 deleteBuiltinByIds / deleteByToolIds |
+| REG-02 | 代码删了方法 → 硬删 + 级联 | 库中多一条 beanName+methodName+name 不在代码中的行 | binding.deleteByToolIds → envParam.deleteByToolIds → deleteBuiltinByIds([id]),顺序固定 |
+| REG-03 | 软删残留被清 | active=0 的行(旧手工删除留下的) | 同样进入删除集合,`uk_tenant_bean_method` 不再挡同名重建 |
+| REG-04 | 改了 Java 方法名 → 删旧行 | 代码声明 `currentTimestamp`,库中留着 `currentTime` 的旧行 | 身份键含 method_name,旧行(唯一一条 stale)硬删 |
+| REG-05 | 安全阀:扫不到工具 | getAllToolMeta 返回空 | 直接 return:不 upsert、不 selectAllBuiltin、不删任何行 |
+| REG-06 | 单组失败不触发删除 | broken-box 的 upsert 抛异常,库里另有一条 orphan | failCount>0 时整轮 prune 跳过,orphan 与 broken-box 的行都保留 |
+| REG-07 | 熔断:待删数不少于声明数 | 代码只声明 1 个工具,库里留着 2 条孤儿 | stale.size(2) >= liveKeys.size(1) → 跳过删除并打 ERROR,live 记录仍正常 upsert |
+| REG-08 | status/active 归代码所有 | 代码里存在的方法 | 交给 upsert 的实体 status=1、active=1、type=BUILTIN、creator=SYSTEM |
 
 ---
 

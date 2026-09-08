@@ -543,18 +543,19 @@ class InternalApiControllerTest {
                     AgentToolBinding().apply {
                         agentId = 100L
                         toolId = 9L
-                        enableSkip = "false"
                     },
                 ),
             )
-            `when`(agentToolMapper.selectById(9L)).thenReturn(
-                AgentTool().apply {
-                    id = 9L
-                    name = "http-call"
-                    type = "HTTP"
-                    httpUrl = "https://example.com/api"
-                    httpHeaders = storedHeaders
-                },
+            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(
+                listOf(
+                    AgentTool().apply {
+                        id = 9L
+                        name = "http-call"
+                        type = "HTTP"
+                        httpUrl = "https://example.com/api"
+                        httpHeaders = storedHeaders
+                    },
+                ),
             )
             `when`(secretFieldEncryptor.decryptToMap(storedHeaders))
                 .thenReturn(mapOf("X-Api-Key" to "plain-key"))
@@ -708,6 +709,99 @@ class InternalApiControllerTest {
             assertNotNull(data)
             assertEquals(listOf(41L), data?.skillDetails?.map { it.id })
             assertEquals("41", data?.skillList)
+        }
+    }
+
+    /**
+     * 工具下发口径：必须工具（is_required=1）不写绑定表，只能在下发阶段追加，且已存在历史绑定时
+     * 不能重复下发；`status` 必须随 ToolDetailDto 一起下发，否则 agent-service 侧转换实体时拿到的
+     * 是默认值 1，管理员停用工具形同无效。
+     */
+    @Nested
+    @DisplayName("工具下发装配")
+    inner class ToolDeliveryTests {
+
+        private fun stubTool(
+            id: Long,
+            name: String,
+            status: Int = 1,
+            isRequired: Int = 0,
+        ): AgentTool = AgentTool().apply {
+            this.id = id
+            this.name = name
+            type = "BUILTIN"
+            beanName = "demo-tool-box"
+            this.status = status
+            this.isRequired = isRequired
+        }
+
+        private fun stubWebSessionWithBindings(vararg toolIds: Long) {
+            val session = Session().apply {
+                sessionId = "web-tools"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-tools", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "Tool Agent"
+                    systemPrompt = "You are a tool agent"
+                    modelId = 5L
+                    mcpList = "[]"
+                    skillList = ""
+                },
+            )
+            `when`(toolBindingMapper.selectByAgentId(100L)).thenReturn(
+                toolIds.map {
+                    AgentToolBinding().apply {
+                        agentId = 100L
+                        toolId = it
+                    }
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 没有绑定行时也必须工具照旧下发")
+        fun `getAgentSpec should append required tools even without a binding`() {
+            stubWebSessionWithBindings()
+            val required = stubTool(20L, "contextTool", isRequired = 1)
+            `when`(agentToolMapper.selectRequiredTools()).thenReturn(listOf(required))
+            `when`(agentToolMapper.selectByIds(listOf(20L))).thenReturn(listOf(required))
+
+            val data = controller.getAgentSpec("web-tools").data
+
+            assertEquals(listOf(20L), data?.toolDetails?.map { it.id })
+            // 必须工具没有绑定行，兼容用的 toolList JSON 里不出现它
+            assertEquals("[]", data?.toolList)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 必须工具已有历史绑定时不重复下发")
+        fun `getAgentSpec should not duplicate a required tool that already has a binding`() {
+            stubWebSessionWithBindings(20L)
+            val required = stubTool(20L, "contextTool", isRequired = 1)
+            `when`(agentToolMapper.selectRequiredTools()).thenReturn(listOf(required))
+            `when`(agentToolMapper.selectByIds(listOf(20L))).thenReturn(listOf(required))
+
+            val data = controller.getAgentSpec("web-tools").data
+
+            assertEquals(listOf(20L), data?.toolDetails?.map { it.id })
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 停用工具带 status=0 下发")
+        fun `getAgentSpec should deliver tool status`() {
+            stubWebSessionWithBindings(21L)
+            `when`(agentToolMapper.selectByIds(listOf(21L))).thenReturn(listOf(stubTool(21L, "disabledTool", status = 0)))
+
+            val tool = controller.getAgentSpec("web-tools").data?.toolDetails?.firstOrNull()
+
+            assertNotNull(tool)
+            assertEquals(0, tool?.status)
         }
     }
 }

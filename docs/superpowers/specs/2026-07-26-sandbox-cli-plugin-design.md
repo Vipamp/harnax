@@ -444,7 +444,7 @@ class CliPluginAutoRegistrar(
 }
 ```
 
-同步策略（与 BuiltinToolAutoRegistrar 一致）：
+同步策略（CLI 插件保留人工停用的能力；内置工具不同，它的 status 也会被收敛、代码里删掉的工具会被级联硬删除，见 prod_doc 工具文档 §5）：
 - 新插件：insert，status=1
 - 已有：仅更新元数据（description、version、paths）
 - status 不覆盖（admin 可手动禁用）

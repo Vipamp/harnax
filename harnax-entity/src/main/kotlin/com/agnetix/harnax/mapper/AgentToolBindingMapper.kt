@@ -12,4 +12,7 @@ interface AgentToolBindingMapper {
     fun batchInsert(@Param("list") list: List<AgentToolBinding>): Int
 
     fun deleteByAgentId(@Param("agentId") agentId: Long): Int
+
+    /** Cascade clean when the builtin tool sync removes records the code no longer declares */
+    fun deleteByToolIds(@Param("toolIds") toolIds: List<Long>): Int
 }

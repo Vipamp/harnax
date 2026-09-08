@@ -213,9 +213,9 @@ CREATE TABLE IF NOT EXISTS `agent` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
 
 INSERT INTO `agent` (`name`, `description`, `system_prompt`, `model_id`, `mcp_list`, `skill_list`, `tool_list`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
-('Test Agent 1', '测试智能体1', '你是一个助手', 1, '[{"id":1,"enable_skip":"false"}]', '[1,2]', '[{"id":1,"enable_skip":"true","need_confirm":false}]', 'testuser1', 1, 1, 'testuser1', 1),
+('Test Agent 1', '测试智能体1', '你是一个助手', 1, '[{"id":1,"enable_skip":"false"}]', '[1,2]', '[{"id":1,"need_confirm":false}]', 'testuser1', 1, 1, 'testuser1', 1),
 ('Test Agent 2', '测试智能体2', '你是一个编程助手', 2, '[]', '[1]', '[]', 'testuser1', 1, 0, 'testuser1', 1),
-('Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, '[{"id":2,"enable_skip":"true"}]', '[]', '[{"id":2,"enable_skip":"true","need_confirm":true}]', 'testuser2', 0, 1, 'testuser2', 1),
+('Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, '[{"id":2,"enable_skip":"true"}]', '[]', '[{"id":2,"need_confirm":true}]', 'testuser2', 0, 1, 'testuser2', 1),
 ('Deleted Agent', '已删除智能体', '已删除', 1, '[]', '[]', '[]', 'testuser1', 1, 1, 'testuser1', 0);
 
 -- ============================================

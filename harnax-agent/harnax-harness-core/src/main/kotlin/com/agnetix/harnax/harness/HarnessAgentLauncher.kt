@@ -191,26 +191,20 @@ class HarnessAgentLauncher(
             // Dynamic tool assembly from agentSpec.toolSpecs
             // Deduplicate ToolBox additions by beanName (multiple agent_tool records may share the same beanName)
             val addedToolBoxBeans = mutableSetOf<String>()
-            // Track disabled tool names per beanName to remove after addTool (which registers ALL @Tool methods)
-            val disabledToolNamesByBean = mutableMapOf<String, MutableSet<String>>()
+            // Tool names this agent is actually granted, per beanName. addTool registers ALL @Tool
+            // methods of a ToolBox, so anything outside this set is removed afterwards.
+            val allowedToolNamesByBean = mutableMapOf<String, MutableSet<String>>()
             // Track already-scanned ToolBox classes to avoid redundant reflection
             val scannedDangerousInputClasses = mutableSetOf<Class<*>>()
 
             agentSpec.toolSpecs.forEach { toolSpec ->
                 val toolConfig = toolConfigAdaptor.getToolConfig(toolSpec.toolId)
                 if (toolConfig != null) {
-                    // Skip disabled tools (status=0) — they should not be available to the agent
+                    // Skip disabled tools (status=0) — they should not be available to the agent.
+                    // They are absent from allowedToolNamesByBean, so a sibling ToolBox registration
+                    // cannot leak them back in; the final sweep removes them from the toolkit.
                     if (toolConfig.status == 0) {
                         log.info("Tool '{}' (id={}) is disabled, skipping", toolConfig.name, toolConfig.id)
-                        val beanName = toolConfig.beanName ?: ""
-                        // Track this tool name scoped to its beanName
-                        if (beanName.isNotEmpty()) {
-                            disabledToolNamesByBean.getOrPut(beanName) { mutableSetOf() }.add(toolConfig.name)
-                        }
-                        // Remove from toolkit if the ToolBox was already registered
-                        if (beanName in addedToolBoxBeans) {
-                            agentBuilder.removeTool(toolConfig.name)
-                        }
                         return@forEach
                     }
 
@@ -227,8 +221,6 @@ class HarnessAgentLauncher(
                                     )
                                     agentBuilder.addTool(toolBox)
                                     addedToolBoxBeans.add(beanName)
-                                    // Remove disabled methods scoped to this ToolBox
-                                    disabledToolNamesByBean[beanName]?.forEach { name -> agentBuilder.removeTool(name) }
                                 }
                                 toolBox
                             } else {
@@ -273,57 +265,36 @@ class HarnessAgentLauncher(
                         // Scan ToolBox methods for @ToolMeta(dangerousInput=true) — deduplicated by class
                         val beanName = toolConfig.beanName ?: ""
                         if (beanName.isNotEmpty()) {
+                            allowedToolNamesByBean.getOrPut(beanName) { mutableSetOf() }.add(toolConfig.name)
                             val toolBoxClass = toolRegistry?.getToolBox(beanName)?.let { it::class.java }
                             if (toolBoxClass != null && toolBoxClass !in scannedDangerousInputClasses) {
                                 scannedDangerousInputClasses.add(toolBoxClass)
                                 collectDangerousInputTools(toolBoxClass, dangerousInputTools)
                             }
                         }
-                    } else if (!toolSpec.skipIfMissing) {
-                        log.error("Tool with id `${toolSpec.toolId}` (bean: ${toolConfig.beanName}) not found.")
                     } else {
                         log.warn("Tool with id `${toolSpec.toolId}` not found, skipping.")
                     }
-                } else if (!toolSpec.skipIfMissing) {
-                    log.error("Tool config with id `${toolSpec.toolId}` not found in database.")
                 } else {
                     log.warn("Tool config with id `${toolSpec.toolId}` not found, skipping.")
                 }
             }
-        } else {
-            // Fallback: use all registered ToolBox beans from ToolRegistry
-            val fallbackTools = toolRegistry?.getAllToolBoxes() ?: emptyList()
-            if (fallbackTools.isEmpty()) {
-                log.debug("No toolSpecs configured and no ToolBox beans found in ToolRegistry.")
-            }
-            fallbackTools.forEach { templateBox ->
-                val toolBox = toolRegistry?.let { reg ->
-                    // Create a per-session instance to avoid ThreadLocal / singleton sharing issues
-                    val names = reg.getToolBoxNames()
-                    val beanName = names.firstOrNull { reg.getToolBox(it) === templateBox }
-                    beanName?.let { reg.createToolBoxInstance(it) }
-                } ?: templateBox
-                toolBox.init(
-                    toolCallLogAdaptor,
-                    SessionMetaContext(agentSpec.id, sessionId),
-                    userIdentifier,
-                )
-                agentBuilder.addTool(toolBox)
-                // Scan @ToolMeta(needConfirm=true) from ToolBox methods
-                val toolName = toolBox.name()
-                toolBox::class.java.methods
-                    .forEach { method ->
-                        val toolAnnotation = method.getAnnotation(io.agentscope.core.tool.Tool::class.java)
-                        val frameworkName = toolAnnotation?.name?.takeIf { it.isNotBlank() } ?: method.name
-                        val toolMeta = method.getAnnotation(ToolMeta::class.java)
-                        if (toolMeta?.needConfirm == true) {
-                            needConfirmedTools.add(frameworkName)
-                        }
-                        if (toolMeta?.dangerousInput == true) {
-                            dangerousInputTools.add(frameworkName)
-                        }
+
+            // addTool registers every @Tool method of a ToolBox. Drop the methods this agent was not
+            // granted: unselected siblings of a required tool, and admin-disabled methods. The toolkit
+            // keys tools by name, so names granted through any ToolBox are kept.
+            val grantedNames = allowedToolNamesByBean.values.flatten().toSet()
+            addedToolBoxBeans.forEach { bean ->
+                toolRegistry?.getToolMeta(bean)?.methods
+                    ?.map { it.toolName }
+                    ?.filterNot { it in grantedNames }
+                    ?.forEach { name ->
+                        log.debug("Tool '{}' of ToolBox '{}' is not granted to agent '{}', removing", name, bean, agentSpec.name)
+                        agentBuilder.removeTool(name)
                     }
             }
+        } else if (agentSpec.toolSpecs.isNotEmpty()) {
+            log.warn("ToolConfigAdaptor is not configured, {} tool spec(s) ignored.", agentSpec.toolSpecs.size)
         }
 
         if (agentSpec.contextForTools.isNotEmpty()) {

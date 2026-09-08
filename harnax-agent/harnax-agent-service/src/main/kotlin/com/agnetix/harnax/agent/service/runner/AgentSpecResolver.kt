@@ -167,7 +167,6 @@ class AgentSpecResolver(
             builder.addToolSpec(
                 ToolSpec(
                     toolId = tool.id,
-                    skipIfMissing = tool.enableSkip == "true",
                     needConfirm = tool.bindingNeedConfirm,
                 ),
             )
@@ -179,13 +178,10 @@ class AgentSpecResolver(
         allEnvBindings.putAll(parseEnvBindingsFromLegacyJson(specInfo.toolList))
         allEnvBindings.putAll(parseEnvBindingsFromLegacyJson(specInfo.mcpList))
 
-        log.info("[env-debug] Final allEnvBindings ({} entries): {}", allEnvBindings.size, allEnvBindings.keys)
-        if (allEnvBindings.isNotEmpty()) {
-            builder.addContextForTool(ToolEnvContext(bindings = allEnvBindings))
-            log.info("[env-debug] ToolEnvContext registered with {} bindings", allEnvBindings.size)
-        } else {
-            log.warn("[env-debug] No env bindings found — ToolEnvContext NOT registered!")
-        }
+        log.info("Resolved {} env binding(s) for agent '{}': {}", allEnvBindings.size, specInfo.agentName, allEnvBindings.keys)
+        // Registered even when empty: a tool method declaring a ToolEnvContext parameter needs a
+        // container, so require() can report "not configured" instead of failing injection.
+        builder.addContextForTool(ToolEnvContext(bindings = allEnvBindings))
 
         return builder.build()
     }

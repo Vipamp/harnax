@@ -2,7 +2,7 @@
 
 > 中文版本见 [mcp-management.zh-CN.md](./mcp-management.zh-CN.md)
 >
-> For the overall tool system design, see [tool-capability.en-US.md](./tool-capability.en-US.md). This document covers the full chain of MCP server data model, Admin management, binding/delivery, and runtime assembly, with discovered issues and pending TODOs at the end.
+> For the overall tool system design, see [tool-integration-design.en-US.md](./tool-integration-design.en-US.md); for tool annotations and the registration mechanism, see [tool-capability.en-US.md](./tool-capability.en-US.md). This document covers the full chain of MCP server data model, Admin management, binding/delivery, and runtime assembly, with discovered issues and pending TODOs at the end.
 
 ## 1. Overview
 

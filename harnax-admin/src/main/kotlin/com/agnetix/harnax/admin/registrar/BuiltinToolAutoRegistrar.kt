@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.registrar
 
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolEnvParam
+import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.tools.sdk.ToolEnvParamDescriptor
@@ -13,23 +14,30 @@ import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 
 /**
- * Automatically syncs built-in ToolBox metadata to the database when the admin service starts up.
+ * The single lifecycle entry point for builtin tools: insert, update and delete all happen here,
+ * driven by the `@Tool` / `@ToolMeta` annotations on the classpath. No page or API may write a
+ * `type = 'BUILTIN'` row (enforced in `AgentToolServiceImpl`).
  *
- * Each @Tool method in a ToolBox becomes a separate agent_tool record, enabling
- * independent enable/disable, needConfirm, and envParamDefs per method.
+ * Each @Tool method maps to one agent_tool record, enabling independent needConfirm, envParamDefs
+ * and per-method granting at runtime.
  *
- * Sync strategy:
- * - New tools: inserted with status=1, active=1
- * - Existing tools: only metadata fields are updated (displayName, description, readOnly, etc.)
- * - status field is NEVER overwritten (admin can manually disable tools)
- * - Removed ToolBox classes are NOT auto-deleted (admin must manually delete in UI)
- * - Env param defs from @ToolMeta.envParamDefs are synced per method to agent_tool_env_param
+ * Convergence strategy (runs on every startup):
+ * - In code, not in DB: inserted with status=1, active=1
+ * - In both: every code-owned field is overwritten, name and status included — so a renamed
+ *   `@Tool(name = ...)` converges in place and keeps its id and agent bindings
+ * - In DB, not in code: hard-deleted, together with its agent_tool_env_param definitions and its
+ *   agent_tool_binding rows. Identity is `beanName + methodName + toolName`, so only a renamed or
+ *   moved Java method (a bean rename, a method rename) changes the key and drops the old row.
+ * - Soft-deleted builtin rows are purged as well; the sync owns deletion.
+ * - Brakes on deletion: nothing is pruned when the registry yields no @Tool method, when any tool
+ *   group failed to sync, or when the stale set is at least as large as the live set.
  */
 @Component
 class BuiltinToolAutoRegistrar(
     private val toolRegistry: ToolRegistry,
     private val agentToolMapper: AgentToolMapper,
     private val agentToolEnvParamMapper: AgentToolEnvParamMapper,
+    private val agentToolBindingMapper: AgentToolBindingMapper,
 ) {
     private val log = LoggerFactory.getLogger(BuiltinToolAutoRegistrar::class.java)
 
@@ -42,6 +50,12 @@ class BuiltinToolAutoRegistrar(
         }
 
         log.info("[BuiltinToolAutoRegistrar] Syncing {} builtin tool groups to database", allMeta.size)
+
+        // Built before the loop so that a bean whose sync throws is never mistaken for a deleted one
+        val liveKeys = allMeta.flatMap { (beanName, meta) ->
+            meta.methods.map { method -> builtinKey(beanName, method.methodName, method.toolName) }
+        }.toSet()
+
         var successCount = 0
         var failCount = 0
 
@@ -55,6 +69,17 @@ class BuiltinToolAutoRegistrar(
                         requiredKeys.joinToString(",", prefix = "[", postfix = "]") { "\"$it\"" }
                     } else {
                         null
+                    }
+
+                    if (method.isRequired && requiredKeys.isNotEmpty()) {
+                        log.warn(
+                            "[BuiltinToolAutoRegistrar] Required tool '{}::{}' declares required env params {}, " +
+                                "but required tools carry no agent binding so these values can never be resolved. " +
+                                "Remove isRequired or the required env params.",
+                            beanName,
+                            method.toolName,
+                            requiredKeys,
+                        )
                     }
 
                     val agentTool = AgentTool().apply {
@@ -105,7 +130,59 @@ class BuiltinToolAutoRegistrar(
             successCount,
             failCount,
         )
+
+        pruneMissingBuiltinTools(liveKeys, failCount)
     }
+
+    /**
+     * Builtin rows are code-owned, so anything the classpath no longer declares is residue: a
+     * removed ToolBox class, a removed @Tool method, or a row left soft-deleted by the retired
+     * manual delete. All of them go, with their env definitions and agent bindings.
+     *
+     * Two brakes, because deleting is the one thing this sync must not get wrong: a failed group
+     * means the run is not trustworthy, and a stale set as big as the live set means the scan lost
+     * scope rather than the code losing tools.
+     */
+    private fun pruneMissingBuiltinTools(
+        liveKeys: Set<String>,
+        failCount: Int,
+    ) {
+        if (failCount > 0) {
+            log.error(
+                "[BuiltinToolAutoRegistrar] Skipping prune: {} tool group(s) failed to sync, so the live set is not trustworthy",
+                failCount,
+            )
+            return
+        }
+        val stale = agentToolMapper.selectAllBuiltin().filter { tool ->
+            tool.active == 0 || builtinKey(tool.beanName, tool.methodName, tool.name) !in liveKeys
+        }
+        if (stale.isEmpty()) {
+            return
+        }
+        if (stale.size >= liveKeys.size) {
+            log.error(
+                "[BuiltinToolAutoRegistrar] Skipping prune: {} stale record(s) vs only {} live key(s) — " +
+                    "the registry scan looks broken (deleted builtin tools?), not the code. Stale: {}",
+                stale.size,
+                liveKeys.size,
+                stale.map { "${it.beanName}::${it.methodName}(id=${it.id})" },
+            )
+            return
+        }
+
+        val ids = stale.map { it.id }
+        agentToolBindingMapper.deleteByToolIds(ids)
+        agentToolEnvParamMapper.deleteByToolIds(ids)
+        agentToolMapper.deleteBuiltinByIds(ids)
+        log.warn(
+            "[BuiltinToolAutoRegistrar] Removed {} builtin tool record(s) no longer declared by the code: {}",
+            stale.size,
+            stale.map { "${it.beanName}::${it.methodName}(id=${it.id})" },
+        )
+    }
+
+    private fun builtinKey(beanName: String?, methodName: String?, toolName: String?): String = "$beanName|$methodName|$toolName"
 
     /**
      * Sync @ToolEnvParamDef declarations to agent_tool_env_param table for a specific method record.

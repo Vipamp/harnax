@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.AgentToolUpdateRequest
 import com.agnetix.harnax.admin.dto.McpConfigEntry
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentToolService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -44,101 +45,114 @@ class AgentToolServiceImpl(
     override fun getAgentTool(id: Long): AgentTool? = agentToolMapper.selectById(id)
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun createAgentTool(request: AgentToolCreateRequest): Boolean = try {
-        val agentTool = AgentTool()
-        agentTool.name = request.name!!
-        agentTool.displayName = request.displayName
-        agentTool.displayNameZh = request.displayNameZh
-        agentTool.description = request.description ?: ""
-        agentTool.type = request.type
-        agentTool.beanName = request.beanName
-        agentTool.methodName = request.methodName
-        agentTool.httpUrl = request.httpUrl
-        agentTool.httpMethod = request.httpMethod ?: "POST"
-        agentTool.inputSchema = request.inputSchema
-        agentTool.outputSchema = request.outputSchema
-        agentTool.readOnly = if (request.readOnly == true) 1 else 0
-        agentTool.needConfirm = if (request.needConfirm == true) 1 else 0
-        agentTool.timeoutSeconds = request.timeoutSeconds ?: 30
-        agentTool.status = request.status ?: 1
+    override fun createAgentTool(request: AgentToolCreateRequest): Boolean {
+        // Outside the try block: a rejected request must surface its own message, not
+        // "Failed to create agent tool: ..."
+        requireManageableTool(request.type, "Creating a builtin tool through this API")
+        return try {
+            val agentTool = AgentTool()
+            agentTool.name = request.name!!
+            agentTool.displayName = request.displayName
+            agentTool.displayNameZh = request.displayNameZh
+            agentTool.description = request.description ?: ""
+            agentTool.type = request.type
+            agentTool.beanName = request.beanName
+            agentTool.methodName = request.methodName
+            agentTool.httpUrl = request.httpUrl
+            agentTool.httpMethod = request.httpMethod ?: "POST"
+            agentTool.inputSchema = request.inputSchema
+            agentTool.outputSchema = request.outputSchema
+            agentTool.readOnly = if (request.readOnly == true) 1 else 0
+            agentTool.needConfirm = if (request.needConfirm == true) 1 else 0
+            agentTool.timeoutSeconds = request.timeoutSeconds ?: 30
+            agentTool.status = request.status ?: 1
 
-        // Handle requiredEnvParamKeys: List -> JSON string
-        if (!request.requiredEnvParamKeys.isNullOrEmpty()) {
-            agentTool.requiredEnvParamKeys = objectMapper.writeValueAsString(request.requiredEnvParamKeys)
+            // Handle requiredEnvParamKeys: List -> JSON string
+            if (!request.requiredEnvParamKeys.isNullOrEmpty()) {
+                agentTool.requiredEnvParamKeys = objectMapper.writeValueAsString(request.requiredEnvParamKeys)
+            }
+
+            agentTool.tenantId = TenantContext.getTenantId() ?: 1
+            agentTool.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
+
+            if (request.httpHeaders != null) {
+                agentTool.httpHeaders = serializeHeaders(request.httpHeaders)
+            }
+
+            agentTool.createTime = LocalDateTime.now()
+            agentTool.updateTime = LocalDateTime.now()
+            agentToolMapper.insert(agentTool)
+
+            // Insert env param entries into agent_tool_env_param table
+            if (!request.envParams.isNullOrEmpty()) {
+                saveToolEnvParams(agentTool.id, request.envParams)
+            }
+            true
+        } catch (e: Exception) {
+            log.error("Failed to create agent tool", e)
+            throw RuntimeException("Failed to create agent tool: ${e.message}")
         }
-
-        agentTool.tenantId = TenantContext.getTenantId() ?: 1
-        agentTool.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
-
-        if (request.httpHeaders != null) {
-            agentTool.httpHeaders = serializeHeaders(request.httpHeaders)
-        }
-
-        agentTool.createTime = LocalDateTime.now()
-        agentTool.updateTime = LocalDateTime.now()
-        agentToolMapper.insert(agentTool)
-
-        // Insert env param entries into agent_tool_env_param table
-        if (!request.envParams.isNullOrEmpty()) {
-            saveToolEnvParams(agentTool.id, request.envParams)
-        }
-        true
-    } catch (e: Exception) {
-        log.error("Failed to create agent tool", e)
-        throw RuntimeException("Failed to create agent tool: ${e.message}")
     }
 
     @Transactional(rollbackFor = [Exception::class])
-    override fun updateAgentTool(id: Long, request: AgentToolUpdateRequest): Boolean = try {
-        val agentTool = getAgentTool(id)
-            ?: throw RuntimeException("Agent tool not found")
+    override fun updateAgentTool(id: Long, request: AgentToolUpdateRequest): Boolean {
+        val existing = getAgentTool(id) ?: throw RuntimeException("Agent tool not found")
+        // The row's own type and the requested type are both checked: re-typing a custom tool
+        // to BUILTIN would hand a user-owned row to the code sync, and editing a builtin row
+        // would be overwritten (or pruned) at the next startup.
+        requireManageableTool(existing.type, "Updating builtin tool ${existing.name}")
+        requireManageableTool(request.type, "Updating tool ${existing.name} to builtin type")
+        return try {
+            request.name?.let { existing.name = it }
+            request.displayName?.let { existing.displayName = it }
+            request.displayNameZh?.let { existing.displayNameZh = it }
+            request.description?.let { existing.description = it }
+            request.type?.let { existing.type = it }
+            request.beanName?.let { existing.beanName = it }
+            request.methodName?.let { existing.methodName = it }
+            request.httpUrl?.let { existing.httpUrl = it }
+            request.httpMethod?.let { existing.httpMethod = it }
+            request.inputSchema?.let { existing.inputSchema = it }
+            request.outputSchema?.let { existing.outputSchema = it }
+            request.readOnly?.let { existing.readOnly = if (it) 1 else 0 }
+            request.needConfirm?.let { existing.needConfirm = if (it) 1 else 0 }
+            request.timeoutSeconds?.let { existing.timeoutSeconds = it }
 
-        request.name?.let { agentTool.name = it }
-        request.displayName?.let { agentTool.displayName = it }
-        request.displayNameZh?.let { agentTool.displayNameZh = it }
-        request.description?.let { agentTool.description = it }
-        request.type?.let { agentTool.type = it }
-        request.beanName?.let { agentTool.beanName = it }
-        request.methodName?.let { agentTool.methodName = it }
-        request.httpUrl?.let { agentTool.httpUrl = it }
-        request.httpMethod?.let { agentTool.httpMethod = it }
-        request.inputSchema?.let { agentTool.inputSchema = it }
-        request.outputSchema?.let { agentTool.outputSchema = it }
-        request.readOnly?.let { agentTool.readOnly = if (it) 1 else 0 }
-        request.needConfirm?.let { agentTool.needConfirm = if (it) 1 else 0 }
-        request.timeoutSeconds?.let { agentTool.timeoutSeconds = it }
-
-        // Handle requiredEnvParamKeys: List -> JSON string
-        if (request.requiredEnvParamKeys != null) {
-            agentTool.requiredEnvParamKeys = objectMapper.writeValueAsString(request.requiredEnvParamKeys)
-        }
-
-        if (request.httpHeaders != null) {
-            agentTool.httpHeaders = serializeHeaders(request.httpHeaders)
-        }
-
-        agentTool.updateTime = LocalDateTime.now()
-        agentToolMapper.updateById(agentTool)
-
-        // Replace env param entries: delete old, insert new
-        if (request.envParams != null) {
-            agentToolEnvParamMapper.deleteByToolId(id)
-            if (request.envParams.isNotEmpty()) {
-                saveToolEnvParams(id, request.envParams)
+            // Handle requiredEnvParamKeys: List -> JSON string
+            if (request.requiredEnvParamKeys != null) {
+                existing.requiredEnvParamKeys = objectMapper.writeValueAsString(request.requiredEnvParamKeys)
             }
+
+            if (request.httpHeaders != null) {
+                existing.httpHeaders = serializeHeaders(request.httpHeaders)
+            }
+
+            existing.updateTime = LocalDateTime.now()
+            agentToolMapper.updateById(existing)
+
+            // Replace env param entries: delete old, insert new
+            if (request.envParams != null) {
+                agentToolEnvParamMapper.deleteByToolId(id)
+                if (request.envParams.isNotEmpty()) {
+                    saveToolEnvParams(id, request.envParams)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            log.error("Failed to update agent tool", e)
+            throw RuntimeException("Failed to update agent tool: ${e.message}")
         }
-        true
-    } catch (e: Exception) {
-        log.error("Failed to update agent tool", e)
-        throw RuntimeException("Failed to update agent tool: ${e.message}")
     }
 
     override fun toggleAgentToolStatus(id: Long, status: Int): Boolean {
-        agentToolMapper.selectById(id) ?: throw RuntimeException("Agent tool not found")
+        val agentTool = agentToolMapper.selectById(id) ?: throw RuntimeException("Agent tool not found")
+        requireManageableTool(agentTool.type, "Changing status of builtin tool ${agentTool.name}")
         return agentToolMapper.updateStatus(id, status) > 0
     }
 
     override fun deleteAgentTool(id: Long): Boolean {
+        val agentTool = agentToolMapper.selectById(id) ?: throw RuntimeException("Agent tool not found")
+        requireManageableTool(agentTool.type, "Deleting builtin tool ${agentTool.name}")
         agentToolEnvParamMapper.deleteByToolId(id)
         return agentToolMapper.deleteById(id) > 0
     }
@@ -183,6 +197,12 @@ class AgentToolServiceImpl(
     override fun getRequiredEnvParamKeys(id: Long): List<String> {
         val tool = agentToolMapper.selectById(id) ?: throw RuntimeException("Agent tool not found")
         return parseRequiredEnvParamKeys(tool.requiredEnvParamKeys) ?: emptyList()
+    }
+
+    private fun requireManageableTool(type: String?, action: String) {
+        if (type.equals(TOOL_TYPE_BUILTIN, ignoreCase = true)) {
+            throw BizException("Builtin tools are owned by the code sync (BuiltinToolAutoRegistrar): $action is not allowed")
+        }
     }
 
     private fun serializeHeaders(headers: List<McpConfigEntry>): String = secretFieldEncryptor.serializeWithEncryption(headers) ?: "[]"
@@ -279,5 +299,9 @@ class AgentToolServiceImpl(
                 defaultValue = maskedDefault,
             )
         }
+    }
+
+    private companion object {
+        const val TOOL_TYPE_BUILTIN = "BUILTIN"
     }
 }

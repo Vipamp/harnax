@@ -13,6 +13,9 @@ interface AgentToolEnvParamMapper {
 
     fun deleteByToolId(@Param("toolId") toolId: Long): Int
 
+    /** Cascade clean when the builtin tool sync removes records the code no longer declares */
+    fun deleteByToolIds(@Param("toolIds") toolIds: List<Long>): Int
+
     fun selectById(@Param("id") id: Long): AgentToolEnvParam?
 
     fun insert(envParam: AgentToolEnvParam): Int

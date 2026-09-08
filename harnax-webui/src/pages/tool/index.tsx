@@ -4,9 +4,7 @@ import {
   Input,
   message,
   Popover,
-  Result,
   Table,
-  Tabs,
   Tag,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -16,9 +14,8 @@ import { useIsMobile } from '@/utils/responsive';
 
 import { getBuiltinTools } from '@/services/ant-design-pro/tool';
 import {
-  ToolOutlined,
   BuildOutlined,
-  KeyOutlined,
+  ToolOutlined,
   EnvironmentOutlined,
 } from '@ant-design/icons';
 
@@ -35,7 +32,6 @@ const ToolManagement: React.FC = () => {
   const locale = intl.locale;
   const isMobile = useIsMobile();
 
-  const [activeTab, setActiveTab] = useState<string>('toolbox');
   const [builtinTools, setBuiltinTools] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [keyword, setKeyword] = useState<string>('');
@@ -193,67 +189,34 @@ const ToolManagement: React.FC = () => {
       }}
     >
       {contextHolder}
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'toolbox',
-            label: (
-              <span>
-                <BuildOutlined style={{ marginRight: 6 }} />
-                {intl.formatMessage({ id: 'pages.tool.marketplace', defaultMessage: 'Toolbox' })}
-              </span>
-            ),
-            children: (
-              <div>
-                <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                  <Input.Search
-                    placeholder={intl.formatMessage({ id: 'pages.tool.searchPlaceholder', defaultMessage: 'Search tool name or description' })}
-                    allowClear
-                    value={keyword}
-                    onChange={(e) => setKeyword(e.target.value)}
-                    style={{ maxWidth: isMobile ? '100%' : 400, width: isMobile ? '100%' : undefined }}
-                  />
-                </div>
-                <Table
-                  columns={columns}
-                  dataSource={filteredBuiltinTools}
-                  rowKey="id"
-                  loading={loading}
-                  pagination={false}
-                  size={isMobile ? 'small' : 'middle'}
-                  scroll={{ x: 'max-content' }}
-                  locale={{
-                    emptyText: (
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description={intl.formatMessage({ id: 'pages.tool.noTools', defaultMessage: 'No tools' })}
-                      />
-                    ),
-                  }}
-                />
-              </div>
-            ),
-          },
-          {
-            key: 'custom',
-            label: (
-              <span>
-                <KeyOutlined style={{ marginRight: 6 }} />
-                {intl.formatMessage({ id: 'pages.tool.customTools', defaultMessage: 'Custom Tools' })}
-              </span>
-            ),
-            children: (
-              <Result
-                status="info"
-                title={intl.formatMessage({ id: 'pages.tool.comingSoon', defaultMessage: 'Coming soon' })}
-                style={{ marginTop: 80 }}
+      <div>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <Input.Search
+            placeholder={intl.formatMessage({ id: 'pages.tool.searchPlaceholder', defaultMessage: 'Search tool name or description' })}
+            allowClear
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            style={{ maxWidth: isMobile ? '100%' : 400, width: isMobile ? '100%' : undefined }}
+          />
+        </div>
+        <Table
+          columns={columns}
+          dataSource={filteredBuiltinTools}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+          size={isMobile ? 'small' : 'middle'}
+          scroll={{ x: 'max-content' }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={intl.formatMessage({ id: 'pages.tool.noTools', defaultMessage: 'No tools' })}
               />
             ),
-          },
-        ]}
-      />
+          }}
+        />
+      </div>
     </PageContainer>
   );
 };

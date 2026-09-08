@@ -7,9 +7,6 @@ data class ToolConfig(
     @Schema(description = "Tool ID", example = "1")
     val id: Long? = null,
 
-    @Schema(description = "Whether allow to skip if missing", example = "true")
-    val enableSkip: String? = null,
-
     @Schema(description = "Requires human confirmation (constrained by tool entity needConfirm)", example = "false")
     val needConfirm: Boolean? = null,
 

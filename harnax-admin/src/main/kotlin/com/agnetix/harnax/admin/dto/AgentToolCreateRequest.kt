@@ -20,14 +20,18 @@ data class AgentToolCreateRequest(
     @Schema(description = "Tool description (sent to LLM)")
     val description: String? = null,
 
-    @Schema(description = "Tool type: BUILTIN / CUSTOM / HTTP", example = "BUILTIN", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(
+        description = "Tool type: CUSTOM / HTTP. BUILTIN is rejected - builtin tools are created by the code sync only",
+        example = "HTTP",
+        requiredMode = Schema.RequiredMode.REQUIRED,
+    )
     @NotBlank(message = "Tool type cannot be empty")
-    val type: String = "BUILTIN",
+    val type: String = "CUSTOM",
 
-    @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Spring Bean name (for CUSTOM type)")
     val beanName: String? = null,
 
-    @Schema(description = "Java method name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Java method name (for CUSTOM type)")
     val methodName: String? = null,
 
     @Schema(description = "HTTP request URL (for HTTP type)")

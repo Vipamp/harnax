@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -13,23 +14,23 @@ import kotlin.test.assertTrue
  * Agent tool management regression: /api/admin/tools
  *
  * Tools cannot be created via API; builtin ToolBox beans (TimeToolBox/EmailToolBox)
- * are auto-registered on startup by BuiltinToolAutoRegistrar. Tests operate on
- * these builtin records.
+ * are auto-registered on startup by BuiltinToolAutoRegistrar. Since every registered record
+ * is builtin, this suite covers the read endpoints and the write rejection of builtin rows —
+ * the CUSTOM/HTTP write paths are covered by AgentToolServiceImplTest with a mocked mapper,
+ * as they cannot be reached without a create API.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class AgentToolCrudIT : BaseAdminIT() {
 
     private var toolId: Long = -1
-    private var toolName: String = ""
 
     private fun locateTool(): Long {
         if (toolId > 0) return toolId
-        // sendEmail is safe to mutate: other ITs do not depend on it
+        // sendEmail is a builtin row other ITs do not depend on, so it is the safe write target to probe
         val record = findInPage("/api/admin/tools/page") { it["name"]?.asText() == "sendEmail" }
         assertNotNull(record, "builtin tool sendEmail should be auto-registered on startup")
         toolId = record["id"].asLong()
-        toolName = record["name"].asText()
         return toolId
     }
 
@@ -45,7 +46,7 @@ class AgentToolCrudIT : BaseAdminIT() {
 
     @Test
     @Order(2)
-    fun `builtin endpoint returns enabled builtin tools`() {
+    fun `builtin endpoint returns every registered builtin tool`() {
         val data = assertOk(getJson("/api/admin/tools/builtin"))
         assertTrue(data.isArray)
         val names = data.map { it["name"].asText() }
@@ -71,27 +72,24 @@ class AgentToolCrudIT : BaseAdminIT() {
 
     @Test
     @Order(5)
-    fun `update tool description and verify`() {
-        val body = mapOf("description" to "IT updated description")
-        assertOk(putJson("/api/admin/tools/update/${locateTool()}", body))
+    fun `update on a builtin tool is rejected and leaves the record untouched`() {
+        val body = mapOf("description" to "IT should not be able to write this")
+        assertErr(putJson("/api/admin/tools/update/${locateTool()}", body))
 
         val data = assertOk(getJson("/api/admin/tools/${locateTool()}"))
-        assertEquals("IT updated description", data["description"].asText())
+        assertNotEquals("IT should not be able to write this", data["description"].asText())
     }
 
     @Test
     @Order(6)
-    fun `toggle tool status off removes it from available list`() {
-        assertOk(putJson("/api/admin/tools/toggle/${locateTool()}?status=0"))
-        var data = assertOk(getJson("/api/admin/tools/${locateTool()}"))
-        assertEquals(0, data["status"].asInt())
+    fun `toggle on a builtin tool is rejected and keeps it enabled`() {
+        assertErr(putJson("/api/admin/tools/toggle/${locateTool()}?status=0"))
+
+        val data = assertOk(getJson("/api/admin/tools/${locateTool()}"))
+        assertEquals(1, data["status"].asInt(), "builtin status is code-owned and stays enabled")
 
         val available = assertOk(getJson("/api/admin/tools/available"))
-        assertTrue(available.none { it["id"].asLong() == toolId }, "disabled tool must not be available")
-
-        assertOk(putJson("/api/admin/tools/toggle/${locateTool()}?status=1"))
-        data = assertOk(getJson("/api/admin/tools/${locateTool()}"))
-        assertEquals(1, data["status"].asInt())
+        assertTrue(available.any { it["id"].asLong() == toolId }, "builtin tool stays available")
     }
 
     @Test
@@ -110,11 +108,10 @@ class AgentToolCrudIT : BaseAdminIT() {
 
     @Test
     @Order(9)
-    fun `delete tool then detail returns empty`() {
-        assertOk(deleteJson("/api/admin/tools/${locateTool()}"))
+    fun `delete on a builtin tool is rejected and the record survives`() {
+        assertErr(deleteJson("/api/admin/tools/${locateTool()}"))
 
-        val node = getJson("/api/admin/tools/$toolId")
-        assertEquals(200, node["code"].asInt())
-        assertTrue(node["data"] == null || node["data"].isNull, "deleted tool should not be returned")
+        val data = assertOk(getJson("/api/admin/tools/$toolId"))
+        assertEquals("sendEmail", data["name"].asText(), "builtin row must survive a delete attempt")
     }
 }

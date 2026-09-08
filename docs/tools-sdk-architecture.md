@@ -57,7 +57,7 @@ graph TB
 | `ToolCallContext` | `sdk` | 工具调用上下文接口 |
 | `SessionMetaContext` | `sdk` | 会话级上下文（agentId + sessionId） |
 | `UserIdentifier` | `sdk` | 用户标识（userId） |
-| `ToolSpec` | `sdk` | 工具规格数据类（toolId、toolName、skipIfMissing、needConfirm） |
+| `ToolSpec` | `sdk` | 工具规格数据类（toolId、toolName、needConfirm） |
 | `HttpProxyToolBox` | `sdk` | HTTP 代理工具，实现 `AgentTool` 接口，将工具调用转发到 HTTP 端点 |
 | `ToolRegistry` | `sdk.registry` | Spring 容器级工具注册中心，自动发现所有 `ToolBox` Bean |
 | `ToolCallLogAdaptor` | `sdk.adaptor` | 工具调用日志适配器接口 |

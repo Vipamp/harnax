@@ -72,7 +72,7 @@ declare namespace API {
     isPublic?: number;
     owner?: string;
     mcpList?: { id: number; enableSkip?: string; envBindings?: EnvBinding[] }[];
-    toolList?: { id: number; enableSkip?: string; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
+    toolList?: { id: number; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // comma-separated skill IDs
   };
 
@@ -111,7 +111,6 @@ declare namespace API {
     toolDisplayNameZh?: string;
     toolDescription?: string;
     toolType?: string;
-    enableSkip?: string;
     needConfirm?: boolean;
     envBindings?: EnvBinding[];
   };

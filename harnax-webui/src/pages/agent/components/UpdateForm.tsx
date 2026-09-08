@@ -109,9 +109,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         setToolConfigs(values.toolList.map((item: any) => ({
           toolId: item.toolId,
           toolName: item.toolName,
-          enableSkip: item.enableSkip === 'true',
           needConfirm: item.needConfirm || false,
-          entityNeedConfirm: item.needConfirm ? 1 : 0,
           envBindings: (item.envBindings || []).map((b: any) => ({
             envKey: b.envKey,
             envValue: b.customValue || b.envValue || '',
@@ -139,25 +137,12 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
   useEffect(() => {
     if (tools.length === 0 || toolConfigs.every(c => !c.toolId)) return;
     const updated = toolConfigs.map(config => {
-      if (!config.toolId) return config;
+      if (!config.toolId || config.envEntries) return config;
       const tool = tools.find((t: any) => t.id === config.toolId);
-      if (!tool) return config;
-      let changed = false;
-      const newConfig = { ...config };
-      if (tool.needConfirm !== config.entityNeedConfirm) {
-        newConfig.entityNeedConfirm = tool.needConfirm;
-        changed = true;
-      }
-      if (!config.envEntries && tool.envParams && tool.envParams.length > 0) {
-        newConfig.envEntries = tool.envParams;
-        changed = true;
-      }
-      return changed ? newConfig : config;
+      if (!tool || !tool.envParams || tool.envParams.length === 0) return config;
+      return { ...config, envEntries: tool.envParams };
     });
-    const changed = updated.some((c, i) =>
-      c.entityNeedConfirm !== toolConfigs[i].entityNeedConfirm ||
-      c.envEntries !== toolConfigs[i].envEntries
-    );
+    const changed = updated.some((c, i) => c.envEntries !== toolConfigs[i].envEntries);
     if (changed) { setToolConfigs(updated); }
   }, [tools]);
 
@@ -300,7 +285,6 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           skillList: skillConfigs.filter(c => c.skillId).map(c => c.skillId!.toString()).join(','),
           toolList: toolConfigs.filter(c => c.toolId).map(c => ({
             id: c.toolId,
-            enableSkip: c.enableSkip ? 'true' : 'false',
             needConfirm: c.needConfirm || false,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
               envKey: b.envKey,

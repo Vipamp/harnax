@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.dto.AgentToolCreateRequest
 import com.agnetix.harnax.admin.dto.AgentToolUpdateRequest
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.AgentTool
@@ -72,7 +73,7 @@ class AgentToolServiceImplTest {
             id = 1L
             name = "time-tool-box"
             displayName = "时间工具"
-            type = "BUILTIN"
+            type = "CUSTOM"
             beanName = "time-tool-box"
             needConfirm = 0
             status = 1
@@ -92,6 +93,21 @@ class AgentToolServiceImplTest {
 
         // Default mock: no env param entries
         `when`(agentToolEnvParamMapper.selectByToolId(anyLong())).thenReturn(emptyList())
+    }
+
+    /** A row owned by the code sync: the write APIs must refuse to touch these. */
+    private fun builtinTool(id: Long = 1L, name: String = "time-tool-box"): AgentTool = AgentTool().apply {
+        this.id = id
+        this.name = name
+        displayName = "时间工具"
+        type = "BUILTIN"
+        beanName = name
+        methodName = "getCurrentTime"
+        needConfirm = 0
+        status = 1
+        active = 1
+        createTime = LocalDateTime.now()
+        updateTime = LocalDateTime.now()
     }
 
     @Nested
@@ -184,13 +200,32 @@ class AgentToolServiceImplTest {
     inner class CreateAgentToolTests {
 
         @Test
-        @DisplayName("createAgentTool - Create BUILTIN type successfully")
-        fun `createAgentTool should create BUILTIN type successfully`() {
+        @DisplayName("createAgentTool - Reject BUILTIN type")
+        fun `createAgentTool should reject BUILTIN type`() {
             // Given
             val request = AgentToolCreateRequest(
                 name = "time-tool-box",
                 displayName = "时间工具",
                 type = "BUILTIN",
+                beanName = "time-tool-box",
+            )
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                agentToolService.createAgentTool(request)
+            }
+            assertTrue(exception.message!!.contains("Builtin tools are owned by the code sync"))
+            verify(agentToolMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createAgentTool - Create CUSTOM type successfully")
+        fun `createAgentTool should create CUSTOM type successfully`() {
+            // Given
+            val request = AgentToolCreateRequest(
+                name = "time-tool-box",
+                displayName = "时间工具",
+                type = "CUSTOM",
                 beanName = "time-tool-box",
             )
 
@@ -233,7 +268,7 @@ class AgentToolServiceImplTest {
             val request = AgentToolCreateRequest(
                 name = "dangerous-tool",
                 displayName = "危险工具",
-                type = "BUILTIN",
+                type = "CUSTOM",
                 beanName = "dangerous-tool",
                 needConfirm = true,
             )
@@ -260,7 +295,7 @@ class AgentToolServiceImplTest {
             )
             val request = AgentToolCreateRequest(
                 name = "env-tool",
-                type = "BUILTIN",
+                type = "CUSTOM",
                 beanName = "env-tool",
                 envParams = envEntries,
             )
@@ -293,7 +328,7 @@ class AgentToolServiceImplTest {
             // Given
             val request = AgentToolCreateRequest(
                 name = "no-env-tool",
-                type = "BUILTIN",
+                type = "CUSTOM",
                 beanName = "no-env-tool",
             )
 
@@ -316,7 +351,8 @@ class AgentToolServiceImplTest {
             )
             val request = AgentToolCreateRequest(
                 name = "secret-tool",
-                type = "BUILTIN",
+                type = "CUSTOM",
+                beanName = "secret-tool",
                 envParams = envEntries,
             )
 
@@ -343,7 +379,8 @@ class AgentToolServiceImplTest {
             )
             val request = AgentToolCreateRequest(
                 name = "plain-tool",
-                type = "BUILTIN",
+                type = "CUSTOM",
+                beanName = "plain-tool",
                 envParams = envEntries,
             )
 
@@ -399,6 +436,36 @@ class AgentToolServiceImplTest {
                 agentToolService.updateAgentTool(999L, request)
             }
             assertTrue(exception.message!!.contains("Agent tool not found"))
+            verify(agentToolMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgentTool - Reject builtin tool")
+        fun `updateAgentTool should reject builtin tool`() {
+            // Given
+            val request = AgentToolUpdateRequest(displayName = "改名尝试")
+            `when`(agentToolMapper.selectById(1L)).thenReturn(builtinTool())
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                agentToolService.updateAgentTool(1L, request)
+            }
+            assertTrue(exception.message!!.contains("Updating builtin tool time-tool-box"))
+            verify(agentToolMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateAgentTool - Reject switching a tool to builtin type")
+        fun `updateAgentTool should reject switching type to builtin`() {
+            // Given
+            val request = AgentToolUpdateRequest(type = "BUILTIN")
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                agentToolService.updateAgentTool(1L, request)
+            }
+            assertTrue(exception.message!!.contains("to builtin type"))
             verify(agentToolMapper, never()).updateById(any())
         }
 
@@ -511,6 +578,20 @@ class AgentToolServiceImplTest {
             assertTrue(exception.message!!.contains("Agent tool not found"))
             verify(agentToolMapper, never()).updateStatus(anyLong(), anyInt())
         }
+
+        @Test
+        @DisplayName("toggleAgentToolStatus - Reject builtin tool")
+        fun `toggleAgentToolStatus should reject builtin tool`() {
+            // Given
+            `when`(agentToolMapper.selectById(1L)).thenReturn(builtinTool())
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                agentToolService.toggleAgentToolStatus(1L, 0)
+            }
+            assertTrue(exception.message!!.contains("Changing status of builtin tool"))
+            verify(agentToolMapper, never()).updateStatus(anyLong(), anyInt())
+        }
     }
 
     @Nested
@@ -521,6 +602,7 @@ class AgentToolServiceImplTest {
         @DisplayName("deleteAgentTool - Logically delete and cascade delete env params")
         fun `deleteAgentTool should delete tool and cascade env param entries`() {
             // Given
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
             `when`(agentToolEnvParamMapper.deleteByToolId(1L)).thenReturn(2)
             `when`(agentToolMapper.deleteById(1L)).thenReturn(1)
 
@@ -534,19 +616,47 @@ class AgentToolServiceImplTest {
         }
 
         @Test
-        @DisplayName("deleteAgentTool - Return false when not found")
-        fun `deleteAgentTool should return false when not found`() {
+        @DisplayName("deleteAgentTool - Throw RuntimeException when tool not found")
+        fun `deleteAgentTool should throw when tool not found`() {
             // Given
-            `when`(agentToolEnvParamMapper.deleteByToolId(999L)).thenReturn(0)
-            `when`(agentToolMapper.deleteById(999L)).thenReturn(0)
+            `when`(agentToolMapper.selectById(999L)).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> {
+                agentToolService.deleteAgentTool(999L)
+            }
+            assertTrue(exception.message!!.contains("Agent tool not found"))
+            verify(agentToolMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteAgentTool - Return false when nothing was deleted")
+        fun `deleteAgentTool should return false when nothing was deleted`() {
+            // Given
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+            `when`(agentToolMapper.deleteById(1L)).thenReturn(0)
 
             // When
-            val result = agentToolService.deleteAgentTool(999L)
+            val result = agentToolService.deleteAgentTool(1L)
 
             // Then
             assertFalse(result)
-            verify(agentToolEnvParamMapper).deleteByToolId(999L)
-            verify(agentToolMapper).deleteById(999L)
+            verify(agentToolMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteAgentTool - Reject builtin tool")
+        fun `deleteAgentTool should reject builtin tool`() {
+            // Given
+            `when`(agentToolMapper.selectById(1L)).thenReturn(builtinTool())
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                agentToolService.deleteAgentTool(1L)
+            }
+            assertTrue(exception.message!!.contains("Deleting builtin tool"))
+            verify(agentToolMapper, never()).deleteById(anyLong())
+            verify(agentToolEnvParamMapper, never()).deleteByToolId(anyLong())
         }
     }
 
@@ -675,7 +785,7 @@ class AgentToolServiceImplTest {
         @DisplayName("getBuiltinTools - Return builtin tools only")
         fun `getBuiltinTools should return builtin tools`() {
             // Given
-            `when`(agentToolMapper.selectBuiltinToolList()).thenReturn(listOf(testAgentTool))
+            `when`(agentToolMapper.selectBuiltinToolList()).thenReturn(listOf(builtinTool()))
 
             // When
             val result = agentToolService.getBuiltinTools()

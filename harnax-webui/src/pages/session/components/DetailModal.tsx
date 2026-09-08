@@ -277,13 +277,6 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
                       )}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      {tool.enableSkip && (
-                        <Tag color={tool.enableSkip === 'true' ? 'orange' : 'default'}>
-                          {tool.enableSkip === 'true'
-                            ? intl.formatMessage({ id: 'pages.session.allowSkip', defaultMessage: 'Allow Skip' })
-                            : intl.formatMessage({ id: 'pages.session.notAllowSkip', defaultMessage: 'Not Allow Skip' })}
-                        </Tag>
-                      )}
                       {tool.needConfirm && (
                         <Tag color="orange">{intl.formatMessage({ id: 'pages.session.needConfirm', defaultMessage: 'Need Confirm' })}</Tag>
                       )}

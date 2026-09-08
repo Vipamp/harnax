@@ -54,4 +54,11 @@
         DELETE FROM agent_tool_env_param WHERE tool_id = #{toolId}
     </delete>
 
+    <delete id="deleteByToolIds">
+        DELETE FROM agent_tool_env_param WHERE tool_id IN
+        <foreach collection="toolIds" item="toolId" open="(" separator="," close=")">
+            #{toolId}
+        </foreach>
+    </delete>
+
 </mapper>

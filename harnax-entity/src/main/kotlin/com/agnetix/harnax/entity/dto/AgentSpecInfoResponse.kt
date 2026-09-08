@@ -38,7 +38,7 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Chat model ID")
     val modelId: Long,
 
-    @Schema(description = "Tool bindings (JSON: [{id, enableSkip, needConfirm, envBindings}])")
+    @Schema(description = "Tool bindings (JSON: [{id, needConfirm, envBindings}])")
     val toolList: String = "[]",
 
     @Schema(description = "MCP bindings (JSON: [{id, enableSkip, envBindings}])")

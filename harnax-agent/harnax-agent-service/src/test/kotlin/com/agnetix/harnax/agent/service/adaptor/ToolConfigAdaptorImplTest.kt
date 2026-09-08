@@ -86,7 +86,7 @@ class ToolConfigAdaptorImplTest {
                 httpHeaders = null, envParams = null, inputSchema = null,
                 outputSchema = null, readOnly = 0, needConfirm = 0,
                 requiredEnvParamKeys = null, timeoutSeconds = 30,
-                enableSkip = "false", bindingNeedConfirm = false,
+                bindingNeedConfirm = false,
             )
             stubContext(listOf(dto))
 

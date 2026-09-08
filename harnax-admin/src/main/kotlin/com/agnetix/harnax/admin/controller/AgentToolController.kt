@@ -48,7 +48,10 @@ class AgentToolController(
     }
 
     @PutMapping("/update/{id}")
-    @Operation(summary = "Update tool", description = "Update tool information by ID")
+    @Operation(
+        summary = "Update tool",
+        description = "Update a CUSTOM/HTTP tool by ID. Builtin tools are rejected: they are owned by the code sync",
+    )
     fun updateAgentTool(
         @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
         @Valid @RequestBody request: AgentToolUpdateRequest,
@@ -60,7 +63,10 @@ class AgentToolController(
     }
 
     @PutMapping("/toggle/{id}")
-    @Operation(summary = "Toggle tool status", description = "Enable or disable tool")
+    @Operation(
+        summary = "Toggle tool status",
+        description = "Enable or disable a CUSTOM/HTTP tool. Builtin tools are always enabled by the code sync and are rejected here",
+    )
     fun toggleAgentTool(
         @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
         @Parameter(description = "Status (0: disabled 1: enabled)") @RequestParam(name = "status") status: Int,
@@ -72,7 +78,10 @@ class AgentToolController(
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Delete tool", description = "Logical delete tool by ID")
+    @Operation(
+        summary = "Delete tool",
+        description = "Logically delete a CUSTOM/HTTP tool by ID. Builtin tools are rejected: the code sync removes them when the code deletes them",
+    )
     fun deleteAgentTool(
         @Parameter(description = "Tool ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<Void> = try {
@@ -95,7 +104,10 @@ class AgentToolController(
     }
 
     @GetMapping("/builtin")
-    @Operation(summary = "Get builtin tools", description = "Get all builtin tools that are enabled and active")
+    @Operation(
+        summary = "Get builtin tools",
+        description = "Get every builtin tool registered by the code sync (active rows, always enabled). Read-only: builtin tools cannot be written through this API",
+    )
     fun getBuiltinTools(): ResultVo<List<AgentToolResponse>> = try {
         val tools = agentToolService.getBuiltinTools()
         ResultVo.success(tools.map { agentToolService.convertToResponse(it) })

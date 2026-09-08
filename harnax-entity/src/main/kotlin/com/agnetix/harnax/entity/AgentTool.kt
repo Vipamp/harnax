@@ -29,8 +29,8 @@ class AgentTool : Serializable {
     @Schema(description = "Tool description (sent to LLM)")
     var description: String = ""
 
-    @Schema(description = "Tool type: BUILTIN / CUSTOM / HTTP")
-    var type: String = "BUILTIN"
+    @Schema(description = "Tool type: CUSTOM / HTTP; BUILTIN is code-owned and only written by the builtin tool sync")
+    var type: String = "CUSTOM"
 
     @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
     var beanName: String? = null

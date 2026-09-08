@@ -2,7 +2,7 @@
 
 > 中文版本见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)
 >
-> For the overall tool system design, see [tool-capability.en-US.md](./tool-capability.en-US.md); for MCP server management, see [mcp-management.en-US.md](./mcp-management.en-US.md). This document covers the full chain of Skill data model, repository categories, sync-into-DB, agent configuration, config delivery and runtime assembly, ending with the issues found during the full-chain walkthrough, their fixes, and what is still pending.
+> For the overall tool system design, see [tool-integration-design.en-US.md](./tool-integration-design.en-US.md); for tool annotations and the registration mechanism, see [tool-capability.en-US.md](./tool-capability.en-US.md); for MCP server management, see [mcp-management.en-US.md](./mcp-management.en-US.md). This document covers the full chain of Skill data model, repository categories, sync-into-DB, agent configuration, config delivery and runtime assembly, ending with the issues found during the full-chain walkthrough, their fixes, and what is still pending.
 
 ## 1. Overview
 

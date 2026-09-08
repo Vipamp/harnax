@@ -289,7 +289,6 @@ class InternalApiController(
             val items = toolBindings.map { binding ->
                 mapOf(
                     "id" to binding.toolId,
-                    "enable_skip" to binding.enableSkip,
                     "need_confirm" to (binding.needConfirm == 1),
                     "env_bindings" to resolveEnvBindingsJson(binding.envBindings),
                 )
@@ -297,10 +296,27 @@ class InternalApiController(
             objectMapper.writeValueAsString(items)
         }
 
-        val toolDetails = toolBindings.mapNotNull { binding ->
-            val tool = agentToolMapper.selectById(binding.toolId)
+        // Required builtin tools carry no binding row: they are appended at delivery time so that
+        // no agent configuration can omit them. A stale binding on such a tool is still honoured.
+        val bindingByToolId = toolBindings.associateBy { it.toolId }
+        val boundToolIds = bindingByToolId.keys
+        val toolIdsToDeliver = (
+            toolBindings.map { it.toolId } +
+                agentToolMapper.selectRequiredTools().map { it.id }.filter { it !in boundToolIds }
+            ).distinct()
+        val toolById = if (toolIdsToDeliver.isEmpty()) {
+            emptyMap()
+        } else {
+            agentToolMapper.selectByIds(toolIdsToDeliver).associateBy { it.id }
+        }
+        val missingToolIds = toolIdsToDeliver - toolById.keys
+        if (missingToolIds.isNotEmpty()) {
+            log.warn("Tools not found (deleted?), skipped from spec: toolIds={}", missingToolIds)
+        }
+
+        val toolDetails = toolIdsToDeliver.mapNotNull { toolId ->
+            val tool = toolById[toolId]
             if (tool == null) {
-                log.warn("Tool not found: toolId={}", binding.toolId)
                 null
             } else {
                 ToolDetailDto(
@@ -323,8 +339,8 @@ class InternalApiController(
                     needConfirm = tool.needConfirm,
                     requiredEnvParamKeys = tool.requiredEnvParamKeys,
                     timeoutSeconds = tool.timeoutSeconds,
-                    enableSkip = binding.enableSkip,
-                    bindingNeedConfirm = binding.needConfirm == 1,
+                    status = tool.status,
+                    bindingNeedConfirm = bindingByToolId[toolId]?.needConfirm == 1,
                 )
             }
         }

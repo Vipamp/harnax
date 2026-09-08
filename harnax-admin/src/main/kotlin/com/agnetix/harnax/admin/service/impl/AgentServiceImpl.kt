@@ -218,7 +218,6 @@ class AgentServiceImpl(
                         toolDisplayNameZh = fullTool.displayNameZh,
                         toolDescription = fullTool.description,
                         toolType = fullTool.type,
-                        enableSkip = binding.enableSkip,
                         needConfirm = binding.needConfirm == 1,
                         envBindings = parseEnvBindingsJson(binding.envBindings),
                     ),
@@ -311,22 +310,17 @@ class AgentServiceImpl(
         val now = LocalDateTime.now()
         val bindings = toolList.mapNotNull { config ->
             val toolId = config.id ?: return@mapNotNull null
-            val toolEntity = agentToolService.getAgentTool(toolId)
-            val finalNeedConfirm = if (toolEntity != null && toolEntity.needConfirm == 0) {
-                0
-            } else {
-                if (config.needConfirm == true) 1 else 0
-            }
             AgentToolBinding().apply {
                 this.agentId = agentId
                 this.toolId = toolId
-                this.enableSkip = config.enableSkip ?: "false"
-                this.needConfirm = finalNeedConfirm
+                // Runtime ORs agent_tool.needConfirm with this value, so the binding level can only
+                // tighten confirmation, never lift a tool that the code declares as confirm-worthy.
+                this.needConfirm = if (config.needConfirm == true) 1 else 0
                 this.envBindings = serializeEnvBindings(config.envBindings)
                 this.createTime = now
                 this.updateTime = now
             }
-        }
+        }.distinctBy { it.toolId }
         if (bindings.isNotEmpty()) {
             toolBindingMapper.batchInsert(bindings)
         }

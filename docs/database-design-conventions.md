@@ -142,7 +142,6 @@ CREATE TABLE IF NOT EXISTS agent_tool_binding (
     id           BIGINT AUTO_INCREMENT PRIMARY KEY,
     agent_id     BIGINT NOT NULL,
     tool_id      BIGINT NOT NULL,
-    enable_skip  VARCHAR(5) DEFAULT 'false',
     need_confirm TINYINT    DEFAULT 0,
     env_bindings TEXT       DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
     create_time  DATETIME   DEFAULT CURRENT_TIMESTAMP,

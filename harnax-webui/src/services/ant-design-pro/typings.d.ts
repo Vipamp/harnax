@@ -371,7 +371,6 @@ declare namespace API {
     toolDisplayNameZh?: string;
     toolDescription?: string;
     toolType?: string;
-    enableSkip?: string;
     needConfirm?: boolean;
     envBindings?: EnvBinding[];
   };

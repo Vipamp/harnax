@@ -12,6 +12,11 @@ interface AgentToolService {
 
     fun getAgentTool(id: Long): AgentTool?
 
+    /**
+     * The four write methods below serve CUSTOM/HTTP tools only; each rejects `type = 'BUILTIN'`
+     * because [com.agnetix.harnax.admin.registrar.BuiltinToolAutoRegistrar] is the sole owner of
+     * builtin rows (insert, update and hard delete all happen at startup).
+     */
     fun createAgentTool(request: AgentToolCreateRequest): Boolean
 
     fun updateAgentTool(id: Long, request: AgentToolUpdateRequest): Boolean

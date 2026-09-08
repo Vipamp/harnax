@@ -18,13 +18,13 @@ data class AgentToolUpdateRequest(
     @Schema(description = "Tool description (sent to LLM)")
     val description: String? = null,
 
-    @Schema(description = "Tool type: BUILTIN / CUSTOM / HTTP")
+    @Schema(description = "Tool type: CUSTOM / HTTP. BUILTIN is rejected on update")
     val type: String? = null,
 
-    @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Spring Bean name (for CUSTOM type)")
     val beanName: String? = null,
 
-    @Schema(description = "Java method name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Java method name (for CUSTOM type)")
     val methodName: String? = null,
 
     @Schema(description = "HTTP request URL (for HTTP type)")

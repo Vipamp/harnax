@@ -195,7 +195,6 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
           skillList: skillConfigs.filter(c => c.skillId).map(c => c.skillId).join(','),
           toolList: toolConfigs.filter(c => c.toolId).map(c => ({
             id: c.toolId,
-            enableSkip: c.enableSkip ? 'true' : 'false',
             needConfirm: c.needConfirm || false,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
               envKey: b.envKey,

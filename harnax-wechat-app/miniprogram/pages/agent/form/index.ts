@@ -16,7 +16,6 @@ interface ToolOption {
   name: string;
   label: string;
   type?: string;
-  needConfirm: number; // 实体 needConfirm（0/1），约束是否可切换"需要确认"
   envParams: API.ToolEnvParamEntry[];
 }
 
@@ -35,8 +34,6 @@ interface ToolConfigVM {
   toolId?: number;
   label: string;
   pickerIndex: number;
-  entityNeedConfirm: number;
-  enableSkip: boolean;
   needConfirm: boolean;
   envBindings: EnvBindingVM[];
 }
@@ -159,7 +156,6 @@ Page({
         name: t.name,
         label: t.displayNameZh || t.displayName || t.name,
         type: t.type,
-        needConfirm: t.needConfirm ? 1 : 0,
         envParams: (t.envParams || []) as API.ToolEnvParamEntry[],
       }));
       const mcpOptions = (mcpRes.records || []) as API.McpItem[];
@@ -202,8 +198,6 @@ Page({
         toolId: t.toolId,
         label: opt?.label || t.toolDisplayNameZh || t.toolDisplayName || t.toolName || '未知工具',
         pickerIndex: optIdx,
-        entityNeedConfirm: opt?.needConfirm ?? 1,
-        enableSkip: t.enableSkip === 'true',
         needConfirm: !!t.needConfirm,
         envBindings: buildEnvBindings(entries, envVarOptions, t.envBindings),
       };
@@ -289,7 +283,7 @@ Page({
   // ---- 工具配置 ----
   onAddTool() {
     const toolConfigs = this.data.toolConfigs.concat([
-      { _id: nextId(), label: '', pickerIndex: -1, entityNeedConfirm: 1, enableSkip: false, needConfirm: false, envBindings: [] },
+      { _id: nextId(), label: '', pickerIndex: -1, needConfirm: false, envBindings: [] },
     ]);
     this.setData({ toolConfigs });
   },
@@ -311,16 +305,10 @@ Page({
       toolId: tool.id,
       label: tool.label,
       pickerIndex: optIdx,
-      entityNeedConfirm: tool.needConfirm,
-      needConfirm: tool.needConfirm === 1 ? prev.needConfirm : false,
+      needConfirm: false,
       envBindings: buildEnvBindings(tool.envParams, this.data.envVarOptions),
     };
     this.setData({ toolConfigs: configs });
-  },
-
-  onToolEnableSkip(e: any) {
-    const idx = Number(e.currentTarget.dataset.index);
-    this.setData({ [`toolConfigs[${idx}].enableSkip`]: !!e.detail.value });
   },
 
   onToolNeedConfirm(e: any) {
@@ -451,7 +439,6 @@ Page({
         .filter((c) => c.toolId)
         .map((c) => ({
           id: c.toolId as number,
-          enableSkip: c.enableSkip ? 'true' : 'false',
           needConfirm: c.needConfirm || false,
           envBindings: c.envBindings.map(toEnvBindingPayload),
         })),

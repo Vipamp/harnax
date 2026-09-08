@@ -6,9 +6,7 @@ import { PlusOutlined, LockOutlined, DownOutlined, RightOutlined, EnvironmentOut
 export type ToolConfigState = {
   toolId?: number;
   toolName?: string;
-  enableSkip?: boolean;
   needConfirm?: boolean;
-  entityNeedConfirm?: number;
   envEntries?: API.ToolEnvParamEntry[];
   envBindings?: { envKey: string; envValue: string; envVarId?: number; customInput?: boolean }[];
 };
@@ -74,7 +72,6 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
       const tool = tools.find((t: any) => t.id === value);
       if (tool) {
         newConfigs[index].toolName = tool.name;
-        newConfigs[index].entityNeedConfirm = tool.needConfirm;
         const envEntries: API.ToolEnvParamEntry[] = tool.envParams || [];
         newConfigs[index].envEntries = envEntries;
         if (envEntries.length > 0) {
@@ -84,9 +81,6 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
           }));
         } else {
           newConfigs[index].envBindings = [];
-        }
-        if (tool.needConfirm === 0) {
-          newConfigs[index].needConfirm = false;
         }
       }
     }
@@ -140,12 +134,8 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
               options={groupedToolOptions}
             />
             <span>
-              {intl.formatMessage({ id: 'pages.agent.tool.enableSkip', defaultMessage: 'Skip if missing' })}
-              <Switch size="small" checked={config.enableSkip} onChange={(checked) => handleToolConfigChange(index, 'enableSkip', checked)} />
-            </span>
-            <span>
               {intl.formatMessage({ id: 'pages.agent.tool.needConfirm', defaultMessage: 'Need confirm' })}
-              <Switch size="small" checked={config.needConfirm} disabled={config.entityNeedConfirm === 0} onChange={(checked) => handleToolConfigChange(index, 'needConfirm', checked)} />
+              <Switch size="small" checked={config.needConfirm} onChange={(checked) => handleToolConfigChange(index, 'needConfirm', checked)} />
             </span>
             <Button type="text" danger onClick={() => removeToolConfig(index)}>
               {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}

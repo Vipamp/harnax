@@ -187,13 +187,13 @@ class AgentSpecResolverTest {
                     id = 10L, name = "file-read", displayName = "File Read",
                     displayNameZh = "文件读取", description = "Read files",
                     type = "BUILTIN", beanName = "file-read", methodName = "execute",
-                    enableSkip = "true", bindingNeedConfirm = true,
+                    bindingNeedConfirm = true,
                 ),
                 ToolDetailDto(
                     id = 20L, name = "http-call", displayName = "HTTP Call",
                     displayNameZh = "HTTP调用", description = "Make HTTP calls",
                     type = "BUILTIN", beanName = "http-call", methodName = "execute",
-                    enableSkip = "false", bindingNeedConfirm = false,
+                    bindingNeedConfirm = false,
                 ),
             )
             val spec = buildSpecResponse(toolDetails = tools)
@@ -203,11 +203,9 @@ class AgentSpecResolverTest {
 
             assertEquals(2, agentSpec.toolSpecs.size)
             assertEquals(10L, agentSpec.toolSpecs[0].toolId)
-            assertTrue(agentSpec.toolSpecs[0].skipIfMissing)
             // ToolSpec.needConfirm 是 Boolean（来自 DTO 的 bindingNeedConfirm），不是实体里的 0/1
             assertTrue(agentSpec.toolSpecs[0].needConfirm)
             assertEquals(20L, agentSpec.toolSpecs[1].toolId)
-            assertFalse(agentSpec.toolSpecs[1].skipIfMissing)
             assertFalse(agentSpec.toolSpecs[1].needConfirm)
         }
 
@@ -371,8 +369,9 @@ class AgentSpecResolverTest {
             val (agentSpec, _) = resolver.resolve("web-1")
 
             val envContext = agentSpec.contextForTools.filterIsInstance<ToolEnvContext>().firstOrNull()
-            // Empty env_bindings from tools + empty from MCPs = no ToolEnvContext registered
-            assertNull(envContext)
+            // Empty env_bindings still yields an (empty) container so tool injection never fails
+            assertNotNull(envContext)
+            assertTrue(envContext!!.bindings.isEmpty())
         }
 
         @Test

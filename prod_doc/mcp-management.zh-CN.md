@@ -2,7 +2,7 @@
 
 > 英文版本见 [mcp-management.en-US.md](./mcp-management.en-US.md)
 >
-> 工具体系整体设计见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)，技能（Skill）体系见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)。本文覆盖 MCP 服务的数据模型、Admin 管理、绑定下发与运行时装配全链路，文末附检查发现的问题与待办事项。
+> 工具体系整体设计见 [tool-integration-design.zh-CN.md](./tool-integration-design.zh-CN.md)，工具注解与注册机制见 [tool-capability.zh-CN.md](./tool-capability.zh-CN.md)，技能（Skill）体系见 [skill-management.zh-CN.md](./skill-management.zh-CN.md)。本文覆盖 MCP 服务的数据模型、Admin 管理、绑定下发与运行时装配全链路，文末附检查发现的问题与待办事项。
 
 ## 1. 概述
 

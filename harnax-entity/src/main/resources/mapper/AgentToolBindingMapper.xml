@@ -6,7 +6,6 @@
         <id column="id" property="id"/>
         <result column="agent_id" property="agentId"/>
         <result column="tool_id" property="toolId"/>
-        <result column="enable_skip" property="enableSkip"/>
         <result column="need_confirm" property="needConfirm"/>
         <result column="env_bindings" property="envBindings"/>
         <result column="create_time" property="createTime"/>
@@ -18,15 +17,22 @@
     </select>
 
     <insert id="batchInsert">
-        INSERT INTO agent_tool_binding (agent_id, tool_id, enable_skip, need_confirm, env_bindings, create_time, update_time)
+        INSERT INTO agent_tool_binding (agent_id, tool_id, need_confirm, env_bindings, create_time, update_time)
         VALUES
         <foreach collection="list" item="b" separator=",">
-            (#{b.agentId}, #{b.toolId}, #{b.enableSkip}, #{b.needConfirm}, #{b.envBindings}, #{b.createTime}, #{b.updateTime})
+            (#{b.agentId}, #{b.toolId}, #{b.needConfirm}, #{b.envBindings}, #{b.createTime}, #{b.updateTime})
         </foreach>
     </insert>
 
     <delete id="deleteByAgentId">
         DELETE FROM agent_tool_binding WHERE agent_id = #{agentId}
+    </delete>
+
+    <delete id="deleteByToolIds">
+        DELETE FROM agent_tool_binding WHERE tool_id IN
+        <foreach collection="toolIds" item="toolId" open="(" separator="," close=")">
+            #{toolId}
+        </foreach>
     </delete>
 
 </mapper>
