@@ -109,6 +109,13 @@ class KeepAliveSandboxManager(
                 val sessionId = containerName.removePrefix("agentscope-sandbox-")
                 if (sessionId.isBlank()) continue
 
+                // Already served in memory: attaching here would only be thrown away below,
+                // and it would start a second handle on the same container.
+                if (sandboxes.containsKey(sessionId)) {
+                    log.debug("[keepAlive] Session {} already in memory, skipping scan restore", sessionId)
+                    continue
+                }
+
                 try {
                     // If container is stopped, start it first
                     if (!isRunning) {

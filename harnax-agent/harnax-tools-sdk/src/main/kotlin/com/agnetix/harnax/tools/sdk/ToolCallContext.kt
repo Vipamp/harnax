@@ -14,5 +14,6 @@ data class SessionMetaContext(
 ) : ToolCallContext
 
 data class UserIdentifier(
-    val userId: Long,
+    /** End user behind the call; null when the caller is a service or a key without an owner. */
+    val userId: Long? = null,
 ) : ToolCallContext

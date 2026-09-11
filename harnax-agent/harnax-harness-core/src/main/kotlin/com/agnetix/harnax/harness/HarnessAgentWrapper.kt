@@ -37,6 +37,7 @@ import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionMode
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.Task
+import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.sandbox.SandboxContext
 import io.agentscope.harness.agent.sandbox.WorkspaceSpec
@@ -52,6 +53,7 @@ import java.nio.file.Paths
 import java.time.Duration
 import java.util.Base64
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Wraps a [HarnessAgent] and exposes a streaming call API.
@@ -63,6 +65,11 @@ import java.util.concurrent.CountDownLatch
  */
 class HarnessAgentWrapper(
     val harnessAgent: HarnessAgent,
+    /**
+     * The MCP clients created for this agent. [closeMcpClients] is the only thing that releases them:
+     * `HarnessAgent.close()` does not touch the toolkit, and a stdio client is an OS process.
+     */
+    val mcpClients: List<McpClientWrapper> = emptyList(),
     val dangerousTools: Set<String>,
     val tokenStatBuilder: TokenStatBuilder,
     val tokenStatAdaptor: TokenStatAdaptor,
@@ -98,6 +105,9 @@ class HarnessAgentWrapper(
      */
     @Volatile
     private var activeCallDisposable: Disposable? = null
+
+    /** Set once by [release]; see the note there about reaching this from two paths. */
+    private val released = AtomicBoolean(false)
 
     /** Tracks whether CLI plugins have been initialized for this wrapper's sandbox. */
     @Volatile
@@ -633,6 +643,35 @@ class HarnessAgentWrapper(
         }
         // 4. Signal to agent internals — invalidates sandbox, causes agent ops to fail
         harnessAgent.interrupt()
+    }
+
+    /**
+     * Release what this agent created but nothing else will free: the MCP clients, then the agent.
+     *
+     * Called when the wrapper is discarded (cache expiry, an explicit invalidation such as `/refresh`
+     * or a capability toggle, service shutdown). [HarnessAgent.close] stops at the state layer, so
+     * without this a stdio client — an OS process — outlives every rebuild, and an agent is rebuilt on
+     * a 30-minute timer and on each of those commands.
+     *
+     * Not safe to call while a request is in flight: an active call would lose the tools underneath
+     * it. The caller owns that check.
+     */
+    fun release() {
+        // Idempotent: a shutdown sweep and the cache's own removal listener can both reach for this
+        // agent, and a double close would otherwise report the second one as a fresh failure.
+        if (!released.compareAndSet(false, true)) return
+        mcpClients.forEach { client ->
+            try {
+                client.close()
+            } catch (e: Exception) {
+                log.warn("[harness] Failed to close MCP client for session={}: {}", sessionId, e.message)
+            }
+        }
+        try {
+            harnessAgent.close()
+        } catch (e: Exception) {
+            log.warn("[harness] Failed to close agent for session={}: {}", sessionId, e.message)
+        }
     }
 
     private fun callStreamInternal(

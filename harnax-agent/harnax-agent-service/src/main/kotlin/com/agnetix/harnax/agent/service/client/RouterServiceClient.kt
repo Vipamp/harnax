@@ -34,12 +34,19 @@ class RouterServiceClient(
      * @return true if registration succeeded, false otherwise
      */
     fun registerInstance(instanceId: String, host: String, port: Int): Boolean = try {
-        restTemplate.postForObject(
+        val body = restTemplate.postForObject(
             "$routerUrl/api/router/instance/register?instanceId=$instanceId&host=$host&port=$port",
             null,
             Map::class.java,
         )
-        true
+        if (!isRouterSuccess(body)) {
+            log.error(
+                "Router rejected registration for instance '$instanceId': ${routerMessage(body)}",
+            )
+            false
+        } else {
+            true
+        }
     } catch (e: Exception) {
         log.warn("Failed to register instance '$instanceId' with router at $routerUrl: ${e.message}")
         false
@@ -48,15 +55,24 @@ class RouterServiceClient(
     /**
      * Send a heartbeat to the session-router for the given instance.
      *
-     * @return true if heartbeat succeeded, false otherwise
+     * @return true if the router still knows this instance; false means the caller must
+     *         re-register, which also covers a plain connectivity failure.
      */
     fun sendHeartbeat(instanceId: String): Boolean = try {
-        restTemplate.postForObject(
+        val body = restTemplate.postForObject(
             "$routerUrl/api/router/instance/heartbeat?instanceId=$instanceId",
             null,
             Map::class.java,
         )
-        true
+        if (!isRouterSuccess(body)) {
+            log.warn(
+                "Router did not accept heartbeat for instance '$instanceId' (${routerMessage(body)})" +
+                    " - registration is gone, will re-register",
+            )
+            false
+        } else {
+            true
+        }
     } catch (e: Exception) {
         log.warn("Heartbeat failed for instance '$instanceId': ${e.message}")
         false
@@ -64,4 +80,12 @@ class RouterServiceClient(
 
     /** Returns the configured router base URL (useful for logging). */
     fun getRouterUrl(): String = routerUrl
+
+    /**
+     * Router endpoints report business failures as HTTP 200 with a non-200 `code` in the
+     * ResultVo envelope, so the HTTP status alone is not enough.
+     */
+    private fun isRouterSuccess(body: Map<*, *>?): Boolean = (body?.get("code") as? Number)?.toInt() == 200
+
+    private fun routerMessage(body: Map<*, *>?): String = body?.get("message")?.toString() ?: "no response body"
 }

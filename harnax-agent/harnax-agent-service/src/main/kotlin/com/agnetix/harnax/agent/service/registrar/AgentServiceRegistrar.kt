@@ -65,7 +65,10 @@ class AgentServiceRegistrar(
         }
 
         if (!routerServiceClient.sendHeartbeat(instanceId)) {
-            log.warn("Heartbeat failed for instance $instanceId")
+            // The router no longer recognises this instance (it restarted, or the registration was
+            // evicted). Staying "registered" would heartbeat into the void forever.
+            registered = false
+            log.warn("Heartbeat failed for instance $instanceId - will re-register on the next tick")
         } else {
             log.debug("Heartbeat sent successfully for instance: $instanceId")
         }

@@ -43,6 +43,7 @@ import io.agentscope.core.permission.PermissionRule
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.AgentStateStore
 import io.agentscope.core.tool.AgentTool
+import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
@@ -172,15 +173,45 @@ class HarnessAgentLauncher(
         agentBuilder.model(chatModel)
 
         // ----- MCP -----
-        agentSpec.mcpServices.forEach {
-            val mcpConfig = mcpConfigAdaptor.getConfig(it.mcpId)
-            if (mcpConfig != null) {
-                agentBuilder.addMcp(McpHelper.createMcpClient(mcpConfig, it.isAsync, mcpConfigDecryptor?.let { d -> d::decryptToMap }, mcpConfigDecryptor?.let { d -> d::decryptToolEnvParamsToMap }))
-            } else if (!it.skipIfMissing) {
-                log.error("Mcp config with id `${it.mcpId}` not found.")
-                throw HarnaxErrorCode.AGENT_MCP_NOT_FOUND.format(it.mcpId)
-            } else {
-                log.warn("Mcp config with id `${it.mcpId}` not found.")
+        // Collected so the clients can be closed when this agent is dropped: `HarnessAgent.close()`
+        // only unbinds the state saver and clears the state cache, it does not touch the toolkit's MCP
+        // clients, and a stdio client is an OS process. See `mcpClients` on HarnessAgentWrapper.
+        val mcpClients = mutableListOf<McpClientWrapper>()
+        agentSpec.mcpServices.forEach { mcpSpec ->
+            val mcpConfig = mcpConfigAdaptor.getConfig(mcpSpec.mcpId)
+            if (mcpConfig == null) {
+                log.warn("Mcp config with id `${mcpSpec.mcpId}` not found.")
+                return@forEach
+            }
+            // Skip disabled servers (status=0). Disabling is deliberate, so it must not be
+            // reported as a missing config either way.
+            if (mcpConfig.status == 0) {
+                log.info("MCP server '{}' (id={}) is disabled, skipping", mcpConfig.name, mcpConfig.id)
+                return@forEach
+            }
+            // One unreachable server must not cost the agent every tool it has: same shape as Admin
+            // dropping an unresolvable binding from the spec. `client` is closed on the way out of a
+            // failed registration because `addMcp` gives up on a timer while its registration thread
+            // keeps going — the client may well be live and simply unacknowledged.
+            var client: McpClientWrapper? = null
+            try {
+                val created = McpHelper.createMcpClient(
+                    mcpConfig,
+                    mcpSpec.isAsync,
+                    mcpConfigDecryptor?.let { d -> d::decryptToMap },
+                    mcpConfigDecryptor?.let { d -> d::decryptToolEnvParamsToMap },
+                )
+                client = created
+                agentBuilder.addMcp(created)
+                mcpClients += created
+            } catch (e: Exception) {
+                log.warn(
+                    "MCP server '{}' (id={}) failed to load, the agent is built without it: {}",
+                    mcpConfig.name,
+                    mcpConfig.id,
+                    e.message,
+                )
+                client?.let { c -> McpHelper.closeQuietly(c, mcpConfig.name) }
             }
         }
 
@@ -484,6 +515,7 @@ class HarnessAgentLauncher(
 
         return HarnessAgentWrapper(
             harnessAgent = agent,
+            mcpClients = mcpClients,
             dangerousTools = needConfirmedTools + dangerousInputTools,
             tokenStatBuilder = TokenStatBuilder()
                 .agentId(agentSpec.id)
