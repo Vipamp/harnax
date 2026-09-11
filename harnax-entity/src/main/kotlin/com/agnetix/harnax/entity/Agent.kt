@@ -51,24 +51,6 @@ class Agent : Serializable {
     var modelId: Long = 0
 
     /**
-     * MCP service list (JSON format)
-     */
-    @Schema(description = "MCP service list (JSON format)")
-    var mcpList: String = ""
-
-    /**
-     * Skill list (JSON format)
-     */
-    @Schema(description = "Skill list (JSON format)")
-    var skillList: String = ""
-
-    /**
-     * Tool list (JSON format)
-     */
-    @Schema(description = "Tool list (JSON format)")
-    var toolList: String = ""
-
-    /**
      * Owner
      */
     @Schema(description = "Owner")

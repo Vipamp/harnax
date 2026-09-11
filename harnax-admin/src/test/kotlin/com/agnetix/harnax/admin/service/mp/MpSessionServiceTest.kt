@@ -68,8 +68,6 @@ class MpSessionServiceTest {
             description = "智能客服"
             systemPrompt = "You are helpful"
             modelId = 100L
-            mcpList = "[]"
-            skillList = "[]"
             status = 1
             active = 1
         }

@@ -1,13 +1,22 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentUpdateRequest
+import com.agnetix.harnax.admin.dto.EnvBinding
+import com.agnetix.harnax.admin.dto.ToolConfig
+import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
+import com.agnetix.harnax.entity.AgentTool
+import com.agnetix.harnax.entity.AgentToolBinding
+import com.agnetix.harnax.entity.AgentToolEnvParam
+import com.agnetix.harnax.entity.EnvVariable
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
@@ -18,8 +27,11 @@ import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
+import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import org.junit.jupiter.api.Assertions.*
@@ -38,6 +50,7 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
@@ -105,6 +118,18 @@ class AgentServiceImplTest {
     @Mock
     private lateinit var skillMapper: SkillMapper
 
+    @Mock
+    private lateinit var mcpServerMapper: McpServerMapper
+
+    @Mock
+    private lateinit var agentToolMapper: AgentToolMapper
+
+    @Mock
+    private lateinit var agentToolEnvParamMapper: AgentToolEnvParamMapper
+
+    @Mock
+    private lateinit var secretFieldEncryptor: SecretFieldEncryptor
+
     @Captor
     private lateinit var agentCaptor: ArgumentCaptor<Agent>
 
@@ -123,8 +148,6 @@ class AgentServiceImplTest {
             description = "Test agent description"
             systemPrompt = "You are a helpful assistant"
             modelId = 1L
-            mcpList = """[{"id":1,"enable_skip":"true"}]"""
-            skillList = "1,2,3"
             owner = "admin"
             status = 1
             isPublic = 1
@@ -142,6 +165,31 @@ class AgentServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // Bound MCP ids are now checked against live servers of the caller's tenant. The binding
+        // fixtures below only assert on the rows written, so every id resolves unless a test says
+        // otherwise.
+        `when`(mcpServerMapper.selectByIds(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).map { id ->
+                McpServer().apply {
+                    this.id = id
+                    tenantId = 1L
+                    name = "MCP $id"
+                    type = "streamablehttp"
+                }
+            }
+        }
+
+        // Tool ids are checked the same way (see resolveBindableTools), so they resolve by default too.
+        `when`(agentToolMapper.selectByIds(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).map { id ->
+                AgentTool().apply {
+                    this.id = id
+                    tenantId = 1L
+                    name = "tool-$id"
+                }
+            }
+        }
     }
 
     @Nested
@@ -153,7 +201,7 @@ class AgentServiceImplTest {
         fun `page should return paginated results`() {
             // Given
             val agents = listOf(testAgent)
-            `when`(agentMapper.selectAgentList(null, null, "admin")).thenReturn(agents)
+            `when`(agentMapper.selectAgentList(null, null, "admin", 1L)).thenReturn(agents)
 
             // When
             val page = agentService.page(null, null, 1, 10)
@@ -161,7 +209,7 @@ class AgentServiceImplTest {
             // Then
             assertNotNull(page)
             assertTrue(page.total >= 0)
-            verify(agentMapper).selectAgentList(null, null, "admin")
+            verify(agentMapper).selectAgentList(null, null, "admin", 1L)
         }
 
         @Test
@@ -169,14 +217,14 @@ class AgentServiceImplTest {
         fun `page should filter by name`() {
             // Given
             val filteredAgents = listOf(testAgent)
-            `when`(agentMapper.selectAgentList("Test", null, "admin")).thenReturn(filteredAgents)
+            `when`(agentMapper.selectAgentList("Test", null, "admin", 1L)).thenReturn(filteredAgents)
 
             // When
             val page = agentService.page("Test", null, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(agentMapper).selectAgentList("Test", null, "admin")
+            verify(agentMapper).selectAgentList("Test", null, "admin", 1L)
         }
 
         @Test
@@ -184,14 +232,33 @@ class AgentServiceImplTest {
         fun `page should filter by status`() {
             // Given
             val activeAgents = listOf(testAgent)
-            `when`(agentMapper.selectAgentList(null, 1, "admin")).thenReturn(activeAgents)
+            `when`(agentMapper.selectAgentList(null, 1, "admin", 1L)).thenReturn(activeAgents)
 
             // When
             val page = agentService.page(null, 1, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(agentMapper).selectAgentList(null, 1, "admin")
+            verify(agentMapper).selectAgentList(null, 1, "admin", 1L)
+        }
+
+        @Test
+        @DisplayName("page - Push the current tenant into the query")
+        fun `page should filter by tenant`() {
+            // Given - 不带租户就等于把别的租户公开的智能体也列出来
+            TenantContext.setTenantId(7L)
+            try {
+                `when`(agentMapper.selectAgentList(null, null, "admin", 7L)).thenReturn(listOf(testAgent))
+
+                // When
+                val page = agentService.page(null, null, 1, 10)
+
+                // Then
+                assertNotNull(page)
+                verify(agentMapper).selectAgentList(null, null, "admin", 7L)
+            } finally {
+                TenantContext.clear()
+            }
         }
     }
 
@@ -205,7 +272,6 @@ class AgentServiceImplTest {
             // Given
             val mcpConfig = AgentCreateRequest.McpConfig(
                 id = 1L,
-                enableSkip = "true",
             )
 
             val request = AgentCreateRequest(
@@ -249,6 +315,33 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).insert(any())
+        }
+
+        @Test
+        @DisplayName("createAgent - Stamp the current tenant on the entity")
+        fun `createAgent should stamp the current tenant`() {
+            // Given - 服务层的取值；落库那一半见 AgentMapperTest 的 "insert should persist tenant id"
+            TenantContext.setTenantId(7L)
+            try {
+                val request = AgentCreateRequest(
+                    name = "Tenant Agent",
+                    description = "Tenant agent description",
+                    systemPrompt = "Tenant prompt",
+                    modelId = 1L,
+                    owner = "admin",
+                )
+                val captor = argumentCaptor<Agent>()
+                `when`(agentMapper.insert(any())).thenReturn(1)
+
+                // When
+                assertTrue(agentService.createAgent(request))
+
+                // Then
+                verify(agentMapper).insert(captor.capture())
+                assertEquals(7L, captor.firstValue.tenantId)
+            } finally {
+                TenantContext.clear()
+            }
         }
 
         @Test
@@ -477,6 +570,16 @@ class AgentServiceImplTest {
             assertNull(result)
             verify(agentMapper).selectById(999L)
         }
+
+        @Test
+        @DisplayName("getAgent - Return null for another tenant's agent")
+        fun `getAgent should return null for another tenant agent`() {
+            // Given - 列表按租户过滤，单行不按租户就等于把过滤做成摆设
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent.apply { tenantId = 7L })
+
+            // When & Then
+            assertNull(agentService.getAgent(1L))
+        }
     }
 
     @Nested
@@ -489,7 +592,6 @@ class AgentServiceImplTest {
             // Given
             val mcpConfig = AgentCreateRequest.McpConfig(
                 id = 2L,
-                enableSkip = "false",
             )
 
             val request = AgentUpdateRequest(
@@ -556,6 +658,69 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("updateAgent - Collapse repeated MCP ids within one request")
+        fun `updateAgent should dedupe repeated mcp ids`() {
+            // Given - uk_agent_mcp_binding_agent_id_mcp_id rejects a duplicate batch outright
+            val request = AgentUpdateRequest(
+                mcpList = listOf(
+                    AgentCreateRequest.McpConfig(id = 3L),
+                    AgentCreateRequest.McpConfig(id = 3L),
+                    AgentCreateRequest.McpConfig(id = 4L),
+                ),
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then - one row per mcpId, in first-seen order
+            val captor = argumentCaptor<List<AgentMcpBinding>>()
+            verify(mcpBindingMapper).batchInsert(captor.capture())
+            assertEquals(listOf(3L, 4L), captor.firstValue.map { it.mcpId })
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject an MCP id with no live server")
+        fun `updateAgent should reject mcp id that does not resolve`() {
+            // Given - 绑定一个查不到的 id，下发时会被 `?: continue` 静默丢掉
+            val request = AgentUpdateRequest(
+                mcpList = listOf(AgentCreateRequest.McpConfig(id = 9L)),
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(mcpServerMapper.selectByIds(listOf(9L))).thenReturn(emptyList())
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("9"))
+            verify(mcpBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject an MCP server of another tenant")
+        fun `updateAgent should reject mcp server of another tenant`() {
+            // Given - 跨租户 id 猜出来也绑不上，否则等于把别人的服务挂到自己 Agent 上
+            val foreign = McpServer().apply {
+                id = 9L
+                tenantId = 2L
+                name = "Other Tenant MCP"
+                type = "streamablehttp"
+            }
+            val request = AgentUpdateRequest(
+                mcpList = listOf(AgentCreateRequest.McpConfig(id = 9L)),
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(mcpServerMapper.selectByIds(listOf(9L))).thenReturn(listOf(foreign))
+
+            // When & Then
+            assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            verify(mcpBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
         @DisplayName("updateAgent - Clear skill list with empty string")
         fun `updateAgent should clear skill list with empty string`() {
             // Given
@@ -577,10 +742,9 @@ class AgentServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateAgent - Keep original MCP list when not provided")
+        @DisplayName("updateAgent - Keep MCP bindings when the request omits them")
         fun `updateAgent should keep original mcp list when not provided`() {
             // Given
-            val originalMcpList = testAgent.mcpList
             val request = AgentUpdateRequest(
                 name = "Keep MCP Agent",
             )
@@ -594,8 +758,9 @@ class AgentServiceImplTest {
             // Then
             assertTrue(result)
             verify(agentMapper).updateById(any())
-            // Verify the mcpList was not changed
-            assertEquals(originalMcpList, testAgent.mcpList)
+            // A null mcpList means "not sent", so the binding rows are left alone
+            verify(mcpBindingMapper, never()).deleteByAgentId(any())
+            verify(mcpBindingMapper, never()).batchInsert(any())
         }
 
         @Test
@@ -683,6 +848,20 @@ class AgentServiceImplTest {
             assertEquals("Agent not found", exception.message)
             verify(agentMapper, never()).updateStatus(any(), anyInt())
         }
+
+        @Test
+        @DisplayName("toggleAgentStatus - Throw when agent belongs to another tenant")
+        fun `toggleAgentStatus should throw RuntimeException for another tenant agent`() {
+            // Given - 写入口走 getAgent，否则单行读的租户守卫能被这个 writer 绕过
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent.apply { tenantId = 7L })
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> {
+                agentService.toggleAgentStatus(1L, 0)
+            }
+            assertEquals("Agent not found", exception.message)
+            verify(agentMapper, never()).updateStatus(any(), anyInt())
+        }
     }
 
     @Nested
@@ -721,6 +900,20 @@ class AgentServiceImplTest {
             assertFalse(result)
             verify(agentMapper).deleteById(1L)
         }
+
+        @Test
+        @DisplayName("deleteAgent - Reject another tenant's agent")
+        fun `deleteAgent should reject another tenant agent`() {
+            // Given - 删除与级联清绑定都只对本租户的行成立
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent.apply { tenantId = 7L })
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> { agentService.deleteAgent(1L) }
+            assertEquals("Agent not found", exception.message)
+            verify(agentMapper, never()).deleteById(any())
+            verify(toolBindingMapper, never()).deleteByAgentId(any())
+            verify(mcpBindingMapper, never()).deleteByAgentId(any())
+        }
     }
 
     @Nested
@@ -749,7 +942,6 @@ class AgentServiceImplTest {
             val mcpBinding = AgentMcpBinding().apply {
                 agentId = 1L
                 mcpId = 1L
-                enableSkip = "true"
                 envBindings = null
             }
 
@@ -790,8 +982,6 @@ class AgentServiceImplTest {
                 id = 1L
                 name = "No MCP Agent"
                 modelId = 1L
-                mcpList = ""
-                skillList = ""
             }
 
             val sessions = listOf<Session>()
@@ -803,7 +993,7 @@ class AgentServiceImplTest {
 
             // Then
             assertNotNull(result)
-            // When mcpList is empty, response.mcpList is null (not set)
+            // With no MCP binding rows, response.mcpList is never assigned and stays null
             assertNull(result.mcpList)
             assertEquals(0, result.sessionCount)
         }
@@ -816,8 +1006,6 @@ class AgentServiceImplTest {
                 id = 1L
                 name = "No Skill Agent"
                 modelId = 1L
-                mcpList = ""
-                skillList = ""
             }
 
             val sessions = listOf<Session>()
@@ -829,31 +1017,8 @@ class AgentServiceImplTest {
 
             // Then
             assertNotNull(result)
-            // When skillList is empty, response.skillList is null (not set)
+            // With no skill binding rows, response.skillList is never assigned and stays null
             assertNull(result.skillList)
-        }
-
-        @Test
-        @DisplayName("convertToResponse - Handle invalid MCP list JSON gracefully")
-        fun `convertToResponse should handle invalid mcp list json gracefully`() {
-            // Given - binding table returns empty list (no invalid JSON scenario)
-            val agentWithEmptyBindings = Agent().apply {
-                id = 1L
-                name = "Empty MCP Agent"
-                modelId = 1L
-            }
-
-            val sessions = listOf<Session>()
-            `when`(modelService.getModel(1L)).thenReturn(null)
-            `when`(sessionMapper.selectByAgentId(1L)).thenReturn(sessions)
-            `when`(mcpBindingMapper.selectByAgentId(1L)).thenReturn(emptyList())
-
-            // When
-            val result = agentService.convertToResponse(agentWithEmptyBindings)
-
-            // Then
-            assertNotNull(result)
-            assertNull(result.mcpList)
         }
 
         @Test
@@ -893,7 +1058,6 @@ class AgentServiceImplTest {
             val mcpBinding = AgentMcpBinding().apply {
                 agentId = 1L
                 mcpId = 1L
-                enableSkip = "true"
             }
 
             val sessions = listOf<Session>()
@@ -938,6 +1102,200 @@ class AgentServiceImplTest {
             // Then
             assertNotNull(result)
             assertTrue(result.skillList?.isEmpty() == true)
+        }
+    }
+
+    @Nested
+    @DisplayName("环境参数绑定守卫")
+    inner class EnvBindingGuardTests {
+
+        private fun stubAgentForUpdate() {
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(agentMapper.updateById(any())).thenReturn(1)
+        }
+
+        private fun boundToolEnvJson(toolId: Long): String? {
+            stubAgentForUpdate()
+            agentService.updateAgent(
+                1L,
+                AgentUpdateRequest(
+                    toolList = listOf(
+                        ToolConfig(
+                            id = toolId,
+                            envBindings = listOf(EnvBinding(envKey = "API_KEY", envVarId = 7L, envValue = "******")),
+                        ),
+                    ),
+                ),
+            )
+            val captor = argumentCaptor<List<AgentToolBinding>>()
+            verify(toolBindingMapper).batchInsert(captor.capture())
+            return captor.firstValue.single().envBindings
+        }
+
+        private fun requiredToolParam(vararg names: String): List<AgentToolEnvParam> = names.map { name ->
+            AgentToolEnvParam().apply {
+                toolId = 5L
+                envParamName = name
+                required = 1
+            }
+        }
+
+        private fun liveEnvVariable(): EnvVariable = EnvVariable().apply {
+            id = 7L
+            tenantId = 1L
+            envKey = "OPENAI_KEY"
+            sensitive = 1
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a tool id with no live row")
+        fun `updateAgent should reject tool id that does not resolve`() {
+            // Given - 下发时这条绑定会被丢掉，operator 只看到少了一个工具
+            val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 9L)))
+            stubAgentForUpdate()
+            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(emptyList())
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("9"), "message should carry the id: ${exception.message}")
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a tool of another tenant")
+        fun `updateAgent should reject tool of another tenant`() {
+            val foreign = AgentTool().apply {
+                id = 9L
+                tenantId = 2L
+                name = "Other Tenant Tool"
+            }
+            val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 9L)))
+            stubAgentForUpdate()
+            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(listOf(foreign))
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("9"))
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject an env var reference that resolves to nothing")
+        fun `updateAgent should reject env var reference that does not resolve`() {
+            // Given - 快照里只存指针，值靠运行时按 id 现取，所以 id 失效等于这个参数永久为空
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(id = 5L, envBindings = listOf(EnvBinding(envKey = "API_KEY", envVarId = 7L))),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("7"), "message should carry the id: ${exception.message}")
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Store a reference as a pointer, without the incoming mask")
+        fun `updateAgent should not snapshot a value for a reference`() {
+            // Given - 表单回填的是展示值（敏感变量即 `******`），落进快照就成了变量被删后的兜底值
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+
+            // When
+            val json = boundToolEnvJson(5L)
+
+            // Then
+            assertNotNull(json)
+            assertTrue(json!!.contains("\"envVarId\":7"), "pointer kept: $json")
+            assertFalse(json.contains("******"), "mask must not be persisted: $json")
+            assertFalse(json.contains("envValue"), "no value stored for a reference: $json")
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a required tool param with nothing behind it")
+        fun `updateAgent should reject unfilled required tool param`() {
+            val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 5L)))
+            stubAgentForUpdate()
+            `when`(agentToolEnvParamMapper.selectByToolId(5L)).thenReturn(requiredToolParam("API_KEY"))
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("API_KEY"), "message should name the param: ${exception.message}")
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - A tool's own default does not answer a required param")
+        fun `updateAgent should reject required tool param backed only by tool default`() {
+            // Given - agent_tool.env_params 的默认值不进 ToolEnvContext，只有绑定值会下发
+            val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 5L)))
+            stubAgentForUpdate()
+            val params = requiredToolParam("API_KEY").also { it[0].defaultValue = "stored-default" }
+            `when`(agentToolEnvParamMapper.selectByToolId(5L)).thenReturn(params)
+
+            // When & Then
+            assertThrows<BizException> { agentService.updateAgent(1L, request) }
+        }
+
+        @Test
+        @DisplayName("updateAgent - Accept a tool param filled by a live reference")
+        fun `updateAgent should accept required tool param filled by reference`() {
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(id = 5L, envBindings = listOf(EnvBinding(envKey = "API_KEY", envVarId = 7L))),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(agentToolEnvParamMapper.selectByToolId(5L)).thenReturn(requiredToolParam("API_KEY"))
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(liveEnvVariable())
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(toolBindingMapper).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - A masked value typed back into the form is not a value")
+        fun `updateAgent should treat a masked custom value as unfilled`() {
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(id = 5L, envBindings = listOf(EnvBinding(envKey = "API_KEY", customValue = "sk****ef"))),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(agentToolEnvParamMapper.selectByToolId(5L)).thenReturn(requiredToolParam("API_KEY"))
+
+            // When & Then
+            assertThrows<BizException> { agentService.updateAgent(1L, request) }
+        }
+
+        @Test
+        @DisplayName("updateAgent - An MCP's stored default does answer a required param")
+        fun `updateAgent should accept required mcp param covered by server default`() {
+            // Given - mcp_server.env_params 整份解密后作为 stdio 进程环境下发，默认值确实会到位
+            val server = McpServer().apply {
+                id = 3L
+                tenantId = 1L
+                name = "MCP 3"
+                type = "stdio"
+                envParams = "{}"
+            }
+            val request = AgentUpdateRequest(mcpList = listOf(AgentCreateRequest.McpConfig(id = 3L)))
+            stubAgentForUpdate()
+            `when`(mcpServerMapper.selectByIds(listOf(3L))).thenReturn(listOf(server))
+            `when`(secretFieldEncryptor.deserializeToolEnvEntries("{}")).thenReturn(
+                listOf(ToolEnvParamEntry(envParamName = "API_KEY", required = true, defaultValue = "stored-default")),
+            )
+
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(mcpBindingMapper).batchInsert(any())
         }
     }
 }

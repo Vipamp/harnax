@@ -88,6 +88,7 @@ class MpAgentServiceTest {
             modelId = 100L
             status = 1
             active = 1
+            tenantId = 1L
         }
 
         // 模拟已登录的请求上下文, 供 UserContextUtil.getCurrentUsername 使用
@@ -111,7 +112,7 @@ class MpAgentServiceTest {
         @DisplayName("listAgents - 返回启用Agent及模型名和会话数")
         fun `listAgents should return active agents with model name and session count`() {
             // Given
-            `when`(agentMapper.selectAgentList(null, 1, "mobileuser")).thenReturn(listOf(testAgent))
+            `when`(agentMapper.selectAgentList(null, 1, "mobileuser", 1L)).thenReturn(listOf(testAgent))
             `when`(modelService.getModel(100L)).thenReturn(
                 Model().apply {
                     id = 100L
@@ -121,7 +122,7 @@ class MpAgentServiceTest {
             `when`(mpSessionMapper.countByUserIdAndAgentId(1L, 10L)).thenReturn(3)
 
             // When
-            val result = mpAgentService.listAgents(1L)
+            val result = mpAgentService.listAgents(1L, 1L)
 
             // Then
             assertEquals(1, result.size)
@@ -142,12 +143,12 @@ class MpAgentServiceTest {
                 name = "已删除Agent"
                 active = 0
             }
-            `when`(agentMapper.selectAgentList(null, 1, "mobileuser")).thenReturn(listOf(testAgent, inactiveAgent))
+            `when`(agentMapper.selectAgentList(null, 1, "mobileuser", 1L)).thenReturn(listOf(testAgent, inactiveAgent))
             `when`(modelService.getModel(anyLong())).thenReturn(null)
             `when`(mpSessionMapper.countByUserIdAndAgentId(anyLong(), anyLong())).thenReturn(0)
 
             // When
-            val result = mpAgentService.listAgents(1L)
+            val result = mpAgentService.listAgents(1L, 1L)
 
             // Then
             assertEquals(1, result.size)
@@ -158,12 +159,12 @@ class MpAgentServiceTest {
         @DisplayName("listAgents - 模型不存在时模型名为空字符串")
         fun `listAgents should use empty model name when model not found`() {
             // Given
-            `when`(agentMapper.selectAgentList(null, 1, "mobileuser")).thenReturn(listOf(testAgent))
+            `when`(agentMapper.selectAgentList(null, 1, "mobileuser", 1L)).thenReturn(listOf(testAgent))
             `when`(modelService.getModel(100L)).thenReturn(null)
             `when`(mpSessionMapper.countByUserIdAndAgentId(1L, 10L)).thenReturn(0)
 
             // When
-            val result = mpAgentService.listAgents(1L)
+            val result = mpAgentService.listAgents(1L, 1L)
 
             // Then
             assertEquals("", result[0].modelName)
@@ -172,9 +173,9 @@ class MpAgentServiceTest {
         @Test
         @DisplayName("listAgents - 无Agent返回空列表")
         fun `listAgents should return empty list when no agents`() {
-            `when`(agentMapper.selectAgentList(null, 1, "mobileuser")).thenReturn(emptyList())
+            `when`(agentMapper.selectAgentList(null, 1, "mobileuser", 1L)).thenReturn(emptyList())
 
-            assertTrue(mpAgentService.listAgents(1L).isEmpty())
+            assertTrue(mpAgentService.listAgents(1L, 1L).isEmpty())
         }
 
         @Test
@@ -185,7 +186,7 @@ class MpAgentServiceTest {
 
             // When & Then
             assertThrows<RuntimeException> {
-                mpAgentService.listAgents(1L)
+                mpAgentService.listAgents(1L, 1L)
             }
         }
     }
@@ -244,7 +245,7 @@ class MpAgentServiceTest {
             )
 
             // When
-            val detail = mpAgentService.getAgentDetail(10L)
+            val detail = mpAgentService.getAgentDetail(10L, 1L)
 
             // Then
             assertEquals(10L, detail.id)
@@ -268,9 +269,23 @@ class MpAgentServiceTest {
 
             // When & Then
             val ex = assertThrows<BizException> {
-                mpAgentService.getAgentDetail(10L)
+                mpAgentService.getAgentDetail(10L, 1L)
             }
             assertEquals("Agent not found", ex.message)
+        }
+
+        @Test
+        @DisplayName("getAgentDetail - 跨租户Agent按不存在处理")
+        fun `getAgentDetail should treat cross-tenant agent as not found`() {
+            // Given
+            `when`(agentMapper.selectById(10L)).thenReturn(testAgent.apply { tenantId = 9L })
+
+            // When & Then
+            val ex = assertThrows<BizException> {
+                mpAgentService.getAgentDetail(10L, 1L)
+            }
+            assertEquals("Agent not found", ex.message)
+            org.mockito.Mockito.verify(modelService, org.mockito.Mockito.never()).getModel(anyLong())
         }
 
         @Test
@@ -281,7 +296,7 @@ class MpAgentServiceTest {
 
             // When & Then
             val ex = assertThrows<BizException> {
-                mpAgentService.getAgentDetail(10L)
+                mpAgentService.getAgentDetail(10L, 1L)
             }
             assertEquals("Agent is not available", ex.message)
         }
@@ -294,7 +309,7 @@ class MpAgentServiceTest {
 
             // When & Then
             val ex = assertThrows<BizException> {
-                mpAgentService.getAgentDetail(10L)
+                mpAgentService.getAgentDetail(10L, 1L)
             }
             assertEquals("Agent is not available", ex.message)
         }
@@ -309,7 +324,7 @@ class MpAgentServiceTest {
             `when`(skillBindingMapper.selectByAgentId(10L)).thenReturn(emptyList())
 
             // When
-            val detail = mpAgentService.getAgentDetail(10L)
+            val detail = mpAgentService.getAgentDetail(10L, 1L)
 
             // Then
             assertEquals("", detail.modelName)
@@ -345,7 +360,7 @@ class MpAgentServiceTest {
             `when`(skillService.getSkill(400L)).thenReturn(null)
 
             // When
-            val detail = mpAgentService.getAgentDetail(10L)
+            val detail = mpAgentService.getAgentDetail(10L, 1L)
 
             // Then
             assertTrue(detail.mcpList.isEmpty())
@@ -362,7 +377,7 @@ class MpAgentServiceTest {
             `when`(skillBindingMapper.selectByAgentId(10L)).thenReturn(emptyList())
 
             // When
-            val detail = mpAgentService.getAgentDetail(10L)
+            val detail = mpAgentService.getAgentDetail(10L, 1L)
 
             // Then
             assertTrue(detail.mcpList.isEmpty())

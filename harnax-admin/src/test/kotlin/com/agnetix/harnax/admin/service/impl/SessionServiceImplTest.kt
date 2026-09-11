@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -10,11 +11,15 @@ import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentMcpBinding
+import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -74,6 +79,12 @@ class SessionServiceImplTest {
     @Mock
     private lateinit var sessionMapper: SessionMapper
 
+    @Mock
+    private lateinit var mcpBindingMapper: AgentMcpBindingMapper
+
+    @Mock
+    private lateinit var skillBindingMapper: AgentSkillBindingMapper
+
     private lateinit var testSession: Session
     private lateinit var testAgent: Agent
 
@@ -94,8 +105,6 @@ class SessionServiceImplTest {
             enableSearch = 0
             enablePlan = 0
             permissionMode = "DEFAULT"
-            mcpList = """[{"id":1,"enable_skip":"true"}]"""
-            skillList = "10,20"
             owner = "admin"
             status = 1
             isPublic = 0
@@ -111,8 +120,6 @@ class SessionServiceImplTest {
             description = "Agent description"
             systemPrompt = "You are a helpful assistant"
             modelId = 1L
-            mcpList = """[{"id":1,"enable_skip":"true"}]"""
-            skillList = "10,20"
             owner = "admin"
             status = 1
             active = 1
@@ -141,7 +148,25 @@ class SessionServiceImplTest {
         modelService = modelService,
         jwtUtil = jwtUtil,
         sessionMapper = sessionMapper,
+        mcpBindingMapper = mcpBindingMapper,
+        skillBindingMapper = skillBindingMapper,
     )
+
+    private fun mcpBinding(
+        agentId: Long,
+        mcpId: Long,
+    ): AgentMcpBinding = AgentMcpBinding().apply {
+        this.agentId = agentId
+        this.mcpId = mcpId
+    }
+
+    private fun skillBinding(
+        agentId: Long,
+        skillId: Long,
+    ): AgentSkillBinding = AgentSkillBinding().apply {
+        this.agentId = agentId
+        this.skillId = skillId
+    }
 
     @Nested
     @DisplayName("Page Query Tests")
@@ -151,7 +176,7 @@ class SessionServiceImplTest {
         @DisplayName("page - Normal pagination query")
         fun `page should return paginated results`() {
             // Given
-            `when`(sessionMapper.selectSessionList(null, null, "admin")).thenReturn(listOf(testSession))
+            `when`(sessionMapper.selectSessionList(null, null, "admin", 1L)).thenReturn(listOf(testSession))
 
             // When
             val page = createService().page(null, null, 1, 10)
@@ -159,35 +184,54 @@ class SessionServiceImplTest {
             // Then
             assertNotNull(page)
             assertTrue(page.total >= 0)
-            verify(sessionMapper).selectSessionList(null, null, "admin")
+            verify(sessionMapper).selectSessionList(null, null, "admin", 1L)
         }
 
         @Test
         @DisplayName("page - Filter by keyword")
         fun `page should filter by keyword`() {
             // Given
-            `when`(sessionMapper.selectSessionList("Test", null, "admin")).thenReturn(listOf(testSession))
+            `when`(sessionMapper.selectSessionList("Test", null, "admin", 1L)).thenReturn(listOf(testSession))
 
             // When
             val page = createService().page("Test", null, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(sessionMapper).selectSessionList("Test", null, "admin")
+            verify(sessionMapper).selectSessionList("Test", null, "admin", 1L)
         }
 
         @Test
         @DisplayName("page - Filter by status")
         fun `page should filter by status`() {
             // Given
-            `when`(sessionMapper.selectSessionList(null, 1, "admin")).thenReturn(listOf(testSession))
+            `when`(sessionMapper.selectSessionList(null, 1, "admin", 1L)).thenReturn(listOf(testSession))
 
             // When
             val page = createService().page(null, 1, 1, 10)
 
             // Then
             assertNotNull(page)
-            verify(sessionMapper).selectSessionList(null, 1, "admin")
+            verify(sessionMapper).selectSessionList(null, 1, "admin", 1L)
+        }
+
+        @Test
+        @DisplayName("page - Push the current tenant into the query")
+        fun `page should filter by tenant`() {
+            // Given - 不带租户就等于把别的租户公开的会话也列出来
+            TenantContext.setTenantId(7L)
+            try {
+                `when`(sessionMapper.selectSessionList(null, null, "admin", 7L)).thenReturn(listOf(testSession))
+
+                // When
+                val page = createService().page(null, null, 1, 10)
+
+                // Then
+                assertNotNull(page)
+                verify(sessionMapper).selectSessionList(null, null, "admin", 7L)
+            } finally {
+                TenantContext.clear()
+            }
         }
     }
 
@@ -257,13 +301,38 @@ class SessionServiceImplTest {
             assertEquals("Test Agent", saved.name)
             assertEquals("You are a helpful assistant", saved.systemPrompt)
             assertEquals(1L, saved.modelId)
-            assertEquals("10,20", saved.skillList)
             // sessionId generated with web- prefix
             assertTrue(saved.sessionId.startsWith("web-"))
             // Default status enabled and not public
             assertEquals(1, saved.status)
             assertEquals(0, saved.isPublic)
             assertEquals("admin", saved.creator)
+            assertEquals(1L, saved.tenantId)
+        }
+
+        @Test
+        @DisplayName("createSession - Stamp the current tenant")
+        fun `createSession should stamp the current tenant`() {
+            // Given - 不打标就会落到 DDL 缺省租户，和它绑定的 agent 不同租户
+            val request = SessionCreateRequest(
+                title = "Tenant Session",
+                agentId = 100L,
+            )
+            `when`(sessionMapper.countByTitle("Tenant Session")).thenReturn(0)
+            `when`(agentService.getAgent(100L)).thenReturn(testAgent)
+            `when`(sessionMapper.insert(any())).thenReturn(1)
+            TenantContext.setTenantId(7L)
+            try {
+                // When
+                assertTrue(createService().createSession(request))
+
+                // Then
+                val captor = argumentCaptor<Session>()
+                verify(sessionMapper).insert(captor.capture())
+                assertEquals(7L, captor.firstValue.tenantId)
+            } finally {
+                TenantContext.clear()
+            }
         }
 
         @Test
@@ -709,7 +778,10 @@ class SessionServiceImplTest {
             }
 
             `when`(modelService.getModel(1L)).thenReturn(model)
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(listOf(mcpBinding(100L, 1L)))
             `when`(mcpServerService.getMcpServer(1L)).thenReturn(mcpServer)
+            `when`(skillBindingMapper.selectByAgentId(100L))
+                .thenReturn(listOf(skillBinding(100L, 10L), skillBinding(100L, 20L)))
             `when`(skillService.getSkill(10L)).thenReturn(skill10)
             `when`(skillService.getSkill(20L)).thenReturn(skill20)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(repository)
@@ -743,8 +815,6 @@ class SessionServiceImplTest {
                 id = 2L
                 title = "Empty Session"
                 modelId = 999L
-                mcpList = ""
-                skillList = ""
             }
 
             `when`(modelService.getModel(999L)).thenReturn(null)
@@ -765,12 +835,12 @@ class SessionServiceImplTest {
             val session = Session().apply {
                 id = 3L
                 title = "MCP Session"
+                agentId = 100L
                 modelId = 1L
-                mcpList = """[{"id":88,"enable_skip":"false"}]"""
-                skillList = ""
             }
 
             `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(listOf(mcpBinding(100L, 88L)))
             `when`(mcpServerService.getMcpServer(88L)).thenReturn(null)
 
             // When
@@ -782,18 +852,19 @@ class SessionServiceImplTest {
         }
 
         @Test
-        @DisplayName("convertToResponse - Handle invalid MCP list JSON gracefully")
-        fun `convertToResponse should handle invalid mcp list json gracefully`() {
+        @DisplayName("convertToResponse - Return empty lists when the agent has no bindings")
+        fun `convertToResponse should return empty lists when the agent has no bindings`() {
             // Given
             val session = Session().apply {
                 id = 4L
-                title = "Bad MCP Session"
+                title = "No Binding Session"
+                agentId = 100L
                 modelId = 1L
-                mcpList = "not-a-json"
-                skillList = ""
             }
 
             `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(emptyList())
+            `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(emptyList())
 
             // When
             val result = createService().convertToResponse(session)
@@ -801,11 +872,12 @@ class SessionServiceImplTest {
             // Then
             assertNotNull(result)
             assertTrue(result.mcpList.isEmpty())
+            assertTrue(result.skillList.isEmpty())
         }
 
         @Test
-        @DisplayName("convertToResponse - Skip invalid skill IDs gracefully")
-        fun `convertToResponse should skip invalid skill ids gracefully`() {
+        @DisplayName("convertToResponse - Skip orphan skill bindings")
+        fun `convertToResponse should skip orphan skill bindings`() {
             // Given
             val skill10 = Skill().apply {
                 id = 10L
@@ -816,12 +888,15 @@ class SessionServiceImplTest {
             val session = Session().apply {
                 id = 5L
                 title = "Bad Skill Session"
+                agentId = 100L
                 modelId = 1L
-                mcpList = ""
-                skillList = "abc,10"
             }
 
             `when`(modelService.getModel(1L)).thenReturn(null)
+            `when`(skillBindingMapper.selectByAgentId(100L))
+                .thenReturn(listOf(skillBinding(100L, 999L), skillBinding(100L, 10L)))
+            // binding 999 points at a deleted skill
+            `when`(skillService.getSkill(999L)).thenReturn(null)
             `when`(skillService.getSkill(10L)).thenReturn(skill10)
             `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(null)
 
@@ -830,32 +905,9 @@ class SessionServiceImplTest {
 
             // Then
             assertNotNull(result)
-            // Invalid skill ID "abc" is skipped, valid skill 10 is kept
             assertEquals(1, result.skillList.size)
             assertEquals("code-review", result.skillList[0].skillName)
-        }
-
-        @Test
-        @DisplayName("convertToResponse - Skip non-existent skills")
-        fun `convertToResponse should skip non-existent skills`() {
-            // Given
-            val session = Session().apply {
-                id = 6L
-                title = "Orphan Skill Session"
-                modelId = 1L
-                mcpList = ""
-                skillList = "999"
-            }
-
-            `when`(modelService.getModel(1L)).thenReturn(null)
-            `when`(skillService.getSkill(999L)).thenReturn(null)
-
-            // When
-            val result = createService().convertToResponse(session)
-
-            // Then
-            assertNotNull(result)
-            assertTrue(result.skillList.isEmpty())
+            assertNull(result.skillList[0].repositoryName)
         }
     }
 }

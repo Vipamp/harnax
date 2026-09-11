@@ -287,7 +287,9 @@ class ApiKeyServiceImplTest {
         @Test
         @DisplayName("initSystemKeys - 已存在系统Key时跳过")
         fun `initSystemKeys should skip when key already exists`() {
+            // 两个系统服务各自判断，只 stub 一个的话另一个仍会建 Key
             `when`(apiKeyMapper.selectSystemKeyByServiceName("channel-service")).thenReturn(testSystemKey)
+            `when`(apiKeyMapper.selectSystemKeyByServiceName("scheduler")).thenReturn(testSystemKey)
 
             apiKeyService.initSystemKeys()
 

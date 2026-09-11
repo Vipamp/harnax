@@ -8,7 +8,6 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentCaptor
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.verify
@@ -16,6 +15,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.quality.Strictness
 import java.time.LocalDateTime
@@ -70,12 +70,12 @@ class TokenStatsControllerTest {
             val result = controller.getAggregationStats(null, null)
 
             assertTrue(result.isSuccess())
-            val startCaptor = ArgumentCaptor.forClass(String::class.java)
-            val endCaptor = ArgumentCaptor.forClass(String::class.java)
+            val startCaptor = argumentCaptor<String>()
+            val endCaptor = argumentCaptor<String>()
             verify(tokenStatsService).getAggregationStats(startCaptor.capture(), endCaptor.capture())
-            assertNotNull(startCaptor.value)
-            assertNotNull(endCaptor.value)
-            assertTrue(startCaptor.value < endCaptor.value)
+            assertNotNull(startCaptor.firstValue)
+            assertNotNull(endCaptor.firstValue)
+            assertTrue(startCaptor.firstValue < endCaptor.firstValue)
         }
 
         @Test

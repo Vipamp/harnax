@@ -71,8 +71,6 @@ data class SessionResponse(
         var mcpName: String? = null,
         @Schema(description = "MCP description", example = "File system service")
         var mcpDescription: String? = null,
-        @Schema(description = "Whether allow to skip", example = "true")
-        var enableSkip: String? = null,
     )
 
     @Schema(description = "Skill item")

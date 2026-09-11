@@ -8,22 +8,29 @@ import com.agnetix.harnax.admin.dto.AgentUpdateRequest
 import com.agnetix.harnax.admin.dto.EnvBinding
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.ToolConfig
+import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
+import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
+import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
+import com.agnetix.harnax.mapper.AgentToolEnvParamMapper
+import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.github.pagehelper.PageHelper
@@ -57,6 +64,10 @@ class AgentServiceImpl(
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val skillMapper: SkillMapper,
+    private val mcpServerMapper: McpServerMapper,
+    private val agentToolMapper: AgentToolMapper,
+    private val agentToolEnvParamMapper: AgentToolEnvParamMapper,
+    private val secretFieldEncryptor: SecretFieldEncryptor,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -72,7 +83,7 @@ class AgentServiceImpl(
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<Agent>(safePageNum, safePageSize)
-        return Page.fromPageInfo(agentMapper.selectAgentList(name, status, currentUsername))
+        return Page.fromPageInfo(agentMapper.selectAgentList(name, status, currentUsername, currentTenantId()))
     }
 
     @Transactional(rollbackFor = [Exception::class])
@@ -87,7 +98,7 @@ class AgentServiceImpl(
         agent.owner = currentUsername
         agent.status = request.status ?: 1
         agent.isPublic = request.isPublic ?: 0
-        agent.tenantId = TenantContext.getTenantId() ?: 1
+        agent.tenantId = currentTenantId()
         agent.creator = currentUsername
 
         agent.createTime = LocalDateTime.now()
@@ -108,7 +119,14 @@ class AgentServiceImpl(
         throw RuntimeException("Failed to create agent: ${e.message}")
     }
 
-    override fun getAgent(id: Long): Agent? = agentMapper.selectById(id)
+    /**
+     * Single-row access to `agent`.
+     *
+     * The list query filters by tenant, so a by-id read that does not would make that filter
+     * cosmetic: any row could be opened, edited or deleted by guessing its id. A row outside the
+     * current tenant answers as a missing one.
+     */
+    override fun getAgent(id: Long): Agent? = agentMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun updateAgent(id: Long, request: AgentUpdateRequest): Boolean = try {
@@ -147,12 +165,16 @@ class AgentServiceImpl(
     }
 
     override fun toggleAgentStatus(id: Long, status: Int): Boolean {
-        val agent = agentMapper.selectById(id)
-            ?: throw RuntimeException("Agent not found")
+        // Read through getAgent, otherwise the tenant guard on single-row access is bypassed by this writer.
+        getAgent(id) ?: throw RuntimeException("Agent not found")
         return agentMapper.updateStatus(id, status) > 0
     }
 
     override fun deleteAgent(id: Long): Boolean {
+        val agent = agentMapper.selectById(id)
+        if (agent != null && agent.tenantId != currentTenantId()) {
+            throw RuntimeException("Agent not found")
+        }
         // Clean up bindings before deleting agent
         toolBindingMapper.deleteByAgentId(id)
         mcpBindingMapper.deleteByAgentId(id)
@@ -161,7 +183,7 @@ class AgentServiceImpl(
         return agentMapper.deleteById(id) > 0
     }
 
-    override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, "")
+    override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, "", currentTenantId())
 
     /**
      * Convert Agent entity to response DTO.
@@ -236,7 +258,6 @@ class AgentServiceImpl(
                 item.mcpId = fullMcp.id
                 item.mcpName = fullMcp.name
                 item.mcpDescription = fullMcp.description
-                item.enableSkip = binding.enableSkip
                 item.envBindings = parseEnvBindingsJson(binding.envBindings)
                 mcpItems.add(item)
             }
@@ -308,8 +329,20 @@ class AgentServiceImpl(
         if (toolList.isNullOrEmpty()) return
 
         val now = LocalDateTime.now()
+        val toolIds = toolList.mapNotNull { it.id }.distinct()
+        val toolsById = resolveBindableTools(toolIds).associateBy { it.id }
         val bindings = toolList.mapNotNull { config ->
             val toolId = config.id ?: return@mapNotNull null
+            val tool = toolsById[toolId] ?: return@mapNotNull null
+            assertEnvVarRefsBindable(config.envBindings, "tool '${tool.name}'")
+            assertRequiredEnvParamsFilled(
+                "tool '${tool.name}'",
+                // The tool's own default never reaches a builtin/HTTP tool at runtime (only the binding
+                // values are delivered into ToolEnvContext), so it cannot stand in for a required param.
+                loadToolEnvParams(toolId),
+                config.envBindings,
+                defaultValueCounts = false,
+            )
             AgentToolBinding().apply {
                 this.agentId = agentId
                 this.toolId = toolId
@@ -334,21 +367,76 @@ class AgentServiceImpl(
         if (mcpList.isNullOrEmpty()) return
 
         val now = LocalDateTime.now()
+        val mcpIds = mcpList.mapNotNull { it.id }.distinct()
+        val serversById = resolveBindableMcpServers(mcpIds).associateBy { it.id }
         val bindings = mcpList.mapNotNull { config ->
             val mcpId = config.id ?: return@mapNotNull null
+            val server = serversById[mcpId] ?: return@mapNotNull null
+            assertEnvVarRefsBindable(config.envBindings, "MCP server '${server.name}'")
+            assertRequiredEnvParamsFilled(
+                "MCP server '${server.name}'",
+                secretFieldEncryptor.deserializeToolEnvEntries(server.envParams),
+                config.envBindings,
+                // `mcp_server.env_params` is delivered whole and decrypted as the stdio process env,
+                // so a declared default does land in the runtime and may answer a required param.
+                defaultValueCounts = true,
+            )
             AgentMcpBinding().apply {
                 this.agentId = agentId
                 this.mcpId = mcpId
-                this.enableSkip = config.enableSkip ?: "false"
                 this.envBindings = serializeEnvBindings(config.envBindings)
                 this.createTime = now
                 this.updateTime = now
             }
-        }
+        }.distinctBy { it.mcpId }
         if (bindings.isNotEmpty()) {
             mcpBindingMapper.batchInsert(bindings)
         }
     }
+
+    /**
+     * Tool rows the agent may be bound to, out of [toolIds].
+     *
+     * Same reasoning as [resolveBindableMcpServers]: a binding whose tool row is gone is not an error
+     * at write time, but delivery drops it with only a log line, so the operator loses a tool without
+     * a signal. A cross-tenant id would additionally hand over another tenant's tool configuration.
+     */
+    private fun resolveBindableTools(toolIds: List<Long>): List<AgentTool> {
+        if (toolIds.isEmpty()) return emptyList()
+        val tenantId = currentTenantId()
+        val resolvable = agentToolMapper.selectByIds(toolIds).filter { it.tenantId == tenantId }
+        val missing = toolIds - resolvable.map { it.id }.toSet()
+        if (missing.isNotEmpty()) {
+            throw BizException(
+                "Tool is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
+            )
+        }
+        return resolvable
+    }
+
+    /**
+     * Server rows behind [mcpIds], rejecting the ones that cannot be delivered.
+     *
+     * A binding whose server is gone is not an error at write time any more, but it is one at
+     * runtime: delivery resolves it with `?: continue`, so the agent simply stops seeing that tool
+     * and nothing tells the operator. `selectByIds` already excludes `active = 0`, and the tenant
+     * comparison mirrors `McpServerService.getMcpServer`, which is what the resolver goes through.
+     * Rows are returned rather than ids because the caller needs `env_params` to check required params.
+     */
+    private fun resolveBindableMcpServers(mcpIds: List<Long>): List<McpServer> {
+        if (mcpIds.isEmpty()) return emptyList()
+        val tenantId = currentTenantId()
+        val resolvable = mcpServerMapper.selectByIds(mcpIds).filter { it.tenantId == tenantId }
+        val missing = mcpIds - resolvable.map { it.id }.toSet()
+        if (missing.isNotEmpty()) {
+            throw BizException(
+                "MCP server is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
+            )
+        }
+        return resolvable
+    }
+
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
 
     /**
      * Save skill bindings: delete old + insert new.
@@ -443,7 +531,7 @@ class AgentServiceImpl(
 
     /**
      * Serialize env bindings to JSON snapshot.
-     * For bindings with envVarId, resolves envVarName and envValue from env_variable table.
+     * A reference stores the pointer only; [parseEnvBindingsJson] and delivery resolve its value live.
      */
     private fun serializeEnvBindings(bindings: List<EnvBinding>?): String? {
         if (bindings.isNullOrEmpty()) return null
@@ -453,10 +541,13 @@ class AgentServiceImpl(
 
             if (binding.envVarId != null) {
                 snapshot["envVarId"] = binding.envVarId
-                // Resolve envVarName and envValue from DB
-                val envVar = envVariableService.getEnvVariable(binding.envVarId)
-                snapshot["envVarName"] = binding.envVarName ?: envVar?.envKey
-                snapshot["envValue"] = binding.envValue ?: envVariableService.getDecryptedValue(binding.envVarId)
+                // Resolve envVarName from DB
+                snapshot["envVarName"] = binding.envVarName ?: envVariableService.getEnvVariable(binding.envVarId)?.envKey
+                // No value is stored for a reference. What the client sends here is the read API's
+                // display value — `******` for a sensitive variable — and snapshotting that turns the
+                // stars into the fallback a tool receives once the variable is gone; resolving it
+                // server-side instead would write a plaintext secret into this column. Delivery
+                // follows the pointer live (`resolveEnvBindingsJson`).
             } else if (binding.customValue != null) {
                 snapshot["customValue"] = binding.customValue
             } else if (binding.envValue != null) {
@@ -467,6 +558,72 @@ class AgentServiceImpl(
             snapshot
         }
         return objectMapper.writeValueAsString(snapshots)
+    }
+
+    /**
+     * Reject references to env variables this save cannot resolve.
+     *
+     * Only the reference is stored, and delivery follows it with an unscoped
+     * `getDecryptedValue(envVarId)`: an id that is gone leaves the tool with nothing, and an id of
+     * another tenant's variable hands over that tenant's secret. Both are knowable at save time.
+     */
+    private fun assertEnvVarRefsBindable(bindings: List<EnvBinding>?, target: String) {
+        val ids = bindings?.mapNotNull { it.envVarId }?.distinct().orEmpty()
+        if (ids.isEmpty()) return
+        val tenantId = currentTenantId()
+        val unresolved = ids.filter { envVariableService.getEnvVariable(it)?.tenantId != tenantId }
+        if (unresolved.isNotEmpty()) {
+            throw BizException(
+                "$target references an env variable that is missing, deleted, or outside your tenant: ${unresolved.joinToString(",")}",
+            )
+        }
+    }
+
+    /**
+     * Reject a save that leaves a required env param with nothing to resolve at runtime.
+     *
+     * [defaultValueCounts] says whether the parameter's own stored default can answer the requirement;
+     * each caller passes what follows from where that default actually goes at runtime.
+     */
+    private fun assertRequiredEnvParamsFilled(
+        target: String,
+        entries: List<ToolEnvParamEntry>,
+        bindings: List<EnvBinding>?,
+        defaultValueCounts: Boolean,
+    ) {
+        val byKey = bindings.orEmpty().associateBy { it.envKey }
+        val missing = entries.filter { entry ->
+            entry.required && !entry.hasRuntimeValue(byKey[entry.envParamName], defaultValueCounts)
+        }.map { it.envParamName }
+        if (missing.isNotEmpty()) {
+            throw BizException(
+                "$target requires env params that are left without a value: ${missing.joinToString(",")}",
+            )
+        }
+    }
+
+    private fun ToolEnvParamEntry.hasRuntimeValue(binding: EnvBinding?, defaultValueCounts: Boolean): Boolean {
+        // A reference counts without seeing its value: delivery resolves it from the DB.
+        if (binding?.envVarId != null) return true
+        val typed = binding?.customValue ?: binding?.envValue
+        // Masked text is a display artefact travelling back through the form, not a value.
+        if (!typed.isNullOrBlank() && !typed.contains("****")) return true
+        return defaultValueCounts && !defaultValue.isNullOrBlank()
+    }
+
+    /**
+     * Parameter definitions of a tool, read from the table: [AgentToolService] hands out the masked
+     * view meant for display, which cannot tell an absent default from a redacted one.
+     */
+    private fun loadToolEnvParams(toolId: Long): List<ToolEnvParamEntry> = agentToolEnvParamMapper.selectByToolId(toolId).map { entity ->
+        ToolEnvParamEntry(
+            id = entity.id,
+            envParamName = entity.envParamName,
+            description = entity.description,
+            required = entity.required == 1,
+            secret = entity.secret == 1,
+            defaultValue = entity.defaultValue,
+        )
     }
 
     /**

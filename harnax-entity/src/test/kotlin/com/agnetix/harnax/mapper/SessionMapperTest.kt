@@ -16,6 +16,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -221,6 +222,36 @@ open class SessionMapperTest {
             sessions.forEach {
                 assertEquals(0, it.status)
             }
+        }
+
+        @Test
+        @DisplayName("selectSessionList - 按租户过滤")
+        fun `selectSessionList should filter by tenant`() {
+            // Given - 预置行都在租户 1，插一行租户 2 的公开会话作对照
+            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+            sessionMapper.insert(
+                Session().apply {
+                    sessionId = "session-tenant2"
+                    agentId = 1L
+                    title = "租户 2 会话"
+                    tenantId = 2L
+                    creator = "admin"
+                    isPublic = 1
+                    status = 1
+                    active = 1
+                    createTime = now
+                    updateTime = now
+                },
+            )
+
+            // When
+            val own = sessionMapper.selectSessionList(null, null, "admin", 1L).map { it.sessionId }
+            val other = sessionMapper.selectSessionList(null, null, "admin", 2L).map { it.sessionId }
+
+            // Then - 传了租户就只看得到自己的行，不传时整个条件不拼上
+            assertTrue(own.contains("session-001"))
+            assertFalse(own.contains("session-tenant2"))
+            assertEquals(listOf("session-tenant2"), other)
         }
 
         @Test

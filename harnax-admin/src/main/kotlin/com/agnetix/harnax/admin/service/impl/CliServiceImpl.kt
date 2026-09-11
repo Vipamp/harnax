@@ -103,7 +103,7 @@ class CliServiceImpl(
         request.version?.let { cli.version = it }
         request.installScript?.let { cli.installScript = it }
         request.checkCommand?.let { cli.checkCommand = it }
-        request.envParams?.let { cli.envParams = secretFieldEncryptor.serializeToolEnvParams(it) }
+        request.envParams?.let { cli.envParams = secretFieldEncryptor.serializeToolEnvParams(it, cli.envParams) }
         request.isPublic?.let { cli.isPublic = it }
 
         val success = cliMapper.updateById(cli) > 0

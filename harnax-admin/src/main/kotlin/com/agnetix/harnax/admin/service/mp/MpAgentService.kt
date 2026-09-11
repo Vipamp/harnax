@@ -31,9 +31,12 @@ class MpAgentService(
 
     private val log = LoggerFactory.getLogger(MpAgentService::class.java)
 
-    fun listAgents(userId: Long): List<MpAgentResponse> {
+    fun listAgents(
+        userId: Long,
+        tenantId: Long?,
+    ): List<MpAgentResponse> {
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val agents = agentMapper.selectAgentList(null, 1, currentUsername)
+        val agents = agentMapper.selectAgentList(null, 1, currentUsername, tenantId)
         return agents.filter { it.active == 1 }.map { agent ->
             val modelName = modelService.getModel(agent.modelId)?.modelName ?: ""
             val sessionCount = mpSessionMapper.countByUserIdAndAgentId(userId, agent.id)
@@ -48,9 +51,16 @@ class MpAgentService(
         }
     }
 
-    fun getAgentDetail(agentId: Long): MpAgentDetailResponse {
+    fun getAgentDetail(
+        agentId: Long,
+        tenantId: Long?,
+    ): MpAgentDetailResponse {
         val agent = agentMapper.selectById(agentId)
             ?: throw BizException("Agent not found")
+        if (tenantId != null && agent.tenantId != tenantId) {
+            // Same wording as a missing agent, so another tenant's ids stay unlisted.
+            throw BizException("Agent not found")
+        }
         if (agent.active != 1 || agent.status != 1) {
             throw BizException("Agent is not available")
         }

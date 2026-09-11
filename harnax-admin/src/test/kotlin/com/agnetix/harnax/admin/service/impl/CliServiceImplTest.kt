@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.CliCreateRequest
 import com.agnetix.harnax.admin.dto.CliUpdateRequest
+import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
@@ -461,6 +462,28 @@ class CliServiceImplTest {
             assertEquals("kubectl", updated.name) // Unchanged
             // skillIds not provided, bindings untouched
             verify(cliSkillBindingMapper, never()).deleteByCliId(anyLong())
+        }
+
+        @Test
+        @DisplayName("updateCli - Env param encryption gets the row's current json as carry-over source")
+        fun `updateCli should pass stored envParams into serialization`() {
+            // Given: the edit form prefills the mask the detail API returned, so the stored column
+            // is the only place the real credential still exists
+            val entries = listOf(
+                ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true, defaultValue = "AB****CD"),
+            )
+            `when`(cliMapper.selectById(1L)).thenReturn(testCli)
+            `when`(cliMapper.updateById(any())).thenReturn(1)
+            `when`(secretFieldEncryptor.serializeToolEnvParams(entries, testCli.envParams)).thenReturn("[carried]")
+
+            // When
+            val result = createService().updateCli(1L, CliUpdateRequest(envParams = entries))
+
+            // Then
+            assertTrue(result)
+            val captor = argumentCaptor<Cli>()
+            verify(cliMapper).updateById(captor.capture())
+            assertEquals("[carried]", captor.firstValue.envParams)
         }
 
         @Test

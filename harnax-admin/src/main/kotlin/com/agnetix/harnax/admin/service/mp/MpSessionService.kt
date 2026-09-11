@@ -35,6 +35,10 @@ class MpSessionService(
             ?: throw BizException("Agent ID is required")
         val agent = agentMapper.selectById(agentId)
             ?: throw BizException("Agent not found")
+        if (tenantId != null && agent.tenantId != tenantId) {
+            // Same wording as a missing agent, so another tenant's ids stay unlisted.
+            throw BizException("Agent not found")
+        }
         if (agent.active != 1 || agent.status != 1) {
             throw BizException("Agent is not available")
         }
@@ -50,8 +54,6 @@ class MpSessionService(
             this.description = agent.description
             this.systemPrompt = agent.systemPrompt
             this.modelId = agent.modelId
-            this.mcpList = agent.mcpList
-            this.skillList = agent.skillList
             this.tenantId = tenantId ?: agent.tenantId
             this.enableThink = 0
             this.enableSearch = 0

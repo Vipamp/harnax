@@ -24,7 +24,7 @@ class MpAgentController(
     fun listAgents(): ResultVo<List<MpAgentResponse>> {
         val user = SecurityUtils.getCurrentUser()
             ?: return ResultVo.error("User not logged in")
-        return ResultVo.success(mpAgentService.listAgents(user.id))
+        return ResultVo.success(mpAgentService.listAgents(user.id, user.tenantId))
     }
 
     @GetMapping("/{agentId}")
@@ -34,6 +34,6 @@ class MpAgentController(
     ): ResultVo<MpAgentDetailResponse> {
         val user = SecurityUtils.getCurrentUser()
             ?: return ResultVo.error("User not logged in")
-        return ResultVo.success(mpAgentService.getAgentDetail(agentId))
+        return ResultVo.success(mpAgentService.getAgentDetail(agentId, user.tenantId))
     }
 }

@@ -22,10 +22,17 @@ interface SessionMapper {
 
     // ==================== Custom Query Methods ====================
 
+    /**
+     * Query list with conditions.
+     *
+     * Tenant-scoped list query: [tenantId] is pushed into the SQL when non-null, mirroring
+     * `selectAgentList`.
+     */
     fun selectSessionList(
         @Param("keyword") keyword: String?,
         @Param("status") status: Int?,
         @Param("currentUsername") currentUsername: String,
+        @Param("tenantId") tenantId: Long? = null,
     ): List<Session>
 
     fun countByTitle(@Param("title") title: String): Int

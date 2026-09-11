@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.dto.SessionChatUpdateRequest
 import com.agnetix.harnax.admin.dto.SessionCreateRequest
@@ -9,13 +10,13 @@ import com.agnetix.harnax.admin.service.*
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.Session
+import com.agnetix.harnax.mapper.AgentMcpBindingMapper
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import tools.jackson.core.type.TypeReference
-import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 import java.util.*
 
@@ -31,10 +32,11 @@ class SessionServiceImpl(
     private val modelService: ModelService,
     private val jwtUtil: JwtUtil,
     private val sessionMapper: SessionMapper,
+    private val mcpBindingMapper: AgentMcpBindingMapper,
+    private val skillBindingMapper: AgentSkillBindingMapper,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
-    private val objectMapper = ObjectMapper()
 
     override fun page(
         keyword: String?,
@@ -53,10 +55,19 @@ class SessionServiceImpl(
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<Session>(safePageNum, safePageSize)
-        return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername))
+        return Page.fromPageInfo(sessionMapper.selectSessionList(keyword, status, currentUsername, currentTenantId()))
     }
 
-    override fun getSession(id: Long): Session? = this.sessionMapper.selectById(id)
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+
+    /**
+     * The mapper's single-row statements carry no tenant condition and the tenant interceptor is
+     * inert, so ownership is decided here: a row of another tenant answers as the absent one it is
+     * to this caller.
+     */
+    private fun ownedSession(id: Long): Session? = sessionMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+
+    override fun getSession(id: Long): Session? = ownedSession(id)
 
     override fun convertToResponse(session: Session): SessionResponse {
         val response = SessionResponse()
@@ -95,70 +106,33 @@ class SessionServiceImpl(
         response.createTime = session.createTime
         response.updateTime = session.updateTime
 
-        // Parse MCP list (JSON format)
-        if (session.mcpList.isNotEmpty()) {
-            try {
-                val mcpConfigs: List<Map<String, Any>> = objectMapper.readValue(
-                    session.mcpList,
-                    object : TypeReference<List<Map<String, Any>>>() {},
-                )
-
-                val mcpItems = mutableListOf<SessionResponse.McpItem>()
-                for (config in mcpConfigs) {
-                    val mcpId = (config["id"] as Number).toLong()
-                    val enableSkip = config["enable_skip"] as String?
-
-                    val fullMcp = mcpServerService.getMcpServer(mcpId)
-                    fullMcp?.let {
-                        val item = SessionResponse.McpItem()
-                        item.mcpId = it.id
-                        item.mcpName = it.name
-                        item.mcpDescription = it.description
-                        item.enableSkip = enableSkip
-                        mcpItems.add(item)
-                    }
-                }
-                response.mcpList = mcpItems
-            } catch (e: Exception) {
-                log.warn("Failed to parse MCP list", e)
-                response.mcpList = mutableListOf()
-            }
+        // A session has no capability bindings of its own: both lists follow the bound agent
+        val mcpItems = mutableListOf<SessionResponse.McpItem>()
+        for (binding in mcpBindingMapper.selectByAgentId(session.agentId)) {
+            val mcp = mcpServerService.getMcpServer(binding.mcpId) ?: continue
+            val item = SessionResponse.McpItem()
+            item.mcpId = mcp.id
+            item.mcpName = mcp.name
+            item.mcpDescription = mcp.description
+            mcpItems.add(item)
         }
+        response.mcpList = mcpItems
 
-        // Parse skill list (comma-separated string)
-        if (session.skillList.isNotEmpty()) {
-            try {
-                val skillIds = session.skillList.split(",")
-                val skillItems = mutableListOf<SessionResponse.SkillItem>()
+        val skillItems = mutableListOf<SessionResponse.SkillItem>()
+        for (binding in skillBindingMapper.selectByAgentId(session.agentId)) {
+            val skill = skillService.getSkill(binding.skillId) ?: continue
+            val item = SessionResponse.SkillItem()
+            item.skillId = skill.id
+            item.skillName = skill.name
 
-                for (skillIdStr in skillIds) {
-                    try {
-                        val skillId = skillIdStr.trim().toLong()
-                        val skill = skillService.getSkill(skillId)
-                        skill?.let {
-                            val item = SessionResponse.SkillItem()
-                            item.skillId = it.id
-                            item.skillName = it.name
-
-                            val repository = skillRepositoryService.getSkillRepository(it.repositoryId)
-                            repository?.let {
-                                item.repositoryId = it.id
-                                item.repositoryName = it.name
-                            }
-
-                            skillItems.add(item)
-                        }
-                    } catch (e: NumberFormatException) {
-                        log.warn("Invalid skill ID: {}", skillIdStr)
-                    }
-                }
-
-                response.skillList = skillItems
-            } catch (e: Exception) {
-                log.warn("Failed to parse skill list", e)
-                response.skillList = mutableListOf()
+            skillRepositoryService.getSkillRepository(skill.repositoryId)?.let { repository ->
+                item.repositoryId = repository.id
+                item.repositoryName = repository.name
             }
+
+            skillItems.add(item)
         }
+        response.skillList = skillItems
 
         return response
     }
@@ -186,8 +160,6 @@ class SessionServiceImpl(
         session.description = agent.description
         session.systemPrompt = agent.systemPrompt
         session.modelId = agent.modelId
-        session.mcpList = agent.mcpList
-        session.skillList = agent.skillList
         session.owner = agent.owner
         session.status = 1
 
@@ -198,6 +170,9 @@ class SessionServiceImpl(
         // Set creator
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
         session.creator = currentUsername
+
+        // 归属跟随当前租户，否则行会落到 DDL 缺省租户，与它绑定的 agent 不同租户
+        session.tenantId = currentTenantId()
 
         // Default not public
         session.isPublic = 0
@@ -211,7 +186,7 @@ class SessionServiceImpl(
     }
 
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
-        val session = sessionMapper.selectById(id)
+        val session = ownedSession(id)
             ?: throw BizException("Session not found")
         session.title = request.title
         session.description = request.sessionDescription
@@ -264,7 +239,7 @@ class SessionServiceImpl(
     override fun toggleSessionStatus(id: Long, status: Int): Boolean {
         log.info("Toggling session status, id: {}, status: {}", id, status)
 
-        val session = sessionMapper.selectById(id)
+        val session = ownedSession(id)
             ?: throw BizException("Session not found")
 
         return sessionMapper.updateStatus(id, status) > 0
@@ -274,7 +249,7 @@ class SessionServiceImpl(
     override fun deleteSession(id: Long): Boolean {
         log.info("Deleting session, id: {}", id)
 
-        val session = this.sessionMapper.selectById(id)
+        val session = ownedSession(id)
             ?: throw BizException("Session not found")
 
         return this.sessionMapper.deleteById(id) > 0

@@ -52,12 +52,6 @@ class Session : Serializable {
     @Schema(description = "Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)")
     var permissionMode: String = "DEFAULT"
 
-    @Schema(description = "MCP service list (JSON format)")
-    var mcpList: String = "[]"
-
-    @Schema(description = "Skill list (JSON format)")
-    var skillList: String = "[]"
-
     @Schema(description = "Owner")
     var owner: String = ""
 

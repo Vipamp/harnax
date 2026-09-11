@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentCaptor
-import org.mockito.Captor
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
@@ -20,6 +18,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.quality.Strictness
 
 /**
@@ -42,8 +41,7 @@ class AdminUserInitializerTest {
     @Mock
     private lateinit var sysUserService: SysUserService
 
-    @Captor
-    private lateinit var requestCaptor: ArgumentCaptor<SysUserCreateRequest>
+    private val requestCaptor = argumentCaptor<SysUserCreateRequest>()
 
     @InjectMocks
     private lateinit var initializer: AdminUserInitializer
@@ -64,7 +62,7 @@ class AdminUserInitializerTest {
 
             // Then
             verify(sysUserService, times(1)).createUser(requestCaptor.capture())
-            val request = requestCaptor.value
+            val request = requestCaptor.firstValue
             assertEquals("admin", request.username)
             assertEquals("System Administrator", request.nickname)
             assertEquals("admin@harnax.com", request.email)
@@ -84,7 +82,7 @@ class AdminUserInitializerTest {
 
             // Then - 密码不是明文，而是固定的 SHA-256 十六进制串
             verify(sysUserService).createUser(requestCaptor.capture())
-            val request = requestCaptor.value
+            val request = requestCaptor.firstValue
             assertNotEquals("admin123", request.password, "不应传明文密码")
             assertEquals(ADMIN123_SHA256, request.password)
             // 64 位十六进制字符串

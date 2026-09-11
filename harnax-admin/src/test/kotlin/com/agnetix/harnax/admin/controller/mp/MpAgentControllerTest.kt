@@ -48,6 +48,7 @@ class MpAgentControllerTest {
         testUser = SysUser().apply {
             id = 1L
             username = "mpuser"
+            tenantId = 3L
             status = 1
         }
         // 初始化 SecurityUtils 单例,使 SecurityUtils.getCurrentUser() 可用
@@ -77,7 +78,7 @@ class MpAgentControllerTest {
                 MpAgentResponse(id = 1L, name = "Agent A", description = "desc A", modelName = "gpt-4", status = 1, sessionCount = 2),
                 MpAgentResponse(id = 2L, name = "Agent B", description = "desc B", modelName = "gpt-3.5", status = 1, sessionCount = 0),
             )
-            `when`(mpAgentService.listAgents(1L)).thenReturn(agents)
+            `when`(mpAgentService.listAgents(1L, 3L)).thenReturn(agents)
 
             val result = controller.listAgents()
 
@@ -91,7 +92,7 @@ class MpAgentControllerTest {
         @DisplayName("listAgents - 无可用 Agent 时返回空列表")
         fun `listAgents should return empty list when no agents`() {
             loginAs("mpuser")
-            `when`(mpAgentService.listAgents(1L)).thenReturn(emptyList())
+            `when`(mpAgentService.listAgents(1L, 3L)).thenReturn(emptyList())
 
             val result = controller.listAgents()
 
@@ -114,7 +115,7 @@ class MpAgentControllerTest {
         @DisplayName("listAgents - service 抛异常时异常向上传播")
         fun `listAgents should propagate service exception`() {
             loginAs("mpuser")
-            `when`(mpAgentService.listAgents(1L)).thenThrow(RuntimeException("DB error"))
+            `when`(mpAgentService.listAgents(1L, 3L)).thenThrow(RuntimeException("DB error"))
 
             assertThrows<RuntimeException> {
                 controller.listAgents()
@@ -142,7 +143,7 @@ class MpAgentControllerTest {
                 enableSearch = false,
                 enablePlan = false,
             )
-            `when`(mpAgentService.getAgentDetail(1L)).thenReturn(detail)
+            `when`(mpAgentService.getAgentDetail(1L, 3L)).thenReturn(detail)
 
             val result = controller.getAgentDetail(1L)
 
@@ -168,7 +169,7 @@ class MpAgentControllerTest {
         @DisplayName("getAgentDetail - Agent 不存在时异常向上传播")
         fun `getAgentDetail should propagate exception when agent not found`() {
             loginAs("mpuser")
-            `when`(mpAgentService.getAgentDetail(999L)).thenThrow(BizException("Agent not found"))
+            `when`(mpAgentService.getAgentDetail(999L, 3L)).thenThrow(BizException("Agent not found"))
 
             assertThrows<BizException> {
                 controller.getAgentDetail(999L)
@@ -179,7 +180,7 @@ class MpAgentControllerTest {
         @DisplayName("getAgentDetail - Agent 不可用时异常向上传播")
         fun `getAgentDetail should propagate exception when agent unavailable`() {
             loginAs("mpuser")
-            `when`(mpAgentService.getAgentDetail(2L)).thenThrow(BizException("Agent is not available"))
+            `when`(mpAgentService.getAgentDetail(2L, 3L)).thenThrow(BizException("Agent is not available"))
 
             assertThrows<BizException> {
                 controller.getAgentDetail(2L)
