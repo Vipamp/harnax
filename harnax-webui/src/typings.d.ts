@@ -208,6 +208,8 @@ message?: string;
     updateTime?: string;
     headers?: McpConfigEntry[];
     envParams?: ToolEnvParamEntry[];
+    authType?: string;
+    oauthConfig?: McpOAuthConfig;
   };
 
   /**
@@ -223,6 +225,8 @@ message?: string;
     isPublic?: number;
     headers?: McpConfigEntry[];
     envParams?: ToolEnvParamEntry[];
+    authType?: string;
+    oauthConfig?: McpOAuthConfig;
   };
 
   /**
@@ -239,6 +243,105 @@ message?: string;
     isPublic?: number;
     headers?: McpConfigEntry[];
     envParams?: ToolEnvParamEntry[];
+    authType?: string;
+    oauthConfig?: McpOAuthConfig;
+  };
+
+  /**
+   * @zh-CN MCP 的 OAuth 配置（非敏感部分，对应后端 McpOAuthConfig）
+   */
+  export type McpOAuthConfig = {
+    /** 授权服务器 issuer；留空表示由发现填入，编辑时留空不代表清除库里已有的值 */
+    authorizationServer?: string;
+    scopes?: string[];
+    audience?: string;
+    /** 是否发送 RFC 8707 的 resource 参数，让令牌绑定到本 MCP 服务 */
+    resourceIndicator?: boolean;
+  };
+
+  /**
+   * @zh-CN 登记 OAuth 客户端的请求（对应后端 McpOAuthClientRequest）
+   */
+  export type McpOAuthClientRequest = {
+    clientId: string;
+    /** 省略或传掩码值表示保留库里已有的密文；空串表示清除（公共客户端，只靠 PKCE） */
+    clientSecret?: string;
+    callbackUrl?: string;
+  };
+
+  /**
+   * @zh-CN 一次发现 / 登记的结果回显（对应后端 McpOAuthDiscoveryResponse，不含任何明文密钥）
+   */
+  export type McpOAuthDiscoveryResponse = {
+    issuer?: string;
+    /** CONFIG / PROTECTED_RESOURCE / RESOURCE_METADATA */
+    issuerSource?: string;
+    authorizationEndpoint?: string;
+    tokenEndpoint?: string;
+    registrationEndpoint?: string;
+    revocationEndpoint?: string;
+    scopesSupported?: string[];
+    unknownScopes?: string[];
+    clientId?: string;
+    clientSecretPresent?: boolean;
+    callbackUrl?: string;
+    /** 本次构建生成的回跳地址；与 callbackUrl 不一致就说明登记里存的是旧值 */
+    defaultCallbackUrl?: string;
+  };
+
+  /**
+   * @zh-CN 发起一次授权拿到的链接（对应后端 McpOAuthAuthorizeResponse）
+   * state 就在这个 URL 里，由授权服务器原样带回，不单独出现在响应字段中
+   */
+  export type McpOAuthAuthorizeResponse = {
+    authorizeUrl: string;
+    issuer?: string;
+    scopes?: string[];
+    /** 这个请求在服务器上还能被兑换多久，单位秒 */
+    expiresIn?: number;
+  };
+
+  /**
+   * @zh-CN 落地页把授权服务器带回的参数交给后端换票（对应后端 McpOAuthExchangeRequest）
+   */
+  export type McpOAuthExchangeRequest = {
+    code?: string;
+    state?: string;
+    error?: string;
+    errorDescription?: string;
+  };
+
+  /**
+   * @zh-CN 换票的结果（对应后端 McpOAuthExchangeResponse，没有任何字段能装令牌）
+   */
+  export type McpOAuthExchangeResponse = {
+    authorized: boolean;
+    message?: string;
+    scopes?: string[];
+    accessExpiresAt?: string;
+  };
+
+  /**
+   * @zh-CN 本用户在这个 MCP 上的授权状态（对应后端 McpOAuthStatusResponse，不含令牌）
+   */
+  export type McpOAuthStatusResponse = {
+    authorized: boolean;
+    /** ACTIVE / NEEDS_CONSENT / REVOKED，没授权过时为空 */
+    status?: string;
+    scopes?: string[];
+    accessExpiresAt?: string;
+    lastRefreshedAt?: string;
+    lastError?: string;
+  };
+
+  /**
+   * @zh-CN 撤销授权的结果（对应后端 McpOAuthRevokeResponse）
+   */
+  export type McpOAuthRevokeResponse = {
+    revoked: boolean;
+    /** 授权服务器有没有真的收下这次撤销；它不支持撤销时为 false，本地仍然清掉了 */
+    upstreamRevoked?: boolean;
+    message?: string;
   };
 
   /**
@@ -460,8 +563,6 @@ message?: string;
    */
   export type AgentMcpConfig = {
     id?: number;
-    enable_skip?: string;
-    enableSkip?: string;
     mcpId?: number;
     mcpName?: string;
     mcpDescription?: string;

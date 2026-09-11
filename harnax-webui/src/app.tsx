@@ -3,9 +3,9 @@ import type { Settings as LayoutSettings } from '@ant-design/pro-components';
 import { SettingDrawer } from '@ant-design/pro-components';
 import type { RequestConfig, RunTimeLayoutConfig } from '@umijs/max';
 import { history, Link } from '@umijs/max';
-import { Button, Space, Typography } from 'antd';
+import { Button } from 'antd';
 import React, { useState } from 'react';
-import { AvatarDropdown, AvatarName, Footer, Question, SelectLang, ThemeSwitcher } from '@/components';
+import { AvatarDropdown, AvatarName, Question, SelectLang, ThemeSwitcher } from '@/components';
 import TenantSwitcher from '@/components/TenantSwitcher';
 import { ThemeProvider } from '@/contexts/ThemeProvider';
 import { useIsMobile } from '@/utils/responsive';
@@ -15,6 +15,18 @@ import '@ant-design/v5-patch-for-react-19';
 
 const isDev = process.env.NODE_ENV === 'development';
 const loginPath = '/login';
+const oauthCallbackPath = '/mcp/oauth/callback';
+
+/**
+ * 跳登录页时带上「回来去哪」。
+ *
+ * 授权落地页是例外：它的 query 里是一次性的授权码与 state，原样带进登录页地址就等于把它们抄进
+ * 浏览器历史、并跟着重定向再走一遍。登录已经打断这次授权了，所以送回 MCP 列表重新发起。
+ */
+const loginRedirect = (location: { pathname: string; search: string }): string => {
+  const target = location.pathname === oauthCallbackPath ? '/context/mcp' : location.pathname + location.search;
+  return `?redirect=${encodeURIComponent(target)}`;
+};
 
 /**
  * @see https://umijs.org/docs/api/runtime-config#getinitialstate
@@ -49,7 +61,7 @@ export async function getInitialState(): Promise<{
    if (location.pathname !== '/login') {
      history.replace({
       pathname: '/login',
-     search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
+     search: loginRedirect(location),
        });
      }
     }
@@ -65,7 +77,7 @@ export async function getInitialState(): Promise<{
  if (!currentUser && location.pathname !== loginPath) {
    history.replace({
      pathname: loginPath,
-     search: `?redirect=${encodeURIComponent(location.pathname + location.search)}`,
+     search: loginRedirect(location),
    });
    // 确保返回空的用户信息
    currentUser = undefined;

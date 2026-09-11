@@ -15,6 +15,7 @@ import { useModel, useLocation, history } from '@umijs/max';
 import { getMcpServerById, getMcpTools } from '@/services/ant-design-pro/mcp';
 import BackButton from '@/components/BackButton';
 import DetailPageHeader from '@/components/DetailPageHeader';
+import OAuthPanel from './components/OAuthPanel';
 
 const { Text, Title } = Typography;
 
@@ -28,6 +29,13 @@ interface ToolItem {
   name: string;
   parameters: ToolParameter[];
 }
+
+/** 键是运行时认账的 auth_type；BASIC 不列，因为 resolveAuthType 会拒掉它、库里存不下 */
+const AUTH_TYPE_LABEL: Record<string, { id: string; defaultMessage: string }> = {
+  NONE: { id: 'pages.mcp.oauth.auth.none', defaultMessage: 'None (no upstream credential)' },
+  STATIC_HEADER: { id: 'pages.mcp.oauth.auth.staticHeader', defaultMessage: 'Static header (shared service credential)' },
+  OAUTH2: { id: 'pages.mcp.oauth.auth.oauth2', defaultMessage: 'OAuth 2.1 (per user)' },
+};
 
 const McpDetail: React.FC = () => {
   const intl = useIntl();
@@ -225,6 +233,10 @@ const McpDetail: React.FC = () => {
                   color: MCP_TYPE_CONFIG[mcpInfo.type]?.color || '#999',
                   label: MCP_TYPE_CONFIG[mcpInfo.type]?.label || mcpInfo.type
                 },
+                ...(mcpInfo.authType === 'OAUTH2' ? [{
+                  color: '#722ed1',
+                  label: intl.formatMessage(AUTH_TYPE_LABEL.OAUTH2)
+                }] : []),
                 ...(mcpInfo.isPublic === 1 ? [{ color: 'blue', label: intl.formatMessage({ id: 'pages.common.public', defaultMessage: 'Public' }) }] : []),
                 {
                   color: mcpInfo.status === 1 ? 'success' : 'default',
@@ -239,7 +251,13 @@ const McpDetail: React.FC = () => {
                 {
                   label: intl.formatMessage({ id: 'pages.mcp.detail.connectionMethod', defaultMessage: 'Connection Method' }),
                   value: mcpInfo.type === 'stdio' ? (mcpInfo.command || '-') : (mcpInfo.url || '-')
-                }
+                },
+                ...(mcpInfo.authType && mcpInfo.authType !== 'NONE' ? [{
+                  label: intl.formatMessage({ id: 'pages.mcp.oauth.authType', defaultMessage: 'Auth Method' }),
+                  value: AUTH_TYPE_LABEL[mcpInfo.authType]
+                    ? intl.formatMessage(AUTH_TYPE_LABEL[mcpInfo.authType])
+                    : mcpInfo.authType
+                }] : [])
               ]}
               creator={mcpInfo.creator || intl.formatMessage({ id: 'pages.common.unknown', defaultMessage: 'Unknown' })}
               createTime={mcpInfo.createTime}
@@ -311,6 +329,11 @@ const McpDetail: React.FC = () => {
                   </div>
                 )}
               </Card>
+            )}
+
+            {/* OAuth 2.1：仅在认证方式为 OAUTH2 时出现 */}
+            {mcpInfo.authType === 'OAUTH2' && (
+              <OAuthPanel mcpId={parseInt(mcpId, 10)} config={mcpInfo.oauthConfig} />
             )}
 
             {/* 工具列表 */}

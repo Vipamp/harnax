@@ -145,6 +145,12 @@ export default [
    redirect: '/welcome',
   },
   {
+    // 授权服务器回跳的落地页：不套布局，页面读走 query 后自己抹掉，再调带登录态的换票接口
+    path: '/mcp/oauth/callback',
+    layout: false,
+    component: './mcp/oauth-callback',
+  },
+  {
    path: '*',
     layout: false,
    component: './404',

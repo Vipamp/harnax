@@ -5,6 +5,7 @@ import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import { FormModal } from '@/components/FormModal';
 import ConfigEntriesEditor from './ConfigEntriesEditor';
+import OAuthFields from './OAuthFields';
 import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
 
 export interface UpdateFormProps {
@@ -18,6 +19,7 @@ export interface UpdateFormProps {
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
   const [mcpType, setMcpType] = useState<string>(values.type);
+  const [authType, setAuthType] = useState<string>(values.authType || 'NONE');
   const [form] = Form.useForm();
   const [testing, setTesting] = useState(false);
   const [isPublic, setIsPublic] = useState(values.isPublic === 1);
@@ -36,15 +38,21 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         url: values.url,
         headers: values.headers || [],
         envParams: values.envParams || [],
+        authType: values.authType || 'NONE',
+        // 库里发现的 issuer 直接回填：留空提交本来就等于「不改它」，让管理员看到它比看到空值诚实。
+        // 整份对象要带上后端的默认值：oauth_config 为空的行后端按 resourceIndicator=true 处理，
+        // 这里给 {} 会连开关的 initialValue 一起抹成「关」，显示与实际配置相反。
+        oauthConfig: { resourceIndicator: true, ...(values.oauthConfig || {}) },
       });
     }
   }, [visible, values]);
 
-  // 当外部 values 变化时更新 mcpType、isPublic 和 status
+  // 当外部 values 变化时更新 mcpType、authType、isPublic 和 status
   useEffect(() => {
     if (values?.type) {
       setMcpType(values.type);
     }
+    setAuthType(values?.authType || 'NONE');
     if (values?.isPublic !== undefined) {
       setIsPublic(values.isPublic === 1);
     }
@@ -52,6 +60,17 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
       setStatus(values.status);
     }
   }, [values]);
+
+  // 运行时只认 McpAuthTypes.SUPPORTED 这三个；V25 里的 BASIC 写进来会被 resolveAuthType 拒掉，给了选项就是让人配一个存不下的值
+  const authTypeOptions = [
+    { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.none', defaultMessage: 'None (no upstream credential)' }), value: 'NONE' },
+    { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.staticHeader', defaultMessage: 'Static header (shared service credential)' }), value: 'STATIC_HEADER' },
+    {
+      label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.oauth2', defaultMessage: 'OAuth 2.1 (per user)' }),
+      value: 'OAUTH2',
+      disabled: mcpType === 'stdio',
+    },
+  ];
 
   const mcpTypeOptions = [
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
@@ -110,7 +129,14 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             }, { name: invalidEnv.envParamName || '' }));
             return;
           }
-          onSubmit({ ...formValues, isPublic: isPublic ? 1 : 0, status });
+          const { oauthConfig, ...rest } = formValues;
+          onSubmit({
+            ...rest,
+            // 后端在 authType 离开 OAUTH2 时会清掉 oauth_config，这里就不必把残留值带回去
+            oauthConfig: formValues.authType === 'OAUTH2' ? oauthConfig : undefined,
+            isPublic: isPublic ? 1 : 0,
+            status,
+          });
         }}
       >
         <Form.Item
@@ -144,7 +170,21 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.mcp.typePlaceholder', defaultMessage: 'Please select MCP type' })}
-            onChange={(val: string) => setMcpType(val)}
+            onChange={(val: string) => {
+              setMcpType(val);
+              // 隐藏字段的旧值仍会被提交出去（Form 默认 preserve），而后端把「没带」当作「保留」，
+              // 所以切类型时不主动清掉，另一种传输方式的连接参数就一直留着。
+              form.setFieldsValue(
+                val === 'stdio'
+                  ? { url: undefined, headers: undefined }
+                  : { command: undefined, envParams: undefined },
+              );
+              if (val === 'stdio') {
+                // 后端 validateAuthType 拒绝 stdio + OAUTH2，切过去就得把认证方式一并收回 NONE
+                setAuthType('NONE');
+                form.setFieldsValue({ authType: 'NONE' });
+              }
+            }}
             options={mcpTypeOptions}
           />
         </Form.Item>
@@ -186,7 +226,16 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
                   message: intl.formatMessage({ id: 'pages.mcp.urlInvalid', defaultMessage: 'Please enter correct URL format' }),
                 },
               ]}
-              extra={intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
+              extra={
+                <>
+                  {intl.formatMessage({ id: mcpType === 'sse' ? 'pages.mcp.urlExtraSse' : 'pages.mcp.urlExtraHttp', defaultMessage: mcpType === 'sse' ? 'SSE type: enter SSE event stream endpoint' : 'Streamable HTTP type: enter HTTP endpoint' })}
+                  {authType === 'OAUTH2' && (
+                    <div>
+                      {intl.formatMessage({ id: 'pages.mcp.oauth.urlChangeWarning', defaultMessage: 'Changing the URL clears every user grant issued for the old address (the token is bound to it), so users have to authorize again.' })}
+                    </div>
+                  )}
+                </>
+              }
             >
               <Input 
                 placeholder={mcpType === 'sse' ? 'http://localhost:3000/sse' : 'http://localhost:3000/mcp'}
@@ -203,6 +252,21 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
               />
             </Form.Item>
           </>
+        )}
+
+        <Form.Item
+          name="authType"
+          label={intl.formatMessage({ id: 'pages.mcp.oauth.authType', defaultMessage: 'Auth Method' })}
+          extra={intl.formatMessage({ id: 'pages.mcp.oauth.authExtra', defaultMessage: 'OAuth only enables the two admin endpoints (discovery and client registration); the service itself still connects with the headers above until per-user token injection lands.' })}
+        >
+          <Select
+            options={authTypeOptions}
+            onChange={(val: string) => setAuthType(val)}
+          />
+        </Form.Item>
+
+        {authType === 'OAUTH2' && (
+          <OAuthFields intl={intl} storedIssuer={values.oauthConfig?.authorizationServer} />
         )}
 
         <Form.Item

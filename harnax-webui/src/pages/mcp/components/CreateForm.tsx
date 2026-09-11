@@ -4,6 +4,7 @@ import { useIntl } from '@umijs/max';
 import { ThunderboltOutlined, ApiOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import ConfigEntriesEditor from './ConfigEntriesEditor';
+import OAuthFields from './OAuthFields';
 import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
 
 export interface CreateFormProps {
@@ -16,6 +17,7 @@ export interface CreateFormProps {
 const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, onConnectivityTest }) => {
   const intl = useIntl();
   const [mcpType, setMcpType] = useState<string>('sse');
+  const [authType, setAuthType] = useState<string>('NONE');
   const [form] = Form.useForm();
   const [testing, setTesting] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
@@ -26,6 +28,17 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
     { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
+  ];
+
+  // 运行时只认 McpAuthTypes.SUPPORTED 这三个；V25 里的 BASIC 写进来会被 resolveAuthType 拒掉，给了选项就是让人配一个存不下的值
+  const authTypeOptions = [
+    { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.none', defaultMessage: 'None (no upstream credential)' }), value: 'NONE' },
+    { label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.staticHeader', defaultMessage: 'Static header (shared service credential)' }), value: 'STATIC_HEADER' },
+    {
+      label: intl.formatMessage({ id: 'pages.mcp.oauth.auth.oauth2', defaultMessage: 'OAuth 2.1 (per user)' }),
+      value: 'OAUTH2',
+      disabled: mcpType === 'stdio',
+    },
   ];
 
   /** 连通性测试 */
@@ -79,7 +92,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             }, { name: invalidEnv.envParamName || '' }));
             return;
           }
-          onSubmit({ ...values, isPublic: isPublic ? 1 : 0, status });
+          const { oauthConfig, ...rest } = values;
+          onSubmit({
+            ...rest,
+            oauthConfig: values.authType === 'OAUTH2' ? oauthConfig : undefined,
+            isPublic: isPublic ? 1 : 0,
+            status,
+          });
         }}
       >
         <Form.Item
@@ -113,7 +132,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.mcp.typePlaceholder', defaultMessage: 'Please select MCP type' })}
-            onChange={(val: string) => setMcpType(val)}
+            onChange={(val: string) => {
+              setMcpType(val);
+              // Form 默认 preserve：隐藏的字段仍带着旧值提交出去。切类型等于换一套连接参数，
+              // 不把另一种的残留清掉，切回去时表单会显示成填过了。
+              form.setFieldsValue(
+                val === 'stdio'
+                  ? { url: undefined, headers: undefined }
+                  : { command: undefined, envParams: undefined },
+              );
+              if (val === 'stdio') {
+                setAuthType('NONE');
+                form.setFieldsValue({ authType: 'NONE' });
+              }
+            }}
             options={mcpTypeOptions}
           />
         </Form.Item>
@@ -174,6 +206,20 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
         )}
 
         <Form.Item
+          name="authType"
+          label={intl.formatMessage({ id: 'pages.mcp.oauth.authType', defaultMessage: 'Auth Method' })}
+          initialValue="NONE"
+          extra={intl.formatMessage({ id: 'pages.mcp.oauth.authExtra', defaultMessage: 'OAuth only enables the two admin endpoints (discovery and client registration); the service itself still connects with the headers above until per-user token injection lands.' })}
+        >
+          <Select
+            options={authTypeOptions}
+            onChange={(val: string) => setAuthType(val)}
+          />
+        </Form.Item>
+
+        {authType === 'OAUTH2' && <OAuthFields intl={intl} />}
+
+        <Form.Item
           label={intl.formatMessage({ id: 'pages.common.status', defaultMessage: 'Status' })}
         >
           <Switch
@@ -206,7 +252,15 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
             {intl.formatMessage({ id: 'pages.mcp.connectivityTest', defaultMessage: 'Connectivity Test' })}
           </Button>
           <Button
-            onClick={() => form.resetFields()}
+            onClick={() => {
+              // resetFields 只管表单值；这几个驱动条件渲染的本地状态不一起退回去，重置后看到的
+              // 表单就和提交出去的载荷不一致（OAuthFields 还挂着、type 却已退回 sse）
+              form.resetFields();
+              setMcpType('sse');
+              setAuthType('NONE');
+              setIsPublic(false);
+              setStatus(1);
+            }}
           >
             {intl.formatMessage({ id: 'pages.common.reset', defaultMessage: 'Reset' })}
           </Button>

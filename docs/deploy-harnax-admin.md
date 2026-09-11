@@ -63,6 +63,8 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `FLYWAY_ENABLED` | `true` | 是否启用 Flyway 建表 |
 | `SWAGGER_ENABLED` | `true` | 是否启用 Swagger 文档 (生产建议关闭) |
 | `HARNAX_ROUTER_URL` | `http://localhost:8081` | Router 服务地址 |
+| `APP_BASE_URL` | `http://localhost:8080` | 本部署对外的访问 origin（对应配置项 `app.base-url`）。用于生成通道回调 URL。生产环境**必须改成上游真正能访问到的地址**（有 nginx 就填 nginx 的地址），否则回调会指向 localhost |
+| `APP_FRONTEND_BASE_URL` | 空（回退到 `APP_BASE_URL`） | 浏览器所在的 origin（对应配置项 `app.frontend-base-url`）。MCP OAuth 的 `redirect_uri` 由它拼成，指向的是前端路由 `/mcp/oauth/callback`：走 nginx 时与 `APP_BASE_URL` 相同，本地开发要填 `http://localhost:8000`（SPA 的端口，不是 admin 的 8080）。AS 按精确字符串比对 `redirect_uri`，填错就是第一次授权被拒。**改了这一项，已存在的客户端登记不会自动改**——`mcp_oauth_client.callback_url` 存的是登记那一刻的值，要在「登记客户端」表单里把新的回跳地址填进去重存一次 |
 
 > **安全提醒**: `ADMIN_INTERNAL_API_SECRET` 是其他服务 (channel/router/agent-service) 调用 admin 内部 API 的凭证，生产环境必须修改，且长度不少于 32 字符。此密钥需与 router 的配置保持一致。
 
@@ -74,7 +76,6 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 |--------|--------|------|
 | `jwt.secret` | `harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication` | JWT 签名密钥，**必须与 agent-service 保持一致**。需直接修改 `application.yml` |
 | `jwt.expiration` | `7200000`（2 小时） | Token 有效期（毫秒） |
-| `app.base-url` | `http://localhost:8080` | 服务外部访问地址，用于生成通道回调 URL。生产环境**必须修改**，否则回调地址会指向 localhost |
 | `mybatis.configuration.log-impl` | `StdOutImpl` | MyBatis SQL 日志输出到 stdout，生产环境建议关闭或改为 `Slf4jImpl` |
 | `spring.datasource.hikari.maximum-pool-size` | `20` | 数据库连接池上限，不支持环境变量覆盖 |
 

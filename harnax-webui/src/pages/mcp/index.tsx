@@ -34,13 +34,12 @@ const McpCard: React.FC<{
   index: number;
   config: { color: string; label: string; icon: React.ReactNode; bg: string };
   isAdmin: boolean;
-  currentUser: string;
+  currentUser: string | undefined;
   onToggleStatus: (id: number, status: number) => void;
   onEdit: (item: API.McpServerItem) => void;
   onDelete: (id: number) => void;
   onTest: (id: number, name: string) => void;
-  hasOperationPermission: (isAdmin: boolean, currentUser: string, creator?: string) => boolean;
-}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest, hasOperationPermission }) => {
+}> = ({ item, index, config, isAdmin, currentUser, onToggleStatus, onEdit, onDelete, onTest }) => {
   const intl = useIntl();
   const endpoint = item.type === 'stdio' ? item.command : item.url;
 
@@ -96,8 +95,13 @@ const McpCard: React.FC<{
       tagLabel={config.label}
       tagColor={config.color}
       tagBgHover={config.color}
+      tags={
+        item.authType === 'OAUTH2'
+          ? [{ label: intl.formatMessage({ id: 'pages.mcp.oauth.cardTag', defaultMessage: 'OAuth' }), color: 'purple' }]
+          : []
+      }
       description={renderDescription()}
-      status={item.status}
+      status={item.status ?? 1}
       isPublic={item.isPublic}
       creator={item.creator}
       createTime={item.createTime}
@@ -211,12 +215,17 @@ const McpManagement: React.FC = () => {
     setLoading(true);
     try {
       const res = await getMcpServerPage({
-        current: page,
-        size: size,
+        pageNum: page,
+        pageSize: size,
         keyword: kw || undefined,
         status: st,
         type: tp,
       });
+      if (res.code !== 200) {
+        // 失败就保留上一次的结果：把列表清空会让人以为服务都被删了
+        messageApi.error(res.message || intl.formatMessage({ id: 'pages.message.operationFailed', defaultMessage: 'Operation failed, please try again' }));
+        return;
+      }
       setData(res.data?.records || []);
       setTotal(res.data?.total || 0);
     } catch (error) {
@@ -473,7 +482,6 @@ const McpManagement: React.FC = () => {
               }}
               onDelete={handleRemove}
               onTest={handleConnectivityTest}
-              hasOperationPermission={hasOperationPermission}
             />
           );
         }}
@@ -513,10 +521,6 @@ const McpManagement: React.FC = () => {
             const errorMsg = error?.message || error?.info?.errorMessage || '创建失败，请重试';
             messageApi.error(errorMsg);
           }
-        }}
-        onConnectivityTest={async () => {
-          messageApi.info(intl.formatMessage({ id: 'pages.mcp.testAfterSave', defaultMessage: 'Please save the MCP service before testing connectivity' }));
-          return false;
         }}
       />
 

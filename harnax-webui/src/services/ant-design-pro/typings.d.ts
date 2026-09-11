@@ -344,7 +344,6 @@ declare namespace API {
     mcpId: number;
     mcpName: string;
     mcpDescription?: string;
-    enableSkip?: string;
   };
 
   type SessionSkillItem = {
@@ -380,7 +379,6 @@ declare namespace API {
     mcpId?: number;
     mcpName?: string;
     mcpDescription?: string;
-    enableSkip?: string;
     envBindings?: EnvBinding[];
   };
 
