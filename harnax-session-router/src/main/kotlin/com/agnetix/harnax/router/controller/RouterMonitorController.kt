@@ -17,14 +17,13 @@ import org.springframework.web.bind.annotation.RestController
 /**
  * Router Monitor Controller.
  *
- * Read-only observability surface intended for the bundled static UI
- * (and any external dashboard tooling). Unlike [InstanceRegistryController],
- * these endpoints are NOT marked [com.agnetix.harnax.auth.InternalOnly]
- * so they can be reached from a browser without service-to-service credentials.
- *
- * Access control is delegated to the upstream edge (nginx in production, or
- * the developer machine in local mode). Authentication/authorization for the
- * monitor UI itself is out of scope here.
+ * Read-only observability surface for the bundled static UI (and any external dashboard
+ * tooling). Unlike [InstanceRegistryController] these endpoints are not marked
+ * [com.agnetix.harnax.auth.InternalOnly]: a browser cannot hold service-to-service credentials,
+ * so an operator's own JWT or API key is what they carry. That is a difference in who may call,
+ * not a licence to be anonymous — node addresses and a full call trail are a map of everything
+ * worth attacking, so the monitor is authenticated like the rest of the API and the edge is only
+ * the second lock.
  */
 @RestController
 @RequestMapping("/api/router/monitor")
@@ -95,16 +94,13 @@ class RouterMonitorController(
         return ResultVo.success(apiCallLogService.query(query))
     }
 
-    private fun parseLastHeartbeatMs(value: Any?): Long {
-        // AgentInstance.lastHeartbeat is a LocalDateTime; convert to epoch ms best-effort.
-        return when (value) {
+    private fun parseLastHeartbeatMs(value: Any?): Long = // AgentInstance.lastHeartbeat is an Instant; epoch millis is the legacy Redis form.
+        when (value) {
             null -> 0L
-            is java.time.LocalDateTime -> value.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
             is java.time.Instant -> value.toEpochMilli()
             is Number -> value.toLong()
             else -> 0L
         }
-    }
 }
 
 /**
@@ -129,7 +125,7 @@ data class MonitorInstanceInfo(
          */
         @Suppress("unused")
         fun fromAgentInstance(inst: AgentInstance, sessionCount: Int, nowMs: Long): MonitorInstanceInfo {
-            val lastMs = inst.lastHeartbeat.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val lastMs = inst.lastHeartbeat.toEpochMilli()
             return MonitorInstanceInfo(
                 instanceId = inst.instanceId,
                 host = inst.host,

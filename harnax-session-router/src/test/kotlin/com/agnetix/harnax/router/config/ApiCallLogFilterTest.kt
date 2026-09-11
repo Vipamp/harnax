@@ -4,9 +4,13 @@ import com.agnetix.harnax.auth.AuthContext
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.auth.CallerType
 import com.agnetix.harnax.router.entity.ApiCallLog
+import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.AdminClientService
 import com.agnetix.harnax.router.service.ApiCallLogService
 import com.agnetix.harnax.router.service.SessionInfoClient
+import jakarta.servlet.AsyncContext
+import jakarta.servlet.AsyncEvent
+import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ServletOutputStream
 import jakarta.servlet.WriteListener
@@ -20,6 +24,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 
 class ApiCallLogFilterTest {
@@ -356,6 +361,101 @@ class ApiCallLogFilterTest {
             any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
             any(), any(), anyOrNull(), any(), any(), anyOrNull(),
             any(), any(), anyOrNull(), eq("header-req-id"),
+        )
+    }
+
+    // ==================== A call is logged when it is over ====================
+
+    @Test
+    fun `a call still running when the chain returns is logged once its response is written`() {
+        AuthContextHolder.set(AuthContext("user"))
+        val asyncContext = mock(AsyncContext::class.java)
+        `when`(request.requestURI).thenReturn("/api/router/agent/chat/stream")
+        `when`(request.method).thenReturn("POST")
+        `when`(request.getAttribute("router.sessionId")).thenReturn("sess-async")
+        `when`(request.isAsyncStarted).thenReturn(true)
+        `when`(request.asyncContext).thenReturn(asyncContext)
+        `when`(response.status).thenReturn(200)
+        val listener = argumentCaptor<AsyncListener>()
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+
+        // The stream has only started: nothing is logged yet, but everything the log needs from this
+        // thread — including the admin round trip — has already been resolved.
+        verify(apiCallLogService, never()).record(any())
+        verify(sessionInfoClient).getSessionInfo("sess-async")
+        verify(asyncContext).addListener(listener.capture())
+
+        // The agent dies a minute into the stream. The row has to say so.
+        `when`(response.status).thenReturn(502)
+        listener.lastValue.onComplete(AsyncEvent(asyncContext))
+
+        verify(apiCallLogService).buildLogEntry(
+            any(), any(), anyOrNull(), eq("sess-async"),
+            anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(),
+            eq(502), eq(false), anyOrNull(),
+            any(), any(), anyOrNull(), anyOrNull(),
+        )
+        verify(apiCallLogService).record(any())
+    }
+
+    @Test
+    fun `one row per call even when completion races with a timeout`() {
+        AuthContextHolder.set(AuthContext("user"))
+        val asyncContext = mock(AsyncContext::class.java)
+        `when`(request.requestURI).thenReturn("/api/router/agent/confirm")
+        `when`(request.method).thenReturn("POST")
+        `when`(request.isAsyncStarted).thenReturn(true)
+        `when`(request.asyncContext).thenReturn(asyncContext)
+        `when`(response.status).thenReturn(200)
+        val listener = argumentCaptor<AsyncListener>()
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+        verify(asyncContext).addListener(listener.capture())
+
+        listener.lastValue.onComplete(AsyncEvent(asyncContext))
+        listener.lastValue.onTimeout(AsyncEvent(asyncContext))
+
+        verify(apiCallLogService, times(1)).record(any())
+    }
+
+    @Test
+    fun `the instance the router chose is read off the request`() {
+        AuthContextHolder.set(AuthContext("user"))
+        `when`(request.requestURI).thenReturn("/api/router/agent/chat/stream")
+        `when`(request.method).thenReturn("POST")
+        // A stream never puts its instance in MDC; the router leaves it on the request instead.
+        `when`(request.getAttribute(SessionRouterService.ROUTED_INSTANCE_ATTR)).thenReturn("inst-7")
+        `when`(response.status).thenReturn(200)
+        `when`(
+            apiCallLogService.buildLogEntry(
+                any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+                any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+                any(), any(), anyOrNull(), anyOrNull(),
+            ),
+        ).thenReturn(ApiCallLog())
+
+        filter.doFilterInternal(request, response, chain)
+
+        verify(apiCallLogService).buildLogEntry(
+            any(), any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(),
+            any(), any(), anyOrNull(), any(), any(), anyOrNull(),
+            any(), any(), eq("inst-7"), anyOrNull(),
         )
     }
 }

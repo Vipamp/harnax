@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 /**
  * Global fallback for uncaught exceptions in non-streaming endpoints.
  * SSE proxy endpoints handle errors themselves by emitting ErrorChatEvent.
+ *
+ * The HTTP status stays 200 and the failure travels in the body's `code`: the webui's request layer
+ * decides "this failed" from `code != 200` and only reads a body from a 2xx response, so answering
+ * 502 here would replace the real reason with a generic transport error on the user's screen.
  */
 @RestControllerAdvice
 class GlobalExceptionHandler {

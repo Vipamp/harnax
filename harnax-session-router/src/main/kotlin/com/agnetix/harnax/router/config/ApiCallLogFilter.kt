@@ -2,34 +2,43 @@ package com.agnetix.harnax.router.config
 
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.router.controller.AgentProxyController
+import com.agnetix.harnax.router.proxy.SessionRouterService
 import com.agnetix.harnax.router.service.ApiCallLogService
 import com.agnetix.harnax.router.service.SessionInfoClient
+import jakarta.servlet.AsyncEvent
+import jakarta.servlet.AsyncListener
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.web.filter.OncePerRequestFilter
 import org.springframework.web.util.ContentCachingResponseWrapper
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Records API call logs for all requests under `/api/router/agent/`.
  *
- * For normal (non-SSE) endpoints the response is wrapped with [ContentCachingResponseWrapper]
- * so the status code is available after the controller has written the body.
+ * The row is written when the response is finished. Everything the log needs that is not the final
+ * status — the caller, the session, the agent behind it, the instance the router picked — is resolved
+ * on the thread that served the request, because the thread the response finishes on (an agent's
+ * event loop for a stream, a coroutine dispatcher for a suspend call) carries none of them.
  *
- * SSE endpoints (`/stream` suffix or `/confirm`) must NOT be wrapped — buffering the
- * entire response body in memory prevents SSE events from being flushed in real time.
- * For those endpoints we record the start/end time and the HTTP status set by the
- * controller on the raw response.
+ * SSE endpoints (`/stream` suffix or `/confirm`) are not wrapped with [ContentCachingResponseWrapper]:
+ * buffering a stream in memory stops the events from reaching the client. The same applies to the
+ * suspend endpoints listed in [SUSPEND_ENDPOINTS] — their filter chain unwinds while the response is
+ * still being produced, so a wrapper would flush an empty body.
  */
 @Order(Ordered.HIGHEST_PRECEDENCE + 15)
 class ApiCallLogFilter(
     private val apiCallLogService: ApiCallLogService,
     private val sessionInfoClient: SessionInfoClient,
 ) : OncePerRequestFilter() {
+
+    private val log = LoggerFactory.getLogger(ApiCallLogFilter::class.java)
 
     companion object {
         // Extracts sessionId from URL paths like /agent/chat/history/{id}, /agent/session/{id}
@@ -57,6 +66,12 @@ class ApiCallLogFilter(
         )
     }
 
+    /**
+     * What a call costs and whether it worked is decided by the response, not by the filter chain:
+     * for a stream or a suspend call the chain returns as soon as async processing starts, minutes
+     * before the agent falls over. Logging there recorded 200 in ~0ms for the endpoints that fail
+     * most often, which is the opposite of why the table exists.
+     */
     public override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
@@ -69,65 +84,27 @@ class ApiCallLogFilter(
         }
 
         val startTime = LocalDateTime.now()
+        // The wrapper is for calls that are over when the chain returns. Wrapping the calls that are
+        // still running would hold their body in memory — which is what breaks a stream.
+        val buffered = !isSseEndpoint(path) && !isSuspendEndpoint(path)
+        val responseToLog = if (buffered) ContentCachingResponseWrapper(response) else response
 
-        if (isSseEndpoint(path)) {
-            // SSE: no response wrapper, log after the stream finishes (or the client disconnects).
-            var errorMessage: String? = null
+        var errorMessage: String? = null
+        try {
+            filterChain.doFilter(request, responseToLog)
+        } catch (e: Exception) {
+            errorMessage = e.message
+            throw e
+        } finally {
             try {
-                filterChain.doFilter(request, response)
+                val pending = snapshot(request, responseToLog, path, startTime, errorMessage)
+                if (!buffered && request.isAsyncStarted) logWhenSettled(pending) else write(pending)
             } catch (e: Exception) {
-                errorMessage = e.message
-                throw e
-            } finally {
-                val endTime = LocalDateTime.now()
-                val statusCode = response.status
-                val success = statusCode in 200..299 && errorMessage == null
-                try {
-                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
-                } catch (_: Exception) {
-                    // Never let logging break the request flow
-                }
+                // Logging must never break the request flow, and must never mask its outcome either.
+                log.debug("Could not log the call to $path: ${e.message}")
             }
-        } else if (isSuspendEndpoint(path)) {
-            // Suspend-fun (batch) endpoints: ContentCachingResponseWrapper is incompatible
-            // with Spring MVC's async dispatch for Kotlin suspend controllers — the filter
-            // chain returns before the coroutine writes the body, so copyBodyToResponse()
-            // flushes an empty buffer.  Skip the wrapper; read status directly from response.
-            var errorMessage: String? = null
-            try {
-                filterChain.doFilter(request, response)
-            } catch (e: Exception) {
-                errorMessage = e.message
-                throw e
-            } finally {
-                val endTime = LocalDateTime.now()
-                val statusCode = response.status
-                val success = statusCode in 200..299 && errorMessage == null
-                try {
-                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
-                } catch (_: Exception) {
-                    // Never let logging break the request flow
-                }
-            }
-        } else {
-            // Non-SSE: wrap response to capture status after controller writes the body.
-            val wrappedResponse = ContentCachingResponseWrapper(response)
-            var errorMessage: String? = null
-            try {
-                filterChain.doFilter(request, wrappedResponse)
-            } catch (e: Exception) {
-                errorMessage = e.message
-                throw e
-            } finally {
-                val endTime = LocalDateTime.now()
-                val statusCode = wrappedResponse.status
-                val success = statusCode in 200..299 && errorMessage == null
-                try {
-                    recordLog(request, statusCode, success, errorMessage, startTime, endTime)
-                } catch (_: Exception) {
-                    // Never let logging break the request flow
-                }
-                wrappedResponse.copyBodyToResponse()
+            if (responseToLog is ContentCachingResponseWrapper) {
+                runCatching { responseToLog.copyBodyToResponse() }
             }
         }
     }
@@ -137,77 +114,166 @@ class ApiCallLogFilter(
     /**
      * Suspend-fun batch endpoints that must NOT use ContentCachingResponseWrapper.
      * Spring MVC async dispatch for Kotlin suspend controllers returns from the filter
-     * chain before the coroutine writes the response body, making the wrapper incompatible.
+     * chain before the coroutine writes the body, making the wrapper incompatible.
      */
     private fun isSuspendEndpoint(path: String): Boolean = SUSPEND_ENDPOINTS.any { path == it || path.startsWith("$it/") }
 
-    private fun recordLog(
+    /**
+     * Resolve everything that belongs to the serving thread while still on it: the auth context and
+     * MDC are thread-locals, and the session lookup is a blocking call that has no business running
+     * on an agent's event loop.
+     */
+    private fun snapshot(
         request: HttpServletRequest,
-        statusCode: Int,
-        success: Boolean,
-        errorMessage: String?,
+        response: HttpServletResponse,
+        path: String,
         startTime: LocalDateTime,
-        endTime: LocalDateTime,
-    ) {
+        errorMessage: String?,
+    ): PendingCallLog {
         val context = AuthContextHolder.get()
-        val callerId = context?.callerId ?: "unknown"
-        val callerType = context?.callerType?.name ?: "UNKNOWN"
-        val tenantId = context?.tenantId
 
-        val path = request.requestURI
-        // Primary: read from request attribute set by the controller (most reliable).
-        // Fallback: extract from URL path (GET/DELETE endpoints with {sessionId} in path).
-        val sessionId =
-            request.getAttribute(AgentProxyController.SESSION_ID_ATTR) as? String
-                ?: extractSessionIdFromPath(path)
-        val requestType = extractRequestType(path)
+        // Primary: read from the request attribute set by the controller (most reliable).
+        // Fallback: extract from the URL, which is all a GET/DELETE with {sessionId} in it offers.
+        val sessionId = request.getAttribute(AgentProxyController.SESSION_ID_ATTR) as? String
+            ?: extractSessionIdFromPath(path)
 
-        var agentId: Long? = null
-        var agentName: String? = null
-        var modelId: Long? = null
-        var modelName: String? = null
-
-        if (sessionId != null) {
-            val sessionInfo = sessionInfoClient.getSessionInfo(sessionId)
-            if (sessionInfo != null) {
-                agentId = sessionInfo.agentId
-                agentName = sessionInfo.agentName
-                modelId = sessionInfo.modelId
-                modelName = sessionInfo.modelName
-            }
-        }
-
-        val instanceId = MDC.get("instanceId")
+        // The router sets MDC on the thread that places the call and clears it on the way out, so for
+        // an async call the placement is read off the request attribute it recorded instead.
+        val instanceId = request.getAttribute(SessionRouterService.ROUTED_INSTANCE_ATTR) as? String
+            ?: MDC.get("instanceId")
         val requestId = MDC.get("requestId") ?: request.getHeader("X-Request-Id")
 
-        val entry = apiCallLogService.buildLogEntry(
-            callerId = callerId,
-            callerType = callerType,
-            tenantId = tenantId,
-            sessionId = sessionId,
-            agentId = agentId,
-            agentName = agentName,
-            modelId = modelId,
-            modelName = modelName,
-            endpoint = path,
-            method = request.method,
-            requestType = requestType,
-            statusCode = statusCode,
-            success = success,
-            errorMessage = errorMessage,
+        val sessionInfo = sessionId?.let { lookupSessionInfo(it) }
+        return PendingCallLog(
+            request = request,
+            response = response,
             startTime = startTime,
-            endTime = endTime,
+            path = path,
+            method = request.method,
+            callerId = context?.callerId ?: "unknown",
+            callerType = context?.callerType?.name ?: "UNKNOWN",
+            tenantId = context?.tenantId,
+            sessionId = sessionId,
+            agentId = sessionInfo?.agentId,
+            agentName = sessionInfo?.agentName,
+            modelId = sessionInfo?.modelId,
+            modelName = sessionInfo?.modelName,
             instanceId = instanceId,
             requestId = requestId,
+            requestType = extractRequestType(path),
+            errorMessage = errorMessage,
         )
-
-        apiCallLogService.record(entry)
     }
 
     /**
-     * Extract sessionId from URL path (e.g. /agent/chat/history/{id}, /agent/session/{id}).
+     * A session's agent is worth a failed call log too, so an admin that cannot answer costs the four
+     * enrichment columns and nothing else.
      */
+    private fun lookupSessionInfo(sessionId: String) = try {
+        sessionInfoClient.getSessionInfo(sessionId)
+    } catch (e: Exception) {
+        log.debug("Could not enrich the call log of session $sessionId: ${e.message}")
+        null
+    }
+
+    private fun logWhenSettled(pending: PendingCallLog) {
+        val asyncContext = try {
+            pending.request.asyncContext
+        } catch (e: IllegalStateException) {
+            // The response was already written when we asked: this is the last moment it can be read.
+            write(pending)
+            return
+        }
+        val written = AtomicBoolean(false)
+        try {
+            asyncContext.addListener(
+                object : AsyncListener {
+                    // A restarted async request is still the same call awaiting its one log row.
+                    override fun onStartAsync(event: AsyncEvent) {
+                        Unit
+                    }
+
+                    override fun onComplete(event: AsyncEvent) {
+                        if (written.compareAndSet(false, true)) write(pending)
+                    }
+
+                    override fun onTimeout(event: AsyncEvent) {
+                        if (!written.compareAndSet(false, true)) return
+                        pending.timedOut = true
+                        write(pending)
+                    }
+
+                    override fun onError(event: AsyncEvent) {
+                        if (written.compareAndSet(false, true)) write(pending)
+                    }
+                },
+            )
+        } catch (e: IllegalStateException) {
+            if (written.compareAndSet(false, true)) write(pending)
+        }
+    }
+
+    private fun write(pending: PendingCallLog) {
+        try {
+            val statusCode = pending.response.status
+            val success = statusCode in 200..299 && pending.errorMessage == null && !pending.timedOut
+            val entry = apiCallLogService.buildLogEntry(
+                callerId = pending.callerId,
+                callerType = pending.callerType,
+                tenantId = pending.tenantId,
+                sessionId = pending.sessionId,
+                agentId = pending.agentId,
+                agentName = pending.agentName,
+                modelId = pending.modelId,
+                modelName = pending.modelName,
+                endpoint = pending.path,
+                method = pending.method,
+                requestType = pending.requestType,
+                statusCode = statusCode,
+                success = success,
+                errorMessage = pending.errorMessage ?: pending.timedOutMessage(),
+                startTime = pending.startTime,
+                endTime = LocalDateTime.now(),
+                instanceId = pending.instanceId,
+                requestId = pending.requestId,
+            )
+            apiCallLogService.record(entry)
+        } catch (e: Exception) {
+            // Never let logging break the request flow
+            log.debug("Could not record the call log for ${pending.path}: ${e.message}")
+        }
+    }
+
     private fun extractSessionIdFromPath(path: String): String? = SESSION_ID_URL_PATTERN.find(path)?.groupValues?.get(1)
 
     private fun extractRequestType(path: String): String? = REQUEST_TYPE_PATTERN.find(path)?.groupValues?.get(1)?.uppercase()
+
+    /**
+     * A call that is still running when its async request times out produced nothing for the client,
+     * whatever the container managed to write into the response.
+     */
+    private fun PendingCallLog.timedOutMessage(): String? = if (timedOut) "Request timed out before the response was written" else null
+
+    private class PendingCallLog(
+        val request: HttpServletRequest,
+        val response: HttpServletResponse,
+        val startTime: LocalDateTime,
+        val path: String,
+        val method: String,
+        val callerId: String,
+        val callerType: String,
+        val tenantId: Long?,
+        val sessionId: String?,
+        val agentId: Long?,
+        val agentName: String?,
+        val modelId: Long?,
+        val modelName: String?,
+        val instanceId: String?,
+        val requestId: String?,
+        val requestType: String?,
+        val errorMessage: String?,
+    ) {
+        @Volatile
+        var timedOut: Boolean = false
+    }
 }

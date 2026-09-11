@@ -17,7 +17,16 @@ spring:
       - org.springframework.boot.data.redis.autoconfigure.DataRedisRepositoriesAutoConfiguration
   mvc:
     async:
-      request-timeout: 600000  # 10min — must exceed agent-service processing time + snapshot upload
+      # Must not be the shortest link on a stream: the router ends one itself after
+      # router.proxy.stream-max-duration-minutes, so the container has to allow at least that long.
+      request-timeout: 1800000  # 30min
+  task:
+    scheduling:
+      # Health checks, call-log flushing, rate-limit and mapping cleanup all run as @Scheduled.
+      # On the default single thread one task that blocks — a health check waiting on Redis — stops
+      # every other one, including the log flush.
+      pool:
+        size: ${ROUTER_SCHEDULER_POOL_SIZE:4}
   codec:
     max-in-memory-size: 16MB  # Support large payloads (e.g., base64 image data)
 
@@ -46,20 +55,29 @@ spring:
     baseline-on-migrate: true
 
   # Redis configuration - only used when CACHE_TYPE=redis
-  # In local mode (CACHE_TYPE=local), Redis is not needed
+  # In local mode (CACHE_TYPE=local), Redis is not needed.
+  # Every key below is read explicitly by RedisConfig — keep the names in sync with it.
   data:
     redis:
       host: ${REDIS_HOST:}
       port: ${REDIS_PORT:6379}
+      username: ${REDIS_USERNAME:}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
-      timeout: 3000
-      lettuce:
-        pool:
-          max-active: 50
-          max-idle: 10
-          min-idle: 0
-          max-wait: 5000
+      timeout: 3000             # Command timeout: a Redis stall fails in 3s instead of 60s
+      connect-timeout: 2000     # TCP connect timeout
+      # Routing state must never be evicted: run Redis with maxmemory-policy=noeviction.
+      # For Redis HA set one of the two below (sentinel wins over cluster); otherwise this
+      # single host is a hard dependency of the whole routing layer.
+      sentinel:
+        master: ${REDIS_SENTINEL_MASTER:}
+        nodes: ${REDIS_SENTINEL_NODES:}        # host1:port1,host2:port2
+        password: ${REDIS_SENTINEL_PASSWORD:}
+      cluster:
+        nodes: ${REDIS_CLUSTER_NODES:}         # host1:port1,host2:port2,host3:port3
+        max-redirects: ${REDIS_CLUSTER_MAX_REDIRECTS:3}
+      # Lettuce uses one shared async connection, so pooling is not configured
+      # (commons-pool2 is intentionally not a dependency).
 
 mybatis:
   mapper-locations: classpath*:mapper/*.xml
@@ -69,18 +87,33 @@ mybatis:
 # Session Router Configuration
 router:
   cache:
-    type: ${CACHE_TYPE:local}          # Cache implementation: 'redis' or 'local' (default: local for dev)
-    instance-ttl-seconds: 3             # Instance cache TTL (used by local cache)
-    session-ttl-seconds: 300            # Session mapping cache TTL (used by local cache, 5 min default)
+    # 'redis' or 'local'. Local means "single node, nothing shared": instance records and session
+    # bindings live in memory for the lifetime of this process. The binding lifetime is not a knob —
+    # it is the same RedisSessionMappingService.SESSION_TTL in both modes, so a session keeps its
+    # agent for exactly as long in dev as it would in a cluster.
+    type: ${CACHE_TYPE:local}
   health:
     heartbeat-timeout-ms: 30000   # Heartbeat timeout: 30 seconds
     check-interval-ms: 5000       # Health check interval: 5 seconds
   proxy:
     connect-timeout-ms: 5000      # Proxy connect timeout
-    read-timeout-ms: 600000       # Proxy read timeout: 10min for AI processing
+    read-timeout-ms: 600000       # Proxy read timeout: 10min for AI processing (JSON calls only; streams bound themselves)
     max-in-memory-size-mb: 16     # Max in-memory buffer size for WebClient
-    stream-timeout-minutes: 10    # SSE stream overall timeout: 10min for long AI tasks
+    # Reactor Netty keeps one connection pool per host:port, so this caps what a SINGLE agent
+    # instance may occupy — that is the point: a wedged instance cannot absorb the router.
+    max-connections-per-instance: 50
+    pending-acquire-timeout-ms: 10000   # How long a caller waits for a slot at a saturated instance
+    pending-acquire-max-count: 100      # Waiters beyond this are refused fast instead of timing out together
+    pool-max-idle-seconds: 60           # Idle connections kept for a reused agent
+    pool-max-lifetime-minutes: 5        # Connections are recycled by age, so a rebalanced agent is not held
+    stream-idle-timeout-seconds: 120    # A stream that says nothing for this long is over
+    stream-max-duration-minutes: 30     # Wall-clock cap on one stream, however chatty it is
     failover-max-retries: 2       # Max failover retry attempts
+  migration:
+    # Tell the instance a session left to stop its sandbox (STOP_SANDBOX: workspace snapshot kept,
+    # history and plans untouched). Best-effort and off the request thread.
+    evict-old-instance: true
+    max-pending: 200              # Evictions queued before new ones are dropped
   idempotency:
     ttl-seconds: 60               # Request deduplication TTL
   cors:
@@ -92,8 +125,9 @@ router:
     # error rather than a missing credential. Keep in sync with docker-compose.yml.
     allowed-origins: ${ROUTER_CORS_ALLOWED_ORIGINS:http://localhost,https://localhost,http://127.0.0.1,https://127.0.0.1,http://localhost:*,https://localhost:*,http://127.0.0.1:*,https://127.0.0.1:*}
   circuit-breaker:
-    failure-threshold: 3          # Failures before opening circuit
-    open-duration-ms: 30000       # Time before trying half-open
+    failure-threshold: 3          # Consecutive retryable failures before opening the circuit
+    open-duration-ms: 30000       # How long an open circuit refuses new placements
+    probe-lease-ms: 30000         # How long a half-open circuit holds the slot for its single probe
 
 # Unified internal authentication
 harnax:
@@ -105,9 +139,11 @@ harnax:
       token-ttl-seconds: 300
     external:
       enabled: true
-    # The bundled monitor UI is designed to be reached from a browser without
-    # service-to-service credentials. Restrict by network boundary (nginx / VPC)
-    # instead of by JWT.
+    # The monitor UI is served from here, but its data is not free: /api/router/monitor/instances
+    # is a map of the cluster's internal addresses and /call-logs is every call the router has seen,
+    # with session ids and error text. Both therefore require a credential like any other endpoint —
+    # the page passes the same Bearer token or X-Api-Key the rest of the API takes. Only the files
+    # that render the page stay open.
     # IMPORTANT: Do NOT add `/api/router/` here — internal APIs like heartbeat
     # and instance registration rely on UnifiedAuthFilter to validate Bearer JWT
     # tokens and set AuthContext, which InternalAuthorizationInterceptor depends on.
@@ -121,7 +157,6 @@ harnax:
       - /favicon.ico
       - /style.css
       - /app.js
-      - /api/router/monitor/
 
 # Admin service URL for internal API calls (API key validation, session info)
 admin:
@@ -132,6 +167,13 @@ admin:
 
 # Actuator / Metrics
 management:
+  endpoint:
+    health:
+      # /actuator/health/liveness answers "is this process running" — the only question a container
+      # restart should key on. /actuator/health/readiness answers "can this node route"; its members
+      # are configured in application-cluster.yml, where the shared state actually exists.
+      probes:
+        enabled: true
   endpoints:
     web:
       exposure:

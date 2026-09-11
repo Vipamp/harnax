@@ -37,3 +37,18 @@ spring:
 router:
   cache:
     type: redis
+  # 会话反向索引对账：多节点写入下索引会与绑定漂移，导致选实例时负载统计失真。
+  # 每轮只有一个节点执行（Redis 全局锁），其余节点跳过。
+  reconcile:
+    interval-ms: ${ROUTER_RECONCILE_INTERVAL_MS:300000}
+    batch-size: ${ROUTER_RECONCILE_BATCH_SIZE:500}
+    max-batches-per-index: ${ROUTER_RECONCILE_MAX_BATCHES:40}
+
+management:
+  endpoint:
+    health:
+      group:
+        # 就绪探针只看路由能力本身：绑定、选实例、熔断状态全在 Redis 里，Redis 不可达时
+        # 该节点就不该留在负载均衡里。调用日志库（MySQL）不参与：写日志失败不该让路由下线。
+        readiness:
+          include: readinessState,redis

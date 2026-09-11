@@ -8,13 +8,14 @@ import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionInfoClient
 import com.agnetix.harnax.router.service.SessionMappingService
 import com.agnetix.harnax.router.service.impl.CaffeineIdempotencyService
-import com.agnetix.harnax.router.service.impl.CaffeineSessionMappingService
 import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
 import com.agnetix.harnax.router.service.impl.LocalInstanceRegistry
+import com.agnetix.harnax.router.service.impl.LocalSessionMappingService
 import com.agnetix.harnax.router.service.impl.RedisCircuitBreaker
 import com.agnetix.harnax.router.service.impl.RedisIdempotencyService
 import com.agnetix.harnax.router.service.impl.RedisInstanceRegistry
 import com.agnetix.harnax.router.service.impl.RedisSessionMappingService
+import com.agnetix.harnax.router.service.impl.SessionIndexReconciler
 import io.netty.channel.ChannelOption
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -25,10 +26,8 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Primary
 import org.springframework.core.Ordered
 import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.http.client.reactive.ReactorClientHttpConnector
 import org.springframework.scheduling.annotation.EnableScheduling
-import org.springframework.web.client.RestClient
 import org.springframework.web.cors.CorsConfiguration
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 import org.springframework.web.filter.CorsFilter
@@ -48,10 +47,21 @@ class RouterConfig(
     private val readTimeoutMs: Int,
     @Value($$"${router.proxy.max-in-memory-size-mb:16}")
     private val maxInMemorySizeMb: Int,
-    @Value($$"${router.proxy.max-connections:200}")
-    private val maxConnections: Int,
+    // Reactor Netty keeps one pool per host:port, so this is a per-instance ceiling rather than a
+    // total: it is what a single agent instance may occupy, and the reason one wedged instance
+    // cannot absorb the router.
+    @Value($$"${router.proxy.max-connections-per-instance:50}")
+    private val maxConnectionsPerInstance: Int,
     @Value($$"${router.proxy.pending-acquire-timeout-ms:10000}")
     private val pendingAcquireTimeoutMs: Int,
+    // Requests waiting behind a saturated instance fail instead of piling up: a queue this deep only
+    // means every caller in it times out together.
+    @Value($$"${router.proxy.pending-acquire-max-count:100}")
+    private val pendingAcquireMaxCount: Int,
+    @Value($$"${router.proxy.pool-max-idle-seconds:60}")
+    private val poolMaxIdleSeconds: Long,
+    @Value($$"${router.proxy.pool-max-lifetime-minutes:5}")
+    private val poolMaxLifetimeMinutes: Long,
     @Value($$"${router.proxy.write-timeout-seconds:30}")
     private val writeTimeoutSeconds: Int,
     // Port-less origins must be listed separately: the SPA is served on the standard 443, so the
@@ -64,22 +74,28 @@ class RouterConfig(
 
     private val log = LoggerFactory.getLogger(RouterConfig::class.java)
 
+    @Bean(destroyMethod = "dispose")
+    fun agentConnectionProvider(): ConnectionProvider = ConnectionProvider.builder("router-pool")
+        .maxConnections(maxConnectionsPerInstance)
+        .pendingAcquireTimeout(Duration.ofMillis(pendingAcquireTimeoutMs.toLong()))
+        .pendingAcquireMaxCount(pendingAcquireMaxCount)
+        .maxIdleTime(Duration.ofSeconds(poolMaxIdleSeconds))
+        .maxLifeTime(Duration.ofMinutes(poolMaxLifetimeMinutes))
+        .evictInBackground(Duration.ofSeconds(30))
+        .metrics(true)
+        .build()
+
+    /**
+     * Calls that must be answered: the response has to arrive inside the read timeout, and a
+     * connection that stops being read is closed rather than held.
+     */
     @Bean
-    fun webClient(): WebClient {
+    @Primary
+    fun webClient(agentConnectionProvider: ConnectionProvider): WebClient {
         // ReadTimeoutHandler takes seconds, so convert readTimeoutMs -> readTimeoutSeconds.
         val readTimeoutSeconds = (readTimeoutMs / 1000).coerceAtLeast(1)
 
-        val connectionProvider = ConnectionProvider.builder("router-pool")
-            .maxConnections(maxConnections)
-            .pendingAcquireTimeout(Duration.ofMillis(pendingAcquireTimeoutMs.toLong()))
-            .pendingAcquireMaxCount(500)
-            .maxIdleTime(Duration.ofSeconds(60))
-            .maxLifeTime(Duration.ofMinutes(5))
-            .evictInBackground(Duration.ofSeconds(30))
-            .metrics(true)
-            .build()
-
-        val httpClient = HttpClient.create(connectionProvider)
+        val httpClient = HttpClient.create(agentConnectionProvider)
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMs)
             .responseTimeout(Duration.ofMillis(readTimeoutMs.toLong()))
             .doOnConnected { conn ->
@@ -95,20 +111,19 @@ class RouterConfig(
     }
 
     /**
-     * RestClient for batch (non-streaming) requests to agent-service.
+     * Calls that stream: an agent thinking for a minute holds the connection without sending
+     * anything, and a per-read timeout would close exactly the connections this endpoint exists for.
+     * The stream bounds itself instead — see [com.agnetix.harnax.router.service.AgentServiceClient].
      */
     @Bean
-    fun restClient(): RestClient {
-        val factory = SimpleClientHttpRequestFactory().apply {
-            setConnectTimeout(Duration.ofMillis(connectTimeoutMs.toLong()))
-            setReadTimeout(Duration.ofMillis(readTimeoutMs.toLong()))
-        }
-        return RestClient.builder()
-            .requestFactory(factory)
-            .requestInterceptor { request, body, execution ->
-                tokenProvider.authHeaders().forEach { (key, value) -> request.headers.add(key, value) }
-                execution.execute(request, body)
-            }
+    fun streamingWebClient(agentConnectionProvider: ConnectionProvider): WebClient {
+        val httpClient = HttpClient.create(agentConnectionProvider)
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connectTimeoutMs)
+
+        return WebClient.builder()
+            .clientConnector(ReactorClientHttpConnector(httpClient))
+            .codecs { config -> config.defaultCodecs().maxInMemorySize(maxInMemorySizeMb * 1024 * 1024) }
+            .filter(authFilter())
             .build()
     }
 
@@ -127,14 +142,16 @@ class RouterConfig(
         redisTemplate: RedisTemplate<String, Any>,
         @Value($$"${router.circuit-breaker.failure-threshold:3}") failureThreshold: Int,
         @Value($$"${router.circuit-breaker.open-duration-ms:30000}") openDurationMs: Long,
-    ): InstanceCircuitBreaker = RedisCircuitBreaker(redisTemplate, failureThreshold, openDurationMs)
+        @Value($$"${router.circuit-breaker.probe-lease-ms:30000}") probeLeaseMs: Long,
+    ): InstanceCircuitBreaker = RedisCircuitBreaker(redisTemplate, failureThreshold, openDurationMs, probeLeaseMs)
 
     @Bean
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "local", matchIfMissing = true)
     fun localInstanceCircuitBreaker(
         @Value($$"${router.circuit-breaker.failure-threshold:3}") failureThreshold: Int,
         @Value($$"${router.circuit-breaker.open-duration-ms:30000}") openDurationMs: Long,
-    ): InstanceCircuitBreaker = LocalInstanceCircuitBreaker(failureThreshold, openDurationMs)
+        @Value($$"${router.circuit-breaker.probe-lease-ms:30000}") probeLeaseMs: Long,
+    ): InstanceCircuitBreaker = LocalInstanceCircuitBreaker(failureThreshold, openDurationMs, probeLeaseMs)
 
     // ==================== Redis cache mode beans ====================
 
@@ -160,6 +177,23 @@ class RouterConfig(
         @Value($$"${router.idempotency.ttl-seconds:60}") ttlSeconds: Long,
     ): IdempotencyService = RedisIdempotencyService(redisTemplate, ttlSeconds)
 
+    /**
+     * Only meaningful in redis mode: the reverse index is shared state that several nodes update as
+     * a side effect of routing, and it is the only place where their writes can diverge.
+     */
+    @Bean
+    @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
+    fun sessionIndexReconciler(
+        redisTemplate: RedisTemplate<String, Any>,
+        @Value($$"${router.reconcile.batch-size:500}") batchSize: Int,
+        @Value($$"${router.reconcile.max-batches-per-index:40}") maxBatchesPerIndex: Int,
+    ): SessionIndexReconciler = SessionIndexReconciler(
+        redisTemplate,
+        RedisSessionMappingService.SESSION_TTL,
+        batchSize,
+        maxBatchesPerIndex,
+    )
+
     // ==================== Local cache mode beans ====================
 
     @Bean
@@ -173,11 +207,13 @@ class RouterConfig(
     fun localSessionMappingService(
         instanceRegistry: InstanceRegistry,
         @Value($$"${router.health.heartbeat-timeout-ms:30000}") heartbeatTimeoutMs: Long,
-    ): SessionMappingService = CaffeineSessionMappingService(instanceRegistry, heartbeatTimeoutMs)
+    ): SessionMappingService = LocalSessionMappingService(instanceRegistry, heartbeatTimeoutMs)
 
     @Bean
     @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "local", matchIfMissing = true)
-    fun localIdempotencyService(): IdempotencyService = CaffeineIdempotencyService()
+    fun localIdempotencyService(
+        @Value($$"${router.idempotency.ttl-seconds:60}") ttlSeconds: Long,
+    ): IdempotencyService = CaffeineIdempotencyService(ttlSeconds)
 
     // ==================== CORS ====================
 

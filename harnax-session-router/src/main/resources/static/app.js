@@ -2,6 +2,7 @@
    HARNAX // ROUTER · CONTROL DECK — runtime script
    - Polls /api/router/monitor/instances every 5s.
    - Submits filter form -> /api/router/monitor/call-logs.
+   - Both take Authorization: Bearer <token> (from ?token= once, then localStorage).
    - Renders using vanilla DOM ops; no framework.
    ============================================================ */
 (function () {
@@ -117,10 +118,41 @@
         });
     }
 
+    // ---------- Credential ----------
+    // The monitor answers with node addresses and every call the router has logged, so it is not
+    // anonymous: the page carries the same bearer token the rest of the API takes. `?token=` is the
+    // bootstrap — a developer pastes one into the URL, and it survives the reload from there on.
+    var TOKEN_KEY = "harnax.monitor.token";
+
+    function readToken() {
+        var fromUrl = new URLSearchParams(window.location.search).get("token");
+        if (fromUrl) {
+            window.localStorage.setItem(TOKEN_KEY, fromUrl);
+            // A query string is kept in history and sent as a referrer. The token has somewhere
+            // better to live now that it has been picked up.
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return fromUrl;
+        }
+        return window.localStorage.getItem(TOKEN_KEY) || "";
+    }
+
+    var authToken = readToken();
+
     // ---------- Fetchers ----------
     function fetchJSON(url) {
-        return fetch(url, { headers: { "Accept": "application/json" } })
+        var headers = { "Accept": "application/json" };
+        if (authToken) headers["Authorization"] = "Bearer " + authToken;
+        return fetch(url, { headers: headers })
             .then(function (r) {
+                if (r.status === 401 || r.status === 403) {
+                    var denied = new Error(
+                        authToken
+                            ? "the router rejected this token (401/403)"
+                            : "the router wants a token: open the page as ?token=<jwt or api key>"
+                    );
+                    denied.unauthorized = true;
+                    throw denied;
+                }
                 if (!r.ok) throw new Error("HTTP " + r.status);
                 return r.json();
             })
@@ -275,16 +307,44 @@
     }
 
     // ---------- Polling ----------
+    var pollTimer = null;
+    var locked = false;
+
+    /**
+     * A router that will not identify this browser has nothing to show, and asking it every five
+     * seconds is noise. Say what is missing once and stop.
+     */
+    function lockOut(message) {
+        if (locked) return;
+        locked = true;
+        if (pollTimer !== null) clearInterval(pollTimer);
+        $("stat-healthy").textContent = "—";
+        $("stat-sessions").textContent = "—";
+        $("footer-updated").textContent = "no access";
+        clear($("instances"));
+        $("instances").appendChild(el("div", { class: "instance" }, [
+            el("div", { class: "instance__head" }, [el("span", { class: "instance__id", text: "credential required" })]),
+            el("div", { class: "instance__addr", text: message }),
+        ]));
+        clear($("logs-body"));
+        $("logs-body").appendChild(el("tr", { class: "logs__placeholder" }, [
+            el("td", { colspan: "8", text: message }),
+        ]));
+    }
+
     function pollInstances() {
+        if (locked) return;
         fetchJSON("/api/router/monitor/instances")
-            .then(renderInstances)
+            .then(function (items) { if (!locked) renderInstances(items); })
             .catch(function (err) {
+                if (err.unauthorized) { lockOut(err.message); return; }
                 console.error("[pollInstances] failed:", err);
                 $("stat-healthy").textContent = "?";
             });
     }
 
     function queryLogs(filters, offset) {
+        if (locked) return;
         state.currentFilters = filters || {};
         state.offset = offset || 0;
         var params = new URLSearchParams();
@@ -296,8 +356,9 @@
         params.set("limit", String(state.limit));
         params.set("offset", String(state.offset));
         fetchJSON("/api/router/monitor/call-logs?" + params.toString())
-            .then(renderLogs)
+            .then(function (items) { if (!locked) renderLogs(items); })
             .catch(function (err) {
+                if (err.unauthorized) { lockOut(err.message); return; }
                 console.error("[queryLogs] failed:", err);
                 clear($("logs-body"));
                 $("logs-body").appendChild(el("tr", { class: "logs__placeholder" }, [
@@ -323,6 +384,7 @@
     }
 
     function tickUpdated() {
+        if (locked) return;
         var d = new Date();
         $("footer-updated").textContent =
             "last sync " + pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" + pad(d.getSeconds(), 2);
@@ -333,7 +395,7 @@
         setInterval(tickClock, 1000);
 
         pollInstances();
-        setInterval(pollInstances, POLL_INTERVAL_MS);
+        pollTimer = setInterval(pollInstances, POLL_INTERVAL_MS);
 
         // Default: most recent 100 logs.
         queryLogs({}, 0);
@@ -361,6 +423,18 @@
         tickUpdated();
         setInterval(tickUpdated, POLL_INTERVAL_MS);
     }
+
+    // Second way in, for anyone who would rather not touch the URL: harnaxMonitor.setToken("<jwt>").
+    window.harnaxMonitor = {
+        setToken: function (value) {
+            window.localStorage.setItem(TOKEN_KEY, String(value || "").trim());
+            window.location.href = window.location.pathname;
+        },
+        clearToken: function () {
+            window.localStorage.removeItem(TOKEN_KEY);
+            window.location.href = window.location.pathname;
+        },
+    };
 
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", init);

@@ -16,7 +16,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import java.time.LocalDateTime
+import java.time.Instant
 
 class RouterMonitorControllerTest {
 
@@ -46,14 +46,14 @@ class RouterMonitorControllerTest {
                 host = "10.0.0.2"
                 port = 8080
                 status = "UP"
-                lastHeartbeat = LocalDateTime.of(2025, 1, 1, 12, 0, 0)
+                lastHeartbeat = Instant.parse("2025-01-01T12:00:00Z")
             }
             val inst2 = AgentInstance().apply {
                 instanceId = "inst-a"
                 host = "10.0.0.1"
                 port = 8080
                 status = "UP"
-                lastHeartbeat = LocalDateTime.of(2025, 1, 1, 12, 0, 0)
+                lastHeartbeat = Instant.parse("2025-01-01T12:00:00Z")
             }
             `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(inst1, inst2))
             `when`(sessionMappingService.getSessionCountsByInstances(listOf("inst-b", "inst-a")))
@@ -89,7 +89,7 @@ class RouterMonitorControllerTest {
                 host = "10.0.0.1"
                 port = 8080
                 status = "UP"
-                lastHeartbeat = LocalDateTime.now()
+                lastHeartbeat = Instant.now()
             }
             `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(inst))
             `when`(sessionMappingService.getSessionCountsByInstances(any()))
@@ -171,7 +171,7 @@ class RouterMonitorControllerTest {
                 host = "10.0.0.1"
                 port = 8080
                 status = "UP"
-                lastHeartbeat = LocalDateTime.of(2025, 1, 1, 12, 0, 0)
+                lastHeartbeat = Instant.parse("2025-01-01T12:00:00Z")
             }
             val nowMs = System.currentTimeMillis()
             val info = MonitorInstanceInfo.fromAgentInstance(inst, sessionCount = 5, nowMs = nowMs)
@@ -186,7 +186,7 @@ class RouterMonitorControllerTest {
 
         @Test
         fun `fromAgentInstance computes heartbeat age`() {
-            val recentHeartbeat = LocalDateTime.now().minusSeconds(10)
+            val recentHeartbeat = Instant.now().minusSeconds(10)
             val inst = AgentInstance().apply {
                 instanceId = "inst-1"
                 host = "10.0.0.1"
@@ -207,15 +207,14 @@ class RouterMonitorControllerTest {
     @Nested
     inner class ParseLastHeartbeatMs {
         @Test
-        fun `handles LocalDateTime`() {
+        fun `handles Instant`() {
             val controller = RouterMonitorController(instanceRegistry, sessionMappingService, apiCallLogService)
             val method = RouterMonitorController::class.java.getDeclaredMethod("parseLastHeartbeatMs", Any::class.java)
             method.isAccessible = true
 
-            val ldt = LocalDateTime.of(2025, 1, 1, 0, 0, 0)
-            val result = method.invoke(controller, ldt) as Long
-            val expected = ldt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-            assertEquals(expected, result)
+            val heartbeat = Instant.parse("2025-01-01T00:00:00Z")
+            val result = method.invoke(controller, heartbeat) as Long
+            assertEquals(heartbeat.toEpochMilli(), result)
             assertTrue(result > 0)
         }
 
