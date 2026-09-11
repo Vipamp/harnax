@@ -25,9 +25,6 @@ class AgentMcpBinding : Serializable {
     @Schema(description = "FK to mcp_server.id")
     var mcpId: Long = 0
 
-    @Schema(description = "Whether to skip if MCP is unavailable (true/false)")
-    var enableSkip: String = "false"
-
     @Schema(description = "Environment bindings JSON snapshot")
     var envBindings: String? = null
 

@@ -212,8 +212,8 @@ class AgentSpecResolverTest {
         @Test
         fun `resolve should build MCP specs from mcpDetails`() {
             val mcps = listOf(
-                McpDetailDto(id = 5L, name = "github-mcp", type = "sse", enableSkip = "true"),
-                McpDetailDto(id = 6L, name = "local-mcp", type = "stdio", enableSkip = "false"),
+                McpDetailDto(id = 5L, name = "github-mcp", type = "sse"),
+                McpDetailDto(id = 6L, name = "local-mcp", type = "stdio"),
             )
             val spec = buildSpecResponse(mcpDetails = mcps)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
@@ -222,9 +222,7 @@ class AgentSpecResolverTest {
 
             assertEquals(2, agentSpec.mcpServices.size)
             assertEquals(5L, agentSpec.mcpServices[0].mcpId)
-            assertTrue(agentSpec.mcpServices[0].skipIfMissing)
             assertEquals(6L, agentSpec.mcpServices[1].mcpId)
-            assertFalse(agentSpec.mcpServices[1].skipIfMissing)
         }
 
         @Test
@@ -320,7 +318,7 @@ class AgentSpecResolverTest {
 
         @Test
         fun `resolve should parse env bindings from legacy toolList JSON`() {
-            val toolListJson = """[{"id":1,"enable_skip":false,"need_confirm":false,"env_bindings":[{"envKey":"API_KEY","envValue":"sk-123"}]}]"""
+            val toolListJson = """[{"id":1,"need_confirm":false,"env_bindings":[{"envKey":"API_KEY","envValue":"sk-123"}]}]"""
             val spec = buildSpecResponse(toolList = toolListJson)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -334,7 +332,7 @@ class AgentSpecResolverTest {
 
         @Test
         fun `resolve should parse env bindings from legacy mcpList JSON`() {
-            val mcpListJson = """[{"id":1,"enable_skip":false,"need_confirm":false,"env_bindings":[{"envKey":"MCP_TOKEN","envValue":"token-abc"}]}]"""
+            val mcpListJson = """[{"id":1,"env_bindings":[{"envKey":"MCP_TOKEN","envValue":"token-abc"}]}]"""
             val spec = buildSpecResponse(mcpList = mcpListJson)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -347,8 +345,8 @@ class AgentSpecResolverTest {
 
         @Test
         fun `resolve should merge env bindings from both toolList and mcpList`() {
-            val toolListJson = """[{"id":1,"enable_skip":false,"need_confirm":false,"env_bindings":[{"envKey":"TOOL_KEY","envValue":"tool-val"}]}]"""
-            val mcpListJson = """[{"id":2,"enable_skip":false,"need_confirm":false,"env_bindings":[{"envKey":"MCP_KEY","envValue":"mcp-val"}]}]"""
+            val toolListJson = """[{"id":1,"need_confirm":false,"env_bindings":[{"envKey":"TOOL_KEY","envValue":"tool-val"}]}]"""
+            val mcpListJson = """[{"id":2,"env_bindings":[{"envKey":"MCP_KEY","envValue":"mcp-val"}]}]"""
             val spec = buildSpecResponse(toolList = toolListJson, mcpList = mcpListJson)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 
@@ -362,7 +360,7 @@ class AgentSpecResolverTest {
 
         @Test
         fun `resolve should handle empty env bindings gracefully`() {
-            val toolListJson = """[{"id":1,"enable_skip":false,"need_confirm":false,"env_bindings":[]}]"""
+            val toolListJson = """[{"id":1,"need_confirm":false,"env_bindings":[]}]"""
             val spec = buildSpecResponse(toolList = toolListJson)
             `when`(adminApiClient.getAgentSpec("web-1")).thenReturn(spec)
 

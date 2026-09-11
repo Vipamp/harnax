@@ -329,12 +329,14 @@ agentscope 消费端（HarnessAgent 内部）
 
 | 范围 | 结果 | 归属 |
 |------|------|------|
-| `harnax-admin` 全量 | 1475 项，14 failures / 27 errors | `AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor` / `InternalApi` 七类；Skill 与 Cli 相关类全绿 |
+| `harnax-admin` 全量 | 1475 项，14 failures / 27 errors | `AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor` / `InternalApi` 七类；Skill 与 Cli 相关类全绿（`SecretFieldEncryptor` 已在 2026-09 的 MCP 修复轮解决，见本节末「R3 注」；`InternalApi` 即下方 `InternalApiControllerTest`，已修） |
 | `harnax-entity` 全量 | 203 项，2 failures / 142 errors | 140 errors 是 CGLIB 无法代理 final Kotlin 测试类（`AopConfigException`，未执行到 SQL），2 errors 是 `AgentToolMapperTest` 报 `Unknown column 'is_required'`；2 failures 是同一个类的两条断言（软删行仍被返回、按 id 查回的是另一行）。Skill 相关的两个类 35 项全绿 |
 
 逐类核实过归属：这些测试文件与被测主代码均未被第一轮改动。`InternalApiControllerTest` 的失败是测试自身只声明 11 个 `@Mock`、缺 `modelProviderMapper`，而该构造参数在第一轮之前就已存在——**该项已在第三轮修复**，见 R3-9。
 
 > **归因更正**：本节早先的版本把 `harnax-entity` 的 142 errors 笼统归给「`schema-test.sql` 与迁移漂移」。重跑后逐项数过：其中 140 项是测试类为 final Kotlin 类、Spring 测试上下文用 CGLIB 代理时报 `AopConfigException`（根本没执行到 SQL），与 schema 无关；真正源于漂移的只有 `agent_tool` 缺 V5 的 `is_required`（2 errors）与同类的 2 个断言失败。`skill` / `skill_repository` 两表的漂移已在第五轮对齐（`skillmd` / `resources` 改为 `MEDIUMTEXT`，补上 `V15` 的 `active_name` / `builtin_guard` 生成列与三个唯一索引，`source_type` 注释补 `BUILTIN`）；`agent_tool` 等非 Skill 表的漂移不在本轮范围，而那 13 个测试类的 `final` 修改属于测试基础设施、超出 Skill 范围，已撤回。
+
+> **R3 注（2026-09，MCP 修复轮）**：上表的 `SecretFieldEncryptor` 已解决。根因在测试夹具——它用裸 `ObjectMapper()` 构造 `SecretFieldEncryptor`，而 Jackson 3 下裸 mapper 绑不了 Kotlin 数据类的构造参数，`deserializeEntries` 读回的条目字段全空，于是断言失败。生产侧注入的一直是 `JacksonConfig` 里的 `jacksonObjectMapper()`，**从未受影响**，所以这是一处只存在于测试里的假阴性。改法是把夹具换成同一个 builder。该套件现在全绿，按同一口径剩下的既存失败只有 `AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService`（`InternalApiControllerTest` 已在 R3-9 解决）。
 
 另需留意：改动前的 HEAD 基线上 `harnax-admin` 的测试代码**根本无法编译**（`JwtAuthenticationFilterTest` 缺 `internalApiSecret` 参数、`SecurityUtilsTest` 类型不匹配），工作区已修好，因此无法取得 HEAD 的 admin 测试基线做逐项对照。
 
@@ -360,7 +362,11 @@ agentscope 消费端（HarnessAgent 内部）
 - `InternalApiControllerTest`（+2 项）：停用技能既不进 `skillDetails` 也不进 `skillList`、悬空绑定不影响其余技能。当时的判断是「CLI 合并处不加同类过滤：`saveSkillBindings` 强制 CLI 绑定只能引用内置仓库的技能，而内置技能不可 toggle，加了是死代码」——这一判断在第五轮被推翻，见 R5-1
 - `SkillSourceCrudIT` / `SkillSourceExtraIT`（重写，17 项）：改走 multipart 上传并断言当前契约，新增对「JSON 端拒绝 ZIP」「ZIP 的 fetch / install 为一次性」「`status = 99` 不落库」「内置仓库只读」「`zipPath` 不出服务器」的回归保护。
 
-本轮**未处理**的既存失败（与 Skill 无关）：`AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor` 六类；`harnax-entity` 的 Mapper 错误主要是 final 测试类的 CGLIB 代理问题（见上方归因更正），与 `schema-test.sql` 漂移无关。
+本轮**未处理**的既存失败（与 Skill 无关）：`AgentTask` / `TokenStats` / `AdminUserInitializer` / `ApiKeyService` / `AuthService` / `SecretFieldEncryptor` 六类（`SecretFieldEncryptor` 一类已在 2026-09 的 MCP 修复轮解决，见上文「R3 注」）；`harnax-entity` 的 Mapper 错误主要是 final 测试类的 CGLIB 代理问题（见上方归因更正），与 `schema-test.sql` 漂移无关。
+
+> **后续（2026-09，MCP 第五轮）**：上表余下五类已全部转绿，`harnax-admin` 单测 1598 项零失败。根因归为三类，写在 `docs/unit-test-cases.md` §17：裸 Mockito 匹配器（`ArgumentCaptor.capture()` / `ArgumentMatchers.eq()` / `isNull()`）返回平台类型，Kotlin 插入非空校验后抛 NPE 并连带污染同类后续用例；mockito-kotlin 的 `any()` 编译为 `ArgumentMatchers.any(T::class.java)`，匹配不到 null，可空参数必须用 `anyOrNull()`；桩覆盖不全（`initSystemKeys()` 遍历两个服务，只 stub 一个时另一个仍会插 Key）。其中 `AgentTaskController` 是**代码偏离约定**：7 个 catch 块漏了 `"Prefix: ${e.message}"`，用例早就按 `TokenStatsController` / `InternalApiController` 的既有约定断言，改的是生产代码。
+
+> **后续（2026-09，MCP 第六轮）**：上面把 `harnax-entity` 的 Mapper 失败归因于「final 测试类的 CGLIB 代理」（随后又改记「环境问题、不计入回归」）**是错的**。真根因是 `PlanNoteMapper.xml` 的注释体里出现连续连字符——XML 注释不允许，MyBatis 解析该文件失败，而三个服务的 `mybatis.mapper-locations` 都是 `classpath*:mapper/*.xml`，一个文件解析不了就等于 `SqlSessionFactory` 建不起来。修掉之后这批用例全绿：`harnax-entity` 现为 210 项、`harnax-admin` 单测现为 1608 项，零失败；前提是本机 Docker **且** `TESTCONTAINERS_RYUK_DISABLED=true`（`mysql:8.0` 本地有，`testcontainers/ryuk` 拉不到），跑法记在 `docs/unit-test-cases.md` §17。也正因如此，`V25` / `V26` 的可执行性另做了一次验证：Mapper 测试用的是手写 `schema-test.sql`、不碰 Flyway，所以由 `harnax-admin` 的一条 failsafe IT 真起应用、在全新 MySQL 8 上跑完 `V1..V26`，见 `prod_doc/mcp-management.zh-CN.md` §7.5。
 
 #### 第四轮（R4-1）修复后的验证
 
@@ -406,8 +412,8 @@ agentscope 消费端（HarnessAgent 内部）
 
 #### 本轮只记录、未改代码两项
 
-- **`AgentSpecResolverTest` 的唯一失败项属 tool 范围**：`resolve should build tool specs from toolDetails` 断言 `assertEquals(1, agentSpec.toolSpecs[0].needConfirm)`，而 `ToolSpec.needConfirm` 是 `Boolean = false`（`harnax-tools-sdk/.../ToolSpec.kt`），这条断言恒失败。已用 `git diff` 确认本轮对 `AgentSpecResolver.kt` 的修改只涉及内置技能注入、未碰 tool 映射，`ToolSpec.kt` 也不在改动列表——属既有测试错误，不在 Skill 与 agent 加载范围内，只记录不修。
-- **`V15` 在一个已被跨租户污染过的库上会中断迁移**：第 3a 步的重名去重按 `(tenant_id, name)` 分区、保留每个租户最旧的一行，所以租户 1 与租户 2 各有一行 `builtin-cli-skills` 时两行都会保留；紧接着的 `uk_skill_repository_builtin_guard` 会因为两行的 `builtin_guard` 都是 1 而创建失败，整个迁移卡在 V15。P0-4 的保留名校验只挡得住此后新写入，挡不住此前已建出的重复行。已执行过的库上不能就地改写 `V15`：`spring.flyway.validate-on-migrate: true` 生效， checksum 不一致会直接卡住启动；而 `application.yml` 里的 `spring.flyway.repair-on-migrate: true` 是一行**无效配置**——已反编译确认 Spring Boot 4.0.1 的 `FlywayProperties` 没有 `repairOnMigrate` 字段（只有 `validateOnMigrate` 与 `validateMigrationNaming`），而 `@ConfigurationProperties` 默认忽略未知字段，所以它不报错、也什么都没开启，不能指望它自动修正 checksum。**本轮未改动任何迁移脚本**；如需修复这类库，应新增一个 `V16` 先把多余的 builtin 行改名再补索引。
+- **`AgentSpecResolverTest` 的唯一失败项属 tool 范围**：`resolve should build tool specs from toolDetails` 断言 `assertEquals(1, agentSpec.toolSpecs[0].needConfirm)`，而 `ToolSpec.needConfirm` 是 `Boolean = false`（`harnax-tools-sdk/.../ToolSpec.kt`），这条断言恒失败。已用 `git diff` 确认本轮对 `AgentSpecResolver.kt` 的修改只涉及内置技能注入、未碰 tool 映射，`ToolSpec.kt` 也不在改动列表——属既有测试错误，不在 Skill 与 agent 加载范围内，只记录不修。**已解决（2026-09 MCP 第五轮）**：随既存红灯一并清理，`harnax-agent-service` 单测 131 项全绿。
+- **`V15` 在一个已被跨租户污染过的库上会中断迁移**：第 3a 步的重名去重按 `(tenant_id, name)` 分区、保留每个租户最旧的一行，所以租户 1 与租户 2 各有一行 `builtin-cli-skills` 时两行都会保留；紧接着的 `uk_skill_repository_builtin_guard` 会因为两行的 `builtin_guard` 都是 1 而创建失败，整个迁移卡在 V15。P0-4 的保留名校验只挡得住此后新写入，挡不住此前已建出的重复行。已执行过的库上不能就地改写 `V15`：`spring.flyway.validate-on-migrate: true` 生效， checksum 不一致会直接卡住启动；而 `application.yml` 里的 `spring.flyway.repair-on-migrate: true` 是一行**无效配置**——已反编译确认 Spring Boot 4.0.1 的 `FlywayProperties` 没有 `repairOnMigrate` 字段（只有 `validateOnMigrate` 与 `validateMigrationNaming`），而 `@ConfigurationProperties` 默认忽略未知字段，所以它不报错、也什么都没开启，不能指望它自动修正 checksum。**本轮未改动任何迁移脚本**；如需修复这类库，应在当前版本之后新增一个迁移先把多余的 builtin 行改名再补索引（`V16` 已被 `drop_skill_storage_path_and_binding_indexes` 占用，`V25` / `V26` 已留给 OAuth 数据模型）。
 
 ## 10. 关键文件索引
 

@@ -12,4 +12,6 @@ interface AgentMcpBindingMapper {
     fun batchInsert(@Param("list") list: List<AgentMcpBinding>): Int
 
     fun deleteByAgentId(@Param("agentId") agentId: Long): Int
+
+    fun deleteByMcpId(@Param("mcpId") mcpId: Long): Int
 }

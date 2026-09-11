@@ -134,7 +134,7 @@ class AgentSpecResolver(
 
         // ── MCP details (full config from admin) ──
         for (mcp in specInfo.mcpDetails) {
-            builder.addMcpService(McpSpec(mcpId = mcp.id, skipIfMissing = mcp.enableSkip == "true"))
+            builder.addMcpService(McpSpec(mcpId = mcp.id))
         }
 
         // ── Skill details (full config from admin, no SkillMapper needed) ──

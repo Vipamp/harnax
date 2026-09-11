@@ -52,9 +52,6 @@ data class AgentCreateRequest(
         @Schema(description = "MCP ID", example = "1")
         val id: Long? = null,
 
-        @Schema(description = "Whether allow to skip", example = "true")
-        val enableSkip: String? = null,
-
         @Schema(description = "Environment variable bindings for MCP")
         val envBindings: List<EnvBinding>? = null,
     )

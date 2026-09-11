@@ -91,7 +91,6 @@ class AgentSpecBuilder {
 data class McpSpec(
     val mcpId: Long,
     val isAsync: Boolean = true,
-    val skipIfMissing: Boolean = true,
 )
 
 data class SkillSpec(

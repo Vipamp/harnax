@@ -45,7 +45,6 @@ enum class HarnaxErrorCode(
 
     // ==================== Agent 链路错误 (6000-6999) ====================
     AGENT_MODEL_NOT_FOUND("6001", "模型配置未找到"),
-    AGENT_MCP_NOT_FOUND("6002", "MCP 服务配置 [{}] 未找到"),
     AGENT_SKILL_NOT_FOUND("6003", "Skill [{}] 未找到"),
     AGENT_LLM_CALL_FAILED("6004", "LLM 调用失败: {}"),
     AGENT_INIT_FAILED("6005", "Agent 初始化失败: {}"),

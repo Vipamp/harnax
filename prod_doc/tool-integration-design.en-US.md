@@ -126,7 +126,7 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 
 - **Decision**: `agent_tool_binding.enable_skip` and `ToolSpec.skipIfMissing` were removed together (V17); a missing tool now always means "warn and skip".
 - **Why**: the switch only chose between an error and a warning; it granted no runtime tolerance. Surfaced in the UI as "缺失时跳过" it read like a resilience setting it never was.
-- **Contrast**: `agent_mcp_binding.enable_skip` is **kept** — an unreachable MCP server really does block agent construction, so there "fail" versus "warn and skip" are two genuine behaviours.
+- **Contrast**: the same argument holds for MCP, so `agent_mcp_binding.enable_skip`, `McpSpec.skipIfMissing` and the `AGENT_MCP_NOT_FOUND` error code were removed as well (V20) — a missing config record now also means "warn and skip", with no opt-in to fail instead. Connection failures (unreachable address, rejected auth) still throw: the switch never covered them, and swallowing those exceptions would only let an agent with no working tools come up silently, which is harder to diagnose than a failure.
 
 ### 6.7 Binding-level `needConfirm` may only tighten
 
@@ -153,8 +153,9 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | Runtime adaptor | `ToolConfigAdaptor` | `McpConfigAdaptor` | `SkillAdaptor` |
 | Metadata source | Code annotations (builtin) / DB (custom) | DB | Remote repository sync |
 | Writable by operators | No for builtin, yes for custom (not enabled) | Yes | Yes |
-| Secret handling | Encrypted headers / env values | Encrypted env values | None |
-| Behaviour when missing | Warn and skip (no switch) | Governed by `enable_skip` | Cached fallback |
+| Secret handling | Encrypted headers / env values | Encrypted headers / env values (decrypted before delivery) | None |
+| Behaviour when missing | Warn and skip (no switch) | Warn and skip (no switch since V20, same as Tool) | Cached fallback |
+| Behaviour when disabled | `status` delivered, skipped at runtime | Same as Tool (`status=0` skipped) | Filtered at Admin delivery, never reaches the spec |
 
 ## 8. Known boundaries
 
@@ -165,6 +166,7 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | HTTP tools have no UI entry point | `HttpProxyToolBox` and its columns are complete, but the tool page offers no creation form |
 | Pruning residue needs a human | When the circuit breaker trips (stale rows ≥ declared rows) or a tool group failed to sync, the delete is skipped with an ERROR log; review the code and re-release |
 | `name` is not part of the unique key | `uk_tenant_bean_method` excludes `name`, so two methods declaring the same `@Tool(name)` are not caught by the database; the sync looks rows up by `name` to attach env params, so a duplicate can land those definitions on the wrong row |
+| Tenant filtering is uneven across capabilities | `mcp_server` list queries now filter by `tenant_id` (section 7, round three of `mcp-management`); `agent` does not: `AgentMapper.xml` neither maps nor inserts `agent.tenant_id`, yet `AgentServiceImpl` writes `agent.tenantId` and `MpSessionService` reads it — the value is set, dropped on the floor, then trusted |
 
 ## 9. Evolution timeline
 
@@ -180,6 +182,7 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | — | API and frontend write paths for builtins closed | Single source of truth (6.2) |
 | V17 | Drop `agent_tool_binding.enable_skip` | The switch had no semantics (6.6) |
 | V18 | Unique key `(agent_id, tool_id)` on `agent_tool_binding` | Make "the binding row is the one fact for this agent-tool pair" actually true |
+| V19-V22 | MCP side aligned onto tool semantics: binding unique key, `enable_skip` dropped, stale capability columns on `agent` / `session` dropped, `tenant_id` filtering and the `is_public` default | The same defects reproduced one by one on MCP (see section 7 of `mcp-management`) |
 | — | Assembly loses the `TOOL_SET` fallback | Close the loop on method-granular granting (6.5) |
 | — | Upsert refreshes `name` + two brakes on prune | Renames stop losing bindings; mass deletes are gated (6.3) |
 
@@ -194,4 +197,4 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | SQL and unique-key behaviour | `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml` (`upsertBuiltinTool` / `deleteBuiltinByIds`) |
 | Spec delivery | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` (`buildAgentSpecResponse`) |
 | Runtime assembly | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |
-| Migrations | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`, `V17__drop_tool_binding_enable_skip.sql`, `V18__add_tool_binding_unique_key.sql` |
+| Migrations | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`, `V17__drop_tool_binding_enable_skip.sql`, `V18__add_tool_binding_unique_key.sql`; MCP counterparts: `V19__add_mcp_binding_unique_key.sql`, `V20__drop_mcp_binding_enable_skip.sql`, `V21__drop_stale_capability_list_columns.sql`, `V22__mcp_public_default_and_tenant_backfill.sql`, `V23__add_mcp_server_name_unique_key.sql` (MCP names unique within a tenant, the counterpart of the tool-side name key) |

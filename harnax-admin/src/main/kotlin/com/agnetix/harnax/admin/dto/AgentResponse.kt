@@ -98,16 +98,8 @@ data class AgentResponse(
         @Schema(description = "MCP description", example = "File system service")
         var mcpDescription: String? = null,
 
-        @Schema(description = "Whether allow skip", example = "true")
-        var enableSkip: String? = null,
-
         @Schema(description = "Environment variable bindings")
         var envBindings: List<EnvBinding>? = null,
-    )
-
-    data class McpConfigInternal(
-        var id: Long? = null,
-        var enableSkip: String? = null,
     )
 
     @Schema(description = "Skill item")

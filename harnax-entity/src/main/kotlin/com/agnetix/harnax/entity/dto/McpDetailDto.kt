@@ -32,8 +32,6 @@ data class McpDetailDto(
     @Schema(description = "Environment parameters JSON string")
     val envParams: String? = null,
 
-    // ── Binding-level fields (from agent_mcp_binding) ──
-
-    @Schema(description = "Enable skip if MCP unavailable")
-    val enableSkip: String? = null,
+    @Schema(description = "Enable status (0:disabled, 1:enabled). Disabled servers are skipped when assembling the agent")
+    val status: Int = 1,
 )

@@ -41,7 +41,7 @@ data class AgentSpecInfoResponse(
     @Schema(description = "Tool bindings (JSON: [{id, needConfirm, envBindings}])")
     val toolList: String = "[]",
 
-    @Schema(description = "MCP bindings (JSON: [{id, enableSkip, envBindings}])")
+    @Schema(description = "MCP bindings (JSON: [{id, envBindings}])")
     val mcpList: String = "[]",
 
     @Schema(description = "Skill IDs (comma-separated)")

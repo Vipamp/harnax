@@ -5,20 +5,19 @@ import com.agnetix.harnax.agent.adaptor.mcp.*
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.dto.McpDetailDto
-import com.agnetix.harnax.mapper.McpServerMapper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
  * McpConfigAdaptor Implementation.
  *
- * **Primary path**: reads MCP config from [AgentSpecContextHolder] (populated by admin API).
- * **Fallback**: queries DB directly via [McpServerMapper].
+ * Reads MCP config from [AgentSpecContextHolder], the one place it can be read from: Admin delivers
+ * `headers` / `envParams` decrypted on its way out because this service holds no AES key, so a row read
+ * straight from the database would be fed to the client as ciphertext that no one here can open.
  */
 @Component
 class McpConfigAdaptorImpl(
     private val specContextHolder: AgentSpecContextHolder,
-    private val mcpServerMapper: McpServerMapper,
 ) : McpConfigAdaptor {
 
     private val log = LoggerFactory.getLogger(McpConfigAdaptorImpl::class.java)
@@ -29,24 +28,15 @@ class McpConfigAdaptorImpl(
             return null
         }
 
-        // Primary: read from context (admin pre-resolved)
         val mcpDetails = specContextHolder.get()?.mcpDetails
-        if (!mcpDetails.isNullOrEmpty()) {
-            val dto = mcpDetails.find { it.id == mcpId }
-            if (dto != null) {
-                log.debug("MCP config loaded from context: mcpId={}, name={}", mcpId, dto.name)
-                return dtoToEntity(dto)
-            }
-        }
-
-        // Fallback: direct DB query
-        log.debug("MCP config fallback to DB: mcpId={}", mcpId)
-        val mcpServer = mcpServerMapper.selectById(mcpId)
-        if (mcpServer == null) {
-            log.warn("McpServer not found: $mcpId")
+        val dto = mcpDetails?.find { it.id == mcpId }
+        if (dto == null) {
+            // Warn, not debug: an agent bound to a server this spec does not carry means the caller
+            // stopped filling `mcpDetails`, and the difference is otherwise invisible in the logs.
+            log.warn("MCP {} is not in the delivered spec, so its config cannot be resolved here", mcpId)
             return null
         }
-        return mcpServer
+        return dtoToEntity(dto)
     }
 
     /**
@@ -62,6 +52,7 @@ class McpConfigAdaptorImpl(
         entity.url = dto.url
         entity.headers = dto.headers
         entity.envParams = dto.envParams
+        entity.status = dto.status
         return entity
     }
 }

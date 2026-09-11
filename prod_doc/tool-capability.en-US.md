@@ -91,7 +91,7 @@ Path: `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sd
 |-----------|---------|-------------|
 | `displayName` | `""` | English display name in the Admin UI; when blank, the sync falls back to the tool name (`@Tool.name`); also serves as the i18n fallback text |
 | `displayNameZh` | `""` | Chinese display name in the Admin UI (used in the i18n zh-CN locale); the frontend falls back to the English name when blank |
-| `envParamDefs` | `[]` | Array of environment parameter definitions (`ToolEnvParamDef`), synced to the `agent_tool_env_param` table at startup and used as the rendering basis for the env-parameter form when binding tools in the Admin UI; each entry has `key` (parameter name), `description` (UI hint), `required` (mandatory or not), `secret` (secret or not, masked in the UI), and `defaultValue` (default, non-secret only) — see section 3.4 |
+| `envParamDefs` | `[]` | Array of environment parameter definitions (`ToolEnvParamDef`), synced to the `agent_tool_env_param` table at startup and used as the rendering basis for the env-parameter form when binding tools in the Admin UI; each entry has `key` (parameter name), `description` (UI hint), `required` (mandatory or not), `secret` (secret or not, masked in the UI), and `defaultValue` (default, non-secret only — the sync stores the annotation value verbatim and never goes through the encryptor, so putting a default on a `secret = true` parameter writes a plaintext credential into the table) — see section 3.4 |
 | `timeoutSeconds` | `0` | Execution timeout in seconds; `0` means the system default (written as 30 seconds during DB sync) |
 | `isPublic` | `true` | Whether publicly available (visible to all users) |
 | `needConfirm` | `false` | **Whether user confirmation is required before execution.** When `true`, an ASK permission rule is generated at runtime: every invocation pauses and waits for user confirmation; it does not inspect input content and is independent of the arguments; it can be skipped in `BYPASS` permission mode. For a builtin tool this value comes from the annotation and is not editable in the UI; the only no-code way to tighten it is the binding row `agent_tool_binding.needConfirm` for one agent. The runtime ORs the two, so a binding can only add confirmation, never cancel a confirmation the tool itself declares (`agent_tool.needConfirm` itself is editable only for CUSTOM / HTTP tools) — see section 6.4 |
@@ -384,7 +384,7 @@ Entity: `AgentToolBinding.kt`
 - `needConfirm`: binding-level confirmation, **OR-ed** with `agent_tool.needConfirm` — it can add confirmation for one agent, never cancel the tool's own confirmation;
 - `envBindings`: env variable binding JSON snapshot (per-agent tool env configuration).
 
-> There used to be an `enable_skip` column ("skip when the tool is unavailable"). Its only semantic was error-vs-warn logging; it granted no runtime tolerance. It was dropped by `V17__drop_tool_binding_enable_skip.sql`. The MCP binding table keeps its own `agent_mcp_binding.enable_skip`.
+> There used to be an `enable_skip` column ("skip when the tool is unavailable"). Its only semantic was error-vs-warn logging; it granted no runtime tolerance. It was dropped by `V17__drop_tool_binding_enable_skip.sql`. The same-named column on the MCP binding table was dropped too, by `V20__drop_mcp_binding_enable_skip.sql`: it only covered "no `mcp_server` record found" while an unreachable server still threw, so keeping it around only misled people (see section 7 of `mcp-management`).
 >
 > `V18__add_tool_binding_unique_key.sql` first removes historical duplicate rows (same agent bound to the same tool twice, keeping the newest), then adds a unique key on `(agent_id, tool_id)` and drops `idx_agent_tool_binding_agent_id`, which that key already covers as a left prefix.
 >
@@ -500,8 +500,10 @@ Authoring checklist:
 
 **Assigning values**: when the tool is bound to an agent, the Admin UI renders an env-parameter form based on the declarations; the operator picks one of two options:
 
-1. **Reference a global env variable**: first create the variable in Admin's "Environment Variables" management (`/api/admin/env-variables`, values stored encrypted), then associate it at binding time (`envVarId` is stored). At runtime Admin resolves it to the **latest** decrypted value — updating the global variable propagates to all referencing bindings;
+1. **Reference a global env variable**: first create the variable in Admin's "Environment Variables" management (`/api/admin/env-variables`, values stored encrypted), then associate it at binding time (`envVarId` is stored). At runtime Admin resolves it to the **latest** decrypted value — updating the global variable propagates to all referencing bindings. **The snapshot does not store the value**, only the pointer: what the client submits back is a display value (`******` for a sensitive one), so snapshotting it would keep a string of stars as the secret, while resolving it server-side first would write a plaintext secret into the `env_bindings` column (the AES key lives in admin only — see `mcp-management` §7.16). The other direction of the same rule: **a referenced variable cannot be deleted** — `deleteEnvVariable` checks the `envVarId` pointers in all three binding tables first and answers "bound by N agent(s): …; rebind them first";
 2. **Custom value**: enter a literal directly (`customValue` is stored), saved as a snapshot.
+
+A `secret = true` parameter is **never prefilled with its default**: the read API masks a secret default too, so prefilling would drop `abc****wxyz` into the form field and from there into the row. Override it by typing a real value or by referencing a global variable.
 
 **Full data flow**:
 

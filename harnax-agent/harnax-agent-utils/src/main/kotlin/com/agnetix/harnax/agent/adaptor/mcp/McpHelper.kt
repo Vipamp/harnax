@@ -1,10 +1,12 @@
 package com.agnetix.harnax.agent.adaptor.mcp
 
+import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.entity.McpServer
 import io.agentscope.core.tool.mcp.McpClientBuilder
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.modelcontextprotocol.spec.McpSchema
 import org.slf4j.LoggerFactory
+import java.time.Duration
 
 /**
  * 配置解析器函数类型：将数据库中存储的 JSON 字符串解析为明文的 Key-Value Map
@@ -24,19 +26,51 @@ object McpHelper {
 
     private val log = LoggerFactory.getLogger(McpHelper::class.java)
 
+    /**
+     * How long a handshake call may block the caller. Both users of this run on a request thread,
+     * so "no answer" has to become an error instead of a parked thread.
+     */
+    private val CLIENT_REQUEST_TIMEOUT: Duration = Duration.ofSeconds(10)
+
+    /**
+     * How long building a client may take. Generous compared to [CLIENT_REQUEST_TIMEOUT] because a
+     * stdio client starts an external process, which may have to be fetched first (`npx -y ...`).
+     * Matches the registration wait in `HarnessAgentBuilder.addMcp`.
+     */
+    private val CLIENT_BUILD_TIMEOUT: Duration = Duration.ofSeconds(60)
+
     fun listTools(mcpServer: McpServer, configResolver: McpConfigResolver? = null, envResolver: McpConfigResolver? = null): List<McpSchema.Tool> {
         val mcpClient = createMcpClient(mcpServer, false, configResolver, envResolver)
+        // Closed on the way out, whatever the outcome: this runs once per connectivity test click and
+        // nobody else holds the client — a stdio one is an OS process.
         try {
-            mcpClient.initialize()?.block(java.time.Duration.ofSeconds(10))
-        } catch (t: Throwable) {
-            log.error("Failed to initialize McpClient `${mcpServer.name}`", t)
-            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
+            try {
+                mcpClient.initialize()?.block(CLIENT_REQUEST_TIMEOUT)
+            } catch (t: Throwable) {
+                log.error("Failed to initialize McpClient `${mcpServer.name}`", t)
+                throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
+            }
+            try {
+                // Bounded like initialize(): an un-timed block() here would hang the admin request
+                // on a server that answers initialize but not tools/list.
+                return mcpClient.listTools()?.block(CLIENT_REQUEST_TIMEOUT) ?: emptyList()
+            } catch (t: Throwable) {
+                log.error("Failed to list tools from McpClient `${mcpServer.name}`", t)
+                throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
+            }
+        } finally {
+            closeQuietly(mcpClient, mcpServer.name)
         }
+    }
+
+    /**
+     * Close a client without letting a second failure replace the first one.
+     */
+    fun closeQuietly(mcpClient: McpClientWrapper, name: String) {
         try {
-            return mcpClient.listTools()?.block() ?: emptyList()
+            mcpClient.close()
         } catch (t: Throwable) {
-            log.error("Failed to list tools from McpClient `${mcpServer.name}`", t)
-            throw McpErrorCode.MCP_CONNECTION_FAILED.format(t, mcpServer.name)
+            log.warn("Failed to close McpClient `$name`", t)
         }
     }
 
@@ -97,7 +131,20 @@ object McpHelper {
             is StreamableHttpMcpConfig -> buildStreamableMcpClient(mcpConfig)
         }
         return try {
-            if (isAsync) builder.buildAsync().block()!! else builder.buildSync()
+            if (isAsync) {
+                // Bounded, and null-checked rather than asserted: an un-timed block() parks the
+                // caller forever on a server that never answers, and `!!` on that null would surface
+                // as a bare NPE naming nothing.
+                builder.buildAsync().block(CLIENT_BUILD_TIMEOUT)
+                    ?: run {
+                        log.error("MCP client build returned null: name={}", mcpConfig.name)
+                        throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format()
+                    }
+            } else {
+                builder.buildSync()
+            }
+        } catch (e: HarnaxException) {
+            throw e
         } catch (e: Exception) {
             throw McpErrorCode.MCP_CLIENT_CREATE_FAILED.format(e, mcpConfig.name)
         }

@@ -91,7 +91,7 @@ harnax-agent-service（运行时装配、适配器实现）
 |------|--------|------|
 | `displayName` | `""` | Admin UI 英文展示名；留空时同步入库时回退为工具名（`@Tool.name`），也作为 i18n 缺省文案 |
 | `displayNameZh` | `""` | Admin UI 中文展示名（i18n zh-CN 语言环境使用），留空时前端回退英文名 |
-| `envParamDefs` | `[]` | 环境参数定义数组（`ToolEnvParamDef`），启动时同步到 `agent_tool_env_param` 表，作为 Admin UI 绑定工具时环境参数表单的渲染依据；每项含 `key`（参数名）、`description`（UI 说明）、`required`（是否必填）、`secret`（是否密钥，UI 脱敏）、`defaultValue`（默认值，仅限非密钥），详见 3.4 节 |
+| `envParamDefs` | `[]` | 环境参数定义数组（`ToolEnvParamDef`），启动时同步到 `agent_tool_env_param` 表，作为 Admin UI 绑定工具时环境参数表单的渲染依据；每项含 `key`（参数名）、`description`（UI 说明）、`required`（是否必填）、`secret`（是否密钥，UI 脱敏）、`defaultValue`（默认值，仅限非密钥——同步路径把注解值原样入库、不过加密器，给 `secret = true` 的参数配默认值等于往表里写明文密钥），详见 3.4 节 |
 | `timeoutSeconds` | `0` | 执行超时秒数；`0` 表示使用系统默认值（同步入库时写为 30 秒） |
 | `isPublic` | `true` | 是否公开可用（面向所有用户可见） |
 | `needConfirm` | `false` | **执行前是否需要用户确认**。为 `true` 时运行时生成 ASK 权限规则，每次调用都会暂停并等待用户确认；不检查入参内容，与调用参数无关；在 `BYPASS` 权限模式下会被跳过。内置工具的该字段由代码注解决定，页面上改不了；不改代码想给某个智能体加严，只能针对绑定项设置 `agent_tool_binding.needConfirm`——运行时取两者之或，绑定层只能追加确认、不能取消工具自带的确认（`agent_tool.needConfirm` 本身只有自定义 / HTTP 工具可在 UI 修改），详见 6.4 节 |
@@ -380,11 +380,11 @@ fun executeCommand(
 
 对应实体：`AgentToolBinding.kt`
 
-- `agentId` / `toolId`：绑定关系，`(agent_id, tool_id)` 唯一（见下方 V18 说明），保存时按 toolId 去重；
+- `agentId` / `toolId`：绑定关系，`(agent_id, tool_id)` 唯一（见下方 V18 说明），保存时按 toolId 去重。去重是兜底而不是校验：后果从「报唯一键」变成「加两张一样的卡、第二张填的环境变量静默丢掉」，所以界面先挡——webui 的下拉按行过滤掉别的行已选过的工具，小程序选中时直接拒绝并 toast（它每张卡共用一个候选 range，按下标过滤会让已选卡片错位）；
 - `needConfirm`：绑定级确认，与 `agent_tool.needConfirm` **取或**——只能给某个智能体追加确认，不能取消工具自带的确认；
-- `envBindings`：环境变量绑定 JSON 快照（按 Agent 粒度配置工具环境参数）。
+- `envBindings`：环境变量绑定 JSON 快照（按 Agent 粒度配置工具环境参数）。引用型条目只存 `envVarId` 指针、不存值，读取与下发都按 id 现取（见步骤 3）。
 
-> 历史上还有一列 `enable_skip`（工具缺失时是否跳过），语义只是「报错还是告警跳过」，不构成任何运行时容错能力，已由 `V17__drop_tool_binding_enable_skip.sql` 删除。MCP 绑定表 `agent_mcp_binding.enable_skip` 保留。
+> 历史上还有一列 `enable_skip`（工具缺失时是否跳过），语义只是「报错还是告警跳过」，不构成任何运行时容错能力，已由 `V17__drop_tool_binding_enable_skip.sql` 删除。MCP 绑定表上的同名列也已由 `V20__drop_mcp_binding_enable_skip.sql` 一并删除：它只覆盖「查不到 `mcp_server` 记录」，服务连不上时照样抛错，留着只会误导（见 `mcp-management` 第 7 节）。
 >
 > `V18__add_tool_binding_unique_key.sql` 先清理同一智能体重复绑定同一工具的历史行（保留最新一条），再为 `(agent_id, tool_id)` 建唯一键，并去掉被其左前缀覆盖的 `idx_agent_tool_binding_agent_id`。
 >
@@ -500,8 +500,10 @@ class WeatherToolBox : ToolBox() {
 
 **赋值**：工具绑定到智能体时，Admin UI 会按声明渲染环境参数表单，操作者二选一：
 
-1. **引用全局环境变量**：先在 Admin「环境变量管理」（`/api/admin/env-variables`，值加密存储）中创建变量，绑定时选择关联（存 `envVarId`）。运行时 Admin 会解析为**最新**的解密值注入——改全局变量即可对所有引用方生效；
+1. **引用全局环境变量**：先在 Admin「环境变量管理」（`/api/admin/env-variables`，值加密存储）中创建变量，绑定时选择关联（存 `envVarId`）。运行时 Admin 会解析为**最新**的解密值注入——改全局变量即可对所有引用方生效。**快照里不存这个值**，只存指针：客户端回填的是展示值（敏感项即 `******`），存下来等于把一串星号当密钥；在服务端解密后再写则会把明文密钥落进 `env_bindings` 列（AES 密钥只在 admin，见 `mcp-management` §7.16）。反向的约束是：**被引用的变量删不掉**，`deleteEnvVariable` 会先查三张绑定表的 `envVarId`，命中就报「被 N 个 agent 绑着：…，先改绑再删」；
 2. **自定义值**：直接填写字面量（存 `customValue`），以快照形式保存。
+
+`secret = true` 的参数**不预填默认值**：读接口对密钥项的默认值给的也是掩码，预填会把 `abc****wxyz` 这串字面量填进表单并落库。要覆盖它只能自己填一个真值，或者引用一个全局变量。
 
 **完整数据流**：
 
@@ -509,14 +511,16 @@ class WeatherToolBox : ToolBox() {
 @ToolMeta.envParamDefs（代码声明）
     → admin 启动：BuiltinToolAutoRegistrar 同步到 agent_tool_env_param 表（UI 表单渲染依据）
     → Admin UI：为智能体绑定工具时按表单填写每个 envKey（引用全局变量或自定义值）
-    → agent_tool_binding.envBindings（JSON 快照：envKey + envVarId / customValue）
-    → agent 启动：InternalApiController 将 envVarId 解析为最新解密值（失败回退快照值）
+    → agent_tool_binding.envBindings（JSON 快照：envKey + envVarId / customValue；引用只有指针，没有值）
+    → agent 启动：InternalApiController 将 envVarId 解析为最新解密值（解析不到时回退快照值——新写入没有快照值可回退，只剩一句 warn）
     → AgentSpecResolver 合并全部绑定为扁平 Map，封装 ToolEnvContext
     → HarnessAgentLauncher 注册进 ToolExecutionContext
     → 工具方法的 envContext 参数自动注入，envContext.require("KEY") 取值
 ```
 
-必填参数未配置时，`require()` 抛出 `Environment parameter 'XXX' is required but not configured`，错误信息会返回给模型。
+必填参数留空**保存就会被挡**：`assertRequiredEnvParamsFilled` 按 `agent_tool_env_param.required = 1` 逐条问「运行时拿得到值吗」——有 `envVarId` 引用算拿到，自填值要非空且不含 `****`，而工具自己的 `default_value` **不算**（`ToolConfigAdaptorImpl` 把参数定义装进了运行时的 `AgentTool`，但全仓没有任何一处读它，默认值到不了 `ToolEnvContext`）。两个前端也各有一道提交校验，报参数名，但真正拦得住的是服务端这条。
+
+运行期那句 `Environment parameter 'XXX' is required but not configured`（`require()` 抛出、错误信息返回给模型）因此只剩两种来路：改动之前存下的脏行，以及 `is_required = 1` 的必须工具（它没有绑定行，见 6.1）。
 
 ### 步骤 4：编写单元测试
 
@@ -538,7 +542,7 @@ class WeatherToolBox : ToolBox() {
 ### 步骤 6：为智能体绑定工具并配置环境变量
 
 1. Admin UI 进入智能体配置（创建或编辑），在工具选择步骤勾选新工具（向导候选列表只含 `is_required = 0` 的工具；标了 `isRequired = true` 的工具不在列表中，也无需勾选，下发时自动追加）；
-2. 按表单为必填环境参数赋值（引用全局变量或自定义值）；
+2. 按表单为必填环境参数赋值（引用全局变量或自定义值）——留空保存不了：服务端会报出缺哪几个参数名，跨租户或已删除的 `envVarId` 同样在这一步被挡；
 3. 按需设置 `needConfirm`（执行前二次确认）——该开关只能加严：打开后本智能体每次调用都确认，工具本身已要求确认的无法在此取消；
 4. 保存，绑定写入 `agent_tool_binding`。
 
@@ -548,7 +552,7 @@ class WeatherToolBox : ToolBox() {
 2. 观察前端会话页的工具调用卡片（SSE 工具事件流）；
 3. 检查 `tool_call_log` 表 / 服务日志，确认出现 `weather-tool-box::getWeather` 的调用记录（含入参、结果、耗时）；
 4. `needConfirm=true` 的工具验证 ASK 确认交互；
-5. 故意不配置必填环境参数，验证工具把「参数未配置」错误返回给模型而不是静默失败。
+5. 故意留空一个必填环境参数，确认保存被挡下且报出参数名（运行期那句「参数未配置」已经拿不到这种输入了，它只会出现在改动之前存下的脏行和 `is_required = 1` 的必须工具上）。
 
 ### 常见陷阱速查
 
@@ -558,7 +562,8 @@ class WeatherToolBox : ToolBox() {
 | 工具管理页面看不到新工具 | admin 未重启（未同步），或该 ToolBox 没有扫到 `@Tool` 方法（`ToolRegistry` 里没有它的元数据），或该记录 `type` 不是 `BUILTIN`（自定义工具暂不在前端展示） |
 | 智能体配置向导里选不到 | 该工具 `is_required = 1`（必须工具不进候选列表，下发时自动带上），或它是自定义 / HTTP 工具且 `status = 0` |
 | 运行时日志出现 `Tool ... not found, skipping` | `agent_tool` 记录缺失（admin 未重启同步）、`beanName` 为空，或 agent-service 未重启导致 `ToolRegistry` 中没有该 ToolBox；该工具会被跳过，不会兜底注册 |
-| 环境参数取不到值 | 绑定时未赋值；确认 `agent_tool_binding.envBindings` 中 envKey 与代码声明一致 |
+| 环境参数取不到值 | 引用型条目在快照里不存值，只存 `envVarId`：变量还在就一定按最新值解析，所以取不到通常是 envKey 与代码声明不一致，或者 `agent_tool_binding.envBindings` 里根本没有这个 key（保存时的必填与引用校验现在会先挡一道）。剩下一种静默情况是改动之前存下的历史行：里面可能带着一串掩码当值，变量又已被删除，才会兜出星号 |
+| 表单里看着填好了，工具拿到一串星号 | 那是掩码不是值。两处来源：`secret = true` 的参数曾把默认值掩码预填进绑定框，以及引用型快照曾把 `displayValue`（敏感项即 `******`）当值存下——本轮都改了（敏感项一律留空、引用不落值）。判定口径是「含 `****` 的不算已填」，历史脏行需要重新填一次 |
 | 必须工具运行期报「环境参数未配置」 | `isRequired = true` 的工具没有绑定行，拿不到任何 envBindings 快照。必须工具不要声明必填环境参数；确实需要外部配置，改为在非必须工具上声明，或让代码用 `ToolEnvContext.get(key)` 自行兜默认值，避免 `require` |
 | 想停用 / 改名 / 删除某个内置工具 | 没有这种入口：内置工具由代码同步独占管理（见 5.3），写接口对 `BUILTIN` 直接拒绝，页面也没有开关。要去掉或改名就改注解重新发布；手工改库里的记录会在下次 admin 重启时被收敛回代码状态 |
 | 改了 Java 方法名或 bean 名后智能体说「找不到工具」 | 身份键是 `beanName + methodName + toolName`，改这两个之一等于删旧建新，`id` 变了，挂在旧 id 上的 `agent_tool_binding` 已随级联清理删除——去智能体配置里重新勾选该工具并补环境参数。只改 `@Tool(name = ...)` 不会有这个问题，记录会原地更新 |

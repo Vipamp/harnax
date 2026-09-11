@@ -1,10 +1,8 @@
 package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
-import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
-import com.agnetix.harnax.mapper.McpServerMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -15,25 +13,12 @@ import org.mockito.Mockito.*
 class McpConfigAdaptorImplTest {
 
     private lateinit var specContextHolder: AgentSpecContextHolder
-    private lateinit var mcpServerMapper: McpServerMapper
     private lateinit var adaptor: McpConfigAdaptorImpl
-
-    private lateinit var testMcpServer: McpServer
 
     @BeforeEach
     fun setUp() {
         specContextHolder = mock(AgentSpecContextHolder::class.java)
-        mcpServerMapper = mock(McpServerMapper::class.java)
-        adaptor = McpConfigAdaptorImpl(specContextHolder, mcpServerMapper)
-
-        testMcpServer = McpServer().apply {
-            id = 1L
-            name = "test-mcp"
-            description = "A test MCP server"
-            type = "stdio"
-            command = "npx -y @mcp/test"
-            url = ""
-        }
+        adaptor = McpConfigAdaptorImpl(specContextHolder)
     }
 
     private fun stubContext(mcpDetails: List<McpDetailDto>) {
@@ -49,8 +34,8 @@ class McpConfigAdaptorImplTest {
     }
 
     @Nested
-    @DisplayName("Context-first path")
-    inner class ContextFirstTests {
+    @DisplayName("Context is the only source")
+    inner class ContextTests {
 
         @Test
         fun `getConfig should load from context when MCP DTO found`() {
@@ -68,7 +53,6 @@ class McpConfigAdaptorImplTest {
             assertNotNull(result)
             assertEquals("ctx-mcp", result!!.name)
             assertEquals("npx -y @mcp/ctx", result.command)
-            verify(mcpServerMapper, never()).selectById(1L)
         }
 
         @Test
@@ -82,6 +66,7 @@ class McpConfigAdaptorImplTest {
                 url = "http://localhost:3000",
                 headers = """{"Authorization":"Bearer xxx"}""",
                 envParams = """{"KEY":"val"}""",
+                status = 0,
             )
             stubContext(listOf(dto))
 
@@ -96,28 +81,23 @@ class McpConfigAdaptorImplTest {
             assertEquals("http://localhost:3000", result.url)
             assertEquals("""{"Authorization":"Bearer xxx"}""", result.headers)
             assertEquals("""{"KEY":"val"}""", result.envParams)
+            assertEquals(0, result.status)
         }
 
         @Test
-        fun `getConfig should fallback to DB when context has no matching MCP`() {
-            stubContext(emptyList())
-            `when`(mcpServerMapper.selectById(999L)).thenReturn(testMcpServer)
+        fun `getConfig should return null when the spec carries no such MCP`() {
+            // There is no database fallback any more: a row read here would carry ciphertext that this
+            // service has no key to open, and the client would be handed garbage headers.
+            stubContext(listOf(McpDetailDto(id = 1L, name = "other", type = "stdio", command = "x")))
 
-            val result = adaptor.getConfig(999L)
-
-            assertNotNull(result)
-            verify(mcpServerMapper).selectById(999L)
+            assertNull(adaptor.getConfig(999L))
         }
 
         @Test
-        fun `getConfig should fallback to DB when context is null`() {
+        fun `getConfig should return null when there is no spec in the context`() {
             `when`(specContextHolder.get()).thenReturn(null)
-            `when`(mcpServerMapper.selectById(1L)).thenReturn(testMcpServer)
 
-            val result = adaptor.getConfig(1L)
-
-            assertNotNull(result)
-            verify(mcpServerMapper).selectById(1L)
+            assertNull(adaptor.getConfig(1L))
         }
     }
 
@@ -135,17 +115,6 @@ class McpConfigAdaptorImplTest {
         fun `getConfig should return null for negative mcpId`() {
             val result = adaptor.getConfig(-1)
             assertNull(result)
-        }
-
-        @Test
-        fun `getConfig should return null when MCP not found in DB`() {
-            `when`(specContextHolder.get()).thenReturn(null)
-            `when`(mcpServerMapper.selectById(999L)).thenReturn(null)
-
-            val result = adaptor.getConfig(999L)
-
-            assertNull(result)
-            verify(mcpServerMapper).selectById(999L)
         }
     }
 }

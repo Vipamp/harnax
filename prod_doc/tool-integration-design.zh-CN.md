@@ -126,7 +126,7 @@ HarnessAgentLauncher.createAgentBase()
 
 - **决策**：`agent_tool_binding.enable_skip` 与 `ToolSpec.skipIfMissing` 一并删除（V17），工具取不到时统一「告警 + 跳过」。
 - **原因**：这个开关只决定报错还是告警，不构成任何容错能力，UI 上的「缺失时跳过」被理解成运行时容忍度，是误导。
-- **对照**：`agent_mcp_binding.enable_skip` **保留**——一个连不上的 MCP Server 确实会阻断 Agent 构建，那里「报错」与「跳过」是两种真实行为。
+- **对照**：同样的论证在 MCP 侧也成立——`agent_mcp_binding.enable_skip` 与 `McpSpec.skipIfMissing`、`AGENT_MCP_NOT_FOUND` 错误码已一并删除（V20），配置缺失同样统一「告警 + 跳过」，不再提供「缺失即失败」这个选项。连接失败（地址不可达、鉴权不通过）仍然外抛：这个开关从来管不到它，而把异常吞掉只会让一个连不上任何工具的 Agent 静默上线，比失败更难排查。
 
 ### 6.7 绑定级 `needConfirm` 只能加严
 
@@ -153,8 +153,9 @@ HarnessAgentLauncher.createAgentBase()
 | 运行时适配器 | `ToolConfigAdaptor` | `McpConfigAdaptor` | `SkillAdaptor` |
 | 元数据来源 | 代码注解同步（内置）/ DB（自定义） | DB | 远端仓库同步落库 |
 | 运营可写 | 内置否、自定义是（未开放） | 是 | 是 |
-| 密钥处理 | headers / env 值加密 | env 值加密 | 无 |
-| 缺失时行为 | 告警跳过（无开关） | 由 `enable_skip` 决定 | 缓存兜底 |
+| 密钥处理 | headers / env 值加密 | headers / env 值加密（下发前解密） | 无 |
+| 缺失时行为 | 告警跳过（无开关） | 告警跳过（无开关，V20 起与 Tool 一致） | 缓存兜底 |
+| 停用时行为 | 下发带 `status`，运行侧跳过 | 同 Tool（`status=0` 跳过） | Admin 下发时过滤，不进 spec |
 
 ## 8. 已知边界
 
@@ -165,6 +166,7 @@ HarnessAgentLauncher.createAgentBase()
 | HTTP 工具无 UI 入口 | `HttpProxyToolBox` 与字段齐备，但工具管理页不提供创建 |
 | 删除残留需人工确认 | 熔断保护命中时（待删条数 ≥ 代码声明条数，或某个工具组同步失败）跳过删除并打 ERROR，需要人工核对代码后重新发布 |
 | `name` 不参与唯一键 | `uk_tenant_bean_method` 不含 `name`，因此代码里两个方法标了同名 `@Tool(name)` 不会被数据库拦下；同步按 `name` 检索记录挂环境参数，这种重名会让参数定义落到错误的行上 |
+| 租户过滤能力不齐 | `mcp_server` 列表查询已按 `tenant_id` 过滤（`mcp-management` 第 7 节第三轮），`agent` 还没有：`AgentMapper.xml` 既不映射也不插入 `agent.tenant_id`，而 `AgentServiceImpl` 会写 `agent.tenantId`、`MpSessionService` 会读它——写了不存、读了不真 |
 
 ## 9. 演进时间线
 
@@ -180,6 +182,7 @@ HarnessAgentLauncher.createAgentBase()
 | — | API 与前端关闭内置工具写入口 | 单一事实来源（6.2） |
 | V17 | 删 `agent_tool_binding.enable_skip` | 该开关无语义（6.6） |
 | V18 | `agent_tool_binding (agent_id, tool_id)` 唯一键 | 让「绑定行是该 Agent-工具对的唯一事实」成立 |
+| V19-V22 | MCP 侧对齐工具口径：绑定唯一键、删 `enable_skip`、删 `agent` / `session` 上的能力残留列、`tenant_id` 过滤与 `is_public` 缺省 | 同一套判据在 MCP 上逐条复现（详见 `mcp-management` 第 7 节） |
 | — | 装配去掉 `TOOL_SET` 兜底 | 方法粒度授权闭环（6.5） |
 | — | `upsert` 覆盖 `name` + 删除双保险 | 改名不再丢绑定、误删有刹车（6.3） |
 
@@ -194,4 +197,4 @@ HarnessAgentLauncher.createAgentBase()
 | SQL 与唯一键行为 | `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`（`upsertBuiltinTool` / `deleteBuiltinByIds`） |
 | 配置下发 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt`（`buildAgentSpecResponse`） |
 | 运行时装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |
-| 迁移脚本 | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`、`V17__drop_tool_binding_enable_skip.sql`、`V18__add_tool_binding_unique_key.sql` |
+| 迁移脚本 | `harnax-admin/src/main/resources/db/migration/V4__refactor_tool_granularity.sql`、`V17__drop_tool_binding_enable_skip.sql`、`V18__add_tool_binding_unique_key.sql`；MCP 侧对应 `V19__add_mcp_binding_unique_key.sql`、`V20__drop_mcp_binding_enable_skip.sql`、`V21__drop_stale_capability_list_columns.sql`、`V22__mcp_public_default_and_tenant_backfill.sql`、`V23__add_mcp_server_name_unique_key.sql`（MCP 服务名租户内唯一，对应工具侧的名称唯一键） |
