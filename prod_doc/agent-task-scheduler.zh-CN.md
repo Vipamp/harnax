@@ -2,9 +2,9 @@
 
 > 本文覆盖「智能体定时任务」（Agent Task）这个业务域的完整链路：数据模型、harnax-scheduler 独立服务的职责、Quartz 调度引擎、任务生命周期（创建→注册→触发→执行→停止→回收）、跨服务边界与鉴权、以及本轮集群化改造的方案决策与实施计划。
 >
-> **本文同时是本轮改造的设计文档与进度基准**：第 11 节的状态表是"哪些做了、哪些没做"的唯一真相源；改一段代码前先对齐那张表。
+> **本轮改造的设计与实施计划已于 2026-09-11 定稿并移至** [docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md](../docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md)（决策清单 D1~D8、里程碑 S0~S4、跨服务契约 C1~C4、测试 IT-1~IT-7、验收标准）。本文此后是**现状链路与方案推理**的参考：改代码前先对齐那份 spec 的里程碑表，本文第 10~11 节保留作工作项清单与被取代决策的备查记录。
 >
-> 相关文档：会话路由见 [docs/deploy-harnax-session-router.md](../docs/deploy-harnax-session-router.md)，渠道监听器单实例化（MySQL `GET_LOCK` 范式）见 [docs/channel-to-agent-flow.md](../docs/channel-to-agent-flow.md)，后端分层规范见 [docs/backend-code-conventions.md](../docs/backend-code-conventions.md)，库表规范见 [docs/database-design-conventions.md](../docs/database-design-conventions.md)。
+> 相关文档：会话路由能力契约见 [session-routing.zh-CN.md](./session-routing.zh-CN.md)（部署步骤见 [docs/deploy-harnax-session-router.md](../docs/deploy-harnax-session-router.md)），渠道监听器单实例化（MySQL `GET_LOCK` 范式）见 [docs/channel-to-agent-flow.md](../docs/channel-to-agent-flow.md)，后端分层规范见 [docs/backend-code-conventions.md](../docs/backend-code-conventions.md)，库表规范见 [docs/database-design-conventions.md](../docs/database-design-conventions.md)。
 
 ## 1. 结论先行
 
@@ -336,11 +336,17 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 
 ### 10.4 数据
 
+> **本节的结论已被取代（2026-09-11 评审 D8）**：改为**迁任务定义 `agent_task`、不迁历史日志**。理由是选定独立 `harnax_scheduler` 库后，两库同在一个 MySQL 实例内，跨库 `INSERT ... SELECT` 是一次几十行的脚本，而"人工重建任务"在任务量非零时是真实的运维负担与出错源。完整策略与发布顺序见 [spec 第 10 节](../docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md)。下面的原始推理保留备查。
+
 不迁数据、上线后人工重建。备选的一次性 `INSERT ... SELECT`（同实例跨库）与双写渐进都被否决：当前环境任务量小、历史日志价值低，而双写要写两套随后即弃的临时代码并显著抬高测试量。代价是明确的——历史执行日志丢弃，需在发布公告里写明。
 
 ## 11. 实施计划与进度状态表
 
-> 本节是进度唯一真相源。每完成一项把状态改掉。
+> **本节的里程碑编号已被 2026-09-11 的设计评审重排。** 新的决策清单、实施计划（S0~S4）与验收标准见 [docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md](../docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md)。两处顺序修正必读：
+> - **同步执行必须先于 Quartz JDBC store 上线**。现状 `AgentTaskJob` 起裸 daemon 线程后立刻返回，Quartz 认为 job 秒完、`QRTZ_FIRED_TRIGGERS` 不留行，于是故障接管、`waitForJobsToCompleteOnShutdown`、`@DisallowConcurrentExecution` 三者同时失效。按原 M1→M4 顺序会先得到一个"名义集群"。
+> - **对账必须与 JDBC store 同期**。共享 store 下 `loadTasksToScheduler()` 的"全删重建"等于任一节点重启就报掉全集群任务。
+>
+> 下面的 M0~M5 表格保留作为**工作项清单**，不再是进度真相源。状态列已于 2026-09-11 逐项对照代码核对。
 
 ### M0 行为修复（独立合入，必须最先）
 
@@ -348,9 +354,9 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 
 | # | 项 | 状态 |
 |---|---|---|
-| 0.1 | `selectById`/`updateById`/`deleteById` 补属主可见性条件，与 `selectTaskList` 口径一致；调用方传当前用户 | ⏳ |
-| 0.2 | CLI `task.go` 的 `logId` → `id` | ⏳ |
-| 0.3 | trigger 冲突改业务 code `40901`，前后端一起改 | ⏳ |
+| 0.1 | `selectById`/`updateById`/`deleteById` 补属主可见性条件，与 `selectTaskList` 口径一致；调用方传当前用户 | ✅ 已完成（commit `8e70819`；服务间无用户上下文的调用另走 `selectAnyById`） |
+| 0.2 | CLI 的日志字段 `logId` → `id`。**并需补 `task stop` 子命令**——`task.go` 里根本没有该命令，"从 CLI 停止运行中任务从来没生效过"的真实原因是功能缺失，不只是字段名读错 | ⏳ |
+| 0.3 | trigger 冲突改业务 code `40901`，前后端一起改。补充事实：现状文案匹配并非"从不命中"——业务并发那条会拼进 `e.message` 因而能命中，漏的是集群抢锁失败的 `"Task is already being executed by another instance"` | ⏳ |
 
 ### M1 scheduler 自建库 + Quartz JDBC 集群
 
@@ -379,11 +385,11 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 | # | 项 | 状态 |
 |---|---|---|
 | 3.1 | scheduler：CRUD service、日志 service（不迁死代码 `save()`）、4 个 DTO、`/api/scheduler/agent-tasks/**` controller（12 端点，保持 `records`/`total`/`id` 契约） | ⏳ |
-| 3.2 | scheduler：`GET /agent-tasks/{id}/agent-id` internal 端点 | ⏳ |
+| 3.2 | ~~scheduler：`GET /agent-tasks/{id}/agent-id` internal 端点~~ | ❌ **已作废**（评审 D4：agentId 编进 sessionId，见 spec 契约 C1。该端点、其测试与一跳 admin→scheduler 转发均不再需要） |
 | 3.3 | scheduler：约 20 行 internal-token 校验拦截器（8.2 的偏离项） | ⏳ |
 | 3.4 | admin：`AgentTaskController` 瘦身为鉴权 + 转发，路径不变；注入 `X-Forwarded-User`/`X-Tenant-Id` | ⏳ |
 | 3.5 | admin：删 `AgentTaskService(+Impl)`、`AgentTaskLogService(+Impl)`、4 DTO、`SchedulerClient` 广播逻辑 | ⏳ |
-| 3.6 | admin：`resolveFromTask` 改调 agent-id；删除死端点 `/internal/agent-tasks/{id}/spec` 及其测试 | ⏳ |
+| 3.6 | admin：~~`resolveFromTask` 改调 agent-id~~ → 改为**纯字符串解析**取 `parts[2]` 当 agentId，`split` 用 `limit=4`，并**删除对 `agentTaskMapper` 的依赖**；删除死端点 `/internal/agent-tasks/{id}/spec` 及其测试 | ⏳（形态按 spec C1 调整） |
 
 **里程碑验收**：webui 列表（含 `lastRunStatus`/`lastRunTime`）、创建/编辑/启停/删除、立即执行、日志弹窗轮询全通；CLI 与小程序各跑一遍。回滚点 = revert 整个 PR（旧表数据仍在）。
 
