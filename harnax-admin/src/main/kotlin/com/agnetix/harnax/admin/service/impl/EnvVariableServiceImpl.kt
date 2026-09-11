@@ -5,11 +5,13 @@ import com.agnetix.harnax.admin.dto.EnvVariableCreateRequest
 import com.agnetix.harnax.admin.dto.EnvVariableResponse
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.EnvVariable
+import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.EnvVariableMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -22,6 +24,7 @@ class EnvVariableServiceImpl(
     private val envVariableMapper: EnvVariableMapper,
     private val jwtUtil: JwtUtil,
     private val aesUtil: AesUtil,
+    private val agentMapper: AgentMapper,
 ) : EnvVariableService {
 
     private val log = LoggerFactory.getLogger(EnvVariableServiceImpl::class.java)
@@ -79,7 +82,9 @@ class EnvVariableServiceImpl(
         // Only update value if provided (empty means keep current for sensitive)
         if (request.envValue != null) {
             envVariable.envValue = if (targetSensitive == 1) {
-                aesUtil.encrypt(request.envValue!!)
+                // The detail API masks a sensitive value, so a mask coming back means "unchanged";
+                // encrypting it would store the mask in place of the credential it stands for.
+                if (request.envValue!!.contains("****")) envVariable.envValue else aesUtil.encrypt(request.envValue!!)
             } else {
                 request.envValue!!
             }
@@ -103,7 +108,26 @@ class EnvVariableServiceImpl(
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to delete this env variable")
         }
+        assertNotReferencedByAgents(id, envVariable.envKey)
         return envVariableMapper.deleteById(id) > 0
+    }
+
+    /**
+     * Refuse to delete a variable an agent still binds to.
+     *
+     * A binding that references a variable stores the id and nothing else, and delivery resolves the
+     * value through it every time, so deleting the variable empties every agent that points at it —
+     * with no error, because the resolve simply yields nothing.
+     */
+    private fun assertNotReferencedByAgents(id: Long, envKey: String?) {
+        val referring = agentMapper.selectByEnvVarRef(id)
+        if (referring.isEmpty()) return
+        val shown = referring.take(MAX_REFERRING_AGENTS).joinToString(", ") { it.name } +
+            if (referring.size > MAX_REFERRING_AGENTS) " …" else ""
+        throw BizException(
+            "Env variable '$envKey' is bound by ${referring.size} agent(s): $shown. " +
+                "Rebind them first, then delete.",
+        )
     }
 
     override fun toggleEnabled(id: Long, enabled: Int): Boolean {
@@ -184,5 +208,10 @@ class EnvVariableServiceImpl(
         } else {
             env.envValue
         }
+    }
+
+    private companion object {
+        /** Enough to point at the offenders; the count in the message is the full one. */
+        const val MAX_REFERRING_AGENTS = 5
     }
 }

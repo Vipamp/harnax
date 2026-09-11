@@ -52,6 +52,27 @@ open class AgentMapperTest {
     @Autowired
     private lateinit var agentMapper: AgentMapper
 
+    private fun insertAgent(
+        name: String,
+        tenantId: Long,
+    ): Agent {
+        val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+        return Agent().apply {
+            this.name = name
+            description = "租户查询用"
+            modelId = 1L
+            owner = "testuser1"
+            status = 1
+            // 私有行，让租户条件成为唯一的区分维度
+            isPublic = 0
+            creator = "testuser1"
+            active = 1
+            this.tenantId = tenantId
+            createTime = now
+            updateTime = now
+        }.also { agentMapper.insert(it) }
+    }
+
     @Nested
     @DisplayName("Basic CRUD Tests")
     inner class BasicCrudTests {
@@ -69,6 +90,7 @@ open class AgentMapperTest {
             assertEquals("测试智能体1", agent.description)
             assertEquals("你是一个助手", agent.systemPrompt)
             assertEquals(1L, agent.modelId)
+            assertEquals(1L, agent.tenantId)
             assertEquals(1, agent.status)
             assertEquals(1, agent.isPublic)
             assertEquals("testuser1", agent.owner)
@@ -105,8 +127,6 @@ open class AgentMapperTest {
                 description = "新智能体"
                 systemPrompt = "你是一个新助手"
                 modelId = 1L
-                mcpList = "[]"
-                skillList = "[1]"
                 owner = "testuser1"
                 status = 1
                 isPublic = 1
@@ -229,6 +249,33 @@ open class AgentMapperTest {
             agents.forEach {
                 assertTrue(it.isPublic == 1 || it.creator == "testuser1")
             }
+        }
+
+        @Test
+        @DisplayName("insert - Persist tenant id")
+        fun `insert should persist tenant id`() {
+            // Given - tenant_id 之前不在 insert 列里，行永远落在缺省租户
+            val agent = insertAgent("Tenant Stamp Agent", 77L)
+
+            // When & Then
+            assertEquals(77L, agentMapper.selectById(agent.id)?.tenantId)
+        }
+
+        @Test
+        @DisplayName("selectAgentList - Filter by tenant")
+        fun `selectAgentList should filter by tenant`() {
+            // Given
+            insertAgent("Tenant A Agent", 88L)
+            insertAgent("Tenant B Agent", 99L)
+
+            // When - 传了租户就只看得到自己的行
+            val owned = agentMapper.selectAgentList(null, null, "testuser1", 88L).map { it.name }
+            val unfiltered = agentMapper.selectAgentList(null, null, "testuser1").map { it.name }
+
+            // Then
+            assertEquals(listOf("Tenant A Agent"), owned)
+            // 不传租户时整个条件不拼上，预置的租户 2 行也照样可见
+            assertTrue(unfiltered.containsAll(listOf("Tenant A Agent", "Tenant B Agent", "Tenant2 Agent")))
         }
     }
 }

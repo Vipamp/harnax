@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.quality.Strictness
+import org.springframework.dao.QueryTimeoutException
 import java.time.LocalDateTime
 
 /**
@@ -315,14 +316,29 @@ class EnvVariableControllerTest {
         }
 
         @Test
-        @DisplayName("delete - service 抛异常时返回错误")
-        fun `delete should return error on service exception`() {
-            `when`(envVariableService.deleteEnvVariable(1L)).thenThrow(RuntimeException("DB error"))
+        @DisplayName("delete - 守卫文案原样返回")
+        fun `delete should pass the reference guard message through`() {
+            `when`(envVariableService.deleteEnvVariable(1L)).thenThrow(
+                BizException("Env variable 'GITHUB_TOKEN' is bound by 1 agent(s): customer-support. Rebind them first, then delete."),
+            )
 
             val result = controller.delete(1L)
 
             assertFalse(result.isSuccess())
-            assertEquals("Failed to delete env variable", result.message)
+            assertTrue(result.message.startsWith("Env variable 'GITHUB_TOKEN' is bound by"), result.message)
+        }
+
+        @Test
+        @DisplayName("delete - 数据库错误不透传原文")
+        fun `delete should not leak a database failure in its own words`() {
+            `when`(envVariableService.deleteEnvVariable(1L)).thenThrow(
+                QueryTimeoutException("SELECT * FROM agent WHERE del_flag = 0 AND env_bindings LIKE '%7%' timed out"),
+            )
+
+            val result = controller.delete(1L)
+
+            assertFalse(result.isSuccess())
+            assertEquals("Database operation failed, please check the submitted values and try again", result.message)
         }
     }
 

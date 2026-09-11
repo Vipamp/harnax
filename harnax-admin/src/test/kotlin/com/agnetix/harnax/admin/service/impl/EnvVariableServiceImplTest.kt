@@ -5,7 +5,9 @@ import com.agnetix.harnax.admin.dto.EnvVariableCreateRequest
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.EnvVariable
+import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.EnvVariableMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -53,6 +55,9 @@ class EnvVariableServiceImplTest {
     @Mock
     private lateinit var aesUtil: AesUtil
 
+    @Mock
+    private lateinit var agentMapper: AgentMapper
+
     private lateinit var testEnvVariable: EnvVariable
 
     @BeforeEach
@@ -91,6 +96,7 @@ class EnvVariableServiceImplTest {
         envVariableMapper = envVariableMapper,
         jwtUtil = jwtUtil,
         aesUtil = aesUtil,
+        agentMapper = agentMapper,
     )
 
     @Nested
@@ -372,6 +378,28 @@ class EnvVariableServiceImplTest {
         }
 
         @Test
+        @DisplayName("updateEnvVariable - A masked sensitive value keeps the stored ciphertext")
+        fun `updateEnvVariable should keep stored ciphertext for masked value`() {
+            // Given: the row already holds ciphertext and the page sends back what the detail API masked
+            testEnvVariable.sensitive = 1
+            testEnvVariable.envValue = "encrypted-stored-value"
+            val request = EnvVariableUpdateRequest(envValue = "sk****alue")
+
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            // When
+            val result = createService().updateEnvVariable(1L, request)
+
+            // Then: encrypting the mask would store the mask in place of the credential
+            assertTrue(result)
+            val captor = argumentCaptor<EnvVariable>()
+            verify(envVariableMapper).updateById(captor.capture())
+            assertEquals("encrypted-stored-value", captor.firstValue.envValue)
+            verify(aesUtil, never()).encrypt(anyString())
+        }
+
+        @Test
         @DisplayName("updateEnvVariable - Keep current value when envValue not provided")
         fun `updateEnvVariable should keep current value when envValue not provided`() {
             // Given
@@ -470,6 +498,30 @@ class EnvVariableServiceImplTest {
             // Then
             assertTrue(result)
             verify(envVariableMapper).deleteById(1L)
+        }
+
+        @Test
+        @DisplayName("deleteEnvVariable - Refuse to delete a variable an agent still binds")
+        fun `deleteEnvVariable should refuse when an agent still references it`() {
+            // Given: the binding stores only the id, so deleting the row would silently empty the agent
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(agentMapper.selectByEnvVarRef(1L)).thenReturn(
+                listOf(
+                    Agent().apply {
+                        id = 11L
+                        name = "customer-support"
+                    },
+                ),
+            )
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> {
+                createService().deleteEnvVariable(1L)
+            }
+            assertTrue(exception.message!!.contains("1 agent(s)"), "message should carry the count")
+            assertTrue(exception.message!!.contains("customer-support"), "message should name the offender")
+            verify(envVariableMapper, never()).deleteById(anyLong())
         }
 
         @Test

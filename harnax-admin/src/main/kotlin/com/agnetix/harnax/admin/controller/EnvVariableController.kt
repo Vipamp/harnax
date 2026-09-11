@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.dto.*
 import com.agnetix.harnax.admin.service.EnvVariableService
+import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -85,7 +86,7 @@ class EnvVariableController(
         if (envVariableService.deleteEnvVariable(id)) ResultVo.success() else ResultVo.error("Failed to delete env variable")
     } catch (e: Exception) {
         log.error("Failed to delete env variable", e)
-        ResultVo.error("Failed to delete env variable")
+        ResultVo.error(ApiErrors.message(e, "Failed to delete env variable"))
     }
 
     @PutMapping("/{id}/toggle")
