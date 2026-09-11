@@ -1,7 +1,10 @@
 server:
   port: 8083
+  shutdown: graceful
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s  # Budget for the @PreDestroy listener teardown
   application:
     name: harnax-channel-service
   datasource:
@@ -22,18 +25,56 @@ router:
   service:
     url: ${ROUTER_URL:http://172.20.10.5:8081}
 
-# Channel WebClient proxy configuration
+# Channel service runtime: listener reconciliation, turn processing, caches, proxy calls
 channel:
-  auto-start: true  # Auto-start all enabled channels on startup
   router-api-key: ${CHANNEL_API_KEY:}  # If empty, auto-fetch from admin
   auto-fetch-system-key: true  # Auto-fetch system key from admin if router-api-key is empty
   sync:
     interval-ms: ${CHANNEL_SYNC_INTERVAL_MS:10000}  # Channel table polling interval (ms)
+    max-starts-per-cycle: ${CHANNEL_SYNC_MAX_STARTS:5}  # Max listeners started per round; <=0 means unlimited
+    restart-backoff-initial-ms: ${CHANNEL_RESTART_BACKOFF_INITIAL_MS:2000}  # First retry delay for a dead listener
+    restart-backoff-max-ms: ${CHANNEL_RESTART_BACKOFF_MAX_MS:300000}   # Backoff ceiling; also the "was healthy" reset threshold
+    stale-heartbeat-ms: ${CHANNEL_STALE_HEARTBEAT_MS:180000}       # CONNECTED but no heartbeat for this long => restart; 0 disables
+  lock:
+    enabled: ${CHANNEL_LOCK_ENABLED:true}  # MySQL GET_LOCK mutex: only one instance owns the listeners
+    name: ${CHANNEL_LOCK_NAME:harnax-channel-listeners}
+  turn:
+    pool-size: ${CHANNEL_TURN_POOL_SIZE:24}                    # Threads for inbound message processing (replaces shared Dispatchers.IO)
+    per-channel-concurrency: ${CHANNEL_TURN_PER_CHANNEL:4}    # Max concurrent conversations per channel
+  session:
+    max-sessions: ${CHANNEL_SESSION_MAX_SESSIONS:10000}   # Conversations held in memory; least recently used are evicted
+    max-messages: ${CHANNEL_SESSION_MAX_MESSAGES:500}     # Messages kept per conversation
+    idle-ttl-minutes: ${CHANNEL_SESSION_IDLE_TTL_MIN:120} # Drop a conversation idle for this long; 0 disables
+  monitor:
+    health:
+      enabled: ${CHANNEL_HEALTH_ENABLED:true}   # Register the connection health indicator (liveness probe is unaffected)
+      failure-grace-ms: ${CHANNEL_HEALTH_FAILURE_GRACE_MS:60000}  # How long a channel must stay FAILED before health goes DOWN
   admin:
     url: ${ADMIN_SERVICE_URL:http://localhost:8080}
   proxy:
     connect-timeout-ms: 5000       # TCP connect timeout
     response-timeout-ms: 600000    # HTTP response timeout: 10min for AI processing
+    stream-idle-timeout-ms: ${CHANNEL_STREAM_IDLE_TIMEOUT_MS:180000} # Cancel an SSE stream that emits nothing for this long; 0 disables
+  router:
+    breaker:
+      enabled: ${ROUTER_BREAKER_ENABLED:true}
+      failure-threshold: ${ROUTER_BREAKER_FAILURE_THRESHOLD:5}  # Consecutive router failures before the breaker opens
+      open-duration-ms: ${ROUTER_BREAKER_OPEN_DURATION_MS:30000}  # How long the breaker stays open before probing again
+
+# Actuator: connection health + per-channel state + runtime metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,channels
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true  # /actuator/health/liveness and /readiness for container orchestration
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # Unified internal authentication
 harnax:

@@ -2,11 +2,15 @@ package com.agnetix.harnax.channel.service.config
 
 import com.agnetix.harnax.channel.dingtalk.DingtalkAdaptor
 import com.agnetix.harnax.channel.feishu.FeishuAdaptor
-import com.agnetix.harnax.channel.sdk.message.ChannelMessage
-import com.agnetix.harnax.channel.sdk.message.MessageType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.MicrometerChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
+import com.agnetix.harnax.channel.service.client.RouterCircuitBreaker
+import com.agnetix.harnax.channel.service.session.InMemoryChannelSessionManager
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import com.agnetix.harnax.channel.wecom.WecomAdaptor
+import io.micrometer.core.instrument.MeterRegistry
 import io.netty.channel.ChannelOption
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -20,7 +24,6 @@ import org.springframework.web.reactive.function.client.ExchangeFilterFunction
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.netty.http.client.HttpClient
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Channel service configuration.
@@ -31,6 +34,10 @@ class ChannelConfig(
     private val connectTimeoutMs: Int,
     @Value("\${channel.proxy.response-timeout-ms:120000}")
     private val responseTimeoutMs: Int,
+    @Value("\${channel.turn.pool-size:24}")
+    private val turnPoolSize: Int,
+    @Value("\${channel.turn.per-channel-concurrency:4}")
+    private val turnPerChannelConcurrency: Int,
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelConfig::class.java)
@@ -70,6 +77,32 @@ class ChannelConfig(
             .build()
     }
 
+    /**
+     * Circuit guarding router calls, so an agent-service outage sheds load instead of
+     * parking every channel worker on a 10-minute read timeout.
+     */
+    @Bean
+    fun routerCircuitBreaker(
+        @Value("\${channel.router.breaker.enabled:true}")
+        enabled: Boolean,
+        @Value("\${channel.router.breaker.failure-threshold:5}")
+        failureThreshold: Int,
+        @Value("\${channel.router.breaker.open-duration-ms:30000}")
+        openDurationMs: Long,
+    ): RouterCircuitBreaker {
+        log.info(
+            "Creating RouterCircuitBreaker enabled={}, failureThreshold={}, openDuration={}ms",
+            enabled,
+            failureThreshold,
+            openDurationMs,
+        )
+        return RouterCircuitBreaker(
+            enabled = enabled,
+            failureThreshold = failureThreshold,
+            openDuration = Duration.ofMillis(openDurationMs),
+        )
+    }
+
     private fun apiKeyFilter(apiKey: String): ExchangeFilterFunction = ExchangeFilterFunction { request, next ->
         val mutated = ClientRequest.from(request)
         mutated.header("X-Api-Key", apiKey)
@@ -77,13 +110,58 @@ class ChannelConfig(
     }
 
     /**
-     * Provide an in-memory ChannelSessionManager for channel service.
-     * Stores session history in memory using ConcurrentHashMap.
+     * Runtime metrics sink for the channel transports. The implementation ships with the SDK;
+     * this only binds it to the registry actuator already provides.
      */
     @Bean
-    fun channelSessionManager(): ChannelSessionManager {
-        log.info("Creating InMemoryChannelSessionManager for channel service")
-        return InMemoryChannelSessionManager()
+    fun channelMetricsSink(registry: MeterRegistry): ChannelMetricsSink = MicrometerChannelMetricsSink(registry)
+
+    /**
+     * Bounded execution surface for inbound messages.
+     *
+     * Replaces the previous per-channel use of the global `Dispatchers.IO`: one slow agent turn
+     * used to be able to occupy the shared 64-thread pool and stall every other channel.
+     * Closed on shutdown so the JVM can exit without waiting for in-flight turns.
+     */
+    @Bean(destroyMethod = "close")
+    fun channelTurnExecutor(
+        sink: ChannelMetricsSink,
+    ): ChannelTurnExecutor {
+        log.info(
+            "Creating ChannelTurnExecutor poolSize={}, perChannelConcurrency={}",
+            turnPoolSize,
+            turnPerChannelConcurrency,
+        )
+        return ChannelTurnExecutor(
+            threadPoolSize = turnPoolSize,
+            perChannelConcurrency = turnPerChannelConcurrency,
+            sink = sink,
+        )
+    }
+
+    /**
+     * In-memory conversation history for the channel service.
+     *
+     * Bounded on purpose: this process is long-lived and every group chat it has ever served used
+     * to stay resident forever.
+     */
+    @Bean
+    fun channelSessionManager(
+        @Value("\${channel.session.max-sessions:10000}") maxSessions: Int,
+        @Value("\${channel.session.max-messages:500}") maxMessages: Int,
+        @Value("\${channel.session.idle-ttl-minutes:120}") idleTtlMinutes: Long,
+    ): ChannelSessionManager {
+        log.info(
+            "Creating InMemoryChannelSessionManager maxSessions={}, maxMessages={}, idleTtl={}min",
+            maxSessions,
+            maxMessages,
+            idleTtlMinutes,
+        )
+        return InMemoryChannelSessionManager(
+            maxSessions = maxSessions,
+            maxMessagesPerSession = maxMessages,
+            idleTtl = Duration.ofMinutes(idleTtlMinutes),
+        )
     }
 
     /**
@@ -91,91 +169,38 @@ class ChannelConfig(
      * WechatAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
-    fun wechatAdaptor(): WechatAdaptor = WechatAdaptor()
+    fun wechatAdaptor(
+        turnExecutor: ChannelTurnExecutor,
+        sink: ChannelMetricsSink,
+    ): WechatAdaptor = WechatAdaptor(turnExecutor = turnExecutor, metricsSink = sink)
 
     /**
      * Registers the Feishu adaptor Bean.
      * FeishuAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
-    fun feishuAdaptor(): FeishuAdaptor = FeishuAdaptor()
+    fun feishuAdaptor(
+        turnExecutor: ChannelTurnExecutor,
+        sink: ChannelMetricsSink,
+    ): FeishuAdaptor = FeishuAdaptor(turnExecutor = turnExecutor, metricsSink = sink)
 
     /**
      * Registers the DingTalk adaptor Bean.
      * DingtalkAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
-    fun dingtalkAdaptor(): DingtalkAdaptor = DingtalkAdaptor()
+    fun dingtalkAdaptor(
+        turnExecutor: ChannelTurnExecutor,
+        sink: ChannelMetricsSink,
+    ): DingtalkAdaptor = DingtalkAdaptor(turnExecutor = turnExecutor, metricsSink = sink)
 
     /**
      * Registers the WeCom adaptor Bean.
      * WecomAdaptor has no Spring annotations, so it is explicitly created as a singleton here.
      */
     @Bean
-    fun wecomAdaptor(): WecomAdaptor = WecomAdaptor()
-
-    /**
-     * In-memory implementation of ChannelSessionManager.
-     * Uses ConcurrentHashMap to store session history.
-     * Key format: "{channelId}:{sessionId}"
-     */
-    class InMemoryChannelSessionManager : ChannelSessionManager {
-        private val log = LoggerFactory.getLogger(InMemoryChannelSessionManager::class.java)
-        private val sessions = ConcurrentHashMap<String, MutableList<ChannelMessage>>()
-
-        companion object {
-            // Max messages kept per session to prevent unbounded growth
-            private const val MAX_MESSAGES_PER_SESSION = 500
-
-            // Max total sessions tracked; oldest are evicted when exceeded
-            private const val MAX_TOTAL_SESSIONS = 10_000
-        }
-
-        override suspend fun getHistory(channelId: Long, sessionId: String, limit: Int): List<ChannelMessage> {
-            val key = "$channelId:$sessionId"
-            val messages = sessions[key] ?: emptyList()
-            log.debug("Getting history for key={}, size={}", key, messages.size)
-            return messages.takeLast(limit)
-        }
-
-        override suspend fun addMessage(channelId: Long, message: ChannelMessage) {
-            val key = "$channelId:${message.sessionId}"
-            // Strip image data from stored messages to avoid memory bloat in history
-            val stored = if (message.imageUrls.isNotEmpty()) {
-                message.copy(
-                    content = if (message.messageType == MessageType.IMAGE) "[image sent]" else message.content,
-                    imageUrls = emptyList(),
-                )
-            } else if (message.messageType == MessageType.IMAGE && message.content.startsWith("data:image")) {
-                message.copy(content = "[image sent]")
-            } else {
-                message
-            }
-
-            // Evict oldest sessions if capacity is exceeded
-            if (sessions.size >= MAX_TOTAL_SESSIONS && !sessions.containsKey(key)) {
-                val oldestKey = sessions.keys.firstOrNull()
-                if (oldestKey != null) {
-                    sessions.remove(oldestKey)
-                    log.debug("Evicted oldest session to stay within limit: key={}", oldestKey)
-                }
-            }
-
-            val list = sessions.computeIfAbsent(key) { mutableListOf() }
-            synchronized(list) {
-                list.add(stored)
-                // Trim oldest messages when exceeding per-session limit
-                while (list.size > MAX_MESSAGES_PER_SESSION) {
-                    list.removeAt(0)
-                }
-            }
-            log.debug("Added message to key={}, total={}", key, list.size)
-        }
-
-        override suspend fun clearHistory(channelId: Long, sessionId: String) {
-            val key = "$channelId:$sessionId"
-            sessions.remove(key)
-            log.debug("Cleared history for key={}", key)
-        }
-    }
+    fun wecomAdaptor(
+        turnExecutor: ChannelTurnExecutor,
+        sink: ChannelMetricsSink,
+    ): WecomAdaptor = WecomAdaptor(turnExecutor = turnExecutor, metricsSink = sink)
 }
