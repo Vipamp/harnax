@@ -5,20 +5,26 @@ import com.agnetix.harnax.channel.feishu.client.PlatformResponse
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
+import com.agnetix.harnax.channel.sdk.util.TextChunker
 import com.lark.oapi.event.EventDispatcher
 import com.lark.oapi.service.im.ImService
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1
-import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import tools.jackson.module.kotlin.jacksonObjectMapper
+import java.lang.reflect.Method
 import java.util.Base64
-import java.util.Collections
-import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import com.lark.oapi.ws.Client as WsClient
 
 /**
@@ -37,35 +43,73 @@ import com.lark.oapi.ws.Client as WsClient
  * - Each Channel corresponds to an independent WebSocket connection
  * - Feishu WebSocket operates in cluster mode, only one client will receive messages for the same application
  * - Feishu SDK uses at-least-once delivery, events may be re-delivered on reconnection or retry
+ *
+ * Lifecycle notes:
+ * - The listener is registered in [listeners] *before* the client is started, and marked
+ *   closing on stop. The previous code registered the client only after `start()` returned,
+ *   so a stop() during connect could not find it and leaked a live WebSocket forever.
+ * - `com.lark.oapi.ws.Client.start()` is expected to block for the lifetime of the
+ *   connection (that is why it runs on a dedicated thread). Because that behaviour is not
+ *   contractual, a fast return with no event ever received is treated as "liveness
+ *   unconfirmed" instead of "connection died": only a listener that demonstrably worked,
+ *   or one that held a connection for a while, is handed back to the reconcile loop for a
+ *   restart. That asymmetry is deliberate — the wrong guess would restart healthy channels.
+ * - Inbound events are dispatched to [ChannelTurnExecutor]; the SDK callback thread must
+ *   never block on the agent, and image download (which is part of parsing) belongs to the
+ *   turn, not to the reader thread.
  */
 class FeishuWebSocketMode(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
+    private val turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    private val metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(FeishuWebSocketMode::class.java)
     private val objectMapper = jacksonObjectMapper()
 
-    // Stores WebSocket client for each Channel
-    private val wsClients = ConcurrentHashMap<Long, WsClient>()
+    private val tracker = ChannelConnectionTracker(metricsSink, ChannelType.FEISHU.code)
 
-    // Stores message handler for each Channel
-    private val messageHandlers = ConcurrentHashMap<Long, suspend (ChannelMessage) -> Unit>()
+    /** One entry per channel whose listener we asked for. */
+    private val listeners = ConcurrentHashMap<Long, FeishuListener>()
 
-    // Tracks processed message IDs per channel for deduplication (Feishu uses at-least-once delivery)
-    private val processedMessageIds = ConcurrentHashMap<Long, MutableSet<String>>()
+    /** msgId bookkeeping per channel; a message is only remembered once the turn succeeded. */
+    private val deduplicators = ConcurrentHashMap<Long, MessageDeduplicator>()
 
-    companion object {
-        // Max number of message IDs to keep per channel before cleanup
-        private const val MAX_PROCESSED_IDS = 1000
+    /** appId -> token, so a chatty channel does not exchange a new tenant_access_token per message. */
+    private val tokenCache = ConcurrentHashMap<String, CachedToken>()
 
-        // Feishu text message content limit (bytes). The actual API limit is ~150KB for content JSON;
-        // use a conservative 20KB per chunk to leave headroom for JSON wrapper and metadata.
-        private const val MAX_MESSAGE_CHUNK_BYTES = 20_000
+    /** Per-channel listener bookkeeping. */
+    private inner class FeishuListener(val channel: ChannelSpec) {
+        val closing = AtomicBoolean(false)
+
+        @Volatile
+        var client: WsClient? = null
+
+        @Volatile
+        var thread: Thread? = null
+
+        @Volatile
+        var messageHandler: (suspend (ChannelMessage) -> Unit)? = null
+
+        @Volatile
+        var startedAt: Long = 0
+
+        @Volatile
+        var eventsReceived: Long = 0
     }
+
+    private class CachedToken(
+        val token: String,
+        val expiresAt: Long,
+    )
 
     override fun getModeName(): String = "websocket"
 
     override fun isCallbackMode(): Boolean = false
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = tracker.state(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = tracker.snapshot()
 
     /**
      * Start WebSocket long connection
@@ -74,91 +118,40 @@ class FeishuWebSocketMode(
      * @param messageHandler Message processing function
      */
     override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
-        if (wsClients.containsKey(channel.id)) {
+        val existing = listeners[channel.id]
+        if (existing != null && !existing.closing.get()) {
             logger.warn("WebSocket connection already exists for channel: ${channel.id}")
             return
         }
 
         val appId = channel.appId
         val appSecret = channel.appSecret
-
         if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
+            tracker.markFailed(channel.id, "missing appId or appSecret")
             throw IllegalArgumentException("WebSocket mode requires appId and appSecret for channel: ${channel.id}")
         }
 
+        val holder = FeishuListener(channel)
+        holder.messageHandler = messageHandler
+        if (listeners.putIfAbsent(channel.id, holder) != null) {
+            logger.warn("WebSocket connection for channel ${channel.id} was started concurrently, ignoring this request")
+            return
+        }
+        tracker.markConnecting(channel.id)
         logger.info("Starting WebSocket connection for channel: ${channel.id}")
 
-        try {
-            // Create message event handler
-            val messageEventHandler = object : ImService.P2MessageReceiveV1Handler() {
-                override fun handle(data: P2MessageReceiveV1?) {
-                    if (data == null) {
-                        logger.warn("Received null message event for channel: ${channel.id}")
-                        return
-                    }
-
-                    // Extract messageId early for deduplication
-                    // Feishu SDK uses at-least-once delivery, same event may be delivered multiple times
-                    val messageId = data.event?.message?.messageId
-                    if (!messageId.isNullOrBlank() && !markMessageProcessed(channel.id, messageId)) {
-                        logger.debug("Duplicate message event ignored: messageId=$messageId, channel=${channel.id}")
-                        return
-                    }
-
-                    // Process message asynchronously (do not block event processing)
-                    runBlocking {
-                        try {
-                            val channelMessage = parseFeishuEvent(data, channel)
-                            if (channelMessage != null) {
-                                val handler = messageHandlers[channel.id]
-                                if (handler != null) {
-                                    handler(channelMessage)
-                                } else {
-                                    logger.warn("No message handler registered for channel: ${channel.id}")
-                                }
-                            }
-                        } catch (e: Exception) {
-                            logger.error("Failed to handle Feishu message event for channel: ${channel.id}", e)
-                        }
-                    }
-                }
-            }
-
-            // Create event dispatcher and register message handler
+        val wsClient = try {
             val eventDispatcher = EventDispatcher.newBuilder("", "")
-                .onP2MessageReceiveV1(messageEventHandler)
+                .onP2MessageReceiveV1(messageEventHandler(holder))
                 .build()
-
-            // Create WebSocket client
-            val wsClient = WsClient.Builder(appId, appSecret)
+            WsClient.Builder(appId, appSecret)
                 .eventHandler(eventDispatcher)
                 .autoReconnect(true)
                 .build()
-
-            // Register handler before starting thread so it is available when events arrive
-            messageHandlers[channel.id] = messageHandler
-
-            // Start in background thread (non-blocking)
-            Thread {
-                try {
-                    wsClient.start()
-                    // Only register client after successful start to avoid race with stop()
-                    wsClients[channel.id] = wsClient
-                    logger.info("WebSocket connection started for channel: ${channel.id}")
-                } catch (e: Exception) {
-                    logger.error("WebSocket connection failed for channel: ${channel.id}", e)
-                    messageHandlers.remove(channel.id)
-                    processedMessageIds.remove(channel.id)
-                }
-            }.apply {
-                isDaemon = true
-                name = "feishu-ws-channel-${channel.id}"
-                start()
-            }
         } catch (e: Exception) {
-            logger.error("Failed to start WebSocket connection for channel: ${channel.id}", e)
-            messageHandlers.remove(channel.id)
-            processedMessageIds.remove(channel.id)
+            listeners.remove(channel.id, holder)
+            tracker.markFailed(channel.id, e.message ?: "client build failed")
+            logger.error("Failed to build Feishu WebSocket client for channel: ${channel.id}", e)
             throw ChannelSendException(
                 channelType = ChannelType.FEISHU,
                 platformErrorCode = null,
@@ -166,6 +159,13 @@ class FeishuWebSocketMode(
                 cause = e,
             )
         }
+        holder.client = wsClient
+        holder.startedAt = System.currentTimeMillis()
+
+        val thread = Thread({ runConnection(holder, wsClient) }, "feishu-ws-channel-${channel.id}")
+        holder.thread = thread
+        thread.isDaemon = true
+        thread.start()
     }
 
     /**
@@ -174,22 +174,146 @@ class FeishuWebSocketMode(
      * @param channel Channel configuration
      */
     override fun stop(channel: ChannelSpec) {
-        val wsClient = wsClients.remove(channel.id)
-        messageHandlers.remove(channel.id)
-        processedMessageIds.remove(channel.id)
-
-        if (wsClient != null) {
-            try {
-                // WsClient.disconnect() is protected; invoke via reflection to close the connection
-                val disconnectMethod = wsClient.javaClass.getDeclaredMethod("disconnect")
-                disconnectMethod.isAccessible = true
-                disconnectMethod.invoke(wsClient)
-                logger.info("WebSocket connection stopped for channel: ${channel.id}")
-            } catch (e: Exception) {
-                logger.error("Failed to disconnect WebSocket for channel: ${channel.id}", e)
-            }
-        } else {
+        val holder = listeners.remove(channel.id)
+        deduplicators.remove(channel.id)
+        if (holder == null) {
+            tracker.markStopped(channel.id)
             logger.warn("No WebSocket connection found for channel: ${channel.id}")
+            return
+        }
+        // Closing first makes the reader thread and any late event give up on their own.
+        holder.closing.set(true)
+        disconnect(holder.client)
+        val thread = holder.thread
+        if (thread != null && thread !== Thread.currentThread()) {
+            runCatching { thread.join(STOP_JOIN_MS) }
+            if (thread.isAlive) {
+                logger.warn("Feishu WebSocket thread for channel ${channel.id} did not exit within ${STOP_JOIN_MS}ms")
+            }
+        }
+        tracker.markStopped(channel.id)
+        logger.info("WebSocket connection stopped for channel: ${channel.id}")
+    }
+
+    /** Stop every listener; called once on application shutdown. */
+    fun shutdown() {
+        listeners.values.forEach { holder ->
+            runCatching { stop(holder.channel) }
+        }
+        listeners.clear()
+        deduplicators.clear()
+        tokenCache.clear()
+    }
+
+    /** WsClient.disconnect() is not public in oapi-sdk 2.4.0, so it is invoked reflectively. */
+    private fun disconnect(client: WsClient?) {
+        if (client == null) return
+        val method = DISCONNECT_METHOD.value ?: run {
+            logger.warn("Feishu SDK exposes no disconnect(); leaving the socket to the daemon thread")
+            return
+        }
+        try {
+            method.invoke(client)
+        } catch (e: Exception) {
+            logger.error("Failed to disconnect WebSocket: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Runs the blocking `start()` call on the listener's own thread and translates its
+     * outcome into a connection state the reconcile loop can act on.
+     */
+    private fun runConnection(
+        holder: FeishuListener,
+        client: WsClient,
+    ) {
+        val channelId = holder.channel.id
+        if (holder.closing.get()) {
+            // stop() ran while this thread was being scheduled; do not open a socket nobody owns.
+            disconnect(client)
+            listeners.remove(channelId, holder)
+            return
+        }
+        try {
+            client.start()
+            if (holder.closing.get()) return
+            val aliveMs = System.currentTimeMillis() - holder.startedAt
+            if (holder.eventsReceived > 0 || aliveMs > FAST_RETURN_MS) {
+                // The socket demonstrably worked and has now ended: ask for a restart.
+                tracker.markFailed(channelId, "connection ended after ${aliveMs}ms")
+            } else {
+                logger.warn(
+                    "Feishu start() returned after ${aliveMs}ms without receiving any event for channel $channelId; " +
+                        "treating liveness as unconfirmed instead of restarting",
+                )
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            if (!holder.closing.get()) tracker.markFailed(channelId, "interrupted")
+        } catch (e: Throwable) {
+            if (holder.closing.get()) return
+            logger.error("WebSocket connection failed for channel: $channelId", e)
+            tracker.markFailed(channelId, e.message ?: "ws client failure")
+        } finally {
+            // Remove only our own registration, so a restart that already happened survives.
+            listeners.remove(channelId, holder)
+        }
+    }
+
+    private fun messageEventHandler(holder: FeishuListener) = object : ImService.P2MessageReceiveV1Handler() {
+        override fun handle(data: P2MessageReceiveV1?) {
+            val channelId = holder.channel.id
+            if (data == null) {
+                logger.warn("Received null message event for channel: $channelId")
+                return
+            }
+            if (holder.closing.get() || listeners[channelId] !== holder) {
+                logger.debug("Ignoring Feishu event from a superseded listener, channel: $channelId")
+                return
+            }
+            holder.eventsReceived++
+            // First event is the only positive proof the connection is really serving traffic.
+            tracker.markConnected(channelId)
+
+            // Feishu SDK uses at-least-once delivery, same event may be delivered multiple times
+            val msgKey = data.event?.message?.messageId?.takeIf { it.isNotBlank() }
+            val dedup = msgKey?.let { deduplicators.computeIfAbsent(channelId) { MessageDeduplicator() } }
+            if (msgKey != null && dedup != null && !dedup.tryBegin(msgKey)) {
+                logger.debug("Duplicate message event ignored: messageId=$msgKey, channel=$channelId")
+                tracker.onDuplicateMessage(channelId)
+                return
+            }
+            val rollback = {
+                if (msgKey != null) dedup?.rollback(msgKey)
+            }
+            val commit = {
+                if (msgKey != null) dedup?.commit(msgKey)
+            }
+
+            val handler = holder.messageHandler
+            if (handler == null) {
+                logger.warn("No message handler registered for channel: $channelId")
+                rollback()
+                return
+            }
+
+            val sessionId = data.event?.message?.chatId ?: msgKey ?: ""
+            tracker.markMessageReceived(channelId)
+            turnExecutor.launchTurn(channelId, sessionId) {
+                try {
+                    val channelMessage = parseFeishuEvent(data, holder.channel)
+                    if (channelMessage == null) {
+                        // Nothing was forwarded, so a platform redelivery must still be accepted.
+                        rollback()
+                        return@launchTurn
+                    }
+                    handler(channelMessage)
+                    commit()
+                } catch (e: Exception) {
+                    logger.error("Failed to handle Feishu message event for channel: $channelId", e)
+                    rollback()
+                }
+            }
         }
     }
 
@@ -202,28 +326,28 @@ class FeishuWebSocketMode(
      * message to preserve the full response.
      */
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-        val appId = channel.appId
-        val appSecret = channel.appSecret
+        val appId = requireCredentials(channel, "send messages")
+        val appSecret = channel.appSecret!!
 
-        if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
-            throw ChannelSendException(
-                channelType = ChannelType.FEISHU,
-                platformErrorCode = null,
-                message = "WebSocket mode requires appId and appSecret to send messages",
-            )
-        }
-
-        // Get tenant_access_token
         val token = getTenantAccessToken(appId, appSecret)
 
         // Split long messages into chunks to respect Feishu's content size limit
-        val chunks = splitMessageIntoChunks(message, MAX_MESSAGE_CHUNK_BYTES)
+        val chunks = TextChunker.splitByUtf8Bytes(message, MAX_MESSAGE_CHUNK_BYTES)
         if (chunks.size > 1) {
             logger.info("Splitting long message into {} chunks for session={}, totalLength={}", chunks.size, sessionId, message.length)
         }
 
-        for ((index, chunk) in chunks.withIndex()) {
-            sendSingleMessage(channel, sessionId, chunk, token, index + 1, chunks.size)
+        val started = System.currentTimeMillis()
+        var error: Throwable? = null
+        try {
+            for ((index, chunk) in chunks.withIndex()) {
+                sendSingleMessage(channel, sessionId, chunk, token, index + 1, chunks.size)
+            }
+        } catch (e: Exception) {
+            error = e
+            throw e
+        } finally {
+            metricsSink.onSendCompleted(channel.id, System.currentTimeMillis() - started, error)
         }
     }
 
@@ -268,83 +392,12 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * Split a message into chunks based on byte size limit.
-     * Tries to split at newline boundaries to preserve readability.
-     */
-    private fun splitMessageIntoChunks(message: String, maxBytes: Int): List<String> {
-        val messageBytes = message.toByteArray(Charsets.UTF_8)
-        if (messageBytes.size <= maxBytes) {
-            return listOf(message)
-        }
-
-        val chunks = mutableListOf<String>()
-        var start = 0
-
-        while (start < message.length) {
-            val remaining = message.substring(start)
-            val remainingBytes = remaining.toByteArray(Charsets.UTF_8)
-
-            if (remainingBytes.size <= maxBytes) {
-                chunks.add(remaining)
-                break
-            }
-
-            // Find a safe split point: prefer newline, then space, then hard split
-            var end = start + estimateCharLimit(message, start, maxBytes)
-            end = end.coerceAtMost(message.length)
-
-            // Try to find a newline near the end for clean split
-            val searchStart = (end - 200).coerceAtLeast(start)
-            val newlinePos = message.lastIndexOf('\n', end - 1)
-            if (newlinePos >= searchStart && newlinePos > start) {
-                end = newlinePos + 1
-            } else {
-                // Try to find a space for word-boundary split
-                val spacePos = message.lastIndexOf(' ', end - 1)
-                if (spacePos >= searchStart && spacePos > start) {
-                    end = spacePos + 1
-                }
-            }
-
-            chunks.add(message.substring(start, end))
-            start = end
-        }
-
-        return chunks
-    }
-
-    /**
-     * Estimate how many characters fit within the byte limit starting from a given position.
-     * For ASCII-heavy text, 1 char ≈ 1 byte; for CJK, 1 char ≈ 3 bytes.
-     */
-    private fun estimateCharLimit(message: String, start: Int, maxBytes: Int): Int {
-        var bytes = 0
-        var chars = 0
-        for (i in start until message.length) {
-            val charBytes = message[i].toString().toByteArray(Charsets.UTF_8).size
-            if (bytes + charBytes > maxBytes) break
-            bytes += charBytes
-            chars++
-        }
-        return chars
-    }
-
-    /**
      * Send rich message
      */
     override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
-        val appId = channel.appId
-        val appSecret = channel.appSecret
+        val appId = requireCredentials(channel, "send rich messages")
+        val appSecret = channel.appSecret!!
 
-        if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
-            throw ChannelSendException(
-                channelType = ChannelType.FEISHU,
-                platformErrorCode = null,
-                message = "WebSocket mode requires appId and appSecret to send rich messages",
-            )
-        }
-
-        // Get tenant_access_token
         val token = getTenantAccessToken(appId, appSecret)
 
         // Build rich message body (must include receive_id)
@@ -358,6 +411,7 @@ class FeishuWebSocketMode(
 
         // Call Feishu Open API to send message
         val url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
+        val started = System.currentTimeMillis()
         val response = httpClient.postJson(
             url,
             messageBody,
@@ -365,15 +419,42 @@ class FeishuWebSocketMode(
                 "Authorization" to "Bearer $token",
             ),
         )
+        metricsSink.onSendCompleted(channel.id, System.currentTimeMillis() - started, null)
 
         handleSendResponse(response)
+    }
+
+    private fun requireCredentials(
+        channel: ChannelSpec,
+        purpose: String,
+    ): String {
+        val appId = channel.appId
+        val appSecret = channel.appSecret
+        if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.FEISHU,
+                platformErrorCode = null,
+                message = "WebSocket mode requires appId and appSecret to $purpose",
+            )
+        }
+        return appId
     }
 
     /**
      * Get tenant_access_token
      * Used to call Feishu Open API
+     *
+     * Tokens are cached per appId until shortly before they expire: they are valid for ~2h,
+     * and fetching one per sent message added an extra round trip and hit the platform's
+     * token-exchange rate limit under load.
      */
-    private suspend fun getTenantAccessToken(appId: String, appSecret: String): String {
+    private suspend fun getTenantAccessToken(
+        appId: String,
+        appSecret: String,
+    ): String {
+        val now = System.currentTimeMillis()
+        tokenCache[appId]?.let { if (it.expiresAt > now) return it.token }
+
         val requestBody = mapOf(
             "app_id" to appId,
             "app_secret" to appSecret,
@@ -390,9 +471,14 @@ class FeishuWebSocketMode(
                     val json = objectMapper.readTree(response.body)
                     val code = json.path("code").asInt(-1)
                     if (code == 0) {
-                        json.path("tenant_access_token").asText()
+                        val token = json.path("tenant_access_token").asText()
+                        val expireSeconds = json.path("expire").asLong(7200L)
+                        val ttlMs = ((expireSeconds - TOKEN_REFRESH_SAFETY_SEC).coerceAtLeast(1L)) * 1000
+                        tokenCache[appId] = CachedToken(token, now + ttlMs)
+                        token
                     } else {
                         val msg = json.path("msg").asText("unknown")
+                        tokenCache.remove(appId)
                         throw ChannelSendException(
                             channelType = ChannelType.FEISHU,
                             platformErrorCode = code.toString(),
@@ -411,6 +497,7 @@ class FeishuWebSocketMode(
                 }
             }
             is PlatformResponse.Error -> {
+                tokenCache.remove(appId)
                 throw ChannelSendException(
                     channelType = ChannelType.FEISHU,
                     platformErrorCode = response.platformCode,
@@ -418,36 +505,6 @@ class FeishuWebSocketMode(
                     cause = response.exception,
                 )
             }
-        }
-    }
-
-    /**
-     * Mark a message as processed and return whether it's a new message.
-     *
-     * Uses a per-channel Set to track processed message IDs.
-     * Returns true if the message is new (not previously seen), false if duplicate.
-     * When the set exceeds [MAX_PROCESSED_IDS], it is cleared to prevent unbounded growth.
-     *
-     * @param channelId Channel ID
-     * @param messageId Feishu message ID
-     * @return true if new message, false if already processed
-     */
-    private fun markMessageProcessed(channelId: Long, messageId: String): Boolean {
-        val ids = processedMessageIds.computeIfAbsent(channelId) {
-            Collections.synchronizedSet(LinkedHashSet())
-        }
-        synchronized(ids) {
-            if (ids.contains(messageId)) {
-                return false
-            }
-            ids.add(messageId)
-            // Prevent unbounded growth: clear oldest entries when exceeding limit
-            if (ids.size > MAX_PROCESSED_IDS) {
-                val toRemove = ids.take(ids.size - MAX_PROCESSED_IDS / 2)
-                ids.removeAll(toRemove.toSet())
-                logger.debug("Cleaned up processed message IDs for channel $channelId, remaining=${ids.size}")
-            }
-            return true
         }
     }
 
@@ -606,7 +663,6 @@ class FeishuWebSocketMode(
                             if (text.isNotBlank()) textParts.add(text)
                         }
                         "at" -> {
-                            val userId = element.path("user_id").asText("")
                             val userName = element.path("user_name").asText("@user")
                             textParts.add(userName)
                         }
@@ -697,6 +753,27 @@ class FeishuWebSocketMode(
                     cause = response.exception,
                 )
             }
+        }
+    }
+
+    companion object {
+        // Feishu text message content limit (bytes). The actual API limit is ~150KB for content JSON;
+        // use a conservative 20KB per chunk to leave headroom for JSON wrapper and metadata.
+        private const val MAX_MESSAGE_CHUNK_BYTES = 20_000
+
+        // Refresh ahead of the platform-side expiry so a token never goes stale mid-request.
+        private const val TOKEN_REFRESH_SAFETY_SEC = 300L
+
+        private const val STOP_JOIN_MS = 3_000L
+
+        // start() coming back this fast tells us nothing about whether it ever connected.
+        private const val FAST_RETURN_MS = 10_000L
+
+        /** Resolved once instead of on every stop; the SDK keeps disconnect() non-public. */
+        private val DISCONNECT_METHOD: Lazy<Method?> = lazy {
+            runCatching {
+                WsClient::class.java.getDeclaredMethod("disconnect").apply { isAccessible = true }
+            }.getOrNull()
         }
     }
 }

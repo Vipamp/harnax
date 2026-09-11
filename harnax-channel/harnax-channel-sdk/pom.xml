@@ -28,10 +28,32 @@
             <groupId>tools.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>
         </dependency>
+        <!--
+            Micrometer is only needed to compile the built-in ChannelMetricsSink implementation.
+            provided: hosts that already have micrometer-core (any Spring Boot actuator app) use
+            their own copy, and hosts that never touch the metric sink do not pull it in.
+            Version comes from the spring-boot-dependencies BOM imported in the root pom.
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+            JUnit 5，只用于纯逻辑用例（去重、重连退避、文本分片、回合调度）。
+            版本由根 pom 导入的 spring-boot-dependencies BOM 决定；SDK 依旧不引入任何 Spring 依赖，
+            因为这些测试不需要启动容器。
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <sourceDirectory>src/main/kotlin</sourceDirectory>
+        <testSourceDirectory>src/test/kotlin</testSourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>
@@ -47,7 +69,6 @@
                         <configuration>
                             <sourceDirs>
                                 <sourceDir>target/generated-sources/annotations</sourceDir>
-                                <sourceDir>src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
                     </execution>

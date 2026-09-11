@@ -40,6 +40,18 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
+        <!-- 飞书开放平台 SDK (用于 WebSocket 长连接) -->
+        <dependency>
+            <groupId>com.larksuite.oapi</groupId>
+            <artifactId>oapi-sdk</artifactId>
+            <version>2.4.0</version>
+        </dependency>
+        <!-- 固定 protobuf 版本以兼容飞书 SDK -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>3.22.2</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -60,7 +72,6 @@
                         <configuration>
                             <sourceDirs>
                                 <sourceDir>target/generated-sources/annotations</sourceDir>
-                                <sourceDir>src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
                     </execution>

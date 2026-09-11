@@ -7,8 +7,12 @@ import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.*
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import org.slf4j.LoggerFactory
@@ -30,13 +34,15 @@ import javax.crypto.spec.SecretKeySpec
  */
 class FeishuAdaptor(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
+    turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
 ) : ChannelAdaptor {
 
     private val logger = LoggerFactory.getLogger(FeishuAdaptor::class.java)
     private val objectMapper = jacksonObjectMapper()
 
     // WebSocket communication mode instance
-    private val webSocketMode: FeishuWebSocketMode = FeishuWebSocketMode(httpClient)
+    private val webSocketMode: FeishuWebSocketMode = FeishuWebSocketMode(httpClient, turnExecutor, metricsSink)
 
     override fun getType(): ChannelType = ChannelType.FEISHU
 
@@ -159,54 +165,63 @@ class FeishuAdaptor(
      */
     private fun getMode(channel: ChannelSpec): ChannelCommunicationMode = when (channel.communicationMode) {
         "websocket" -> webSocketMode
-        else -> {
-            // Webhook mode: directly use httpClient to send
-            // In Webhook mode, message receiving is handled by external Controller
-            // This only handles sending logic
-            object : ChannelCommunicationMode {
-                override fun getModeName() = "webhook"
-                override fun isCallbackMode() = true
-                override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
-                    logger.info("Webhook mode for channel ${channel.id} - no startup needed")
-                }
-                override fun stop(channel: ChannelSpec) {
-                    logger.info("Webhook mode for channel ${channel.id} - no cleanup needed")
-                }
-                override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
-                    val webhookUrl = channel.webhookUrl
-                    if (webhookUrl.isNullOrBlank()) {
-                        throw ChannelSendException(
-                            channelType = ChannelType.FEISHU,
-                            platformErrorCode = null,
-                            message = "Feishu webhook URL is not configured",
-                        )
-                    }
-                    val messageBody = FeishuMessageBuilder.buildText(message)
-                    val response = httpClient.postJson(webhookUrl, messageBody)
-                    handleSendResponse(response)
-                }
-                override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
-                    val webhookUrl = channel.webhookUrl
-                    if (webhookUrl.isNullOrBlank()) {
-                        throw ChannelSendException(
-                            channelType = ChannelType.FEISHU,
-                            platformErrorCode = null,
-                            message = "Feishu webhook URL is not configured",
-                        )
-                    }
-                    val messageBody = FeishuMessageBuilder.buildFromRichMessage(richMessage)
-                    val response = httpClient.postJson(webhookUrl, messageBody)
-                    handleSendResponse(response)
-                }
+        else -> webhookMode
+    }
+
+    /**
+     * Webhook mode: message receiving is handled by the external Controller,
+     * so this only carries the sending logic.
+     */
+    private val webhookMode: ChannelCommunicationMode = object : ChannelCommunicationMode {
+        override fun getModeName() = "webhook"
+        override fun isCallbackMode() = true
+        override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
+            logger.info("Webhook mode for channel ${channel.id} - no startup needed")
+        }
+        override fun stop(channel: ChannelSpec) {
+            logger.info("Webhook mode for channel ${channel.id} - no cleanup needed")
+        }
+        override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
+            val webhookUrl = channel.webhookUrl
+            if (webhookUrl.isNullOrBlank()) {
+                throw ChannelSendException(
+                    channelType = ChannelType.FEISHU,
+                    platformErrorCode = null,
+                    message = "Feishu webhook URL is not configured",
+                )
             }
+            val messageBody = FeishuMessageBuilder.buildText(message)
+            val response = httpClient.postJson(webhookUrl, messageBody)
+            handleSendResponse(response)
+        }
+        override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+            val webhookUrl = channel.webhookUrl
+            if (webhookUrl.isNullOrBlank()) {
+                throw ChannelSendException(
+                    channelType = ChannelType.FEISHU,
+                    platformErrorCode = null,
+                    message = "Feishu webhook URL is not configured",
+                )
+            }
+            val messageBody = FeishuMessageBuilder.buildFromRichMessage(richMessage)
+            val response = httpClient.postJson(webhookUrl, messageBody)
+            handleSendResponse(response)
         }
     }
 
     /**
      * Start channel (for WebSocket mode)
+     *
+     * @return true when an active listener was established, false for callback (webhook) mode
      */
-    fun startChannel(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
-        getMode(channel).start(channel, messageHandler)
+    fun startChannel(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit): Boolean {
+        val mode = getMode(channel)
+        if (mode.isCallbackMode()) {
+            logger.info("Feishu channel ${channel.id} is in callback mode, no listener to start")
+            return false
+        }
+        mode.start(channel, messageHandler)
+        return true
     }
 
     /**
@@ -234,20 +249,28 @@ class FeishuAdaptor(
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
         chatService: ChannelChatService?,
-    ) {
+    ): Boolean {
         val effectiveChatService = chatService ?: ChannelChatService(sessionManager)
         val messageParser = FeishuMessageParser()
-        startChannel(channel) { message ->
+        return startChannel(channel) { message ->
             val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
             effectiveChatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
     }
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = webSocketMode.connectionState(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = webSocketMode.connectionStates()
 
     /**
      * Stop channel (for WebSocket mode)
      */
     override fun stopChannel(channel: ChannelSpec) {
         getMode(channel).stop(channel)
+    }
+
+    override fun shutdown() {
+        webSocketMode.shutdown()
     }
 
     /**

@@ -16,6 +16,11 @@
     <name>harnax-channel-service</name>
     <description>Harnax Channel Service - Integrates channels with agent-service via session-router</description>
 
+    <properties>
+        <!-- 集成测试（src/test/kotlin/**/it/*IT.kt）默认跳过，用 -Pintegration-test 打开 -->
+        <skipITs>true</skipITs>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.agnetix</groupId>
@@ -58,6 +63,12 @@
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-auth</artifactId>
             <version>${project.version}</version>
+        </dependency>
+
+        <!-- Spring Boot Actuator: channel connection metrics, health indicator, /actuator/channels -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
         <!-- Spring Boot Web -->
@@ -154,6 +165,20 @@
             <version>1.8.1</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Testcontainers：ChannelServiceContextIT 要对着真实 MySQL 启动完整容器 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -225,6 +250,45 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.class</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!-- 集成测试（Testcontainers MySQL）交给 failsafe 执行，用 -Pintegration-test 打开 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                    <includes>
+                        <include>**/*IT.class</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- 跑集成测试：mvn -Pintegration-test verify -->
+        <profile>
+            <id>integration-test</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+    </profiles>
 </project>

@@ -3,15 +3,18 @@ package com.agnetix.harnax.channel.wecom
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.message.RichMessage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
+import com.agnetix.harnax.channel.sdk.util.ReconnectBackoff
+import com.agnetix.harnax.channel.sdk.util.TextChunker
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -20,8 +23,7 @@ import okhttp3.WebSocketListener
 import org.slf4j.LoggerFactory
 import tools.jackson.databind.JsonNode
 import tools.jackson.module.kotlin.jacksonObjectMapper
-import java.util.Collections
-import java.util.LinkedHashSet
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -48,29 +50,44 @@ import java.util.concurrent.atomic.AtomicReference
  *
  * Replies use `aibot_respond_msg` (stream format, full replacement) keyed by the
  * original callback req_id; proactive sends use `aibot_send_msg` (markdown).
+ *
+ * Lifecycle and resource notes:
+ * - Every connect attempt carries a generation number. OkHttp callbacks from a socket of
+ *   an older attempt are ignored: without this, a late onClosed from a socket we already
+ *   replaced would trigger an extra reconnect and cancel the new connection's heartbeat.
+ * - The OkHttp client and the heartbeat scheduler are shared across channels. Each
+ *   connection used to own both, so N channels meant N connection pools and N threads
+ *   that spent their life sleeping between pings.
+ * - Message handling is delegated to [ChannelTurnExecutor], which bounds in-flight agent
+ *   turns per channel and serializes turns belonging to the same conversation.
  */
-class WecomWebSocketMode : ChannelCommunicationMode {
+class WecomWebSocketMode(
+    private val turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    private val metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
+) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(WecomWebSocketMode::class.java)
     private val objectMapper = jacksonObjectMapper()
 
     private val connections = ConcurrentHashMap<Long, Connection>()
-    private val messageHandlers = ConcurrentHashMap<Long, suspend (ChannelMessage) -> Unit>()
-    private val processedMessageIds = ConcurrentHashMap<Long, MutableSet<String>>()
+    private val deduplicators = ConcurrentHashMap<Long, MessageDeduplicator>()
+    private val tracker = ChannelConnectionTracker(metricsSink, ChannelType.WECOM.code)
 
     /** sessionId(chatId) -> latest callback req_id, per channel, used to build replies. */
     private val replyReqIds = ConcurrentHashMap<Long, ConcurrentHashMap<String, String>>()
 
-    companion object {
-        private const val PING_INTERVAL_SEC = 30L
-        private const val MAX_MISSED_PONG = 2
-        private const val MAX_PROCESSED_IDS = 1000
-        private const val MAX_SEND_CHUNK_CHARS = 2000
+    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+        // The platform protocol defines its own ping frame; OkHttp-level pings would
+        // not be understood by the peer and would only mask heartbeat failures.
+        .connectTimeout(Duration.ofSeconds(10))
+        .readTimeout(0, TimeUnit.MILLISECONDS) // long-lived socket: liveness is heartbeat-based
+        .build()
 
-        // Bound the per-channel replyReqIds cache. reqIds are ephemeral (only the
-        // latest per active session is useful); when exceeded we clear the map and
-        // rarely-active sessions simply fall back to the proactive send path.
-        private const val MAX_REPLY_REQ_IDS = 5000
+    private val scheduler: ScheduledExecutorService by lazy {
+        val threads = (Runtime.getRuntime().availableProcessors().coerceIn(1, 2) + 1)
+        Executors.newScheduledThreadPool(threads) { runnable ->
+            Thread(runnable, "wecom-ws-timer").apply { isDaemon = true }
+        }
     }
 
     /** Per-channel connection state. */
@@ -79,30 +96,25 @@ class WecomWebSocketMode : ChannelCommunicationMode {
         val missedPong = AtomicInteger(0)
         val stopped = AtomicBoolean(false)
 
-        @Volatile var webSocket: WebSocket? = null
+        /** Incremented on every connect attempt; identifies which socket is authoritative. */
+        val generation = AtomicLong(0)
 
-        @Volatile var connectedAt: Long = 0
-        val client: OkHttpClient = OkHttpClient.Builder()
-            .pingInterval(0, TimeUnit.SECONDS) // we manage app-level ping ourselves
-            .build()
-        val scheduler: ScheduledExecutorService =
-            Executors.newSingleThreadScheduledExecutor { r ->
-                Thread(r, "wecom-ws-channel-${channel.id}").apply { isDaemon = true }
-            }
+        @Volatile
+        var webSocket: WebSocket? = null
+
+        @Volatile
+        var connectedAt: Long = 0
+
+        @Volatile
+        var messageHandler: (suspend (ChannelMessage) -> Unit)? = null
+
         val backoff = ReconnectBackoff()
 
         // Cancellable handle for the current heartbeat task, so a reconnect can
         // cancel the previous one instead of leaking stale periodic tasks.
         val heartbeatFuture = AtomicReference<ScheduledFuture<*>?>(null)
 
-        // Ensures only one reconnect is scheduled per disconnect, since OkHttp
-        // may fire both onFailure and onClosed for a single connection drop.
-        val reconnectScheduled = AtomicBoolean(false)
-
-        // Handles agent processing off the WebSocket reader thread so that a
-        // long-running turn never blocks heartbeat ACK reads (which would
-        // otherwise trip the missed-pong watchdog and drop a live connection).
-        val handlerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        fun isCurrent(gen: Long): Boolean = !stopped.get() && generation.get() == gen
 
         fun nextReqId(prefix: String): String = "${prefix}_${reqSeq.incrementAndGet()}"
     }
@@ -110,6 +122,10 @@ class WecomWebSocketMode : ChannelCommunicationMode {
     override fun getModeName(): String = "websocket"
 
     override fun isCallbackMode(): Boolean = false
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = tracker.state(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = tracker.snapshot()
 
     override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         if (connections.containsKey(channel.id)) {
@@ -119,109 +135,149 @@ class WecomWebSocketMode : ChannelCommunicationMode {
         val botId = channel.appId
         val secret = channel.appSecret
         if (botId.isNullOrBlank() || secret.isNullOrBlank()) {
+            tracker.markFailed(channel.id, "missing bot_id or bot_secret")
             throw IllegalArgumentException("WeCom WebSocket mode requires appId(bot_id) and appSecret(bot_secret) for channel: ${channel.id}")
         }
 
         val conn = Connection(channel)
+        conn.messageHandler = messageHandler
         connections[channel.id] = conn
-        messageHandlers[channel.id] = messageHandler
         logger.info("Starting WeCom WebSocket connection for channel: ${channel.id}")
         connect(conn)
     }
 
     override fun stop(channel: ChannelSpec) {
         val conn = connections.remove(channel.id)
-        messageHandlers.remove(channel.id)
-        processedMessageIds.remove(channel.id)
+        deduplicators.remove(channel.id)
         replyReqIds.remove(channel.id)
-        if (conn != null) {
-            conn.stopped.set(true)
-            conn.webSocket?.close(1000, "client stop")
-            conn.scheduler.shutdownNow()
-            conn.client.dispatcher.executorService.shutdown()
-            conn.handlerScope.cancel()
-            logger.info("WeCom WebSocket connection stopped for channel: ${channel.id}")
-        } else {
+        if (conn == null) {
+            tracker.markStopped(channel.id)
             logger.warn("No WeCom WebSocket connection found for channel: ${channel.id}")
+            return
         }
+        conn.stopped.set(true)
+        conn.heartbeatFuture.getAndSet(null)?.cancel(false)
+        conn.webSocket?.close(1000, "client stop")
+        conn.webSocket = null
+        tracker.markStopped(channel.id)
+        logger.info("WeCom WebSocket connection stopped for channel: ${channel.id}")
+    }
+
+    /** Stop every channel and release the shared transport resources (application shutdown). */
+    fun shutdown() {
+        connections.values.forEach { conn ->
+            conn.stopped.set(true)
+            conn.heartbeatFuture.getAndSet(null)?.cancel(false)
+            runCatching { conn.webSocket?.close(1000, "shutdown") }
+        }
+        connections.clear()
+        deduplicators.clear()
+        replyReqIds.clear()
+        scheduler.shutdownNow()
+        runCatching { httpClient.dispatcher.executorService.shutdown() }
+        runCatching { httpClient.connectionPool.evictAll() }
     }
 
     // ==================== Connection lifecycle ====================
 
     private fun connect(conn: Connection) {
         if (conn.stopped.get()) return
-        // A new attempt is starting; allow the next disconnect to schedule a reconnect.
-        conn.reconnectScheduled.set(false)
+        val channelId = conn.channel.id
+        val gen = conn.generation.incrementAndGet()
+        tracker.markConnecting(channelId)
         val request = Request.Builder().url(WecomFrames.ENDPOINT).build()
         val botId = conn.channel.appId!!
         val secret = conn.channel.appSecret!!
 
-        conn.client.newWebSocket(
-            request,
-            object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
-                    conn.webSocket = webSocket
-                    conn.connectedAt = System.currentTimeMillis()
-                    conn.missedPong.set(0)
-                    logger.info("WeCom WebSocket opened for channel: ${conn.channel.id}, subscribing")
-                    val reqId = conn.nextReqId(WecomFrames.CMD_SUBSCRIBE)
-                    writeFrame(webSocket, WecomFrames.subscribe(reqId, botId, secret))
-                    startHeartbeat(conn, webSocket)
-                }
+        try {
+            httpClient.newWebSocket(
+                request,
+                object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        if (!conn.isCurrent(gen)) {
+                            logger.info("Ignoring onOpen from a superseded WeCom socket, channel: $channelId")
+                            runCatching { webSocket.close(1000, "superseded") }
+                            return
+                        }
+                        conn.webSocket = webSocket
+                        conn.connectedAt = System.currentTimeMillis()
+                        conn.missedPong.set(0)
+                        logger.info("WeCom WebSocket opened for channel: $channelId, subscribing")
+                        writeFrame(conn, webSocket, WecomFrames.subscribe(conn.nextReqId(WecomFrames.CMD_SUBSCRIBE), botId, secret))
+                        startHeartbeat(conn, webSocket, gen)
+                    }
 
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    handleRawFrame(conn, text)
-                }
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        if (!conn.isCurrent(gen)) return
+                        handleRawFrame(conn, text)
+                    }
 
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    logger.warn("WeCom WebSocket failure for channel: ${conn.channel.id}: ${t.message}")
-                    scheduleReconnect(conn)
-                }
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        logger.warn("WeCom WebSocket failure for channel: $channelId: ${t.message}")
+                        scheduleReconnect(conn, gen, t.message ?: "websocket failure")
+                    }
 
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    logger.info("WeCom WebSocket closed for channel: ${conn.channel.id}, code=$code, reason=$reason")
-                    scheduleReconnect(conn)
-                }
-            },
-        )
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        logger.info("WeCom WebSocket closed for channel: $channelId, code=$code, reason=$reason")
+                        scheduleReconnect(conn, gen, "closed code=$code")
+                    }
+                },
+            )
+        } catch (e: Exception) {
+            logger.error("WeCom WebSocket connect failed to initiate for channel: $channelId: ${e.message}", e)
+            tracker.markFailed(channelId, e.message ?: "connect failed")
+            scheduleReconnect(conn, gen, e.message ?: "connect failed")
+        }
     }
 
-    private fun scheduleReconnect(conn: Connection) {
-        if (conn.stopped.get()) return
-        // OkHttp may fire both onFailure and onClosed for one disconnect; only
-        // schedule a single reconnect.
-        if (!conn.reconnectScheduled.compareAndSet(false, true)) return
-
+    private fun scheduleReconnect(
+        conn: Connection,
+        gen: Long,
+        reason: String,
+    ) {
+        if (!conn.isCurrent(gen)) {
+            logger.debug("Ignoring reconnect request from a stale WeCom socket, channel: ${conn.channel.id}")
+            return
+        }
         // Cancel the heartbeat task tied to the dead connection.
         conn.heartbeatFuture.getAndSet(null)?.cancel(false)
+        conn.webSocket = null
 
         val alive = if (conn.connectedAt > 0) {
-            java.time.Duration.ofMillis(System.currentTimeMillis() - conn.connectedAt)
+            Duration.ofMillis(System.currentTimeMillis() - conn.connectedAt)
         } else {
-            java.time.Duration.ZERO
+            Duration.ZERO
         }
         conn.connectedAt = 0
-        conn.webSocket = null
+
         val delay = conn.backoff.onDisconnected(alive)
-        logger.warn("WeCom WebSocket reconnecting for channel: ${conn.channel.id} in ${delay.toMillis()}ms")
+        tracker.markReconnecting(conn.channel.id, reason)
+        logger.warn("WeCom WebSocket reconnecting for channel: ${conn.channel.id} in ${delay.toMillis()}ms (reason=$reason)")
         try {
-            conn.scheduler.schedule({ connect(conn) }, delay.toMillis(), TimeUnit.MILLISECONDS)
+            scheduler.schedule({ connect(conn) }, delay.toMillis(), TimeUnit.MILLISECONDS)
         } catch (e: Exception) {
-            logger.debug("WeCom reconnect not scheduled (scheduler shut down) for channel: ${conn.channel.id}")
+            logger.error("WeCom reconnect could not be scheduled for channel: ${conn.channel.id}: ${e.message}")
+            tracker.markFailed(conn.channel.id, "reconnect not scheduled: ${e.message}")
         }
     }
 
-    private fun startHeartbeat(conn: Connection, webSocket: WebSocket) {
-        val future = conn.scheduler.scheduleAtFixedRate({
-            if (conn.stopped.get()) return@scheduleAtFixedRate
-            if (conn.webSocket !== webSocket) return@scheduleAtFixedRate // stale
+    private fun startHeartbeat(
+        conn: Connection,
+        webSocket: WebSocket,
+        gen: Long,
+    ) {
+        val future = scheduler.scheduleAtFixedRate({
+            if (!conn.isCurrent(gen) || conn.webSocket !== webSocket) {
+                return@scheduleAtFixedRate
+            }
             if (conn.missedPong.get() >= MAX_MISSED_PONG) {
                 logger.warn("WeCom WebSocket no heartbeat ack for channel: ${conn.channel.id}, closing")
-                webSocket.close(4000, "heartbeat timeout")
+                tracker.markReconnecting(conn.channel.id, "heartbeat timeout")
+                runCatching { webSocket.close(4000, "heartbeat timeout") }
                 return@scheduleAtFixedRate
             }
             conn.missedPong.incrementAndGet()
-            writeFrame(webSocket, WecomFrames.ping(conn.nextReqId(WecomFrames.CMD_PING)))
+            writeFrame(conn, webSocket, WecomFrames.ping(conn.nextReqId(WecomFrames.CMD_PING)))
         }, PING_INTERVAL_SEC, PING_INTERVAL_SEC, TimeUnit.SECONDS)
         // Replace and cancel any previous heartbeat task from an earlier connection.
         conn.heartbeatFuture.getAndSet(future)?.cancel(false)
@@ -229,7 +285,10 @@ class WecomWebSocketMode : ChannelCommunicationMode {
 
     // ==================== Frame handling ====================
 
-    private fun handleRawFrame(conn: Connection, raw: String) {
+    private fun handleRawFrame(
+        conn: Connection,
+        raw: String,
+    ) {
         val node = try {
             objectMapper.readTree(raw)
         } catch (e: Exception) {
@@ -242,122 +301,183 @@ class WecomWebSocketMode : ChannelCommunicationMode {
         when (cmd) {
             WecomFrames.CMD_MSG_CALLBACK -> handleMsgCallback(conn, reqId, node.path("body"))
             WecomFrames.CMD_EVENT_CALLBACK -> logger.debug("WeCom event callback ignored, channel: ${conn.channel.id}")
-            "" -> {
-                // Response frame (no cmd): identify by req_id prefix.
-                when {
-                    reqId.startsWith(WecomFrames.CMD_PING) -> {
-                        conn.missedPong.set(0)
-                        logger.debug("WeCom heartbeat ack, channel: ${conn.channel.id}")
-                    }
-                    reqId.startsWith(WecomFrames.CMD_SUBSCRIBE) -> {
-                        val errcode = node.path("errcode").asInt(-1)
-                        if (errcode == 0) {
-                            conn.missedPong.set(0)
-                            logger.info("WeCom subscribed successfully, channel: ${conn.channel.id}")
-                        } else {
-                            logger.error(
-                                "WeCom subscribe failed, channel: ${conn.channel.id}, errcode=$errcode, errmsg=${node.path("errmsg").asText("")}",
-                            )
-                        }
-                    }
-                    else -> {
-                        val errcode = node.path("errcode").asInt(0)
-                        if (errcode != 0) {
-                            logger.warn(
-                                "WeCom send/reply ack error, channel: ${conn.channel.id}, req_id=$reqId, errcode=$errcode, errmsg=${node.path("errmsg").asText("")}",
-                            )
-                        } else {
-                            logger.debug("WeCom send/reply ack ok, channel: ${conn.channel.id}, req_id=$reqId")
-                        }
-                    }
-                }
-            }
+            "" -> handleResponseFrame(conn, reqId, node)
             else -> logger.debug("WeCom unhandled cmd '$cmd' for channel: ${conn.channel.id}")
         }
     }
 
-    private fun handleMsgCallback(conn: Connection, reqId: String, body: JsonNode) {
-        val msgId = body.path("msgid").asText("")
-        if (msgId.isNotBlank() && !markMessageProcessed(conn.channel.id, msgId)) {
-            logger.debug("WeCom duplicate message ignored: msgId=$msgId, channel=${conn.channel.id}")
-            return
-        }
-
-        val msgType = body.path("msgtype").asText("")
-        val userId = body.path("from").path("userid").asText("")
-        val chatType = body.path("chattype").asText("")
-        var chatId = body.path("chatid").asText("")
-        if (chatId.isBlank()) chatId = userId
-
-        val text = when (msgType) {
-            "text" -> body.path("text").path("content").asText("")
-            "voice" -> {
-                val c = body.path("voice").path("content").asText("")
-                if (c.isNotBlank()) c else body.path("voice").path("text").asText("")
+    /** Response frames carry no cmd and are identified by their req_id prefix. */
+    private fun handleResponseFrame(
+        conn: Connection,
+        reqId: String,
+        node: JsonNode,
+    ) {
+        val channelId = conn.channel.id
+        when {
+            reqId.startsWith(WecomFrames.CMD_PING) -> {
+                conn.missedPong.set(0)
+                tracker.markHeartbeat(channelId)
+                logger.debug("WeCom heartbeat ack, channel: $channelId")
             }
-            else -> ""
-        }.trim()
 
-        if (text.isEmpty()) {
-            logger.debug("WeCom message without text ignored (msgtype={}), channel={}", msgType, conn.channel.id)
+            reqId.startsWith(WecomFrames.CMD_SUBSCRIBE) -> {
+                val errcode = node.path("errcode").asInt(-1)
+                if (errcode == 0) {
+                    conn.missedPong.set(0)
+                    tracker.markConnected(channelId)
+                    logger.info("WeCom subscribed successfully, channel: $channelId")
+                } else {
+                    val errmsg = node.path("errmsg").asText("")
+                    logger.error("WeCom subscribe failed, channel: $channelId, errcode=$errcode, errmsg=$errmsg")
+                    tracker.markFailed(channelId, "subscribe errcode=$errcode errmsg=$errmsg")
+                }
+            }
+
+            else -> {
+                val errcode = node.path("errcode").asInt(0)
+                if (errcode != 0) {
+                    val detail = node.path("errmsg").asText("")
+                    logger.warn("WeCom send/reply ack error, channel: $channelId, req_id=$reqId, errcode=$errcode, errmsg=$detail")
+                    metricsSink.onSendCompleted(
+                        channelId,
+                        0,
+                        ChannelSendException(ChannelType.WECOM, errcode.toString(), "WeCom ack error: $detail"),
+                    )
+                } else {
+                    logger.debug("WeCom send/reply ack ok, channel: $channelId, req_id=$reqId")
+                    metricsSink.onSendCompleted(channelId, 0, null)
+                }
+            }
+        }
+    }
+
+    private fun handleMsgCallback(
+        conn: Connection,
+        reqId: String,
+        body: JsonNode,
+    ) {
+        val channelId = conn.channel.id
+        val msgId = body.path("msgid").asText("")
+        val dedup = if (msgId.isBlank()) null else deduplicators.computeIfAbsent(channelId) { MessageDeduplicator() }
+        if (dedup != null && !dedup.tryBegin(msgId)) {
+            logger.debug("WeCom duplicate message ignored: msgId=$msgId, channel=$channelId")
+            tracker.onDuplicateMessage(channelId)
             return
         }
 
-        val isGroup = chatType == "group"
-        val sessionId = chatId
-        // Cache the callback req_id so Reply() (aibot_respond_msg) can address it.
-        if (reqId.isNotBlank()) {
-            val submap = replyReqIds.computeIfAbsent(conn.channel.id) { ConcurrentHashMap() }
-            if (submap.size >= MAX_REPLY_REQ_IDS) submap.clear()
-            submap[sessionId] = reqId
+        try {
+            val msgType = body.path("msgtype").asText("")
+            val userId = body.path("from").path("userid").asText("")
+            val chatType = body.path("chattype").asText("")
+            var chatId = body.path("chatid").asText("")
+            if (chatId.isBlank()) chatId = userId
+
+            val text = when (msgType) {
+                "text" -> body.path("text").path("content").asText("")
+                "voice" -> {
+                    val c = body.path("voice").path("content").asText("")
+                    if (c.isNotBlank()) c else body.path("voice").path("text").asText("")
+                }
+
+                else -> ""
+            }.trim()
+
+            if (text.isEmpty()) {
+                logger.debug("WeCom message without text ignored (msgtype={}), channel={}", msgType, channelId)
+                dedup?.rollback(msgId)
+                return
+            }
+
+            val isGroup = chatType == "group"
+            val sessionId = chatId
+            // Cache the callback req_id so Reply() (aibot_respond_msg) can address it.
+            if (reqId.isNotBlank()) {
+                val submap = replyReqIds.computeIfAbsent(channelId) { ConcurrentHashMap() }
+                if (submap.size >= MAX_REPLY_REQ_IDS) submap.clear()
+                submap[sessionId] = reqId
+            }
+
+            val channelMessage = ChannelMessage.builder()
+                .messageId(msgId)
+                .sessionId(sessionId)
+                .messageType(MessageType.TEXT)
+                .content(text)
+                .channelType(ChannelType.WECOM)
+                .senderId(userId)
+                .senderName(userId)
+                .isGroupMessage(isGroup)
+                .groupId(if (isGroup) chatId else null)
+                .build()
+
+            tracker.markMessageReceived(channelId)
+            dispatch(conn, channelMessage, dedup, msgId)
+        } catch (e: Exception) {
+            logger.error("Failed to process WeCom callback frame for channel: $channelId", e)
+            dedup?.rollback(msgId)
         }
+    }
 
-        val channelMessage = ChannelMessage.builder()
-            .messageId(msgId)
-            .sessionId(sessionId)
-            .messageType(MessageType.TEXT)
-            .content(text)
-            .channelType(ChannelType.WECOM)
-            .senderId(userId)
-            .senderName(userId)
-            .isGroupMessage(isGroup)
-            .groupId(if (isGroup) chatId else null)
-            .build()
-
-        conn.handlerScope.launch {
+    private fun dispatch(
+        conn: Connection,
+        message: ChannelMessage,
+        dedup: MessageDeduplicator?,
+        msgId: String,
+    ) {
+        val handler = conn.messageHandler
+        if (handler == null) {
+            logger.warn("No message handler registered for channel: ${conn.channel.id}")
+            dedup?.rollback(msgId)
+            return
+        }
+        turnExecutor.launchTurn(conn.channel.id, message.sessionId) {
             try {
-                messageHandlers[conn.channel.id]?.invoke(channelMessage)
-                    ?: logger.warn("No message handler registered for channel: ${conn.channel.id}")
+                handler(message)
+                // Only a completed turn may suppress the platform's next redelivery.
+                dedup?.commit(msgId)
             } catch (e: Exception) {
                 logger.error("Failed to handle WeCom message for channel: ${conn.channel.id}", e)
+                dedup?.rollback(msgId)
             }
         }
     }
 
     // ==================== Sending ====================
 
-    override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
+    override suspend fun sendMessage(
+        channel: ChannelSpec,
+        sessionId: String,
+        message: String,
+    ) {
         val conn = connections[channel.id] ?: throw notConnected(channel)
         val webSocket = conn.webSocket ?: throw notConnected(channel)
+        val started = System.currentTimeMillis()
 
-        // Prefer replying to the original message (aibot_respond_msg) when we have a req_id.
-        val reqId = replyReqIds[channel.id]?.get(sessionId)
-        if (reqId != null) {
-            val streamId = conn.nextReqId("stream")
-            writeFrame(webSocket, WecomFrames.respondMsg(reqId, streamId, message))
-            logger.debug("WeCom reply sent for channel: ${channel.id}, session=$sessionId")
-            return
+        val result = runCatching {
+            // Prefer replying to the original message (aibot_respond_msg) when we have a req_id.
+            val reqId = replyReqIds[channel.id]?.get(sessionId)
+            if (reqId != null) {
+                val streamId = conn.nextReqId("stream")
+                requireSent(conn, webSocket, WecomFrames.respondMsg(reqId, streamId, message))
+                logger.debug("WeCom reply sent for channel: ${channel.id}, session=$sessionId")
+            } else {
+                // Fall back to proactive send (aibot_send_msg) in markdown, chunked.
+                val chunks = TextChunker.splitByChars(message, MAX_SEND_CHUNK_CHARS)
+                for (chunk in chunks) {
+                    requireSent(conn, webSocket, WecomFrames.sendMsg(conn.nextReqId(WecomFrames.CMD_SEND_MSG), sessionId, chunk))
+                }
+                logger.debug("WeCom proactive message sent for channel: ${channel.id}, chunks=${chunks.size}")
+            }
         }
 
-        // Fall back to proactive send (aibot_send_msg) in markdown, chunked.
-        val chunks = splitByChars(message, MAX_SEND_CHUNK_CHARS)
-        for (chunk in chunks) {
-            writeFrame(webSocket, WecomFrames.sendMsg(conn.nextReqId(WecomFrames.CMD_SEND_MSG), sessionId, chunk))
-        }
-        logger.debug("WeCom proactive message sent for channel: ${channel.id}, chunks=${chunks.size}")
+        metricsSink.onSendCompleted(channel.id, System.currentTimeMillis() - started, result.exceptionOrNull())
+        result.getOrThrow()
     }
 
-    override suspend fun sendRichMessage(channel: ChannelSpec, sessionId: String, richMessage: RichMessage) {
+    override suspend fun sendRichMessage(
+        channel: ChannelSpec,
+        sessionId: String,
+        richMessage: RichMessage,
+    ) {
         val text = when (richMessage) {
             is com.agnetix.harnax.channel.sdk.message.TextRichMessage -> richMessage.content
             is com.agnetix.harnax.channel.sdk.message.MarkdownRichMessage -> richMessage.content
@@ -374,42 +494,44 @@ class WecomWebSocketMode : ChannelCommunicationMode {
 
     // ==================== Helpers ====================
 
-    private fun writeFrame(webSocket: WebSocket, frame: Map<String, Any>) {
-        webSocket.send(objectMapper.writeValueAsString(frame))
+    /** @return false when OkHttp refused the frame (outbound queue full or socket closing). */
+    private fun writeFrame(
+        conn: Connection,
+        webSocket: WebSocket,
+        frame: Map<String, Any>,
+    ): Boolean = try {
+        val queued = webSocket.send(objectMapper.writeValueAsString(frame))
+        if (!queued) {
+            logger.warn("WeCom WebSocket rejected a frame under backpressure, channel: ${conn.channel.id}")
+        }
+        queued
+    } catch (e: Exception) {
+        logger.warn("WeCom frame write failed for channel: ${conn.channel.id}: ${e.message}", e)
+        false
     }
 
-    private fun splitByChars(message: String, maxChars: Int): List<String> {
-        if (message.length <= maxChars) return listOf(message)
-        val chunks = mutableListOf<String>()
-        var remaining = message
-        while (remaining.length > maxChars) {
-            var splitAt = remaining.lastIndexOf('\n', maxChars)
-            if (splitAt <= 0) splitAt = remaining.lastIndexOf(' ', maxChars)
-            if (splitAt <= 0) splitAt = maxChars
-            chunks.add(remaining.substring(0, splitAt))
-            remaining = remaining.substring(splitAt).trimStart()
+    private fun requireSent(
+        conn: Connection,
+        webSocket: WebSocket,
+        frame: Map<String, Any>,
+    ) {
+        if (!writeFrame(conn, webSocket, frame)) {
+            throw ChannelSendException(
+                channelType = ChannelType.WECOM,
+                platformErrorCode = null,
+                message = "WeCom WebSocket could not enqueue the message for channel: ${conn.channel.id}",
+            )
         }
-        if (remaining.isNotEmpty()) chunks.add(remaining)
-        return chunks
     }
 
-    private fun markMessageProcessed(channelId: Long, messageId: String): Boolean {
-        val ids = processedMessageIds.computeIfAbsent(channelId) {
-            Collections.synchronizedSet(LinkedHashSet())
-        }
-        synchronized(ids) {
-            if (ids.contains(messageId)) return false
-            ids.add(messageId)
-            if (ids.size > MAX_PROCESSED_IDS) {
-                val iterator = ids.iterator()
-                var toRemove = ids.size - MAX_PROCESSED_IDS / 2
-                while (iterator.hasNext() && toRemove > 0) {
-                    iterator.next()
-                    iterator.remove()
-                    toRemove--
-                }
-            }
-            return true
-        }
+    companion object {
+        private const val PING_INTERVAL_SEC = 30L
+        private const val MAX_MISSED_PONG = 2
+        private const val MAX_SEND_CHUNK_CHARS = 2000
+
+        // Bound the per-channel replyReqIds cache. reqIds are ephemeral (only the
+        // latest per active session is useful); when exceeded we clear the map and
+        // rarely-active sessions simply fall back to the proactive send path.
+        private const val MAX_REPLY_REQ_IDS = 5000
     }
 }

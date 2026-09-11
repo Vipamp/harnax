@@ -71,43 +71,16 @@
             <groupId>tools.jackson.module</groupId>
             <artifactId>jackson-module-kotlin</artifactId>
         </dependency>
-        <!-- WebFlux for HTTP client -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
         <!-- Kotlinx Coroutines -->
         <dependency>
             <groupId>org.jetbrains.kotlinx</groupId>
             <artifactId>kotlinx-coroutines-core</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.jetbrains.kotlinx</groupId>
-            <artifactId>kotlinx-coroutines-reactor</artifactId>
-        </dependency>
-        <!-- Servlet API -->
-        <dependency>
-            <groupId>jakarta.servlet</groupId>
-            <artifactId>jakarta.servlet-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <!-- XML Processing -->
-        <dependency>
-            <groupId>tools.jackson.dataformat</groupId>
-            <artifactId>jackson-dataformat-xml</artifactId>
-        </dependency>
-        <!-- 飞书开放平台 SDK (用于 WebSocket 长连接) -->
-        <dependency>
-            <groupId>com.larksuite.oapi</groupId>
-            <artifactId>oapi-sdk</artifactId>
-            <version>2.4.0</version>
-        </dependency>
-        <!-- 固定 protobuf 版本以兼容飞书 SDK -->
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-            <version>3.22.2</version>
-        </dependency>
+        <!--
+            这里只保留六个子模块都真正需要的公共依赖。
+            平台专属依赖（WebFlux、飞书 oapi-sdk、protobuf、XML、Servlet API 等）一律写在各自子模块里，
+            否则 harnax-channel-sdk 这个抽象层会被迫携带它源码里一次都没引用的依赖。
+        -->
     </dependencies>
 
     <build>
@@ -128,7 +101,6 @@
                         <configuration>
                             <sourceDirs>
                                 <sourceDir>target/generated-sources/annotations</sourceDir>
-                                <sourceDir>src/main/kotlin</sourceDir>
                             </sourceDirs>
                         </configuration>
                     </execution>

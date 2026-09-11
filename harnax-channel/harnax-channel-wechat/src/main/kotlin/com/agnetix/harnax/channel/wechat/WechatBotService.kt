@@ -140,14 +140,20 @@ class WechatBotService {
      * and passes messages to upper layer for processing via messageHandler callback.
      *
      * @param channelId Channel ID
+     * @param onStopped Invoked once the polling thread exits, with the reason. The loop can
+     *        end silently (login expired, client closed), and without this the caller would
+     *        keep believing the channel is live.
      * @param messageHandler Message handler, receives WeixinMessage list
      */
     fun startPolling(
         channelId: Long,
+        onStopped: (String?) -> Unit = {},
         messageHandler: (List<WeixinMessage>) -> Unit,
     ) {
         val flag = AtomicBoolean(true)
-        pollingFlags[channelId] = flag
+        // A second startPolling for the same channel must retire the previous loop,
+        // otherwise both threads keep calling getUpdates() with the same cursor.
+        pollingFlags.put(channelId, flag)?.set(false)
 
         val client = clientMap[channelId]
             ?: throw IllegalStateException("ILinkClient not found for channel $channelId, please login first")
@@ -155,32 +161,45 @@ class WechatBotService {
         val thread = Thread({
             logger.info("Starting message polling for channel $channelId")
             var consecutiveFailures = 0
-            while (flag.get() && client.isLoggedIn) {
-                try {
-                    val messages = client.getUpdates()
-                    consecutiveFailures = 0 // Reset on success
-                    if (messages.isNotEmpty()) {
-                        messageHandler(messages)
-                    }
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    break
-                } catch (e: Exception) {
-                    consecutiveFailures++
-                    // Exponential backoff: 3s, 6s, 12s, 24s, ... capped at 60s
-                    val delayMs = (3000L * (1L shl minOf(consecutiveFailures - 1, 4))).coerceAtMost(60_000L)
-                    logger.warn(
-                        "Polling error for channel $channelId (attempt $consecutiveFailures), retrying in ${delayMs}ms: ${e.message}",
-                    )
+            var stopReason: String? = null
+            try {
+                while (flag.get() && client.isLoggedIn) {
                     try {
-                        Thread.sleep(delayMs)
+                        val messages = client.getUpdates()
+                        consecutiveFailures = 0 // Reset on success
+                        if (messages.isNotEmpty()) {
+                            messageHandler(messages)
+                        }
                     } catch (_: InterruptedException) {
                         Thread.currentThread().interrupt()
+                        stopReason = "interrupted"
                         break
+                    } catch (e: Exception) {
+                        consecutiveFailures++
+                        // Exponential backoff: 3s, 6s, 12s, 24s, ... capped at 60s
+                        val delayMs = (3000L * (1L shl minOf(consecutiveFailures - 1, 4))).coerceAtMost(60_000L)
+                        logger.warn(
+                            "Polling error for channel $channelId (attempt $consecutiveFailures), retrying in ${delayMs}ms: ${e.message}",
+                        )
+                        try {
+                            Thread.sleep(delayMs)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            stopReason = "interrupted"
+                            break
+                        }
                     }
                 }
+                if (stopReason == null) {
+                    stopReason = if (!client.isLoggedIn) "login expired or client closed" else "stopped"
+                }
+            } catch (e: Throwable) {
+                stopReason = "polling thread failed: ${e.message}"
+                logger.error("Message polling crashed for channel $channelId", e)
+            } finally {
+                logger.info("Message polling stopped for channel $channelId ($stopReason)")
+                runCatching { onStopped(stopReason) }
             }
-            logger.info("Message polling stopped for channel $channelId")
         }, "wechat-polling-$channelId")
 
         thread.isDaemon = true
@@ -191,7 +210,7 @@ class WechatBotService {
      * Stop message polling
      */
     fun stopPolling(channelId: Long) {
-        pollingFlags[channelId]?.set(false)
+        pollingFlags.remove(channelId)?.set(false)
         logger.info("Stopping message polling for channel $channelId")
     }
 

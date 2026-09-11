@@ -3,17 +3,24 @@ package com.agnetix.harnax.channel.wechat
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.error.ChannelSendException
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MarkdownRichMessage
 import com.agnetix.harnax.channel.sdk.message.RichMessage
 import com.agnetix.harnax.channel.sdk.message.TextRichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
 import com.github.wechat.ilink.sdk.core.config.ILinkConfig
 import com.github.wechat.ilink.sdk.core.login.LoginContext
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
 import org.slf4j.LoggerFactory
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * WeChat Long Polling Communication Mode
@@ -33,92 +40,165 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class WechatLongPollingMode(
     private val botService: WechatBotService = WechatBotService(),
+    private val turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    private val metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(WechatLongPollingMode::class.java)
     private val objectMapper = jacksonObjectMapper()
 
-    // Tracks channels with active login/polling threads to prevent duplicate starts
-    private val activeChannels = ConcurrentHashMap.newKeySet<Long>()
+    private val tracker = ChannelConnectionTracker(metricsSink, ChannelType.WECHAT.code)
+
+    /** One entry per channel with a login/polling thread we own; also prevents duplicate starts. */
+    private val listeners = ConcurrentHashMap<Long, Listener>()
+
+    private inner class Listener(val channel: ChannelSpec) {
+        val closing = AtomicBoolean(false)
+
+        @Volatile
+        var thread: Thread? = null
+
+        @Volatile
+        var messageHandler: (suspend (ChannelMessage) -> Unit)? = null
+    }
 
     override fun getModeName(): String = "long-polling"
 
     override fun isCallbackMode(): Boolean = false
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = tracker.state(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = tracker.snapshot()
 
     /**
      * Start long polling communication mode
      *
      * Flow:
      * 1. Create or get ILinkClient
-     * 2. Execute QR code login
-     * 3. Wait for user to scan code and login successfully
-     * 4. Start message polling thread
+     * 2. Execute QR code login (or resume with stored credentials)
+     * 3. Start message polling thread
      *
      * @param channel Channel configuration
      * @param messageHandler Message processing callback
      */
     override fun start(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         val channelId = channel.id
-
-        if (!activeChannels.add(channelId)) {
+        val existing = listeners[channelId]
+        if (existing != null && !existing.closing.get()) {
             logger.warn("Long-polling already active for channel: $channelId, skipping duplicate start")
             return
         }
 
-        // Build iLink configuration
-        val iLinkConfig = buildILinkConfig(channel)
-
-        val credentials = parseCredentials(channel.configJson)
-
-        if (credentials != null) {
-            // Preferred path: connect with stored credentials obtained via the
-            // admin-side scan flow — no QR scan needed here.
-            val thread = Thread({
-                try {
-                    botService.createClientFromCredentials(channelId, credentials, iLinkConfig)
-                    logger.info("WeChat channel $channelId connecting with stored credentials, botId=${credentials.botId}")
-                    botService.startPolling(channelId) { messages ->
-                        handleMessages(messages, channel, messageHandler)
-                    }
-                } catch (e: Exception) {
-                    logger.error("WeChat resume-connect failed for channel $channelId: ${e.message}", e)
-                    runCatching { botService.closeClient(channelId) }
-                    activeChannels.remove(channelId)
-                }
-            }, "wechat-resume-$channelId")
-            thread.isDaemon = true
-            thread.start()
+        val holder = Listener(channel)
+        holder.messageHandler = messageHandler
+        if (listeners.putIfAbsent(channelId, holder) != null) {
+            logger.warn("Long-polling for channel $channelId was started concurrently, ignoring this request")
             return
         }
+        tracker.markConnecting(channelId)
 
-        // Fallback path: no stored credentials, perform interactive QR login.
-        // Used mainly for local development; production should authenticate via admin.
-        botService.getOrCreateClient(channelId, iLinkConfig)
-        val thread = Thread({
-            try {
-                val qrCodeContent = botService.executeLogin(channelId)
-                logger.info("========================================")
-                logger.info("请使用微信扫描以下二维码内容登录：")
-                logger.info(qrCodeContent)
-                logger.info("========================================")
-
-                val loginFuture = botService.getLoginFuture(channelId)
-                if (loginFuture != null) {
-                    val context = loginFuture.get()
-                    logger.info("WeChat bot login successful, botId = ${context.botId}")
-                    botService.startPolling(channelId) { messages ->
-                        handleMessages(messages, channel, messageHandler)
-                    }
+        val iLinkConfig = buildILinkConfig(channel)
+        val credentials = parseCredentials(channel.configJson)
+        val thread = Thread(
+            {
+                if (credentials != null) {
+                    resumeWithCredentials(holder, credentials, iLinkConfig)
+                } else {
+                    loginWithQrCode(holder, iLinkConfig)
                 }
-            } catch (e: Exception) {
-                logger.error("WeChat long-polling mode startup failed for channel $channelId: ${e.message}", e)
-            } finally {
-                activeChannels.remove(channelId)
-            }
-        }, "wechat-login-$channelId")
-
+            },
+            if (credentials != null) "wechat-resume-$channelId" else "wechat-login-$channelId",
+        )
         thread.isDaemon = true
+        holder.thread = thread
         thread.start()
+    }
+
+    /**
+     * Preferred path: connect with stored credentials obtained via the admin-side scan
+     * flow — no QR scan needed here.
+     */
+    private fun resumeWithCredentials(
+        holder: Listener,
+        credentials: LoginContext,
+        config: ILinkConfig,
+    ) {
+        val channelId = holder.channel.id
+        if (holder.closing.get()) {
+            listeners.remove(channelId, holder)
+            return
+        }
+        try {
+            botService.createClientFromCredentials(channelId, credentials, config)
+            logger.info("WeChat channel $channelId connecting with stored credentials, botId=${credentials.botId}")
+            startPolling(holder)
+        } catch (e: Exception) {
+            logger.error("WeChat resume-connect failed for channel $channelId: ${e.message}", e)
+            runCatching { botService.closeClient(channelId) }
+            fail(holder, e.message ?: "resume-connect failed")
+        }
+    }
+
+    /**
+     * Fallback path: no stored credentials, perform interactive QR login.
+     * Used mainly for local development; production should authenticate via admin.
+     */
+    private fun loginWithQrCode(
+        holder: Listener,
+        config: ILinkConfig,
+    ) {
+        val channelId = holder.channel.id
+        try {
+            botService.getOrCreateClient(channelId, config)
+            val qrCodeContent = botService.executeLogin(channelId)
+            logger.info("========================================")
+            logger.info("请使用微信扫描以下二维码内容登录：")
+            logger.info(qrCodeContent)
+            logger.info("========================================")
+
+            val loginFuture = botService.getLoginFuture(channelId)
+            if (loginFuture == null) {
+                fail(holder, "login future unavailable")
+                return
+            }
+            val context = loginFuture.get(LOGIN_WAIT_MINUTES, TimeUnit.MINUTES)
+            if (holder.closing.get()) {
+                runCatching { botService.closeClient(channelId) }
+                return
+            }
+            logger.info("WeChat bot login successful, botId = ${context.botId}")
+            startPolling(holder)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            fail(holder, "interrupted")
+        } catch (e: Exception) {
+            logger.error("WeChat long-polling mode startup failed for channel $channelId: ${e.message}", e)
+            fail(holder, e.message ?: "login failed")
+        }
+    }
+
+    private fun startPolling(holder: Listener) {
+        val channelId = holder.channel.id
+        botService.startPolling(
+            channelId,
+            onStopped = { reason ->
+                if (!holder.closing.get()) {
+                    fail(holder, reason ?: "polling stopped")
+                }
+            },
+        ) { messages ->
+            handleMessages(holder, messages)
+        }
+        tracker.markConnected(channelId)
+    }
+
+    private fun fail(
+        holder: Listener,
+        reason: String,
+    ) {
+        val channelId = holder.channel.id
+        listeners.remove(channelId, holder)
+        tracker.markFailed(channelId, reason)
     }
 
     /**
@@ -126,9 +206,35 @@ class WechatLongPollingMode(
      */
     override fun stop(channel: ChannelSpec) {
         val channelId = channel.id
-        activeChannels.remove(channelId)
-        botService.closeClient(channelId)
+        val holder = listeners.remove(channelId)
+        if (holder == null) {
+            tracker.markStopped(channelId)
+            logger.warn("No active WeChat long-polling for channel $channelId, nothing to stop")
+            return
+        }
+        // Set first so the polling stop-callback knows this shutdown was intentional.
+        holder.closing.set(true)
+        runCatching { botService.closeClient(channelId) }
+            .onFailure { logger.warn("Failed to close ILinkClient for channel $channelId: ${it.message}") }
+        val thread = holder.thread
+        if (thread != null && thread !== Thread.currentThread()) {
+            thread.interrupt()
+            runCatching { thread.join(STOP_JOIN_MS) }
+            if (thread.isAlive) {
+                logger.warn("WeChat login/polling thread for channel $channelId did not exit within ${STOP_JOIN_MS}ms")
+            }
+        }
+        tracker.markStopped(channelId)
         logger.info("WeChat long-polling mode stopped for channel $channelId")
+    }
+
+    /** Stop every channel (application shutdown). */
+    fun shutdown() {
+        listeners.values.forEach { holder ->
+            runCatching { stop(holder.channel) }
+        }
+        listeners.clear()
+        botService.closeAll()
     }
 
     /**
@@ -217,22 +323,38 @@ class WechatLongPollingMode(
 
     /**
      * Process retrieved message list
-     * Convert WeixinMessage to ChannelMessage and callback to upper layer
+     * Convert WeixinMessage to ChannelMessage and hand each one to the turn executor.
+     *
+     * The polling thread must get back to getUpdates() immediately: waiting for the
+     * agent turn here stalls the update cursor and makes the platform see a dead bot.
      */
     private fun handleMessages(
+        holder: Listener,
         messages: List<WeixinMessage>,
-        channel: ChannelSpec,
-        messageHandler: suspend (ChannelMessage) -> Unit,
     ) {
+        val channelId = holder.channel.id
+        val handler = holder.messageHandler ?: run {
+            logger.warn("No message handler registered for channel: $channelId")
+            return
+        }
         for (msg in messages) {
-            try {
-                val channelMessage = WechatMessageConverter.toChannelMessage(msg, channel)
-                // Use coroutine to call suspend function
-                kotlinx.coroutines.runBlocking {
-                    messageHandler(channelMessage)
-                }
+            if (holder.closing.get() || listeners[channelId] !== holder) {
+                logger.debug("Dropping WeChat message for stopped channel: $channelId")
+                return
+            }
+            val channelMessage = try {
+                WechatMessageConverter.toChannelMessage(msg, holder.channel)
             } catch (e: Exception) {
-                logger.error("Error handling WeChat message: ${e.message}", e)
+                logger.error("Failed to convert WeChat message for channel $channelId: ${e.message}", e)
+                continue
+            }
+            tracker.markMessageReceived(channelId)
+            turnExecutor.launchTurn(channelId, channelMessage.sessionId) {
+                try {
+                    handler(channelMessage)
+                } catch (e: Exception) {
+                    logger.error("Error handling WeChat message for channel $channelId: ${e.message}", e)
+                }
             }
         }
     }
@@ -276,5 +398,13 @@ class WechatLongPollingMode(
         channel.token?.let { builder.channelVersion(it) }
 
         return builder.build()
+    }
+
+    companion object {
+        // Upper bound for the interactive QR login wait. Without it a never-scanned
+        // QR code parks the login thread (and the channel in CONNECTING) forever.
+        private const val LOGIN_WAIT_MINUTES = 5L
+
+        private const val STOP_JOIN_MS = 3_000L
     }
 }

@@ -4,9 +4,13 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import org.slf4j.LoggerFactory
@@ -20,11 +24,14 @@ import org.slf4j.LoggerFactory
  * handshake. verifySignature/parseMessage/buildResponse are only kept for SDK
  * interface compatibility and are not used in WebSocket mode.
  */
-class WecomAdaptor : ChannelAdaptor {
+class WecomAdaptor(
+    turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
+) : ChannelAdaptor {
 
     private val logger = LoggerFactory.getLogger(WecomAdaptor::class.java)
 
-    private val webSocketMode: WecomWebSocketMode = WecomWebSocketMode()
+    private val webSocketMode: WecomWebSocketMode = WecomWebSocketMode(turnExecutor, metricsSink)
 
     override fun getType(): ChannelType = ChannelType.WECOM
 
@@ -71,16 +78,25 @@ class WecomAdaptor : ChannelAdaptor {
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
         chatService: ChannelChatService?,
-    ) {
+    ): Boolean {
         val effectiveChatService = chatService ?: ChannelChatService(sessionManager)
         val messageParser = WecomMessageParser()
         startChannel(channel) { message ->
             val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
             effectiveChatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
+        return true
     }
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = webSocketMode.connectionState(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = webSocketMode.connectionStates()
 
     override fun stopChannel(channel: ChannelSpec) {
         webSocketMode.stop(channel)
+    }
+
+    override fun shutdown() {
+        webSocketMode.shutdown()
     }
 }

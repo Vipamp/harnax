@@ -5,9 +5,13 @@ import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelCommunicationMode
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
+import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import org.slf4j.LoggerFactory
@@ -33,6 +37,8 @@ import org.slf4j.LoggerFactory
  */
 class WechatAdaptor(
     private val botService: WechatBotService = WechatBotService(),
+    turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
+    metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
 ) : ChannelAdaptor {
 
     private val logger = LoggerFactory.getLogger(WechatAdaptor::class.java)
@@ -40,7 +46,7 @@ class WechatAdaptor(
     /**
      * Long polling communication mode instance
      */
-    private val longPollingMode: WechatLongPollingMode = WechatLongPollingMode(botService)
+    private val longPollingMode: WechatLongPollingMode = WechatLongPollingMode(botService, turnExecutor, metricsSink)
 
     override fun getType(): ChannelType = ChannelType.WECHAT
 
@@ -181,20 +187,29 @@ class WechatAdaptor(
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
         chatService: ChannelChatService?,
-    ) {
+    ): Boolean {
         val effectiveChatService = chatService ?: ChannelChatService(sessionManager)
         val messageParser = WechatMessageParser()
         startChannel(channel) { message ->
             val agentRequest = messageParser.parse(message).withSessionId(channel.sessionId)
             effectiveChatService.chat(message, channel, agentAdaptor, this, agentRequest)
         }
+        return true
     }
+
+    override fun connectionState(channelId: Long): ChannelConnectionState = longPollingMode.connectionState(channelId)
+
+    override fun connectionStates(): List<ChannelConnectionState> = longPollingMode.connectionStates()
 
     /**
      * Stop WeChat channel
      */
     override fun stopChannel(channel: ChannelSpec) {
         longPollingMode.stop(channel)
+    }
+
+    override fun shutdown() {
+        longPollingMode.shutdown()
     }
 
     /**
