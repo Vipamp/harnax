@@ -36,6 +36,21 @@ class CaffeineIdempotencyServiceTest {
     }
 
     @Test
+    fun `release lets the same request ID through again`() {
+        assertTrue(service.tryAcquire("req-rel"))
+        assertFalse(service.tryAcquire("req-rel"))
+
+        service.release("req-rel")
+
+        assertTrue(service.tryAcquire("req-rel"))
+    }
+
+    @Test
+    fun `releasing a request ID nobody holds is harmless`() {
+        assertDoesNotThrow { service.release("never-acquired") }
+    }
+
+    @Test
     fun `tryAcquire with empty string request ID`() {
         assertTrue(service.tryAcquire(""))
         assertFalse(service.tryAcquire(""))

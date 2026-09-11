@@ -72,4 +72,22 @@ class RedisIdempotencyServiceIntegrationTest : RedisIntegrationTestBase() {
         assertTrue(service.tryAcquire(longId))
         assertFalse(service.tryAcquire(longId))
     }
+
+    @Test
+    fun `a finished request hands its lease back to the fleet`() {
+        val otherNode = RedisIdempotencyService(getRedisTemplate(), ttlSeconds = 60)
+
+        assertTrue(service.tryAcquire("req-1"))
+        assertFalse(otherNode.tryAcquire("req-1"), "another node must not run the same request at the same time")
+
+        service.release("req-1")
+
+        assertTrue(otherNode.tryAcquire("req-1"), "a client retrying a request that already failed must be served")
+    }
+
+    @Test
+    fun `releasing a lease nobody holds is harmless`() {
+        assertDoesNotThrow { service.release("never-acquired") }
+        assertTrue(service.tryAcquire("never-acquired"))
+    }
 }

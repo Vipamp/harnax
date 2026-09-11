@@ -3,13 +3,14 @@ package com.agnetix.harnax.router.integration
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.health.HeartbeatHealthChecker
 import com.agnetix.harnax.router.service.InstanceCircuitBreaker
-import com.agnetix.harnax.router.service.impl.CaffeineSessionMappingService
 import com.agnetix.harnax.router.service.impl.LocalInstanceCircuitBreaker
 import com.agnetix.harnax.router.service.impl.LocalInstanceRegistry
+import com.agnetix.harnax.router.service.impl.LocalSessionMappingService
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import java.time.LocalDateTime
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -19,16 +20,22 @@ import java.util.concurrent.ConcurrentHashMap
 class LocalRoutingWorkflowTest {
 
     private lateinit var instanceRegistry: LocalInstanceRegistry
-    private lateinit var sessionMappingService: CaffeineSessionMappingService
+    private lateinit var sessionMappingService: LocalSessionMappingService
     private lateinit var circuitBreaker: InstanceCircuitBreaker
     private lateinit var healthChecker: HeartbeatHealthChecker
 
     @BeforeEach
     fun setUp() {
         instanceRegistry = LocalInstanceRegistry(heartbeatTimeoutMs = 30000)
-        sessionMappingService = CaffeineSessionMappingService(instanceRegistry, 30000)
+        sessionMappingService = LocalSessionMappingService(instanceRegistry, 30000)
         circuitBreaker = LocalInstanceCircuitBreaker(failureThreshold = 3, openDurationMs = 1000)
-        healthChecker = HeartbeatHealthChecker(instanceRegistry, sessionMappingService, 30000)
+        healthChecker = HeartbeatHealthChecker(
+            instanceRegistry,
+            sessionMappingService,
+            circuitBreaker,
+            SimpleMeterRegistry(),
+            30000,
+        )
     }
 
     private fun createInstance(id: String, host: String = "10.0.0.1", port: Int = 8082): AgentInstance = AgentInstance().apply {
@@ -37,7 +44,7 @@ class LocalRoutingWorkflowTest {
         this.port = port
         status = "UP"
         active = 1
-        lastHeartbeat = LocalDateTime.now()
+        lastHeartbeat = Instant.now()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -45,7 +52,7 @@ class LocalRoutingWorkflowTest {
         val field = LocalInstanceRegistry::class.java.getDeclaredField("instances")
         field.isAccessible = true
         val instances = field.get(registry) as ConcurrentHashMap<String, AgentInstance>
-        instances[instanceId]?.lastHeartbeat = LocalDateTime.now().minusSeconds(60)
+        instances[instanceId]?.lastHeartbeat = Instant.now().minusSeconds(60)
     }
 
     @Test
@@ -75,10 +82,12 @@ class LocalRoutingWorkflowTest {
         // 4. Health checker detects and performs failover (rebinds to inst-2)
         healthChecker.checkInstanceHealth()
 
-        // 5. Verify instance-1 is marked DOWN and removed from active instances
-        assertNull(instanceRegistry.getInstance("inst-1"))
-        val activeInstances = instanceRegistry.getAllActiveInstances()
-        assertTrue(activeInstances.none { it.instanceId == "inst-1" })
+        // 5. Instance-1 is marked DOWN but stays registered: a returning heartbeat brings it back
+        //    without requiring a re-registration.
+        val downInstance = instanceRegistry.getInstance("inst-1")
+        assertNotNull(downInstance)
+        assertEquals("DOWN", downInstance!!.status)
+        assertTrue(instanceRegistry.getHealthyInstances().none { it.instanceId == "inst-1" })
 
         // 6. Sessions from inst-1 are now rebound to inst-2
         assertEquals("inst-2", sessionMappingService.getInstanceId("sess-1"))

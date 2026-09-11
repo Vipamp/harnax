@@ -9,6 +9,9 @@ import java.util.concurrent.TimeUnit
 /**
  * Redis-based distributed idempotency service.
  * Prevents duplicate request processing across multiple router nodes.
+ *
+ * The marker is a lease, not a record: [release] removes it as soon as the request is over, so the
+ * TTL only matters for the node that died mid-request.
  */
 class RedisIdempotencyService(
     private val redisTemplate: RedisTemplate<String, Any>,
@@ -17,6 +20,8 @@ class RedisIdempotencyService(
 ) : IdempotencyService {
 
     private val log = LoggerFactory.getLogger(RedisIdempotencyService::class.java)
+
+    private val degrade = ThrottledWarn()
 
     companion object {
         private const val IDEMPOTENCY_KEY_PREFIX = "router:idempotency:"
@@ -42,10 +47,20 @@ class RedisIdempotencyService(
 
             isFirstRequest
         } catch (e: Exception) {
-            log.error("Redis error in idempotency check for $requestId, allowing request: ${e.message}")
-            // Fallback: allow request to proceed (better than rejecting valid requests)
-            // This may allow duplicates during Redis outage, but prevents service disruption
+            // Fallback: allow the request (better than rejecting valid requests). This may admit a
+            // duplicate during a Redis outage, but it does not stop the service.
+            degrade.log(log, "Idempotency store unavailable, admitting requests without a duplicate check (last request: $requestId)", e)
             true
+        }
+    }
+
+    override fun release(requestId: String) {
+        try {
+            redisTemplate.delete("$IDEMPOTENCY_KEY_PREFIX$requestId")
+        } catch (e: Exception) {
+            // The lease expires on its own; a Redis that is down again right after the request must
+            // not turn a finished request into an error.
+            degrade.log(log, "Idempotency lease for $requestId left to expire on its own", e)
         }
     }
 }
