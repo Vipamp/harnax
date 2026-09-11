@@ -9,7 +9,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.springframework.data.redis.core.RedisTemplate
 import java.time.Duration
-import java.time.LocalDateTime
+import java.time.Instant
 
 /**
  * Unit tests for [RedisInstanceRegistry] using mocked RedisTemplate.
@@ -27,16 +27,8 @@ class RedisInstanceRegistryTest {
         registry = RedisInstanceRegistry(redisTemplate, heartbeatTimeoutMs = 30000)
     }
 
-    private fun mockHashGet(key: String, field: String, value: Any?) {
-        `when`(redisTemplate.opsForHash<String, Any>().get(key, field)).thenReturn(value)
-    }
-
     private fun mockHashEntries(key: String, entries: Map<String, Any>) {
         `when`(redisTemplate.opsForHash<String, Any>().entries(key)).thenReturn(entries)
-    }
-
-    private fun mockHashHasKey(key: String, field: String, exists: Boolean) {
-        `when`(redisTemplate.opsForHash<String, Any>().hasKey(key, field)).thenReturn(exists)
     }
 
     // ==================== registerInstance ====================
@@ -68,30 +60,9 @@ class RedisInstanceRegistryTest {
         }
     }
 
-    // ==================== refreshHeartbeat ====================
-
-    @Nested
-    inner class RefreshHeartbeat {
-        @Test
-        fun `updates heartbeat when instance exists`() {
-            mockHashHasKey("router:instance:inst-1", "instanceId", true)
-
-            registry.refreshHeartbeat("inst-1")
-
-            verify(redisTemplate.opsForHash<String, Any>()).put(eq("router:instance:inst-1"), eq("lastHeartbeat"), any<String>())
-            verify(redisTemplate.opsForHash<String, Any>()).put("router:instance:inst-1", "status", "UP")
-            verify(redisTemplate).expire("router:instance:inst-1", Duration.ofHours(24))
-        }
-
-        @Test
-        fun `does nothing when instance not found`() {
-            mockHashHasKey("router:instance:unknown", "instanceId", false)
-
-            registry.refreshHeartbeat("unknown")
-
-            verify(redisTemplate.opsForHash<String, Any>(), never()).put(any(), any(), any())
-        }
-    }
+    // refreshHeartbeat / markInstanceDown / markAsDraining are single Lua scripts now; mocking
+    // RedisTemplate would only assert that we called execute(). They are covered against a real
+    // Redis in RedisInstanceRegistryIntegrationTest.
 
     // ==================== getInstance ====================
 
@@ -147,9 +118,9 @@ class RedisInstanceRegistryTest {
             )
             mockHashEntries("router:instance:inst-1", data)
 
-            val before = LocalDateTime.now().minusSeconds(1)
+            val before = Instant.now().minusSeconds(1)
             val instance = registry.getInstance("inst-1")
-            val after = LocalDateTime.now().plusSeconds(1)
+            val after = Instant.now().plusSeconds(1)
 
             assertNotNull(instance)
             assertNotNull(instance!!.lastHeartbeat)
@@ -185,7 +156,7 @@ class RedisInstanceRegistryTest {
                 "port" to 8080,
                 "status" to "UP",
                 "active" to 1,
-                "lastHeartbeat" to LocalDateTime.now().toString(),
+                "lastHeartbeat" to Instant.now().toString(),
             )
             `when`(redisTemplate.opsForSet().members("router:instances:healthy")).thenReturn(setOf("inst-1"))
             mockHashEntries("router:instance:inst-1", healthyData)
@@ -194,49 +165,6 @@ class RedisInstanceRegistryTest {
 
             assertEquals(1, result.size)
             assertEquals("inst-1", result[0].instanceId)
-        }
-    }
-
-    // ==================== markInstanceDown ====================
-
-    @Nested
-    inner class MarkInstanceDown {
-        @Test
-        fun `returns 0 when instance not found`() {
-            mockHashHasKey("router:instance:unknown", "instanceId", false)
-            assertEquals(0, registry.markInstanceDown("unknown"))
-        }
-
-        @Test
-        fun `returns 0 when already DOWN`() {
-            mockHashHasKey("router:instance:inst-1", "instanceId", true)
-            mockHashGet("router:instance:inst-1", "status", "DOWN")
-            assertEquals(0, registry.markInstanceDown("inst-1"))
-        }
-
-        @Test
-        fun `marks as DOWN and removes from healthy set`() {
-            mockHashHasKey("router:instance:inst-1", "instanceId", true)
-            mockHashGet("router:instance:inst-1", "status", "UP")
-
-            assertEquals(1, registry.markInstanceDown("inst-1"))
-
-            verify(redisTemplate.opsForHash<String, Any>()).put("router:instance:inst-1", "status", "DOWN")
-            verify(redisTemplate.opsForSet()).remove("router:instances:healthy", "inst-1")
-        }
-    }
-
-    // ==================== markAsDraining ====================
-
-    @Nested
-    inner class MarkAsDraining {
-        @Test
-        fun `sets status to DRAINING and removes from healthy set`() {
-            registry.markAsDraining("inst-1")
-
-            verify(redisTemplate.opsForHash<String, Any>()).put(eq("router:instance:inst-1"), eq("status"), eq("DRAINING"))
-            verify(redisTemplate.opsForHash<String, Any>()).put(eq("router:instance:inst-1"), eq("lastHeartbeat"), any<String>())
-            verify(redisTemplate.opsForSet()).remove("router:instances:healthy", "inst-1")
         }
     }
 
@@ -262,6 +190,71 @@ class RedisInstanceRegistryTest {
 
             assertEquals(1, result.size)
             assertEquals("inst-1", result[0].instanceId)
+        }
+    }
+
+    // ==================== outage degradation ====================
+
+    @Nested
+    inner class DegradedFleet {
+        /** What a healthy fleet looks like to the registry until Redis is taken away again. */
+        private fun registeredInRedis() {
+            `when`(redisTemplate.opsForSet().members("router:instances:healthy")).thenReturn(setOf("inst-1"))
+            mockHashEntries(
+                "router:instance:inst-1",
+                mapOf("host" to "10.0.0.1", "port" to 8080, "status" to "UP", "active" to 1, "lastHeartbeat" to Instant.now().toString()),
+            )
+        }
+
+        private fun redisIsDown() {
+            `when`(redisTemplate.opsForSet().members("router:instances:healthy")).thenThrow(RuntimeException("Redis is down"))
+        }
+
+        @Test
+        fun `routing continues on the last fleet Redis reported`() {
+            registeredInRedis()
+            assertEquals(1, registry.getHealthyInstances().size)
+
+            redisIsDown()
+
+            assertEquals(listOf("inst-1"), registry.getHealthyInstances().map { it.instanceId })
+        }
+
+        @Test
+        fun `an instance Redis has already dropped is not kept alive by the snapshot`() {
+            registeredInRedis()
+            assertEquals(1, registry.getHealthyInstances().size)
+
+            `when`(redisTemplate.opsForSet().members("router:instances:healthy")).thenReturn(emptySet())
+            assertTrue(registry.getHealthyInstances().isEmpty())
+
+            redisIsDown()
+            assertTrue(
+                registry.getHealthyInstances().isEmpty(),
+                "the snapshot mirrors what Redis last confirmed, not what this node once hoped for",
+            )
+        }
+
+        @Test
+        fun `a session's bound instance is still named while Redis is down`() {
+            registeredInRedis()
+            registry.getHealthyInstances()
+
+            `when`(redisTemplate.opsForHash<String, Any>().entries("router:instance:inst-1")).thenThrow(RuntimeException("Redis is down"))
+
+            assertEquals("inst-1", registry.getInstance("inst-1")?.instanceId)
+        }
+
+        @Test
+        fun `the health checker is never shown the snapshot`() {
+            registeredInRedis()
+            registry.getHealthyInstances()
+            `when`(redisTemplate.opsForSet().members("router:instances:all")).thenReturn(setOf("inst-1"))
+            `when`(redisTemplate.opsForHash<String, Any>().entries("router:instance:inst-1")).thenThrow(RuntimeException("Redis is down"))
+
+            // Pruning and marking instances down must not be decided from stale data, so this read
+            // fails the way any other Redis read does.
+            assertThrows(RuntimeException::class.java) { registry.getAllActiveInstances() }
         }
     }
 }

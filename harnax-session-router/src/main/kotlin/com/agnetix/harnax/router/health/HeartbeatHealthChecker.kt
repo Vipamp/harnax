@@ -1,8 +1,12 @@
 package com.agnetix.harnax.router.health
 
 import com.agnetix.harnax.router.entity.AgentInstance
+import com.agnetix.harnax.router.service.InstanceCircuitBreaker
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
+import io.micrometer.core.instrument.Gauge
+import io.micrometer.core.instrument.MeterRegistry
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.scheduling.annotation.Scheduled
@@ -13,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap
 class HeartbeatHealthChecker(
     private val instanceRegistry: InstanceRegistry,
     private val sessionMappingService: SessionMappingService,
+    private val circuitBreaker: InstanceCircuitBreaker,
+    private val meterRegistry: MeterRegistry,
     @Value("\${router.health.heartbeat-timeout-ms:30000}")
     private val heartbeatTimeoutMs: Long,
 ) {
@@ -24,6 +30,19 @@ class HeartbeatHealthChecker(
 
     // Entries older than this are considered stale and eligible for cleanup.
     private val failoverEntryTtlMs = 300_000L // 5 minutes
+
+    /**
+     * How many instances this router could place a new session on right now, excluding DRAINING
+     * ones. Scrape-time read rather than a counter bumped by the health loop: the two would drift
+     * on every path that changes fleet membership outside this node (register, drain, another
+     * router marking it DOWN).
+     */
+    @PostConstruct
+    fun registerGauges() {
+        Gauge.builder("router.healthy.instances", instanceRegistry) {
+            it.getHealthyInstances().size.toDouble()
+        }.register(meterRegistry)
+    }
 
     @Scheduled(fixedDelayString = "\${router.health.check-interval-ms:5000}")
     fun checkInstanceHealth() {
@@ -37,7 +56,9 @@ class HeartbeatHealthChecker(
                 // Re-fetch healthy instances for each down instance to avoid stale snapshot:
                 // if multiple instances go down in the same cycle, sessions from the first
                 // should not be rebound to the second (which is also down).
-                val currentHealthy = instanceRegistry.getAllActiveInstances().filter { it.isHealthy(heartbeatTimeoutMs) }
+                // DRAINING instances are alive but must not receive migrated sessions, so ask the
+                // registry for "accepting new sessions" rather than filtering on isHealthy.
+                val currentHealthy = instanceRegistry.getHealthyInstances()
                 handleInstanceDown(downInstance.instanceId, currentHealthy)
             }
         }
@@ -63,14 +84,20 @@ class HeartbeatHealthChecker(
             return
         }
 
-        val targetInstance = selectFailoverTarget(healthyInstances, downInstanceId)
-        val countMap = sessionMappingService.getSessionCountsByInstances(healthyInstances.map { it.instanceId })
+        // A migration is a bulk new placement, so it must not land on an instance whose request
+        // path is already failing. If every candidate is tripped, migrate anyway: sessions stuck
+        // behind a dead instance are worse than a batch that may have to move again.
+        val targets = healthyInstances.filterNot { circuitBreaker.isOpen(it.instanceId) }
+            .ifEmpty { healthyInstances }
+
+        val targetInstance = selectFailoverTarget(targets, downInstanceId)
+        val countMap = sessionMappingService.getSessionCountsByInstances(targets.map { it.instanceId })
         val currentLoad = countMap[targetInstance.instanceId] ?: 0
-        val avgLoad = countMap.values.sum().toDouble() / healthyInstances.size
+        val avgLoad = countMap.values.sum().toDouble() / targets.size
 
         if (currentLoad > avgLoad * 2) {
             log.warn("Target instance ${targetInstance.instanceId} is overloaded ($currentLoad sessions, avg: $avgLoad), selecting alternative")
-            val alternativeTargets = healthyInstances.filter {
+            val alternativeTargets = targets.filter {
                 it.instanceId != targetInstance.instanceId &&
                     (countMap[it.instanceId] ?: 0) <= avgLoad * 1.5
             }

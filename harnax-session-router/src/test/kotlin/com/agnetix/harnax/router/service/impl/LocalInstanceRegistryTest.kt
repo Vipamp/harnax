@@ -46,8 +46,19 @@ class LocalInstanceRegistryTest {
     }
 
     @Test
-    fun `refreshHeartbeat does nothing for unknown instance`() {
-        assertDoesNotThrow { registry.refreshHeartbeat("non-existent") }
+    fun `refreshHeartbeat returns false for unknown instance`() {
+        assertFalse(registry.refreshHeartbeat("non-existent"))
+    }
+
+    @Test
+    fun `refreshHeartbeat keeps a draining instance draining`() {
+        registry.registerInstance("inst-1", "10.0.0.1", 8082)
+        registry.markAsDraining("inst-1")
+
+        assertTrue(registry.refreshHeartbeat("inst-1"))
+
+        assertEquals("DRAINING", registry.getInstance("inst-1")?.status)
+        assertTrue(registry.getHealthyInstances().isEmpty())
     }
 
     @Test
@@ -125,8 +136,19 @@ class LocalInstanceRegistryTest {
     }
 
     @Test
-    fun `markAsDraining does nothing for unknown instance`() {
-        assertDoesNotThrow { registry.markAsDraining("non-existent") }
+    fun `markAsDraining returns false for unknown instance`() {
+        assertFalse(registry.markAsDraining("non-existent"))
+    }
+
+    @Test
+    fun `markInstanceDown keeps the registration so a heartbeat can recover it`() {
+        registry.registerInstance("inst-1", "10.0.0.1", 8082)
+        registry.markInstanceDown("inst-1")
+
+        assertNotNull(registry.getInstance("inst-1"))
+        assertTrue(registry.refreshHeartbeat("inst-1"))
+        assertEquals("UP", registry.getInstance("inst-1")?.status)
+        assertEquals(1, registry.getHealthyInstances().size)
     }
 
     @Test

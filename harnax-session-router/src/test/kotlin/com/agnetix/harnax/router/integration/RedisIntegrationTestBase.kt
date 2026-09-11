@@ -1,10 +1,9 @@
 package com.agnetix.harnax.router.integration
 
+import com.agnetix.harnax.router.config.RedisConfig
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory
 import org.springframework.data.redis.core.RedisTemplate
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer
-import org.springframework.data.redis.serializer.StringRedisSerializer
 import org.testcontainers.containers.GenericContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -23,6 +22,11 @@ abstract class RedisIntegrationTestBase {
         private var cachedConnectionFactory: LettuceConnectionFactory? = null
         private var cachedPort: Int = -1
 
+        /**
+         * Builds the template through [RedisConfig] so the serializers here are byte-for-byte the
+         * ones production uses. The Lua scripts compare stored values against their JSON-encoded
+         * form, so a different ObjectMapper would make these tests prove nothing.
+         */
         fun getRedisTemplate(): RedisTemplate<String, Any> {
             val currentPort = redis.firstMappedPort
             if (cachedRedisTemplate == null || cachedPort != currentPort) {
@@ -31,15 +35,7 @@ abstract class RedisIntegrationTestBase {
 
                 val config = RedisStandaloneConfiguration(redis.host, currentPort)
                 cachedConnectionFactory = LettuceConnectionFactory(config).apply { afterPropertiesSet() }
-
-                cachedRedisTemplate = RedisTemplate<String, Any>().apply {
-                    connectionFactory = cachedConnectionFactory
-                    keySerializer = StringRedisSerializer()
-                    hashKeySerializer = StringRedisSerializer()
-                    valueSerializer = GenericJackson2JsonRedisSerializer()
-                    hashValueSerializer = GenericJackson2JsonRedisSerializer()
-                    afterPropertiesSet()
-                }
+                cachedRedisTemplate = RedisConfig().redisTemplate(cachedConnectionFactory!!)
                 cachedPort = currentPort
             }
             return cachedRedisTemplate!!

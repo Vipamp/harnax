@@ -1,7 +1,10 @@
 package com.agnetix.harnax.router.entity
 
 import java.io.Serializable
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 /**
  * Agent service instance entity.
@@ -11,6 +14,10 @@ class AgentInstance : Serializable {
 
     companion object {
         private const val serialVersionUID = 1L
+
+        const val STATUS_UP = "UP"
+        const val STATUS_DOWN = "DOWN"
+        const val STATUS_DRAINING = "DRAINING"
 
         // Allowed port range for agent services (8000-9999)
         const val MIN_PORT = 8000
@@ -24,11 +31,6 @@ class AgentInstance : Serializable {
             Regex("^fe80:", RegexOption.IGNORE_CASE),
         )
 
-        // Block link-local addresses (cloud metadata endpoints like 169.254.169.254)
-        private val LINK_LOCAL_PATTERNS = listOf(
-            Regex("^169\\.254\\."),
-        )
-
         // Block known cloud metadata service hostnames
         private val BLOCKED_HOST_NAMES = setOf(
             "localhost",
@@ -37,6 +39,22 @@ class AgentInstance : Serializable {
             "metadata",
             "169.254.169.254",
         )
+
+        /**
+         * Parse a persisted heartbeat timestamp.
+         *
+         * Accepts the current epoch-millis format plus the legacy `LocalDateTime.toString()`
+         * format, so a rolling router upgrade does not lose heartbeats already stored in Redis.
+         */
+        fun parseHeartbeat(raw: String?): Instant? {
+            if (raw.isNullOrBlank()) return null
+            raw.toLongOrNull()?.let { return Instant.ofEpochMilli(it) }
+            return try {
+                LocalDateTime.parse(raw).atZone(ZoneId.systemDefault()).toInstant()
+            } catch (_: Exception) {
+                null
+            }
+        }
 
         /**
          * Validate if host is a valid IP address (not domain name).
@@ -116,24 +134,38 @@ class AgentInstance : Serializable {
     @Volatile var port: Int = 0
 
     /** Instance status: UP, DOWN, DRAINING */
-    @Volatile var status: String = "UP"
+    @Volatile var status: String = STATUS_UP
 
-    /** Last heartbeat timestamp */
-    @Volatile var lastHeartbeat: LocalDateTime = LocalDateTime.now()
+    /**
+     * Last heartbeat, in UTC epoch. Heartbeat freshness is compared across router nodes, so this
+     * must not be a zone-less LocalDateTime — two containers in different timezones would disagree
+     * about whether the instance is alive.
+     */
+    @Volatile var lastHeartbeat: Instant = Instant.now()
 
     /** Active flag: 0=deleted, 1=active */
     @Volatile var active: Int = 1
 
     /**
-     * Check if instance is healthy based on heartbeat timeout.
+     * Alive: process is up and its heartbeat is fresh.
+     *
+     * DRAINING counts as alive — draining means "no new sessions", not "dead". Treating it as
+     * unhealthy makes the health checker mark the instance DOWN within one check interval and
+     * forcibly migrate every session off it, defeating graceful shutdown.
      */
     fun isHealthy(heartbeatTimeoutMs: Long): Boolean {
-        if (status != "UP" || active != 1) return false
-        val timeoutSeconds = heartbeatTimeoutMs / 1000
-        return lastHeartbeat.isAfter(LocalDateTime.now().minusSeconds(timeoutSeconds))
+        if (active != 1) return false
+        if (status != STATUS_UP && status != STATUS_DRAINING) return false
+        return heartbeatAgeMs() < heartbeatTimeoutMs
     }
 
-    fun isDraining(): Boolean = status == "DRAINING" && active == 1
+    /** Eligible to receive sessions that have no binding yet. */
+    fun isAcceptingNewSessions(heartbeatTimeoutMs: Long): Boolean = isHealthy(heartbeatTimeoutMs) && status == STATUS_UP
+
+    /** Age of the last heartbeat; negative when the timestamp is in the future (clock skew). */
+    fun heartbeatAgeMs(): Long = ChronoUnit.MILLIS.between(lastHeartbeat, Instant.now())
+
+    fun isDraining(): Boolean = status == STATUS_DRAINING && active == 1
 
     /**
      * Get the base URL for this instance.

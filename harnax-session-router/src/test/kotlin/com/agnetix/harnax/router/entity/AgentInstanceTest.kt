@@ -2,14 +2,16 @@ package com.agnetix.harnax.router.entity
 
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class AgentInstanceTest {
 
     private fun createInstance(
         status: String = "UP",
         active: Int = 1,
-        lastHeartbeat: LocalDateTime = LocalDateTime.now(),
+        lastHeartbeat: Instant = Instant.now(),
         host: String = "localhost",
         port: Int = 8082,
     ): AgentInstance = AgentInstance().apply {
@@ -34,8 +36,18 @@ class AgentInstanceTest {
     }
 
     @Test
-    fun `isHealthy returns false when status is DRAINING`() {
-        assertFalse(createInstance(status = "DRAINING").isHealthy(30000))
+    fun `isHealthy treats a fresh DRAINING instance as alive`() {
+        // The health checker marks instances DOWN when they stop heartbeating. If DRAINING were
+        // "unhealthy", every graceful shutdown would be reported as a crash and its sessions moved.
+        assertTrue(createInstance(status = "DRAINING").isHealthy(30000))
+    }
+
+    @Test
+    fun `isAcceptingNewSessions is true only for a fresh UP instance`() {
+        assertTrue(createInstance().isAcceptingNewSessions(30000))
+        assertFalse(createInstance(status = "DRAINING").isAcceptingNewSessions(30000))
+        assertFalse(createInstance(status = "DOWN").isAcceptingNewSessions(30000))
+        assertFalse(createInstance(lastHeartbeat = Instant.now().minusSeconds(60)).isAcceptingNewSessions(30000))
     }
 
     @Test
@@ -45,17 +57,17 @@ class AgentInstanceTest {
 
     @Test
     fun `isHealthy returns false when heartbeat is stale`() {
-        assertFalse(createInstance(lastHeartbeat = LocalDateTime.now().minusSeconds(60)).isHealthy(30000))
+        assertFalse(createInstance(lastHeartbeat = Instant.now().minusSeconds(60)).isHealthy(30000))
     }
 
     @Test
     fun `isHealthy returns true when heartbeat is just within timeout`() {
-        assertTrue(createInstance(lastHeartbeat = LocalDateTime.now().minusSeconds(29)).isHealthy(30000))
+        assertTrue(createInstance(lastHeartbeat = Instant.now().minusSeconds(29)).isHealthy(30000))
     }
 
     @Test
     fun `isHealthy converts ms to seconds correctly`() {
-        val instance = createInstance(lastHeartbeat = LocalDateTime.now().minusSeconds(5))
+        val instance = createInstance(lastHeartbeat = Instant.now().minusSeconds(5))
         assertTrue(instance.isHealthy(10000))
         assertFalse(instance.isHealthy(3000))
     }
@@ -99,10 +111,34 @@ class AgentInstanceTest {
     // ==================== DRAINING exclusion from healthy ====================
 
     @Test
-    fun `DRAINING instance is not healthy but is draining`() {
+    fun `DRAINING instance is alive but takes no new sessions`() {
         val instance = createInstance(status = "DRAINING", active = 1)
-        assertFalse(instance.isHealthy(30000))
+        assertTrue(instance.isHealthy(30000))
+        assertFalse(instance.isAcceptingNewSessions(30000))
         assertTrue(instance.isDraining())
+    }
+
+    // ==================== parseHeartbeat tests ====================
+
+    @Test
+    fun `parseHeartbeat reads epoch millis`() {
+        val millis = 1_700_000_000_123L
+        assertEquals(Instant.ofEpochMilli(millis), AgentInstance.parseHeartbeat(millis.toString()))
+    }
+
+    @Test
+    fun `parseHeartbeat still reads the legacy LocalDateTime format`() {
+        // A rolling upgrade leaves old values in Redis; losing them would mark live instances DOWN.
+        val legacy = LocalDateTime.of(2025, 1, 1, 12, 0, 0)
+        val expected = legacy.atZone(ZoneId.systemDefault()).toInstant()
+        assertEquals(expected, AgentInstance.parseHeartbeat(legacy.toString()))
+    }
+
+    @Test
+    fun `parseHeartbeat returns null for unreadable values`() {
+        assertNull(AgentInstance.parseHeartbeat("invalid-timestamp"))
+        assertNull(AgentInstance.parseHeartbeat(""))
+        assertNull(AgentInstance.parseHeartbeat(null))
     }
 
     // ==================== SSRF protection tests ====================
