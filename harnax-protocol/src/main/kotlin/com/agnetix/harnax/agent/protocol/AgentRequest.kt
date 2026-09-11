@@ -28,6 +28,9 @@ sealed class AgentRequest {
     abstract val type: RequestType
     abstract val sessionId: String
 
+    /** End user the request is executed for; null when no human identity could be established. */
+    abstract val userId: Long?
+
     /**
      * Returns a new AgentRequest with the given sessionId replaced.
      */
@@ -49,6 +52,7 @@ data class ChatAgentRequest(
     val message: String,
     val imageUrls: List<String> = emptyList(),
     val requestId: String = "",
+    override val userId: Long? = null,
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CHAT
 }
@@ -71,6 +75,7 @@ data class CommandAgentRequest(
     override val sessionId: String,
     val command: CommandType,
     val args: String = "",
+    override val userId: Long? = null,
 ) : AgentRequest() {
     override val type: RequestType = RequestType.COMMAND
 
@@ -130,6 +135,7 @@ data class ConfirmAgentRequest(
     val isConfirmed: Boolean,
     val toolInfoList: List<ToolInfo> = emptyList(),
     val toolResults: List<ToolConfirmResult> = emptyList(),
+    override val userId: Long? = null,
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CONFIRM
 }

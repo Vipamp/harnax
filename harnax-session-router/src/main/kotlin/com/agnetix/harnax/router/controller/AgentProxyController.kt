@@ -1,11 +1,13 @@
 package com.agnetix.harnax.router.controller
 
+import com.agnetix.harnax.agent.protocol.AgentRequest
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
+import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.proxy.SessionRouterService
 import jakarta.servlet.http.HttpServletRequest
@@ -40,6 +42,34 @@ class AgentProxyController(
     }
 
     /**
+     * An authenticated end user always beats whatever the body claims — otherwise an API-key
+     * caller could name another user. A caller with no end-user identity (service token,
+     * SYSTEM key) keeps what it sent, since it resolved the user itself; that is the one place
+     * where a body-supplied identity is trusted, so it is logged.
+     */
+    private fun resolveUserId(request: AgentRequest): Long? {
+        val context = AuthContextHolder.get()
+        val authenticated = context?.userId
+        if (authenticated != null) {
+            val claimed = request.userId
+            if (claimed != null && claimed != authenticated) {
+                log.warn(
+                    "[Router] Caller '${context.callerId}' (${context.callerType}) claimed userId=$claimed " +
+                        "for session=${request.sessionId} while authenticated as userId=$authenticated; using the authenticated id",
+                )
+            }
+            return authenticated
+        }
+        if (request.userId != null) {
+            log.info(
+                "[Router] No end-user identity for caller '${context?.callerId}' (${context?.callerType}), " +
+                    "session=${request.sessionId} runs as the body's userId=${request.userId}",
+            )
+        }
+        return request.userId
+    }
+
+    /**
      * Proxy a direct (non-streaming) chat request to the correct agent-service instance.
      */
     @PostMapping("/chat")
@@ -49,7 +79,7 @@ class AgentProxyController(
     ): ResultVo<ChatResponse> {
         httpRequest.setAttribute(SESSION_ID_ATTR, request.sessionId)
         log.info("[Router] Received chat proxy request for session: ${request.sessionId}, message='${request.message.take(50)}'")
-        return sessionRouterService.proxyChatRequest(request)
+        return sessionRouterService.proxyChatRequest(request.copy(userId = resolveUserId(request)))
     }
 
     /**
@@ -63,7 +93,7 @@ class AgentProxyController(
     ): Flux<ChatEvent> {
         httpRequest.setAttribute(SESSION_ID_ATTR, request.sessionId)
         log.info("[Router] Received stream proxy request for session: ${request.sessionId}")
-        return sessionRouterService.proxyStreamRequest(request)
+        return sessionRouterService.proxyStreamRequest(request.copy(userId = resolveUserId(request)))
             .doOnNext { event ->
                 log.debug("[Router→Channel] Forwarding event to channel for session=${request.sessionId}: ${event.javaClass.simpleName}")
             }
@@ -79,7 +109,7 @@ class AgentProxyController(
     ): ResultVo<CommandResponse> {
         httpRequest.setAttribute(SESSION_ID_ATTR, request.sessionId)
         log.debug("Received command proxy request for session: ${request.sessionId}")
-        return sessionRouterService.proxyCommandRequest(request)
+        return sessionRouterService.proxyCommandRequest(request.copy(userId = resolveUserId(request)))
     }
 
     /**
@@ -92,7 +122,7 @@ class AgentProxyController(
     ): Flux<ChatEvent> {
         httpRequest.setAttribute(SESSION_ID_ATTR, request.sessionId)
         log.debug("Received confirm proxy request for session: ${request.sessionId}")
-        return sessionRouterService.proxyConfirmStreamRequest(request)
+        return sessionRouterService.proxyConfirmStreamRequest(request.copy(userId = resolveUserId(request)))
     }
 
     /**
@@ -223,11 +253,24 @@ class AgentProxyController(
         httpRequest: HttpServletRequest,
     ): ResultVo<Map<String, Any>> {
         httpRequest.setAttribute(SESSION_ID_ATTR, sessionId)
-        log.info("[AgentProxyController] Received workspace upload request for session: $sessionId, fileName: ${file.originalFilename}")
+        val fileName = safeFileName(file.originalFilename ?: "")
+        log.info("[AgentProxyController] Received workspace upload request for session: $sessionId, fileName: $fileName")
         val fileBytes = file.bytes
-        val fileName = file.originalFilename ?: "uploaded-file"
         return sessionRouterService.proxyWorkspaceUpload(sessionId, path, fileName, fileBytes)
     }
+
+    /**
+     * A file name is client-supplied and the router repeats it — in a log line, in the multipart body
+     * it sends on to the agent, and in the `Content-Disposition` of the download. Control characters
+     * would start a line of their own there and a quote would close the value early, so both go, along
+     * with the directory part: the sandbox is handed a name, never a path.
+     */
+    private fun safeFileName(raw: String): String = raw
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .filterNot { it == '"' || it.code < 0x20 }
+        .take(128)
+        .ifBlank { "unnamed" }
 
     /**
      * Proxy a workspace file download request.
@@ -247,7 +290,7 @@ class AgentProxyController(
                 log.warn("[AgentProxyController] Download rejected: file size ${bytes.size} exceeds limit $MAX_DOWNLOAD_SIZE")
                 return ResponseEntity.status(413).build()
             }
-            val fileName = java.io.File(path).name
+            val fileName = safeFileName(path)
             return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$fileName\"")
                 .contentType(MediaType.parseMediaType(contentType))

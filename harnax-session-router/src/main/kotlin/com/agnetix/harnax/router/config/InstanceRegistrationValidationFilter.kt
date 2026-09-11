@@ -2,6 +2,7 @@ package com.agnetix.harnax.router.config
 
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.entity.AgentInstance
+import com.agnetix.harnax.router.support.IdFormat
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -12,6 +13,14 @@ import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
 import tools.jackson.databind.ObjectMapper
 
+/**
+ * Rejects malformed instance registrations before they reach [com.agnetix.harnax.router.controller.InstanceRegistryController].
+ *
+ * Reads the same request parameters the controller binds with `@RequestParam`, so both see query
+ * string or form fields and neither can be passed by a registration that carries them some other
+ * way. The controller repeats the host and port checks it cares about most — this filter is a cheap
+ * front line, not the authority.
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 class InstanceRegistrationValidationFilter(
@@ -20,7 +29,6 @@ class InstanceRegistrationValidationFilter(
 
     private val log = LoggerFactory.getLogger(InstanceRegistrationValidationFilter::class.java)
 
-    private val paramPattern = Regex("^[a-zA-Z0-9._-]+$")
     private val hostPattern = Regex("^[a-zA-Z0-9._-]+$")
 
     public override fun doFilterInternal(
@@ -28,14 +36,16 @@ class InstanceRegistrationValidationFilter(
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        val path = request.requestURI
+        // requestURI keeps matrix parameters and Spring drops them before matching the route, so
+        // `/register;junk=1` used to reach the controller having skipped everything below.
+        val path = request.requestURI.substringBefore(';')
 
         if (path == "/api/router/instance/register") {
             val instanceId = request.getParameter("instanceId") ?: ""
             val host = request.getParameter("host") ?: ""
             val portStr = request.getParameter("port") ?: ""
 
-            if (instanceId.isBlank() || !paramPattern.matches(instanceId) || instanceId.length > 64) {
+            if (!IdFormat.isInstanceId(instanceId)) {
                 log.warn("Registration rejected: invalid instanceId format")
                 writeError(response, HttpServletResponse.SC_BAD_REQUEST, "Invalid instanceId format")
                 return

@@ -40,6 +40,7 @@ class RemoteApiKeyStore(
             val data = runBlocking { adminClientService.validateApiKey(hash) } ?: return null
             ApiKeyInfo(
                 name = data.name,
+                userId = data.userId,
                 keyHash = data.keyHash,
                 scopes = data.scopes.split(",").map { it.trim() }.filter { it.isNotBlank() }.toSet(),
                 tenantId = data.tenantId,

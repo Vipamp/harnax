@@ -39,8 +39,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -144,6 +147,7 @@ class InternalApiControllerTest {
                 enabled = 1
                 expiresAt = null
                 keyType = "PERMANENT"
+                userId = 77L
             }
             `when`(apiKeyMapper.selectByKeyHash("abc123hash")).thenReturn(entity)
 
@@ -156,6 +160,7 @@ class InternalApiControllerTest {
             assertTrue(result.isSuccess())
             assertNotNull(result.data)
             assertEquals("test_key", result.data?.name)
+            assertEquals(77L, result.data?.userId)
             assertEquals("chat", result.data?.scopes)
             assertEquals(10L, result.data?.tenantId)
             assertEquals(300, result.data?.rateLimit)
@@ -202,6 +207,32 @@ class InternalApiControllerTest {
             assertTrue(result.isSuccess())
             assertNotNull(result.data)
             assertFalse(result.data?.enabled == true)
+        }
+
+        @Test
+        @DisplayName("validateApiKey - SYSTEM key 无归属人时 userId 为空")
+        fun `validateApiKey should leave userId null for a system key`() {
+            // Given - 系统密钥后面没有人，运行侧不能拿 0 当 userId 去解析按人的上游授权
+            val entity = ApiKeyEntity().apply {
+                id = 3L
+                name = "system_key"
+                keyHash = "sys123hash"
+                scopes = "chat"
+                rateLimit = 60
+                enabled = 1
+                keyType = "SYSTEM"
+                userId = null
+            }
+            `when`(apiKeyMapper.selectByKeyHash("sys123hash")).thenReturn(entity)
+
+            // When
+            val result = controller.validateApiKey(
+                InternalApiController.ApiKeyValidateRequest(keyHash = "sys123hash"),
+            )
+
+            // Then
+            assertTrue(result.isSuccess())
+            assertNull(result.data?.userId)
         }
     }
 
@@ -299,10 +330,8 @@ class InternalApiControllerTest {
                 description = "News agent desc"
                 systemPrompt = "You are a news agent"
                 modelId = 5L
-                mcpList = "[]"
-                skillList = ""
             }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
+            `when`(agentTaskMapper.selectAnyById(1L)).thenReturn(task)
             `when`(agentMapper.selectById(100L)).thenReturn(agent)
 
             val result = controller.getAgentTaskSpec(1L)
@@ -316,9 +345,51 @@ class InternalApiControllerTest {
         }
 
         @Test
+        @DisplayName("getAgentTaskSpec - 能力清单取自绑定表")
+        fun `getAgentTaskSpec should read capability lists from binding tables`() {
+            // Given - agent 上的 mcp_list / skill_list 历史列已删除，定时任务侧只能看绑定表
+            val task = AgentTask().apply {
+                id = 1L
+                agentId = 100L
+            }
+            val agent = Agent().apply {
+                id = 100L
+                name = "News Agent"
+            }
+            `when`(agentTaskMapper.selectAnyById(1L)).thenReturn(task)
+            `when`(agentMapper.selectById(100L)).thenReturn(agent)
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 7L
+                        envBindings = """[{"envKey":"MCP_TOKEN","customValue":"tok"}]"""
+                    },
+                ),
+            )
+            `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentSkillBinding().apply {
+                        agentId = 100L
+                        skillId = 21L
+                    },
+                    AgentSkillBinding().apply {
+                        agentId = 100L
+                        skillId = 22L
+                    },
+                ),
+            )
+
+            val data = controller.getAgentTaskSpec(1L).data
+
+            assertEquals("""[{"id":7,"env_bindings":[{"envKey":"MCP_TOKEN","envValue":"tok"}]}]""", data?.mcpList)
+            assertEquals("21,22", data?.skillList)
+        }
+
+        @Test
         @DisplayName("getAgentTaskSpec - 任务不存在时返回错误")
         fun `getAgentTaskSpec should return error when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
+            `when`(agentTaskMapper.selectAnyById(999L)).thenReturn(null)
 
             val result = controller.getAgentTaskSpec(999L)
 
@@ -333,7 +404,7 @@ class InternalApiControllerTest {
                 id = 1L
                 agentId = 999L
             }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
+            `when`(agentTaskMapper.selectAnyById(1L)).thenReturn(task)
             `when`(agentMapper.selectById(999L)).thenReturn(null)
 
             val result = controller.getAgentTaskSpec(1L)
@@ -353,8 +424,6 @@ class InternalApiControllerTest {
             description = "Test agent desc"
             systemPrompt = "You are a test agent"
             modelId = 5L
-            mcpList = "[]"
-            skillList = ""
         }
 
         @Test
@@ -405,7 +474,7 @@ class InternalApiControllerTest {
                 id = 42L
                 agentId = 100L
             }
-            `when`(agentTaskMapper.selectById(42L)).thenReturn(task)
+            `when`(agentTaskMapper.selectAnyById(42L)).thenReturn(task)
             `when`(agentMapper.selectById(100L)).thenReturn(stubAgent())
 
             val result = controller.getAgentSpec("task-42-uuid123")
@@ -460,31 +529,31 @@ class InternalApiControllerTest {
                     name = "Secret Agent"
                     systemPrompt = "You are a secret agent"
                     modelId = 5L
-                    mcpList = "[]"
-                    skillList = ""
                 },
             )
         }
 
-        private fun stubMcp(storedHeaders: String?, storedEnvParams: String?) {
+        private fun stubMcp(storedHeaders: String?, storedEnvParams: String?, status: Int = 1) {
             `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
                 listOf(
                     AgentMcpBinding().apply {
                         agentId = 100L
                         mcpId = 7L
-                        enableSkip = "false"
                     },
                 ),
             )
-            `when`(mcpServerMapper.selectById(7L)).thenReturn(
-                McpServer().apply {
-                    id = 7L
-                    name = "github-mcp"
-                    type = "sse"
-                    url = "https://example.com/sse"
-                    headers = storedHeaders
-                    envParams = storedEnvParams
-                },
+            `when`(mcpServerMapper.selectByIds(listOf(7L))).thenReturn(
+                listOf(
+                    McpServer().apply {
+                        id = 7L
+                        name = "github-mcp"
+                        type = "sse"
+                        url = "https://example.com/sse"
+                        headers = storedHeaders
+                        envParams = storedEnvParams
+                        this.status = status
+                    },
+                ),
             )
         }
 
@@ -530,6 +599,87 @@ class InternalApiControllerTest {
             val mcp = result.data?.mcpDetails?.firstOrNull()
             assertNull(mcp?.headers)
             assertNull(mcp?.envParams)
+            verifyNoInteractions(secretFieldEncryptor)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - MCP status 随配置下发")
+        fun `getAgentSpec should deliver MCP status`() {
+            // Given - agent-service cannot see the table, so a disabled server must arrive disabled
+            stubWebSession()
+            stubMcp(null, null, status = 0)
+
+            val result = controller.getAgentSpec("web-secret")
+
+            assertTrue(result.isSuccess())
+            assertEquals(0, result.data?.mcpDetails?.firstOrNull()?.status)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - MCP 一次批量查询，悬空绑定两半都不出现")
+        fun `getAgentSpec should fetch MCPs in one batch and drop an orphan binding`() {
+            stubWebSession()
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 7L
+                    },
+                    // 服务行已删除，绑定还留着
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 88L
+                    },
+                ),
+            )
+            `when`(mcpServerMapper.selectByIds(listOf(7L, 88L))).thenReturn(
+                listOf(
+                    McpServer().apply {
+                        id = 7L
+                        name = "github-mcp"
+                        type = "sse"
+                    },
+                ),
+            )
+
+            val data = controller.getAgentSpec("web-secret").data
+
+            assertEquals(listOf(7L), data?.mcpDetails?.map { it.id })
+            assertEquals("""[{"id":7,"env_bindings":[]}]""", data?.mcpList)
+            verify(mcpServerMapper).selectByIds(listOf(7L, 88L))
+            verify(mcpServerMapper, never()).selectById(anyLong())
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 别租户的 MCP 服务两半都不下发")
+        fun `getAgentSpec should drop an MCP server of another tenant`() {
+            // Given - V23 之前存下的跨租户绑定：selectByIds 没有租户条件，只能拿 agent 自己的租户比
+            stubWebSession()
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 7L
+                    },
+                ),
+            )
+            `when`(mcpServerMapper.selectByIds(listOf(7L))).thenReturn(
+                listOf(
+                    McpServer().apply {
+                        id = 7L
+                        name = "github-mcp"
+                        type = "sse"
+                        tenantId = 2L
+                        headers = """[{"key":"Authorization","value":"ENC_B64","secret":true}]"""
+                    },
+                ),
+            )
+
+            val data = controller.getAgentSpec("web-secret").data
+
+            assertEquals(emptyList<Long>(), data?.mcpDetails?.map { it.id })
+            assertEquals("[]", data?.mcpList)
+            // 连解密都不该发生：别租户的凭据不进下发内容
             verifyNoInteractions(secretFieldEncryptor)
         }
 
@@ -587,8 +737,6 @@ class InternalApiControllerTest {
                     name = "Skill Agent"
                     systemPrompt = "You are a skill agent"
                     modelId = 5L
-                    mcpList = "[]"
-                    skillList = ""
                 },
             )
             `when`(skillBindingMapper.selectByAgentId(100L)).thenReturn(
@@ -599,7 +747,7 @@ class InternalApiControllerTest {
                     }
                 },
             )
-            skills.forEach { `when`(skillMapper.selectById(it.id)).thenReturn(it) }
+            `when`(skillMapper.selectByIds(skills.map { it.id })).thenReturn(skills.toList())
         }
 
         private fun skill(id: Long, name: String, status: Int) = Skill().apply {
@@ -670,7 +818,10 @@ class InternalApiControllerTest {
                     },
                 ),
             )
-            `when`(skillMapper.selectById(999L)).thenReturn(null)
+            // 批量查询的结果里就是没有 999 这一行
+            `when`(skillMapper.selectByIds(listOf(21L, 999L))).thenReturn(
+                listOf(skill(21L, "live-skill", 1)),
+            )
 
             val data = controller.getAgentSpec("web-skill").data
 
@@ -750,8 +901,6 @@ class InternalApiControllerTest {
                     name = "Tool Agent"
                     systemPrompt = "You are a tool agent"
                     modelId = 5L
-                    mcpList = "[]"
-                    skillList = ""
                 },
             )
             `when`(toolBindingMapper.selectByAgentId(100L)).thenReturn(

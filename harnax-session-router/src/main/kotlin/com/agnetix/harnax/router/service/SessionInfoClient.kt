@@ -9,14 +9,16 @@ import org.springframework.stereotype.Component
 import java.util.concurrent.TimeUnit
 
 /**
- * Caching layer on top of [AdminClientService.getSessionInfo].
+ * Caching layer on top of [AdminClientService.lookupSession].
  *
  * Delegates all HTTP calls to the shared [AdminClientService] and adds a
  * local Caffeine cache (5 min TTL) to avoid hitting the Admin service
  * on every request.
  *
- * Uses a sentinel value to cache negative results (Admin unreachable / session not found),
- * preventing repeated timeouts on every cache miss when Admin is down.
+ * Only an *answer* is worth remembering. The sentinel this class used to cache covered both "admin
+ * says there is no such session" and "admin did not answer", so one admin blip left every session it
+ * touched reading as non-existent for five minutes after recovery. An [AdminClientService.SessionLookup.Unreachable]
+ * is therefore invalidated straight away and the next request asks again.
  */
 @Component
 class SessionInfoClient(
@@ -27,35 +29,35 @@ class SessionInfoClient(
 
     private val log = LoggerFactory.getLogger(SessionInfoClient::class.java)
 
-    /** Sentinel value cached when Admin is unreachable or returns null, prevents repeated timeouts. */
-    private val nullSession = AdminClientService.SessionInfo(
-        sessionId = "",
-        agentId = -1L,
-        agentName = "",
-        modelId = null,
-        modelName = null,
-    )
-
     private val cache = Caffeine.newBuilder()
         .maximumSize(5000)
         .expireAfterWrite(5, TimeUnit.MINUTES)
-        .build<String, AdminClientService.SessionInfo>()
+        .build<String, AdminClientService.SessionLookup>()
 
-    fun getSessionInfo(sessionId: String): AdminClientService.SessionInfo? {
-        val cached = cache.get(sessionId) { sid ->
-            // Overall request budget: slightly above responseTimeoutMs to leave scheduler slack.
-            val overallTimeoutMs = responseTimeoutMs + 1000
-            try {
-                runBlocking {
-                    withTimeoutOrNull(overallTimeoutMs) {
-                        adminClientService.getSessionInfo(sid)
-                    }
-                } ?: nullSession
-            } catch (e: Exception) {
-                log.warn("[Router→Admin] Failed to get session info for $sid: ${e.message}")
-                nullSession
-            }
+    /**
+     * Loading through [Caffeine.get] rather than get-then-put keeps the per-key single flight: N
+     * concurrent requests for one uncached session used to become N calls to admin.
+     */
+    fun lookup(sessionId: String): AdminClientService.SessionLookup {
+        val outcome = cache.get(sessionId) { sid -> load(sid) }
+        if (outcome === AdminClientService.SessionLookup.Unreachable) {
+            cache.invalidate(sessionId)
         }
-        return if (cached === nullSession) null else cached
+        return outcome
+    }
+
+    fun getSessionInfo(sessionId: String): AdminClientService.SessionInfo? = (lookup(sessionId) as? AdminClientService.SessionLookup.Found)?.info
+
+    private fun load(sessionId: String): AdminClientService.SessionLookup {
+        // Overall request budget: slightly above responseTimeoutMs to leave scheduler slack.
+        val overallTimeoutMs = responseTimeoutMs + 1000
+        return try {
+            runBlocking {
+                withTimeoutOrNull(overallTimeoutMs) { adminClientService.lookupSession(sessionId) }
+            } ?: AdminClientService.SessionLookup.Unreachable
+        } catch (e: Exception) {
+            log.warn("[Router→Admin] Failed to get session info for $sessionId: ${e.message}")
+            AdminClientService.SessionLookup.Unreachable
+        }
     }
 }

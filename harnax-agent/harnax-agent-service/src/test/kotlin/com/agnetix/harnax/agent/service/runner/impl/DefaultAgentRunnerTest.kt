@@ -18,6 +18,7 @@ import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.tools.sdk.UserIdentifier
 import io.agentscope.core.message.ToolUseBlock
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -25,8 +26,11 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class DefaultAgentRunnerTest {
 
@@ -670,6 +674,38 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
+        fun `process defers agent release until the blocking call returns`() {
+            stubAgentCreation()
+            val insideCall = CountDownLatch(1)
+            val letCallFinish = CountDownLatch(1)
+            `when`(agentWrapper.call(any<String>(), any())).thenAnswer {
+                insideCall.countDown()
+                assertTrue(letCallFinish.await(5, TimeUnit.SECONDS), "test must let the call finish")
+                ChatResponse(sessionId = "session-1", content = "done")
+            }
+
+            val caller = Thread {
+                runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello"))
+            }
+            caller.start()
+            assertTrue(insideCall.await(5, TimeUnit.SECONDS), "the call should have started")
+
+            // REFRESH invalidates the cache, which is what reaches the removal listener
+            runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.REFRESH),
+            )
+
+            // `after` gives the listener (which Caffeine runs on its own thread) a chance to
+            // release early — releasing here would tear the agent's MCP tools down mid-call.
+            verify(agentWrapper, after(300).never()).release()
+
+            letCallFinish.countDown()
+            caller.join(5_000)
+
+            verify(agentWrapper, timeout(5_000)).release()
+        }
+
+        @Test
         fun `process throws HarnaxException when agent spec resolution fails`() {
             `when`(agentSpecResolver.resolve(any())).thenThrow(RuntimeException("Session not found"))
 
@@ -801,6 +837,70 @@ class DefaultAgentRunnerTest {
             runner.process(ChatAgentRequest(sessionId = "session-1", message = "second"))
 
             verify(launcher, times(2)).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+        }
+    }
+
+    // ==================== End-user identity ====================
+
+    @Nested
+    inner class UserIdentity {
+        @Test
+        fun `process builds the agent with the request user`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hi", userId = 42L))
+
+            val captor = argumentCaptor<UserIdentifier>()
+            verify(launcher).createSingleAgent(any(), any(), any<Boolean>(), any(), captor.capture())
+            assertEquals(42L, captor.firstValue.userId)
+        }
+
+        @Test
+        fun `confirm rebuild builds the agent with the request user`() {
+            stubAgentCreation()
+            stubPendingToolCalls()
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(Flux.just(EndEventChatEvent()))
+
+            val result = runner.confirm(
+                ConfirmAgentRequest(sessionId = "session-1", isConfirmed = true, userId = 42L),
+            )
+            StepVerifier.create(result).expectNextCount(1).verifyComplete()
+
+            val captor = argumentCaptor<UserIdentifier>()
+            verify(launcher).createSingleAgent(any(), any(), any<Boolean>(), any(), captor.capture())
+            assertEquals(42L, captor.firstValue.userId)
+        }
+
+        @Test
+        fun `same session under a different user rebuilds the agent instead of reusing it`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "a", userId = 1L))
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "b", userId = 2L))
+
+            val captor = argumentCaptor<UserIdentifier>()
+            verify(launcher, times(2)).createSingleAgent(any(), any(), any<Boolean>(), any(), captor.capture())
+            assertEquals(listOf(1L, 2L), captor.allValues.map { it.userId })
+        }
+
+        @Test
+        fun `a caller with no end user leaves the agent user null instead of a fake id`() {
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-1", content = "ok"),
+            )
+
+            runner.process(ChatAgentRequest(sessionId = "session-1", message = "hi"))
+
+            val captor = argumentCaptor<UserIdentifier>()
+            verify(launcher).createSingleAgent(any(), any(), any<Boolean>(), any(), captor.capture())
+            assertNull(captor.firstValue.userId)
         }
     }
 

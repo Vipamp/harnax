@@ -18,6 +18,7 @@ class RemoteApiKeyStoreTest {
         withMockedAdminClient { adminClient, store ->
             val responseData = AdminClientService.ApiKeyValidateResponse(
                 name = "test-key",
+                userId = 7L,
                 keyHash = "abc123",
                 scopes = "router:invoke,api:chat",
                 tenantId = 1L,
@@ -31,6 +32,7 @@ class RemoteApiKeyStoreTest {
 
             assertNotNull(result)
             assertEquals("test-key", result!!.name)
+            assertEquals(7L, result.userId)
             assertEquals("abc123", result.keyHash)
             assertTrue(result.scopes.contains("router:invoke"))
             assertTrue(result.scopes.contains("api:chat"))

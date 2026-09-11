@@ -58,11 +58,57 @@ class DefaultAgentRunner(
     private val agentCache = Caffeine.newBuilder()
         .maximumSize(cacheMaxSize)
         .expireAfterWrite(30, TimeUnit.MINUTES)
-        .removalListener<String, HarnessAgentWrapper> { key, _, cause ->
+        .removalListener<String, CachedAgent> { key, value, cause ->
             log.info("Agent evicted from cache: session=$key, cause=$cause")
+            // Caffeine declares the listener key @Nullable
+            if (key != null) value?.let { releaseAgent(key, it.agent) }
         }
-        .build<String, HarnessAgentWrapper>()
+        .build<String, CachedAgent>()
     private val activeStreams = JConcurrentHashMap<String, Subscription>()
+
+    /**
+     * Sessions with a blocking (non-streaming) `process()` call in flight.
+     *
+     * The channel path reaches the agent through `/api/agent/chat`, which has no subscription to
+     * register, so without this marker an eviction mid-call releases the agent while its MCP tools
+     * are still being called.
+     */
+    private val activeCalls = JConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Agents whose cache entry was dropped while a stream of theirs was still running.
+     *
+     * Releasing one mid-call would pull its MCP tools out from under that call, so the release waits
+     * for the stream's doFinally. Bounded by the number of concurrent streams.
+     */
+    private val pendingRelease = JConcurrentHashMap<String, HarnessAgentWrapper>()
+
+    /**
+     * Release a dropped agent now, or as soon as this session's run ends.
+     */
+    private fun releaseAgent(sessionId: String, agent: HarnessAgentWrapper) {
+        if (activeStreams.containsKey(sessionId) || activeCalls.contains(sessionId)) {
+            val displaced = pendingRelease.put(sessionId, agent)
+            if (displaced != null && displaced !== agent) {
+                log.warn("Two dropped agents queued for release on session=$sessionId; releasing the older one now")
+                displaced.release()
+            }
+            // The run may have ended between the check and the put, in which case its cleanup
+            // already looked for an entry and found none.
+            if (!activeStreams.containsKey(sessionId) && !activeCalls.contains(sessionId)) drainPendingRelease(sessionId)
+        } else {
+            agent.release()
+        }
+    }
+
+    /**
+     * Release the agent whose release was postponed because this session's stream was still running.
+     */
+    private fun drainPendingRelease(sessionId: String) {
+        val pending = pendingRelease.remove(sessionId) ?: return
+        log.info("Releasing agent whose release was deferred for session=$sessionId")
+        pending.release()
+    }
 
     override fun process(request: ChatAgentRequest): ChatResponse {
         val sessionId = request.sessionId
@@ -71,11 +117,17 @@ class DefaultAgentRunner(
         log.info("Processing direct (non-streaming) chat request for session=$sessionId")
 
         try {
-            // TODO [P1] UserIdentifier(0) is hardcoded — all requests share userId=0.
-            //   Should extract real user ID from request context (e.g. SecurityContext or request header).
-            val userIdentifier = UserIdentifier(0)
+            val userIdentifier = UserIdentifier(request.userId)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
-            return agent.call(message, imageUrls)
+            // Registered around the call only, and cleared here rather than in a `doFinally` the
+            // caller never sees: an eviction during the call must defer the release like a stream's.
+            activeCalls.add(sessionId)
+            return try {
+                agent.call(message, imageUrls)
+            } finally {
+                activeCalls.remove(sessionId)
+                drainPendingRelease(sessionId)
+            }
         } catch (e: Exception) {
             log.error("Error creating agent or calling for session=$sessionId: ${e.message}", e)
             throw e as? HarnaxException
@@ -94,8 +146,7 @@ class DefaultAgentRunner(
         log.info("Streaming message for session=$sessionId: $message, images=${imageUrls.size}")
 
         try {
-            // TODO [P1] UserIdentifier(0) is hardcoded — see process() for details.
-            val userIdentifier = UserIdentifier(0)
+            val userIdentifier = UserIdentifier(request.userId)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
             return agent.callStream(message, imageUrls)
                 .doOnSubscribe { subscription ->
@@ -104,6 +155,7 @@ class DefaultAgentRunner(
                 }
                 .doFinally {
                     activeStreams.remove(sessionId)
+                    drainPendingRelease(sessionId)
                     log.debug("Stream ended for session=$sessionId")
                 }
         } catch (e: Exception) {
@@ -139,8 +191,8 @@ class DefaultAgentRunner(
                 log.info("Compact command received for session=$sessionId, args='$args' (not yet implemented)")
                 CommandResponse.success(sessionId, message = "Compact not yet implemented")
             }
-            CommandType.APPROVE -> handleApproveOrDeny(sessionId, isConfirmed = true)
-            CommandType.DENY -> handleApproveOrDeny(sessionId, isConfirmed = false)
+            CommandType.APPROVE -> handleApproveOrDeny(sessionId, isConfirmed = true, userId = request.userId)
+            CommandType.DENY -> handleApproveOrDeny(sessionId, isConfirmed = false, userId = request.userId)
             CommandType.STOP_SANDBOX -> {
                 val sandboxManager = launcher.keepAliveSandboxManager
                 if (sandboxManager != null) {
@@ -186,10 +238,8 @@ class DefaultAgentRunner(
 
     override fun interrupt(sessionId: String) {
         // 1. Interrupt the agent execution via HarnessAgent.interrupt() ( works both streaming and blocking calls)
-        val agent = agentCache.getIfPresent(sessionId)
-        if (agent != null) {
-            agent.interrupt()
-        }
+        val agent = agentCache.getIfPresent(sessionId)?.agent
+        agent?.interrupt()
 
         // 2. Also cancel active stream subscription (belt-and-suspenders for streaming case)
         val subscription = activeStreams.remove(sessionId)
@@ -209,10 +259,10 @@ class DefaultAgentRunner(
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
         log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}, toolResults=${request.toolResults.size}")
-        val agent = agentCache.getIfPresent(sessionId)
+        val agent = cachedAgent(sessionId, request.userId)
             ?: run {
-                log.warn("Agent not in cache for confirm, rebuilding: session=$sessionId")
-                getOrCreateAgent(sessionId, UserIdentifier(0))
+                log.warn("Agent not cached for this user, rebuilding for confirm: session=$sessionId")
+                getOrCreateAgent(sessionId, UserIdentifier(request.userId))
             }
 
         // Build ConfirmResult list for agentscope's METADATA_CONFIRM_RESULTS
@@ -253,6 +303,7 @@ class DefaultAgentRunner(
             }
             .doFinally {
                 activeStreams.remove(sessionId)
+                drainPendingRelease(sessionId)
                 log.debug("Confirm stream ended for session=$sessionId")
             }
     }
@@ -275,7 +326,7 @@ class DefaultAgentRunner(
         }
 
         // ─── Step 1: Try structured plan data from AgentState (preferred) ───
-        val wrapper = agentCache.getIfPresent(sessionId)
+        val wrapper = agentCache.getIfPresent(sessionId)?.agent
         // When wrapper exists, readFullPlanFromState() already falls back to StateStore internally
         // via getLiveAgentState(), so readFullPlanFromStateStore() is only needed when wrapper is null
         // (e.g. after service restart or cache eviction).
@@ -539,26 +590,85 @@ class DefaultAgentRunner(
     }
 
     /**
+     * The cached agent only for the user it was built for. An entry owned by someone else is dropped
+     * and answered as absent, because reusing it would run this request through that other user's
+     * client - and, once per-user tokens are injected, through their credentials. Every read of the
+     * cache asks this question, so a new call site cannot forget to. It cannot, however, see an entry
+     * created while this thread was waiting; [awaitOwnAgent] re-checks that case.
+     */
+    private fun cachedAgent(
+        sessionId: String,
+        userId: Long?,
+    ): HarnessAgentWrapper? {
+        val cached = agentCache.getIfPresent(sessionId) ?: return null
+        if (cached.userId != userId) {
+            log.warn(
+                "Session=$sessionId agent was built for user=${cached.userId} but request claims user=$userId; rebuilding",
+            )
+            agentCache.invalidate(sessionId)
+            return null
+        }
+        return cached.agent
+    }
+
+    /**
      * Route agent creation based on sessionId prefix.
      * Delegates spec resolution to AgentSpecResolver (which calls Admin).
      */
     private fun getOrCreateAgent(sessionId: String, userIdentifier: UserIdentifier): HarnessAgentWrapper = try {
-        agentCache.get(sessionId) { sid ->
-            log.info("Resolving agent spec for sessionId=$sid")
-            val (agentSpec, chatSpec) = agentSpecResolver.resolve(sid)
-            val agent = launcher.createSingleAgent(
-                agentSpec = agentSpec,
-                sessionId = sid,
-                stateless = false,
-                chatSpec = chatSpec,
-                userIdentifier = userIdentifier,
-            )
-            log.info("Agent for session=$sid created and cached successfully")
-            agent
-        }
+        cachedAgent(sessionId, userIdentifier.userId) ?: awaitOwnAgent(sessionId, userIdentifier)
     } finally {
         // Clear ThreadLocal context to prevent leaks after agent creation
         specContextHolder.clear()
+    }
+
+    /**
+     * Take or build the agent for this session, and never hand back one built for a different user.
+     *
+     * [cachedAgent] cannot cover the case where the entry does not exist yet: Caffeine runs one loader
+     * per key, so a thread that loses that race waits and is then handed the winner's agent — the winner
+     * being whoever asked first, which is not necessarily the same user (the router forwards a userId the
+     * caller supplied; see `resolveUserId` in AgentProxyController). One rebuild is allowed, enough for a
+     * transient race. If it happens twice, two users really are on one session; that is an ownership bug
+     * upstream, and failing is better than quietly running one of them as the other.
+     */
+    private fun awaitOwnAgent(
+        sessionId: String,
+        userIdentifier: UserIdentifier,
+    ): HarnessAgentWrapper {
+        val userId = userIdentifier.userId
+        repeat(2) {
+            val entry = agentCache.get(sessionId) { sid -> buildAgent(sid, userIdentifier) }
+            if (entry.userId == userId) return entry.agent
+            log.warn(
+                "Session=$sessionId was built concurrently for user=${entry.userId} while this request claims user=$userId; rebuilding",
+            )
+            // Conditional: someone may have rebuilt the key for their own user in the meantime, and
+            // dropping that entry would repeat the mistake on top of theirs. Releasing the entry we
+            // drop is the removal listener's job.
+            agentCache.asMap().remove(sessionId, entry)
+        }
+        throw HarnaxException(
+            HarnaxErrorCode.AGENT_INIT_FAILED.code,
+            "Session=$sessionId is claimed by more than one user; refusing to reuse an agent built for someone else",
+        )
+    }
+
+    private fun buildAgent(
+        sessionId: String,
+        userIdentifier: UserIdentifier,
+    ): CachedAgent {
+        log.info("Resolving agent spec for sessionId=$sessionId")
+        val (agentSpec, chatSpec) = agentSpecResolver.resolve(sessionId)
+        val agent = launcher.createSingleAgent(
+            agentSpec = agentSpec,
+            sessionId = sessionId,
+            stateless = false,
+            chatSpec = chatSpec,
+            userIdentifier = userIdentifier,
+        )
+        log.info("Agent for session=$sessionId created and cached successfully")
+        return CachedAgent(agent, userIdentifier.userId)
     }
 
     /**
@@ -566,13 +676,18 @@ class DefaultAgentRunner(
      * Builds a ConfirmAgentRequest, calls confirm() to resume the agent,
      * collects the streaming output, and returns a CommandResponse with the text.
      */
-    private fun handleApproveOrDeny(sessionId: String, isConfirmed: Boolean): CommandResponse {
+    private fun handleApproveOrDeny(
+        sessionId: String,
+        isConfirmed: Boolean,
+        userId: Long?,
+    ): CommandResponse {
         val action = if (isConfirmed) "approve" else "deny"
         log.info("Handling $action command for session=$sessionId, delegating to confirm flow")
 
         val confirmRequest = ConfirmAgentRequest(
             sessionId = sessionId,
             isConfirmed = isConfirmed,
+            userId = userId,
         )
         val stream = confirm(confirmRequest)
         val events = stream.collectList().block() ?: emptyList()
@@ -725,6 +840,15 @@ class DefaultAgentRunner(
         log.info("Session permission mode changed: session=$sessionId, mode=$mode")
         return CommandResponse.success(sessionId, message = "Permission mode set to $mode")
     }
+
+    /**
+     * A cached agent plus the end user it was built for. A session belongs to one user, so an
+     * entry owned by someone else is stale and gets rebuilt rather than reused.
+     */
+    private data class CachedAgent(
+        val agent: HarnessAgentWrapper,
+        val userId: Long?,
+    )
 
     companion object {
         private val SUPPORTED_CAPABILITIES = setOf("search", "thinking", "plan", "bypass")

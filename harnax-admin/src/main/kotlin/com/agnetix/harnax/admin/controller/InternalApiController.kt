@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.CliDetailDto
@@ -67,6 +68,8 @@ class InternalApiController(
 
     data class ApiKeyValidateResponse(
         val name: String,
+        /** Owner of the key; null for SYSTEM keys. */
+        val userId: Long?,
         val keyHash: String,
         val scopes: String,
         val tenantId: Long?,
@@ -124,6 +127,7 @@ class InternalApiController(
 
         val response = ApiKeyValidateResponse(
             name = entity.name,
+            userId = entity.userId,
             keyHash = entity.keyHash,
             scopes = entity.scopes,
             tenantId = entity.tenantId,
@@ -209,6 +213,7 @@ class InternalApiController(
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
             model = model,
+            agentTenantId = agent.tenantId,
             enableThink = session.enableThink,
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
@@ -231,6 +236,7 @@ class InternalApiController(
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
             model = model,
+            agentTenantId = agent.tenantId,
             permissionMode = channel.permissionMode,
             enableThink = channel.enableThink,
             enableSearch = channel.enableSearch,
@@ -243,7 +249,7 @@ class InternalApiController(
         val parts = sessionId.split("-", limit = 3)
         val taskId = parts[1].toLongOrNull()
             ?: throw IllegalArgumentException("Invalid task sessionId, cannot parse taskId: $sessionId")
-        val task = agentTaskMapper.selectById(taskId)
+        val task = agentTaskMapper.selectAnyById(taskId)
             ?: throw IllegalArgumentException("Agent task not found: $taskId")
         val agent = agentMapper.selectById(task.agentId)
             ?: throw IllegalArgumentException("Agent not found: ${task.agentId}")
@@ -256,6 +262,7 @@ class InternalApiController(
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
             model = model,
+            agentTenantId = agent.tenantId,
             permissionMode = "BYPASS",
         )
     }
@@ -276,6 +283,7 @@ class InternalApiController(
         systemPrompt: String,
         modelId: Long,
         model: Model? = null,
+        agentTenantId: Long,
         enableThink: Int = 0,
         enableSearch: Int = 0,
         enablePlan: Int = 0,
@@ -347,23 +355,33 @@ class InternalApiController(
 
         // ── MCP bindings (JSON for backward compat + full detail DTOs) ──
         val mcpBindings = mcpBindingMapper.selectByAgentId(agentId)
-        val mcpListJson = if (mcpBindings.isEmpty()) {
-            "[]"
-        } else {
-            val items = mcpBindings.map { binding ->
-                mapOf(
-                    "id" to binding.mcpId,
-                    "enable_skip" to binding.enableSkip,
-                    "env_bindings" to resolveEnvBindingsJson(binding.envBindings),
-                )
-            }
-            objectMapper.writeValueAsString(items)
-        }
 
-        val mcpDetails = mcpBindings.mapNotNull { binding ->
-            val mcp = mcpServerMapper.selectById(binding.mcpId)
+        val mcpIdsToDeliver = mcpBindings.map { it.mcpId }.distinct()
+        val mcpById = if (mcpIdsToDeliver.isEmpty()) {
+            emptyMap()
+        } else {
+            // selectByIds has no tenant condition and an internal call carries no trustworthy tenant
+            // header, so the agent's own tenant is the only comparable basis: without it a cross-tenant
+            // binding stored before the save-time check still hands over another tenant's headers.
+            mcpServerMapper.selectByIds(mcpIdsToDeliver)
+                .filter { it.tenantId == agentTenantId }
+                .associateBy { it.id }
+        }
+        val missingMcpIds = mcpIdsToDeliver - mcpById.keys
+        if (missingMcpIds.isNotEmpty()) {
+            log.warn(
+                "MCP servers not resolved (deleted, or outside agent tenant {}), skipped from spec: mcpIds={}",
+                agentTenantId,
+                missingMcpIds,
+            )
+        }
+        // Derived from what was actually resolved, like skillList above: a binding whose server row is
+        // gone would otherwise still contribute its env bindings to the other half of the answer
+        val mcpListJson = serializeMcpBindings(mcpBindings.filter { it.mcpId in mcpById })
+
+        val mcpDetails = mcpIdsToDeliver.mapNotNull { mcpId ->
+            val mcp = mcpById[mcpId]
             if (mcp == null) {
-                log.warn("MCP server not found: mcpId={}", binding.mcpId)
                 null
             } else {
                 McpDetailDto(
@@ -376,18 +394,24 @@ class InternalApiController(
                     // Delivered decrypted: agent-service holds no AES key. See plainConfigJson().
                     headers = plainConfigJson(mcp.headers),
                     envParams = plainToolEnvJson(mcp.envParams),
-                    enableSkip = binding.enableSkip,
+                    status = mcp.status,
                 )
             }
         }
 
         // ── Skill bindings (comma-separated IDs + full detail DTOs) ──
         val skillBindings = skillBindingMapper.selectByAgentId(agentId)
+        val skillIdsToDeliver = skillBindings.map { it.skillId }.distinct()
+        val skillById = if (skillIdsToDeliver.isEmpty()) {
+            emptyMap()
+        } else {
+            skillMapper.selectByIds(skillIdsToDeliver).associateBy { it.id }
+        }
 
-        val skillDetails = skillBindings.mapNotNull { binding ->
-            val skill = skillMapper.selectById(binding.skillId)
+        val skillDetails = skillIdsToDeliver.mapNotNull { skillId ->
+            val skill = skillById[skillId]
             if (skill == null) {
-                log.warn("Skill not found: skillId={}", binding.skillId)
+                log.warn("Skill not found: skillId={}", skillId)
                 null
             } else if (skill.status == 0) {
                 // The gate `/builtin-skills` applies, and the one the CLI branch below applies to a
@@ -555,7 +579,18 @@ class InternalApiController(
                 val resolvedValue = when {
                     envVarId != null -> {
                         // Try latest value from env_variable table, fallback to snapshot
-                        envVariableService.getDecryptedValue(envVarId) ?: snapshotValue
+                        val latest = envVariableService.getDecryptedValue(envVarId)
+                        if (latest == null && snapshotValue == null) {
+                            // A reference carries no value of its own, so a variable that is gone
+                            // leaves nothing to deliver: the tool sees the parameter as unconfigured.
+                            log.warn(
+                                "Env binding '{}' references env variable {} that no longer resolves; " +
+                                    "delivering nothing for it",
+                                envKey,
+                                envVarId,
+                            )
+                        }
+                        latest ?: snapshotValue
                     }
                     customValue != null -> customValue
                     else -> snapshotValue
@@ -572,6 +607,21 @@ class InternalApiController(
             emptyList()
         }
     }
+
+    /**
+     * Legacy JSON shape of an agent's MCP bindings: `[{id, env_bindings:[{envKey, envValue}]}]`.
+     *
+     * agent-service reads `env_bindings` from here (see `AgentSpecResolver`), while the server
+     * configuration itself arrives in `mcpDetails`.
+     */
+    private fun serializeMcpBindings(bindings: List<AgentMcpBinding>): String = objectMapper.writeValueAsString(
+        bindings.map { binding ->
+            mapOf(
+                "id" to binding.mcpId,
+                "env_bindings" to resolveEnvBindingsJson(binding.envBindings),
+            )
+        },
+    )
 
     /**
      * Deliver a stored `McpConfigEntry` array as a flat plain-text JSON object.
@@ -607,7 +657,7 @@ class InternalApiController(
 
     @GetMapping("/agent-tasks/{taskId}/spec")
     fun getAgentTaskSpec(@PathVariable taskId: Long): ResultVo<TaskAgentSpecResponse> = try {
-        val task = agentTaskMapper.selectById(taskId)
+        val task = agentTaskMapper.selectAnyById(taskId)
             ?: return ResultVo.error("Agent task not found: $taskId")
         val agent = agentMapper.selectById(task.agentId)
             ?: return ResultVo.error("Agent not found: ${task.agentId}")
@@ -618,8 +668,8 @@ class InternalApiController(
             description = agent.description,
             systemPrompt = agent.systemPrompt,
             modelId = agent.modelId,
-            mcpList = agent.mcpList,
-            skillList = agent.skillList,
+            mcpList = serializeMcpBindings(mcpBindingMapper.selectByAgentId(agent.id)),
+            skillList = skillBindingMapper.selectByAgentId(agent.id).joinToString(",") { it.skillId.toString() },
         )
         ResultVo.success(spec)
     } catch (e: Exception) {

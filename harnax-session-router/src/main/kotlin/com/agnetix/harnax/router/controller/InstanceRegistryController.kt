@@ -8,6 +8,7 @@ import com.agnetix.harnax.router.dto.RouterHealthResponse
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.InstanceRegistry
 import com.agnetix.harnax.router.service.SessionMappingService
+import com.agnetix.harnax.router.support.IdFormat
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 
@@ -36,6 +37,7 @@ class InstanceRegistryController(
         @RequestParam host: String,
         @RequestParam port: Int,
     ): ResultVo<InstanceOperationResponse> {
+        IdFormat.requireInstanceId(instanceId)
         log.info("Instance registration request: $instanceId at $host:$port")
 
         // Security validation: Only allow IP addresses (no domain names)
@@ -62,10 +64,17 @@ class InstanceRegistryController(
 
     /**
      * Refresh heartbeat for an existing instance.
+     *
+     * A missing registration is reported as 410 rather than swallowed: the alternative is an
+     * instance that keeps heartbeating into the void and never re-registers, so the router routes
+     * nothing to it. The agent-side registrar turns this into a re-registration.
      */
     @PostMapping("/instance/heartbeat")
     fun heartbeat(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
-        instanceRegistry.refreshHeartbeat(instanceId)
+        IdFormat.requireInstanceId(instanceId)
+        if (!instanceRegistry.refreshHeartbeat(instanceId)) {
+            return ResultVo.error(410, "Instance not registered: $instanceId")
+        }
         return ResultVo.success(InstanceOperationResponse(status = "ok", instanceId = instanceId))
     }
 
@@ -74,6 +83,7 @@ class InstanceRegistryController(
      */
     @PostMapping("/instance/unregister")
     fun unregisterInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
+        IdFormat.requireInstanceId(instanceId)
         log.info("Instance unregistration request: $instanceId")
         instanceRegistry.unregisterInstance(instanceId)
         sessionMappingService.unbindInstanceSessions(instanceId)
@@ -86,8 +96,11 @@ class InstanceRegistryController(
      */
     @PostMapping("/instance/drain")
     fun drainInstance(@RequestParam instanceId: String): ResultVo<InstanceOperationResponse> {
+        IdFormat.requireInstanceId(instanceId)
         log.info("Instance drain request: $instanceId")
-        instanceRegistry.markAsDraining(instanceId)
+        if (!instanceRegistry.markAsDraining(instanceId)) {
+            return ResultVo.error(404, "Instance not registered: $instanceId")
+        }
         return ResultVo.success(InstanceOperationResponse(status = "draining", instanceId = instanceId))
     }
 
@@ -110,7 +123,12 @@ class InstanceRegistryController(
     }
 
     /**
-     * Health check endpoint.
+     * How many agent instances this router can route to right now.
+     *
+     * A capacity report for operators, not a health probe: it says nothing about this node, and it
+     * reads DOWN the moment the last agent stops heartbeating — which is precisely when the router
+     * itself is still healthy and refusing work. Container and load-balancer probes belong on
+     * `/actuator/health/liveness` and `/actuator/health/readiness`.
      */
     @GetMapping("/health")
     fun health(): ResultVo<RouterHealthResponse> {

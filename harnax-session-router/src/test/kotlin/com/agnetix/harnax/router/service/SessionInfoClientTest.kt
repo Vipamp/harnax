@@ -175,4 +175,25 @@ class SessionInfoClientTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun `an answer of no such session is cached`() {
+        val body = mapper.writeValueAsString(ResultVo.success<AdminClientService.SessionInfo?>(null))
+        withHttpServer(body = body) { _, client, counter ->
+            assertNull(client.getSessionInfo("gone"))
+            assertNull(client.getSessionInfo("gone"))
+            assertEquals(1, counter.get(), "admin answered once; asking again adds nothing")
+        }
+    }
+
+    @Test
+    fun `admin not answering is not cached`() {
+        withHttpServer(statusCode = 500) { _, client, counter ->
+            // A failed lookup is what the guard fails open on. Caching it would leave every session
+            // this router knows looking like an unknown one for the rest of the cache's life.
+            assertNull(client.getSessionInfo("blip"))
+            assertNull(client.getSessionInfo("blip"))
+            assertEquals(2, counter.get(), "an unreachable admin must not be remembered as an answer")
+        }
+    }
 }

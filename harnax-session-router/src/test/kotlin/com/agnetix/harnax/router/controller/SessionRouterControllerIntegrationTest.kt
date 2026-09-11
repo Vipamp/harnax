@@ -11,7 +11,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
-import java.time.LocalDateTime
+import java.time.Instant
 
 class SessionRouterControllerIntegrationTest {
 
@@ -44,7 +44,7 @@ class SessionRouterControllerIntegrationTest {
             instanceId = "inst-1"
             status = "UP"
             active = 1
-            lastHeartbeat = LocalDateTime.now()
+            lastHeartbeat = Instant.now()
         }
         `when`(instanceRegistry.getHealthyInstances()).thenReturn(listOf(healthyInstance))
 
@@ -116,14 +116,30 @@ class SessionRouterControllerIntegrationTest {
 
     @Test
     fun `heartbeat succeeds for existing instance`() {
+        `when`(instanceRegistry.refreshHeartbeat("inst-1")).thenReturn(true)
+
         mockMvc.perform(
             post("/api/router/instance/heartbeat")
                 .param("instanceId", "inst-1"),
         )
             .andExpect(status().isOk)
+            .andExpect(jsonPath("$.code").value(200))
             .andExpect(jsonPath("$.data.status").value("ok"))
 
         verify(instanceRegistry).refreshHeartbeat("inst-1")
+    }
+
+    @Test
+    fun `heartbeat reports a lost registration instead of pretending to succeed`() {
+        `when`(instanceRegistry.refreshHeartbeat("inst-1")).thenReturn(false)
+
+        mockMvc.perform(
+            post("/api/router/instance/heartbeat")
+                .param("instanceId", "inst-1"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.code").value(410))
+            .andExpect(jsonPath("$.data").doesNotExist())
     }
 
     // ==================== Unregister ====================
@@ -147,6 +163,8 @@ class SessionRouterControllerIntegrationTest {
 
     @Test
     fun `drain instance succeeds`() {
+        `when`(instanceRegistry.markAsDraining("inst-1")).thenReturn(true)
+
         mockMvc.perform(
             post("/api/router/instance/drain")
                 .param("instanceId", "inst-1"),
@@ -155,6 +173,18 @@ class SessionRouterControllerIntegrationTest {
             .andExpect(jsonPath("$.data.status").value("draining"))
 
         verify(instanceRegistry).markAsDraining("inst-1")
+    }
+
+    @Test
+    fun `drain reports an unknown instance instead of a false success`() {
+        `when`(instanceRegistry.markAsDraining("ghost")).thenReturn(false)
+
+        mockMvc.perform(
+            post("/api/router/instance/drain")
+                .param("instanceId", "ghost"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.code").value(404))
     }
 
     // ==================== List instances ====================
@@ -167,7 +197,7 @@ class SessionRouterControllerIntegrationTest {
             port = 8082
             status = "UP"
             active = 1
-            lastHeartbeat = LocalDateTime.now()
+            lastHeartbeat = Instant.now()
         }
         `when`(instanceRegistry.getAllActiveInstances()).thenReturn(listOf(inst1))
 
