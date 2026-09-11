@@ -1,5 +1,6 @@
 package com.agnetix.harnax.channel.wecom
 
+import com.agnetix.harnax.channel.sdk.util.ReconnectBackoff
 import tools.jackson.module.kotlin.jacksonObjectMapper
 import java.time.Duration
 import kotlin.test.Test

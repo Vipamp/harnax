@@ -5,6 +5,7 @@ import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 
 /**
@@ -188,13 +189,15 @@ interface ChannelAdaptor {
      * @param channel Channel configuration
      * @param agentAdaptor AI Agent processor
      * @param sessionManager Session manager for conversation history
+     * @return true when an active listener was established, false when this channel
+     *         needs no active connection (e.g. webhook callback mode)
      */
     fun startChannelWithAgent(
         channel: ChannelSpec,
         agentAdaptor: AgentAdaptor,
         sessionManager: ChannelSessionManager,
         chatService: com.agnetix.harnax.channel.sdk.service.ChannelChatService? = null,
-    )
+    ): Boolean
 
     /**
      * Stop this channel and release the underlying communication resources.
@@ -202,4 +205,23 @@ interface ChannelAdaptor {
      * @param channel Channel configuration
      */
     fun stopChannel(channel: ChannelSpec)
+
+    /**
+     * Release resources shared across all channels this adaptor serves.
+     *
+     * [stopChannel] handles one channel; this is called once on application shutdown,
+     * after every channel has been stopped, to shut down shared thread pools and clients.
+     */
+    fun shutdown() {}
+
+    /**
+     * Current connection state of one channel.
+     *
+     * Reported by the underlying transport, so callers can tell the difference between
+     * "a listener was requested" and "the connection is actually serving traffic".
+     */
+    fun connectionState(channelId: Long): ChannelConnectionState = ChannelConnectionState(channelId)
+
+    /** Snapshot of every channel this adaptor currently serves. */
+    fun connectionStates(): List<ChannelConnectionState> = emptyList()
 }

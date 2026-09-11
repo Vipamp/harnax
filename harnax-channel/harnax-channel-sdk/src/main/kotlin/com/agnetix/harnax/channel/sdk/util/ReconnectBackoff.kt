@@ -1,16 +1,17 @@
-package com.agnetix.harnax.channel.wecom
+package com.agnetix.harnax.channel.sdk.util
 
 import java.time.Duration
 
 /**
- * Exponential reconnection backoff for the WeCom WebSocket connection.
+ * Exponential reconnection backoff.
  *
- * Mirrors cc-connect behavior:
- * - starts at 1s, doubles on each failure up to a max of 30s
- * - if the previous connection was alive longer than [resetThreshold], the
- *   backoff resets to the initial value (the disconnect was not a rapid failure loop)
+ * Behaviour:
+ * - starts at [initial], doubles on each failure up to [max]
+ * - if the previous connection stayed alive longer than [resetThreshold], the backoff
+ *   resets to [initial] (that disconnect was not part of a rapid failure loop)
  *
- * This class is pure logic (no I/O) to make the reconnection policy unit-testable.
+ * Pure logic (no I/O), so the reconnection policy is unit-testable and can be shared by
+ * both the per-channel transports and the service-level reconcile loop.
  */
 class ReconnectBackoff(
     private val initial: Duration = Duration.ofSeconds(1),

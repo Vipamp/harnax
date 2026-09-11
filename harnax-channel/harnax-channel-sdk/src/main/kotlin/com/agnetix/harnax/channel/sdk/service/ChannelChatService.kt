@@ -44,7 +44,7 @@ open class ChannelChatService(
     protected val sessionManager: ChannelSessionManager,
     /**
      * Optional callback invoked when a HITL tool confirmation event is received.
-     * The caller (e.g. ChannelManager) can use this to persist the pending confirm state.
+     * The caller can use this to persist the pending confirm state for the session.
      */
     protected val onPendingConfirm: ((sessionId: String, tools: List<PendingToolInfo>) -> Unit)? = null,
     /**
@@ -212,7 +212,7 @@ open class ChannelChatService(
                 logger.info("[Batch] Response sent for session=${message.sessionId}, text length=${responseText.length}")
             } else {
                 // Send fallback notification to user instead of silent no-op
-                val fallbackMsg = "\u26a0\ufe0f AI processing completed but returned no content. Please try again."
+                val fallbackMsg = "${ReplyMarkers.EMPTY_REPLY_PREFIX}. Please try again."
                 logger.warn("[Batch] Empty response for session=${message.sessionId}, sending fallback message")
                 try {
                     channelAdaptor.sendMessage(channel, message.sessionId, fallbackMsg)
@@ -335,6 +335,10 @@ open class ChannelChatService(
         replyContent: String,
         channel: ChannelSpec,
     ) {
+        if (replyContent.isBlank() || ReplyMarkers.isSyntheticReply(replyContent)) {
+            logger.debug("[History] Skip empty/synthetic reply for session {}: {}", originalMessage.sessionId, replyContent.take(80))
+            return
+        }
         val assistantMessage = ChannelMessage.builder()
             .sessionId(originalMessage.sessionId)
             .role(MessageRole.ASSISTANT)
@@ -353,7 +357,7 @@ open class ChannelChatService(
      * - request-id: short request identifier for tracing (e.g., "req-a1b2c3d4")
      * - message: user-readable error description
      */
-    private fun formatErrorMessage(code: String, requestId: String, message: String): String = "\u26a0\ufe0f AI processing failed: $message (code: $code, requestId: $requestId)"
+    private fun formatErrorMessage(code: String, requestId: String, message: String): String = "${ReplyMarkers.FAILED_PREFIX}: $message (code: $code, requestId: $requestId)"
 
     /**
      * Build a plain-text confirmation message from pending tool info.

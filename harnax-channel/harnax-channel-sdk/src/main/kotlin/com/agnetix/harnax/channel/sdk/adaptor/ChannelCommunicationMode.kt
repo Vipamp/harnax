@@ -3,6 +3,7 @@ package com.agnetix.harnax.channel.sdk.adaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.RichMessage
+import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 
 /**
  * Channel Communication Mode Interface
@@ -94,4 +95,15 @@ interface ChannelCommunicationMode {
      * @param sessionId Session ID
      */
     suspend fun sendTypingIndicator(channel: ChannelSpec, sessionId: String) {}
+
+    /**
+     * Current connection state of one channel listener.
+     *
+     * Lets the reconcile loop and health endpoints distinguish "we asked for a listener"
+     * from "the transport is actually up". Callback/webhook modes keep the default.
+     */
+    fun connectionState(channelId: Long): ChannelConnectionState = ChannelConnectionState(channelId)
+
+    /** Snapshot of every channel this mode currently serves. */
+    fun connectionStates(): List<ChannelConnectionState> = emptyList()
 }
