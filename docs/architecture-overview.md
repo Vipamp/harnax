@@ -341,68 +341,68 @@ Router 心跳检测超时（30s）
 
 ## 📊 数据库设计
 
-### Session Router 相关表
+### Session Router 的存储
 
-#### session_mapping 表
-```sql
-CREATE TABLE session_mapping (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    session_id VARCHAR(255) NOT NULL UNIQUE COMMENT '会话ID',
-    instance_id VARCHAR(255) NOT NULL COMMENT '实例ID',
-    active_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '最后活跃时间',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_instance_id (instance_id),
-    INDEX idx_active_time (active_time)
-) COMMENT='Session与实例绑定关系表';
-```
+Router 侧只有一张表：`api_call_log`（Flyway `V1__create_session_router_tables.sql`；local 模式由
+`SqliteInitConfig` 执行 `db/sqlite-init.sql` 建同一张表）。**没有** `session_mapping`、`agent_instance`
+这两张表——路由状态不进关系库，而是按部署模式放在 Redis 或进程内存里：
 
-#### agent_instance 表
-```sql
-CREATE TABLE agent_instance (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    instance_id VARCHAR(255) NOT NULL UNIQUE COMMENT '实例ID',
-    host VARCHAR(255) NOT NULL COMMENT '主机地址',
-    port INT NOT NULL COMMENT '端口号',
-    status VARCHAR(50) DEFAULT 'ACTIVE' COMMENT '状态',
-    last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '最后心跳时间',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_status (status),
-    INDEX idx_heartbeat (last_heartbeat)
-) COMMENT='Agent服务实例注册表';
-```
+| 模式 | 开关 | 实例注册 / 会话绑定的存放处 |
+|------|------|------------------------------|
+| local | `CACHE_TYPE=local` | 进程内存（`LocalInstanceRegistry` / `LocalSessionMappingService`），不共享、重启即丢 |
+| cluster | `CACHE_TYPE=redis` | Redis，键布局见下表 |
+
+两种模式的绑定生命周期相同：都用 `RedisSessionMappingService.SESSION_TTL`（24h），
+同一个 session「记住」它所属实例的时间长度不会因为换个模式就变。
+
+集群模式的 Redis 键：
+
+| 键 | 类型 / TTL | 用途 |
+|----|-----------|------|
+| `router:instance:{id}` | Hash / 24h | 实例注册信息（host、port、status、lastHeartbeat…） |
+| `router:instances:all` / `router:instances:healthy` | Set | 全部活跃注册 / 可接新会话的实例 |
+| `router:session:{id}` | String / 24h | 会话 → 实例绑定 |
+| `router:instance_sessions:{id}` | Set | 反向索引，故障转移时按它批量迁移绑定 |
+| `router:circuit:{id}` | Hash | 熔断计数，只由 Lua 脚本改写 |
+| `router:idempotency:{requestId}` | String / 60s | 代理请求按 requestId 去重 |
+| `router:lock:session:{id}` | 10s | 会话重绑期间的跨节点互斥 |
+| `router:lock:index_reconcile` | 4min | 反向索引对账（`SessionIndexReconciler`） |
 
 ### 数据流
 
 ```
 Agent Service 启动
     ↓
-POST /api/router/instance/register
+POST /api/router/instance/register（内部 JWT，注册参数过 SSRF 校验）
     ↓
-INSERT INTO agent_instance
+写 router:instance:{id} + 加入 router:instances:all（可接新会话则同时进 :healthy）
     ↓
-定期发送心跳
+定期 POST /api/router/instance/heartbeat → 刷新 lastHeartbeat 与键的 TTL
     ↓
-UPDATE agent_instance SET last_heartbeat = NOW()
+收到聊天请求（Bearer JWT 或 X-Api-Key）
     ↓
-收到聊天请求
+查会话绑定：命中且该实例仍健康且不在 DRAINING → 沿用（会话亲和）
+    ↓ 未命中
+在健康实例里选一个负载最低的（排除熔断跳开的实例），原子写入绑定 + 反向索引
     ↓
-SELECT instance_id FROM session_mapping WHERE session_id = ?
+WebClient 经该实例专属连接池转发，落 api_call_log
     ↓
-SELECT * FROM agent_instance WHERE instance_id = ? AND is_healthy
-    ↓
-转发请求到该实例
-    ↓
-UPDATE session_mapping SET active_time = NOW()
+HeartbeatHealthChecker 周期扫描：心跳超时的实例标记 DOWN，
+把它名下的绑定整体重绑到落点最少的健康实例，并通知 admin 驱逐旧沙箱
 ```
 
 ## 🔐 安全考虑
 
 ### 认证机制
 
-1. **Web UI → Admin**: JWT Token 认证
-2. **Web UI → Router**: JWT Token 认证（可选）
-3. **Router → Agent Service**: 内部信任，无需认证
-4. **Channel → Router**: 无需认证（内部网络）
+1. **Web UI → Admin**：JWT Token 认证
+2. **Web UI → Router**：`Authorization: Bearer <jwt>` 或 `X-Api-Key` 二选一。`harnax.auth.skip-paths` 只放行监控面板的静态资源（`/ui`、`/index.html`、`/static/`、`/favicon.ico`、`/style.css`、`/app.js`），面板数据 API 仍需凭证
+3. **Channel → Router**：带 `X-Api-Key`（channel 启动时向 admin 取 key）。不是「内网即可访问」——`/api/router/agent/**` 无凭证直接 401
+4. **Router → Agent Service**：带内部 JWT（`InternalTokenProvider` 签发的短期 token，`Authorization: Bearer` + `X-Caller-Id`）。agent-service 的 `skip-paths` 为空，无凭证会被 `UnifiedAuthFilter` 拒掉
+5. **Agent → Router（注册 / 心跳）**：只接受内部 JWT。相关控制器标了 `@InternalOnly`，外部 API Key 会被 `InternalAuthorizationInterceptor` 拒绝
+
+> 网络隔离是纵深防御的一层，不是凭证的替代品：Router 与 Agent 之间的互信由共享 HMAC 密钥
+> （`HARNAX_AUTH_SECRET`，出厂占位值必须覆盖）建立的短期 token 承载。
 
 ### 网络安全
 
@@ -414,10 +414,10 @@ UPDATE session_mapping SET active_time = NOW()
 
 ### Session Router 优化
 
-1. **连接池**: WebClient 使用连接池
-2. **异步处理**: 全程响应式，非阻塞
-3. **缓存**: 实例列表缓存，减少数据库查询
-4. **批量心跳**: 合并心跳请求
+1. **按实例隔离的连接池**: WebClient 连接池按 `host:port` 分，单个实例被打满不会占住其他实例的连接
+2. **异步与流式**: servlet MVC + `suspend` 处理器，SSE 走 `Flux`；慢请求不占 servlet 线程。定时任务共用 `spring.task.scheduling` 池（4 线程），代价是任务自身不能长时间阻塞
+3. **状态不进关系库**: 实例注册与会话绑定在 Redis（cluster）或内存（local），MySQL/SQLite 只承载 `api_call_log`
+4. **降级快照**: Redis 不可达时，用最后一次已知的实例视图和影子绑定继续服务；这份视图会随时间作废，避免一直往早已死掉的实例转发
 
 ### Agent Service 优化
 

@@ -48,10 +48,13 @@ Router 通过 `CACHE_TYPE` 环境变量切换两种存储后端：
 
 | 存储 | `local` 模式 (默认) | `redis` 模式 |
 |------|---------------------|--------------|
-| 实例注册表 (InstanceRegistry) | 内存 ConcurrentHashMap | Redis Hash (`router:instance:{id}`) |
-| 会话映射 (SessionMappingService) | 内存 ConcurrentHashMap | Redis Key (`router:session:{id}`) |
+| 实例注册表 (InstanceRegistry) | 内存 ConcurrentHashMap | Redis Hash (`router:instance:{id}`，24h TTL) |
+| 会话映射 (SessionMappingService) | `LocalSessionMappingService`，ConcurrentHashMap + 反向索引 | Redis Key (`router:session:{id}`，24h TTL，每次请求续期) |
 | 幂等服务 (IdempotencyService) | Caffeine 本地缓存 | Redis SET NX |
-| 熔断器 (CircuitBreaker) | 内存 ConcurrentHashMap | Redis Key (`router:circuit:{id}:*`) |
+| 熔断器 (CircuitBreaker) | 内存 ConcurrentHashMap | 单实例单 Hash (`router:circuit:{id}`)，状态迁移只由 Lua 改写 |
+
+> 会话绑定生命周期两种模式共用同一个常量 `RedisSessionMappingService.SESSION_TTL`（24h）：local 模式同样
+> 有定时清理任务丢弃超期绑定，因此一个会话在开发环境和在集群里保持其 agent 的时长完全一致。
 
 > **重要**: 部署多个 Router 时必须使用 `redis` 模式。`local` 模式仅适用于单实例部署，多实例部署使用 `local` 模式会导致各 Router 状态不共享，session 路由完全失效。
 
@@ -63,7 +66,7 @@ Router 通过 `CACHE_TYPE` 环境变量切换两种存储后端：
 
 本地模式使用嵌入式 SQLite，**无需安装或配置外部数据库**：
 
-- 数据库文件位置：`/var/lib/harnax-router/call-log.db`（默认）
+- 数据库文件位置：yml 默认 `tmp/harnax-router/call-log.db`（相对路径），服务器部署建议用 `ROUTER_SQLITE_PATH` 指到 `/var/lib/harnax-router/call-log.db`
 - 可通过环境变量 `ROUTER_SQLITE_PATH` 自定义路径
 - 应用启动时自动创建数据库和表结构
 - 监控面板的调用日志查询功能完全可用
@@ -102,12 +105,15 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `ROUTER_SQLITE_PATH` | `/var/lib/harnax-router/call-log.db` | SQLite 数据库文件路径 |
+| `ROUTER_SQLITE_PATH` | `tmp/harnax-router/call-log.db` | SQLite 数据库文件路径（yml 默认是相对路径，容器部署应显式指到挂载卷） |
+| `ROUTER_DB_URL` | `jdbc:sqlite:${ROUTER_SQLITE_PATH}` | 需要整体替换数据源 URL 时使用 |
+| `ROUTER_DB_DRIVER` | `org.sqlite.JDBC` | JDBC 驱动 |
 | `ROUTER_DB_POOL_SIZE` | `10` | 连接池大小（SQLite 并发有限，通常无需调大） |
 
 > **注意**：确保 SQLite 文件所在目录存在且有写权限。首次启动前需创建目录：
 > ```bash
 > mkdir -p /var/lib/harnax-router
+> export ROUTER_SQLITE_PATH=/var/lib/harnax-router/call-log.db
 > ```
 
 ### 数据库配置（集群模式 - MySQL）
@@ -139,14 +145,19 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 > **密钥一致性**: `HARNAX_AUTH_SECRET` 需与 admin、agent-service、channel-service 保持一致。`ADMIN_INTERNAL_API_SECRET` 需与 admin 的配置一致。
 
+> **启动校验**：集群模式（`router.cache.type=redis`）下，上表两个密钥只要还等于仓库里的占位值，
+> `PlaceholderSecretCheck` 就会在启动阶段抛错退出——带着人人可伪造的内部凭证起来，等同于没有认证。
+> 单机 local 模式不做这个校验。
+
 ### 路由参数 (application.yml 内置，一般无需调整)
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `router.health.heartbeat-timeout-ms` | `30000` | 实例心跳超时 (30s 无心跳视为下线) |
 | `router.health.check-interval-ms` | `5000` | 健康检查周期 |
-| `router.proxy.read-timeout-ms` | `600000` | 代理读超时 (10min) |
-| `router.proxy.stream-timeout-minutes` | `10` | SSE 流超时 |
+| `router.proxy.read-timeout-ms` | `600000` | 代理读超时 (10min，仅 JSON 调用) |
+| `router.proxy.stream-idle-timeout-seconds` | `120` | SSE 流静默上限（无事件即结束） |
+| `router.proxy.stream-max-duration-minutes` | `30` | SSE 流墙钟上限 |
 | `router.proxy.failover-max-retries` | `2` | failover 最大重试次数 |
 | `router.circuit-breaker.failure-threshold` | `3` | 连续失败次数触发熔断 |
 | `router.circuit-breaker.open-duration-ms` | `30000` | 熔断恢复间隔 |
@@ -238,8 +249,8 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 ```nginx
 upstream router_cluster {
-    ip_hash;  # sticky session: 保证同一客户端命中同一 Router
-              # 这是 SSE 长连接必须的，否则流会在 Router 切换时断开
+    ip_hash;  # 客户端粘在同一 Router：不是正确性要求（会话绑定在 Redis 里，任意节点都能路由
+              # 任意 session），但省掉跨节点重连的抖动，也让面板的轮询落在同一台节点上
     server router-1:8081;
     server router-2:8081;
     # server router-3:8081;
@@ -270,7 +281,7 @@ server {
 
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
-        proxy_read_timeout 900s;  # 15 min
+        proxy_read_timeout 900s;   # 15min，只保证不早于 Router 的 120s 静默判定切断
         proxy_next_upstream error timeout;
         proxy_next_upstream_tries 1;
     }
@@ -298,7 +309,10 @@ server {
 }
 ```
 
-> **ip_hash 说明**: `ip_hash` 基于客户端 IP 做 sticky session。SSE 流式连接是长连接，不能跨 Router 迁移，必须保证同一客户端的所有请求（包括 SSE 流和心跳）都路由到同一个 Router。如果使用 `round-robin`，SSE 流会在 Router 切换时断开。
+> **ip_hash 说明**: 会话粘性由 Redis 里的 session→instance 绑定保证，与客户端落在哪个 Router 无关，
+> 因此 `ip_hash` 不是正确性要求。已建立的 SSE 流是一条具体的 TCP 连接，负载均衡无法在中途把它挪到另
+> 一台 Router；真正会断流的是 Router 进程本身重启，那种情况下无论用什么算法都得由客户端重连。用
+> `ip_hash` 的收益是减少重连与跨节点漂移，代价是节点增减时哈希环变化会重排部分客户端。
 
 ### 多实例启动
 
@@ -342,7 +356,10 @@ java -Xms512m -Xmx1024m \
 > - `router:session:{sessionId}` — 会话映射 (String, 24h TTL)
 > - `router:instance_sessions:{instanceId}` — 实例会话反向索引 (Set)
 > - `router:lock:session:{sessionId}` — reroute 分布式锁 (String, 5s TTL)
-> - `router:circuit:{instanceId}:*` — 熔断器状态
+> - `router:circuit:{instanceId}` — 熔断器状态 (Hash，Lua 原子改写)
+> - `router:lock:index_reconcile` — 反向索引对账锁 (String, 4min TTL，仅一个节点执行)
+>
+> `router.reconcile.*`（`ROUTER_RECONCILE_INTERVAL_MS` 等）只在 cluster profile 中定义。
 
 ---
 
@@ -353,17 +370,26 @@ Agent Service 通过 `router.service.url` 配置 Router 地址，启动时 POST 
 - **本地模式**: `router.service.url` 直连 Router 地址
 - **集群模式**: `router.service.url` 指向 nginx 地址
 
-注册后，Router 通过健康检查 (每 5s) 发现不健康的实例，自动将 session 迁移到健康的实例上。
+注册后，Router 通过健康检查 (每 5s) 发现不健康的实例，把它绑定的 session **整体迁移到同一台**目标实例
+（不拆分会话，熔断中的实例先被排除；目标过载时改选负载更低的节点），并通知旧实例释放沙箱。
 
 ---
 
 ## 健康检查
 
 ```bash
-curl http://localhost:8081/api/router/health
+# 容器 / 负载均衡探针（无需凭证，UnifiedAuthFilter 内置放行 /actuator）
+curl http://localhost:8081/actuator/health/liveness
+curl http://localhost:8081/actuator/health/readiness
+
+# 容量报表：当前有几个可路由的健康实例（需内部 JWT）
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/router/health
 ```
 
-返回内容包含当前健康实例数量。HTTP 200 表示 Router 本身正常（不保证有健康的 Agent 实例）。
+`/api/router/health` 返回当前健康实例数量，它是**容量报表**而不是探针：最后一个 agent 停止心跳时它会
+报 DOWN，而那正是 Router 自身仍然健康、只是拒绝接活的时候，用它做存活探针会导致无意义的重启。
+cluster 模式的 `/actuator/health/readiness` 包含 Redis 检查——共享状态不可达时该节点已无法正确路由，
+应当摘出负载均衡；调用日志库（MySQL）不参与就绪判定，写日志失败不该让路由下线。
 
 ---
 
@@ -372,6 +398,10 @@ curl http://localhost:8081/api/router/health
 | 端口 | 用途 | 对外暴露 |
 |------|------|---------|
 | 8081 | HTTP API + SSE 代理 | 本地模式可直连；集群模式下仅 nginx 可访问 |
+
+> 容器编排里 8081 直接映射为宿主机的 28081，供服务间与联调直连（绕过 nginx）。这不代表它可以匿名：
+> 除 `/actuator`、`/health` 和面板静态文件外，Router 自己的每个 API 都要凭证，绕过 nginx 少的是传输层
+> 边界，不是认证。
 
 ---
 
@@ -382,13 +412,18 @@ curl http://localhost:8081/api/router/health
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `router.proxy.connect-timeout-ms` | `5000` | 连接 agent-service 超时（5 秒） |
-| `router.proxy.read-timeout-ms` | `600000` | 代理读超时（10 分钟，AI 推理较长） |
-| `router.proxy.stream-timeout-minutes` | `10` | SSE 流总超时 |
+| `router.proxy.read-timeout-ms` | `600000` | 代理读超时（10 分钟，只作用于 JSON 调用；流自带超时约束） |
+| `router.proxy.stream-idle-timeout-seconds` | `120` | 流静默多久即判定结束 |
+| `router.proxy.stream-max-duration-minutes` | `30` | 单条流的墙钟上限，无论多活跃 |
 | `router.proxy.failover-max-retries` | `2` | 故障转移重试次数 |
-| `router.proxy.max-connections` | `200` | WebClient 连接池上限（代码默认值，不在 yml 中） |
+| `router.proxy.max-connections-per-instance` | `50` | **单个** agent 实例的连接上限（Reactor Netty 按 host:port 分池，一台卡住的实例吃不掉整个 Router） |
 | `router.proxy.max-in-memory-size-mb` | `16` | 响应体内存缓冲上限 |
-| `router.proxy.pending-acquire-timeout-ms` | `10000` | 连接池等待获取超时（代码默认值） |
-| `spring.mvc.async.request-timeout` | `600000` | Spring MVC 异步请求超时（10 分钟） |
+| `router.proxy.pending-acquire-timeout-ms` | `10000` | 实例池打满时调用方的排队上限 |
+| `router.proxy.pending-acquire-max-count` | `100` | 排队人数超过此值直接快速拒绝，避免一起超时 |
+| `router.proxy.pool-max-idle-seconds` | `60` | 空闲连接保留时长 |
+| `router.proxy.pool-max-lifetime-minutes` | `5` | 连接按年龄回收，避免黏在已重新均衡的实例上 |
+| `spring.mvc.async.request-timeout` | `1800000` | Spring MVC 异步请求超时（30 分钟，必须不短于 `stream-max-duration-minutes`，否则容器会抢在 Router 之前掐断流） |
+| `spring.task.scheduling.pool.size` | `4` | `@Scheduled` 线程数。默认单线程，一个阻塞任务（健康检查等 Redis）会拖住日志刷盘等其余任务 |
 | `spring.codec.max-in-memory-size` | `16MB` | WebFlux 编解码器内存上限 |
 | `server.forward-headers-strategy` | `native` | 转发头策略，nginx 后置时必须为 `native` |
 
@@ -420,8 +455,13 @@ harnax:
       - /favicon.ico
       - /style.css
       - /app.js
-      - /api/router/monitor/   # 监控面板 API
 ```
+
+跳过的只有渲染面板所需的静态文件。`/api/router/monitor/*` 曾经在这里，现已移出：`instances` 是整
+个集群的内部地址拓扑，`call-logs` 是 Router 见过的每一次调用（含 sessionId 与错误文本），匿名可读等
+于把这两样摆在公网上。现在两者都要 `Authorization: Bearer <jwt>` 或 `X-Api-Key`。
+
+`UnifiedAuthFilter` 另外内置跳过 `/health` 与 `/actuator` 前缀，无需在 skip-paths 里声明。
 
 > **安全警告**：不要把 `/api/router/` 整体加入 skip-paths，否则 heartbeat / register 等 `@InternalOnly` 接口的 JWT 不会被解析，导致所有内部接口返回 401。
 
@@ -442,17 +482,20 @@ harnax:
 
 ### 内置监控面板
 
-访问 `http://<host>:8081/ui` 查看：
+访问 `http://<host>:8081/ui?token=<jwt or api key>` 查看：
 - 已注册实例列表（IP、端口、状态、session 数、心跳延迟）
 - API 调用明细（支持按 sessionId / instanceId / agentName 查询，含耗时）
+
+页面把 token 存进 localStorage，一次性带上即可持续轮询；地址栏里的 `?token=` 会被抹掉，避免留在浏览
+器历史中。凭证缺失或失效时面板停止轮询并提示需要凭证。启动日志中的地址已带上该参数形式。
 
 ### 监控 API 端点
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| GET | `/api/router/monitor/instances` | 无 | 实例列表（含 session 数、心跳延迟） |
-| GET | `/api/router/monitor/call-logs` | 无 | 调用日志分页查询 |
-| GET | `/api/router/metrics/cache` | 无 | 缓存统计（实例数、命中率） |
+| GET | `/api/router/monitor/instances` | JWT / API Key | 实例列表（含 session 数、心跳延迟） |
+| GET | `/api/router/monitor/call-logs` | JWT / API Key | 调用日志分页查询 |
+| GET | `/api/router/metrics/cache` | 内部 JWT | 当前生效的注册表 / 会话映射实现类名 |
 
 ### Spring Boot Actuator
 
@@ -465,7 +508,9 @@ Router 暴露了以下 Actuator 端点：
 | `/actuator/prometheus` | Prometheus 指标 |
 | `/actuator/metrics` | 全部指标列表 |
 
-> **安全提示**：Actuator 端点默认暴露且无需认证。生产环境建议通过 nginx 限制访问，或修改 `management.endpoints.web.exposure.include` 配置。
+> **安全提示**：`UnifiedAuthFilter` 内置跳过 `/actuator` 前缀，这些端点是匿名可读的（暴露线程、堆、
+> 数据源等运行时信息）。生产环境建议通过 nginx 限制来源，或收窄
+> `management.endpoints.web.exposure.include`（当前为 `health,info,prometheus,metrics`）。
 
 ### 关键 Prometheus 指标
 
@@ -474,7 +519,11 @@ Router 暴露了以下 Actuator 端点：
 | `router_proxy_duration_seconds` | 代理请求延迟 |
 | `router_proxy_requests_total` | 请求总数（按 status / endpoint） |
 | `router_failover_count_total` | 故障转移次数 |
+| `router_healthy_instances` | 该副本可放置会话的实例数（排除 DOWN / DRAINING / 心跳超时） |
 | `hikaricp_connections_active` | 数据库连接数 |
+
+> `router_healthy_instances` 每个 Router 副本各报各的，抓取时现场读一次注册表。多副本时某副本的 Redis
+> 视图落后会比其他副本偏低，因此告警用 `min(router_healthy_instances) < 1` 而不是 `avg()`。
 
 ---
 
@@ -485,3 +534,5 @@ Router 暴露了以下 Actuator 端点：
 | RateLimiter 是本地的 | 每个 Router 独立限流，N 个 Router 限流阈值放大 N 倍 | 配合 nginx ip_hash 后影响可控 |
 | API Key 缓存 5 分钟 | 撤销 Key 后最多 5 分钟生效 | 安全敏感场景需注意 |
 | SSE 不可跨 Router 恢复 | Router 宕机时客户端需重连 | 客户端需实现重连逻辑 |
+| Redis 不可达期间的降级 | 会话绑定退到本节点影子缓存，实例表退到最后一次快照；快照按心跳超时老化后不再路由 | 该窗口内跨节点粘性无法保证，Redis 恢复后仍以 Redis 为准 |
+| 熔断只影响新放置 | 已绑定实例恰好熔断时，该会话仍会先试原实例，失败后再走代理故障转移 | 换取的是"一次熔断不会把整台实例的会话同时改绑"，代价是首跳可能白等一次超时 |
