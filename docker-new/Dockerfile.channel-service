@@ -7,7 +7,7 @@ FROM eclipse-temurin:21-jre-alpine
 # Set timezone (use Aliyun mirror for Alpine packages)
 ENV TZ=Asia/Shanghai
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache tzdata netcat-openbsd \
+    && apk add --no-cache tzdata wget \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
     && echo $TZ > /etc/timezone
 
@@ -28,15 +28,19 @@ USER harnax
 # Expose port
 EXPOSE 8083
 
-# Health check using TCP port probe (no HTTP health endpoint available)
+# Health check probes the actuator liveness endpoint (probes.enabled=true in application.yml).
+# Liveness only reflects process health on purpose: per-channel connection status is exposed
+# separately via /actuator/health and /actuator/channels, so one unreachable channel platform
+# never gets the container killed.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD nc -z localhost 8083 || exit 1
+  CMD wget -qO- http://localhost:8083/actuator/health/liveness || exit 1
 
 # JVM options optimization
 ENV JAVA_OPTS="-Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
 
-# Start application
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# Start application (exec so the JVM replaces the shell and receives SIGTERM directly,
+# which lets the graceful shutdown hooks stop the channel listeners before exit)
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
 
 # Metadata
 LABEL maintainer="agnetix"

@@ -56,12 +56,15 @@ services:
     networks:
       - harnax-network
 
-  # Redis (shared cache for router instances in cluster mode)
+  # Redis (shared routing state for router instances in cluster mode)
+  # Holds session bindings, the instance registry, reroute locks and circuit-breaker state.
+  # maxmemory-policy MUST stay `noeviction`: evicting routing keys under memory pressure
+  # silently unbinds sessions and drops locks, which is far worse than a write error.
   redis:
     image: redis:7-alpine
     container_name: harnax-redis
     restart: always
-    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "26379:6379"
     volumes:
@@ -75,7 +78,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 256M
+          memory: 768M
     networks:
       - harnax-network
 
@@ -143,6 +146,16 @@ services:
       HARNAX_SCHEDULER_URL: http://scheduler:8084
       # Router External URL (returned to frontend/mobile apps)
       HARNAX_ROUTER_EXTERNAL_URL: http://localhost:28081
+      # Public origin of this deployment. Spring reads it as `app.base-url` to build callback URLs
+      # (channel platform callbacks). Point it at whatever the upstream can actually reach (the
+      # nginx front door when there is one); left unset it falls back to a localhost URL that is
+      # right for nothing but this machine.
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:28080}
+      # Origin the browser is standing on, read as Spring's `app.frontend-base-url` and used for the
+      # MCP OAuth redirect_uri, which is now a front-end route. Unset falls back to APP_BASE_URL - so
+      # with the default above (admin's own port, which serves no page) an OAuth callback would land
+      # on nothing: set this to the nginx origin, or set APP_BASE_URL to it.
+      APP_FRONTEND_BASE_URL: ${APP_FRONTEND_BASE_URL:-}
       # MinIO Configuration (output file download proxy)
       MINIO_ENABLED: "true"
       MINIO_ENDPOINT: http://minio:9000
@@ -199,6 +212,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       # Auth
+      # These `change-me` fallbacks are not harmless here: CACHE_TYPE above is `redis`, and
+      # PlaceholderSecretCheck aborts startup instead of accepting tokens signed with a key that is
+      # published in the repository. Put real values in docker-new/.env (see .env.example).
       SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # Admin service (for API key validation + session info)
@@ -213,6 +229,9 @@ services:
       # JVM
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
     ports:
+      # Reaching the router directly bypasses nginx, so this is only safe because the router
+      # authenticates its own APIs: the monitor page loads anonymously, but its data — node
+      # addresses and the full call trail — answers 401 without a token or API key.
       - "28081:8081"
     volumes:
       - router-logs:/app/logs
@@ -223,7 +242,10 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/router/monitor/instances"]
+      # Liveness only — a container restart cannot fix an unreachable Redis, and restarting every
+      # router node during a Redis blip turns a short outage into a cold start for the whole cluster.
+      # Readiness (which does watch Redis) belongs to the load balancer, not to the restart policy.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health/liveness"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -281,7 +303,7 @@ services:
       router:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8084/api/scheduler/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/actuator/health/liveness"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -400,6 +422,8 @@ services:
       # Admin Service (for API key auto-fetch)
       ADMIN_SERVICE_URL: http://admin:8080
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
+      # Router API Key：配置后不再向 admin 申请；留空则沿用自动获取，但要求 admin 先于本容器可用。
+      CHANNEL_API_KEY: ${CHANNEL_API_KEY:-}
       # Auth Configuration
       SERVICE_ID: ${CHANNEL_SERVICE_ID:-channel-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
@@ -407,6 +431,31 @@ services:
       JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
       # Log Configuration
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Listener ownership (MySQL GET_LOCK): only one instance drives the long-lived connections
+      CHANNEL_LOCK_ENABLED: ${CHANNEL_LOCK_ENABLED:-true}
+      CHANNEL_LOCK_NAME: ${CHANNEL_LOCK_NAME:-harnax-channel-listeners}
+      # Channel table reconciliation
+      CHANNEL_SYNC_INTERVAL_MS: ${CHANNEL_SYNC_INTERVAL_MS:-10000}
+      CHANNEL_SYNC_MAX_STARTS: ${CHANNEL_SYNC_MAX_STARTS:-5}
+      CHANNEL_RESTART_BACKOFF_INITIAL_MS: ${CHANNEL_RESTART_BACKOFF_INITIAL_MS:-2000}
+      CHANNEL_RESTART_BACKOFF_MAX_MS: ${CHANNEL_RESTART_BACKOFF_MAX_MS:-300000}
+      CHANNEL_STALE_HEARTBEAT_MS: ${CHANNEL_STALE_HEARTBEAT_MS:-180000}
+      # Inbound turn processing: bounded thread pool + per-channel concurrency
+      CHANNEL_TURN_POOL_SIZE: ${CHANNEL_TURN_POOL_SIZE:-24}
+      CHANNEL_TURN_PER_CHANNEL: ${CHANNEL_TURN_PER_CHANNEL:-4}
+      # In-memory conversation cache
+      CHANNEL_SESSION_MAX_SESSIONS: ${CHANNEL_SESSION_MAX_SESSIONS:-10000}
+      CHANNEL_SESSION_MAX_MESSAGES: ${CHANNEL_SESSION_MAX_MESSAGES:-500}
+      CHANNEL_SESSION_IDLE_TTL_MIN: ${CHANNEL_SESSION_IDLE_TTL_MIN:-120}
+      # Router call protection
+      ROUTER_BREAKER_ENABLED: ${ROUTER_BREAKER_ENABLED:-true}
+      ROUTER_BREAKER_FAILURE_THRESHOLD: ${ROUTER_BREAKER_FAILURE_THRESHOLD:-5}
+      ROUTER_BREAKER_OPEN_DURATION_MS: ${ROUTER_BREAKER_OPEN_DURATION_MS:-30000}
+      CHANNEL_STREAM_IDLE_TIMEOUT_MS: ${CHANNEL_STREAM_IDLE_TIMEOUT_MS:-180000}
+      # 连接健康指示器（/actuator/health）。与上面的存活探针无关：平台连接断开只是服务降级，
+      # 不是需要重拉的容器。
+      CHANNEL_HEALTH_ENABLED: ${CHANNEL_HEALTH_ENABLED:-true}
+      CHANNEL_HEALTH_FAILURE_GRACE_MS: ${CHANNEL_HEALTH_FAILURE_GRACE_MS:-60000}
     ports:
       - "28083:8083"
     volumes:
@@ -418,11 +467,14 @@ services:
       router:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8083 || exit 1"]
+      # Liveness only: a channel platform being unreachable must not get the container killed.
+      # Per-channel connection status lives in /actuator/health and /actuator/channels.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/actuator/health/liveness"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 60s
+    stop_grace_period: 35s
     deploy:
       resources:
         limits:

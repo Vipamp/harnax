@@ -28,9 +28,10 @@ USER harnax
 # Expose port
 EXPOSE 8081
 
-# Health check
+# Health check — /api/router/health needs an internal JWT, so a probe there would read 401 and
+# mark a perfectly routing-enabled container unhealthy. Liveness is anonymous, like every other image.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-  CMD wget -qO- http://localhost:8081/api/router/health || exit 1
+  CMD wget -qO- http://localhost:8081/actuator/health/liveness || exit 1
 
 # JVM options optimization
 ENV JAVA_OPTS="-Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs"
