@@ -7,6 +7,8 @@ import java.time.Instant
  */
 data class ApiKeyInfo(
     val name: String,
+    /** Owner of the key (`api_key.user_id`); null for SYSTEM keys, which have no human behind them. */
+    val userId: Long? = null,
     val keyHash: String,
     val scopes: Set<String>,
     val tenantId: Long?,

@@ -7,6 +7,8 @@ enum class CallerType {
 
 data class AuthContext(
     val callerId: String,
+    /** Human behind an external API key; null for internal service callers and SYSTEM keys. */
+    val userId: Long? = null,
     val callerType: CallerType = CallerType.INTERNAL_SERVICE,
     val tenantId: Long? = null,
     val rateLimitPerMinute: Int? = null,

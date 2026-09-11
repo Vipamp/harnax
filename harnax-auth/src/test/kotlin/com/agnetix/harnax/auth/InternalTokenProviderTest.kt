@@ -40,6 +40,14 @@ class InternalTokenProviderTest {
         }
 
         @Test
+        fun `token is typed internal`() {
+            // Without this claim a service token is indistinguishable from a browser's login
+            // token, and the receiver would have to guess who may reach @InternalOnly.
+            val claims = parseToken(provider.generateToken(), sharedSecret)
+            assertEquals("internal", claims["typ"])
+        }
+
+        @Test
         fun `token has correct expiration`() {
             val before = System.currentTimeMillis()
             val token = provider.generateToken()
@@ -163,6 +171,42 @@ class InternalTokenProviderTest {
             val context = providerB.verifyToken(token)
 
             assertEquals("service-a", context.callerId)
+        }
+
+        @Test
+        fun `a user JWT signed with the same secret is not an internal service`() {
+            // Deploy docs tell the operator to reuse one secret for admin and agent-service. If
+            // that secret also lands in harnax.auth.internal.shared-secret, a browser token must
+            // still not unlock @InternalOnly endpoints.
+            val userToken = Jwts.builder()
+                .subject("alice")
+                .claim("userId", 7L)
+                .claim("tenantId", 3L)
+                .issuedAt(Date())
+                .expiration(Date(System.currentTimeMillis() + 60_000))
+                .signWith(Keys.hmacShaKeyFor(sharedSecret.toByteArray(StandardCharsets.UTF_8)))
+                .compact()
+
+            val context = provider.verifyToken(userToken)
+
+            assertEquals(CallerType.EXTERNAL_API, context.callerType)
+            assertFalse(context.isInternal())
+            assertEquals(7L, context.userId)
+            assertEquals(3L, context.tenantId)
+        }
+
+        @Test
+        fun `rejects a bearer that is neither a service token nor a user token`() {
+            val unclassifiable = Jwts.builder()
+                .subject("who-am-i")
+                .issuedAt(Date())
+                .expiration(Date(System.currentTimeMillis() + 60_000))
+                .signWith(Keys.hmacShaKeyFor(sharedSecret.toByteArray(StandardCharsets.UTF_8)))
+                .compact()
+
+            assertThrows<SecurityException> {
+                provider.verifyToken(unclassifiable)
+            }
         }
     }
 

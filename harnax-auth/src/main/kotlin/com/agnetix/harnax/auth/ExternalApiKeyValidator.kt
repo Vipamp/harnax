@@ -23,6 +23,7 @@ class ExternalApiKeyValidator(
 
         return AuthContext(
             callerId = keyInfo.name,
+            userId = keyInfo.userId,
             scopes = keyInfo.scopes,
             callerType = CallerType.EXTERNAL_API,
             tenantId = keyInfo.tenantId,

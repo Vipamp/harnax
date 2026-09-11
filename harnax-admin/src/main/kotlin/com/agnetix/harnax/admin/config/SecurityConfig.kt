@@ -1,6 +1,8 @@
 package com.agnetix.harnax.admin.config
 
+import com.agnetix.harnax.auth.InternalTokenProvider
 import jakarta.servlet.http.HttpServletResponse
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -99,5 +101,21 @@ class SecurityConfig(
         val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", configuration)
         return source
+    }
+
+    /**
+     * 供 admin 调用 scheduler 时签发的服务间 token。admin 自身关掉了 harnax.auth.enabled，
+     * 所以自动配置的 InternalTokenProvider 并不存在，这里按同一组配置单独建一个。
+     */
+    @Bean
+    fun schedulerTokenProvider(
+        @Value("\${harnax.auth.service-id:admin}") serviceId: String,
+        @Value("\${harnax.auth.internal.shared-secret:}") sharedSecret: String,
+        @Value("\${harnax.auth.internal.token-ttl-seconds:300}") tokenTtlSeconds: Long,
+    ): InternalTokenProvider {
+        require(sharedSecret.length >= 32) {
+            "harnax.auth.internal.shared-secret must be at least 32 characters to call the scheduler"
+        }
+        return InternalTokenProvider(serviceId, sharedSecret, tokenTtlSeconds)
     }
 }

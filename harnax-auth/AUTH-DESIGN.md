@@ -58,11 +58,18 @@
 ```json
 {
   "sub": "channel-0",
+  "typ": "internal",
   "iat": 1718611200,
   "exp": 1718611500,
   "jti": "uuid-xxx"
 }
 ```
+
+`typ` 是内部服务身份标记：签名相同并不代表调用方就是服务——如果运维把 `jwt.secret` 与
+`harnax.auth.internal.shared-secret` 配成同一个值，浏览器里的登录 JWT 也能通过验签。所以
+`verifyToken()` 只把带 `typ=internal` 的 token 判为 `INTERNAL_SERVICE`；没有 `typ` 但带
+`userId` 的按用户身份处理，记为 `EXTERNAL_API`（能过认证、访问不了 `@InternalOnly`）；
+两者都没有的直接拒绝。
 
 **令牌缓存：**
 
@@ -202,7 +209,7 @@ X-Caller-Id: channel-0
    → 读取 Authorization 头，提取 JWT
 
 ② InternalTokenProvider.verifyToken()
-   → 验证 HMAC 签名 + 过期时间
+   → 验证 HMAC 签名 + 过期时间 + typ=internal
    → 构建 AuthContext(callerId="channel-0", INTERNAL_SERVICE)
 
 ③ AuthContextHolder.set(context)

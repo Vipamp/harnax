@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.auth.InternalTokenProvider
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.jupiter.api.AfterEach
@@ -26,6 +27,11 @@ import java.util.concurrent.TimeUnit
 @MockitoSettings(strictness = Strictness.LENIENT)
 class SchedulerClientImplTest {
 
+    companion object {
+        private const val SERVICE_ID = "admin"
+        private const val TEST_SHARED_SECRET = "unit-test-shared-secret-at-least-32-chars"
+    }
+
     private lateinit var server: MockWebServer
 
     @BeforeEach
@@ -41,7 +47,7 @@ class SchedulerClientImplTest {
 
     private fun baseUrl(s: MockWebServer = server): String = s.url("/").toString().removeSuffix("/")
 
-    private fun createService(urls: String = baseUrl()): SchedulerClientImpl = SchedulerClientImpl(urls)
+    private fun createService(urls: String = baseUrl()): SchedulerClientImpl = SchedulerClientImpl(urls, InternalTokenProvider(SERVICE_ID, TEST_SHARED_SECRET, 300))
 
     private fun successResponse(): MockResponse = MockResponse()
         .setResponseCode(200)
@@ -74,6 +80,23 @@ class SchedulerClientImplTest {
             assertNotNull(request)
             assertEquals("POST", request!!.method)
             assertEquals("/api/scheduler/tasks/1/trigger", request.path)
+        }
+
+        @Test
+        @DisplayName("triggerTask - 请求带内部服务 token")
+        fun `triggerTask should carry an internal bearer token`() {
+            // Given - scheduler 开启 UnifiedAuthFilter 后，只认 typ=internal 的 bearer
+            server.enqueue(successResponse())
+
+            // When
+            createService().triggerTask(1L)
+
+            // Then
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertNotNull(request)
+            val authorization = request!!.getHeader("Authorization")
+            assertTrue(authorization != null && authorization.startsWith("Bearer "), "缺少内部服务 token: $authorization")
+            assertEquals(SERVICE_ID, request.getHeader("X-Caller-Id"))
         }
 
         @Test

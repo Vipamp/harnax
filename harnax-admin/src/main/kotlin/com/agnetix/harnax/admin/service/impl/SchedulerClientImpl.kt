@@ -1,6 +1,8 @@
 package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.service.SchedulerClient
+import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
+import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -13,6 +15,7 @@ import java.time.Duration
 @Service
 class SchedulerClientImpl(
     @Value("\${harnax.scheduler.url:http://localhost:8084}") private val schedulerUrls: String,
+    private val tokenProvider: InternalTokenProvider,
 ) : SchedulerClient {
 
     private val log = LoggerFactory.getLogger(SchedulerClientImpl::class.java)
@@ -29,6 +32,8 @@ class SchedulerClientImpl(
         }
         RestClient.builder()
             .requestFactory(factory)
+            // The scheduler runs UnifiedAuthFilter: every call needs a fresh typ=internal bearer.
+            .requestInterceptor(AuthRestTemplateInterceptor(tokenProvider))
             .build()
     }
 

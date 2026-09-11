@@ -477,7 +477,7 @@ abstract class BaseIntegrationTest {
 #### 4.4.4 认证辅助
 
 - `AdminAuthHelper`：调用 `/api/admin/auth/captcha` + `/login` 获取 JWT。验证码问题的解法（按优先级）：① 若 admin 支持 `captcha.enabled=false` 类配置则容器模式直接关闭；② 否则由 IT 在启动 admin 容器时注入测试 profile 提供固定验证码；③ 兜底用 `DbFixture` 预置用户 + 直接走内部 token。**具体采用哪种在任务 T3 实施时确认**（开放问题 Q2）；
-- `InternalTokenHelper`：读取注入容器的 `harnax.auth.internal.shared-secret` 测试值，本地用 jjwt 签发与 harnax-auth 兼容的内部 JWT，携带 `Authorization: Bearer` + `X-Caller-Id`，用于测试服务间接口（如 `InternalApiController`）与鉴权负向用例；
+- `InternalTokenHelper`：读取注入容器的 `harnax.auth.internal.shared-secret` 测试值，本地用 jjwt 签发与 harnax-auth 兼容的内部 JWT（必须带 `typ=internal` claim，缺了就不再被 `verifyToken()` 判为内部服务），携带 `Authorization: Bearer` + `X-Caller-Id`，用于测试服务间接口（如 `InternalApiController`）与鉴权负向用例；
 - `ApiKeyHelper`：通过 Admin 的 ApiKeyController 创建 Router 用 `X-Api-Key`，供 `SingleHarnaxClient` 使用。
 
 ---

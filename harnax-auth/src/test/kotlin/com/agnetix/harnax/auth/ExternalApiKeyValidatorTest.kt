@@ -28,6 +28,7 @@ class ExternalApiKeyValidatorTest {
             val keyHash = sha256(rawKey)
             val keyInfo = ApiKeyInfo(
                 name = "test-app",
+                userId = 7L,
                 keyHash = keyHash,
                 scopes = setOf("read", "write"),
                 tenantId = 42L,
@@ -40,6 +41,7 @@ class ExternalApiKeyValidatorTest {
             val context = validator.validate(rawKey)
 
             assertEquals("test-app", context.callerId)
+            assertEquals(7L, context.userId)
             assertEquals(CallerType.EXTERNAL_API, context.callerType)
             assertEquals(42L, context.tenantId)
             assertEquals(100, context.rateLimitPerMinute)
@@ -65,6 +67,7 @@ class ExternalApiKeyValidatorTest {
             val context = validator.validate(rawKey)
 
             assertEquals("permanent-app", context.callerId)
+            assertNull(context.userId)
             assertNull(context.tenantId)
             assertNull(context.rateLimitPerMinute)
         }
