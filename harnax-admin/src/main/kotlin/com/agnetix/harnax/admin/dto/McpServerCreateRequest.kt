@@ -23,7 +23,7 @@ data class McpServerCreateRequest(
         requiredMode = Schema.RequiredMode.REQUIRED,
     )
     @NotBlank(message = "MCP type cannot be empty")
-    val type: String = "stdio",
+    val type: String = "streamablehttp",
 
     @Schema(
         description = "Execute command (only for stdio type)",
@@ -34,8 +34,20 @@ data class McpServerCreateRequest(
     @Schema(description = "Service URL (for sse/streamablehttp type)", example = "http://localhost:3000/sse")
     val url: String? = null,
 
+    @Schema(
+        description = "Upstream auth method (NONE/STATIC_HEADER/OAUTH2). Omitted means NONE",
+        example = "NONE",
+    )
+    val authType: String? = null,
+
+    @Schema(description = "OAuth configuration, only allowed when authType is OAUTH2")
+    val oauthConfig: McpOAuthConfig? = null,
+
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
+
+    @Schema(description = "Whether public (0:no, 1:yes). Omitted means public", example = "1")
+    val isPublic: Int? = null,
 
     @Schema(description = "HTTP headers configuration (for sse/streamablehttp type)")
     val headers: List<McpConfigEntry>? = null,

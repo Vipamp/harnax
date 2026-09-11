@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
-import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
@@ -183,19 +182,19 @@ class McpServerControllerTest {
         }
 
         @Test
-        @DisplayName("createMcpServer - stdio 类型不支持,直接返回错误")
-        fun `createMcpServer should reject stdio type`() {
+        @DisplayName("createMcpServer - stdio 类型透传给 service")
+        fun `createMcpServer should delegate stdio type to service`() {
             val request = McpServerCreateRequest(
                 name = "stdio-mcp",
                 type = "stdio",
                 command = "npx -y some-server",
             )
+            `when`(mcpServerService.createMcpServer(any())).thenReturn(true)
 
             val result = controller.createMcpServer(request)
 
-            assertFalse(result.isSuccess())
-            assertEquals("stdio mode is not supported in current edition", result.message)
-            verify(mcpServerService, never()).createMcpServer(any())
+            assertTrue(result.isSuccess())
+            verify(mcpServerService).createMcpServer(request)
         }
 
         @Test

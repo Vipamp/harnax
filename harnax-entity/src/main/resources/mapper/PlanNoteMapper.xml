@@ -24,8 +24,9 @@
         SELECT * FROM plan_note WHERE id = #{id} LIMIT 1
     </select>
 
-    <!-- deleteById: plan_note has no `active` column, so this is a real DELETE -- the same as
-         deleteBySessionId below. The former `SET active = 0` named a column the table never had -->
+    <!-- deleteById: plan_note has no `active` column, so this is a real DELETE, the same as
+         deleteBySessionId below. The former `SET active = 0` named a column the table never had.
+         Note: a double hyphen is not allowed inside an XML comment body. -->
     <delete id="deleteById">
         DELETE FROM plan_note WHERE id = #{id}
     </delete>

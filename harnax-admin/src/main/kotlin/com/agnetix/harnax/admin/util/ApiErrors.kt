@@ -35,16 +35,20 @@ object ApiErrors {
     private const val GENERIC_DUPLICATE = "The submitted name is already in use"
 
     /**
-     * Unique index of `V15__skill_source_integrity.sql` mapped to the rule it enforces.
+     * Unique indexes added by `V15__skill_source_integrity.sql` and `V23__add_mcp_server_name_unique_key.sql`,
+     * mapped to the rule each enforces.
      *
      * Naming the index keeps the answer specific: a bare "already exists" does not say whether the
-     * collision is on the source name, on a skill inside it, or on the reserved builtin name.
+     * collision is on the source name, on a skill inside it, on the reserved builtin name, or on an
+     * MCP server name inside the caller's own tenant.
      */
     private val DUPLICATE_INDEX_MESSAGES = mapOf(
         "uk_skill_repository_tenant_active_name" to "Source name already exists",
         "uk_skill_repository_builtin_guard" to
             "Repository name '${BuiltinRepository.CLI_SKILLS}' is reserved for the platform",
         "uk_skill_repo_active_name" to "A skill with this name already exists in the repository",
+        "uk_mcp_server_tenant_active_name" to "An MCP server with this name already exists in your tenant",
+        "uk_mcp_oauth_client_tenant_issuer_client" to "An OAuth client registration for this authorization server already exists, please run discovery again",
     )
 
     /**

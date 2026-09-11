@@ -4,9 +4,11 @@ import com.agnetix.harnax.entity.McpServer
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.mybatis.spring.boot.test.autoconfigure.MybatisTest
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -16,6 +18,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -51,6 +54,23 @@ open class McpServerMapperTest {
 
     @Autowired
     private lateinit var mcpServerMapper: McpServerMapper
+
+    private fun insertServer(name: String, tenantId: Long): McpServer {
+        val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+        return McpServer().apply {
+            this.name = name
+            description = "批量与租户查询用"
+            type = "streamablehttp"
+            url = "http://localhost:1/mcp"
+            status = 1
+            isPublic = 1
+            creator = "admin"
+            active = 1
+            this.tenantId = tenantId
+            createTime = now
+            updateTime = now
+        }.also { mcpServerMapper.insert(it) }
+    }
 
     @Nested
     @DisplayName("Basic CRUD Tests")
@@ -182,6 +202,37 @@ open class McpServerMapperTest {
         }
 
         @Test
+        @DisplayName("updateOAuthConfig - Only the oauth_config column moves")
+        fun `updateOAuthConfig should touch nothing but the oauth config`() {
+            // Given - 发现成功后要把 issuer 写回这一列，但那一行别的东西正被编辑页拥有
+            val server = insertServer("Issuer Writeback MCP", 77L)
+
+            // When
+            val result = mcpServerMapper.updateOAuthConfig(server.id, """{"authorizationServer":"https://as.example.com"}""")
+
+            // Then - updateById 的 SET 是无条件的，整行回写会覆盖别人的编辑，所以这里要逐列确认没动
+            assertEquals(1, result)
+            val updated = mcpServerMapper.selectById(server.id)
+            assertNotNull(updated)
+            assertEquals("""{"authorizationServer":"https://as.example.com"}""", updated.oauthConfig)
+            assertEquals("Issuer Writeback MCP", updated.name)
+            assertEquals("http://localhost:1/mcp", updated.url)
+            assertEquals(1, updated.status)
+            assertEquals(77L, updated.tenantId)
+        }
+
+        @Test
+        @DisplayName("updateOAuthConfig - A logically deleted row is not revived")
+        fun `updateOAuthConfig should skip a deleted row`() {
+            val server = insertServer("Deleted Writeback MCP", 78L)
+            mcpServerMapper.deleteById(server.id)
+
+            val result = mcpServerMapper.updateOAuthConfig(server.id, """{"authorizationServer":"https://as.example.com"}""")
+
+            assertEquals(0, result)
+        }
+
+        @Test
         @DisplayName("deleteById - Logically delete MCP server")
         fun `deleteById should logically delete mcp server`() {
             // Given
@@ -281,6 +332,65 @@ open class McpServerMapperTest {
 
             // Then
             assertNull(mcpServer)
+        }
+
+        @Test
+        @DisplayName("selectByName - Tenant id limits the lookup")
+        fun `selectByName should limit the lookup to the given tenant`() {
+            // Given - 唯一键按租户算，重名检查也必须是同口径，否则别租户占了名字自己就建不了
+            insertServer("Cross Tenant Name MCP", 33L)
+
+            // When & Then
+            assertNotNull(mcpServerMapper.selectByName("Cross Tenant Name MCP", 33L))
+            assertNull(mcpServerMapper.selectByName("Cross Tenant Name MCP", 44L))
+        }
+
+        @Test
+        @DisplayName("uk_mcp_server_tenant_active_name - Guards active names per tenant")
+        fun `unique key should guard active names per tenant`() {
+            // Given - V23 的生成列让已删除行退出唯一键，互斥只发生在同租户的有效行之间
+            val first = insertServer("Guard MCP", 55L)
+
+            // When & Then
+            assertThrows<DuplicateKeyException> { insertServer("Guard MCP", 55L) }
+            assertNotNull(insertServer("Guard MCP", 66L))
+
+            mcpServerMapper.deleteById(first.id)
+            assertNotNull(insertServer("Guard MCP", 55L))
+        }
+
+        @Test
+        @DisplayName("selectByIds - Batch fetch keeps the requested live rows only")
+        fun `selectByIds should return only the requested live servers`() {
+            // Given - 下发链路一次批量取绑定到的服务，多给或漏给都会让 spec 与绑定表不一致
+            val first = insertServer("Batch MCP 1", 1L)
+            val second = insertServer("Batch MCP 2", 1L)
+            insertServer("Batch MCP 3", 1L)
+            mcpServerMapper.deleteById(second.id)
+
+            // When
+            val names = mcpServerMapper.selectByIds(listOf(first.id, second.id, 999_999L)).map { it.name }
+
+            // Then
+            assertEquals(listOf("Batch MCP 1"), names)
+        }
+
+        @Test
+        @DisplayName("selectMcpServerList - Filter by tenant")
+        fun `selectMcpServerList should filter by tenant`() {
+            // Given
+            insertServer("Tenant One MCP", 11L)
+            insertServer("Tenant Two MCP", 22L)
+
+            // When - 传了租户就只看得到自己的行
+            val owned = mcpServerMapper.selectMcpServerList(null, null, null, "admin", 11L).map { it.name }
+            val unfiltered = mcpServerMapper.selectMcpServerList(null, null, null, "admin").map { it.name }
+
+            // Then
+            assertTrue(owned.contains("Tenant One MCP"))
+            assertFalse(owned.contains("Tenant Two MCP"))
+            // 不传租户时整个条件不拼上
+            assertTrue(unfiltered.containsAll(listOf("Tenant One MCP", "Tenant Two MCP")))
         }
     }
 }

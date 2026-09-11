@@ -3,6 +3,7 @@ package com.agnetix.harnax.admin.dto
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.McpServer
 import io.swagger.v3.oas.annotations.media.Schema
+import org.slf4j.LoggerFactory
 import tools.jackson.databind.ObjectMapper
 import java.time.LocalDateTime
 
@@ -23,6 +24,10 @@ data class McpServerResponse(
     val command: String? = null,
     @Schema(description = "Service URL (for sse/streamablehttp type)")
     val url: String? = null,
+    @Schema(description = "Upstream auth method (NONE/STATIC_HEADER/OAUTH2)", example = "NONE")
+    val authType: String? = null,
+    @Schema(description = "OAuth configuration (non-sensitive fields only)")
+    val oauthConfig: McpOAuthConfig? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
@@ -39,6 +44,8 @@ data class McpServerResponse(
     val envParams: List<ToolEnvParamEntry>? = null,
 ) {
     companion object {
+        private val log = LoggerFactory.getLogger(McpServerResponse::class.java)
+
         @JvmStatic
         fun fromEntity(
             entity: McpServer,
@@ -54,6 +61,8 @@ data class McpServerResponse(
                 type = entity.type,
                 command = entity.command,
                 url = entity.url,
+                authType = entity.authType,
+                oauthConfig = parseOAuthConfig(entity.oauthConfig, objectMapper),
                 status = entity.status,
                 isPublic = entity.isPublic,
                 creator = entity.creator,
@@ -62,6 +71,27 @@ data class McpServerResponse(
                 headers = headers,
                 envParams = envParams,
             )
+        }
+
+        /**
+         * `oauth_config` holds only non-sensitive fields, so it is returned as-is with no masking.
+         *
+         * Public because the OAuth service reads the same column and must apply the same rule rather
+         * than keep a second copy of it.
+         */
+        fun parseOAuthConfig(
+            json: String?,
+            objectMapper: ObjectMapper?,
+        ): McpOAuthConfig? {
+            if (json.isNullOrBlank() || objectMapper == null) return null
+            return try {
+                objectMapper.readValue(json, McpOAuthConfig::class.java)
+            } catch (e: Exception) {
+                // A value we serialized ourselves that will not parse is drift, not "no config":
+                // answering null here would let the UI overwrite it blind.
+                log.warn("Stored MCP oauth_config is unreadable, treating it as unset: {}", e.message)
+                null
+            }
         }
 
         /**

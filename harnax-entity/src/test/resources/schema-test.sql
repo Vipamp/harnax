@@ -97,11 +97,15 @@ INSERT INTO `model` (`name`, `model_name`, `provider_id`, `description`, `model_
 -- ============================================
 CREATE TABLE IF NOT EXISTS `mcp_server` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) DEFAULT 1 COMMENT '租户 ID',
     `name` VARCHAR(100) NOT NULL COMMENT 'MCP 服务名称',
     `description` TEXT DEFAULT NULL COMMENT 'MCP 服务描述',
     `type` VARCHAR(20) NOT NULL DEFAULT 'streamablehttp' COMMENT 'MCP 类型（stdio/sse/streamablehttp）',
     `command` VARCHAR(500) DEFAULT NULL COMMENT '执行命令（仅 stdio 类型）',
     `url` VARCHAR(500) DEFAULT NULL COMMENT '服务地址（sse/streamablehttp 类型）',
+    -- V25：上游认证方式与 OAuth 非敏感配置（client 凭据不在此列，见 mcp_oauth_client）
+    `auth_type` VARCHAR(20) NOT NULL DEFAULT 'NONE' COMMENT '上游认证方式（NONE/STATIC_HEADER/BASIC/OAUTH2）',
+    `oauth_config` TEXT DEFAULT NULL COMMENT 'OAuth 非敏感配置 JSON',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
     `creator` VARCHAR(100) NOT NULL COMMENT '创建人',
@@ -110,8 +114,11 @@ CREATE TABLE IF NOT EXISTS `mcp_server` (
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `headers` TEXT DEFAULT NULL COMMENT 'HTTP headers JSON',
     `env_params` TEXT DEFAULT NULL COMMENT 'Env params JSON',
+    -- V23 uniqueness guard: per tenant, and only over active rows (the generated column turns NULL
+    -- once active = 0, so a deleted server name can be taken again)
+    `active_name` VARCHAR(100) GENERATED ALWAYS AS (IF(active = 1, name, NULL)) VIRTUAL,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
+    UNIQUE KEY `uk_mcp_server_tenant_active_name` (`tenant_id`, `active_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 服务表';
 
 INSERT INTO `mcp_server` (`name`, `description`, `type`, `command`, `url`, `status`, `is_public`, `creator`, `active`) VALUES
@@ -194,13 +201,11 @@ INSERT INTO `skill` (`tenant_id`, `name`, `repository_id`, `description`, `skill
 -- ============================================
 CREATE TABLE IF NOT EXISTS `agent` (
     `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户ID',
     `name` VARCHAR(100) NOT NULL COMMENT '智能体名称',
     `description` TEXT DEFAULT NULL COMMENT '智能体描述',
     `system_prompt` TEXT DEFAULT NULL COMMENT '系统提示词（支持 Markdown）',
     `model_id` BIGINT(20) DEFAULT NULL COMMENT '对话模型 ID',
-    `mcp_list` TEXT DEFAULT NULL COMMENT 'MCP 服务列表（JSON 格式）',
-    `skill_list` TEXT DEFAULT NULL COMMENT '技能列表（JSON 格式）',
-    `tool_list` TEXT DEFAULT NULL COMMENT '工具列表（JSON 格式）',
     `owner` VARCHAR(100) DEFAULT NULL COMMENT '所有者',
     `status` TINYINT(1) DEFAULT 1 COMMENT '是否启用（0:禁用，1:启用）',
     `is_public` TINYINT(1) DEFAULT 1 COMMENT '是否公开（0:否，1:是）',
@@ -209,14 +214,15 @@ CREATE TABLE IF NOT EXISTS `agent` (
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    UNIQUE KEY `uk_name` (`name`)
+    KEY `idx_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体表';
 
-INSERT INTO `agent` (`name`, `description`, `system_prompt`, `model_id`, `mcp_list`, `skill_list`, `tool_list`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
-('Test Agent 1', '测试智能体1', '你是一个助手', 1, '[{"id":1,"enable_skip":"false"}]', '[1,2]', '[{"id":1,"need_confirm":false}]', 'testuser1', 1, 1, 'testuser1', 1),
-('Test Agent 2', '测试智能体2', '你是一个编程助手', 2, '[]', '[1]', '[]', 'testuser1', 1, 0, 'testuser1', 1),
-('Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, '[{"id":2,"enable_skip":"true"}]', '[]', '[{"id":2,"need_confirm":true}]', 'testuser2', 0, 1, 'testuser2', 1),
-('Deleted Agent', '已删除智能体', '已删除', 1, '[]', '[]', '[]', 'testuser1', 1, 1, 'testuser1', 0);
+INSERT INTO `agent` (`tenant_id`, `name`, `description`, `system_prompt`, `model_id`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
+(1, 'Test Agent 1', '测试智能体1', '你是一个助手', 1, 'testuser1', 1, 1, 'testuser1', 1),
+(1, 'Test Agent 2', '测试智能体2', '你是一个编程助手', 2, 'testuser1', 1, 0, 'testuser1', 1),
+(1, 'Test Agent 3', '测试智能体3', '你是一个翻译助手', 3, 'testuser2', 0, 1, 'testuser2', 1),
+(1, 'Deleted Agent', '已删除智能体', '已删除', 1, 'testuser1', 1, 1, 'testuser1', 0),
+(2, 'Tenant2 Agent', '租户 2 智能体', '你是租户 2 助手', 1, 'user2', 1, 1, 'user2', 1);
 
 -- ============================================
 -- 8. Channel 通道表
@@ -272,8 +278,6 @@ CREATE TABLE IF NOT EXISTS `session` (
     `enable_search` TINYINT(1) DEFAULT 0 COMMENT '是否开启联网搜索（0:否，1:是）',
     `enable_plan` TINYINT(1) DEFAULT 0 COMMENT '是否开启规划（0:否，1:是）',
     `permission_mode` VARCHAR(20) NOT NULL DEFAULT 'DEFAULT' COMMENT 'Permission mode (DEFAULT/ACCEPT_EDITS/EXPLORE/BYPASS/DONT_ASK)',
-    `mcp_list` TEXT DEFAULT NULL COMMENT 'MCP 列表（JSON 格式）',
-    `skill_list` TEXT DEFAULT NULL COMMENT '技能列表（JSON 格式）',
     `owner` VARCHAR(100) DEFAULT NULL COMMENT '归属人',
     `status` TINYINT(1) DEFAULT 1 COMMENT '状态（0:已结束，1:进行中）',
     `is_public` TINYINT(1) DEFAULT 0 COMMENT 'Public visibility (0: Private, 1: Public)',
@@ -577,3 +581,73 @@ INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `descriptio
 (4, 1, 'http-api-tool', 'HTTP API工具', '调用外部HTTP接口', 'HTTP', NULL, NULL, 1, 1, 1, 'testuser1', 1),
 (5, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'BUILTIN', 'disabled-tool-box', 'doSomething', 0, 0, 1, 'admin', 1),
 (6, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'BUILTIN', 'deleted-tool-box', 'doSomething', 0, 1, 1, 'admin', 0);
+
+-- ============================================
+-- 22. MCP OAuth Client - 租户 x 授权服务器的客户端注册（V26）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `mcp_oauth_client` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '注册 ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户 ID',
+    -- issuer / callback_url 用二进制排序规则：MySQL 默认排序规则不区分大小写，而这两个值在规范里是
+    -- 精确字符串比较（iss、redirect_uri），折叠大小写会把另一个授权服务器的注册悄悄复用过来
+    `issuer` VARCHAR(255) COLLATE utf8mb4_bin NOT NULL COMMENT '授权服务器 issuer，精确字符串（区分大小写）',
+    `client_id` VARCHAR(255) NOT NULL COMMENT 'client_id',
+    `client_secret_enc` TEXT DEFAULT NULL COMMENT 'client_secret 密文；公有客户端为 NULL',
+    `registration_source` VARCHAR(20) NOT NULL DEFAULT 'MANUAL' COMMENT '来源（MANUAL/DCR/ID_METADATA）',
+    `authorization_endpoint` VARCHAR(500) DEFAULT NULL COMMENT '发现结果快照',
+    `token_endpoint` VARCHAR(500) DEFAULT NULL COMMENT '发现结果快照',
+    `registration_endpoint` VARCHAR(500) DEFAULT NULL COMMENT '发现结果快照；NULL 表示不支持 DCR',
+    `revocation_endpoint` VARCHAR(500) DEFAULT NULL COMMENT '发现结果快照；NULL 表示只本地撤销',
+    `scopes_supported` TEXT DEFAULT NULL COMMENT '发现结果快照，逗号分隔',
+    `callback_url` VARCHAR(500) COLLATE utf8mb4_bin NOT NULL COMMENT '注册时登记的 redirect_uri，精确匹配（区分大小写）',
+    `creator` VARCHAR(100) DEFAULT '' COMMENT '创建人',
+    `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    -- V15/V23 的软删除唯一键写法：active=0 时生成列转 NULL，唯一索引忽略 NULL，删掉后可重新登记
+    `active_client_id` VARCHAR(255) GENERATED ALWAYS AS (IF(`active` = 1, `client_id`, NULL)) VIRTUAL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_mcp_oauth_client_tenant_issuer_client` (`tenant_id`, `issuer`, `active_client_id`),
+    KEY `idx_mcp_oauth_client_tenant_issuer` (`tenant_id`, `issuer`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP OAuth 客户端注册表';
+
+-- ============================================
+-- 23. MCP User Credential - 用户 x MCP 服务的授权结果（V26）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `mcp_user_credential` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '凭据 ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户 ID',
+    `user_id` BIGINT(20) NOT NULL COMMENT 'sys_user.id，不是用户名',
+    `mcp_id` BIGINT(20) NOT NULL COMMENT 'MCP 服务 ID',
+    `access_token_enc` TEXT DEFAULT NULL COMMENT 'access_token 密文；撤销时清空',
+    `refresh_token_enc` TEXT DEFAULT NULL COMMENT 'refresh_token 密文；只在 admin 进程内出现',
+    `access_expires_at` DATETIME DEFAULT NULL COMMENT 'access_token 过期时间，过期即当作缺失',
+    `scopes` VARCHAR(512) DEFAULT NULL COMMENT '实际授予的 scope，可能小于请求的',
+    `status` VARCHAR(20) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/NEEDS_CONSENT/REVOKED',
+    `last_error` VARCHAR(512) DEFAULT NULL COMMENT '脱敏后的失败原因，禁止含令牌片段',
+    `last_refreshed_at` DATETIME DEFAULT NULL COMMENT '最近一次刷新成功时间',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_mcp_user_credential_tenant_user_mcp` (`tenant_id`, `user_id`, `mcp_id`),
+    KEY `idx_mcp_user_credential_mcp` (`mcp_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 用户授权凭据表';
+
+-- ============================================
+-- 24. MCP Call Log - 授权与调用审计（V26）
+-- ============================================
+CREATE TABLE IF NOT EXISTS `mcp_call_log` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '日志 ID',
+    `tenant_id` BIGINT(20) NOT NULL DEFAULT 1 COMMENT '租户 ID',
+    `user_id` BIGINT(20) DEFAULT NULL COMMENT 'sys_user.id；解析不到会话归属时为 NULL',
+    `mcp_id` BIGINT(20) NOT NULL COMMENT 'MCP 服务 ID',
+    `session_id` VARCHAR(255) DEFAULT NULL COMMENT '运行时会话',
+    `tool_name` VARCHAR(255) DEFAULT NULL COMMENT '工具名；令牌换发时为 NULL',
+    `action` VARCHAR(20) NOT NULL DEFAULT 'ISSUE' COMMENT 'ISSUE/REFRESH/REVOKE/CALL',
+    `outcome` VARCHAR(20) NOT NULL COMMENT 'OK/AUTH_FAILED/NEEDS_CONSENT/ERROR',
+    `latency_ms` BIGINT(20) DEFAULT 0 COMMENT '耗时（毫秒）',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_mcp_call_log_tenant_mcp_time` (`tenant_id`, `mcp_id`, `create_time`),
+    KEY `idx_mcp_call_log_session` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 授权与调用审计表';

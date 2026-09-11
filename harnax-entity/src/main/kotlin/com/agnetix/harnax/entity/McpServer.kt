@@ -57,6 +57,21 @@ class McpServer : Serializable {
     var url: String = ""
 
     /**
+     * Upstream auth method. NONE and STATIC_HEADER both keep using [headers]; only OAUTH2 has a
+     * per-user token flow resolved at runtime.
+     */
+    @Schema(description = "Upstream auth method (NONE/STATIC_HEADER/BASIC/OAUTH2)")
+    var authType: String = McpAuthTypes.NONE
+
+    /**
+     * Non-sensitive OAuth config JSON: authorizationServer, scopes, audience, resourceIndicator.
+     * The shape is the admin's `McpOAuthConfig` DTO; client credentials belong to
+     * `mcp_oauth_client`, never here, because this column is echoed to the UI in plaintext.
+     */
+    @Schema(description = "Non-sensitive OAuth config JSON")
+    var oauthConfig: String? = null
+
+    /**
      * Status (0:disabled, 1:enabled)
      */
     @Schema(description = "Status (0:disabled, 1:enabled)")

@@ -5,11 +5,14 @@
     <!-- Result Map -->
     <resultMap id="McpServerResultMap" type="com.agnetix.harnax.entity.McpServer">
         <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
         <result column="type" property="type"/>
         <result column="command" property="command"/>
         <result column="url" property="url"/>
+        <result column="auth_type" property="authType"/>
+        <result column="oauth_config" property="oauthConfig"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
         <result column="creator" property="creator"/>
@@ -27,6 +30,14 @@
         SELECT * FROM mcp_server WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
+    <!-- selectByIds -->
+    <select id="selectByIds" resultMap="McpServerResultMap">
+        SELECT * FROM mcp_server WHERE active = 1 AND id IN
+        <foreach collection="ids" item="mcpId" open="(" separator="," close=")">
+            #{mcpId}
+        </foreach>
+    </select>
+
     <!-- deleteById -->
     <update id="deleteById">
         UPDATE mcp_server SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
@@ -34,15 +45,19 @@
 
     <!-- selectByName -->
     <select id="selectByName" resultMap="McpServerResultMap">
-        SELECT * FROM mcp_server WHERE name = #{name} AND active = 1 LIMIT 1
+        SELECT * FROM mcp_server WHERE name = #{name} AND active = 1
+        <if test='tenantId != null'>
+            AND tenant_id = #{tenantId}
+        </if>
+        LIMIT 1
     </select>
 
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO mcp_server (
-        name, description, type, command, url, status, is_public, creator, active, create_time, update_time, headers, env_params
+        tenant_id, name, description, type, command, url, auth_type, oauth_config, status, is_public, creator, active, create_time, update_time, headers, env_params
         ) VALUES (
-        #{name}, #{description}, #{type}, #{command}, #{url}, #{status}, #{isPublic}, #{creator}, #{active},
+        #{tenantId}, #{name}, #{description}, #{type}, #{command}, #{url}, #{authType}, #{oauthConfig}, #{status}, #{isPublic}, #{creator}, #{active},
         #{createTime}, #{updateTime}, #{headers}, #{envParams}
         )
     </insert>
@@ -55,6 +70,9 @@
         type = #{type},
         command = #{command},
         url = #{url},
+        auth_type = #{authType},
+        oauth_config = #{oauthConfig},
+        status = #{status},
         is_public = #{isPublic},
         creator = #{creator},
         active = #{active},
@@ -67,6 +85,11 @@
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE mcp_server SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- updateOAuthConfig: one column, so a concurrent edit to any other column survives -->
+    <update id="updateOAuthConfig">
+        UPDATE mcp_server SET oauth_config = #{oauthConfig}, update_time = NOW() WHERE id = #{id} AND active = 1
     </update>
 
     <!-- selectMcpServerList -->
@@ -83,6 +106,9 @@
         </if>
         <if test='type != null and type != ""'>
             AND type = #{type}
+        </if>
+        <if test='tenantId != null'>
+            AND tenant_id = #{tenantId}
         </if>
         ORDER BY status DESC, update_time DESC
     </select>

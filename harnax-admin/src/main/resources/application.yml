@@ -110,14 +110,25 @@ captcha:
 admin:
   internal-api:
     secret: ${ADMIN_INTERNAL_API_SECRET:change-me-in-production-min-32-chars!!}
-  # Base URL for generating callback URLs (used by channel service)
+
+# Base URL this deployment is reachable at from outside. Used to generate callback URLs
+# (channel platform callbacks), so it must be the address the third party can actually reach -
+# not the host admin listens on.
+app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
+  # Origin the browser returns to after an authorization server consents. The MCP OAuth
+  # redirect_uri is a front-end route, so it is not always this service's own origin: behind the
+  # shipped nginx it is the same address as base-url, but in development the SPA is on :8000
+  # while admin is on :8080. Empty means "fall back to app.base-url".
+  frontend-base-url: ${APP_FRONTEND_BASE_URL:}
 
 # UnifiedAuthFilter disabled in admin - admin uses its own JWT auth (JwtAuthenticationFilter)
 # Only channel/router/agent-service use harnax-auth's UnifiedAuthFilter
 harnax:
   auth:
     enabled: false
+    # 出向调用（scheduler）用它签发服务间 token；入向鉴权仍走 JwtAuthenticationFilter
+    service-id: admin
     internal:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
   router:

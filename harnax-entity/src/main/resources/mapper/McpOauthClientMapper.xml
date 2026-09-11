@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.McpOauthClientMapper">
+
+    <resultMap id="McpOauthClientResultMap" type="com.agnetix.harnax.entity.McpOauthClient">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="issuer" property="issuer"/>
+        <result column="client_id" property="clientId"/>
+        <result column="client_secret_enc" property="clientSecretEnc"/>
+        <result column="registration_source" property="registrationSource"/>
+        <result column="authorization_endpoint" property="authorizationEndpoint"/>
+        <result column="token_endpoint" property="tokenEndpoint"/>
+        <result column="registration_endpoint" property="registrationEndpoint"/>
+        <result column="revocation_endpoint" property="revocationEndpoint"/>
+        <result column="scopes_supported" property="scopesSupported"/>
+        <result column="callback_url" property="callbackUrl"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <!-- selectByTenantAndIssuer -->
+    <select id="selectByTenantAndIssuer" resultMap="McpOauthClientResultMap">
+        SELECT * FROM mcp_oauth_client
+        WHERE active = 1 AND tenant_id = #{tenantId} AND issuer = #{issuer}
+        ORDER BY id LIMIT 1
+    </select>
+
+    <!-- insert -->
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO mcp_oauth_client (
+        tenant_id, issuer, client_id, client_secret_enc, registration_source,
+        authorization_endpoint, token_endpoint, registration_endpoint, revocation_endpoint,
+        scopes_supported, callback_url, creator, active, create_time, update_time
+        ) VALUES (
+        #{tenantId}, #{issuer}, #{clientId}, #{clientSecretEnc}, #{registrationSource},
+        #{authorizationEndpoint}, #{tokenEndpoint}, #{registrationEndpoint}, #{revocationEndpoint},
+        #{scopesSupported}, #{callbackUrl}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <!-- updateById: every column is written from the loaded row, so a null here really means
+         "this registration has no such endpoint" instead of "not provided". tenant_id and issuer
+         are the identity of the row and stay out of the SET list, same as mcp_server. -->
+    <update id="updateById">
+        UPDATE mcp_oauth_client SET
+        client_id = #{clientId},
+        client_secret_enc = #{clientSecretEnc},
+        registration_source = #{registrationSource},
+        authorization_endpoint = #{authorizationEndpoint},
+        token_endpoint = #{tokenEndpoint},
+        registration_endpoint = #{registrationEndpoint},
+        revocation_endpoint = #{revocationEndpoint},
+        scopes_supported = #{scopesSupported},
+        callback_url = #{callbackUrl},
+        active = #{active},
+        update_time = #{updateTime}
+        WHERE id = #{id}
+    </update>
+
+</mapper>
