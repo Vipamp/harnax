@@ -9,8 +9,8 @@ import org.springframework.stereotype.Component
  * Registry that resolves a [ChannelAdaptor] by [ChannelType].
  *
  * All ChannelAdaptor beans are injected as a list by Spring and indexed by their
- * declared type. This lets the orchestration layer (ChannelBootstrapRunner,
- * ChannelManager) dispatch strictly by channel type, so adding a new channel
+ * declared type. This lets the orchestration layer (ChannelBootstrapRunner)
+ * dispatch strictly by channel type, so adding a new channel
  * requires only registering a new adaptor bean — no changes to the dispatch
  * logic. The communicationMode field is then purely descriptive of the
  * transport (websocket/stream/long_polling/webhook) and no longer used for
@@ -30,4 +30,7 @@ class ChannelAdaptorRegistry(adaptors: List<ChannelAdaptor>) {
     fun get(type: ChannelType): ChannelAdaptor = byType[type] ?: throw IllegalArgumentException("No channel adaptor registered for type: $type")
 
     fun contains(type: ChannelType): Boolean = byType.containsKey(type)
+
+    /** Every registered adaptor; used by the observability layer and shutdown hooks. */
+    fun all(): Collection<ChannelAdaptor> = byType.values
 }

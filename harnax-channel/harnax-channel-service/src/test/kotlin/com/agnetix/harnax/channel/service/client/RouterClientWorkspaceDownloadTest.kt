@@ -35,7 +35,14 @@ class RouterClientWorkspaceDownloadTest {
         webClient = mock()
         restClient = mock()
         objectMapper = mock()
-        routerClient = RouterClient(webClient, restClient, objectMapper, routerUrl)
+        routerClient = RouterClient(
+            webClient = webClient,
+            restClient = restClient,
+            objectMapper = objectMapper,
+            breaker = RouterCircuitBreaker(),
+            routerUrl = routerUrl,
+            streamIdleTimeoutMs = 180_000L,
+        )
     }
 
     // ==================== Error handling ====================

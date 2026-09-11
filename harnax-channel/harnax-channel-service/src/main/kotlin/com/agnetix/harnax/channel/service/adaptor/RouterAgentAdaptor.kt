@@ -6,6 +6,7 @@ import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
 import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
 import com.agnetix.harnax.channel.sdk.adaptor.AgentStreamEvent
 import com.agnetix.harnax.channel.sdk.adaptor.PendingToolInfo
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.service.client.RouterClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
@@ -51,7 +52,7 @@ class RouterAgentAdaptor(
                 )
                 if (chatResponse.content.isBlank()) {
                     log.warn("[Adaptor] Empty response from router for session=$sessionId — agent may have failed silently")
-                } else if (chatResponse.content.startsWith("[Router Error]")) {
+                } else if (chatResponse.content.startsWith(ReplyMarkers.ROUTER_ERROR_PREFIX)) {
                     log.warn("[Adaptor] Router error response for session=$sessionId: {}", chatResponse.content)
                 } else {
                     log.info("[Adaptor] Batch process completed for session=$sessionId, responseLength={}", chatResponse.content.length)
