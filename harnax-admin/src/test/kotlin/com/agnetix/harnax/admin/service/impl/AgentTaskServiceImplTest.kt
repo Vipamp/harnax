@@ -22,6 +22,7 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
@@ -95,7 +96,7 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `getAgentTask should return task by id`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
 
             val service = createService()
             val result = service.getAgentTask(1L)
@@ -107,7 +108,7 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `getAgentTask should return null when not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
+            `when`(agentTaskMapper.selectById(999L, "admin")).thenReturn(null)
 
             val service = createService()
             val result = service.getAgentTask(999L)
@@ -228,7 +229,7 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `updateAgentTask should throw when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
+            `when`(agentTaskMapper.selectById(999L, "admin")).thenReturn(null)
 
             val service = createService()
             val exception = assertThrows<BizException> {
@@ -239,9 +240,9 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `updateAgentTask should update fields successfully`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
             `when`(agentTaskMapper.selectByName("Updated Name")).thenReturn(null)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(
                 name = "Updated Name",
@@ -253,7 +254,7 @@ class AgentTaskServiceImplTest {
             val result = service.updateAgentTask(1L, request)
 
             assertTrue(result)
-            verify(agentTaskMapper).updateById(any())
+            verify(agentTaskMapper).updateById(any(), eq("admin"))
         }
 
         @Test
@@ -262,7 +263,7 @@ class AgentTaskServiceImplTest {
                 id = 2L
                 name = "Existing Task"
             }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
             `when`(agentTaskMapper.selectByName("Existing Task")).thenReturn(existingTask)
 
             val request = AgentTaskUpdateRequest(name = "Existing Task")
@@ -276,7 +277,7 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `updateAgentTask should throw on invalid cron`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
 
             val request = AgentTaskUpdateRequest(cronExpression = "bad-cron")
 
@@ -290,8 +291,8 @@ class AgentTaskServiceImplTest {
         @Test
         fun `updateAgentTask should reset status to paused`() {
             testTask.taskStatus = 1 // running
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(prompt = "New prompt")
 
@@ -299,14 +300,14 @@ class AgentTaskServiceImplTest {
             service.updateAgentTask(1L, request)
 
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
-            verify(agentTaskMapper).updateById(taskCaptor.capture())
+            verify(agentTaskMapper).updateById(taskCaptor.capture(), eq("admin"))
             assertEquals(0, taskCaptor.firstValue.taskStatus) // reset to paused
         }
 
         @Test
         fun `updateAgentTask should skip name check when name unchanged`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(
                 name = "Daily News", // same name
@@ -322,8 +323,8 @@ class AgentTaskServiceImplTest {
         @Test
         fun `updateAgentTask should reset status to paused when running`() {
             testTask.taskStatus = 1 // running
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(prompt = "New prompt")
 
@@ -331,13 +332,13 @@ class AgentTaskServiceImplTest {
             service.updateAgentTask(1L, request)
 
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
-            verify(agentTaskMapper).updateById(taskCaptor.capture())
+            verify(agentTaskMapper).updateById(taskCaptor.capture(), eq("admin"))
             assertEquals(0, taskCaptor.firstValue.taskStatus) // reset to paused
         }
 
         @Test
         fun `updateAgentTask should throw when new agentId not found`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
             `when`(agentService.getAgent(999L)).thenReturn(null)
 
             val request = AgentTaskUpdateRequest(agentId = 999L)
@@ -355,9 +356,9 @@ class AgentTaskServiceImplTest {
                 id = 200L
                 name = "New Agent"
             }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
             `when`(agentService.getAgent(200L)).thenReturn(newAgent)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(agentId = 200L)
 
@@ -365,15 +366,15 @@ class AgentTaskServiceImplTest {
             service.updateAgentTask(1L, request)
 
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
-            verify(agentTaskMapper).updateById(taskCaptor.capture())
+            verify(agentTaskMapper).updateById(taskCaptor.capture(), eq("admin"))
             assertEquals(200L, taskCaptor.firstValue.agentId)
             assertEquals("New Agent", taskCaptor.firstValue.agentName)
         }
 
         @Test
         fun `updateAgentTask should not update null fields`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(
                 prompt = "Only prompt changed",
@@ -384,7 +385,7 @@ class AgentTaskServiceImplTest {
             service.updateAgentTask(1L, request)
 
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
-            verify(agentTaskMapper).updateById(taskCaptor.capture())
+            verify(agentTaskMapper).updateById(taskCaptor.capture(), eq("admin"))
             assertEquals("Only prompt changed", taskCaptor.firstValue.prompt)
             // Unchanged fields should keep original values
             assertEquals("Daily News", taskCaptor.firstValue.name)
@@ -394,8 +395,8 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `updateAgentTask should skip cron validation when cronExpression is null`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(
                 prompt = "New prompt",
@@ -407,14 +408,14 @@ class AgentTaskServiceImplTest {
 
             assertTrue(result)
             val taskCaptor = org.mockito.kotlin.argumentCaptor<AgentTask>()
-            verify(agentTaskMapper).updateById(taskCaptor.capture())
+            verify(agentTaskMapper).updateById(taskCaptor.capture(), eq("admin"))
             assertEquals("0 0 9 * * ?", taskCaptor.firstValue.cronExpression) // unchanged
         }
 
         @Test
         fun `updateAgentTask should skip agentId check when agentId unchanged`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
 
             val request = AgentTaskUpdateRequest(
                 agentId = 100L, // same agentId
@@ -429,16 +430,31 @@ class AgentTaskServiceImplTest {
         }
 
         @Test
-        fun `updateAgentTask should return false when updateById returns 0`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.updateById(any())).thenReturn(0)
+        fun `updateAgentTask should throw when updateById matches no row`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(0)
 
             val request = AgentTaskUpdateRequest(prompt = "New prompt")
 
             val service = createService()
-            val result = service.updateAgentTask(1L, request)
+            assertThrows<BizException> { service.updateAgentTask(1L, request) }
+        }
 
-            assertFalse(result)
+        @Test
+        fun `updateAgentTask should reject rewriting another user public task`() {
+            // selectById 按可见性放行公开任务，updateById 的属主条件才是拦截点
+            val foreignPublic = testTask.apply {
+                creator = "alice"
+                isPublic = 1
+            }
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(foreignPublic)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(0)
+
+            val service = createService()
+            val exception = assertThrows<BizException> {
+                service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "hijacked"))
+            }
+            assertTrue(exception.message!!.contains("creator"))
         }
     }
 
@@ -450,7 +466,7 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `deleteAgentTask should throw when task not found`() {
-            `when`(agentTaskMapper.selectById(999L)).thenReturn(null)
+            `when`(agentTaskMapper.selectById(999L, "admin")).thenReturn(null)
 
             val service = createService()
             val exception = assertThrows<BizException> {
@@ -461,38 +477,36 @@ class AgentTaskServiceImplTest {
 
         @Test
         fun `deleteAgentTask should soft delete paused task`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.deleteById(1L)).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
 
             val service = createService()
             val result = service.deleteAgentTask(1L)
 
             assertTrue(result)
-            verify(agentTaskMapper).deleteById(1L)
+            verify(agentTaskMapper).deleteById(1L, "admin")
         }
 
         @Test
         fun `deleteAgentTask should unschedule running task before delete`() {
             val runningTask = testTask.apply { taskStatus = 1 }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(runningTask)
-            `when`(agentTaskMapper.deleteById(1L)).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(runningTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
 
             val service = createService()
             val result = service.deleteAgentTask(1L)
 
             assertTrue(result)
-            verify(agentTaskMapper).deleteById(1L)
+            verify(agentTaskMapper).deleteById(1L, "admin")
         }
 
         @Test
-        fun `deleteAgentTask should return false when deleteById returns 0`() {
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(testTask)
-            `when`(agentTaskMapper.deleteById(1L)).thenReturn(0)
+        fun `deleteAgentTask should throw when deleteById matches no row`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(0)
 
             val service = createService()
-            val result = service.deleteAgentTask(1L)
-
-            assertFalse(result)
+            assertThrows<BizException> { service.deleteAgentTask(1L) }
         }
     }
 
@@ -543,16 +557,18 @@ class AgentTaskServiceImplTest {
     inner class SchedulerProxyTests {
 
         @Test
-        fun `toggleTaskStatus should update status via mapper`() {
+        fun `toggleTaskStatus should delegate the switch to the scheduler`() {
             val service = createService()
             val task = AgentTask().apply { id = 1L }
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(task)
-            `when`(agentTaskMapper.updateStatus(1L, 1)).thenReturn(1)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(task)
+            `when`(schedulerClient.startTask(1L)).thenReturn(ResultVo.success<Void>())
 
             val result = service.toggleTaskStatus(1L, 1)
 
             assertTrue(result)
-            verify(agentTaskMapper).updateStatus(1L, 1)
+            verify(schedulerClient).startTask(1L)
+            // 状态由 scheduler 侧持有并回写，本地不抢着改
+            verify(agentTaskMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
         @Test
@@ -582,7 +598,7 @@ class AgentTaskServiceImplTest {
         @Test
         fun `toggleTaskStatus should throw when task not found`() {
             val service = createService()
-            `when`(agentTaskMapper.selectById(1L)).thenReturn(null)
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(null)
 
             assertThrows<Exception> {
                 service.toggleTaskStatus(1L, 1)

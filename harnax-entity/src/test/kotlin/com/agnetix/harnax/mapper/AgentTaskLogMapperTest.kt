@@ -102,21 +102,98 @@ open class AgentTaskLogMapperTest {
         }
 
         @Test
-        @DisplayName("updateById - 更新日志状态")
-        fun `updateById should update log status`() {
-            val log = agentTaskLogMapper.selectById(1L)
-            assertNotNull(log)
+        @DisplayName("markStopping - 只有运行中的日志能进入停止中")
+        fun `markStopping should only claim a running log`() {
+            val running = insertExecutionLog(taskId = 1L, initialStatus = 3)
 
-            log.status = 0
-            log.errorInfo = "Updated error"
-            log.durationMs = 99999
-            val result = agentTaskLogMapper.updateById(log)
+            assertEquals(1, agentTaskLogMapper.markStopping(running.id, "Stopping..."))
+            assertEquals(4, agentTaskLogMapper.selectById(running.id)?.status)
 
-            assertEquals(1, result)
-            val updated = agentTaskLogMapper.selectById(1L)
+            // 重复点击停止：状态已经不是 3，由调用方按幂等处理
+            assertEquals(0, agentTaskLogMapper.markStopping(running.id, "Stopping..."))
+
+            // 已结束的 seed 行（id=1, status=1）不能被拉回停止中
+            assertEquals(0, agentTaskLogMapper.markStopping(1L, "Stopping..."))
+        }
+
+        @Test
+        @DisplayName("finishExecution - 只在运行中回写，被请求停止后写入 0 行")
+        fun `finishExecution should not overwrite a row that was asked to stop`() {
+            val running = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            running.status = 1
+            running.response = "Done"
+            running.endTime = LocalDateTime.now()
+            running.durationMs = 1000L
+            assertEquals(1, agentTaskLogMapper.finishExecution(running))
+            assertEquals(1, agentTaskLogMapper.selectById(running.id)?.status)
+
+            // 执行线程收尾前用户点了停止：结果不能覆盖停止信号
+            val stopping = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            agentTaskLogMapper.markStopping(stopping.id, "Stopping...")
+            stopping.status = 1
+            stopping.response = "Late result"
+            assertEquals(0, agentTaskLogMapper.finishExecution(stopping))
+            assertEquals(4, agentTaskLogMapper.selectById(stopping.id)?.status)
+        }
+
+        @Test
+        @DisplayName("finalizeStopped - 停止中收尾为已停止(5)")
+        fun `finalizeStopped should close a stopping row as stopped`() {
+            val stopping = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            agentTaskLogMapper.markStopping(stopping.id, "Stopping...")
+
+            stopping.status = 5
+            stopping.endTime = LocalDateTime.now()
+            stopping.durationMs = 2000L
+            stopping.errorInfo = "Task stopped by user"
+            assertEquals(1, agentTaskLogMapper.finalizeStopped(stopping))
+
+            val updated = agentTaskLogMapper.selectById(stopping.id)
             assertNotNull(updated)
-            assertEquals(0, updated.status)
-            assertEquals("Updated error", updated.errorInfo)
+            assertEquals(5, updated.status)
+            assertEquals(2000L, updated.durationMs)
+
+            // 仍在运行(3)的行不会被 4 -> 5 这条语句碰到
+            val running = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            assertEquals(0, agentTaskLogMapper.finalizeStopped(running))
+        }
+
+        @Test
+        @DisplayName("expireStale - 按各任务自己的 timeout_seconds 回收残留")
+        fun `expireStale should expire only rows past their own task timeout`() {
+            // seed: task 1 的 timeout_seconds = 300, task 2 的 timeout_seconds = 600
+            val stale = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 400L)
+            val staleStopping = insertExecutionLog(taskId = 1L, initialStatus = 4, startedSecondsAgo = 400L)
+            val fresh = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            val withinLongerTimeout = insertExecutionLog(taskId = 2L, initialStatus = 3, startedSecondsAgo = 400L)
+
+            val expired = agentTaskLogMapper.expireStale(300)
+            assertTrue(expired >= 2, "至少两条残留应被回收, 实际=$expired")
+
+            assertEquals(2, agentTaskLogMapper.selectById(stale.id)?.status)
+            assertEquals(2, agentTaskLogMapper.selectById(staleStopping.id)?.status)
+            assertEquals(3, agentTaskLogMapper.selectById(fresh.id)?.status)
+            assertEquals(3, agentTaskLogMapper.selectById(withinLongerTimeout.id)?.status)
+        }
+
+        private fun insertExecutionLog(
+            taskId: Long,
+            initialStatus: Int,
+            startedSecondsAgo: Long = 0L,
+        ): AgentTaskLog {
+            val log = AgentTaskLog().apply {
+                this.taskId = taskId
+                taskName = "Daily News"
+                prompt = "Running prompt"
+                response = ""
+                sessionId = "sess-$initialStatus-$startedSecondsAgo-${System.nanoTime()}"
+                status = initialStatus
+                errorInfo = ""
+                startTime = LocalDateTime.now().minusSeconds(startedSecondsAgo)
+                creator = "admin"
+            }
+            agentTaskLogMapper.insert(log)
+            return log
         }
 
         @Test
@@ -206,7 +283,9 @@ open class AgentTaskLogMapperTest {
             assertTrue(logs.isNotEmpty())
             logs.forEach {
                 assertNotNull(it.startTime)
-                assertTrue(it.startTime!!.toString() >= "2026-07-02")
+                // 用 LocalDateTime 比，不要拿 toString() 和「只有日期」的字符串按字典序比：
+                // "2026-07-01T09:00" 比 "2026-07-01" 长且同前缀，会被判成更大
+                assertTrue(!it.startTime!!.isBefore(LocalDateTime.of(2026, 7, 2, 0, 0)))
             }
         }
 
@@ -224,7 +303,7 @@ open class AgentTaskLogMapperTest {
             assertTrue(logs.isNotEmpty())
             logs.forEach {
                 assertNotNull(it.startTime)
-                assertTrue(it.startTime!!.toString() <= "2026-07-01")
+                assertTrue(!it.startTime!!.isAfter(LocalDateTime.of(2026, 7, 1, 23, 59, 59)))
             }
         }
 

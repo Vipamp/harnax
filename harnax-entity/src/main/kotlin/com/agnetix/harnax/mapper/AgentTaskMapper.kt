@@ -7,13 +7,30 @@ import org.apache.ibatis.annotations.Param
 @Mapper
 interface AgentTaskMapper {
 
-    fun selectById(@Param("id") id: Long): AgentTask?
+    /**
+     * Unscoped lookup for service-to-service paths (scheduler engine, internal API) that have no
+     * end-user context. Anything reachable by a logged-in user must use [selectById] instead.
+     */
+    fun selectAnyById(@Param("id") id: Long): AgentTask?
+
+    /** User-facing lookup; same visibility rule as [selectTaskList]. */
+    fun selectById(
+        @Param("id") id: Long,
+        @Param("currentUsername") currentUsername: String,
+    ): AgentTask?
 
     fun insert(task: AgentTask): Int
 
-    fun updateById(task: AgentTask): Int
+    /** Owner-only: a public task is visible to everyone but editable only by its creator. */
+    fun updateById(
+        @Param("task") task: AgentTask,
+        @Param("currentUsername") currentUsername: String,
+    ): Int
 
-    fun deleteById(@Param("id") id: Long): Int
+    fun deleteById(
+        @Param("id") id: Long,
+        @Param("currentUsername") currentUsername: String,
+    ): Int
 
     fun selectTaskList(
         @Param("name") name: String?,

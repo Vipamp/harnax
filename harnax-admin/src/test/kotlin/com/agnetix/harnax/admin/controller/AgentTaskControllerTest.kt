@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
@@ -445,8 +446,10 @@ class AgentTaskControllerTest {
 
         @Test
         fun `logs should handle service error`() {
-            `when`(agentTaskLogService.page(any(), any(), any(), any(), any(), any(), any(), any()))
-                .thenThrow(RuntimeException("DB error"))
+            // 可空的过滤参数要用 anyOrNull：mockito-kotlin 的 any() 不匹配 null
+            `when`(
+                agentTaskLogService.page(any(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), anyOrNull(), any(), any()),
+            ).thenThrow(RuntimeException("DB error"))
 
             mockMvc.perform(get("/api/admin/agent-tasks/1/logs"))
                 .andExpect(status().isOk)

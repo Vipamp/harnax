@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.dto.AgentToolCreateRequest
 import com.agnetix.harnax.admin.dto.AgentToolUpdateRequest
+import com.agnetix.harnax.admin.dto.McpConfigEntry
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.*
 import org.mockito.InjectMocks
 import org.mockito.Mock
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.Spy
@@ -27,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
@@ -108,6 +111,19 @@ class AgentToolServiceImplTest {
         active = 1
         createTime = LocalDateTime.now()
         updateTime = LocalDateTime.now()
+    }
+
+    /**
+     * The service asks the shared resolver what to store for each entry, so these tests stub that
+     * one call: a secret value comes back encrypted, anything else unchanged. The rule itself
+     * (encrypt / keep mask meaning "unchanged" / reject an uncoverable mask) is pinned by
+     * SecretFieldEncryptorTest.
+     */
+    private fun stubEnvResolver() {
+        `when`(secretFieldEncryptor.resolveEnvParamValue(any(), any())).thenAnswer { invocation ->
+            val entry = invocation.getArgument<ToolEnvParamEntry>(0)
+            if (entry.secret) "encrypted-${entry.defaultValue}" else entry.defaultValue
+        }
     }
 
     @Nested
@@ -302,7 +318,7 @@ class AgentToolServiceImplTest {
 
             `when`(agentToolMapper.insert(any())).thenReturn(1)
             `when`(agentToolEnvParamMapper.batchInsert(any())).thenReturn(2)
-            `when`(secretFieldEncryptor.encrypt("sk-xxx")).thenReturn("encrypted-sk-xxx")
+            stubEnvResolver()
 
             // When
             val result = agentToolService.createAgentTool(request)
@@ -343,8 +359,8 @@ class AgentToolServiceImplTest {
         }
 
         @Test
-        @DisplayName("createAgentTool - Secret env param encrypts defaultValue")
-        fun `createAgentTool should encrypt secret env param defaultValue`() {
+        @DisplayName("createAgentTool - Secret env param goes through the shared resolver")
+        fun `createAgentTool should resolve secret env param defaultValue`() {
             // Given
             val envEntries = listOf(
                 ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true, defaultValue = "my-secret-token"),
@@ -358,16 +374,18 @@ class AgentToolServiceImplTest {
 
             `when`(agentToolMapper.insert(any())).thenReturn(1)
             `when`(agentToolEnvParamMapper.batchInsert(any())).thenReturn(1)
-            `when`(secretFieldEncryptor.encrypt("my-secret-token")).thenReturn("enc-my-secret-token")
+            stubEnvResolver()
 
             // When
             agentToolService.createAgentTool(request)
 
-            // Then
-            verify(secretFieldEncryptor).encrypt("my-secret-token")
+            // Then: a fresh tool has nothing stored, so there is nothing a mask could stand for
+            val storedCaptor = argumentCaptor<Map<String, String>>()
+            verify(secretFieldEncryptor).resolveEnvParamValue(eq(envEntries[0]), storedCaptor.capture())
+            assertTrue(storedCaptor.firstValue.isEmpty())
             val captor = argumentCaptor<List<AgentToolEnvParam>>()
             verify(agentToolEnvParamMapper).batchInsert(captor.capture())
-            assertEquals("enc-my-secret-token", captor.firstValue[0].defaultValue)
+            assertEquals("encrypted-my-secret-token", captor.firstValue[0].defaultValue)
         }
 
         @Test
@@ -386,12 +404,13 @@ class AgentToolServiceImplTest {
 
             `when`(agentToolMapper.insert(any())).thenReturn(1)
             `when`(agentToolEnvParamMapper.batchInsert(any())).thenReturn(1)
+            stubEnvResolver()
 
             // When
             agentToolService.createAgentTool(request)
 
-            // Then
-            verify(secretFieldEncryptor, never()).encrypt(anyString())
+            // Then: a non-secret default is handed to the resolver and comes back as written
+            verify(secretFieldEncryptor).resolveEnvParamValue(eq(envEntries[0]), any())
             val captor = argumentCaptor<List<AgentToolEnvParam>>()
             verify(agentToolEnvParamMapper).batchInsert(captor.capture())
             assertEquals("localhost", captor.firstValue[0].defaultValue)
@@ -527,6 +546,81 @@ class AgentToolServiceImplTest {
             assertTrue(result)
             verify(agentToolEnvParamMapper, never()).deleteByToolId(anyLong())
             verify(agentToolEnvParamMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgentTool - Masked secret default resolves against the ciphertext read before delete")
+        fun `updateAgentTool should read stored secret ciphertext before deleting env param rows`() {
+            // Given: the stored row holds the only copy of what the returned mask stands for
+            val stored = AgentToolEnvParam().apply {
+                toolId = 1L
+                envParamName = "TOKEN"
+                secret = 1
+                defaultValue = "enc-stored-token"
+            }
+            `when`(agentToolEnvParamMapper.selectByToolId(1L)).thenReturn(listOf(stored))
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+            `when`(agentToolMapper.updateById(any())).thenReturn(1)
+            `when`(agentToolEnvParamMapper.batchInsert(any())).thenReturn(1)
+            stubEnvResolver()
+            val request = AgentToolUpdateRequest(
+                envParams = listOf(
+                    ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true, defaultValue = "en****en"),
+                ),
+            )
+
+            // When
+            assertTrue(agentToolService.updateAgentTool(1L, request))
+
+            // Then
+            val storedCaptor = argumentCaptor<Map<String, String>>()
+            verify(secretFieldEncryptor).resolveEnvParamValue(any(), storedCaptor.capture())
+            assertEquals(mapOf("TOKEN" to "enc-stored-token"), storedCaptor.firstValue)
+            val order = inOrder(agentToolEnvParamMapper)
+            order.verify(agentToolEnvParamMapper).selectByToolId(1L)
+            order.verify(agentToolEnvParamMapper).deleteByToolId(1L)
+        }
+
+        @Test
+        @DisplayName("updateAgentTool - A mask with nothing to carry over reaches the page as its own error")
+        fun `updateAgentTool should surface the resolver BizException unwrapped`() {
+            // Given
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+            `when`(agentToolMapper.updateById(any())).thenReturn(1)
+            `when`(secretFieldEncryptor.resolveEnvParamValue(any(), any()))
+                .thenThrow(BizException("Secret value of \"TOKEN\" cannot be kept, please re-enter it"))
+            val request = AgentToolUpdateRequest(
+                envParams = listOf(
+                    ToolEnvParamEntry(envParamName = "TOKEN", required = true, secret = true, defaultValue = "******"),
+                ),
+            )
+
+            // When & Then: wrapping it would cost the message its "re-enter it" instruction
+            val exception = assertThrows<BizException> {
+                agentToolService.updateAgentTool(1L, request)
+            }
+            assertEquals("Secret value of \"TOKEN\" cannot be kept, please re-enter it", exception.message)
+        }
+
+        @Test
+        @DisplayName("updateAgentTool - Header encryption gets the row's current json as carry-over source")
+        fun `updateAgentTool should pass stored httpHeaders into header serialization`() {
+            // Given
+            val storedJson = """[{"key":"Authorization","value":"enc-stored","secret":true}]"""
+            testAgentTool.httpHeaders = storedJson
+            val headers = listOf(McpConfigEntry(key = "Authorization", value = "enc****red", secret = true))
+            `when`(agentToolMapper.selectById(1L)).thenReturn(testAgentTool)
+            `when`(agentToolMapper.updateById(any())).thenReturn(1)
+            `when`(secretFieldEncryptor.serializeWithEncryption(headers, storedJson)).thenReturn("[carried]")
+
+            // When
+            val result = agentToolService.updateAgentTool(1L, AgentToolUpdateRequest(httpHeaders = headers))
+
+            // Then
+            assertTrue(result)
+            val captor = argumentCaptor<AgentTool>()
+            verify(agentToolMapper).updateById(captor.capture())
+            assertEquals("[carried]", captor.firstValue.httpHeaders)
         }
     }
 

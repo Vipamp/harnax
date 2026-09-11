@@ -44,7 +44,7 @@ class AgentTaskServiceImpl(
         return Page.fromPageInfo(agentTaskMapper.selectTaskList(name, agentId, taskStatus, currentUsername))
     }
 
-    override fun getAgentTask(id: Long): AgentTask? = agentTaskMapper.selectById(id)
+    override fun getAgentTask(id: Long): AgentTask? = agentTaskMapper.selectById(id, UserContextUtil.getCurrentUsername(jwtUtil))
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createAgentTask(request: AgentTaskCreateRequest): Boolean {
@@ -91,7 +91,8 @@ class AgentTaskServiceImpl(
     override fun updateAgentTask(id: Long, request: AgentTaskUpdateRequest): Boolean {
         log.info("Updating agent task, id: {}", id)
 
-        val task = agentTaskMapper.selectById(id)
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        val task = agentTaskMapper.selectById(id, currentUsername)
             ?: throw BizException("Agent task not found")
 
         // Check name uniqueness if name changed
@@ -130,37 +131,39 @@ class AgentTaskServiceImpl(
         task.taskStatus = 0
         task.updateTime = LocalDateTime.now()
 
-        val success = agentTaskMapper.updateById(task) > 0
-
-        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config)
-        if (success) {
-            try {
-                schedulerClient.reloadTasks()
-            } catch (e: Exception) {
-                log.warn("Failed to notify scheduler after task update: {}", e.message)
-            }
+        val success = agentTaskMapper.updateById(task, currentUsername) > 0
+        if (!success) {
+            // selectById lets a public task through; rewriting it belongs to the creator alone.
+            throw BizException("Only the task creator can modify this task")
         }
 
-        return success
+        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config)
+        try {
+            schedulerClient.reloadTasks()
+        } catch (e: Exception) {
+            log.warn("Failed to notify scheduler after task update: {}", e.message)
+        }
+        return true
     }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun deleteAgentTask(id: Long): Boolean {
         log.info("Deleting agent task, id: {}", id)
 
-        val task = agentTaskMapper.selectById(id)
+        val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
+        agentTaskMapper.selectById(id, currentUsername)
             ?: throw BizException("Agent task not found")
 
         // Delete from DB first, then reload all scheduler instances to remove stale Quartz jobs
-        val success = agentTaskMapper.deleteById(id) > 0
-        if (success) {
-            try {
-                schedulerClient.reloadTasks()
-            } catch (e: Exception) {
-                log.warn("Failed to reload schedulers after task deletion: {}", e.message)
-            }
+        if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
+            throw BizException("Only the task creator can delete this task")
         }
-        return success
+        try {
+            schedulerClient.reloadTasks()
+        } catch (e: Exception) {
+            log.warn("Failed to reload schedulers after task deletion: {}", e.message)
+        }
+        return true
     }
 
     override fun convertToResponse(task: AgentTask): AgentTaskResponse = AgentTaskResponse.fromEntity(task)
@@ -170,7 +173,7 @@ class AgentTaskServiceImpl(
     // ========================================
 
     override fun toggleTaskStatus(id: Long, status: Int): Boolean {
-        agentTaskMapper.selectById(id)
+        agentTaskMapper.selectById(id, UserContextUtil.getCurrentUsername(jwtUtil))
             ?: throw BizException("Agent task not found")
         val result = if (status == 1) {
             schedulerClient.startTask(id)

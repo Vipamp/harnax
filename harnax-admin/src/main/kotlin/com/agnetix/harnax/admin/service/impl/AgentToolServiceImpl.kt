@@ -88,6 +88,9 @@ class AgentToolServiceImpl(
                 saveToolEnvParams(agentTool.id, request.envParams)
             }
             true
+        } catch (e: BizException) {
+            // "this masked secret cannot be kept, re-enter it" has to reach the page as itself
+            throw e
         } catch (e: Exception) {
             log.error("Failed to create agent tool", e)
             throw RuntimeException("Failed to create agent tool: ${e.message}")
@@ -124,7 +127,7 @@ class AgentToolServiceImpl(
             }
 
             if (request.httpHeaders != null) {
-                existing.httpHeaders = serializeHeaders(request.httpHeaders)
+                existing.httpHeaders = serializeHeaders(request.httpHeaders, existing.httpHeaders)
             }
 
             existing.updateTime = LocalDateTime.now()
@@ -132,12 +135,17 @@ class AgentToolServiceImpl(
 
             // Replace env param entries: delete old, insert new
             if (request.envParams != null) {
+                // The rows are about to go away, and with them the only copy of what a masked
+                // defaultValue stands for.
+                val storedSecrets = storedEnvSecrets(id)
                 agentToolEnvParamMapper.deleteByToolId(id)
                 if (request.envParams.isNotEmpty()) {
-                    saveToolEnvParams(id, request.envParams)
+                    saveToolEnvParams(id, request.envParams, storedSecrets)
                 }
             }
             true
+        } catch (e: BizException) {
+            throw e
         } catch (e: Exception) {
             log.error("Failed to update agent tool", e)
             throw RuntimeException("Failed to update agent tool: ${e.message}")
@@ -205,7 +213,7 @@ class AgentToolServiceImpl(
         }
     }
 
-    private fun serializeHeaders(headers: List<McpConfigEntry>): String = secretFieldEncryptor.serializeWithEncryption(headers) ?: "[]"
+    private fun serializeHeaders(headers: List<McpConfigEntry>, storedJson: String? = null): String = secretFieldEncryptor.serializeWithEncryption(headers, storedJson) ?: "[]"
 
     private fun deserializeHeaders(json: String?): List<McpConfigEntry>? {
         if (json.isNullOrBlank()) return null
@@ -249,9 +257,15 @@ class AgentToolServiceImpl(
 
     /**
      * Save tool env param entries to agent_tool_env_param table.
-     * Encrypts defaultValue when secret=true.
+     *
+     * [storedSecrets] is the ciphertext per parameter name that this tool had before the rows were
+     * replaced; a masked incoming value means "unchanged" and carries that ciphertext over.
      */
-    private fun saveToolEnvParams(toolId: Long, envParamEntries: List<ToolEnvParamEntry>) {
+    private fun saveToolEnvParams(
+        toolId: Long,
+        envParamEntries: List<ToolEnvParamEntry>,
+        storedSecrets: Map<String, String> = emptyMap(),
+    ) {
         val now = LocalDateTime.now()
         val entities = envParamEntries.map { entry ->
             AgentToolEnvParam().apply {
@@ -260,11 +274,7 @@ class AgentToolServiceImpl(
                 this.description = entry.description
                 this.required = if (entry.required) 1 else 0
                 this.secret = if (entry.secret) 1 else 0
-                this.defaultValue = if (entry.secret && !entry.defaultValue.isNullOrBlank()) {
-                    secretFieldEncryptor.encrypt(entry.defaultValue)
-                } else {
-                    entry.defaultValue
-                }
+                this.defaultValue = secretFieldEncryptor.resolveEnvParamValue(entry, storedSecrets)
                 this.createTime = now
                 this.updateTime = now
             }
@@ -273,6 +283,14 @@ class AgentToolServiceImpl(
             agentToolEnvParamMapper.batchInsert(entities)
         }
     }
+
+    /**
+     * Raw stored ciphertexts by parameter name. This reads the table itself rather than
+     * [loadToolEnvParams], which hands out the masked view the write-back has to be defended against.
+     */
+    private fun storedEnvSecrets(toolId: Long): Map<String, String> = agentToolEnvParamMapper.selectByToolId(toolId)
+        .filter { it.secret == 1 && !it.defaultValue.isNullOrBlank() }
+        .associate { it.envParamName to it.defaultValue!! }
 
     /**
      * Load tool env param entries from agent_tool_env_param table.

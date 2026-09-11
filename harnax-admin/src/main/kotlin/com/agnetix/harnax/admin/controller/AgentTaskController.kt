@@ -39,7 +39,7 @@ class AgentTaskController(
         ResultVo.success(agentTaskService.page(name, agentId, taskStatus, pageNum, pageSize))
     } catch (e: Exception) {
         log.error("Failed to query agent task list", e)
-        ResultVo.error("Failed to query agent task list")
+        ResultVo.error("Failed to query agent task list: ${e.message}")
     }
 
     @Operation(summary = "Get agent task by ID")
@@ -51,7 +51,7 @@ class AgentTaskController(
             ResultVo.success(agentTaskService.convertToResponse(task))
         } catch (e: Exception) {
             log.error("Failed to get agent task", e)
-            ResultVo.error("Failed to get agent task")
+            ResultVo.error("Failed to get agent task: ${e.message}")
         }
     }
 
@@ -66,7 +66,7 @@ class AgentTaskController(
         }
     } catch (e: Exception) {
         log.error("Failed to create agent task", e)
-        ResultVo.error("Failed to create agent task")
+        ResultVo.error("Failed to create agent task: ${e.message}")
     }
 
     @Operation(summary = "Update agent task")
@@ -80,7 +80,7 @@ class AgentTaskController(
         }
     } catch (e: Exception) {
         log.error("Failed to update agent task", e)
-        ResultVo.error("Failed to update agent task")
+        ResultVo.error("Failed to update agent task: ${e.message}")
     }
 
     @Operation(summary = "Delete agent task")
@@ -94,7 +94,7 @@ class AgentTaskController(
         }
     } catch (e: Exception) {
         log.error("Failed to delete agent task", e)
-        ResultVo.error("Failed to delete agent task")
+        ResultVo.error("Failed to delete agent task: ${e.message}")
     }
 
     // ========================================
@@ -148,7 +148,7 @@ class AgentTaskController(
         ResultVo.success(agentTaskLogService.page(id, taskName, status, startTimeFrom, startTimeTo, keyword, pageNum, pageSize))
     } catch (e: Exception) {
         log.error("Failed to query agent task logs", e)
-        ResultVo.error("Failed to query agent task logs")
+        ResultVo.error("Failed to query agent task logs: ${e.message}")
     }
 
     @Operation(summary = "Get available agents list")
@@ -158,6 +158,6 @@ class AgentTaskController(
         ResultVo.success(agents.map { mapOf("id" to it.id, "name" to it.name) })
     } catch (e: Exception) {
         log.error("Failed to query agents list", e)
-        ResultVo.error("Failed to query agents list")
+        ResultVo.error("Failed to query agents list: ${e.message}")
     }
 }

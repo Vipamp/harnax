@@ -23,8 +23,16 @@
         <result column="last_run_time" property="lastRunTime"/>
     </resultMap>
 
-    <select id="selectById" resultMap="AgentTaskResultMap">
+    <!-- Service-to-service lookup with no end-user context; deliberately unscoped. -->
+    <select id="selectAnyById" resultMap="AgentTaskResultMap">
         SELECT * FROM agent_task WHERE id = #{id} AND active = 1
+    </select>
+
+    <!-- Same visibility rule as selectTaskList: public, or created by the caller. -->
+    <select id="selectById" resultMap="AgentTaskResultMap">
+        SELECT * FROM agent_task
+        WHERE id = #{id} AND active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
     </select>
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
@@ -39,24 +47,26 @@
         )
     </insert>
 
+    <!-- Owner-only: is_public grants visibility, not the right to rewrite someone else's task. -->
     <update id="updateById">
         UPDATE agent_task SET
-            name = #{name},
-            agent_id = #{agentId},
-            agent_name = #{agentName},
-            prompt = #{prompt},
-            cron_expression = #{cronExpression},
-            task_status = #{taskStatus},
-            concurrent = #{concurrent},
-            timeout_seconds = #{timeoutSeconds},
-            description = #{description},
-            is_public = #{isPublic},
-            update_time = #{updateTime}
-        WHERE id = #{id} AND active = 1
+            name = #{task.name},
+            agent_id = #{task.agentId},
+            agent_name = #{task.agentName},
+            prompt = #{task.prompt},
+            cron_expression = #{task.cronExpression},
+            task_status = #{task.taskStatus},
+            concurrent = #{task.concurrent},
+            timeout_seconds = #{task.timeoutSeconds},
+            description = #{task.description},
+            is_public = #{task.isPublic},
+            update_time = #{task.updateTime}
+        WHERE id = #{task.id} AND active = 1 AND creator = #{currentUsername}
     </update>
 
     <update id="deleteById">
-        UPDATE agent_task SET active = 0, update_time = NOW() WHERE id = #{id}
+        UPDATE agent_task SET active = 0, update_time = NOW()
+        WHERE id = #{id} AND creator = #{currentUsername}
     </update>
 
     <select id="selectTaskList" resultMap="AgentTaskResultMap">
