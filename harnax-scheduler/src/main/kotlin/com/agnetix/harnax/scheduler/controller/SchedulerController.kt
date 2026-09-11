@@ -90,8 +90,11 @@ class SchedulerController(
     @Operation(summary = "Reload all tasks from database")
     @PostMapping("/reload")
     fun reload(): ResultVo<String> = try {
-        schedulerService.loadTasksToScheduler()
-        ResultVo.success("Tasks reloaded")
+        if (schedulerService.loadTasksToScheduler()) {
+            ResultVo.success("Tasks reloaded")
+        } else {
+            ResultVo.error("Some active tasks could not be scheduled, see /actuator/health for details")
+        }
     } catch (e: Exception) {
         log.error("Failed to reload tasks", e)
         ResultVo.error("Failed to reload tasks: ${e.message}")
@@ -110,8 +113,4 @@ class SchedulerController(
         log.error("Failed to stop task: logId={}", logId, e)
         ResultVo.error("Failed to stop task: ${e.message}")
     }
-
-    @Operation(summary = "Health check")
-    @GetMapping("/health")
-    fun health(): ResultVo<String> = ResultVo.success("OK")
 }

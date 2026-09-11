@@ -37,8 +37,6 @@ spring:
           scheduler:
             instanceName: HarnaxScheduler
             instanceId: AUTO
-          jobStore:
-            class: org.quartz.simpl.RAMJobStore
           threadPool:
             class: org.quartz.simpl.SimpleThreadPool
             threadCount: ${QUARTZ_THREAD_COUNT:10}
@@ -50,7 +48,7 @@ mybatis:
   type-aliases-package: com.agnetix.harnax.entity
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
 
 # Springdoc OpenAPI (Swagger) configuration
 springdoc:
@@ -63,6 +61,24 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
   default-flat-param-object: true
+
+# Actuator / Metrics
+management:
+  endpoint:
+    health:
+      # Liveness answers "is this process running" — the only question a container restart should key
+      # on. Whether this instance actually scheduled any tasks lives in /actuator/health (the
+      # aggregate), where the `scheduler` indicator reports it, so a slow database does not restart
+      # the process out from under its own retry loop.
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 logging:
   level:

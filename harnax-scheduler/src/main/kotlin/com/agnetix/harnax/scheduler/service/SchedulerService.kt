@@ -6,15 +6,6 @@ import java.time.LocalDateTime
 interface SchedulerService {
 
     /**
-     * Data class tracking a running task execution for stop capability.
-     */
-    data class RunningTaskInfo(
-        val logId: Long,
-        val taskId: Long,
-        val sessionId: String,
-    )
-
-    /**
      * Schedule a task for recurring execution based on its cron expression.
      */
     fun scheduleTask(task: AgentTask)
@@ -26,8 +17,9 @@ interface SchedulerService {
 
     /**
      * Load all running tasks from the database into the scheduler.
+     * Returns false when the load left active tasks unregistered.
      */
-    fun loadTasksToScheduler()
+    fun loadTasksToScheduler(): Boolean
 
     /**
      * Start scheduling a task (adds to Quartz).
