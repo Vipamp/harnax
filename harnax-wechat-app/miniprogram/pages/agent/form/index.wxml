@@ -77,12 +77,6 @@
         </picker>
         <view class="cfg-card__del" data-index="{{mi}}" bindtap="onRemoveMcp">删除</view>
       </view>
-      <view class="cfg-switches">
-        <view class="cfg-switch">
-          <text>允许跳过</text>
-          <t-switch size="small" value="{{item.enableSkip}}" data-index="{{mi}}" bind:change="onMcpEnableSkip" />
-        </view>
-      </view>
       <view class="env-list" wx:if="{{item.envBindings.length}}">
         <view class="env-list__title">环境参数（{{item.envBindings.length}}）</view>
         <view class="env-row" wx:for="{{item.envBindings}}" wx:key="envKey" wx:for-item="binding" wx:for-index="ei">

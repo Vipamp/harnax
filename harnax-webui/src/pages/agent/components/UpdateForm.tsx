@@ -12,6 +12,7 @@ import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import { getCurrentUserInfo, isPublicSwitchDisabled } from '@/utils/permissionUtil';
 import ToolConfigPanel, { ToolConfigState, EnvVarOption } from './ToolConfigPanel';
 import McpConfigPanel, { McpConfigState } from './McpConfigPanel';
+import { findMissingRequiredEnvParam } from './envBinding';
 import SkillConfigPanel, { SkillConfigState } from './SkillConfigPanel';
 import CliConfigPanel from './CliConfigPanel';
 
@@ -74,10 +75,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
         setMcpConfigs(values.mcpList.map(item => ({
           mcpId: item.mcpId,
           mcpName: item.mcpName,
-          enableSkip: item.enableSkip === 'true',
           envBindings: (item.envBindings || []).map((b: any) => ({
             envKey: b.envKey,
-            envValue: b.customValue || b.envValue || '',
+            // 有 envVarId 的行，后端回的 envValue 是给人看的（敏感项还是 `******`），不是可以再
+            // 存一遍的值：引用只带 id 回去，运行时按 id 现取。
+            envValue: b.envVarId ? '' : (b.customValue || b.envValue || ''),
             envVarId: b.envVarId,
             customInput: !!b.customValue || (!b.envVarId && !!b.envValue),
           })),
@@ -112,7 +114,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           needConfirm: item.needConfirm || false,
           envBindings: (item.envBindings || []).map((b: any) => ({
             envKey: b.envKey,
-            envValue: b.customValue || b.envValue || '',
+            envValue: b.envVarId ? '' : (b.customValue || b.envValue || ''),
             envVarId: b.envVarId,
             customInput: !!b.customValue || (!b.envVarId && !!b.envValue),
           })),
@@ -223,12 +225,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           message.error(intl.formatMessage({ id: 'pages.agent.tool.notSelected', defaultMessage: 'Please select a tool or remove the empty row' }));
           return false;
         }
-        for (const entry of (c.envEntries || []).filter((e: any) => e.required)) {
-          const binding = (c.envBindings || []).find(b => b.envKey === entry.envParamName);
-          if (!binding?.envValue) {
-            message.error(intl.formatMessage({ id: 'pages.agent.tool.envRequired', defaultMessage: 'Required env param is empty: ' }) + entry.envParamName);
-            return false;
-          }
+        const missing = findMissingRequiredEnvParam(c.envEntries, c.envBindings, false);
+        if (missing) {
+          message.error(intl.formatMessage({ id: 'pages.agent.tool.envRequired', defaultMessage: 'Required env param is empty: ' }) + missing);
+          return false;
         }
       }
     } else if (currentStep === 2) {
@@ -238,12 +238,10 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           message.error(intl.formatMessage({ id: 'pages.agent.mcp.notSelected', defaultMessage: 'Please select an MCP service or remove the empty row' }));
           return false;
         }
-        for (const entry of (c.envEntries || []).filter((e: any) => e.required)) {
-          const binding = (c.envBindings || []).find(b => b.envKey === entry.envParamName);
-          if (!binding?.envValue) {
-            message.error(intl.formatMessage({ id: 'pages.agent.mcp.envRequired', defaultMessage: 'Required env param is empty: ' }) + entry.envParamName);
-            return false;
-          }
+        const missing = findMissingRequiredEnvParam(c.envEntries, c.envBindings, true);
+        if (missing) {
+          message.error(intl.formatMessage({ id: 'pages.agent.mcp.envRequired', defaultMessage: 'Required env param is empty: ' }) + missing);
+          return false;
         }
       }
     } else if (currentStep === 3) {
@@ -275,11 +273,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           isPublic: isPublic ? 1 : 0,
           mcpList: mcpConfigs.filter(c => c.mcpId).map(c => ({
             id: c.mcpId,
-            enableSkip: c.enableSkip ? 'true' : 'false',
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
               envKey: b.envKey,
-              ...(customInput ? { customValue: b.envValue } : { envValue: b.envValue }),
-              ...(b.envVarId && !customInput ? { envVarId: b.envVarId } : {}),
+              ...(customInput || !b.envVarId ? { customValue: b.envValue } : { envVarId: b.envVarId }),
             })),
           })),
           skillList: skillConfigs.filter(c => c.skillId).map(c => c.skillId!.toString()).join(','),
@@ -288,8 +284,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
             needConfirm: c.needConfirm || false,
             envBindings: (c.envBindings || []).map(({ customInput, ...b }) => ({
               envKey: b.envKey,
-              ...(customInput ? { customValue: b.envValue } : { envValue: b.envValue }),
-              ...(b.envVarId && !customInput ? { envVarId: b.envVarId } : {}),
+              ...(customInput || !b.envVarId ? { customValue: b.envValue } : { envVarId: b.envVarId }),
             })),
           })),
           cliList: selectedCliIds.map(id => ({ id })),

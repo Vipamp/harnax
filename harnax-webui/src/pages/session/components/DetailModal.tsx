@@ -331,9 +331,6 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
                         ID: {mcp.mcpId}
                       </Text>
                     </div>
-                    <Tag color={mcp.enableSkip === 'true' ? 'orange' : 'default'}>
-                      {mcp.enableSkip === 'true' ? intl.formatMessage({ id: 'pages.session.allowSkip', defaultMessage: 'Allow Skip' }) : intl.formatMessage({ id: 'pages.session.notAllowSkip', defaultMessage: 'Not Allow Skip' })}
-                    </Tag>
                   </div>
                   {mcp.mcpDescription && (
                     <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>

@@ -71,7 +71,7 @@ declare namespace API {
     status?: number;
     isPublic?: number;
     owner?: string;
-    mcpList?: { id: number; enableSkip?: string; envBindings?: EnvBinding[] }[];
+    mcpList?: { id: number; envBindings?: EnvBinding[] }[];
     toolList?: { id: number; needConfirm?: boolean; envBindings?: EnvBinding[] }[];
     skillList?: string; // comma-separated skill IDs
   };
@@ -119,7 +119,6 @@ declare namespace API {
     mcpId?: number;
     mcpName?: string;
     mcpDescription?: string;
-    enableSkip?: string;
     envBindings?: EnvBinding[];
   };
 
@@ -163,7 +162,6 @@ declare namespace API {
     mcpId: number;
     mcpName: string;
     mcpDescription?: string;
-    enableSkip?: string;
   };
 
   type SessionSkillItem = {

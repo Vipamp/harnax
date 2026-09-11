@@ -23,6 +23,8 @@ interface EnvBindingVM {
   envKey: string;
   required: boolean;
   secret: boolean;
+  /** 服务端声明过默认值：MCP 的默认值会随配置下发进进程环境，可以顶替必填 */
+  hasDefault: boolean;
   customInput: boolean;
   envVarId?: number;
   envValue: string;
@@ -43,7 +45,6 @@ interface McpConfigVM {
   mcpId?: number;
   label: string;
   pickerIndex: number;
-  enableSkip: boolean;
   envBindings: EnvBindingVM[];
 }
 
@@ -71,6 +72,7 @@ function buildEnvBindings(
       envKey: e.envParamName,
       required: !!e.required,
       secret: !!e.secret,
+      hasDefault: !!e.defaultValue,
     };
     const savedB = (saved || []).find((s) => s.envKey === e.envParamName);
     if (savedB && savedB.customValue != null && savedB.customValue !== '' && !savedB.envVarId) {
@@ -82,20 +84,23 @@ function buildEnvBindings(
         ...base,
         customInput: false,
         envVarId: savedB.envVarId,
-        envValue: savedB.envValue || (idx >= 0 ? envVarOptions[idx].displayValue : ''),
+        // 只作展示：引用提交时只带 id。选项那份掩码带首尾字符，后端回的这条对敏感项是整串星号。
+        envValue: (idx >= 0 ? envVarOptions[idx].displayValue : '') || savedB.envValue || '',
         sourceIndex: idx,
       };
     }
-    return { ...base, customInput: false, envVarId: undefined, envValue: e.defaultValue || '', sourceIndex: -1 };
+    // 敏感项的 defaultValue 后端只给掩码（McpServerResponse.maskValue），照抄进来存的就是
+    // `abc****wxyz` 这串字面量，还会随 spec 下发进 ToolEnvContext。留空才是诚实的默认值：
+    // 要覆盖就选一个全局变量，或者自己填。与 webui McpConfigPanel 同一条规则。
+    return { ...base, customInput: false, envVarId: undefined, envValue: e.secret ? '' : e.defaultValue || '', sourceIndex: -1 };
   });
 }
 
 /** 视图模型 -> 后端 EnvBinding */
 function toEnvBindingPayload(b: EnvBindingVM): API.EnvBinding {
-  if (b.customInput) return { envKey: b.envKey, customValue: b.envValue };
-  const p: API.EnvBinding = { envKey: b.envKey, envValue: b.envValue };
-  if (b.envVarId) p.envVarId = b.envVarId;
-  return p;
+  // 引用只带 id：envValue 那份是给人看的（敏感项是掩码），存进快照就成了变量被删后的兜底值。
+  if (b.envVarId) return { envKey: b.envKey, envVarId: b.envVarId };
+  return { envKey: b.envKey, customValue: b.envValue };
 }
 
 let _uid = 0;
@@ -213,7 +218,6 @@ Page({
         mcpId: m.mcpId,
         label: opt?.name || m.mcpName || '未知 MCP',
         pickerIndex: optIdx,
-        enableSkip: m.enableSkip === 'true',
         envBindings: buildEnvBindings(entries, envVarOptions, m.envBindings),
       };
     });
@@ -298,6 +302,13 @@ Page({
     const optIdx = Number(e.detail.value);
     const tool = this.data.toolOptions[optIdx];
     if (!tool) return;
+    // 后端 saveToolBindings 有 distinctBy 兜底，重复行会在落库时被丢掉——界面必须先挡住，
+    // 否则用户加了两张一样的卡、存完回来少一张，却没有任何提示。
+    const bound = this.data.toolConfigs.some((c, i) => i !== cardIdx && c.toolId === tool.id);
+    if (bound) {
+      wx.showToast({ title: '该工具已绑定，无需重复添加', icon: 'none' });
+      return;
+    }
     const configs = [...this.data.toolConfigs];
     const prev = configs[cardIdx];
     configs[cardIdx] = {
@@ -319,7 +330,7 @@ Page({
   // ---- MCP 配置 ----
   onAddMcp() {
     const mcpConfigs = this.data.mcpConfigs.concat([
-      { _id: nextId(), label: '', pickerIndex: -1, enableSkip: false, envBindings: [] },
+      { _id: nextId(), label: '', pickerIndex: -1, envBindings: [] },
     ]);
     this.setData({ mcpConfigs });
   },
@@ -334,6 +345,13 @@ Page({
     const optIdx = Number(e.detail.value);
     const mcp = this.data.mcpOptions[optIdx];
     if (!mcp) return;
+    // 后端 saveMcpBindings 有 distinctBy 兜底，重复行会在落库时被丢掉——界面必须先挡住，
+    // 否则用户加了两张一样的卡、存完回来少一张，却没有任何提示。
+    const bound = this.data.mcpConfigs.some((c, i) => i !== cardIdx && c.mcpId === mcp.id);
+    if (bound) {
+      wx.showToast({ title: '该 MCP 已绑定，无需重复添加', icon: 'none' });
+      return;
+    }
     const configs = [...this.data.mcpConfigs];
     configs[cardIdx] = {
       ...configs[cardIdx],
@@ -343,11 +361,6 @@ Page({
       envBindings: buildEnvBindings(mcp.envParams || [], this.data.envVarOptions),
     };
     this.setData({ mcpConfigs: configs });
-  },
-
-  onMcpEnableSkip(e: any) {
-    const idx = Number(e.currentTarget.dataset.index);
-    this.setData({ [`mcpConfigs[${idx}].enableSkip`]: !!e.detail.value });
   },
 
   // ---- 环境变量绑定（工具/MCP 共用，data-type 区分）----
@@ -446,7 +459,6 @@ Page({
         .filter((c) => c.mcpId)
         .map((c) => ({
           id: c.mcpId as number,
-          enableSkip: c.enableSkip ? 'true' : 'false',
           envBindings: c.envBindings.map(toEnvBindingPayload),
         })),
       skillList: skillConfigs
@@ -454,6 +466,25 @@ Page({
         .map((c) => c.skillId)
         .join(','),
     };
+  },
+
+  /** 必填环境参数是否缺值；返回给操作者看的错误文案，null 表示通过 */
+  validateRequiredEnvParams(): string | null {
+    const filled = (b: EnvBindingVM, defaultCounts: boolean) =>
+      !!b.envVarId || !!b.envValue.trim() || (defaultCounts && b.hasDefault);
+    for (const c of this.data.toolConfigs) {
+      if (!c.toolId) continue;
+      // 工具的 default_value 不会下发到运行时（ToolEnvContext 里只有绑定值），所以不能顶替必填
+      const missing = c.envBindings.find((b) => b.required && !filled(b, false));
+      if (missing) return `工具「${c.label}」缺少必填环境参数：${missing.envKey}`;
+    }
+    for (const c of this.data.mcpConfigs) {
+      if (!c.mcpId) continue;
+      // MCP 的 env_params 整份下发进 stdio 进程环境，声明过的默认值算已填
+      const missing = c.envBindings.find((b) => b.required && !filled(b, true));
+      if (missing) return `MCP「${c.label}」缺少必填环境参数：${missing.envKey}`;
+    }
+    return null;
   },
 
   async onSubmit() {
@@ -464,6 +495,11 @@ Page({
     }
     if (!form.modelId) {
       wx.showToast({ title: '请选择模型', icon: 'none' });
+      return;
+    }
+    const envError = this.validateRequiredEnvParams();
+    if (envError) {
+      wx.showToast({ title: envError, icon: 'none', duration: 2500 });
       return;
     }
     this.setData({ submitting: true });

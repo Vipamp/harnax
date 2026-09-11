@@ -1,12 +1,11 @@
 import { useIntl } from '@umijs/max';
-import { Button, Input, Select, Space, Switch, Tag } from 'antd';
+import { Button, Input, Select, Space, Tag } from 'antd';
 import React from 'react';
 import { PlusOutlined, MinusOutlined, LockOutlined, DownOutlined, RightOutlined, EnvironmentOutlined } from '@ant-design/icons';
 
 export type McpConfigState = {
   mcpId?: number;
   mcpName?: string;
-  enableSkip?: boolean;
   envEntries?: API.ToolEnvParamEntry[];
   envBindings?: { envKey: string; envValue: string; envVarId?: number; customInput?: boolean }[];
 };
@@ -49,7 +48,13 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
         const envEntries = selectedMcp.envParams || [];
         newConfigs[index].envEntries = envEntries;
         if (envEntries.length > 0) {
-          newConfigs[index].envBindings = envEntries.map(e => ({ envKey: e.envParamName, envValue: e.defaultValue || '' }));
+          newConfigs[index].envBindings = envEntries.map(e => ({
+            envKey: e.envParamName,
+            // 敏感项的 defaultValue 后端只给掩码（McpServerResponse.maskValue），照抄进来存的就是
+            // `abc****wxyz` 这串字面量，还会随 spec 下发进 ToolEnvContext。留空才是诚实的默认值：
+            // 要覆盖就选一个全局变量，或者自己填。
+            envValue: e.secret ? '' : e.defaultValue || '',
+          }));
         } else {
           newConfigs[index].envBindings = [];
         }
@@ -75,7 +80,9 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
     } else {
       const selected = envVarOptions.find(opt => opt.id === envVarId);
       if (!selected) return;
-      bindings[envIdx] = { ...bindings[envIdx], envVarId: selected.id, envValue: selected.displayValue, customInput: undefined };
+      // 引用只落 envVarId，值由运行时按 id 现取：敏感项的 displayValue 是掩码，
+      // 顺手存成 envValue 就等于把 `******` 写进快照，环境变量一旦被删，工具拿到的就是星号。
+      bindings[envIdx] = { ...bindings[envIdx], envVarId: selected.id, envValue: '', customInput: undefined };
     }
     newConfigs[index].envBindings = bindings;
     setMcpConfigs(newConfigs);
@@ -117,14 +124,12 @@ const McpConfigPanel: React.FC<McpConfigPanelProps> = ({
             value={config.mcpId}
             onChange={(value) => handleMcpConfigChange(index, 'mcpId', value)}
             allowClear
-            options={mcpServers.map(mcp => ({ label: mcp.name, value: mcp.id }))}
+            options={mcpServers
+              // 同一个服务选两次没有意义：后端 `distinctBy { it.mcpId }` 只保留第一条，
+              // 第二行填的环境变量覆盖值会静默丢掉。
+              .filter(mcp => !mcpConfigs.some((other, otherIndex) => otherIndex !== index && other.mcpId === mcp.id))
+              .map(mcp => ({ label: mcp.name, value: mcp.id }))}
           />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: 'var(--vip-text-primary)', fontSize: '14px' }}>
-              {intl.formatMessage({ id: 'pages.agent.allowSkip', defaultMessage: 'Allow Skip' })}
-            </span>
-            <Switch size="small" checked={config.enableSkip} onChange={(checked) => handleMcpConfigChange(index, 'enableSkip', checked)} />
-          </div>
 
           {/* MCP Env Bindings */}
           {config.envEntries && config.envEntries.length > 0 && (

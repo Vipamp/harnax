@@ -40,30 +40,31 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
   const intl = useIntl();
 
   // Group tools by type for OptGroup display
-  const groupedToolOptions = React.useMemo(() => {
-    const builtinTools = tools.filter((t: any) => t.type === 'BUILTIN');
-    const customTools = tools.filter((t: any) => t.type !== 'BUILTIN');
+  const toolOptionsFor = (index: number) => {
+    // 同一个工具选两次没有意义：后端 `distinctBy { it.toolId }` 只保留第一条，
+    // 第二行填的环境变量覆盖值会静默丢掉。只挡别的行，本行自己已选的要留着，否则标题会渲染成裸 id。
+    const selectable = tools.filter(
+      (t: any) => !toolConfigs.some((other, otherIndex) => otherIndex !== index && other.toolId === t.id),
+    );
+    const label = (tool: any) =>
+      (locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name));
     const groups: { label: string; options: { label: string; value: number }[] }[] = [];
+    const builtinTools = selectable.filter((t: any) => t.type === 'BUILTIN');
+    const customTools = selectable.filter((t: any) => t.type !== 'BUILTIN');
     if (builtinTools.length > 0) {
       groups.push({
         label: intl.formatMessage({ id: 'pages.agent.tool.groupBuiltin', defaultMessage: 'Built-in Tools' }),
-        options: builtinTools.map((tool: any) => ({
-          label: locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name),
-          value: tool.id,
-        })),
+        options: builtinTools.map((tool: any) => ({ label: label(tool), value: tool.id })),
       });
     }
     if (customTools.length > 0) {
       groups.push({
         label: intl.formatMessage({ id: 'pages.agent.tool.groupCustom', defaultMessage: 'Custom Tools' }),
-        options: customTools.map((tool: any) => ({
-          label: locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name),
-          value: tool.id,
-        })),
+        options: customTools.map((tool: any) => ({ label: label(tool), value: tool.id })),
       });
     }
     return groups;
-  }, [tools, locale, intl]);
+  };
 
   const handleToolConfigChange = (index: number, field: string, value: any) => {
     const newConfigs = [...toolConfigs];
@@ -77,7 +78,10 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
         if (envEntries.length > 0) {
           newConfigs[index].envBindings = envEntries.map((e: API.ToolEnvParamEntry) => ({
             envKey: e.envParamName,
-            envValue: e.defaultValue || '',
+            // 敏感项的 defaultValue 后端只给掩码（AgentToolServiceImpl.maskValue），照抄进来存的就是
+            // `abc****wxyz` 这串字面量，还会随 spec 下发进 ToolEnvContext。留空才是诚实的默认值：
+            // 要覆盖就选一个全局变量，或者自己填。与 McpConfigPanel 同一条规则。
+            envValue: e.secret ? '' : e.defaultValue || '',
           }));
         } else {
           newConfigs[index].envBindings = [];
@@ -95,7 +99,9 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
     } else {
       const selected = envVarOptions.find(opt => opt.id === envVarId);
       if (!selected) return;
-      bindings[envIndex] = { ...bindings[envIndex], envVarId: selected.id, envValue: selected.displayValue, customInput: undefined };
+      // 引用只落 envVarId，值由运行时按 id 现取：敏感项的 displayValue 是掩码，
+      // 顺手存成 envValue 就等于把 `******` 写进快照，环境变量一旦被删，工具拿到的就是星号。
+      bindings[envIndex] = { ...bindings[envIndex], envVarId: selected.id, envValue: '', customInput: undefined };
     }
     newConfigs[index].envBindings = bindings;
     setToolConfigs(newConfigs);
@@ -131,7 +137,7 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
               placeholder={intl.formatMessage({ id: 'pages.agent.tool.select', defaultMessage: 'Select Tool' })}
               value={config.toolId}
               onChange={(value) => handleToolConfigChange(index, 'toolId', value)}
-              options={groupedToolOptions}
+              options={toolOptionsFor(index)}
             />
             <span>
               {intl.formatMessage({ id: 'pages.agent.tool.needConfirm', defaultMessage: 'Need confirm' })}
