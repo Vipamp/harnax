@@ -246,9 +246,9 @@ class SchedulerServiceImpl(
         val task = agentTaskMapper.selectAnyById(id)
             ?: throw RuntimeException("Agent task not found: $id")
 
-        // Guard: reject if task already has an active running execution
-        if (hasActiveRunningLog(task.id)) {
-            log.warn("Task {} has an active running execution, rejecting runOnce", task.id)
+        // Guard: an in-flight execution only blocks a task that forbids overlap (blocksManualRun).
+        if (blocksManualRun(task)) {
+            log.warn("Task {} has an active running execution and allows no overlap, rejecting runOnce", task.id)
             return false
         }
 
@@ -276,9 +276,10 @@ class SchedulerServiceImpl(
 
         val triggerTime = LocalDateTime.now()
 
-        // Guard: check for actively running logs, auto-expire stale ones (from previous crashes/restarts)
-        if (hasActiveRunningLog(task.id)) {
-            log.warn("Task {} has an active running execution, rejecting trigger", task.id)
+        // Guard: an execution still in flight only counts as a conflict for a task that forbids
+        // overlap. Stale rows are expired on the way, so a zombie cannot block the trigger forever.
+        if (blocksManualRun(task)) {
+            log.warn("Task {} has an active running execution and allows no overlap, rejecting trigger", task.id)
             return false
         }
 
@@ -419,6 +420,16 @@ class SchedulerServiceImpl(
             key.name.removePrefix("AgentTask_").toLongOrNull()
         }.toSet()
     }
+
+    /**
+     * Whether a manual run has to wait for an execution that is already in flight.
+     *
+     * `concurrent` is the task's own answer to that question (entity/DDL: 0 = no overlap, 1 = allow),
+     * so refusing a "run now" on a concurrent=1 task rejected a conflict the task explicitly permits.
+     * The stale sweep still runs first and for both kinds: it is what stops a zombie left by a dead node
+     * from counting as a live execution forever.
+     */
+    private fun blocksManualRun(task: AgentTask): Boolean = hasActiveRunningLog(task.id) && task.concurrent == 0
 
     /**
      * Whether the task has a live execution. Stale rows are expired first, so a zombie left behind by
