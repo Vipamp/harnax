@@ -54,6 +54,24 @@ interface SchedulerService {
     fun hasActiveRunningExecution(taskId: Long): Boolean
 
     /**
+     * Reclaim execution log rows that outran their own task's timeout: the rows a node leaves behind
+     * when it dies mid-task, which otherwise read as "still running" forever.
+     *
+     * @return how many rows were reclaimed; 0 both for "nothing was stale" and for "the sweep failed",
+     *   which it reports by log line rather than by throwing — a housekeeping sweep that dies on one
+     *   statement would take the rest of them down with it.
+     */
+    fun expireStaleExecutions(): Int
+
+    /**
+     * Drop execution logs older than [retentionDays], terminal rows only. The log table is otherwise
+     * append-only, and every row carries the prompt and the full agent response.
+     *
+     * @return how many rows were dropped, 0 when the sweep failed for the same reason as above
+     */
+    fun cleanupOldExecutionLogs(retentionDays: Int): Int
+
+    /**
      * Manually trigger a task execution (bypassing Quartz scheduling).
      * Executes asynchronously and returns immediately.
      */

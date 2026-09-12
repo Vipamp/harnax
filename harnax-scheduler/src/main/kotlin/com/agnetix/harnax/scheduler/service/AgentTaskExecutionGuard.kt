@@ -17,6 +17,12 @@ import java.util.UUID
 class AgentTaskExecutionGuard(
     private val executionMapper: AgentTaskExecutionMapper,
     @Value("\${scheduler.instance-id:#{null}}") private val configuredInstanceId: String?,
+    /**
+     * The same key `SchedulerServiceImpl` and `RouterClient` read: how long an execution may take, how
+     * long until its log row counts as a zombie and how long until its lock row counts as leaked have to
+     * be one number told three ways, or the sweep frees a lock whose execution is still running.
+     */
+    @Value("\${scheduler.timeout-seconds:300}") private val executionTimeoutSeconds: Int,
 ) {
     private val log = LoggerFactory.getLogger(AgentTaskExecutionGuard::class.java)
 
@@ -77,6 +83,27 @@ class AgentTaskExecutionGuard(
         } catch (e: Exception) {
             log.warn("Failed to cleanup old executions: {}", e.message)
         }
+    }
+
+    /**
+     * Release locks whose holder is gone. A row still at status 0 after twice the execution timeout
+     * cannot have a live owner — the execution would have been reaped by then — and leaving it in place
+     * blocks that (task_id, trigger_time) from ever being delivered again.
+     *
+     * Twice, not once: the log-side sweep runs at 1.5x the timeout with its own grace window, and a
+     * lock reaped before its execution has honestly given up would let the same trigger run twice.
+     */
+    fun cleanupLeakedLocks(): Int = try {
+        val deleted = executionMapper.deleteStaleRunning(
+            LocalDateTime.now().minusSeconds(executionTimeoutSeconds * 2L),
+        )
+        if (deleted > 0) {
+            log.info("Released {} execution lock(s) whose holder is gone", deleted)
+        }
+        deleted
+    } catch (e: Exception) {
+        log.warn("Failed to sweep leaked execution locks: {}", e.message)
+        0
     }
 
     private fun getHostName(): String = try {

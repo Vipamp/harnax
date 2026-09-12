@@ -11,6 +11,7 @@ import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskJob
 import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
+import com.agnetix.harnax.scheduler.job.SchedulerHousekeepingJob
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
@@ -81,7 +82,43 @@ class SchedulerServiceImpl(
         if (!schedulerEnabled) {
             return
         }
+        registerHousekeepingJob()
         loadExecutor.execute { loadTasksWithRetry() }
+    }
+
+    /**
+     * The sweeps have no other caller: until this registration existed, a guard row could only ever be
+     * added and an execution log row never removed at all. Registered before the task load and on the
+     * main thread, because none of it reads the database — the *sweeps* do, five minutes later, by which
+     * time the retry loop may well have brought the database up.
+     *
+     * A repeating trigger rather than a cron: the sweep has no relationship to any user's schedule, and a
+     * cron would make it miss while this instance was down for the very restart that leaves zombies.
+     */
+    private fun registerHousekeepingJob() {
+        try {
+            val jobKey = JobKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP)
+            if (scheduler.checkExists(jobKey)) {
+                log.info("Housekeeping job is already registered, leaving it alone")
+                return
+            }
+            val jobDetail = JobBuilder.newJob(SchedulerHousekeepingJob::class.java)
+                .withIdentity(jobKey)
+                .storeDurably()
+                .build()
+            val trigger = TriggerBuilder.newTrigger()
+                .withIdentity(TriggerKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP))
+                .forJob(jobKey)
+                .startNow()
+                .withSchedule(SimpleScheduleBuilder.simpleSchedule().withIntervalInMinutes(5).repeatForever())
+                .build()
+            scheduler.scheduleJob(jobDetail, trigger)
+            log.info("Registered scheduler housekeeping job (every 5 minutes)")
+        } catch (e: Exception) {
+            // Loud but fatal is the wrong way round here: a node that cannot sweep is degraded, and the
+            // task load that follows is the one that decides whether it schedules anything at all.
+            log.warn("Housekeeping job could not be registered: {}", e.message)
+        }
     }
 
     @PreDestroy
@@ -590,16 +627,38 @@ class SchedulerServiceImpl(
         return message
     }
 
-    /** Reclaim executions that outran their own timeout, judged per row in SQL. */
-    private fun expireStaleExecutions() {
-        try {
-            val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
-            if (expired > 0) {
-                log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
-            }
-        } catch (e: Exception) {
-            log.warn("Failed to expire stale running task logs: {}", e.message)
+    /**
+     * Reclaim executions that outran their own timeout, judged per row in SQL.
+     *
+     * Three callers reach this: the startup load, every guard read that answers "is it still running"
+     * (directly, and through [hasActiveRunningExecution]), and the housekeeping sweep — which is the one
+     * that keeps working for a task that stopped firing, where no user request would ever come to ask.
+     * A failure is a log line plus 0: the sweep must not be the thing that takes its caller down.
+     */
+    override fun expireStaleExecutions(): Int = try {
+        val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
+        if (expired > 0) {
+            log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
         }
+        expired
+    } catch (e: Exception) {
+        log.warn("Failed to expire stale running task logs: {}", e.message)
+        0
+    }
+
+    /**
+     * The log table's only removal path: every run appends a row holding the prompt and the whole agent
+     * response, and nothing had ever taken one away.
+     */
+    override fun cleanupOldExecutionLogs(retentionDays: Int): Int = try {
+        val deleted = agentTaskLogMapper.deleteOldLogs(LocalDateTime.now().minusDays(retentionDays.toLong()))
+        if (deleted > 0) {
+            log.info("Removed {} execution log(s) older than {} days", deleted, retentionDays)
+        }
+        deleted
+    } catch (e: Exception) {
+        log.warn("Failed to apply the execution-log retention: {}", e.message)
+        0
     }
 
     companion object {

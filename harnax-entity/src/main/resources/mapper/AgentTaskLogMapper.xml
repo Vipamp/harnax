@@ -181,4 +181,18 @@
               DATE_SUB(NOW(), INTERVAL CEIL(IFNULL(NULLIF(t.timeout_seconds, 0), #{defaultTimeoutSeconds}) * 1.5) SECOND)
     </update>
 
+    <!--
+      Retention sweep, keyed on create_time (indexed) rather than start_time: a run that never got a
+      start time would otherwise stay here forever. The scheduler's housekeeping job is the only caller,
+      and until it existed no statement in this file ever removed a row.
+
+      status NOT IN (3, 4) keeps the same guard every other write carries: a row that still reads live
+      belongs to an execution someone may still report on, age is no argument against that.
+    -->
+    <delete id="deleteOldLogs">
+        DELETE FROM agent_task_log
+        WHERE create_time &lt; #{beforeTime}
+          AND status NOT IN (3, 4)
+    </delete>
+
 </mapper>

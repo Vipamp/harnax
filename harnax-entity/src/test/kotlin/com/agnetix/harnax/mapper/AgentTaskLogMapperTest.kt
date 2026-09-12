@@ -661,6 +661,54 @@ open class AgentTaskLogMapperTest {
         }
     }
 
+    /**
+     * Retention for the log table. Housekeeping is the only writer that ever removes a row here, and
+     * before it there was none: `agent_task_log` carried prompt/response for every run forever.
+     */
+    @Nested
+    @DisplayName("deleteOldLogs 保留期清理")
+    inner class DeleteOldLogsTests {
+
+        @Test
+        @DisplayName("deleteOldLogs - 只删保留期外的终态行")
+        fun `deleteOldLogs should drop only terminal rows past the cutoff`() {
+            val purged = insertLogWithAge(status = 1, ageDays = 100)
+            val recent = insertLogWithAge(status = 1, ageDays = 10)
+            // 看着还活着的行永远不能因为「太老」被删：那正是 stop 路径与 reaper 还要认的行
+            val ancientRunning = insertLogWithAge(status = 3, ageDays = 100)
+            val ancientStopping = insertLogWithAge(status = 4, ageDays = 100)
+
+            val deleted = agentTaskLogMapper.deleteOldLogs(LocalDateTime.now().minusDays(90))
+            assertEquals(1, deleted)
+
+            kotlin.test.assertNull(agentTaskLogMapper.selectById(purged.id))
+            assertNotNull(agentTaskLogMapper.selectById(recent.id))
+            assertNotNull(agentTaskLogMapper.selectById(ancientRunning.id))
+            assertNotNull(agentTaskLogMapper.selectById(ancientStopping.id))
+        }
+
+        private fun insertLogWithAge(
+            status: Int,
+            ageDays: Long,
+        ): AgentTaskLog {
+            val log = AgentTaskLog().apply {
+                taskId = 1L
+                taskName = "Daily News"
+                prompt = "retention probe"
+                response = "ok"
+                sessionId = "sess-ret-$status-$ageDays-${System.nanoTime()}"
+                this.status = status
+                errorInfo = ""
+                startTime = LocalDateTime.now().minusDays(ageDays)
+                endTime = LocalDateTime.now().minusDays(ageDays)
+                creator = OWNER
+                createTime = LocalDateTime.now().minusDays(ageDays)
+            }
+            assertEquals(1, agentTaskLogMapper.insert(log))
+            return log
+        }
+    }
+
     private fun insertTask(
         creator: String,
         isPublic: Int,

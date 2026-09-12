@@ -3,6 +3,7 @@ package com.agnetix.harnax.mapper
 import com.agnetix.harnax.entity.AgentTaskLog
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
+import java.time.LocalDateTime
 
 /**
  * Every write on an execution log carries a status guard in its WHERE clause. Several scheduler
@@ -73,6 +74,16 @@ interface AgentTaskLogMapper {
      * and reclaiming at exactly the timeout used to expire work that was merely slow.
      */
     fun expireStale(@Param("defaultTimeoutSeconds") defaultTimeoutSeconds: Int): Int
+
+    /**
+     * Retention sweep: delete execution logs created before [beforeTime]. Terminal rows only — a row
+     * still at 3 (running) or 4 (stopping) is either live or has an outcome the stop path still owes
+     * the user, and deleting it would throw the record away rather than age it out.
+     *
+     * Called by the scheduler's housekeeping job. Nothing else in this table ever removes a row, so
+     * without it prompt/response/error_info grow per run forever.
+     */
+    fun deleteOldLogs(@Param("beforeTime") beforeTime: LocalDateTime): Int
 
     /**
      * Paged log search, gated by the *task* the log belongs to: a row is only readable through a task
