@@ -173,13 +173,54 @@ open class AgentTaskLogMapperTest {
         }
 
         @Test
+        @DisplayName("reclaimExpired - 拥有真实结果的执行可以回收被误判超时的行")
+        fun `reclaimExpired should only take back a row the reaper marked timeout`() {
+            val expired = insertExecutionLog(taskId = 1L, initialStatus = 2)
+            val running = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            val stopped = insertExecutionLog(taskId = 1L, initialStatus = 5)
+
+            val reclaim = AgentTaskLog().apply {
+                id = expired.id
+                status = 1
+                response = "real result"
+                errorInfo = ""
+                endTime = LocalDateTime.now()
+                durationMs = 480_000L
+            }
+            assertEquals(1, agentTaskLogMapper.reclaimExpired(reclaim))
+            assertEquals(1, agentTaskLogMapper.selectById(expired.id)?.status)
+            assertEquals("real result", agentTaskLogMapper.selectById(expired.id)?.response)
+
+            // 运行中与已停止的行都不受影响
+            assertEquals(0, agentTaskLogMapper.reclaimExpired(running.apply { status = 1 }))
+            assertEquals(3, agentTaskLogMapper.selectById(running.id)?.status)
+            assertEquals(0, agentTaskLogMapper.reclaimExpired(stopped.apply { status = 1 }))
+            assertEquals(5, agentTaskLogMapper.selectById(stopped.id)?.status)
+        }
+
+        @Test
+        @DisplayName("expireStale - 宽限窗口内的行不回收，超出才回收")
+        fun `expireStale should keep a grace window before reclaiming`() {
+            // seed: task 1 的 timeout_seconds = 300 → 回收窗口 450s
+            val insideGrace = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 400L)
+            val outsideGrace = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 700L)
+
+            val expired = agentTaskLogMapper.expireStale(300)
+            assertTrue(expired >= 1, "at least the row past the grace window must be reclaimed")
+
+            assertEquals(3, agentTaskLogMapper.selectById(insideGrace.id)?.status)
+            assertEquals(2, agentTaskLogMapper.selectById(outsideGrace.id)?.status)
+        }
+
+        @Test
         @DisplayName("expireStale - 按各任务自己的 timeout_seconds 回收残留")
         fun `expireStale should expire only rows past their own task timeout`() {
-            // seed: task 1 的 timeout_seconds = 300, task 2 的 timeout_seconds = 600
-            val stale = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 400L)
-            val staleStopping = insertExecutionLog(taskId = 1L, initialStatus = 4, startedSecondsAgo = 400L)
+            // seed: task 1 的 timeout_seconds = 300（窗口 450s）, task 2 = 600（窗口 900s）
+            val stale = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 700L)
+            val staleStopping = insertExecutionLog(taskId = 1L, initialStatus = 4, startedSecondsAgo = 700L)
             val fresh = insertExecutionLog(taskId = 1L, initialStatus = 3)
-            val withinLongerTimeout = insertExecutionLog(taskId = 2L, initialStatus = 3, startedSecondsAgo = 400L)
+            // task 2 的窗口是 900s，700s 的行必须还活着
+            val withinLongerTimeout = insertExecutionLog(taskId = 2L, initialStatus = 3, startedSecondsAgo = 700L)
 
             val expired = agentTaskLogMapper.expireStale(300)
             assertTrue(expired >= 2, "至少两条残留应被回收, 实际=$expired")

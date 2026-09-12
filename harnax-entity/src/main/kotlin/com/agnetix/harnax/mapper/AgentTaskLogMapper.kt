@@ -7,8 +7,9 @@ import org.apache.ibatis.annotations.Param
 /**
  * Every write on an execution log carries a status guard in its WHERE clause. Several scheduler
  * nodes and the stop path can touch the same row, so the guard — not the caller — decides who wins:
- * 3 (running) -> {0, 1, 2, 5} and 4 (stopping) -> {5, 2}. A late writer can never resurrect a row
- * that already reached a terminal status.
+ * 3 (running) -> {0, 1, 4, 2}, 4 (stopping) -> {5, 2}, and 2 (expired) -> {0, 1} only through
+ * [reclaimExpired], which is the one documented exception below. A late writer can never resurrect a
+ * status the user or the stop path put there on purpose.
  */
 @Mapper
 interface AgentTaskLogMapper {
@@ -56,8 +57,20 @@ interface AgentTaskLogMapper {
     fun finalizeStopped(log: AgentTaskLog): Int
 
     /**
+     * Take back a row the reaper had judged [AgentTaskLog] status 2 (timeout) and write the real
+     * outcome over it. Only the execution thread that actually produced a result calls this, and no
+     * scheduler path writes status 2 but [expireStale] — so a row still at 2 means the reaper was
+     * wrong, and the real result is the more truthful record. This is the single allowed exception to
+     * the terminal-status rule in the class comment: it never touches 4 or 5, and a row already at 0
+     * or 1 has a result of its own.
+     */
+    fun reclaimExpired(log: AgentTaskLog): Int
+
+    /**
      * Batch-expire executions that outran their own task's timeout, per row: -> 2.
-     * Reclaims rows left behind by a node that died mid-execution.
+     * Reclaims rows left behind by a node that died mid-execution. The deadline is 1.5x the task
+     * timeout, not the timeout itself: an execution still queued inside agent-service is not dead,
+     * and reclaiming at exactly the timeout used to expire work that was merely slow.
      */
     fun expireStale(@Param("defaultTimeoutSeconds") defaultTimeoutSeconds: Int): Int
 
