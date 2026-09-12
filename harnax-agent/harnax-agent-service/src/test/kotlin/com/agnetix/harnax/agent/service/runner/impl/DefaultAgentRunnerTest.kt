@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.reactivestreams.Subscription
 import org.springframework.test.util.ReflectionTestUtils
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
@@ -587,6 +588,35 @@ class DefaultAgentRunnerTest {
             } finally {
                 ReflectionTestUtils.invokeMethod<Any>(runner, "unregisterCall", "session-blocking")
             }
+        }
+
+        @Test
+        fun `a cached agent alone counts as a live execution`() {
+            // The first arm of the union, on its own: a finished process() leaves the wrapper in the
+            // cache with no call registered and no subscription.
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-cached", content = "ok"),
+            )
+            runner.process(ChatAgentRequest(sessionId = "session-cached", message = "hi"))
+
+            assertTrue(runner.interrupt("session-cached"))
+            verify(agentWrapper).interrupt()
+        }
+
+        @Test
+        fun `an active stream is cancelled and counts as a live execution`() {
+            // The arm the old test name promised but never actually exercised.
+            val subscription = mock(Subscription::class.java)
+
+            @Suppress("UNCHECKED_CAST")
+            val activeStreams = ReflectionTestUtils.getField(runner, "activeStreams") as MutableMap<String, Subscription>
+            activeStreams["session-stream"] = subscription
+
+            assertTrue(runner.interrupt("session-stream"))
+
+            verify(subscription).cancel()
+            assertFalse(activeStreams.containsKey("session-stream"))
         }
     }
 
