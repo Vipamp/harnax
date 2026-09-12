@@ -5,6 +5,7 @@ import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
@@ -499,17 +500,34 @@ class SchedulerServiceImpl(
         } else {
             // Router -> agent -> harnessAgent.interrupt(). The session is NOT cleared here: the node
             // running the task owns that cleanup, and tearing it down from here would destroy a live run.
-            val delivered = routerClient.sendCommand(sessionId, CommandType.INTERRUPT)
-            if (!delivered) {
-                // Nothing on any instance is advancing this execution, so the stop is already final.
-                // Leaving the row at 4 would let the reaper label a finished run "timeout".
-                val now = LocalDateTime.now()
-                taskLog.status = 5
-                taskLog.errorInfo = "No live execution to interrupt"
-                taskLog.endTime = now
-                taskLog.durationMs = Duration.between(taskLog.startTime ?: taskLog.createTime ?: now, now).toMillis()
-                agentTaskLogMapper.finalizeStopped(taskLog)
-                log.info("Task log {} closed as stopped: no live execution remained to interrupt", logId)
+            when (val delivery = routerClient.sendCommand(sessionId, CommandType.INTERRUPT)) {
+                CommandDelivery.Delivered ->
+                    log.info("Interrupt reached the execution behind session {}; it closes the row", sessionId)
+
+                is CommandDelivery.Missed -> {
+                    // An instance answered that nothing is running for this session, so no node will ever
+                    // report this row's outcome and the stop is final here. Leaving it at 4 would let the
+                    // reaper label a finished run "timeout".
+                    val now = LocalDateTime.now()
+                    taskLog.status = 5
+                    taskLog.errorInfo = "No live execution to interrupt"
+                    taskLog.endTime = now
+                    taskLog.durationMs = Duration.between(taskLog.startTime ?: taskLog.createTime ?: now, now).toMillis()
+                    agentTaskLogMapper.finalizeStopped(taskLog)
+                    log.info(
+                        "Task log {} closed as stopped: the agent reported {} (session={})",
+                        logId,
+                        delivery.message ?: "no live execution",
+                        sessionId,
+                    )
+                }
+
+                is CommandDelivery.Unanswered -> log.warn(
+                    "Task log {} stays at stopping: the command never got through ({}), so nothing is known " +
+                        "about the execution — its own node writes the outcome, or the stale sweep times it out",
+                    logId,
+                    delivery.reason,
+                )
             }
         }
         return true

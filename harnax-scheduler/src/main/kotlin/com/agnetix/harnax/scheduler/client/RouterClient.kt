@@ -123,37 +123,51 @@ class RouterClient(
 
     /**
      * Send a command to a session through the router.
-     * @return whether the command reached a live execution. `false` covers both "the agent-service
-     * instance no longer holds this session" and "the call failed", and the scheduler treats both as
-     * "nothing is running" — which is exactly what it needs to close a stopped execution out.
+     * @return what the call learned — see [CommandDelivery]. Deliberately not a boolean: "nothing is
+     * running" and "we could not ask" must not arrive as the same answer, or a router blip lets the
+     * scheduler close a live execution out as stopped.
      */
-    fun sendCommand(sessionId: String, command: CommandType): Boolean = try {
-        val request = CommandAgentRequest(sessionId = sessionId, command = command)
+    fun sendCommand(sessionId: String, command: CommandType): CommandDelivery {
         val url = "$routerUrl/api/router/agent/command"
         log.info("[Scheduler→Router] POST {} - command: {}", url, command)
-        val response = restClient.post()
-            .uri(url)
-            .header("X-Api-Key", apiKey)
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(request)
-            .retrieve()
-            .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-
-        if (response?.data?.success == true) {
-            log.info("[Scheduler←Router] Command {} delivered for session={}", command, sessionId)
-            true
-        } else {
+        val response = try {
+            restClient.post()
+                .uri(url)
+                .header("X-Api-Key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(CommandAgentRequest(sessionId = sessionId, command = command))
+                .retrieve()
+                .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+        } catch (e: Exception) {
             log.warn(
-                "[Scheduler←Router] Command {} NOT delivered for session={}: {}",
+                "[Scheduler←Router] Command {} for session={} never got through ({}): whether an execution is live is unknown",
                 command,
                 sessionId,
-                response?.data?.message ?: "no response body",
+                e.message,
             )
-            false
+            return CommandDelivery.Unanswered(e.message ?: e.javaClass.simpleName)
         }
-    } catch (e: Exception) {
-        log.warn("[Scheduler←Router] Failed to send command {} for session={}: {}", command, sessionId, e.message)
-        false
+
+        return CommandDelivery.from(response).also { delivery ->
+            when (delivery) {
+                CommandDelivery.Delivered ->
+                    log.info("[Scheduler←Router] Command {} delivered for session={}", command, sessionId)
+
+                is CommandDelivery.Missed -> log.warn(
+                    "[Scheduler←Router] Command {} found no live execution for session={}: {}",
+                    command,
+                    sessionId,
+                    delivery.message ?: "no message",
+                )
+
+                is CommandDelivery.Unanswered -> log.warn(
+                    "[Scheduler←Router] Command {} for session={} got no usable answer: {}",
+                    command,
+                    sessionId,
+                    delivery.reason,
+                )
+            }
+        }
     }
 
     /**

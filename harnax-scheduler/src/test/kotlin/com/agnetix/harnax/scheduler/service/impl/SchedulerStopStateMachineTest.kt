@@ -6,6 +6,7 @@ import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
@@ -79,7 +80,7 @@ class SchedulerStopStateMachineTest {
     fun `stop claims the running row and interrupts its session`() {
         whenever(agentTaskLogMapper.selectById(11L)).thenReturn(log(11L, status = 3, sessionId = "sess-11"))
         whenever(agentTaskLogMapper.markStopping(11L, "Stopping...")).thenReturn(1)
-        whenever(routerClient.sendCommand("sess-11", CommandType.INTERRUPT)).thenReturn(true)
+        whenever(routerClient.sendCommand("sess-11", CommandType.INTERRUPT)).thenReturn(CommandDelivery.Delivered)
 
         assertTrue(service.stopTask(11L))
 
@@ -102,7 +103,7 @@ class SchedulerStopStateMachineTest {
     fun `a repeated stop while already stopping still interrupts`() {
         whenever(agentTaskLogMapper.selectById(13L)).thenReturn(log(13L, status = 4, sessionId = "sess-13"))
         whenever(agentTaskLogMapper.markStopping(13L, "Stopping...")).thenReturn(0)
-        whenever(routerClient.sendCommand("sess-13", CommandType.INTERRUPT)).thenReturn(true)
+        whenever(routerClient.sendCommand("sess-13", CommandType.INTERRUPT)).thenReturn(CommandDelivery.Delivered)
 
         assertTrue(service.stopTask(13L))
 
@@ -110,11 +111,13 @@ class SchedulerStopStateMachineTest {
     }
 
     @Test
-    fun `a stop that finds nothing live closes the row as stopped immediately`() {
+    fun `a stop the agent explicitly missed closes the row as stopped immediately`() {
         whenever(agentTaskLogMapper.selectById(15L)).thenReturn(log(15L, status = 3, sessionId = "sess-15"))
         whenever(agentTaskLogMapper.markStopping(15L, "Stopping...")).thenReturn(1)
-        // agent-service was restarted, or the session mapping moved on: nothing is advancing this row
-        whenever(routerClient.sendCommand("sess-15", CommandType.INTERRUPT)).thenReturn(false)
+        // agent-service was restarted, or the session mapping moved on: it answered and said nothing is
+        // running, so no node will ever write this row's outcome.
+        whenever(routerClient.sendCommand("sess-15", CommandType.INTERRUPT))
+            .thenReturn(CommandDelivery.Missed("No live execution for this session on this instance"))
 
         assertTrue(service.stopTask(15L))
 
@@ -125,10 +128,25 @@ class SchedulerStopStateMachineTest {
     }
 
     @Test
+    fun `a command that never got an answer leaves the row stopping`() {
+        whenever(agentTaskLogMapper.selectById(17L)).thenReturn(log(17L, status = 3, sessionId = "sess-17"))
+        whenever(agentTaskLogMapper.markStopping(17L, "Stopping...")).thenReturn(1)
+        // A router blip says nothing about whether the execution is alive somewhere; it is the same
+        // shape as "not running" only on the outside.
+        whenever(routerClient.sendCommand("sess-17", CommandType.INTERRUPT))
+            .thenReturn(CommandDelivery.Unanswered("connection refused"))
+
+        assertTrue(service.stopTask(17L))
+
+        // Finalising here would label a live run as stopped and throw away whatever it reports back.
+        verify(agentTaskLogMapper, never()).finalizeStopped(any())
+    }
+
+    @Test
     fun `a stop that did reach a live execution leaves the row to that node`() {
         whenever(agentTaskLogMapper.selectById(16L)).thenReturn(log(16L, status = 3, sessionId = "sess-16"))
         whenever(agentTaskLogMapper.markStopping(16L, "Stopping...")).thenReturn(1)
-        whenever(routerClient.sendCommand("sess-16", CommandType.INTERRUPT)).thenReturn(true)
+        whenever(routerClient.sendCommand("sess-16", CommandType.INTERRUPT)).thenReturn(CommandDelivery.Delivered)
 
         assertTrue(service.stopTask(16L))
 
