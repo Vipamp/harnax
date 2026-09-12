@@ -4,6 +4,7 @@ import com.agnetix.harnax.agent.protocol.ChatAgentRequest
 import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandResponse
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
@@ -610,6 +611,29 @@ class SessionRouterServiceTest {
 
         assertNull(MDC.get("sessionId"))
         assertNull(MDC.get("instanceId"))
+    }
+
+    /**
+     * The scheduler decides "this execution is over" from this body: agent-service answers 200 with
+     * `success = false` when nothing was live on the instance it reached, and the router must hand
+     * that verdict back untouched rather than dress it up as a delivered command.
+     */
+    @Test
+    fun `proxyCommandRequest passes a failed command through untouched`() = runBlocking {
+        `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
+        `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
+        val verdict = ResultVo.success(
+            CommandResponse.failure("session-1", "No live execution for this session on this instance"),
+        )
+        `when`(agentServiceClient.command(any(), any())).thenReturn(verdict)
+
+        val result = service.proxyCommandRequest(
+            CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
+        )
+
+        assertSame(verdict, result)
+        assertFalse(result.data?.success ?: true)
+        assertEquals("No live execution for this session on this instance", result.data?.message)
     }
 
     // ==================== proxyClearSession ====================
