@@ -62,6 +62,12 @@ class SchedulerStopStateMachineTest {
     @BeforeEach
     fun setUp() {
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
+        // An execution refuses to start without its log row (it is the only place the outcome can be
+        // written), so the insert has to behave like a real one here: row counted, key written back.
+        whenever(agentTaskLogMapper.insert(any())).thenAnswer {
+            it.getArgument<AgentTaskLog>(0).id = 100L
+            1
+        }
         val status = SchedulerStatus(schedulerEnabled = true)
         val metrics = SchedulerMetrics(SimpleMeterRegistry(), status)
         service = SchedulerServiceImpl(

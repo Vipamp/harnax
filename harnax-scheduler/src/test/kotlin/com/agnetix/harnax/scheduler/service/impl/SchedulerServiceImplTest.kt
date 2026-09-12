@@ -14,6 +14,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -24,6 +25,7 @@ import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -124,6 +126,48 @@ class SchedulerServiceImplTest {
         assertTrue(service.runTaskOnce(TASK_ID))
 
         verify(quartz).scheduleJob(any(), any())
+    }
+
+    /**
+     * The running-log insert used to be the one step outside any error handling: its return value was
+     * dropped, and because it sits before the try/finally a failure there never reached the finally that
+     * releases the cluster lock. The result was the worst combination — no log row, a lock stuck at
+     * status=0 (which every later trigger reads as "already running"), and a caller who had already
+     * been answered "Task triggered".
+     */
+    @Test
+    fun `an execution whose running log was not created fails and releases the lock row`() {
+        whenever(agentTaskLogMapper.insert(any())).thenReturn(0)
+
+        assertThrows(RuntimeException::class.java) { service.executeTaskOnce(task(), LocalDateTime.now()) }
+
+        // Nothing was scheduled and no row exists to close out: no success may be written anywhere.
+        verify(routerClient, never()).chat(any(), any())
+        verify(agentTaskLogMapper, never()).finishExecution(any())
+        verify(executionGuard).updateExecutionStatus(eq(TASK_ID), any(), eq(false), any(), any())
+    }
+
+    @Test
+    fun `a running log that came back without a generated id is a failure too`() {
+        // The statement reported one affected row but the key did not come back: from here that row is
+        // unreachable, so it cannot be closed out later and must not be treated as running.
+        whenever(agentTaskLogMapper.insert(any())).thenReturn(1)
+
+        assertThrows(RuntimeException::class.java) { service.executeTaskOnce(task(), LocalDateTime.now()) }
+
+        verify(routerClient, never()).chat(any(), any())
+        verify(agentTaskLogMapper, never()).finishExecution(any())
+        verify(executionGuard).updateExecutionStatus(eq(TASK_ID), any(), eq(false), any(), any())
+    }
+
+    @Test
+    fun `a running-log insert that throws still releases the lock row`() {
+        whenever(agentTaskLogMapper.insert(any())).thenThrow(RuntimeException("Data too long for column 'prompt'"))
+
+        assertThrows(RuntimeException::class.java) { service.executeTaskOnce(task(), LocalDateTime.now()) }
+
+        verify(agentTaskLogMapper, never()).finishExecution(any())
+        verify(executionGuard).updateExecutionStatus(eq(TASK_ID), any(), eq(false), any(), any())
     }
 
     /**

@@ -291,9 +291,15 @@ class SchedulerServiceImpl(
 
         log.info("Manually triggering agent task: id={}, name={}", task.id, task.name)
 
-        // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation)
+        // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation).
+        // Same shape as AgentTaskJob: an exception escaping here would die with the thread — the caller
+        // has already been answered "Task triggered", so the log line is the only trace left.
         Thread {
-            executeTaskOnce(task, triggerTime)
+            try {
+                executeTaskOnce(task, triggerTime)
+            } catch (e: Exception) {
+                log.error("Manual task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
+            }
         }.apply {
             name = "manual-trigger-${task.id}"
             isDaemon = true
@@ -309,21 +315,8 @@ class SchedulerServiceImpl(
      * status-guarded update.
      */
     override fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime) {
-        val taskLog = AgentTaskLog().apply {
-            taskId = task.id
-            taskName = task.name
-            prompt = task.prompt
-            startTime = LocalDateTime.now()
-            creator = task.creator
-            createTime = LocalDateTime.now()
-            status = 3 // running
-        }
-
-        val sessionId = "task-${task.id}-${UUID.randomUUID()}"
-        taskLog.sessionId = sessionId
-
-        agentTaskLogMapper.insert(taskLog)
-        log.info("Inserted running task log: id={}, taskId={}", taskLog.id, task.id)
+        val taskLog = insertRunningLog(task, triggerTime)
+        val sessionId = taskLog.sessionId
 
         try {
             val response = routerClient.chat(sessionId, task.prompt)
@@ -382,6 +375,53 @@ class SchedulerServiceImpl(
                 endTime,
             )
         }
+    }
+
+    /**
+     * Create the running row an execution is reported through, or fail before it starts.
+     *
+     * The insert sits outside [executeTaskOnce]'s try/finally on purpose — nothing may reach the router
+     * without a row to write the outcome into — which also made it the one step whose failure nobody
+     * handled: the affected-row count was dropped, so a rejected insert (column overflow, constraint,
+     * dead connection) left no log row, a cluster lock stuck at status=0 that every later trigger reads
+     * as "already running", and a caller that had already been answered "Task triggered".
+     *
+     * There is no row left to close out here, so releasing the lock in the catch is the only write
+     * still available; [executionGuard]'s lookup is keyed by task id + trigger time, not by log id.
+     * Null-lock-row cleanup is housekeeping's job (T4/T9); this only refuses to fake a success.
+     */
+    private fun insertRunningLog(
+        task: AgentTask,
+        triggerTime: LocalDateTime,
+    ): AgentTaskLog {
+        val taskLog = AgentTaskLog().apply {
+            taskId = task.id
+            taskName = task.name
+            prompt = task.prompt
+            startTime = LocalDateTime.now()
+            creator = task.creator
+            createTime = LocalDateTime.now()
+            status = 3 // running
+            sessionId = "task-${task.id}-${UUID.randomUUID()}"
+        }
+        val startedAt = taskLog.startTime ?: LocalDateTime.now()
+
+        try {
+            val inserted = agentTaskLogMapper.insert(taskLog)
+            // MyBatis writes the generated key back on success; 0 rows or a missing id both mean the
+            // row is not there, and an id of 0 would make every later update a no-op.
+            if (inserted <= 0 || taskLog.id <= 0L) {
+                throw IllegalStateException(
+                    "Running log row for task ${task.id} was not created (affected rows=$inserted, id=${taskLog.id})",
+                )
+            }
+            log.info("Inserted running task log: id={}, taskId={}", taskLog.id, task.id)
+        } catch (e: Exception) {
+            log.error("Task {} cannot start without its running log row: {}", task.id, e.message, e)
+            executionGuard.updateExecutionStatus(task.id, triggerTime, false, startedAt, LocalDateTime.now())
+            throw e
+        }
+        return taskLog
     }
 
     /**
