@@ -155,6 +155,11 @@ class SchedulerStartupLoadTest {
         assertEquals(Status.DOWN, health.health().status)
     }
 
+    /**
+     * Used to read `UP`: a partial success cleared the error, so a node that lost one task to a bad
+     * cron looked perfectly healthy. Drift is a failure signal now — the count still says how much is
+     * scheduling, the error says what is not.
+     */
     @Test
     fun `a load that registers only part of the active tasks keeps retrying`() {
         whenever(agentTaskMapper.selectRunningTasks())
@@ -163,8 +168,15 @@ class SchedulerStartupLoadTest {
         val complete = service.loadTasksToScheduler()
 
         assertFalse(complete, "an incomplete load must be retried")
-        assertEquals(1, status.scheduledJobCount)
-        assertEquals(Status.UP, health.health().status, "this node is scheduling, just not everything")
+        assertEquals(1, status.scheduledJobCount, "the tasks that did register still count")
+        assertNotNull(status.lastLoadError, "a partial load must not clear the error")
+        assertTrue(status.lastLoadError!!.contains("ids=[2]"), "got: ${status.lastLoadError}")
+        assertEquals(Status.DOWN, health.health().status, "a node missing part of its tasks is not healthy")
+        assertEquals(
+            1.0,
+            registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count(),
+            "the drift has to show up as a failed load attempt, not a success",
+        )
     }
 
     private fun task(id: Long, cron: String = "0 0/5 * * * ?") = AgentTask().apply {

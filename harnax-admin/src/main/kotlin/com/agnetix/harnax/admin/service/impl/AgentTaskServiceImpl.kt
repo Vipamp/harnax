@@ -18,6 +18,8 @@ import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime
 
 @Service
@@ -137,12 +139,10 @@ class AgentTaskServiceImpl(
             throw BizException("Only the task creator can modify this task")
         }
 
-        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config)
-        try {
-            schedulerClient.reloadTasks()
-        } catch (e: Exception) {
-            log.warn("Failed to notify scheduler after task update: {}", e.message)
-        }
+        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config).
+        // Deferred to after the commit: the scheduler reads through its own connection and cannot see
+        // this row while the transaction is still open.
+        reloadSchedulersAfterCommit("saved", "The previous definition stays live until a reload succeeds")
         return true
     }
 
@@ -158,11 +158,7 @@ class AgentTaskServiceImpl(
         if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
             throw BizException("Only the task creator can delete this task")
         }
-        try {
-            schedulerClient.reloadTasks()
-        } catch (e: Exception) {
-            log.warn("Failed to reload schedulers after task deletion: {}", e.message)
-        }
+        reloadSchedulersAfterCommit("deleted", "The deleted task can still fire until a reload succeeds")
         return true
     }
 
@@ -197,5 +193,64 @@ class AgentTaskServiceImpl(
     private fun isValidCron(cron: String): Boolean {
         val fields = cron.trim().split("\\s+".toRegex())
         return fields.size in 5..6
+    }
+
+    /**
+     * Broadcast a reload to every scheduler instance once — and only once — this transaction commits.
+     *
+     * Broadcasting inside the method body was the bug: harnax-scheduler is a separate process with its
+     * own connection pool, so it reads the row as it was *before* this transaction and re-registers the
+     * old definition (for a delete, it re-registers a task that the UI already shows as gone). Tying the
+     * notify to `afterCommit` also means a rolled-back write broadcasts nothing.
+     *
+     * Without an active transaction there is nothing to wait for, so the notify runs inline. That path
+     * exists for callers that reach this bean without going through the transactional proxy.
+     */
+    private fun reloadSchedulersAfterCommit(committed: String, staleConsequence: String) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            notifySchedulersNow(committed, staleConsequence)
+            return
+        }
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    notifySchedulersNow(committed, staleConsequence)
+                }
+            },
+        )
+    }
+
+    /**
+     * A reload that answers non-200 is a real failure, not a warning to log away: this instance keeps
+     * firing the old definition until something reloads. It is reported as [CODE_SCHEDULER_SYNC_FAILED]
+     * rather than as a rollback, because [committed] has already reached the database by then — the
+     * caller has to learn "stored but not scheduled", which is a different fact from "not stored".
+     */
+    private fun notifySchedulersNow(committed: String, staleConsequence: String) {
+        val result = try {
+            schedulerClient.reloadTasks()
+        } catch (e: Exception) {
+            log.error("Broadcasting a scheduler reload after the task was {} threw", committed, e)
+            null
+        }
+        if (result?.code == 200) {
+            return
+        }
+        val reason = result?.message ?: "the broadcast threw"
+        log.error("Scheduler reload after the task was {} did not succeed: {}", committed, reason)
+        throw BizException(
+            CODE_SCHEDULER_SYNC_FAILED,
+            "Task $committed, but the scheduler did not reload: $reason. $staleConsequence.",
+        )
+    }
+
+    companion object {
+        /**
+         * The row is committed while no scheduler has picked the change up. Kept in the 409xx family
+         * started by `SchedulerController.CODE_EXECUTION_IN_PROGRESS`: the request was honoured, but
+         * the state the caller asked for is not in effect yet — distinct from a plain 500, which would
+         * read as "your edit was lost".
+         */
+        const val CODE_SCHEDULER_SYNC_FAILED = 40902
     }
 }

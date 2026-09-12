@@ -33,9 +33,21 @@ class SchedulerStatus(
 
     val scheduledJobCount: Int get() = jobCount
 
-    fun recordLoadSuccess(jobCount: Int) {
+    /**
+     * Records a load that registered [jobCount] jobs.
+     *
+     * [pendingError] carries the "partly" in "partly succeeded": pass it when some active tasks could
+     * not be registered and the load therefore left this instance drifting. The timestamp and the count
+     * still move — jobs *are* firing — but [lastLoadError] stays set so the health check keeps reporting
+     * DOWN instead of clearing a real problem just because something else succeeded. A clean sweep is
+     * the only thing that resets it.
+     */
+    fun recordLoadSuccess(
+        jobCount: Int,
+        pendingError: String? = null,
+    ) {
         loadSuccessAt = Instant.now()
-        loadError = null
+        loadError = pendingError
         this.jobCount = jobCount
     }
 

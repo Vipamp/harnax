@@ -194,12 +194,14 @@ class SchedulerServiceImpl(
         log.info("Found {} running agent tasks", activeTasks.size)
 
         var scheduled = 0
+        val failedIds = mutableListOf<Long>()
         for (task in activeTasks) {
             try {
                 scheduleTask(task)
                 scheduled++
                 log.info("Loaded agent task to scheduler: id={}, name={}", task.id, task.name)
             } catch (e: Exception) {
+                failedIds += task.id
                 log.error("Failed to load agent task: id={}, name={}, error={}", task.id, task.name, e.message, e)
             }
         }
@@ -212,9 +214,13 @@ class SchedulerServiceImpl(
             return false
         }
 
-        status.recordLoadSuccess(scheduled)
-        metrics.recordLoadAttempt(success = true)
-        return scheduled == activeTasks.size
+        // Registering *some* of them is not a success either: the failed tasks simply never fire on
+        // this instance. The drift has to stay in lastLoadError (with the ids, which are what an
+        // operator can act on) so the health check keeps saying DOWN and /reload keeps saying no.
+        val drift = describeDrift(failedIds, activeTasks.size)
+        status.recordLoadSuccess(scheduled, drift)
+        metrics.recordLoadAttempt(success = drift == null)
+        return drift == null
     }
 
     override fun startTask(id: Long): Boolean {
@@ -423,6 +429,19 @@ class SchedulerServiceImpl(
         return agentTaskLogMapper.selectRunningByTaskId(taskId).isNotEmpty()
     }
 
+    /** Null means every active task was registered; the text doubles as the health detail. */
+    private fun describeDrift(failedIds: List<Long>, total: Int): String? {
+        if (failedIds.isEmpty()) {
+            return null
+        }
+        // Bounded: a table full of unusable crons must not turn a health detail into a megabyte.
+        val shown = failedIds.take(MAX_DRIFT_IDS).joinToString(",")
+        val hidden = if (failedIds.size > MAX_DRIFT_IDS) ",+${failedIds.size - MAX_DRIFT_IDS} more" else ""
+        val message = "${failedIds.size} of $total active tasks could not be registered: ids=[$shown$hidden]"
+        log.error("Load left drift: {}", message)
+        return message
+    }
+
     /** Reclaim executions that outran their own timeout, judged per row in SQL. */
     private fun expireStaleExecutions() {
         try {
@@ -441,5 +460,8 @@ class SchedulerServiceImpl(
         private const val INITIAL_RETRY_DELAY_MS = 2_000L
         private const val MAX_RETRY_DELAY_MS = 60_000L
         private const val ALERT_AFTER_ATTEMPTS = 5
+
+        /** Upper bound for the ids listed in a load-drift error, which shows up in /actuator/health */
+        private const val MAX_DRIFT_IDS = 20
     }
 }

@@ -1,10 +1,17 @@
 package com.agnetix.harnax.admin.it
 
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.MethodOrderer
 import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -15,10 +22,39 @@ import kotlin.test.assertTrue
  *
  * Only DB-backed endpoints are covered here: start/pause/trigger/toggle proxy
  * to the external scheduler service which is not part of this IT environment.
+ *
+ * Update and delete do call the scheduler though — to broadcast a reload — and they now report a
+ * failed reload instead of ignoring it, so the default URL would make this class fail on a port that
+ * nothing is listening on. A local MockWebServer answers the reload with 200; what the *scheduler*
+ * does with it is [AgentTaskSchedulerIT]'s business.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class AgentTaskCrudIT : BaseAdminIT() {
+
+    companion object {
+        @JvmStatic
+        val scheduler: MockWebServer = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse = MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"code":200,"message":"success","data":null}""")
+            }
+            start()
+        }
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun schedulerProperties(registry: DynamicPropertyRegistry) {
+            registry.add("harnax.scheduler.url") { "http://localhost:${scheduler.port}" }
+        }
+    }
+
+    @AfterAll
+    fun shutdownScheduler() {
+        scheduler.shutdown()
+    }
 
     private val suffix = Random.nextInt(100000, 999999)
     private val agentName = "it_task_agent_$suffix"

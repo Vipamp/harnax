@@ -17,6 +17,9 @@ import org.springframework.stereotype.Component
  * Status rules:
  * - `UP` — a load has succeeded and nothing has failed since, or scheduling is disabled on this node
  * - `DOWN` — no load has ever succeeded, or the most recent load failed
+ *
+ * A load that registered only *some* of the active tasks counts as failed: it leaves `lastLoadError`
+ * set, which is what keeps a drifting node out of `UP`.
  */
 @Component("scheduler")
 class SchedulerHealthIndicator(

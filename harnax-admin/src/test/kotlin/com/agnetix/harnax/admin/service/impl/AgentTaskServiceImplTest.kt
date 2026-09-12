@@ -10,6 +10,7 @@ import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -26,6 +27,8 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
@@ -86,6 +89,8 @@ class AgentTaskServiceImplTest {
 
         `when`(jwtUtil.validateToken(any())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
+        // The write paths now act on the broadcast result, so a bare mock would fail every case.
+        `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.success<Void>())
     }
 
     // ==================== Get Task ====================
@@ -603,6 +608,125 @@ class AgentTaskServiceImplTest {
             assertThrows<Exception> {
                 service.toggleTaskStatus(1L, 1)
             }
+        }
+    }
+
+    // ==================== Scheduler Reload Notification ====================
+
+    /**
+     * The reload broadcast must leave only from a *committed* transaction: harnax-scheduler is a
+     * separate process on its own connection pool, so a reload issued before the commit reads the
+     * old row and re-registers the old definition — while rolled-back work must not broadcast at all.
+     *
+     * Written against [TransactionSynchronizationManager] directly instead of a Spring context: the
+     * unit test cannot drive a real commit, so it fires the registered callback itself. That is
+     * enough to pin the two properties that matter (defer, and never on rollback) without paying for
+     * a @SpringBootTest per case.
+     */
+    @Nested
+    @DisplayName("Scheduler Reload Notification")
+    inner class SchedulerReloadTests {
+
+        @AfterEach
+        fun clearTransactionSynchronization() {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.clearSynchronization()
+            }
+        }
+
+        @Test
+        fun `update broadcasts nothing while the transaction is open and nothing at all when it rolls back`() {
+            givenUpdateSucceeds()
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            assertTrue(service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt")))
+
+            // Still inside the transaction: broadcasting here is the bug this closes.
+            verify(schedulerClient, never()).reloadTasks()
+
+            val callbacks = TransactionSynchronizationManager.getSynchronizations()
+            assertEquals(1, callbacks.size, "the reload has to be registered as an after-commit callback")
+
+            // Rollback: afterCommit never runs, so the broadcast never runs.
+            callbacks.forEach { it.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK) }
+            verify(schedulerClient, never()).reloadTasks()
+        }
+
+        @Test
+        fun `update broadcasts the reload once the transaction commits`() {
+            givenUpdateSucceeds()
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt"))
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+
+            verify(schedulerClient, times(1)).reloadTasks()
+        }
+
+        @Test
+        fun `delete broadcasts the reload only on commit and never on rollback`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            assertTrue(service.deleteAgentTask(1L))
+            verify(schedulerClient, never()).reloadTasks()
+
+            val callbacks = TransactionSynchronizationManager.getSynchronizations()
+            callbacks.forEach { it.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK) }
+            verify(schedulerClient, never()).reloadTasks()
+
+            callbacks.forEach { it.afterCommit() }
+            verify(schedulerClient, times(1)).reloadTasks()
+        }
+
+        /**
+         * A failed reload after the commit is a *partial* failure: the row is already durable, so the
+         * caller must not be told the edit was lost — but it must not hear "success" either, because
+         * the old schedule is still live. Hence a dedicated business code plus a message that says so.
+         */
+        @Test
+        fun `a reload answered with a non-200 turns the committed update into an explicit sync failure`() {
+            givenUpdateSucceeds()
+            `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.error(500, "scheduler boom"))
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt"))
+
+            val exception = assertThrows<BizException> {
+                TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+            }
+            assertEquals(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED, exception.code)
+            assertTrue(
+                exception.message!!.contains("saved"),
+                "the caller has to learn the row itself was kept, got: ${exception.message}",
+            )
+            // The write is not undone by the failed broadcast.
+            verify(agentTaskMapper).updateById(any(), eq("admin"))
+        }
+
+        @Test
+        fun `without a transaction the failed reload surfaces from the write itself`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
+            `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.error(500, "scheduler boom"))
+
+            val service = createService()
+            assertFalse(TransactionSynchronizationManager.isSynchronizationActive())
+            val exception = assertThrows<BizException> {
+                service.deleteAgentTask(1L)
+            }
+            assertEquals(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED, exception.code)
+            assertTrue(exception.message!!.contains("deleted"), "got: ${exception.message}")
+        }
+
+        private fun givenUpdateSucceeds() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
         }
     }
 

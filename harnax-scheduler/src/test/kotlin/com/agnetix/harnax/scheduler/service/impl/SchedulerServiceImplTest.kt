@@ -5,11 +5,15 @@ import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
@@ -24,6 +28,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 import org.quartz.Scheduler
+import org.springframework.boot.health.contributor.Status
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import java.time.LocalDateTime
 
@@ -54,12 +59,14 @@ class SchedulerServiceImplTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
+    private lateinit var status: SchedulerStatus
+
     private lateinit var service: SchedulerServiceImpl
 
     @BeforeEach
     fun setUp() {
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
-        val status = SchedulerStatus(schedulerEnabled = true)
+        status = SchedulerStatus(schedulerEnabled = true)
         val metrics = SchedulerMetrics(SimpleMeterRegistry(), status)
         service = SchedulerServiceImpl(
             schedulerFactory,
@@ -95,6 +102,34 @@ class SchedulerServiceImplTest {
     }
 
     /**
+     * Registering 1 of 2 active tasks is drift, not a success: the health signal and the /reload
+     * answer both have to keep saying so, otherwise the instance quietly stops scheduling one task
+     * while every probe reads UP.
+     */
+    @Test
+    fun `a load that registers only part of the active tasks keeps the load error and reports false`() {
+        val badCronTaskId = 2L
+        whenever(agentTaskMapper.selectRunningTasks())
+            .thenReturn(listOf(cronTask(1L, "0 0 9 * * ?"), cronTask(badCronTaskId, "definitely not a cron")))
+        whenever(quartz.isStarted).thenReturn(true)
+
+        val reloaded = service.loadTasksToScheduler()
+
+        assertFalse(reloaded, "a partial registration must not be reported as a completed reload")
+        val error = status.lastLoadError
+        assertNotNull(error, "a partial registration must leave lastLoadError set")
+        assertTrue(
+            error!!.contains("ids=[$badCronTaskId]"),
+            "the error has to name the task that could not be registered, got: $error",
+        )
+        assertEquals(
+            Status.DOWN,
+            SchedulerHealthIndicator(status, schedulerFactory).health().status,
+            "health must not read UP just because some tasks did get registered",
+        )
+    }
+
+    /**
      * The running-log guard expires stale rows before reading, so that read is stubbed too — otherwise
      * a test would pass on a mocked-out mapper rather than on the guard's own decision.
      */
@@ -114,6 +149,12 @@ class SchedulerServiceImplTest {
         creator = "admin"
         concurrent = 0
         timeoutSeconds = 300
+    }
+
+    private fun cronTask(id: Long, cron: String) = task().apply {
+        this.id = id
+        name = "Task $id"
+        cronExpression = cron
     }
 
     private fun runningLog() = AgentTaskLog().apply {
