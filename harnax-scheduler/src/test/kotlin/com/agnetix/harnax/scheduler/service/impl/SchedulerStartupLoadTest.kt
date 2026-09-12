@@ -4,11 +4,11 @@ import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
-import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -57,12 +57,11 @@ class SchedulerStartupLoadTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
-    @Mock
-    private lateinit var gaugeSchedulerService: SchedulerService
-
     private val registry = SimpleMeterRegistry()
 
     private lateinit var status: SchedulerStatus
+
+    private lateinit var jobInventory: QuartzJobInventory
 
     private lateinit var health: SchedulerHealthIndicator
 
@@ -74,8 +73,10 @@ class SchedulerStartupLoadTest {
         whenever(quartz.isStarted).thenReturn(true)
 
         status = SchedulerStatus(schedulerEnabled = true)
-        // The job-count gauge reads through the service now; this suite only asserts the counters.
-        val metrics = SchedulerMetrics(registry, gaugeSchedulerService)
+        // The live job count now has one implementation, QuartzJobInventory, shared by the gauge and the
+        // health detail; a real one over the mocked factory keeps both reads on the production path.
+        jobInventory = QuartzJobInventory(schedulerFactory)
+        val metrics = SchedulerMetrics(registry, jobInventory)
         metrics.initMeters()
         service = SchedulerServiceImpl(
             schedulerFactory,
@@ -85,10 +86,12 @@ class SchedulerStartupLoadTest {
             executionGuard,
             status,
             metrics,
+            jobInventory = jobInventory,
             schedulerEnabled = true,
         )
-        // The real service, so the health detail goes through the same live read it uses in production.
-        health = SchedulerHealthIndicator(status, schedulerFactory, service)
+        // Same inventory the service delegates to, so the health detail goes through the read it uses in
+        // production.
+        health = SchedulerHealthIndicator(status, schedulerFactory, jobInventory)
     }
 
     @AfterEach
@@ -121,6 +124,13 @@ class SchedulerStartupLoadTest {
         assertEquals(2, healthDetails["scheduledJobCount"], "the detail is the live store content")
         assertNotNull(status.lastLoadSuccessAt)
         assertEquals(Status.UP, health.health().status)
+        // The gauge is wired to the same inventory read as the health detail, so a scrape here sees the
+        // store rather than the startup number: that is the whole point of the real QuartzJobInventory.
+        assertEquals(
+            2.0,
+            registry.get("scheduler.jobs.scheduled").gauge().value(),
+            "the gauge has to follow the live store",
+        )
     }
 
     @Test

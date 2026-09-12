@@ -7,10 +7,10 @@ import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
-import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -58,9 +58,6 @@ class SchedulerStopStateMachineTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
-    @Mock
-    private lateinit var schedulerService: SchedulerService
-
     private lateinit var service: SchedulerServiceImpl
 
     @BeforeEach
@@ -73,8 +70,10 @@ class SchedulerStopStateMachineTest {
             1
         }
         val status = SchedulerStatus(schedulerEnabled = true)
-        // The job-count gauge reads through the service now; this suite never scrapes it.
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), schedulerService)
+        // The job count lives in QuartzJobInventory now; a real one over the mocked factory keeps this
+        // suite honest, and nothing here scrapes the gauge anyway.
+        val jobInventory = QuartzJobInventory(schedulerFactory)
+        val metrics = SchedulerMetrics(SimpleMeterRegistry(), jobInventory)
         service = SchedulerServiceImpl(
             schedulerFactory,
             agentTaskMapper,
@@ -83,6 +82,7 @@ class SchedulerStopStateMachineTest {
             executionGuard,
             status,
             metrics,
+            jobInventory = jobInventory,
             schedulerEnabled = true,
         )
     }

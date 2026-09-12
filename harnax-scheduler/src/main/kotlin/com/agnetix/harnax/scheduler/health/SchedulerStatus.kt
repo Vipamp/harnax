@@ -36,7 +36,7 @@ class SchedulerStatus(
      *
      * Nothing here sees `startTask`/`pauseTask` or any CRUD, so reading this as a live count is how the
      * health detail and the `scheduler.jobs.scheduled` gauge ended up reporting a startup number forever.
-     * Both now go through `SchedulerService.getScheduledTaskIds()`; this stays only as load bookkeeping
+     * Both now read the store through `QuartzJobInventory`; this stays only as load bookkeeping
      * (and as what [lastLoadError] drifts against).
      */
     val lastLoadJobCount: Int get() = jobCount

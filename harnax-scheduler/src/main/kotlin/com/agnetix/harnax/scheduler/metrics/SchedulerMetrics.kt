@@ -1,10 +1,9 @@
 package com.agnetix.harnax.scheduler.metrics
 
-import com.agnetix.harnax.scheduler.service.SchedulerService
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.annotation.PostConstruct
-import org.springframework.context.annotation.Lazy
 import org.springframework.stereotype.Component
 
 /**
@@ -17,10 +16,11 @@ import org.springframework.stereotype.Component
 class SchedulerMetrics(
     private val registry: MeterRegistry,
 
-    // [Lazy] breaks what would otherwise be a construction cycle: SchedulerServiceImpl depends on this
-    // bean to count its load attempts. Spring injects a proxy here and the real service is only reached
-    // when the gauge is scraped, which is always after both beans exist.
-    @Lazy private val schedulerService: SchedulerService,
+    // The job count comes from [QuartzJobInventory] — a bean that only knows the Quartz store — rather
+    // than from `SchedulerService`: that service depends on *this* bean to count its load attempts, so
+    // reading the live count through it is a construction cycle. Going through the inventory keeps the
+    // observation layer below the business layer and needs no lazy proxy to stay bootable.
+    private val jobInventory: QuartzJobInventory,
 ) {
 
     @PostConstruct
@@ -29,8 +29,8 @@ class SchedulerMetrics(
         // move jobs without going through that path, so a load-time number froze the gauge at whatever the
         // instance happened to load minutes or hours ago. NaN when the store cannot be read, so a broken
         // job store shows up as "no sample" instead of a plausible zero.
-        Gauge.builder("scheduler.jobs.scheduled", schedulerService) { service ->
-            runCatching { service.getScheduledTaskIds().size.toDouble() }.getOrDefault(Double.NaN)
+        Gauge.builder("scheduler.jobs.scheduled", jobInventory) { inventory ->
+            runCatching { inventory.scheduledTaskIds().size.toDouble() }.getOrDefault(Double.NaN)
         }
             .description("Agent tasks registered in the Quartz store this instance reads")
             .register(registry)

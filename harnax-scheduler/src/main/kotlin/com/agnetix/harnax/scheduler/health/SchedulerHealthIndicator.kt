@@ -1,6 +1,5 @@
 package com.agnetix.harnax.scheduler.health
 
-import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.health.contributor.Health
 import org.springframework.boot.health.contributor.HealthIndicator
@@ -29,7 +28,7 @@ import org.springframework.stereotype.Component
 class SchedulerHealthIndicator(
     private val status: SchedulerStatus,
     private val schedulerFactory: SchedulerFactoryBean,
-    private val schedulerService: SchedulerService,
+    private val jobInventory: QuartzJobInventory,
 ) : HealthIndicator {
 
     private val log = LoggerFactory.getLogger(SchedulerHealthIndicator::class.java)
@@ -69,5 +68,5 @@ class SchedulerHealthIndicator(
      * published here). -1 when the store cannot be read at all — the count is a detail, so a failing
      * read must not decide the status, which is `quartzStarted`'s job.
      */
-    private fun liveJobCount(): Int = runCatching { schedulerService.getScheduledTaskIds().size }.getOrDefault(-1)
+    private fun liveJobCount(): Int = runCatching { jobInventory.scheduledTaskIds().size }.getOrDefault(-1)
 }

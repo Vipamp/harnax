@@ -6,11 +6,11 @@ import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
-import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -67,10 +67,9 @@ class SchedulerServiceImplTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
-    @Mock
-    private lateinit var schedulerService: SchedulerService
-
     private lateinit var status: SchedulerStatus
+
+    private lateinit var jobInventory: QuartzJobInventory
 
     private lateinit var service: SchedulerServiceImpl
 
@@ -78,8 +77,10 @@ class SchedulerServiceImplTest {
     fun setUp() {
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
         status = SchedulerStatus(schedulerEnabled = true)
-        // The job-count gauge reads through the service now; this suite never scrapes it.
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), schedulerService)
+        // The job count lives in QuartzJobInventory now; a real one over the mocked factory keeps the
+        // service delegation and the health read on the production path.
+        jobInventory = QuartzJobInventory(schedulerFactory)
+        val metrics = SchedulerMetrics(SimpleMeterRegistry(), jobInventory)
         service = SchedulerServiceImpl(
             schedulerFactory,
             agentTaskMapper,
@@ -88,6 +89,7 @@ class SchedulerServiceImplTest {
             executionGuard,
             status,
             metrics,
+            jobInventory = jobInventory,
             schedulerEnabled = true,
         )
     }
@@ -188,8 +190,6 @@ class SchedulerServiceImplTest {
      */
     @Test
     fun `re-scheduling a task that already has a live job replaces it without a delete window`() {
-        whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
-
         service.scheduleTask(cronTask(TASK_ID, "0 0 9 * * ?"))
 
         verify(quartz, never()).deleteJob(any<JobKey>())
@@ -200,7 +200,6 @@ class SchedulerServiceImplTest {
     @Test
     fun `an invalid cron fails the start before the live schedule is touched`() {
         whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(cronTask(TASK_ID, "0 0 0 * * *"))
-        whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
 
         assertThrows(RuntimeException::class.java) { service.startTask(TASK_ID) }
 
@@ -233,7 +232,7 @@ class SchedulerServiceImplTest {
         )
         assertEquals(
             Status.DOWN,
-            SchedulerHealthIndicator(status, schedulerFactory, schedulerService).health().status,
+            SchedulerHealthIndicator(status, schedulerFactory, jobInventory).health().status,
             "health must not read UP just because some tasks did get registered",
         )
     }

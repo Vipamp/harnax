@@ -6,6 +6,7 @@ import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskJob
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
@@ -34,6 +35,7 @@ class SchedulerServiceImpl(
     private val executionGuard: AgentTaskExecutionGuard,
     private val status: SchedulerStatus,
     private val metrics: SchedulerMetrics,
+    private val jobInventory: QuartzJobInventory,
     @Value("\${scheduler.enabled:true}") private val schedulerEnabled: Boolean,
 ) : SchedulerService {
 
@@ -458,12 +460,12 @@ class SchedulerServiceImpl(
         return true
     }
 
-    override fun getScheduledTaskIds(): Set<Long> {
-        val jobKeys = scheduler.getJobKeys(org.quartz.impl.matchers.GroupMatcher.jobGroupEquals("AgentTaskGroup"))
-        return jobKeys.mapNotNull { key ->
-            key.name.removePrefix("AgentTask_").toLongOrNull()
-        }.toSet()
-    }
+    /**
+     * Kept on the interface for `SchedulerController`'s status endpoint; the read itself belongs to
+     * [QuartzJobInventory] so the health indicator and the gauge can use the same implementation without
+     * depending on this service.
+     */
+    override fun getScheduledTaskIds(): Set<Long> = jobInventory.scheduledTaskIds()
 
     /**
      * Whether a manual run has to wait for an execution that is already in flight.
