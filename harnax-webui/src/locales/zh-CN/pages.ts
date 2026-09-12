@@ -1119,6 +1119,7 @@ export default {
   'pages.agentTask.deleteFailed': '删除任务失败',
   'pages.agentTask.createSuccess': '创建成功',
   'pages.agentTask.updateSuccess': '更新成功',
+  'pages.agentTask.savedNotReloaded': '已保存，但调度器未即时重载，稍后会自动对齐',
   'pages.agentTask.operationFailed': '操作失败',
   'pages.agentTask.loadAgentsFailed': '加载智能体列表失败',
   'pages.agentTask.viewLogs': '日志',

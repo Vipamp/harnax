@@ -1115,6 +1115,7 @@ export default {
   'pages.agentTask.deleteFailed': 'Failed to delete task',
   'pages.agentTask.createSuccess': 'Create successful',
   'pages.agentTask.updateSuccess': 'Update successful',
+  'pages.agentTask.savedNotReloaded': 'Saved, but the scheduler did not reload yet. It will catch up on its own.',
   'pages.agentTask.operationFailed': 'Operation failed',
   'pages.agentTask.loadAgentsFailed': 'Failed to load agents',
   'pages.agentTask.viewLogs': 'Logs',
