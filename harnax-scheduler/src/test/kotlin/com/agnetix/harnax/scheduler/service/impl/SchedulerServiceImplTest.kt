@@ -183,11 +183,9 @@ class SchedulerServiceImplTest {
      */
     @Test
     fun `re-scheduling a task that already has a live job replaces it without a delete window`() {
-        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(cronTask(TASK_ID, "0 0 9 * * ?"))
-        whenever(agentTaskMapper.updateStatus(eq(TASK_ID), anyInt())).thenReturn(1)
         whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
 
-        assertTrue(service.startTask(TASK_ID))
+        service.scheduleTask(cronTask(TASK_ID, "0 0 9 * * ?"))
 
         verify(quartz, never()).deleteJob(any<JobKey>())
         verify(quartz).scheduleJob(any<JobDetail>(), any<MutableSet<Trigger>>(), eq(true))
