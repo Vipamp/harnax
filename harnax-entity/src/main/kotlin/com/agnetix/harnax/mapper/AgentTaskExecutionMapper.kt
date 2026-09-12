@@ -23,4 +23,10 @@ interface AgentTaskExecutionMapper {
     ): AgentTaskExecution?
 
     fun deleteOldExecutions(@Param("beforeTime") beforeTime: LocalDateTime): Int
+
+    /**
+     * Delete locks that were never released: a node acquired one and died before it could report an
+     * outcome. Older than [beforeTime] and still status 0.
+     */
+    fun deleteStaleRunning(@Param("beforeTime") beforeTime: LocalDateTime): Int
 }

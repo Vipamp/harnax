@@ -524,6 +524,25 @@ INSERT INTO `agent_task_log` (`id`, `task_id`, `task_name`, `prompt`, `response`
 VALUES (5, 1, 'Daily News', 'Summarize breaking news', 'Breaking news response', 'sess-005', 2, 'Execution timed out', '2026-06-30 09:00:00', '2026-06-30 09:10:00', 600000, 'admin');
 
 -- ============================================
+-- 20b. Agent Task Execution - cluster lock rows
+-- Same shape as the production DDL in harnax-admin V1__init_schema.sql: the unique key on
+-- (task_id, trigger_time) is what turns a row into a lock, so the test schema must carry it too.
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_task_execution` (
+    `id`              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    `task_id`         BIGINT NOT NULL COMMENT 'Associated agent_task.id',
+    `trigger_time`    DATETIME NOT NULL COMMENT 'Trigger time (for deduplication)',
+    `instance_id`     VARCHAR(128) DEFAULT '' COMMENT 'Execution instance identifier',
+    `start_time`      DATETIME COMMENT 'Actual start time',
+    `end_time`        DATETIME COMMENT 'Execution end time',
+    `status`          TINYINT DEFAULT 0 COMMENT '0=running, 1=success, 2=failed',
+    `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_task_trigger` (`task_id`, `trigger_time`),
+    INDEX `idx_task_id` (`task_id`),
+    INDEX `idx_trigger_time` (`trigger_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent task execution lock (multi-instance dedup)';
+
+-- ============================================
 -- 21. Agent Tool 工具定义表
 -- ============================================
 CREATE TABLE IF NOT EXISTS `agent_tool` (
