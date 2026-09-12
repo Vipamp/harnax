@@ -1,5 +1,6 @@
 package com.agnetix.harnax.scheduler.controller
 
+import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -7,6 +8,8 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 
@@ -14,6 +17,9 @@ import org.mockito.quality.Strictness
  * A conflict is a business outcome, not a string to pattern-match: the caller needs a code that
  * survives the admin proxy, because the proxy forwards the message verbatim and the message has
  * already drifted from what the frontend matches on.
+ *
+ * Every assertion below compares against the controller's own constants: a test pinned to the literal
+ * `40901` would stay green while someone changed the constant and move the drift out of reach.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -22,31 +28,33 @@ class SchedulerControllerTest {
     @Mock
     private lateinit var schedulerService: SchedulerService
 
+    private fun controller(enabled: Boolean = true) = SchedulerController(schedulerService, SchedulerStatus(enabled))
+
     @Test
     fun `a rejected trigger because an execution is in flight answers with business code 40901`() {
-        val controller = SchedulerController(schedulerService)
+        val controller = controller()
         whenever(schedulerService.triggerManually(7L)).thenReturn(false)
 
         val result = controller.trigger(7L)
 
-        assertEquals(40901, result.code)
+        assertEquals(SchedulerController.CODE_EXECUTION_IN_PROGRESS, result.code)
     }
 
     @Test
     fun `a rejected run-once because an execution is in flight answers with the same business code`() {
-        val controller = SchedulerController(schedulerService)
+        val controller = controller()
         // false is only ever returned for a conflict here, so the endpoint must not report it as a
         // generic 500 the caller cannot distinguish from a real failure.
         whenever(schedulerService.runTaskOnce(10L)).thenReturn(false)
 
         val result = controller.runOnce(10L)
 
-        assertEquals(40901, result.code)
+        assertEquals(SchedulerController.CODE_EXECUTION_IN_PROGRESS, result.code)
     }
 
     @Test
     fun `a successful trigger still answers 200`() {
-        val controller = SchedulerController(schedulerService)
+        val controller = controller()
         whenever(schedulerService.triggerManually(8L)).thenReturn(true)
 
         assertEquals(200, controller.trigger(8L).code)
@@ -54,9 +62,43 @@ class SchedulerControllerTest {
 
     @Test
     fun `an unexpected failure stays a generic error, not a conflict`() {
-        val controller = SchedulerController(schedulerService)
+        val controller = controller()
         whenever(schedulerService.triggerManually(9L)).thenThrow(RuntimeException("db down"))
 
         assertEquals(500, controller.trigger(9L).code)
+    }
+
+    /**
+     * `scheduler.enabled=false` used to be a half switch: it skipped the startup load and the scheduler
+     * context registration only, while the Quartz factory and these endpoints stayed open. A "disabled"
+     * node therefore still registered jobs — which then died on `null as SchedulerService` inside
+     * AgentTaskJob — and answered 200 to whoever asked. The switch has to close the write surface.
+     */
+    @Test
+    fun `every write endpoint refuses the request while scheduling is disabled`() {
+        val controller = controller(enabled = false)
+
+        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.trigger(1L).code)
+        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.start(1L).code)
+        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.pause(1L).code)
+        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.runOnce(1L).code)
+        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.reload().code)
+
+        // Refusing has to happen before the work, not as a report afterwards.
+        verifyNoInteractions(schedulerService)
+    }
+
+    /**
+     * Stopping an execution touches no Quartz object (it flips the log row and asks the router to
+     * interrupt), so a node that will not schedule new work must still be able to stop live ones.
+     */
+    @Test
+    fun `stop stays served while scheduling is disabled`() {
+        val controller = controller(enabled = false)
+        whenever(schedulerService.stopTask(5L)).thenReturn(true)
+
+        assertEquals(200, controller.stopTask(5L).code)
+
+        verify(schedulerService).stopTask(5L)
     }
 }
