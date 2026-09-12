@@ -191,6 +191,46 @@ class AgentTaskServiceImplTest {
             assertTrue(exception.message!!.contains("Invalid cron"))
         }
 
+        /**
+         * Quartz's grammar is 6 fields plus an optional year, and the pre-check used to stop at 6 — so the
+         * one form it rejected outright was an expression the scheduler would have run.
+         */
+        @Test
+        fun `createAgentTask accepts the 7-field form with a year`() {
+            `when`(agentTaskMapper.selectByName("New Task")).thenReturn(null)
+            `when`(agentService.getAgent(100L)).thenReturn(testAgent)
+            `when`(agentTaskMapper.insert(any())).thenReturn(1)
+
+            val request = AgentTaskCreateRequest(
+                name = "New Task",
+                agentId = 100L,
+                prompt = "Do something",
+                cronExpression = "0 0 9 * * ? 2027",
+            )
+
+            assertTrue(createService().createAgentTask(request))
+        }
+
+        /** The other end of the same window: a 5-field unix cron is not Quartz, and used to pass here. */
+        @Test
+        fun `createAgentTask rejects a 5-field unix cron that Quartz would refuse`() {
+            `when`(agentTaskMapper.selectByName("New Task")).thenReturn(null)
+
+            val request = AgentTaskCreateRequest(
+                name = "New Task",
+                agentId = 100L,
+                prompt = "Do something",
+                cronExpression = "0 9 * * 1",
+            )
+
+            val service = createService()
+            val exception = assertThrows<BizException> {
+                service.createAgentTask(request)
+            }
+            assertTrue(exception.message!!.contains("Invalid cron"), "got: ${exception.message}")
+            verify(agentTaskMapper, never()).insert(any())
+        }
+
         @Test
         fun `createAgentTask should throw when agent not found`() {
             `when`(agentTaskMapper.selectByName("New Task")).thenReturn(null)

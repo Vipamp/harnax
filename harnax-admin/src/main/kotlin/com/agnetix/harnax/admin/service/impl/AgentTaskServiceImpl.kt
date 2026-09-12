@@ -214,17 +214,22 @@ class AgentTaskServiceImpl(
     }
 
     /**
-     * Cheap structural pre-check: a cron field count in 5..6. Nothing more.
+     * Cheap structural pre-check: the field count of Quartz's cron grammar — 6 fields (second, minute,
+     * hour, day-of-month, month, day-of-week) plus an optional 7th year field. Nothing more.
      *
-     * It cannot judge an expression. Quartz rejects what this accepts (`0 0 0 * * *`, where
-     * day-of-month and day-of-week conflict) and accepts what this rejects (the 7-field form with a
-     * year), so the authority is the scheduler: it builds the trigger through Quartz on `start` and
-     * [toggleTaskStatus] forwards the reason it answers. Doing the real check here would mean pulling a
-     * Quartz dependency into a module that only proxies scheduling decisions.
+     * The interval used to be `5..6`, which was wrong at both ends: a 5-field unix cron (`0 9 * * 1`) is
+     * rejected by Quartz yet passed here, and the legal 7-field form with a year was refused — so this
+     * check both let through work that would fail later and blocked work that would have run.
+     *
+     * It still cannot judge an expression. Quartz rejects what this accepts (`0 0 0 * * *`, where
+     * day-of-month and day-of-week conflict), so the semantic authority is the scheduler: it builds the
+     * trigger through Quartz on `start`, and [toggleTaskStatus] forwards the reason it answers. Doing the
+     * real check here would mean adding a Quartz dependency to a module that only proxies scheduling
+     * decisions, and that is deliberately not done.
      */
     private fun isValidCron(cron: String): Boolean {
         val fields = cron.trim().split("\\s+".toRegex())
-        return fields.size in 5..6
+        return fields.size in 6..7
     }
 
     /**

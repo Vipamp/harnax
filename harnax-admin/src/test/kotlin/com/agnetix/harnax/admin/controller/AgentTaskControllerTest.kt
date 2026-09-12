@@ -640,6 +640,33 @@ class AgentTaskControllerTest {
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(500))
         }
+
+        /**
+         * The service forwards whatever the scheduler answered, and 40903 ("this instance has
+         * `scheduler.enabled=false`") is the one code the UI can act on — the status switch is exactly the
+         * request a standby node refuses. Flattening it to 500 made the toggle look broken here rather
+         * than pointed at the wrong node, which is what update/delete already avoid.
+         */
+        @Test
+        fun `toggle reports the scheduler business code instead of folding it into a 500`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 1)).thenThrow(
+                BizException(40903, "Scheduling is disabled on this instance"),
+            )
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(40903))
+                .andExpect(jsonPath("$.message").value("Scheduling is disabled on this instance"))
+        }
+
+        @Test
+        fun `toggle still flattens an unexpected failure`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 1)).thenThrow(RuntimeException("connection refused"))
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+        }
     }
 
     // ==================== POST /api/admin/agent-tasks/{id}/start ====================

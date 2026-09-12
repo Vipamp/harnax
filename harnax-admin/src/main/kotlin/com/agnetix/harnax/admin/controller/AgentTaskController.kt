@@ -121,6 +121,12 @@ class AgentTaskController(
         } else {
             ResultVo.error("Failed to toggle task status")
         }
+    } catch (e: BizException) {
+        // Business code through unchanged, same rule as update/delete: `toggle` is what the UI's status
+        // switch calls, and the service forwards the scheduler's own answer — flattening 40903
+        // ("scheduling is disabled on this instance") into a 500 left the operator with nothing to act on.
+        log.warn("Failed to toggle task status: id={}, code={}, message={}", id, e.code, e.message)
+        ResultVo.error(e.code, e.message ?: "Failed to toggle task status")
     } catch (e: Exception) {
         log.error("Failed to toggle task status", e)
         ResultVo.error(e.message ?: "Failed to toggle task status")
