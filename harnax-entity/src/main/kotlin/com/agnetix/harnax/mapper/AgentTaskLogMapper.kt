@@ -13,6 +13,11 @@ import org.apache.ibatis.annotations.Param
 @Mapper
 interface AgentTaskLogMapper {
 
+    /**
+     * Lookup by log id with no owner or tenant condition — the scheduler resolves a stop request to the
+     * row it has to close out and has no end-user context. Not a user-facing read: unlike
+     * [selectLogList] it cannot tell whose log it returns.
+     */
     fun selectById(@Param("id") id: Long): AgentTaskLog?
 
     fun insert(log: AgentTaskLog): Int
@@ -41,6 +46,17 @@ interface AgentTaskLogMapper {
      */
     fun expireStale(@Param("defaultTimeoutSeconds") defaultTimeoutSeconds: Int): Int
 
+    /**
+     * Paged log search, gated by the *task* the log belongs to: a row is only readable through a task
+     * the caller can see (`is_public = 1 OR creator = currentUsername`, task still active), the same
+     * rule as `AgentTaskMapper.selectTaskList`. Logs carry prompt/response/error_info, so reading them
+     * without that join exposes another user's task traffic verbatim.
+     *
+     * [currentUsername] has no default on purpose: the visibility rule fails closed to "public rows
+     * only" when it is missing, which is not a state any user-facing caller should be able to reach by
+     * accident. [tenantId] narrows further when the caller knows the tenant (nullable, like the other
+     * list queries in this module).
+     */
     fun selectLogList(
         @Param("taskId") taskId: Long?,
         @Param("taskName") taskName: String?,
@@ -48,6 +64,8 @@ interface AgentTaskLogMapper {
         @Param("startTimeFrom") startTimeFrom: String?,
         @Param("startTimeTo") startTimeTo: String?,
         @Param("keyword") keyword: String?,
+        @Param("currentUsername") currentUsername: String,
+        @Param("tenantId") tenantId: Long? = null,
     ): List<AgentTaskLog>
 
     fun selectByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>

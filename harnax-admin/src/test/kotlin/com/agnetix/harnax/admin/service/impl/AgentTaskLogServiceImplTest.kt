@@ -1,7 +1,10 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
+import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -14,7 +17,13 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.nullableArgumentCaptor
 import org.mockito.quality.Strictness
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
 
 @ExtendWith(MockitoExtension::class)
@@ -23,6 +32,9 @@ class AgentTaskLogServiceImplTest {
 
     @Mock
     private lateinit var agentTaskLogMapper: AgentTaskLogMapper
+
+    @Mock
+    private lateinit var jwtUtil: JwtUtil
 
     @InjectMocks
     private lateinit var agentTaskLogService: AgentTaskLogServiceImpl
@@ -47,6 +59,19 @@ class AgentTaskLogServiceImplTest {
             creator = "admin"
             createTime = LocalDateTime.now()
         }
+
+        // page() resolves the caller from the request, so the list tests need a logged-in context.
+        val mockRequest = MockHttpServletRequest()
+        mockRequest.addHeader("Authorization", "Bearer mock-token")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(mockRequest))
+        `when`(jwtUtil.validateToken(any())).thenReturn(true)
+        `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
+    }
+
+    @AfterEach
+    fun tearDown() {
+        RequestContextHolder.resetRequestAttributes()
+        TenantContext.clear()
     }
 
     @Nested
@@ -228,44 +253,96 @@ class AgentTaskLogServiceImplTest {
         }
     }
 
+    /**
+     * The pass-through cases below run without a TenantContext, which is why the tenant argument is
+     * expected as `null`: the service forwards the context verbatim instead of defaulting it, so the
+     * SQL keeps the visibility rule and skips the tenant narrowing.
+     */
     @Nested
     @DisplayName("Page Query Tests")
     inner class PageTests {
 
+        private fun givenEmptyLogList() {
+            `when`(
+                agentTaskLogMapper.selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    any(),
+                    anyOrNull(),
+                ),
+            ).thenReturn(emptyList())
+        }
+
         @Test
         fun `page should pass all parameters to mapper`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword")
+            verify(agentTaskLogMapper)
+                .selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", "admin", null)
         }
 
         @Test
         fun `page should pass null filters correctly`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(1L, null, null, null, null, null, 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null)
+            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null, "admin", null)
         }
 
         @Test
         fun `page should pass only time range filter`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null)
+            verify(agentTaskLogMapper)
+                .selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, "admin", null)
         }
 
         @Test
         fun `page should pass only keyword filter`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(null, null, null, null, null, "error", 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error")
+            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error", "admin", null)
+        }
+
+        /**
+         * The visibility rule lives in the SQL join, so the one thing this service can get wrong is
+         * failing to tell the mapper who is asking. The two identity arguments are captured rather than
+         * hard-coded, so the assertion reads back what the call actually carried.
+         */
+        @Test
+        fun `page should scope the query to the current user and tenant`() {
+            TenantContext.setTenantId(7L)
+            `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("alice")
+            givenEmptyLogList()
+
+            agentTaskLogService.page(null, null, null, null, null, null, 1, 10)
+
+            val username = argumentCaptor<String>()
+            val tenantId = nullableArgumentCaptor<Long>()
+            verify(agentTaskLogMapper)
+                .selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    username.capture(),
+                    tenantId.capture(),
+                )
+            assertEquals("alice", username.firstValue)
+            assertEquals(7L, tenantId.firstValue)
         }
     }
 }

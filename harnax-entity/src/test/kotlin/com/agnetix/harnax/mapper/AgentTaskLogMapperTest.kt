@@ -1,5 +1,6 @@
 package com.agnetix.harnax.mapper
 
+import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -29,6 +30,10 @@ import kotlin.test.assertTrue
 open class AgentTaskLogMapperTest {
 
     companion object {
+        /** Both seeded tasks in schema-test.sql belong to this creator and tenant. */
+        private const val OWNER = "admin"
+        private const val TENANT = 1L
+
         @Container
         val mysqlContainer = MySQLContainer("mysql:8.0")
             .withDatabaseName("harnax_test")
@@ -47,6 +52,9 @@ open class AgentTaskLogMapperTest {
 
     @Autowired
     private lateinit var agentTaskLogMapper: AgentTaskLogMapper
+
+    @Autowired
+    private lateinit var agentTaskMapper: AgentTaskMapper
 
     // ==================== selectById ====================
 
@@ -231,6 +239,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertEquals(1L, it.taskId) }
@@ -246,6 +256,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -264,6 +276,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertTrue(it.taskName.contains("Daily")) }
@@ -279,6 +293,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-07-02 00:00:00",
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -299,6 +315,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = "2026-07-01 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -317,6 +335,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-07-01 00:00:00",
                 startTimeTo = "2026-07-02 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             // 应该匹配 id=1 (07-01) 和 id=2 (07-02)
@@ -333,6 +353,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "breaking",
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertTrue(logs.any { it.prompt.contains("breaking", ignoreCase = true) })
@@ -348,6 +370,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "Weekly report content",
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(4L, logs[0].id)
@@ -363,6 +387,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "Connection timeout",
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(3L, logs[0].id)
@@ -378,6 +404,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-06-01 00:00:00",
                 startTimeTo = "2026-07-31 23:59:59",
                 keyword = "summary",
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -399,6 +427,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2030-01-01 00:00:00",
                 startTimeTo = "2030-12-31 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isEmpty())
         }
@@ -413,6 +443,8 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "zzzznonexistentkeyword",
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.isEmpty())
         }
@@ -427,11 +459,112 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
+                tenantId = TENANT,
             )
             assertTrue(logs.size >= 2)
             for (i in 0 until logs.size - 1) {
                 assertTrue(logs[i].createTime >= logs[i + 1].createTime)
             }
+        }
+
+        /**
+         * The log row repeats the task prompt and the agent response, so this is the case that used to
+         * be the hole: knowing a taskId was enough to read it.
+         */
+        @Test
+        @DisplayName("selectLogList - 非属主读不到他人私有任务的执行日志")
+        fun `selectLogList should hide another user private task logs`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+
+            val asStranger = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "bob",
+                tenantId = TENANT,
+            )
+            assertTrue(asStranger.isEmpty(), "非属主不应读到 ${log.id} 的 prompt/response")
+
+            // 同一行数据对属主可读：挡住 bob 的只有可见性，不是别的筛选条件
+            val asOwner = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "alice",
+                tenantId = TENANT,
+            )
+            assertEquals(listOf(log.id), asOwner.map { it.id })
+        }
+
+        @Test
+        @DisplayName("selectLogList - 公开任务的日志对他人可读")
+        fun `selectLogList should return another user public task logs`() {
+            val task = insertTask(creator = "alice", isPublic = 1)
+            val log = insertLogOf(task.id)
+
+            val asStranger = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "bob",
+                tenantId = TENANT,
+            )
+            assertEquals(listOf(log.id), asStranger.map { it.id })
+        }
+
+        private fun insertTask(
+            creator: String,
+            isPublic: Int,
+        ): AgentTask {
+            val task = AgentTask().apply {
+                name = "visibility-$creator-$isPublic-${System.nanoTime()}"
+                tenantId = TENANT
+                agentId = 100
+                agentName = "News Agent"
+                prompt = "Summarize today's news"
+                cronExpression = "0 0 9 * * ?"
+                taskStatus = 0
+                concurrent = 0
+                timeoutSeconds = 300
+                description = "seed"
+                this.isPublic = isPublic
+                this.creator = creator
+                active = 1
+                createTime = LocalDateTime.now()
+                updateTime = LocalDateTime.now()
+            }
+            assertEquals(1, agentTaskMapper.insert(task))
+            assertTrue(task.id > 0)
+            return task
+        }
+
+        private fun insertLogOf(taskId: Long): AgentTaskLog {
+            val log = AgentTaskLog().apply {
+                this.taskId = taskId
+                taskName = "visibility-seed"
+                prompt = "Private prompt of the task owner"
+                response = "Private response"
+                sessionId = "sess-vis-${System.nanoTime()}"
+                status = 1
+                errorInfo = ""
+                startTime = LocalDateTime.now()
+                endTime = LocalDateTime.now()
+                creator = "alice"
+            }
+            assertEquals(1, agentTaskLogMapper.insert(log))
+            assertTrue(log.id > 0)
+            return log
         }
     }
 }

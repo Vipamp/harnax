@@ -74,30 +74,43 @@
         WHERE id = #{id} AND status = 4
     </update>
 
+    <!--
+      Reads are gated through the owning task, with the same visibility rule as
+      AgentTaskMapper.selectTaskList: active, and either public or created by the caller. The log row
+      repeats prompt/response/error_info verbatim, so filtering on the log columns alone let anyone who
+      guessed a task id read another user's task traffic. The join also drops logs whose task was deleted
+      (active = 0), which the task list no longer shows either.
+    -->
     <select id="selectLogList" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log
+        SELECT l.* FROM agent_task_log l
+        JOIN agent_task t ON t.id = l.task_id
+            AND t.active = 1
+            AND (t.is_public = 1 OR t.creator = #{currentUsername})
+        <if test="tenantId != null">
+            AND t.tenant_id = #{tenantId}
+        </if>
         WHERE 1=1
         <if test="taskId != null">
-            AND task_id = #{taskId}
+            AND l.task_id = #{taskId}
         </if>
         <if test="taskName != null and taskName != ''">
-            AND task_name LIKE CONCAT('%', #{taskName}, '%')
+            AND l.task_name LIKE CONCAT('%', #{taskName}, '%')
         </if>
         <if test="status != null">
-            AND status = #{status}
+            AND l.status = #{status}
         </if>
         <if test="startTimeFrom != null and startTimeFrom != ''">
-            AND start_time &gt;= #{startTimeFrom}
+            AND l.start_time &gt;= #{startTimeFrom}
         </if>
         <if test="startTimeTo != null and startTimeTo != ''">
-            AND start_time &lt;= #{startTimeTo}
+            AND l.start_time &lt;= #{startTimeTo}
         </if>
         <if test="keyword != null and keyword != ''">
-            AND (prompt LIKE CONCAT('%', #{keyword}, '%')
-                 OR response LIKE CONCAT('%', #{keyword}, '%')
-                 OR error_info LIKE CONCAT('%', #{keyword}, '%'))
+            AND (l.prompt LIKE CONCAT('%', #{keyword}, '%')
+                 OR l.response LIKE CONCAT('%', #{keyword}, '%')
+                 OR l.error_info LIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY create_time DESC
+        ORDER BY l.create_time DESC
     </select>
 
     <select id="selectByTaskId" resultMap="AgentTaskLogResultMap">
