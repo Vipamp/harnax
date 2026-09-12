@@ -108,7 +108,9 @@ const AgentTaskManagement: React.FC = () => {
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       onOk: async () => {
         try {
-          const response = await triggerAgentTask(id);
+          // skipErrorHandler only silences the global toast; the response interceptor still raises a
+          // BizError for code !== 200, so a conflict normally lands in the catch below.
+          const response = await triggerAgentTask(id, { skipErrorHandler: true });
           if (response.code === 200) {
             message.success(intl.formatMessage({ id: 'pages.agentTask.triggered', defaultMessage: 'Task triggered' }));
             // Auto-open log modal to watch execution progress
@@ -118,15 +120,23 @@ const AgentTaskManagement: React.FC = () => {
               setLogModalVisible(true);
             }
           } else if (response.code === 40901) {
+            // Kept as the counterpart of the catch below: it fires once the request layer stops
+            // throwing on business errors, and warns about the same conflict.
             message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
           } else {
             message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
           }
           // Refresh task list to update last run status
           setTimeout(() => loadTasks(), 1500);
-      } catch (error) {
-        message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
-      }
+        } catch (error) {
+          // The global errorThrower converts a non-200 ResultVo into this BizError, whose info carries
+          // the backend code: 40901 means "already running", not a trigger failure.
+          if ((error as any)?.info?.errorCode === 40901) {
+            message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
+          } else {
+            message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
+          }
+        }
       },
     });
   };
