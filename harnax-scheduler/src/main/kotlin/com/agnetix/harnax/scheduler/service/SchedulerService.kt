@@ -44,6 +44,16 @@ interface SchedulerService {
     fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
 
     /**
+     * Whether this task already has an execution live *right now*, with zombie rows reclaimed on the
+     * way so a dead node cannot block a task forever.
+     *
+     * The cluster lock cannot answer this question: `agent_task_execution` is keyed by
+     * (task id, trigger time), so it only ever dedupes one fire across instances and says nothing about
+     * an earlier fire of the same task still running. A Quartz fire asks before it starts work.
+     */
+    fun hasActiveRunningExecution(taskId: Long): Boolean
+
+    /**
      * Manually trigger a task execution (bypassing Quartz scheduling).
      * Executes asynchronously and returns immediately.
      */

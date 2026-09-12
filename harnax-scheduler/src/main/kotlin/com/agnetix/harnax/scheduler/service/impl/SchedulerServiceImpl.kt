@@ -10,6 +10,7 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskJob
+import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
@@ -143,7 +144,7 @@ class SchedulerServiceImpl(
 
         val jobDataMap = JobDataMap()
         jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
+        val jobDetail = JobBuilder.newJob(jobClassFor(task))
             .withIdentity(jobKey)
             .usingJobData(jobDataMap)
             .storeDurably()
@@ -269,7 +270,7 @@ class SchedulerServiceImpl(
         val jobKey = JobKey("AgentTask_${task.id}_ONCE_$uniqueId", "AgentTaskGroup_ONCE")
         val jobDataMap = JobDataMap()
         jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
+        val jobDetail = JobBuilder.newJob(jobClassFor(task))
             .withIdentity(jobKey)
             .usingJobData(jobDataMap)
             .build()
@@ -548,15 +549,32 @@ class SchedulerServiceImpl(
      * The stale sweep still runs first and for both kinds: it is what stops a zombie left by a dead node
      * from counting as a live execution forever.
      */
-    private fun blocksManualRun(task: AgentTask): Boolean = hasActiveRunningLog(task.id) && task.concurrent == 0
+    private fun blocksManualRun(task: AgentTask): Boolean = hasActiveRunningExecution(task.id) && task.concurrent == 0
 
     /**
      * Whether the task has a live execution. Stale rows are expired first, so a zombie left behind by
      * a node that died mid-task cannot block the trigger forever.
+     *
+     * Two callers, for two different holes: the manual paths above, and a Quartz fire asking before it
+     * starts work — `@DisallowConcurrentExecution` only mutualises one JobDetail, and one task owns
+     * several (its cron job plus every one-shot), so the annotation cannot see across them. This read
+     * is keyed by task and can.
      */
-    private fun hasActiveRunningLog(taskId: Long): Boolean {
+    override fun hasActiveRunningExecution(taskId: Long): Boolean {
         expireStaleExecutions()
         return agentTaskLogMapper.selectRunningByTaskId(taskId).isNotEmpty()
+    }
+
+    /**
+     * The registered job class is the only channel that carries `concurrent` into Quartz:
+     * `@DisallowConcurrentExecution` is read off that class by reflection and is not `@Inherited`, so
+     * the plain class means "overlap allowed" and nothing else. Misfire instructions are not a
+     * substitute — they decide what happens to a *late* fire, never whether two live ones may overlap.
+     */
+    private fun jobClassFor(task: AgentTask): Class<out Job> = if (task.concurrent == 0) {
+        AgentTaskNonConcurrentJob::class.java
+    } else {
+        AgentTaskJob::class.java
     }
 
     /** Null means every active task was registered; the text doubles as the health detail. */
