@@ -31,7 +31,15 @@ class SchedulerStatus(
 
     val lastLoadError: String? get() = loadError
 
-    val scheduledJobCount: Int get() = jobCount
+    /**
+     * How many tasks the *most recent load* registered — not what this instance is scheduling now.
+     *
+     * Nothing here sees `startTask`/`pauseTask` or any CRUD, so reading this as a live count is how the
+     * health detail and the `scheduler.jobs.scheduled` gauge ended up reporting a startup number forever.
+     * Both now go through `SchedulerService.getScheduledTaskIds()`; this stays only as load bookkeeping
+     * (and as what [lastLoadError] drifts against).
+     */
+    val lastLoadJobCount: Int get() = jobCount
 
     /**
      * Records a load that registered [jobCount] jobs.

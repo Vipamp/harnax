@@ -10,6 +10,7 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -57,6 +58,9 @@ class SchedulerStopStateMachineTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
+    @Mock
+    private lateinit var schedulerService: SchedulerService
+
     private lateinit var service: SchedulerServiceImpl
 
     @BeforeEach
@@ -69,7 +73,8 @@ class SchedulerStopStateMachineTest {
             1
         }
         val status = SchedulerStatus(schedulerEnabled = true)
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), status)
+        // The job-count gauge reads through the service now; this suite never scrapes it.
+        val metrics = SchedulerMetrics(SimpleMeterRegistry(), schedulerService)
         service = SchedulerServiceImpl(
             schedulerFactory,
             agentTaskMapper,

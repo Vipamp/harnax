@@ -10,6 +10,7 @@ import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -66,6 +67,9 @@ class SchedulerServiceImplTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
+    @Mock
+    private lateinit var schedulerService: SchedulerService
+
     private lateinit var status: SchedulerStatus
 
     private lateinit var service: SchedulerServiceImpl
@@ -74,7 +78,8 @@ class SchedulerServiceImplTest {
     fun setUp() {
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
         status = SchedulerStatus(schedulerEnabled = true)
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), status)
+        // The job-count gauge reads through the service now; this suite never scrapes it.
+        val metrics = SchedulerMetrics(SimpleMeterRegistry(), schedulerService)
         service = SchedulerServiceImpl(
             schedulerFactory,
             agentTaskMapper,
@@ -228,7 +233,7 @@ class SchedulerServiceImplTest {
         )
         assertEquals(
             Status.DOWN,
-            SchedulerHealthIndicator(status, schedulerFactory).health().status,
+            SchedulerHealthIndicator(status, schedulerFactory, schedulerService).health().status,
             "health must not read UP just because some tasks did get registered",
         )
     }

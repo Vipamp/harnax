@@ -8,6 +8,7 @@ import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.SchedulerService
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -22,8 +23,10 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
+import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.JobKey
 import org.quartz.Scheduler
 import org.springframework.boot.health.contributor.Status
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
@@ -54,6 +57,9 @@ class SchedulerStartupLoadTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
+    @Mock
+    private lateinit var gaugeSchedulerService: SchedulerService
+
     private val registry = SimpleMeterRegistry()
 
     private lateinit var status: SchedulerStatus
@@ -68,7 +74,8 @@ class SchedulerStartupLoadTest {
         whenever(quartz.isStarted).thenReturn(true)
 
         status = SchedulerStatus(schedulerEnabled = true)
-        val metrics = SchedulerMetrics(registry, status)
+        // The job-count gauge reads through the service now; this suite only asserts the counters.
+        val metrics = SchedulerMetrics(registry, gaugeSchedulerService)
         metrics.initMeters()
         service = SchedulerServiceImpl(
             schedulerFactory,
@@ -80,7 +87,8 @@ class SchedulerStartupLoadTest {
             metrics,
             schedulerEnabled = true,
         )
-        health = SchedulerHealthIndicator(status, schedulerFactory)
+        // The real service, so the health detail goes through the same live read it uses in production.
+        health = SchedulerHealthIndicator(status, schedulerFactory, service)
     }
 
     @AfterEach
@@ -98,12 +106,19 @@ class SchedulerStartupLoadTest {
     }
 
     @Test
-    fun `a successful load publishes the job count to health`() {
+    fun `a successful load recovers health and reports the live job count`() {
         whenever(agentTaskMapper.selectRunningTasks()).thenReturn(listOf(task(1L), task(2L)))
+        // The health detail is no longer the number the load remembered: it is read back off the store,
+        // which is what keeps it honest across start/pause/CRUD. Stub that read here.
+        whenever(quartz.getJobKeys(any())).thenReturn(
+            setOf(JobKey("AgentTask_1", "AgentTaskGroup"), JobKey("AgentTask_2", "AgentTaskGroup")),
+        )
 
         service.loadTasksToScheduler()
 
-        assertEquals(2, status.scheduledJobCount)
+        val healthDetails = health.health().details
+        assertEquals(2, status.lastLoadJobCount, "load bookkeeping still records what this load registered")
+        assertEquals(2, healthDetails["scheduledJobCount"], "the detail is the live store content")
         assertNotNull(status.lastLoadSuccessAt)
         assertEquals(Status.UP, health.health().status)
     }
@@ -132,7 +147,7 @@ class SchedulerStartupLoadTest {
 
         assertTrue(sawDown, "health should report DOWN while the load is still failing")
         assertEquals(Status.UP, observed.status, "load should recover once the database answers")
-        assertEquals(1, status.scheduledJobCount)
+        assertEquals(1, status.lastLoadJobCount)
         assertNull(status.lastLoadError)
         assertEquals(
             1.0,
@@ -150,7 +165,7 @@ class SchedulerStartupLoadTest {
         val complete = service.loadTasksToScheduler()
 
         assertFalse(complete)
-        assertEquals(0, status.scheduledJobCount)
+        assertEquals(0, status.lastLoadJobCount)
         assertNotNull(status.lastLoadError)
         assertEquals(Status.DOWN, health.health().status)
     }
@@ -168,7 +183,7 @@ class SchedulerStartupLoadTest {
         val complete = service.loadTasksToScheduler()
 
         assertFalse(complete, "an incomplete load must be retried")
-        assertEquals(1, status.scheduledJobCount, "the tasks that did register still count")
+        assertEquals(1, status.lastLoadJobCount, "the tasks that did register still count")
         assertNotNull(status.lastLoadError, "a partial load must not clear the error")
         assertTrue(status.lastLoadError!!.contains("ids=[2]"), "got: ${status.lastLoadError}")
         assertEquals(Status.DOWN, health.health().status, "a node missing part of its tasks is not healthy")
