@@ -346,18 +346,12 @@ class SchedulerServiceImpl(
 
             // Write the final status immediately so the frontend sees it without waiting for
             // clearSession. finishExecution only matches while the row is still running (3); zero
-            // rows means a stop was requested mid-flight and the 4 -> 5 transition is ours.
+            // rows means someone else moved it, and *where* they moved it decides what is true now.
             try {
                 if (agentTaskLogMapper.finishExecution(taskLog) > 0) {
                     log.info("Updated agent task log: id={}, status={}, durationMs={}", taskLog.id, taskLog.status, taskLog.durationMs)
                 } else {
-                    taskLog.status = 5 // stopped by user (final)
-                    taskLog.errorInfo = "Task stopped by user"
-                    if (agentTaskLogMapper.finalizeStopped(taskLog) > 0) {
-                        log.info("Task was stopped during execution: id={}, name={}", task.id, task.name)
-                    } else {
-                        log.warn("Execution log {} was already finalised elsewhere: taskId={}", taskLog.id, task.id)
-                    }
+                    closeOutLateExecution(taskLog)
                 }
             } catch (e: Exception) {
                 // Left at 3 or 4 on purpose: expireStale reclaims it as a timeout rather than this
@@ -428,6 +422,50 @@ class SchedulerServiceImpl(
             throw e
         }
         return taskLog
+    }
+
+    /**
+     * The row left status 3 while this execution was still in flight. Re-read it instead of assuming
+     * a user stop: a row the reaper had judged `timeout` is a run that finished successfully but
+     * would otherwise be remembered as a failure, and that mistake is ours to correct because we hold
+     * the real result.
+     */
+    private fun closeOutLateExecution(taskLog: AgentTaskLog) {
+        when (agentTaskLogMapper.selectById(taskLog.id)?.status) {
+            4 -> {
+                taskLog.status = 5 // stopped by user (final)
+                taskLog.errorInfo = "Task stopped by user"
+                if (agentTaskLogMapper.finalizeStopped(taskLog) > 0) {
+                    log.info("Task was stopped during execution: id={}", taskLog.id)
+                } else {
+                    log.warn("Execution log {} changed again mid-stop; result not written", taskLog.id)
+                }
+            }
+
+            2 -> {
+                // reclaimExpired guards the row it replaces (status 2) but not the status it is handed,
+                // so the value stays this thread's own verdict: 0 or 1. Anything else would write a
+                // result nobody produced over a row the reaper already gave up on.
+                check(taskLog.status == 0 || taskLog.status == 1) {
+                    "Refusing to reclaim log ${taskLog.id} with status ${taskLog.status}"
+                }
+                if (agentTaskLogMapper.reclaimExpired(taskLog) > 0) {
+                    log.info(
+                        "Execution log {} had been auto-expired; wrote the real result (status={}) over it",
+                        taskLog.id,
+                        taskLog.status,
+                    )
+                } else {
+                    log.warn("Execution log {} moved again before it could be reclaimed", taskLog.id)
+                }
+            }
+
+            else -> log.warn(
+                "Execution log {} was already terminal elsewhere; its real result (status={}) was not written",
+                taskLog.id,
+                taskLog.status,
+            )
+        }
     }
 
     /**

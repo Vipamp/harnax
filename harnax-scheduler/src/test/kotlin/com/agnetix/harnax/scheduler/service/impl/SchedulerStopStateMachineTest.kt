@@ -178,6 +178,7 @@ class SchedulerStopStateMachineTest {
         whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "partial"))
         // 0 rows: the row had already moved to status 4 by another node
         whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(0)
+        whenever(agentTaskLogMapper.selectById(any())).thenReturn(log(100L, status = 4, sessionId = "sess-1"))
 
         service.executeTaskOnce(task(), LocalDateTime.now())
 
@@ -188,16 +189,32 @@ class SchedulerStopStateMachineTest {
     }
 
     @Test
-    fun `a row already finalised elsewhere is not rewritten`() {
-        whenever(routerClient.chat(any(), any())).thenThrow(RuntimeException("router unavailable"))
+    fun `a row the reaper mis-timed-out gets its real result written back`() {
+        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "real output"))
         whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(0)
-        whenever(agentTaskLogMapper.finalizeStopped(any())).thenReturn(0)
+        // The row had been reaped as 2 while this execution was still running
+        whenever(agentTaskLogMapper.selectById(any())).thenReturn(log(100L, status = 2, sessionId = "sess-21"))
+        whenever(agentTaskLogMapper.reclaimExpired(any())).thenReturn(1)
 
-        service.executeTaskOnce(task(), LocalDateTime.now())
+        service.executeTaskOnce(task().apply { id = 21L }, LocalDateTime.now())
 
         val written = argumentCaptor<AgentTaskLog>()
-        verify(agentTaskLogMapper).finalizeStopped(written.capture())
-        assertEquals(5, written.firstValue.status)
+        verify(agentTaskLogMapper).reclaimExpired(written.capture())
+        assertEquals(1, written.firstValue.status)
+        assertEquals("real output", written.firstValue.response)
+        verify(agentTaskLogMapper, never()).finalizeStopped(any())
+    }
+
+    @Test
+    fun `a row already terminal for another reason is left alone`() {
+        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "late"))
+        whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(0)
+        whenever(agentTaskLogMapper.selectById(any())).thenReturn(log(100L, status = 1, sessionId = "sess-22"))
+
+        service.executeTaskOnce(task().apply { id = 22L }, LocalDateTime.now())
+
+        verify(agentTaskLogMapper, never()).finalizeStopped(any())
+        verify(agentTaskLogMapper, never()).reclaimExpired(any())
     }
 
     @Test
