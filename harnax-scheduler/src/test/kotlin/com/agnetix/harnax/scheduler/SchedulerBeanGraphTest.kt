@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component
 /**
  * Turns the R3 claim into something executable instead of an argument: a real Spring container constructs
  * the whole `harnax-scheduler` bean graph here, which is precisely the check this module never had — it has
- * no `@SpringBootTest`, so when `@Lazy` was added to hold a construction cycle open, nothing asked whether
- * the context can start at all.
+ * no `@SpringBootTest`, so when a lazy proxy was added to hold a construction cycle open, nothing ever
+ * asked whether the context can start at all.
  *
  * Every Spring-managed class of this package is registered as itself, the way component scan does in
  * production; only the outside world (Quartz, MyBatis, Micrometer) is stood in for. A constructor cycle
@@ -72,8 +72,8 @@ class SchedulerBeanGraphTest {
      * Control case for the one above, and a miniature of the wiring R3 removed: an observation bean that
      * reads the live count through the business service, while that service counts its load attempts
      * through the observation bean. Same constructor-injection mechanism as the real beans, and it fails
-     * the same startup — which is precisely what `@Lazy` used to paper over. Without this case the passing
-     * assertion above would only be evidence that "nothing happened".
+     * the same startup — which is precisely what the lazy proxy used to paper over. Without this case the
+     * passing assertion above would only be evidence that "nothing happened".
      */
     @Test
     fun `a meter that reads through the business service closes the cycle this refactor removed`() {
