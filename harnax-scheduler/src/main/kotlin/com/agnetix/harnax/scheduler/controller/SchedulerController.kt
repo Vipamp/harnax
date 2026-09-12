@@ -19,11 +19,12 @@ class SchedulerController(
     @Operation(summary = "Manually trigger a one-time task execution")
     @PostMapping("/tasks/{id}/trigger")
     fun trigger(@PathVariable id: Long): ResultVo<String> = try {
-        val success = schedulerService.triggerManually(id)
-        if (success) {
+        if (schedulerService.triggerManually(id)) {
             ResultVo.success("Task triggered")
         } else {
-            ResultVo.error("Task is already being executed by another instance")
+            // 40901, not a message: both "already running" and "another instance won the lock" mean
+            // the same thing to the caller — try again later.
+            ResultVo.error(CODE_EXECUTION_IN_PROGRESS, "Task execution is already in progress")
         }
     } catch (e: Exception) {
         log.error("Failed to trigger task: id={}", id, e)
@@ -112,5 +113,10 @@ class SchedulerController(
     } catch (e: Exception) {
         log.error("Failed to stop task: logId={}", logId, e)
         ResultVo.error("Failed to stop task: ${e.message}")
+    }
+
+    companion object {
+        /** The task already has a live execution; the caller should poll instead of retrying. */
+        const val CODE_EXECUTION_IN_PROGRESS = 40901
     }
 }

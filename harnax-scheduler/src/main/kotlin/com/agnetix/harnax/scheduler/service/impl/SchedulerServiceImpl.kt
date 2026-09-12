@@ -241,10 +241,9 @@ class SchedulerServiceImpl(
             ?: throw RuntimeException("Agent task not found: $id")
 
         // Guard: reject if task already has an active running execution
-        val hasActiveExecution = hasActiveRunningLog(task.id)
-        if (hasActiveExecution) {
+        if (hasActiveRunningLog(task.id)) {
             log.warn("Task {} has an active running execution, rejecting runOnce", task.id)
-            throw RuntimeException("Task is already running, please wait for it to complete")
+            return false
         }
 
         val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
@@ -272,10 +271,9 @@ class SchedulerServiceImpl(
         val triggerTime = LocalDateTime.now()
 
         // Guard: check for actively running logs, auto-expire stale ones (from previous crashes/restarts)
-        val hasActiveExecution = hasActiveRunningLog(task.id)
-        if (hasActiveExecution) {
+        if (hasActiveRunningLog(task.id)) {
             log.warn("Task {} has an active running execution, rejecting trigger", task.id)
-            throw RuntimeException("Task is already running, please wait for it to complete")
+            return false
         }
 
         // Multi-instance guard (synchronous check)
