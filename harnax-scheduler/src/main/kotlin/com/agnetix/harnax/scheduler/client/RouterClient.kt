@@ -122,24 +122,38 @@ class RouterClient(
     }
 
     /**
-     * Send a command (e.g. INTERRUPT) to the router for a specific session.
+     * Send a command to a session through the router.
+     * @return whether the command reached a live execution. `false` covers both "the agent-service
+     * instance no longer holds this session" and "the call failed", and the scheduler treats both as
+     * "nothing is running" — which is exactly what it needs to close a stopped execution out.
      */
-    fun sendCommand(sessionId: String, command: CommandType) {
+    fun sendCommand(sessionId: String, command: CommandType): Boolean = try {
         val request = CommandAgentRequest(sessionId = sessionId, command = command)
         val url = "$routerUrl/api/router/agent/command"
         log.info("[Scheduler→Router] POST {} - command: {}", url, command)
-        try {
-            restClient.post()
-                .uri(url)
-                .header("X-Api-Key", apiKey)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
-            log.info("[Scheduler←Router] Command {} sent for session={}", command, sessionId)
-        } catch (e: Exception) {
-            log.warn("[Scheduler←Router] Failed to send command {} for session={}: {}", command, sessionId, e.message)
+        val response = restClient.post()
+            .uri(url)
+            .header("X-Api-Key", apiKey)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(request)
+            .retrieve()
+            .body(object : ParameterizedTypeReference<ResultVo<CommandResponse>>() {})
+
+        if (response?.data?.success == true) {
+            log.info("[Scheduler←Router] Command {} delivered for session={}", command, sessionId)
+            true
+        } else {
+            log.warn(
+                "[Scheduler←Router] Command {} NOT delivered for session={}: {}",
+                command,
+                sessionId,
+                response?.data?.message ?: "no response body",
+            )
+            false
         }
+    } catch (e: Exception) {
+        log.warn("[Scheduler←Router] Failed to send command {} for session={}: {}", command, sessionId, e.message)
+        false
     }
 
     /**

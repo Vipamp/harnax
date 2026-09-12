@@ -91,6 +91,7 @@ class SchedulerStopStateMachineTest {
     fun `stop claims the running row and interrupts its session`() {
         whenever(agentTaskLogMapper.selectById(11L)).thenReturn(log(11L, status = 3, sessionId = "sess-11"))
         whenever(agentTaskLogMapper.markStopping(11L, "Stopping...")).thenReturn(1)
+        whenever(routerClient.sendCommand("sess-11", CommandType.INTERRUPT)).thenReturn(true)
 
         assertTrue(service.stopTask(11L))
 
@@ -113,10 +114,38 @@ class SchedulerStopStateMachineTest {
     fun `a repeated stop while already stopping still interrupts`() {
         whenever(agentTaskLogMapper.selectById(13L)).thenReturn(log(13L, status = 4, sessionId = "sess-13"))
         whenever(agentTaskLogMapper.markStopping(13L, "Stopping...")).thenReturn(0)
+        whenever(routerClient.sendCommand("sess-13", CommandType.INTERRUPT)).thenReturn(true)
 
         assertTrue(service.stopTask(13L))
 
         verify(routerClient).sendCommand("sess-13", CommandType.INTERRUPT)
+    }
+
+    @Test
+    fun `a stop that finds nothing live closes the row as stopped immediately`() {
+        whenever(agentTaskLogMapper.selectById(15L)).thenReturn(log(15L, status = 3, sessionId = "sess-15"))
+        whenever(agentTaskLogMapper.markStopping(15L, "Stopping...")).thenReturn(1)
+        // agent-service was restarted, or the session mapping moved on: nothing is advancing this row
+        whenever(routerClient.sendCommand("sess-15", CommandType.INTERRUPT)).thenReturn(false)
+
+        assertTrue(service.stopTask(15L))
+
+        val written = argumentCaptor<AgentTaskLog>()
+        verify(agentTaskLogMapper).finalizeStopped(written.capture())
+        assertEquals(5, written.firstValue.status)
+        assertEquals("No live execution to interrupt", written.firstValue.errorInfo)
+    }
+
+    @Test
+    fun `a stop that did reach a live execution leaves the row to that node`() {
+        whenever(agentTaskLogMapper.selectById(16L)).thenReturn(log(16L, status = 3, sessionId = "sess-16"))
+        whenever(agentTaskLogMapper.markStopping(16L, "Stopping...")).thenReturn(1)
+        whenever(routerClient.sendCommand("sess-16", CommandType.INTERRUPT)).thenReturn(true)
+
+        assertTrue(service.stopTask(16L))
+
+        // The node owning the execution closes 4 -> 5; finalising here would pre-empt its real result.
+        verify(agentTaskLogMapper, never()).finalizeStopped(any())
     }
 
     @Test

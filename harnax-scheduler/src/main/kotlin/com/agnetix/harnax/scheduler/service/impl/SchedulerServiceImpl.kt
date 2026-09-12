@@ -455,7 +455,18 @@ class SchedulerServiceImpl(
         } else {
             // Router -> agent -> harnessAgent.interrupt(). The session is NOT cleared here: the node
             // running the task owns that cleanup, and tearing it down from here would destroy a live run.
-            routerClient.sendCommand(sessionId, CommandType.INTERRUPT)
+            val delivered = routerClient.sendCommand(sessionId, CommandType.INTERRUPT)
+            if (!delivered) {
+                // Nothing on any instance is advancing this execution, so the stop is already final.
+                // Leaving the row at 4 would let the reaper label a finished run "timeout".
+                val now = LocalDateTime.now()
+                taskLog.status = 5
+                taskLog.errorInfo = "No live execution to interrupt"
+                taskLog.endTime = now
+                taskLog.durationMs = Duration.between(taskLog.startTime ?: taskLog.createTime ?: now, now).toMillis()
+                agentTaskLogMapper.finalizeStopped(taskLog)
+                log.info("Task log {} closed as stopped: no live execution remained to interrupt", logId)
+            }
         }
         return true
     }
