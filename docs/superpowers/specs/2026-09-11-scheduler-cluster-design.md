@@ -209,6 +209,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 ### 6.2 两实例与优雅停机（D6 配套）
 
 - 删 `container_name: harnax-scheduler`（compose:270）与宿主映射 `28084:8084`（compose:294），改 `expose: ["8084"]`。
+  - 状态：映射改 `expose` 已由第二轮 R1 落地（compose 里已无 `28084`，故上面两处行号会漂移），`container_name` 仍待 S1。
 - **不在 compose 里声明 `deploy.replicas`**，实例数由部署脚本显式 `--scale scheduler=2` 决定。理由：6.3 的逐台滚动要在"停掉其中一台、补齐到 2"之间来回切换，声明式 replicas 会让 `--no-recreate` 的收敛行为变得难以推理。
 - `stop_grace_period: 360s`。**为什么不是 310s**：同步执行后一次执行占用 = chat 读超时 300s + `clearSession`（快照上传 + 容器销毁，代码注释自述 10s+）+ 状态写回，310s 只剩 10 秒余量，会在正常长任务上被 SIGKILL，D6 落空。
 - 时钟：compose 已统一挂载 `/etc/localtime`；集群要求各节点时钟偏差 < 1s，宿主机 NTP 记入运维 checklist（Quartz 集群对时钟敏感，NTP 步进会造成误判接管）。
@@ -222,6 +223,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 ### 6.4 暴露面
 
 - 删除 `docker-new/nginx.conf:178` 的 `location /api/scheduler/`（admin 走 `HARNAX_SCHEDULER_URL: http://scheduler:8084` 内网服务名，不需要 nginx）。
+  - 状态：第二轮 R1 已删除该 location（原位留了一段禁止回加的注释，行号已漂移），本条只剩下面那项未做。
 - scheduler 的 swagger 与 actuator 生产面收窄：`SWAGGER_ENABLED=false`、`management.endpoints.web.exposure` 去掉 `prometheus` 的匿名暴露（现随 8084 匿名可达）。属 F2，本轮只做部署层。
 
 ## 7. 里程碑

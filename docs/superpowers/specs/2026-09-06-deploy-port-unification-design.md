@@ -33,6 +33,9 @@
 | MinIO Console | 19001 | 29001 | 9001 | — |
 | MCP Server | 19002 | 29002 | 9002 | — |
 
+> 注（2026-09-13）：本表是 2026-09-06 那次统一的快照。Scheduler 一行的宿主端口 28084 已按
+> `2026-09-11-scheduler-cluster-design.md` 6.2 取消发布（compose 改 `expose: ["8084"]`，仅容器网络可达），不再是事实来源的一部分。
+
 约束：容器内部端口一律不变，因此所有服务间 URL、数据源 JDBC、健康检查的容器内地址都不需要动。唯一面向宿主的 URL 是 `HARNAX_ROUTER_EXTERNAL_URL`（供沙箱/外部回调），改为 `http://localhost:28081`。
 
 ## 2. nginx 入口（docker-new/nginx.conf）
@@ -82,7 +85,7 @@ http://localhost,https://localhost,http://127.0.0.1,https://127.0.0.1,http://loc
 4. 代理层：`curl -ks -H 'Origin: https://localhost' https://localhost/api/router/monitor/instances` 期望 `200` + 实例 JSON（这条同时证明无端口 Origin 已通过 CORS）。
 5. 反证对照：同一步骤改用 `-H 'Origin: https://evil.example'` 期望回到 `403`（证明白名单是精确生效的，不是被整体放宽为 `*`）。注意**不能**用 `https://localhost:10443` 做反证——它仍匹配保留的 `https://localhost:*` 通配项，预期是 401 而非 403。
 6. 上一轮修的接口不回归：`curl -ks -X POST -H 'Origin: https://localhost' -H 'Content-Type: application/json' -d '{"sessionId":"probe","command":"STATUS"}' https://localhost/api/router/agent/command` 期望 `401`（缺凭证，说明已穿过 CORS 到达 UnifiedAuthFilter）。
-7. 其余端口逐个探活：28080 admin、28081 router、28082 agent、28083 channel、28084 scheduler、29000 MinIO、29002 MCP 有监听；23306 MySQL、26379 Redis 可连。
+7. 其余端口逐个探活：28080 admin、28081 router、28082 agent、28083 channel、29000 MinIO、29002 MCP 有监听；23306 MySQL、26379 Redis 可连。scheduler 已不发布宿主端口（第二轮 R1），改为容器内探活：`docker-compose exec scheduler wget -qO- http://localhost:8084/actuator/health/liveness`。
 8. 旧端口确认已释放：18080 / 18081 / 10443 / 10080 无监听。
 9. 脚本自检（不跑真实部署，避免与第 2 步重复编译）：`bash -n docker-new/build.sh docker-new/deploy-all.sh docker-new/deploy-service.sh` 语法通过；`grep -rn "deploy/local\|docker/docker-compose" docker-new` 无命中，确认无脚本依赖被删目录。
 

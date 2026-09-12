@@ -9,7 +9,7 @@
 | Router | harnax-session-router | 8081 | 会话路由 + Agent 代理 |
 | Agent-Service | harnax-agent-service | 8082 | 智能体执行引擎 |
 | Channel-Service | harnax-channel-service | 8083 | 多通道消息接入 |
-| Scheduler | harnax-scheduler | 8084 | 定时任务调度 |
+| Scheduler | harnax-scheduler | 8084 | 定时任务调度（仅容器网络可达，不对外暴露） |
 | Frontend | harnax-webui | 80 (nginx) | Web 管理后台 |
 | Mobile App | harnax-app | — | 移动端 H5 |
 
@@ -50,7 +50,6 @@ graph TB
     NGINX -->|/api/admin/*| Admin
     NGINX -->|/api/router/*| Router
     NGINX -->|/api/channel/*| Channel
-    NGINX -->|/api/scheduler/*| Scheduler
 
     Router -->|AdminClientService| Admin
     Router -->|AgentServiceClient| Agent
@@ -162,13 +161,15 @@ graph TB
 ### Admin → Scheduler
 
 **客户端类：** `SchedulerClientImpl`（RestClient）
-**认证方式：** 无（内网直连）
+**认证方式：** 无（内网直连 `http://scheduler:8084`，不经 nginx；scheduler 不发布宿主端口）
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
 | POST | `/api/scheduler/tasks/{id}/trigger` | 手动触发任务 |
 | POST | `/api/scheduler/tasks/{id}/start` | 启动定时任务 |
 | POST | `/api/scheduler/tasks/{id}/pause` | 暂停定时任务 |
+| POST | `/api/scheduler/tasks/logs/{logId}/stop` | 停止一次执行（admin 先校验日志可见性再转发） |
+| POST | `/api/scheduler/reload` | 通知实例重载任务（广播到每个实例） |
 
 ---
 
@@ -224,10 +225,12 @@ graph TB
 | `/api/router/` | router:8081 | 常规代理 |
 | `/api/channel/webhook/` | channel-service:8083 | SSE：禁用缓冲，read_timeout 10min |
 | `/api/channel/` | channel-service:8083 | 常规代理 |
-| `/api/scheduler/` | scheduler:8084 | read_timeout 5min |
 | `/api/admin/` | admin:8080 | WebSocket 支持 |
 | `/ai/` | admin:8080 | SSE：禁用缓冲 |
 | `/` | 静态文件 | SPA fallback |
+
+> Scheduler 不在 nginx 路由表里，compose 也不再把它发布到宿主机：它以 `harnax.auth.enabled=false` 运行、自身端点无鉴权，
+> 而任务与执行日志的属主校验在 admin 侧。对外可达即等于绕过这些校验；它只由 admin 经容器网络直连（见「Admin → Scheduler」）。
 
 ---
 

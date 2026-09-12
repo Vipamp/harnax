@@ -234,6 +234,7 @@ curl http://localhost:8080/api/health
 | 端口 | 用途 | 对外暴露 |
 |------|------|---------|
 | 8080 | HTTP API | 集群模式下仅 nginx 可访问，不直接对外 |
+| 8084 | scheduler（admin 转发任务调度指令的下游） | 不对外暴露：nginx 无 `/api/scheduler/` 路由、`docker-compose.yml` 也不发布宿主端口，仅容器网络 `http://scheduler:8084` 可达 |
 
 ---
 

@@ -294,6 +294,8 @@ QRTZ_TRIGGERS.NEXT_FIRE_TIME 到期
 
 必须记录在案的事实：`AuthAutoConfiguration.kt:41-54` 的 `unifiedAuthFilter` bean 带 `@ConditionalOnProperty(harnax.auth.enabled, havingValue="true", matchIfMissing=true)`，scheduler 显式写了 `false` → **这个 filter 根本没被创建**，不是"创建了但放行"。而 `SchedulerClientImpl.kt:35` 的注释"The scheduler runs UnifiedAuthFilter"与事实相反。同时 `docker-compose.yml:293-294` 把 28084 直接发布到宿主机，`nginx.conf:178-192` 的 `/api/scheduler/` 无任何访问控制，`/actuator/prometheus` 与 `/swagger-ui.html` 匿名可达。日志接口又是 `SELECT *` 全文下发 `prompt`/`response`（无脱敏）。这些是本轮的部署层收紧项与第 13 节的 fast-follow 清单。
 
+> 状态更新（第二轮 R1）：上面两条网络事实已关闭——`docker-compose.yml` 去掉 `28084:8084` 宿主映射、改 `expose: ["8084"]`，`nginx.conf` 的 `location /api/scheduler/` 整段删除，scheduler 只在容器网络 `http://scheduler:8084` 可达。仍未关闭的是 `/actuator/prometheus`、`/swagger-ui.html` 的匿名可达与 scheduler 侧自鉴权（internal-token 拦截器 / `harnax.auth.enabled`），属 S3 与 F2。
+
 另外要清楚：`UnifiedAuthFilter` 即便打开也**验不了用户的登录 JWT**——它用 `harnax.auth.internal.shared-secret` 验签，而 admin 签用户 token 用的是另一个 key `jwt.secret`（`InternalTokenProvider.kt:59-66` 的注释明确区分了两者）。仓库内唯一的服务自鉴终端用户范式是 session-router 的 `X-Api-Key` + `RemoteApiKeyStore`（回源 admin 校验 + Caffeine 缓存）+ `SessionAccessGuard` 的手写租户判断。走那条路要给 scheduler 复刻一遍，并让三个客户端改发送的凭证——正是第 10 节 B 方案要避开的成本。
 
 ## 9. 可观测性

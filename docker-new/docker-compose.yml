@@ -290,8 +290,12 @@ services:
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # JVM Configuration
       JAVA_OPTS: -Xms128m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication
-    ports:
-      - "28084:8084"
+    # Container network only: the scheduler runs with harnax.auth.enabled=false, so publishing 8084
+    # would hand out its write endpoints (/tasks/{id}/pause, /reload, /tasks/logs/{id}/stop) to anyone
+    # who can reach the host, bypassing the owner checks admin applies before it forwards.
+    # admin reaches it through http://scheduler:8084 on harnax-network.
+    expose:
+      - "8084"
     volumes:
       - scheduler-logs:/app/logs
       - /etc/localtime:/etc/localtime:ro
