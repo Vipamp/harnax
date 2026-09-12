@@ -29,15 +29,18 @@
       easily (URLs, exports, the log table on screen), so without this filter anyone who learned an id
       could interrupt somebody else's run. A row that exists but is not the caller's answers exactly
       like a missing one, so the endpoint cannot be probed for other people's log ids.
+
+      Deliberately no tenant predicate: this has to stay as wide as the task reads it mirrors
+      (AgentTaskMapper.xml has none either), and agent_task.tenant_id is only a snapshot of the tenant
+      that was active when the task was created. Narrowing here would be stricter than the task list,
+      and an owner who simply switched tenants would lose sight of their own executions and be unable
+      to stop them.
     -->
     <select id="selectVisibleById" resultMap="AgentTaskLogResultMap">
         SELECT l.* FROM agent_task_log l
         JOIN agent_task t ON t.id = l.task_id
             AND t.active = 1
             AND (t.is_public = 1 OR t.creator = #{currentUsername})
-        <if test="tenantId != null">
-            AND t.tenant_id = #{tenantId}
-        </if>
         WHERE l.id = #{id}
     </select>
 
@@ -98,15 +101,16 @@
       repeats prompt/response/error_info verbatim, so filtering on the log columns alone let anyone who
       guessed a task id read another user's task traffic. The join also drops logs whose task was deleted
       (active = 0), which the task list no longer shows either.
+
+      The creator/public rule is the whole gate; no tenant predicate belongs here. tenant_id is a
+      creation-time snapshot and the task reads carry no tenant condition, so narrowing by tenant would
+      show a task in the list while its own execution logs came back empty.
     -->
     <select id="selectLogList" resultMap="AgentTaskLogResultMap">
         SELECT l.* FROM agent_task_log l
         JOIN agent_task t ON t.id = l.task_id
             AND t.active = 1
             AND (t.is_public = 1 OR t.creator = #{currentUsername})
-        <if test="tenantId != null">
-            AND t.tenant_id = #{tenantId}
-        </if>
         WHERE 1=1
         <if test="taskId != null">
             AND l.task_id = #{taskId}

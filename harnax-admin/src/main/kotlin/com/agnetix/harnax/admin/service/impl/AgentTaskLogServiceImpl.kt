@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentTaskLogResponse
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.service.AgentTaskLogService
@@ -50,11 +49,10 @@ class AgentTaskLogServiceImpl(
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<AgentTaskLog>(safePageNum, safePageSize)
         // A log is only readable through a task the caller may see; the join in selectLogList enforces
-        // it, and this is the only place that learns who is asking.
-        // The tenant is forwarded as it is (null when the request carried no X-Tenant-ID) rather than
-        // defaulted to 1: agent_task rows are stamped `TenantContext.getTenantId() ?: 1` on create, so a
-        // fabricated id would have hidden an owner's own logs behind a tenant they never chose. The
-        // creator/public rule is what closes the cross-owner read; this only narrows it further.
+        // it, and this is the one place that learns who is asking. No tenant is forwarded: the gate is
+        // the creator/public rule, which is exactly what the task list applies. agent_task.tenant_id is
+        // only the snapshot of the tenant active at creation time, so narrowing the log read by the
+        // caller's current tenant would leave a task listed while its own execution logs come back empty.
         return Page.fromPageInfo(
             agentTaskLogMapper.selectLogList(
                 taskId,
@@ -64,7 +62,6 @@ class AgentTaskLogServiceImpl(
                 startTimeTo,
                 keyword,
                 UserContextUtil.getCurrentUsername(jwtUtil),
-                TenantContext.getTenantId(),
             ),
         )
     }

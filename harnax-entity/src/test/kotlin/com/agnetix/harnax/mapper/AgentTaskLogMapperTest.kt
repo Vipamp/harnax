@@ -34,6 +34,12 @@ open class AgentTaskLogMapperTest {
         private const val OWNER = "admin"
         private const val TENANT = 1L
 
+        /**
+         * Used only by the R2 cases: a task stamped with this tenant still belongs to its creator, and
+         * the log reads must not narrow by tenant (the task reads do not).
+         */
+        private const val OTHER_TENANT = 2L
+
         @Container
         val mysqlContainer = MySQLContainer("mysql:8.0")
             .withDatabaseName("harnax_test")
@@ -240,7 +246,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertEquals(1L, it.taskId) }
@@ -257,7 +262,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -277,7 +281,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertTrue(it.taskName.contains("Daily")) }
@@ -294,7 +297,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -316,7 +318,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = "2026-07-01 23:59:59",
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -336,7 +337,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = "2026-07-02 23:59:59",
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             // 应该匹配 id=1 (07-01) 和 id=2 (07-02)
@@ -354,7 +354,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = "breaking",
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertTrue(logs.any { it.prompt.contains("breaking", ignoreCase = true) })
@@ -371,7 +370,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = "Weekly report content",
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(4L, logs[0].id)
@@ -388,7 +386,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = "Connection timeout",
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(3L, logs[0].id)
@@ -405,7 +402,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = "2026-07-31 23:59:59",
                 keyword = "summary",
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -428,7 +424,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = "2030-12-31 23:59:59",
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isEmpty())
         }
@@ -444,7 +439,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = "zzzznonexistentkeyword",
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.isEmpty())
         }
@@ -460,7 +454,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = OWNER,
-                tenantId = TENANT,
             )
             assertTrue(logs.size >= 2)
             for (i in 0 until logs.size - 1) {
@@ -486,7 +479,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = "bob",
-                tenantId = TENANT,
             )
             assertTrue(asStranger.isEmpty(), "非属主不应读到 ${log.id} 的 prompt/response")
 
@@ -499,7 +491,6 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = "alice",
-                tenantId = TENANT,
             )
             assertEquals(listOf(log.id), asOwner.map { it.id })
         }
@@ -518,9 +509,47 @@ open class AgentTaskLogMapperTest {
                 startTimeTo = null,
                 keyword = null,
                 currentUsername = "bob",
-                tenantId = TENANT,
             )
             assertEquals(listOf(log.id), asStranger.map { it.id })
+        }
+
+        /**
+         * R2: `agent_task.tenant_id` is only the snapshot of the tenant that happened to be active when
+         * the task was created, and the task reads carry no tenant condition at all (the automatic tenant
+         * interceptor is disabled). A tenant filter on the log read was therefore *stricter* than the
+         * task list: the task stayed visible while its own logs came back empty. The owner must read
+         * across tenants, exactly like the task list lets them see the task.
+         */
+        @Test
+        @DisplayName("selectLogList - 属主跨租户仍读到自己任务的日志（与任务列表同口径）")
+        fun `selectLogList should still return the owner logs of a task created under another tenant`() {
+            val task = insertTask(creator = "alice", isPublic = 0, tenantId = OTHER_TENANT)
+            val log = insertLogOf(task.id)
+
+            val logs = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "alice",
+            )
+
+            assertEquals(listOf(log.id), logs.map { it.id }, "属主不应因为任务建在别的租户而读不到自己的日志")
+            // The prompt/response still only reaches the owner: dropping the tenant filter must not have
+            // dropped the creator gate.
+            assertTrue(
+                agentTaskLogMapper.selectLogList(
+                    taskId = task.id,
+                    taskName = null,
+                    status = null,
+                    startTimeFrom = null,
+                    startTimeTo = null,
+                    keyword = null,
+                    currentUsername = "bob",
+                ).isEmpty(),
+            )
         }
     }
 
@@ -540,11 +569,11 @@ open class AgentTaskLogMapperTest {
             val log = insertLogOf(task.id)
 
             kotlin.test.assertNull(
-                agentTaskLogMapper.selectVisibleById(log.id, "bob", TENANT),
+                agentTaskLogMapper.selectVisibleById(log.id, "bob"),
                 "非属主不应拿到这条可以被拿去停止执行的日志",
             )
             // Same row, same call, only the caller differs: visibility is what blocks bob.
-            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "alice", TENANT)?.id)
+            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "alice")?.id)
         }
 
         @Test
@@ -553,7 +582,27 @@ open class AgentTaskLogMapperTest {
             val task = insertTask(creator = "alice", isPublic = 1)
             val log = insertLogOf(task.id)
 
-            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "bob", TENANT)?.id)
+            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "bob")?.id)
+        }
+
+        /**
+         * This read is the stop gate, so a tenant condition here would have made it a silent
+         * "not yours": create the task under another tenant, come back as its owner and the stop is
+         * rejected for their own execution. The owner must still get the row.
+         */
+        @Test
+        @DisplayName("selectVisibleById - 属主跨租户仍读得到，因而仍停得掉自己的执行")
+        fun `selectVisibleById should still return the owner log of a task created under another tenant`() {
+            val task = insertTask(creator = "alice", isPublic = 0, tenantId = OTHER_TENANT)
+            val log = insertLogOf(task.id)
+
+            assertEquals(
+                log.id,
+                agentTaskLogMapper.selectVisibleById(log.id, "alice")?.id,
+                "跨租户的属主必须停得掉自己的执行，与任务列表口径一致",
+            )
+            // The creator gate is untouched: bob still cannot reach it.
+            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "bob"))
         }
 
         /**
@@ -567,17 +616,18 @@ open class AgentTaskLogMapperTest {
             val log = insertLogOf(task.id)
             assertEquals(1, agentTaskMapper.deleteById(task.id, "alice"))
 
-            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "alice", TENANT))
+            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "alice"))
         }
     }
 
     private fun insertTask(
         creator: String,
         isPublic: Int,
+        tenantId: Long = TENANT,
     ): AgentTask {
         val task = AgentTask().apply {
             name = "visibility-$creator-$isPublic-${System.nanoTime()}"
-            tenantId = TENANT
+            this.tenantId = tenantId
             agentId = 100
             agentName = "News Agent"
             prompt = "Summarize today's news"

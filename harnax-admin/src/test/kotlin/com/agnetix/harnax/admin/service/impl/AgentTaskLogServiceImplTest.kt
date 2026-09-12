@@ -19,7 +19,7 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
-import org.mockito.kotlin.nullableArgumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
@@ -254,9 +254,9 @@ class AgentTaskLogServiceImplTest {
     }
 
     /**
-     * The pass-through cases below run without a TenantContext, which is why the tenant argument is
-     * expected as `null`: the service forwards the context verbatim instead of defaulting it, so the
-     * SQL keeps the visibility rule and skips the tenant narrowing.
+     * The log read carries no tenant argument (R2): the visibility gate is the caller's username, applied
+     * through the owning task, exactly like the task list. The pass-through cases below therefore pin the
+     * seven arguments the mapper actually takes.
      */
     @Nested
     @DisplayName("Page Query Tests")
@@ -272,7 +272,6 @@ class AgentTaskLogServiceImplTest {
                     anyOrNull(),
                     anyOrNull(),
                     any(),
-                    anyOrNull(),
                 ),
             ).thenReturn(emptyList())
         }
@@ -284,7 +283,7 @@ class AgentTaskLogServiceImplTest {
             agentTaskLogService.page(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", 1, 10)
 
             verify(agentTaskLogMapper)
-                .selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", "admin", null)
+                .selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", "admin")
         }
 
         @Test
@@ -293,7 +292,7 @@ class AgentTaskLogServiceImplTest {
 
             agentTaskLogService.page(1L, null, null, null, null, null, 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null, "admin", null)
+            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null, "admin")
         }
 
         @Test
@@ -303,7 +302,7 @@ class AgentTaskLogServiceImplTest {
             agentTaskLogService.page(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, 1, 10)
 
             verify(agentTaskLogMapper)
-                .selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, "admin", null)
+                .selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, "admin")
         }
 
         @Test
@@ -312,24 +311,26 @@ class AgentTaskLogServiceImplTest {
 
             agentTaskLogService.page(null, null, null, null, null, "error", 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error", "admin", null)
+            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error", "admin")
         }
 
         /**
          * The visibility rule lives in the SQL join, so the one thing this service can get wrong is
-         * failing to tell the mapper who is asking. The two identity arguments are captured rather than
+         * failing to tell the mapper who is asking. The username is therefore captured rather than
          * hard-coded, so the assertion reads back what the call actually carried.
+         *
+         * The second half is the R2 regression guard: a `TenantContext` was exactly what made this read
+         * stricter than the task list, so running it with and without one must produce the *same* call.
          */
         @Test
-        fun `page should scope the query to the current user and tenant`() {
-            TenantContext.setTenantId(7L)
+        fun `page should scope the query to the caller and ignore the request tenant`() {
             `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("alice")
             givenEmptyLogList()
 
+            TenantContext.setTenantId(7L)
             agentTaskLogService.page(null, null, null, null, null, null, 1, 10)
 
             val username = argumentCaptor<String>()
-            val tenantId = nullableArgumentCaptor<Long>()
             verify(agentTaskLogMapper)
                 .selectLogList(
                     anyOrNull(),
@@ -339,10 +340,46 @@ class AgentTaskLogServiceImplTest {
                     anyOrNull(),
                     anyOrNull(),
                     username.capture(),
-                    tenantId.capture(),
                 )
             assertEquals("alice", username.firstValue)
-            assertEquals(7L, tenantId.firstValue)
+
+            // Same request, no tenant on the context at all: nothing about the query may change.
+            TenantContext.clear()
+            agentTaskLogService.page(null, null, null, null, null, null, 1, 10)
+
+            verify(agentTaskLogMapper, times(2))
+                .selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    eq("alice"),
+                )
+        }
+
+        /**
+         * The mapper contract must not grow a tenant slot back: with the parameter gone there is no way
+         * to pass one, which is the point of R2 (a caller passing `null` would have left a dead argument
+         * in the interface). Runs without a database, so it is the guard that survives on a machine with
+         * Docker off.
+         */
+        @Test
+        fun `the log read contract carries no tenant parameter`() {
+            val logList = AgentTaskLogMapper::class.java.methods.first { it.name == "selectLogList" }
+            assertEquals(
+                7,
+                logList.parameterCount,
+                "selectLogList 应为 taskId/taskName/status/startFrom/startTo/keyword/currentUsername，不得再有 tenantId",
+            )
+
+            val visibleById = AgentTaskLogMapper::class.java.methods.first { it.name == "selectVisibleById" }
+            assertEquals(
+                2,
+                visibleById.parameterCount,
+                "selectVisibleById 应为 id/currentUsername，不得再有 tenantId",
+            )
         }
     }
 }

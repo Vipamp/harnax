@@ -202,9 +202,13 @@ class AgentTaskServiceImpl(
      * [AgentTaskLogMapper.selectVisibleById] applies the same rule the execution-log list read uses: the
      * row is only reachable through a task the caller may see. Answering the not-found error for "exists
      * but is not yours" is on purpose; a distinct "forbidden" would turn this endpoint into an id probe.
+     *
+     * The gate is the caller's username and nothing else — no tenant. Tenant narrowing would be
+     * stricter than the task reads (which have none), and an owner who switched tenants would then be
+     * unable to stop their own running execution.
      */
     override fun stopTask(logId: Long): ResultVo<Void> {
-        agentTaskLogMapper.selectVisibleById(logId, UserContextUtil.getCurrentUsername(jwtUtil), TenantContext.getTenantId())
+        agentTaskLogMapper.selectVisibleById(logId, UserContextUtil.getCurrentUsername(jwtUtil))
             ?: throw BizException("Agent task log not found")
         return schedulerClient.stopTask(logId)
     }

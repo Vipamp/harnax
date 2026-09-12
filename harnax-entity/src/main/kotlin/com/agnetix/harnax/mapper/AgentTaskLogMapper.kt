@@ -27,13 +27,12 @@ interface AgentTaskLogMapper {
      * else's running execution.
      *
      * Deliberately answers null for a row that exists but is not the caller's: the caller must not be
-     * able to probe which ids belong to other users. [tenantId] narrows the same optional way as
-     * [selectLogList] (null = "the request carried no tenant", not "tenant 1").
+     * able to probe which ids belong to other users. The gate is the caller's username alone, with no
+     * tenant argument — same width as the task reads this mirrors; see [selectLogList].
      */
     fun selectVisibleById(
         @Param("id") id: Long,
         @Param("currentUsername") currentUsername: String,
-        @Param("tenantId") tenantId: Long? = null,
     ): AgentTaskLog?
 
     fun insert(log: AgentTaskLog): Int
@@ -70,8 +69,11 @@ interface AgentTaskLogMapper {
      *
      * [currentUsername] has no default on purpose: the visibility rule fails closed to "public rows
      * only" when it is missing, which is not a state any user-facing caller should be able to reach by
-     * accident. [tenantId] narrows further when the caller knows the tenant (nullable, like the other
-     * list queries in this module).
+     * accident. That rule is the whole gate and carries no tenant argument on purpose — `tenant_id` is
+     * a creation-time snapshot, the automatic tenant interceptor in this repository is a no-op, and the
+     * task reads have no tenant condition either. Filtering logs by tenant would therefore be stricter
+     * than the task list: a task stays listed while its own logs go empty as soon as the owner switches
+     * tenant, and the stop path then rejects their own execution.
      */
     fun selectLogList(
         @Param("taskId") taskId: Long?,
@@ -81,7 +83,6 @@ interface AgentTaskLogMapper {
         @Param("startTimeTo") startTimeTo: String?,
         @Param("keyword") keyword: String?,
         @Param("currentUsername") currentUsername: String,
-        @Param("tenantId") tenantId: Long? = null,
     ): List<AgentTaskLog>
 
     fun selectByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>

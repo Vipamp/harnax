@@ -26,7 +26,6 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
-import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
@@ -647,7 +646,7 @@ class AgentTaskServiceImplTest {
         @Test
         fun `stopTask refuses a log whose task the caller cannot see and never forwards it`() {
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(eq(99L), any(), anyOrNull())).thenReturn(null)
+            `when`(agentTaskLogMapper.selectVisibleById(eq(99L), any())).thenReturn(null)
 
             val error = assertThrows<BizException> { service.stopTask(99L) }
 
@@ -663,7 +662,7 @@ class AgentTaskServiceImplTest {
         @Test
         fun `stopTask forwards a log the caller is allowed to see`() {
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin", null)).thenReturn(testLog(55L))
+            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin")).thenReturn(testLog(55L))
             `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
 
             val result = service.stopTask(55L)
@@ -673,19 +672,23 @@ class AgentTaskServiceImplTest {
         }
 
         /**
-         * The gate is only as good as the identity it queries with, so pin that the caller and the
-         * request tenant actually reach the mapper instead of a hardcoded name.
+         * The gate is only as good as the identity it queries with, so pin that the caller reaches the
+         * mapper. R2 is the other half of that: the request tenant must *not* participate, otherwise an
+         * owner who switched tenants gets a not-found for their own running execution and can no longer
+         * stop it — while the task itself is still listed for them.
          */
         @Test
-        fun `stopTask gates on the current user and the request tenant`() {
+        fun `stopTask gates on the caller and not on the request tenant`() {
             TenantContext.setTenantId(7L)
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin", 7L)).thenReturn(testLog(55L))
+            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin")).thenReturn(testLog(55L))
             `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
 
-            service.stopTask(55L)
+            val result = service.stopTask(55L)
 
-            verify(agentTaskLogMapper).selectVisibleById(55L, "admin", 7L)
+            assertEquals(200, result.code, "带着租户上下文的属主必须仍能停止自己的执行")
+            verify(agentTaskLogMapper).selectVisibleById(55L, "admin")
+            verify(schedulerClient).stopTask(55L)
         }
 
         @AfterEach
