@@ -4,14 +4,9 @@ import { createAgentTask, updateAgentTask, getAvailableAgents } from '@/services
 import { useIntl } from '@umijs/max';
 import { ScheduleOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
+import { CODE_SCHEDULER_SYNC_FAILED } from '../constants';
 
 const { TextArea } = Input;
-
-/**
- * 对应后端 `AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED`：数据已经写库，只是没有任何 scheduler 实例
- * 确认重载成功。这里重复声明而不是从列表页导入，是因为列表页已经导入了本表单组件，反向导入会成环。
- */
-const CODE_SCHEDULER_SYNC_FAILED = 40902;
 
 interface TaskFormProps {
   visible: boolean;

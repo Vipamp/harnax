@@ -13,12 +13,7 @@ import {
 } from '@/services/ant-design-pro/agentTask';
 import TaskForm from './components/TaskForm';
 import TaskLogModal from './components/TaskLogModal';
-
-/**
- * 对应后端 `AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED`：数据已经提交，只是没有任何 scheduler 实例
- * 确认重载成功。用户要的那次操作本身并没有失败。
- */
-const CODE_SCHEDULER_SYNC_FAILED = 40902;
+import { CODE_EXECUTION_IN_PROGRESS, CODE_SCHEDULER_SYNC_FAILED } from './constants';
 
 const AgentTaskManagement: React.FC = () => {
   const intl = useIntl();
@@ -122,7 +117,7 @@ const AgentTaskManagement: React.FC = () => {
               setLogTask(task);
               setLogModalVisible(true);
             }
-          } else if (response.code === 40901) {
+          } else if (response.code === CODE_EXECUTION_IN_PROGRESS) {
             // 全局 errorThrower 改造前不可达：requestErrorConfig.ts 会把任何 code !== 200 的 ResultVo 直接
             // 抛成 BizError，冲突根本走不到"拿到 response 对象"这一步，真正生效的是下面 catch 里的那条判断。
             // 这里保留，是为了将来全局拦截器不再对业务码抛错时，这条路径仍然给出同样的提示。
@@ -135,7 +130,7 @@ const AgentTaskManagement: React.FC = () => {
         } catch (error) {
           // 全局 errorThrower 把非 200 的 ResultVo 变成这个 BizError，业务码在 info 里：
           // 40901 是"已有执行在跑"，不是触发失败。
-          if ((error as any)?.info?.errorCode === 40901) {
+          if ((error as any)?.info?.errorCode === CODE_EXECUTION_IN_PROGRESS) {
             message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
           } else {
             message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
@@ -166,7 +161,10 @@ const AgentTaskManagement: React.FC = () => {
             message.warning(intl.formatMessage({ id: 'pages.agentTask.savedNotReloaded', defaultMessage: 'Saved, but the scheduler did not reload yet. It will catch up on its own.' }));
             loadTasks();
           } else {
-            message.error(intl.formatMessage({ id: 'pages.agentTask.deleteFailed', defaultMessage: 'Failed to delete task' }));
+            // skipErrorHandler 关掉了全局 toast，后端原文只剩这一条路能露出来：越权删除这类失败的原因
+            // （"Only the task creator can delete this task"）全在 error.info.errorMessage 里，
+            // 固定文案会把它抹掉。取不到原文才退回通用提示，与 TaskForm 的写法一致。
+            message.error((error as any)?.info?.errorMessage || intl.formatMessage({ id: 'pages.agentTask.deleteFailed', defaultMessage: 'Failed to delete task' }));
           }
         }
       },
