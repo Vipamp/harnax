@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.springframework.test.util.ReflectionTestUtils
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
 import java.util.concurrent.CountDownLatch
@@ -85,16 +86,41 @@ class DefaultAgentRunnerTest {
     @Nested
     inner class ExecuteCommand {
         @Test
-        fun `executeCommand INTERRUPT cancels active stream`() {
-            val request = CommandAgentRequest(
-                sessionId = "session-1",
-                command = CommandType.INTERRUPT,
+        fun `executeCommand INTERRUPT reports the miss instead of claiming success`() {
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
             )
 
-            val response = runner.executeCommand(request)
+            assertFalse(response.success)
+            assertEquals("No live execution for this session on this instance", response.message)
+        }
+
+        @Test
+        fun `executeCommand INTERRUPT reports the hit and reaches the agent`() {
+            stubAgentCreation()
+            val insideCall = CountDownLatch(1)
+            val letCallFinish = CountDownLatch(1)
+            `when`(agentWrapper.call(any<String>(), any())).thenAnswer {
+                insideCall.countDown()
+                assertTrue(letCallFinish.await(5, TimeUnit.SECONDS), "test must let the call finish")
+                ChatResponse(sessionId = "session-1", content = "done")
+            }
+            val caller = Thread {
+                runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello"))
+            }
+            caller.start()
+            assertTrue(insideCall.await(5, TimeUnit.SECONDS), "the call should have started")
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
+            )
+
+            letCallFinish.countDown()
+            caller.join(5_000)
 
             assertTrue(response.success)
             assertEquals("Stream interrupted", response.message)
+            verify(agentWrapper).interrupt()
         }
 
         @Test
@@ -546,8 +572,21 @@ class DefaultAgentRunnerTest {
     @Nested
     inner class Interrupt {
         @Test
-        fun `interrupt does nothing when no active stream`() {
-            assertDoesNotThrow { runner.interrupt("nonexistent-session") }
+        fun `interrupt reports a miss when neither an agent nor a stream is live`() {
+            // The miss is the whole point: a caller must be able to tell "stopped" from "already gone".
+            assertFalse(runner.interrupt("nonexistent-session"))
+        }
+
+        @Test
+        fun `a blocking call in flight counts as a live execution`() {
+            // activeCalls is what a blocking /chat registers; an interrupt must see it even when the
+            // agent wrapper itself was rebuilt out from under the cache key.
+            ReflectionTestUtils.invokeMethod<Any>(runner, "registerCall", "session-blocking")
+            try {
+                assertTrue(runner.interrupt("session-blocking"))
+            } finally {
+                ReflectionTestUtils.invokeMethod<Any>(runner, "unregisterCall", "session-blocking")
+            }
         }
     }
 

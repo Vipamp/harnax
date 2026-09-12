@@ -44,10 +44,11 @@ interface AgentRunner {
     fun executeCommand(request: CommandAgentRequest): CommandResponse
 
     /**
-     * Interrupt the ongoing stream for a session.
-     * @param sessionId Session identifier
+     * Interrupt whatever is running for this session on **this** instance.
+     * @return false when neither a cached agent nor a live call/stream exists — i.e. nothing was
+     * advanced or stopped by the call. The scheduler turns that into "this execution is over".
      */
-    fun interrupt(sessionId: String)
+    fun interrupt(sessionId: String): Boolean
 
     /**
      * Load historical messages for a session.
