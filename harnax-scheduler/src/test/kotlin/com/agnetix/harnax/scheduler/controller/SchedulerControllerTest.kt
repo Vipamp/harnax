@@ -33,6 +33,18 @@ class SchedulerControllerTest {
     }
 
     @Test
+    fun `a rejected run-once because an execution is in flight answers with the same business code`() {
+        val controller = SchedulerController(schedulerService)
+        // false is only ever returned for a conflict here, so the endpoint must not report it as a
+        // generic 500 the caller cannot distinguish from a real failure.
+        whenever(schedulerService.runTaskOnce(10L)).thenReturn(false)
+
+        val result = controller.runOnce(10L)
+
+        assertEquals(40901, result.code)
+    }
+
+    @Test
     fun `a successful trigger still answers 200`() {
         val controller = SchedulerController(schedulerService)
         whenever(schedulerService.triggerManually(8L)).thenReturn(true)

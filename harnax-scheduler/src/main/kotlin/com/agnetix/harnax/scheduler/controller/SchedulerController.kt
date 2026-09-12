@@ -66,7 +66,9 @@ class SchedulerController(
         if (success) {
             ResultVo.success("Task run once scheduled")
         } else {
-            ResultVo.error("Run once failed")
+            // Same code as trigger: runTaskOnce returns false only for a conflict, so a plain 500
+            // would tell the caller nothing about whether to retry.
+            ResultVo.error(CODE_EXECUTION_IN_PROGRESS, "Task execution is already in progress")
         }
     } catch (e: Exception) {
         log.error("Failed to run task once: id={}", id, e)
