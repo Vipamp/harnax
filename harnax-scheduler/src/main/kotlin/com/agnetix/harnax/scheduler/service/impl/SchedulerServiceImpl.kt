@@ -155,11 +155,15 @@ class SchedulerServiceImpl(
             )
             .build()
 
-        // Clean up any existing job first, then schedule fresh
-        if (scheduler.checkExists(jobKey)) {
-            scheduler.deleteJob(jobKey)
-        }
-        scheduler.scheduleJob(jobDetail, trigger)
+        // Replace the live schedule in one store call: the job detail and the cron trigger above are
+        // fully built (and the cron validated by Quartz) before anything is written, and
+        // scheduleJob(.., replace = true) swaps job + trigger atomically — it also recovers a job row
+        // that is somehow left without a trigger. The previous checkExists -> deleteJob -> scheduleJob
+        // sequence had a window in which the old job was gone and the new write had not happened yet:
+        // anything failing inside it (paused scheduler, job-store error) left the task unscheduled while
+        // agent_task still read task_status=1. `rescheduleJob` is not a usable substitute here — it
+        // answers a boxed null rather than false when the trigger key is unknown.
+        scheduler.scheduleJob(jobDetail, setOf(trigger), true)
         log.info("Scheduled agent task: id={}, name={}, cron={}", task.id, task.name, task.cronExpression)
     }
 

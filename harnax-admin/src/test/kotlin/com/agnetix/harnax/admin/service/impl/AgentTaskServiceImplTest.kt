@@ -576,6 +576,28 @@ class AgentTaskServiceImplTest {
             verify(agentTaskMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
+        /**
+         * Only the scheduler can call a cron expression invalid — harnax-admin has no Quartz dependency
+         * and must not gain one for a string check — so its reason is the caller's only feedback.
+         * Returning `false` here answered "Failed to toggle task status" to someone who had typed an
+         * expression Quartz rejects.
+         */
+        @Test
+        fun `toggleTaskStatus should forward the scheduler reason instead of a bare failure`() {
+            val service = createService()
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(schedulerClient.startTask(1L)).thenReturn(
+                ResultVo.error("Failed to start task: CronExpression '0 0 0 * * *' is invalid."),
+            )
+
+            val error = assertThrows<BizException> { service.toggleTaskStatus(1L, 1) }
+
+            assertTrue(
+                error.message!!.contains("CronExpression '0 0 0 * * *' is invalid"),
+                "the scheduler's own reason has to reach the caller, got: ${error.message}",
+            )
+        }
+
         @Test
         fun `startTask should delegate to schedulerClient`() {
             val service = createService()

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
@@ -30,7 +31,10 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.JobDetail
+import org.quartz.JobKey
 import org.quartz.Scheduler
+import org.quartz.Trigger
 import org.springframework.boot.health.contributor.Status
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import java.time.LocalDateTime
@@ -168,6 +172,39 @@ class SchedulerServiceImplTest {
 
         verify(agentTaskLogMapper, never()).finishExecution(any())
         verify(executionGuard).updateExecutionStatus(eq(TASK_ID), any(), eq(false), any(), any())
+    }
+
+    /**
+     * 修 6: the sequence was `checkExists -> deleteJob -> scheduleJob`, and the spec's own premise is
+     * weaker than the hole — an invalid cron already throws during the build, above. What actually bites
+     * is the gap between the delete and the write: a failed or lost last call (paused scheduler,
+     * job-store error, a reload racing a start) leaves the task with no job at all while agent_task still
+     * says task_status=1, so nothing fires and nothing reports it.
+     */
+    @Test
+    fun `re-scheduling a task that already has a live job replaces it without a delete window`() {
+        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(cronTask(TASK_ID, "0 0 9 * * ?"))
+        whenever(agentTaskMapper.updateStatus(eq(TASK_ID), anyInt())).thenReturn(1)
+        whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
+
+        assertTrue(service.startTask(TASK_ID))
+
+        verify(quartz, never()).deleteJob(any<JobKey>())
+        verify(quartz).scheduleJob(any<JobDetail>(), any<MutableSet<Trigger>>(), eq(true))
+    }
+
+    /** The cron is validated while the trigger is built, so a bad one must not cost the live schedule. */
+    @Test
+    fun `an invalid cron fails the start before the live schedule is touched`() {
+        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(cronTask(TASK_ID, "0 0 0 * * *"))
+        whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
+
+        assertThrows(RuntimeException::class.java) { service.startTask(TASK_ID) }
+
+        verify(quartz, never()).deleteJob(any<JobKey>())
+        verify(quartz, never()).scheduleJob(any<JobDetail>(), any<MutableSet<Trigger>>(), anyBoolean())
+        // The row must not be flipped to running for a definition that never made it into the scheduler.
+        verify(agentTaskMapper, never()).updateStatus(eq(TASK_ID), anyInt())
     }
 
     /**

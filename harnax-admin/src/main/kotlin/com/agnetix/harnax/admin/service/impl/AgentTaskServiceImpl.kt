@@ -176,7 +176,14 @@ class AgentTaskServiceImpl(
         } else {
             schedulerClient.pauseTask(id)
         }
-        return result.code == 200
+        if (result.isSuccess()) {
+            return true
+        }
+        // Forward the scheduler's own reason. Judging a cron expression needs Quartz, which this module
+        // deliberately does not depend on, so the scheduler is the only party that can say *why* a start
+        // failed — answering `false` here used to flatten "CronExpression '0 0 0 * * *' is invalid" to a
+        // bare "Failed to toggle task status".
+        throw BizException(result.code, result.message)
     }
 
     override fun startTask(id: Long): ResultVo<Void> = schedulerClient.startTask(id)
@@ -188,7 +195,13 @@ class AgentTaskServiceImpl(
     override fun stopTask(logId: Long): ResultVo<Void> = schedulerClient.stopTask(logId)
 
     /**
-     * Simple cron expression validation (5 or 6 fields separated by spaces)
+     * Cheap structural pre-check: a cron field count in 5..6. Nothing more.
+     *
+     * It cannot judge an expression. Quartz rejects what this accepts (`0 0 0 * * *`, where
+     * day-of-month and day-of-week conflict) and accepts what this rejects (the 7-field form with a
+     * year), so the authority is the scheduler: it builds the trigger through Quartz on `start` and
+     * [toggleTaskStatus] forwards the reason it answers. Doing the real check here would mean pulling a
+     * Quartz dependency into a module that only proxies scheduling decisions.
      */
     private fun isValidCron(cron: String): Boolean {
         val fields = cron.trim().split("\\s+".toRegex())
