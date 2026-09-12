@@ -87,6 +87,7 @@ class SchedulerStartupLoadTest {
             status,
             metrics,
             jobInventory = jobInventory,
+            executionTimeoutSeconds = 300,
             schedulerEnabled = true,
         )
         // Same inventory the service delegates to, so the health detail goes through the read it uses in

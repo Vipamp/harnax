@@ -36,6 +36,12 @@ class SchedulerServiceImpl(
     private val status: SchedulerStatus,
     private val metrics: SchedulerMetrics,
     private val jobInventory: QuartzJobInventory,
+    /**
+     * The same key [RouterClient] builds its read timeout from, on purpose: how long an execution may
+     * take and how long until a row without one counts as a zombie have to be one number, or the sweep
+     * expires work that is merely slow.
+     */
+    @Value("\${scheduler.timeout-seconds:300}") private val executionTimeoutSeconds: Int,
     @Value("\${scheduler.enabled:true}") private val schedulerEnabled: Boolean,
 ) : SchedulerService {
 
@@ -551,9 +557,9 @@ class SchedulerServiceImpl(
     /** Reclaim executions that outran their own timeout, judged per row in SQL. */
     private fun expireStaleExecutions() {
         try {
-            val expired = agentTaskLogMapper.expireStale(DEFAULT_TIMEOUT_SECONDS)
+            val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
             if (expired > 0) {
-                log.info("Expired {} stale running task log(s)", expired)
+                log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
             }
         } catch (e: Exception) {
             log.warn("Failed to expire stale running task logs: {}", e.message)
@@ -561,8 +567,6 @@ class SchedulerServiceImpl(
     }
 
     companion object {
-        /** Fallback for a task row without a usable timeout of its own */
-        private const val DEFAULT_TIMEOUT_SECONDS = 300
         private const val INITIAL_RETRY_DELAY_MS = 2_000L
         private const val MAX_RETRY_DELAY_MS = 60_000L
         private const val ALERT_AFTER_ATTEMPTS = 5

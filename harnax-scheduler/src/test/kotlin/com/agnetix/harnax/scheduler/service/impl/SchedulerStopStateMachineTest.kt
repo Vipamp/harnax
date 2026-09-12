@@ -69,22 +69,10 @@ class SchedulerStopStateMachineTest {
             it.getArgument<AgentTaskLog>(0).id = 100L
             1
         }
-        val status = SchedulerStatus(schedulerEnabled = true)
-        // The job count lives in QuartzJobInventory now; a real one over the mocked factory keeps this
-        // suite honest, and nothing here scrapes the gauge anyway.
-        val jobInventory = QuartzJobInventory(schedulerFactory)
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), jobInventory)
-        service = SchedulerServiceImpl(
-            schedulerFactory,
-            agentTaskMapper,
-            agentTaskLogMapper,
-            routerClient,
-            executionGuard,
-            status,
-            metrics,
-            jobInventory = jobInventory,
-            schedulerEnabled = true,
-        )
+        // One construction path for the whole suite (see serviceWith); the job count there is a real
+        // QuartzJobInventory over the mocked factory, which keeps this suite honest even though nothing
+        // here scrapes the gauge.
+        service = serviceWith(timeoutSeconds = DEFAULT_TIMEOUT_SECONDS)
     }
 
     @Test
@@ -156,6 +144,22 @@ class SchedulerStopStateMachineTest {
         assertFalse(service.stopTask(14L))
 
         verify(routerClient, never()).sendCommand(any(), any())
+    }
+
+    @Test
+    fun `the expiry baseline follows the configured execution timeout, not a constant`() {
+        whenever(agentTaskMapper.selectAnyById(1L)).thenReturn(task())
+        whenever(agentTaskLogMapper.selectRunningByTaskId(1L)).thenReturn(listOf(log(31L, status = 3, sessionId = "sess-31")))
+        whenever(agentTaskLogMapper.expireStale(any())).thenReturn(0)
+
+        // A sweep on a service configured for 900s must judge zombies against 900s. The trigger itself
+        // is rejected (the row above is live and this task forbids overlap) — only the argument the
+        // sweep got is under test here.
+        serviceWith(timeoutSeconds = 900).triggerManually(1L)
+
+        val captor = argumentCaptor<Int>()
+        verify(agentTaskLogMapper).expireStale(captor.capture())
+        assertEquals(900, captor.firstValue)
     }
 
     @Test
@@ -240,6 +244,23 @@ class SchedulerStopStateMachineTest {
         timeoutSeconds = 300
     }
 
+    /** One construction path for this suite, with the execution timeout left to the caller. */
+    private fun serviceWith(timeoutSeconds: Int): SchedulerServiceImpl {
+        val jobInventory = QuartzJobInventory(schedulerFactory)
+        return SchedulerServiceImpl(
+            schedulerFactory,
+            agentTaskMapper,
+            agentTaskLogMapper,
+            routerClient,
+            executionGuard,
+            SchedulerStatus(schedulerEnabled = true),
+            SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
+            jobInventory = jobInventory,
+            schedulerEnabled = true,
+            executionTimeoutSeconds = timeoutSeconds,
+        )
+    }
+
     private fun log(
         id: Long,
         status: Int,
@@ -251,5 +272,10 @@ class SchedulerStopStateMachineTest {
         this.status = status
         this.sessionId = sessionId
         startTime = LocalDateTime.now().minusSeconds(5)
+    }
+
+    companion object {
+        /** What `scheduler.timeout-seconds` defaults to in application.yml. */
+        private const val DEFAULT_TIMEOUT_SECONDS = 300
     }
 }

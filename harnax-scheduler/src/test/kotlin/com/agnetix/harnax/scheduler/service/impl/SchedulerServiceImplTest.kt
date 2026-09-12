@@ -90,6 +90,7 @@ class SchedulerServiceImplTest {
             status,
             metrics,
             jobInventory = jobInventory,
+            executionTimeoutSeconds = 300,
             schedulerEnabled = true,
         )
     }
