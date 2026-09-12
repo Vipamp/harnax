@@ -39,6 +39,9 @@ interface AgentTaskService {
     /** Manually trigger a one-time task execution via scheduler */
     fun triggerTask(id: Long): ResultVo<Void>
 
-    /** Stop a running task execution via scheduler */
+    /**
+     * Stop a running task execution via scheduler. The log has to belong to a task this caller can see,
+     * and that is checked before anything is forwarded — the scheduler has no user context of its own.
+     */
     fun stopTask(logId: Long): ResultVo<Void>
 }

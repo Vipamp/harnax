@@ -13,6 +13,7 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
@@ -25,6 +26,7 @@ import java.time.LocalDateTime
 @Service
 class AgentTaskServiceImpl(
     private val agentTaskMapper: AgentTaskMapper,
+    private val agentTaskLogMapper: AgentTaskLogMapper,
     private val agentService: AgentService,
     private val jwtUtil: JwtUtil,
     private val schedulerClient: SchedulerClient,
@@ -192,7 +194,20 @@ class AgentTaskServiceImpl(
 
     override fun triggerTask(id: Long): ResultVo<Void> = schedulerClient.triggerTask(id)
 
-    override fun stopTask(logId: Long): ResultVo<Void> = schedulerClient.stopTask(logId)
+    /**
+     * A stop is a write against somebody else's running execution, so the log id alone must not be
+     * enough: it leaks easily (the log table on screen, URLs, exports). The scheduler cannot make this
+     * call — it has no end-user context — so the gate has to sit here, before the forward.
+     *
+     * [AgentTaskLogMapper.selectVisibleById] applies the same rule the execution-log list read uses: the
+     * row is only reachable through a task the caller may see. Answering the not-found error for "exists
+     * but is not yours" is on purpose; a distinct "forbidden" would turn this endpoint into an id probe.
+     */
+    override fun stopTask(logId: Long): ResultVo<Void> {
+        agentTaskLogMapper.selectVisibleById(logId, UserContextUtil.getCurrentUsername(jwtUtil), TenantContext.getTenantId())
+            ?: throw BizException("Agent task log not found")
+        return schedulerClient.stopTask(logId)
+    }
 
     /**
      * Cheap structural pre-check: a cron field count in 5..6. Nothing more.

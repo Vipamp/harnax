@@ -1,5 +1,7 @@
 package com.agnetix.harnax.admin.it
 
+import com.agnetix.harnax.entity.AgentTaskLog
+import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -11,8 +13,10 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.assertEquals
@@ -60,6 +64,9 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
             registry.add("harnax.scheduler.url") { "http://localhost:${scheduler.port}" }
         }
     }
+
+    @Autowired
+    private lateinit var agentTaskLogMapper: AgentTaskLogMapper
 
     private val suffix = Random.nextInt(100000, 999999)
     private val agentName = "it_sched_agent_$suffix"
@@ -116,6 +123,26 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
         return taskId
     }
 
+    /**
+     * The stop proxy refuses a log whose task the caller cannot see, so that case needs a real row that
+     * belongs to the same `admin` principal the request is signed as.
+     */
+    private fun seedRunningLog(taskId: Long): Long {
+        val taskLog = AgentTaskLog().apply {
+            this.taskId = taskId
+            taskName = this@AgentTaskSchedulerIT.taskName
+            prompt = "IT scheduler proxy"
+            status = 3 // running
+            sessionId = "it-sched-$taskId"
+            startTime = LocalDateTime.now()
+            creator = "admin"
+            createTime = LocalDateTime.now()
+        }
+        assertEquals(1, agentTaskLogMapper.insert(taskLog), "the running log row must be created")
+        assertTrue(taskLog.id > 0, "the generated log id should be written back")
+        return taskLog.id
+    }
+
     @Test
     @Order(1)
     fun `start task proxies to scheduler start endpoint`() {
@@ -149,11 +176,21 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
     @Test
     @Order(4)
     fun `stop task log proxies to scheduler stop endpoint`() {
-        assertOk(postJson("/api/admin/agent-tasks/logs/424242/stop"))
+        // The stop endpoint now gates on the log's task visibility before forwarding, so the request has
+        // to carry a real row the caller owns — an invented id is rejected, which is the point.
+        val logId = seedRunningLog(ensureTask())
+        assertOk(postJson("/api/admin/agent-tasks/logs/$logId/stop"))
 
         val request = takeSchedulerRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/tasks/logs/424242/stop", request.path)
+        assertEquals("/api/scheduler/tasks/logs/$logId/stop", request.path)
+
+        // A log id the caller cannot see must be refused *before* the forward, not reported after it.
+        assertErr(postJson("/api/admin/agent-tasks/logs/424242/stop"))
+        assertTrue(
+            scheduler.takeRequest(100, TimeUnit.MILLISECONDS) == null,
+            "an invisible log id must never reach the scheduler",
+        )
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentTaskCreateRequest
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -9,6 +10,8 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.entity.AgentTaskLog
+import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -23,6 +26,7 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
@@ -39,6 +43,9 @@ class AgentTaskServiceImplTest {
 
     @Mock
     private lateinit var agentTaskMapper: AgentTaskMapper
+
+    @Mock
+    private lateinit var agentTaskLogMapper: AgentTaskLogMapper
 
     @Mock
     private lateinit var agentService: AgentService
@@ -631,6 +638,68 @@ class AgentTaskServiceImplTest {
                 service.toggleTaskStatus(1L, 1)
             }
         }
+
+        /**
+         * The stop path is a *write* against someone else's running execution, and the scheduler cannot
+         * police it because it has no end-user context. So the gate has to be here, and it has to run
+         * before the forward: once the id is on the wire the interruption already happened.
+         */
+        @Test
+        fun `stopTask refuses a log whose task the caller cannot see and never forwards it`() {
+            val service = createService()
+            `when`(agentTaskLogMapper.selectVisibleById(eq(99L), any(), anyOrNull())).thenReturn(null)
+
+            val error = assertThrows<BizException> { service.stopTask(99L) }
+
+            assertEquals(400, error.code, "same shape as any other not-found in this domain")
+            // "Exists but is not yours" must not be distinguishable from "does not exist".
+            assertFalse(
+                error.message!!.contains("permission"),
+                "the answer must not leak that the row exists: ${error.message}",
+            )
+            verify(schedulerClient, never()).stopTask(any())
+        }
+
+        @Test
+        fun `stopTask forwards a log the caller is allowed to see`() {
+            val service = createService()
+            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin", null)).thenReturn(testLog(55L))
+            `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
+
+            val result = service.stopTask(55L)
+
+            assertEquals(200, result.code)
+            verify(schedulerClient).stopTask(55L)
+        }
+
+        /**
+         * The gate is only as good as the identity it queries with, so pin that the caller and the
+         * request tenant actually reach the mapper instead of a hardcoded name.
+         */
+        @Test
+        fun `stopTask gates on the current user and the request tenant`() {
+            TenantContext.setTenantId(7L)
+            val service = createService()
+            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin", 7L)).thenReturn(testLog(55L))
+            `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
+
+            service.stopTask(55L)
+
+            verify(agentTaskLogMapper).selectVisibleById(55L, "admin", 7L)
+        }
+
+        @AfterEach
+        fun clearContext() {
+            TenantContext.clear()
+            RequestContextHolder.resetRequestAttributes()
+        }
+
+        private fun testLog(id: Long) = AgentTaskLog().apply {
+            this.id = id
+            taskId = 1L
+            status = 3
+            creator = "admin"
+        }
     }
 
     // ==================== Scheduler Reload Notification ====================
@@ -756,6 +825,7 @@ class AgentTaskServiceImplTest {
 
     private fun createService(): AgentTaskServiceImpl = AgentTaskServiceImpl(
         agentTaskMapper = agentTaskMapper,
+        agentTaskLogMapper = agentTaskLogMapper,
         agentService = agentService,
         jwtUtil = jwtUtil,
         schedulerClient = schedulerClient,

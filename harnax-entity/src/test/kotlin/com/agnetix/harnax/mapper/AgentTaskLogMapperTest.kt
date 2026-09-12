@@ -522,49 +522,96 @@ open class AgentTaskLogMapperTest {
             )
             assertEquals(listOf(log.id), asStranger.map { it.id })
         }
+    }
 
-        private fun insertTask(
-            creator: String,
-            isPublic: Int,
-        ): AgentTask {
-            val task = AgentTask().apply {
-                name = "visibility-$creator-$isPublic-${System.nanoTime()}"
-                tenantId = TENANT
-                agentId = 100
-                agentName = "News Agent"
-                prompt = "Summarize today's news"
-                cronExpression = "0 0 9 * * ?"
-                taskStatus = 0
-                concurrent = 0
-                timeoutSeconds = 300
-                description = "seed"
-                this.isPublic = isPublic
-                this.creator = creator
-                active = 1
-                createTime = LocalDateTime.now()
-                updateTime = LocalDateTime.now()
-            }
-            assertEquals(1, agentTaskMapper.insert(task))
-            assertTrue(task.id > 0)
-            return task
+    /**
+     * The gated single-row read the stop path runs before it forwards anything: a stranger who guesses a
+     * log id must not be able to interrupt another user's execution, and "not yours" has to answer
+     * exactly like "does not exist".
+     */
+    @Nested
+    @DisplayName("selectVisibleById 单条可见性测试")
+    inner class SelectVisibleByIdTests {
+
+        @Test
+        @DisplayName("selectVisibleById - 非属主读不到他人私有任务的日志（与不存在无差别）")
+        fun `selectVisibleById should hide another user private task log`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+
+            kotlin.test.assertNull(
+                agentTaskLogMapper.selectVisibleById(log.id, "bob", TENANT),
+                "非属主不应拿到这条可以被拿去停止执行的日志",
+            )
+            // Same row, same call, only the caller differs: visibility is what blocks bob.
+            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "alice", TENANT)?.id)
         }
 
-        private fun insertLogOf(taskId: Long): AgentTaskLog {
-            val log = AgentTaskLog().apply {
-                this.taskId = taskId
-                taskName = "visibility-seed"
-                prompt = "Private prompt of the task owner"
-                response = "Private response"
-                sessionId = "sess-vis-${System.nanoTime()}"
-                status = 1
-                errorInfo = ""
-                startTime = LocalDateTime.now()
-                endTime = LocalDateTime.now()
-                creator = "alice"
-            }
-            assertEquals(1, agentTaskLogMapper.insert(log))
-            assertTrue(log.id > 0)
-            return log
+        @Test
+        @DisplayName("selectVisibleById - 公开任务的日志他人可读")
+        fun `selectVisibleById should return another user public task log`() {
+            val task = insertTask(creator = "alice", isPublic = 1)
+            val log = insertLogOf(task.id)
+
+            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "bob", TENANT)?.id)
         }
+
+        /**
+         * Same rule as the log list: a task that is gone (`active = 0`) is not visible any more, so its
+         * logs must not stay reachable through their own ids.
+         */
+        @Test
+        @DisplayName("selectVisibleById - 已软删任务的日志读不到")
+        fun `selectVisibleById should drop logs of a deleted task`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+            assertEquals(1, agentTaskMapper.deleteById(task.id, "alice"))
+
+            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "alice", TENANT))
+        }
+    }
+
+    private fun insertTask(
+        creator: String,
+        isPublic: Int,
+    ): AgentTask {
+        val task = AgentTask().apply {
+            name = "visibility-$creator-$isPublic-${System.nanoTime()}"
+            tenantId = TENANT
+            agentId = 100
+            agentName = "News Agent"
+            prompt = "Summarize today's news"
+            cronExpression = "0 0 9 * * ?"
+            taskStatus = 0
+            concurrent = 0
+            timeoutSeconds = 300
+            description = "seed"
+            this.isPublic = isPublic
+            this.creator = creator
+            active = 1
+            createTime = LocalDateTime.now()
+            updateTime = LocalDateTime.now()
+        }
+        assertEquals(1, agentTaskMapper.insert(task))
+        assertTrue(task.id > 0)
+        return task
+    }
+
+    private fun insertLogOf(taskId: Long): AgentTaskLog {
+        val log = AgentTaskLog().apply {
+            this.taskId = taskId
+            taskName = "visibility-seed"
+            prompt = "Private prompt of the task owner"
+            response = "Private response"
+            sessionId = "sess-vis-${System.nanoTime()}"
+            status = 1
+            errorInfo = ""
+            startTime = LocalDateTime.now()
+            endTime = LocalDateTime.now()
+            creator = "alice"
+        }
+        assertEquals(1, agentTaskLogMapper.insert(log))
+        assertTrue(log.id > 0)
+        return log
     }
 }

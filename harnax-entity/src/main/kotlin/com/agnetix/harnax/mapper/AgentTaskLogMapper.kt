@@ -20,6 +20,22 @@ interface AgentTaskLogMapper {
      */
     fun selectById(@Param("id") id: Long): AgentTaskLog?
 
+    /**
+     * Single-row read with the same task-visibility gate as [selectLogList]: a log is only reachable
+     * through a task the caller may see. This is the counterpart [selectById] does not have, and the
+     * stop path needs it — without a gated read, knowing a log id was enough to interrupt somebody
+     * else's running execution.
+     *
+     * Deliberately answers null for a row that exists but is not the caller's: the caller must not be
+     * able to probe which ids belong to other users. [tenantId] narrows the same optional way as
+     * [selectLogList] (null = "the request carried no tenant", not "tenant 1").
+     */
+    fun selectVisibleById(
+        @Param("id") id: Long,
+        @Param("currentUsername") currentUsername: String,
+        @Param("tenantId") tenantId: Long? = null,
+    ): AgentTaskLog?
+
     fun insert(log: AgentTaskLog): Int
 
     /**

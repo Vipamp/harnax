@@ -23,6 +23,24 @@
         SELECT * FROM agent_task_log WHERE id = #{id}
     </select>
 
+    <!--
+      The gated counterpart of selectById, on the same visibility rule as selectLogList (active, and
+      either public or created by the caller). Stopping an execution is a *write*, and a log id leaks
+      easily (URLs, exports, the log table on screen), so without this filter anyone who learned an id
+      could interrupt somebody else's run. A row that exists but is not the caller's answers exactly
+      like a missing one, so the endpoint cannot be probed for other people's log ids.
+    -->
+    <select id="selectVisibleById" resultMap="AgentTaskLogResultMap">
+        SELECT l.* FROM agent_task_log l
+        JOIN agent_task t ON t.id = l.task_id
+            AND t.active = 1
+            AND (t.is_public = 1 OR t.creator = #{currentUsername})
+        <if test="tenantId != null">
+            AND t.tenant_id = #{tenantId}
+        </if>
+        WHERE l.id = #{id}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent_task_log (
             task_id, task_name, prompt, response, session_id,
