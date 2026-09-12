@@ -57,3 +57,9 @@ deploy/local/pids/
 # Sandbox plugins build artifacts
 sandbox-plugins/harnax-cli/bin/harnax
 sandbox-plugins/harnax-cli/SKILL.md
+
+# Isolated git worktrees
+.worktrees/
+
+# Per-plan scratch (progress ledger, task briefs, review packages)
+.superpowers/
