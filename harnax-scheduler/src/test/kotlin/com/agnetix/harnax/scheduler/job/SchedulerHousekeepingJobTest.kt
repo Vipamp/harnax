@@ -3,6 +3,7 @@ package com.agnetix.harnax.scheduler.job
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.junit.jupiter.api.Assertions.assertDoesNotThrow
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -12,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.DisallowConcurrentExecution
 import org.quartz.JobExecutionContext
 import org.quartz.Scheduler
 import org.quartz.SchedulerContext
@@ -91,5 +93,18 @@ class SchedulerHousekeepingJobTest {
         whenever(scheduler.context).thenReturn(SchedulerContext())
 
         assertDoesNotThrow { SchedulerHousekeepingJob().execute(context) }
+    }
+
+    /**
+     * A sweep slower than its own five-minute period must not put a second multi-row DELETE on the same
+     * ranges: the two statements block each other's rows and a deadlock costs both. Same rule as
+     * [AgentTaskNonConcurrentJob] — the annotation only counts on the registered class.
+     */
+    @Test
+    fun `two sweeps never run at once`() {
+        assertTrue(
+            SchedulerHousekeepingJob::class.java.isAnnotationPresent(DisallowConcurrentExecution::class.java),
+            "the sweep has to be registered as non-concurrent",
+        )
     }
 }

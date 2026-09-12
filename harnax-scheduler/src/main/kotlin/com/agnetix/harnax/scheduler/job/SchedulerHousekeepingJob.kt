@@ -2,6 +2,7 @@ package com.agnetix.harnax.scheduler.job
 
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
+import org.quartz.DisallowConcurrentExecution
 import org.quartz.Job
 import org.quartz.JobExecutionContext
 import org.slf4j.LoggerFactory
@@ -21,7 +22,11 @@ import org.slf4j.LoggerFactory
  * A Quartz job rather than a Spring `@Scheduled` method: with the in-memory job store every node sweeps
  * (all four operations are idempotent, the churn is not free), and the moment the JDBC store lands the
  * same registration becomes cluster-singleton without a line changing here.
+ *
+ * A sweep slower than its own period does not get a second one started: the retention DELETEs are
+ * multi-row and would otherwise block each other's ranges, and a deadlock costs both sweeps.
  */
+@DisallowConcurrentExecution
 class SchedulerHousekeepingJob : Job {
 
     override fun execute(context: JobExecutionContext) {
