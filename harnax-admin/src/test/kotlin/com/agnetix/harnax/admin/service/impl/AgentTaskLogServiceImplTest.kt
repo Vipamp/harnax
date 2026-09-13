@@ -75,67 +75,6 @@ class AgentTaskLogServiceImplTest {
     }
 
     @Nested
-    @DisplayName("Save Log Tests")
-    inner class SaveLogTests {
-
-        @Test
-        fun `save should insert log successfully`() {
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            verify(agentTaskLogMapper).insert(testLog)
-        }
-
-        @Test
-        fun `save should return false when insert fails`() {
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(0)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertFalse(result)
-        }
-
-        @Test
-        fun `save should handle success status log`() {
-            testLog.status = 1
-            testLog.errorInfo = ""
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(1, testLog.status)
-        }
-
-        @Test
-        fun `save should handle failure status log`() {
-            testLog.status = 0
-            testLog.errorInfo = "Connection timeout"
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(0, testLog.status)
-            assertEquals("Connection timeout", testLog.errorInfo)
-        }
-
-        @Test
-        fun `save should handle timeout status log`() {
-            testLog.status = 2
-            testLog.errorInfo = "Execution timed out after 300 seconds"
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(2, testLog.status)
-        }
-    }
-
-    @Nested
     @DisplayName("Get Logs By Task ID Tests")
     inner class GetLogsByTaskIdTests {
 

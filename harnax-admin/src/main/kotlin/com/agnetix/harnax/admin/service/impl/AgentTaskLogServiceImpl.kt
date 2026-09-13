@@ -19,11 +19,6 @@ class AgentTaskLogServiceImpl(
 
     private val log = LoggerFactory.getLogger(AgentTaskLogServiceImpl::class.java)
 
-    override fun save(taskLog: AgentTaskLog): Boolean {
-        log.info("Saving agent task log, taskId: {}, status: {}", taskLog.taskId, taskLog.status)
-        return agentTaskLogMapper.insert(taskLog) > 0
-    }
-
     override fun page(
         taskId: Long?,
         taskName: String?,

@@ -12,7 +12,6 @@ import com.agnetix.harnax.entity.dto.CliDetailDto
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
 import com.agnetix.harnax.entity.dto.SkillDetailDto
-import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
 import com.agnetix.harnax.entity.dto.ToolDetailDto
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
@@ -649,32 +648,6 @@ class InternalApiController(
             log.warn("Stored config payload could not be resolved to plain values; delivering an empty object")
         }
         return objectMapper.writeValueAsString(values)
-    }
-
-    // ========================================
-    // Agent Task Spec (legacy, kept for backward compat)
-    // ========================================
-
-    @GetMapping("/agent-tasks/{taskId}/spec")
-    fun getAgentTaskSpec(@PathVariable taskId: Long): ResultVo<TaskAgentSpecResponse> = try {
-        val task = agentTaskMapper.selectAnyById(taskId)
-            ?: return ResultVo.error("Agent task not found: $taskId")
-        val agent = agentMapper.selectById(task.agentId)
-            ?: return ResultVo.error("Agent not found: ${task.agentId}")
-
-        val spec = TaskAgentSpecResponse(
-            agentId = agent.id,
-            agentName = agent.name,
-            description = agent.description,
-            systemPrompt = agent.systemPrompt,
-            modelId = agent.modelId,
-            mcpList = serializeMcpBindings(mcpBindingMapper.selectByAgentId(agent.id)),
-            skillList = skillBindingMapper.selectByAgentId(agent.id).joinToString(",") { it.skillId.toString() },
-        )
-        ResultVo.success(spec)
-    } catch (e: Exception) {
-        log.error("Failed to get agent task spec: taskId={}", taskId, e)
-        ResultVo.error("Failed to get agent task spec: ${e.message}")
     }
 
     // ========================================

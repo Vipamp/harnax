@@ -32,7 +32,8 @@ class SchedulerClientImpl(
         }
         RestClient.builder()
             .requestFactory(factory)
-            // The scheduler runs UnifiedAuthFilter: every call needs a fresh typ=internal bearer.
+            // The scheduler does NOT run our auth filter (harnax.auth.enabled=false there); this
+            // bearer is forward-compat only. S3 adds an internal-token interceptor that validates it.
             .requestInterceptor(AuthRestTemplateInterceptor(tokenProvider))
             .build()
     }

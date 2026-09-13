@@ -3,7 +3,6 @@ package com.agnetix.harnax.agent.service.client
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.SkillDetailDto
-import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
@@ -162,36 +161,5 @@ class AdminApiClient(
             log.warn("[Agent←Admin] Update permission mode failed: sessionId={}, mode={}, msg={}", sessionId, mode, response?.message)
         }
         return success
-    }
-
-    /**
-     * @deprecated Use [getAgentSpec] instead. Kept for backward compatibility.
-     */
-    @Deprecated("Use getAgentSpec(sessionId) instead", ReplaceWith("getAgentSpec(sessionId)"))
-    fun getTaskAgentSpec(taskId: Long): TaskAgentSpecResponse {
-        val url = "$adminUrl/api/admin/internal/agent-tasks/$taskId/spec"
-        log.info("[Agent→Admin] GET {} - fetching task agent spec for taskId={}", url, taskId)
-
-        val responseType = object : ParameterizedTypeReference<ResultVo<TaskAgentSpecResponse>>() {}
-        val response = try {
-            restTemplate.exchange(url, HttpMethod.GET, null, responseType).body
-        } catch (e: Exception) {
-            log.error("[Agent←Admin] Failed to get task agent spec for taskId={}: {}", taskId, e.message, e)
-            throw RuntimeException("Failed to get task agent spec from admin: ${e.message}", e)
-        }
-
-        if (response == null || response.code != 200 || response.data == null) {
-            val errorMsg = response?.message ?: "No response from admin"
-            log.error("[Agent←Admin] Error getting task agent spec for taskId={}: {}", taskId, errorMsg)
-            throw RuntimeException("Admin returned error: $errorMsg")
-        }
-
-        log.info(
-            "[Agent←Admin] Got task agent spec: taskId={}, agentId={}, agentName={}",
-            taskId,
-            response.data!!.agentId,
-            response.data!!.agentName,
-        )
-        return response.data!!
     }
 }

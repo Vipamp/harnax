@@ -6,8 +6,6 @@ import com.agnetix.harnax.entity.AgentTaskLog
 
 interface AgentTaskLogService {
 
-    fun save(log: AgentTaskLog): Boolean
-
     fun page(
         taskId: Long?,
         taskName: String?,
