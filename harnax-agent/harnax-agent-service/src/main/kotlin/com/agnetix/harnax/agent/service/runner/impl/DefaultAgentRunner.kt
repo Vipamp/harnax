@@ -110,6 +110,16 @@ class DefaultAgentRunner(
         pending.release()
     }
 
+    /** Registers a blocking (non-streaming) call as live for this session. */
+    private fun registerCall(sessionId: String) {
+        activeCalls.add(sessionId)
+    }
+
+    private fun unregisterCall(sessionId: String) {
+        activeCalls.remove(sessionId)
+        drainPendingRelease(sessionId)
+    }
+
     override fun process(request: ChatAgentRequest): ChatResponse {
         val sessionId = request.sessionId
         val message = request.message
@@ -118,15 +128,16 @@ class DefaultAgentRunner(
 
         try {
             val userIdentifier = UserIdentifier(request.userId)
-            val agent = getOrCreateAgent(sessionId, userIdentifier)
-            // Registered around the call only, and cleared here rather than in a `doFinally` the
-            // caller never sees: an eviction during the call must defer the release like a stream's.
-            activeCalls.add(sessionId)
+            // Registered before the agent is built, and cleared by the finally below rather than by a
+            // `doFinally` the caller never sees: spec assembly plus sandbox creation takes seconds, and
+            // a session in that window is an execution in flight. An eviction during the whole span must
+            // defer the release like a stream's.
+            registerCall(sessionId)
             return try {
+                val agent = getOrCreateAgent(sessionId, userIdentifier)
                 agent.call(message, imageUrls)
             } finally {
-                activeCalls.remove(sessionId)
-                drainPendingRelease(sessionId)
+                unregisterCall(sessionId)
             }
         } catch (e: Exception) {
             log.error("Error creating agent or calling for session=$sessionId: ${e.message}", e)
@@ -179,8 +190,11 @@ class DefaultAgentRunner(
         log.info("Executing command for session=$sessionId, command=$command, args='$args'")
         return when (command) {
             CommandType.INTERRUPT -> {
-                interrupt(sessionId)
-                CommandResponse.success(sessionId, message = "Stream interrupted")
+                if (interrupt(sessionId)) {
+                    CommandResponse.success(sessionId, message = "Stream interrupted")
+                } else {
+                    CommandResponse.failure(sessionId, "No live execution for this session on this instance")
+                }
             }
             CommandType.CLEAR -> {
                 clearSession(sessionId)
@@ -236,21 +250,30 @@ class DefaultAgentRunner(
         }
     }
 
-    override fun interrupt(sessionId: String) {
-        // 1. Interrupt the agent execution via HarnessAgent.interrupt() ( works both streaming and blocking calls)
+    override fun interrupt(sessionId: String): Boolean {
+        // 1. Interrupt the agent execution via HarnessAgent.interrupt() (works for both streaming and blocking calls)
         val agent = agentCache.getIfPresent(sessionId)?.agent
         agent?.interrupt()
 
-        // 2. Also cancel active stream subscription (belt-and-suspenders for streaming case)
+        // 2. Also cancel active stream subscription (belt-and-suspenders for the streaming case)
         val subscription = activeStreams.remove(sessionId)
-        if (subscription != null) {
-            subscription.cancel()
-            log.info("Interrupted active stream for session=$sessionId")
-        }
+        subscription?.cancel()
 
-        if (agent == null && subscription == null) {
-            log.info("No active agent or stream to interrupt for session=$sessionId")
+        // A cached wrapper is not evidence of a live execution: agentCache is a 30-minute TTL cache, so
+        // it only says this instance once served the session. Counting it as a hit answered a stop
+        // request with "delivered" after the node that owned the run had already gone away, leaving the
+        // execution with no owner and no final status until the reaper labelled it a timeout.
+        val live = subscription != null || activeCalls.contains(sessionId)
+        if (live) {
+            log.info(
+                "Interrupted live execution for session=$sessionId (stream={}, blocking call={})",
+                subscription != null,
+                activeCalls.contains(sessionId),
+            )
+        } else {
+            log.warn("Interrupt requested for session=$sessionId but nothing is live on this instance")
         }
+        return live
     }
 
     override fun loadHistory(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)

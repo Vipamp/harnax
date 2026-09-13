@@ -37,4 +37,12 @@
         DELETE FROM agent_task_execution WHERE create_time &lt; #{beforeTime}
     </delete>
 
+    <!--
+      A status-0 row older than the deadline is a lock whose holder is gone. It must go, or the
+      (task_id, trigger_time) unique key blocks that trigger from ever being re-delivered.
+    -->
+    <delete id="deleteStaleRunning">
+        DELETE FROM agent_task_execution WHERE status = 0 AND create_time &lt; #{beforeTime}
+    </delete>
+
 </mapper>

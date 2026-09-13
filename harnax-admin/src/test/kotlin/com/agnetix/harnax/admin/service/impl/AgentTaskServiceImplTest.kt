@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentTaskCreateRequest
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
@@ -9,7 +10,10 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.entity.AgentTaskLog
+import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -26,6 +30,8 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
@@ -36,6 +42,9 @@ class AgentTaskServiceImplTest {
 
     @Mock
     private lateinit var agentTaskMapper: AgentTaskMapper
+
+    @Mock
+    private lateinit var agentTaskLogMapper: AgentTaskLogMapper
 
     @Mock
     private lateinit var agentService: AgentService
@@ -86,6 +95,8 @@ class AgentTaskServiceImplTest {
 
         `when`(jwtUtil.validateToken(any())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
+        // The write paths now act on the broadcast result, so a bare mock would fail every case.
+        `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.success<Void>())
     }
 
     // ==================== Get Task ====================
@@ -178,6 +189,46 @@ class AgentTaskServiceImplTest {
                 service.createAgentTask(request)
             }
             assertTrue(exception.message!!.contains("Invalid cron"))
+        }
+
+        /**
+         * Quartz's grammar is 6 fields plus an optional year, and the pre-check used to stop at 6 — so the
+         * one form it rejected outright was an expression the scheduler would have run.
+         */
+        @Test
+        fun `createAgentTask accepts the 7-field form with a year`() {
+            `when`(agentTaskMapper.selectByName("New Task")).thenReturn(null)
+            `when`(agentService.getAgent(100L)).thenReturn(testAgent)
+            `when`(agentTaskMapper.insert(any())).thenReturn(1)
+
+            val request = AgentTaskCreateRequest(
+                name = "New Task",
+                agentId = 100L,
+                prompt = "Do something",
+                cronExpression = "0 0 9 * * ? 2027",
+            )
+
+            assertTrue(createService().createAgentTask(request))
+        }
+
+        /** The other end of the same window: a 5-field unix cron is not Quartz, and used to pass here. */
+        @Test
+        fun `createAgentTask rejects a 5-field unix cron that Quartz would refuse`() {
+            `when`(agentTaskMapper.selectByName("New Task")).thenReturn(null)
+
+            val request = AgentTaskCreateRequest(
+                name = "New Task",
+                agentId = 100L,
+                prompt = "Do something",
+                cronExpression = "0 9 * * 1",
+            )
+
+            val service = createService()
+            val exception = assertThrows<BizException> {
+                service.createAgentTask(request)
+            }
+            assertTrue(exception.message!!.contains("Invalid cron"), "got: ${exception.message}")
+            verify(agentTaskMapper, never()).insert(any())
         }
 
         @Test
@@ -571,6 +622,28 @@ class AgentTaskServiceImplTest {
             verify(agentTaskMapper, never()).updateStatus(anyLong(), anyInt())
         }
 
+        /**
+         * Only the scheduler can call a cron expression invalid — harnax-admin has no Quartz dependency
+         * and must not gain one for a string check — so its reason is the caller's only feedback.
+         * Returning `false` here answered "Failed to toggle task status" to someone who had typed an
+         * expression Quartz rejects.
+         */
+        @Test
+        fun `toggleTaskStatus should forward the scheduler reason instead of a bare failure`() {
+            val service = createService()
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(schedulerClient.startTask(1L)).thenReturn(
+                ResultVo.error("Failed to start task: CronExpression '0 0 0 * * *' is invalid."),
+            )
+
+            val error = assertThrows<BizException> { service.toggleTaskStatus(1L, 1) }
+
+            assertTrue(
+                error.message!!.contains("CronExpression '0 0 0 * * *' is invalid"),
+                "the scheduler's own reason has to reach the caller, got: ${error.message}",
+            )
+        }
+
         @Test
         fun `startTask should delegate to schedulerClient`() {
             val service = createService()
@@ -604,12 +677,200 @@ class AgentTaskServiceImplTest {
                 service.toggleTaskStatus(1L, 1)
             }
         }
+
+        /**
+         * The stop path is a *write* against someone else's running execution, and the scheduler cannot
+         * police it because it has no end-user context. So the gate has to be here, and it has to run
+         * before the forward: once the id is on the wire the interruption already happened.
+         */
+        @Test
+        fun `stopTask refuses a log whose task the caller does not own and never forwards it`() {
+            val service = createService()
+            `when`(agentTaskLogMapper.selectOwnedById(eq(99L), any())).thenReturn(null)
+
+            val error = assertThrows<BizException> { service.stopTask(99L) }
+
+            assertEquals(400, error.code, "same shape as any other not-found in this domain")
+            // "Exists but is not yours" must not be distinguishable from "does not exist".
+            assertFalse(
+                error.message!!.contains("permission"),
+                "the answer must not leak that the row exists: ${error.message}",
+            )
+            verify(schedulerClient, never()).stopTask(any())
+        }
+
+        @Test
+        fun `stopTask forwards a log owned by the caller`() {
+            val service = createService()
+            `when`(agentTaskLogMapper.selectOwnedById(55L, "admin")).thenReturn(testLog(55L))
+            `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
+
+            val result = service.stopTask(55L)
+
+            assertEquals(200, result.code)
+            verify(schedulerClient).stopTask(55L)
+        }
+
+        /**
+         * The gate is only as good as the identity it queries with, so pin that the caller reaches the
+         * mapper — and that it is the *only* thing it queries with: the owner-only rule lives in the SQL
+         * (see AgentTaskLogStopGateSqlTest), and here the service must not quietly widen or narrow it.
+         * R2 is the other half of that: the request tenant must *not* participate, otherwise an owner who
+         * switched tenants gets a not-found for their own running execution and can no longer stop it —
+         * while the task itself is still listed for them.
+         */
+        @Test
+        fun `stopTask gates on the caller and not on the request tenant`() {
+            TenantContext.setTenantId(7L)
+            val service = createService()
+            `when`(agentTaskLogMapper.selectOwnedById(55L, "admin")).thenReturn(testLog(55L))
+            `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
+
+            val result = service.stopTask(55L)
+
+            assertEquals(200, result.code, "带着租户上下文的属主必须仍能停止自己的执行")
+            verify(agentTaskLogMapper).selectOwnedById(55L, "admin")
+            verify(schedulerClient).stopTask(55L)
+        }
+
+        @AfterEach
+        fun clearContext() {
+            TenantContext.clear()
+            RequestContextHolder.resetRequestAttributes()
+        }
+
+        private fun testLog(id: Long) = AgentTaskLog().apply {
+            this.id = id
+            taskId = 1L
+            status = 3
+            creator = "admin"
+        }
+    }
+
+    // ==================== Scheduler Reload Notification ====================
+
+    /**
+     * The reload broadcast must leave only from a *committed* transaction: harnax-scheduler is a
+     * separate process on its own connection pool, so a reload issued before the commit reads the
+     * old row and re-registers the old definition — while rolled-back work must not broadcast at all.
+     *
+     * Written against [TransactionSynchronizationManager] directly instead of a Spring context: the
+     * unit test cannot drive a real commit, so it fires the registered callback itself. That is
+     * enough to pin the two properties that matter (defer, and never on rollback) without paying for
+     * a @SpringBootTest per case.
+     */
+    @Nested
+    @DisplayName("Scheduler Reload Notification")
+    inner class SchedulerReloadTests {
+
+        @AfterEach
+        fun clearTransactionSynchronization() {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.clearSynchronization()
+            }
+        }
+
+        @Test
+        fun `update broadcasts nothing while the transaction is open and nothing at all when it rolls back`() {
+            givenUpdateSucceeds()
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            assertTrue(service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt")))
+
+            // Still inside the transaction: broadcasting here is the bug this closes.
+            verify(schedulerClient, never()).reloadTasks()
+
+            val callbacks = TransactionSynchronizationManager.getSynchronizations()
+            assertEquals(1, callbacks.size, "the reload has to be registered as an after-commit callback")
+
+            // Rollback: afterCommit never runs, so the broadcast never runs.
+            callbacks.forEach { it.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK) }
+            verify(schedulerClient, never()).reloadTasks()
+        }
+
+        @Test
+        fun `update broadcasts the reload once the transaction commits`() {
+            givenUpdateSucceeds()
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt"))
+            TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+
+            verify(schedulerClient, times(1)).reloadTasks()
+        }
+
+        @Test
+        fun `delete broadcasts the reload only on commit and never on rollback`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            assertTrue(service.deleteAgentTask(1L))
+            verify(schedulerClient, never()).reloadTasks()
+
+            val callbacks = TransactionSynchronizationManager.getSynchronizations()
+            callbacks.forEach { it.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK) }
+            verify(schedulerClient, never()).reloadTasks()
+
+            callbacks.forEach { it.afterCommit() }
+            verify(schedulerClient, times(1)).reloadTasks()
+        }
+
+        /**
+         * A failed reload after the commit is a *partial* failure: the row is already durable, so the
+         * caller must not be told the edit was lost — but it must not hear "success" either, because
+         * the old schedule is still live. Hence a dedicated business code plus a message that says so.
+         */
+        @Test
+        fun `a reload answered with a non-200 turns the committed update into an explicit sync failure`() {
+            givenUpdateSucceeds()
+            `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.error(500, "scheduler boom"))
+            TransactionSynchronizationManager.initSynchronization()
+
+            val service = createService()
+            service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt"))
+
+            val exception = assertThrows<BizException> {
+                TransactionSynchronizationManager.getSynchronizations().forEach { it.afterCommit() }
+            }
+            assertEquals(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED, exception.code)
+            assertTrue(
+                exception.message!!.contains("saved"),
+                "the caller has to learn the row itself was kept, got: ${exception.message}",
+            )
+            // The write is not undone by the failed broadcast.
+            verify(agentTaskMapper).updateById(any(), eq("admin"))
+        }
+
+        @Test
+        fun `without a transaction the failed reload surfaces from the write itself`() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
+            `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.error(500, "scheduler boom"))
+
+            val service = createService()
+            assertFalse(TransactionSynchronizationManager.isSynchronizationActive())
+            val exception = assertThrows<BizException> {
+                service.deleteAgentTask(1L)
+            }
+            assertEquals(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED, exception.code)
+            assertTrue(exception.message!!.contains("deleted"), "got: ${exception.message}")
+        }
+
+        private fun givenUpdateSucceeds() {
+            `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
+            `when`(agentTaskMapper.updateById(any(), eq("admin"))).thenReturn(1)
+        }
     }
 
     // ==================== Helper ====================
 
     private fun createService(): AgentTaskServiceImpl = AgentTaskServiceImpl(
         agentTaskMapper = agentTaskMapper,
+        agentTaskLogMapper = agentTaskLogMapper,
         agentService = agentService,
         jwtUtil = jwtUtil,
         schedulerClient = schedulerClient,

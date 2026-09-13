@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 
@@ -106,5 +107,105 @@ class SessionAccessGuardTest {
         AuthContextHolder.set(AuthContext(callerId = "user-9", tenantId = 3L))
         stubLookup("web-1", AdminClientService.SessionLookup.Unreachable)
         guard.requireAccessible("web-1")
+    }
+
+    // ==================== Privileged prefixes ====================
+    //
+    // `task-` names a conversation the *server* decides: scheduler mints it, and it does not live in
+    // admin's `session` table. That makes it invisible to the ownership lookup below — which answers
+    // Unknown for it and passes — so the lookup can never be what stops an end user from naming one.
+    // Only a prefix rule decided before the lookup can. See PrivilegedSessionPrefixes for why `chn-`
+    // deliberately is not on that list.
+
+    @Test
+    fun `an end-user caller cannot name a task session`() {
+        AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
+
+        val e = assertThrows(SecurityException::class.java) {
+            guard.requireAccessible("task-7-6f1d0a2e")
+        }
+
+        assertEquals("Privileged session prefix requires an internal caller", e.message)
+        // The lookup could not have helped: admin never heard of this id, so asking it is what used to
+        // turn the forgery into a pass.
+        verifyNoInteractions(sessionInfoClient)
+    }
+
+    @Test
+    fun `an end user reading a channel session is not refused by the prefix rule`() {
+        // The webui channel-admin page reads sandbox status and workspace files of `chn-{uuid}` sessions
+        // using the visitor's own user-bound key, so `userId != null` is what that legitimate traffic
+        // looks like. Refusing it there took a live read path offline.
+        //
+        // `chn-` is not on the privileged list because its id carries no more reach than the caller
+        // already had: it is a UUID, so naming one means already knowing it, unlike `task-{taskId}`
+        // whose id is an enumerating integer. And admin's `/sessions/{id}/info` never answers for a
+        // `chn-` id today, so refusing it bought no verifiable authorisation either — the real
+        // protection is F3-A, extending that lookup to the `channel` table.
+        val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
+        AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
+        // What admin answers for a chn- id while it reads only the session table.
+        stubLookup(sessionId, AdminClientService.SessionLookup.Unknown)
+
+        guard.requireAccessible(sessionId)
+
+        // Reaching the lookup is the point: the prefix rule no longer short-circuits this caller.
+        verify(sessionInfoClient).lookup(sessionId)
+    }
+
+    @Test
+    fun `a channel session still settles by the tenant comparison`() {
+        // Restoring the branch is not restoring a free pass. Once admin can answer for a chn- id —
+        // which is exactly what F3-A sets out to do — an end user must still be denied another
+        // tenant's channel session, the same as for any web- id.
+        val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
+        AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
+        stubLookup(sessionId, AdminClientService.SessionLookup.Found(sessionOf(tenantId = 4L)))
+
+        val e = assertThrows(SecurityException::class.java) {
+            guard.requireAccessible(sessionId)
+        }
+        assertEquals("Session belongs to another tenant", e.message)
+    }
+
+    @Test
+    fun `an end user's own web session still goes through the ownership lookup`() {
+        // The prefix rule is a short list, not a general tightening: everything the session table knows
+        // about must keep routing exactly as before.
+        AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
+        stubLookup("web-1", AdminClientService.SessionLookup.Found(sessionOf(tenantId = 3L)))
+
+        guard.requireAccessible("web-1")
+
+        verify(sessionInfoClient).lookup("web-1")
+    }
+
+    @Test
+    fun `a caller with no end user behind it still opens a task session`() {
+        // Scheduler and channel-service reach the router on a SYSTEM key, whose `userId` is null, and
+        // that is what carries their legitimate task-/chn- traffic. Denying here would stop scheduled
+        // runs — the fix must not become the outage it prevents.
+        AuthContextHolder.set(AuthContext(callerId = "scheduler", userId = null, tenantId = null))
+
+        guard.requireAccessible("task-7-6f1d0a2e")
+
+        verifyNoInteractions(sessionInfoClient)
+    }
+
+    @Test
+    fun `a tenant-bearing service caller is judged on the end user, not on its tenant`() {
+        // The rule keys on `userId`, so a service token that names a tenant still routes its own
+        // sessions and goes on with the ordinary tenant comparison below; pinning this keeps a later
+        // tenant-based rewrite from quietly narrowing the pass to tenant-less callers only.
+        val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
+        AuthContextHolder.set(AuthContext(callerId = "channel-service", userId = null, tenantId = 3L))
+        // What admin answers for a chn- id, since the channel table is not the session table.
+        stubLookup(sessionId, AdminClientService.SessionLookup.Unknown)
+
+        guard.requireAccessible(sessionId)
+
+        // Reaching the lookup is the point: the prefix rule let this caller through to the ordinary
+        // ownership check instead of refusing it.
+        verify(sessionInfoClient).lookup(sessionId)
     }
 }

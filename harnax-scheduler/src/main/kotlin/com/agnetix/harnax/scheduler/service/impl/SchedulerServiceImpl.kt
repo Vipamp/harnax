@@ -5,9 +5,13 @@ import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskJob
+import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
+import com.agnetix.harnax.scheduler.job.SchedulerHousekeepingJob
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
@@ -34,6 +38,13 @@ class SchedulerServiceImpl(
     private val executionGuard: AgentTaskExecutionGuard,
     private val status: SchedulerStatus,
     private val metrics: SchedulerMetrics,
+    private val jobInventory: QuartzJobInventory,
+    /**
+     * The same key [RouterClient] builds its `chat` read timeout from, on purpose: how long an execution
+     * may take and how long until a row without one counts as a zombie have to be one number, or the
+     * sweep expires work that is merely slow.
+     */
+    @Value("\${scheduler.timeout-seconds:300}") private val executionTimeoutSeconds: Int,
     @Value("\${scheduler.enabled:true}") private val schedulerEnabled: Boolean,
 ) : SchedulerService {
 
@@ -53,25 +64,83 @@ class SchedulerServiceImpl(
     @Volatile
     private var shuttingDown = false
 
+    /**
+     * When this process last ran a stale-execution sweep to completion; null means never (or only
+     * failures). Backs the rate limit in [expireStaleExecutionsThrottled]. Monotonic on purpose — a
+     * wall-clock step from an NTP correction would either freeze the window or open it early.
+     * `internal` only so the tests can move the clock back instead of waiting 30 seconds for a green run.
+     */
+    @Volatile
+    internal var lastStaleSweepAtNanos: Long? = null
+
     @PostConstruct
     fun init() {
-        if (!schedulerEnabled) {
-            log.info("Scheduler is disabled on this instance")
-            return
-        }
-
-        // Register beans in scheduler context so Quartz jobs can access them
+        // Register beans in scheduler context so Quartz jobs can access them.
+        //
+        // Deliberately outside the `scheduler.enabled` gate: the housekeeping sweep is registered on every
+        // node (see onApplicationReady) and takes its collaborators out of *this* context, so gating the
+        // registration too would register a job that fires and quietly does nothing — which is precisely
+        // the hole that left a stopped execution's row at status 4 forever on an inert node.
+        //
+        // These are references, not work: with the in-memory job store an inert node holds no user job at
+        // all, because the load below is what puts them in Quartz. When the JDBC store lands (S2) the
+        // enabled check has to move into the fire path as well — a shared store can hand this node a
+        // trigger it never registered itself.
         val schedulerContext = scheduler.context
         schedulerContext["schedulerService"] = this
         schedulerContext["executionGuard"] = executionGuard
+
+        if (!schedulerEnabled) {
+            log.info("Scheduler is disabled on this instance: no task load, zombie reclaim still runs")
+        }
     }
 
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
+        // Sweeping is not scheduling. It touches no user task, it lives in its own Quartz group, and it is
+        // the only reclaim path for a row this node can still write: `stopTask` is deliberately open on a
+        // disabled node (it writes no Quartz object), so without this the 4 it leaves behind would be
+        // unrecoverable here — no load, no fire and no manual run ever calls expireStale on this instance.
+        registerHousekeepingJob()
         if (!schedulerEnabled) {
             return
         }
         loadExecutor.execute { loadTasksWithRetry() }
+    }
+
+    /**
+     * The sweeps have no other caller: until this registration existed, a guard row could only ever be
+     * added and an execution log row never removed at all. Registered before the task load and on the
+     * main thread, because none of it reads the database — the *sweeps* do, five minutes later, by which
+     * time the retry loop may well have brought the database up.
+     *
+     * A repeating trigger rather than a cron: the sweep has no relationship to any user's schedule, and a
+     * cron would make it miss while this instance was down for the very restart that leaves zombies.
+     */
+    private fun registerHousekeepingJob() {
+        try {
+            val jobKey = JobKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP)
+            if (scheduler.checkExists(jobKey)) {
+                log.info("Housekeeping job is already registered, leaving it alone")
+                return
+            }
+            val jobDetail = JobBuilder.newJob(SchedulerHousekeepingJob::class.java)
+                .withIdentity(jobKey)
+                .storeDurably()
+                .build()
+            val trigger = TriggerBuilder.newTrigger()
+                .withIdentity(TriggerKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP))
+                .forJob(jobKey)
+                .startNow()
+                .withSchedule(SimpleScheduleBuilder.simpleSchedule().withIntervalInMinutes(5).repeatForever())
+                .build()
+            scheduler.scheduleJob(jobDetail, trigger)
+            log.info("Registered scheduler housekeeping job (every 5 minutes)")
+        } catch (e: Exception) {
+            // Loud but fatal is the wrong way round here: a node that cannot sweep is degraded, and the
+            // task load that follows is the one that decides whether it schedules anything at all.
+            log.warn("Housekeeping job could not be registered: {}", e.message)
+        }
     }
 
     @PreDestroy
@@ -134,7 +203,7 @@ class SchedulerServiceImpl(
 
         val jobDataMap = JobDataMap()
         jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
+        val jobDetail = JobBuilder.newJob(jobClassFor(task))
             .withIdentity(jobKey)
             .usingJobData(jobDataMap)
             .storeDurably()
@@ -155,11 +224,15 @@ class SchedulerServiceImpl(
             )
             .build()
 
-        // Clean up any existing job first, then schedule fresh
-        if (scheduler.checkExists(jobKey)) {
-            scheduler.deleteJob(jobKey)
-        }
-        scheduler.scheduleJob(jobDetail, trigger)
+        // Replace the live schedule in one store call: the job detail and the cron trigger above are
+        // fully built (and the cron validated by Quartz) before anything is written, and
+        // scheduleJob(.., replace = true) swaps job + trigger atomically — it also recovers a job row
+        // that is somehow left without a trigger. The previous checkExists -> deleteJob -> scheduleJob
+        // sequence had a window in which the old job was gone and the new write had not happened yet:
+        // anything failing inside it (paused scheduler, job-store error) left the task unscheduled while
+        // agent_task still read task_status=1. `rescheduleJob` is not a usable substitute here — it
+        // answers a boxed null rather than false when the trigger key is unknown.
+        scheduler.scheduleJob(jobDetail, setOf(trigger), true)
         log.info("Scheduled agent task: id={}, name={}, cron={}", task.id, task.name, task.cronExpression)
     }
 
@@ -194,12 +267,14 @@ class SchedulerServiceImpl(
         log.info("Found {} running agent tasks", activeTasks.size)
 
         var scheduled = 0
+        val failedIds = mutableListOf<Long>()
         for (task in activeTasks) {
             try {
                 scheduleTask(task)
                 scheduled++
                 log.info("Loaded agent task to scheduler: id={}, name={}", task.id, task.name)
             } catch (e: Exception) {
+                failedIds += task.id
                 log.error("Failed to load agent task: id={}, name={}, error={}", task.id, task.name, e.message, e)
             }
         }
@@ -212,9 +287,13 @@ class SchedulerServiceImpl(
             return false
         }
 
-        status.recordLoadSuccess(scheduled)
-        metrics.recordLoadAttempt(success = true)
-        return scheduled == activeTasks.size
+        // Registering *some* of them is not a success either: the failed tasks simply never fire on
+        // this instance. The drift has to stay in lastLoadError (with the ids, which are what an
+        // operator can act on) so the health check keeps saying DOWN and /reload keeps saying no.
+        val drift = describeDrift(failedIds, activeTasks.size)
+        status.recordLoadSuccess(scheduled, drift)
+        metrics.recordLoadAttempt(success = drift == null)
+        return drift == null
     }
 
     override fun startTask(id: Long): Boolean {
@@ -240,18 +319,17 @@ class SchedulerServiceImpl(
         val task = agentTaskMapper.selectAnyById(id)
             ?: throw RuntimeException("Agent task not found: $id")
 
-        // Guard: reject if task already has an active running execution
-        val hasActiveExecution = hasActiveRunningLog(task.id)
-        if (hasActiveExecution) {
-            log.warn("Task {} has an active running execution, rejecting runOnce", task.id)
-            throw RuntimeException("Task is already running, please wait for it to complete")
+        // Guard: an in-flight execution only blocks a task that forbids overlap (blocksManualRun).
+        if (blocksManualRun(task)) {
+            log.warn("Task {} has an active running execution and allows no overlap, rejecting runOnce", task.id)
+            return false
         }
 
         val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
         val jobKey = JobKey("AgentTask_${task.id}_ONCE_$uniqueId", "AgentTaskGroup_ONCE")
         val jobDataMap = JobDataMap()
         jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(AgentTaskJob::class.java)
+        val jobDetail = JobBuilder.newJob(jobClassFor(task))
             .withIdentity(jobKey)
             .usingJobData(jobDataMap)
             .build()
@@ -271,11 +349,13 @@ class SchedulerServiceImpl(
 
         val triggerTime = LocalDateTime.now()
 
-        // Guard: check for actively running logs, auto-expire stale ones (from previous crashes/restarts)
-        val hasActiveExecution = hasActiveRunningLog(task.id)
-        if (hasActiveExecution) {
-            log.warn("Task {} has an active running execution, rejecting trigger", task.id)
-            throw RuntimeException("Task is already running, please wait for it to complete")
+        // Guard: an execution still in flight only counts as a conflict for a task that forbids
+        // overlap. A zombie left by a dead node cannot block the trigger forever either — the read
+        // reclaims it, rate limited per node (hasActiveRunningExecution), and housekeeping sweeps every
+        // five minutes regardless.
+        if (blocksManualRun(task)) {
+            log.warn("Task {} has an active running execution and allows no overlap, rejecting trigger", task.id)
+            return false
         }
 
         // Multi-instance guard (synchronous check)
@@ -286,9 +366,21 @@ class SchedulerServiceImpl(
 
         log.info("Manually triggering agent task: id={}, name={}", task.id, task.name)
 
-        // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation)
+        // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation).
+        // Same shape as AgentTaskJob: an exception escaping here would die with the thread — the caller
+        // has already been answered "Task triggered", so the log line is the only trace left.
+        //
+        // Quartz knows nothing about this thread, and that is a promise the reader has to be told:
+        // `waitForJobsToCompleteOnShutdown` waits for worker threads, so neither it nor the container's
+        // stop_grace_period covers a manual run — a restart while this is in flight leaves agent_task_log
+        // at 3 and its lock row at 0 for housekeeping to reap. Merging one-shot runs into Quartz (S4) is
+        // what would put this path under the same protection as the cron one.
         Thread {
-            executeTaskOnce(task, triggerTime)
+            try {
+                executeTaskOnce(task, triggerTime)
+            } catch (e: Exception) {
+                log.error("Manual task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
+            }
         }.apply {
             name = "manual-trigger-${task.id}"
             isDaemon = true
@@ -304,21 +396,8 @@ class SchedulerServiceImpl(
      * status-guarded update.
      */
     override fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime) {
-        val taskLog = AgentTaskLog().apply {
-            taskId = task.id
-            taskName = task.name
-            prompt = task.prompt
-            startTime = LocalDateTime.now()
-            creator = task.creator
-            createTime = LocalDateTime.now()
-            status = 3 // running
-        }
-
-        val sessionId = "task-${task.id}-${UUID.randomUUID()}"
-        taskLog.sessionId = sessionId
-
-        agentTaskLogMapper.insert(taskLog)
-        log.info("Inserted running task log: id={}, taskId={}", taskLog.id, task.id)
+        val taskLog = insertRunningLog(task, triggerTime)
+        val sessionId = taskLog.sessionId
 
         try {
             val response = routerClient.chat(sessionId, task.prompt)
@@ -331,7 +410,9 @@ class SchedulerServiceImpl(
             taskLog.status = 0 // failed
             taskLog.errorInfo = e.message?.take(4000) ?: "Unknown error"
         } finally {
-            // Compute end time and duration BEFORE any slow I/O (clearSession can take 10+ seconds)
+            // Compute end time and duration BEFORE any slow I/O: clearSession is the tail of the
+            // execution, and its own capped read timeout (scheduler.clear-session-timeout-seconds,
+            // 60s by default) is what makes the shutdown budget below a number rather than a hope.
             val endTime = LocalDateTime.now()
             taskLog.endTime = endTime
             taskLog.durationMs = if (taskLog.startTime != null) {
@@ -342,18 +423,12 @@ class SchedulerServiceImpl(
 
             // Write the final status immediately so the frontend sees it without waiting for
             // clearSession. finishExecution only matches while the row is still running (3); zero
-            // rows means a stop was requested mid-flight and the 4 -> 5 transition is ours.
+            // rows means someone else moved it, and *where* they moved it decides what is true now.
             try {
                 if (agentTaskLogMapper.finishExecution(taskLog) > 0) {
                     log.info("Updated agent task log: id={}, status={}, durationMs={}", taskLog.id, taskLog.status, taskLog.durationMs)
                 } else {
-                    taskLog.status = 5 // stopped by user (final)
-                    taskLog.errorInfo = "Task stopped by user"
-                    if (agentTaskLogMapper.finalizeStopped(taskLog) > 0) {
-                        log.info("Task was stopped during execution: id={}, name={}", task.id, task.name)
-                    } else {
-                        log.warn("Execution log {} was already finalised elsewhere: taskId={}", taskLog.id, task.id)
-                    }
+                    closeOutLateExecution(taskLog)
                 }
             } catch (e: Exception) {
                 // Left at 3 or 4 on purpose: expireStale reclaims it as a timeout rather than this
@@ -375,6 +450,133 @@ class SchedulerServiceImpl(
                 taskLog.status == 1,
                 taskLog.startTime ?: endTime,
                 endTime,
+            )
+        }
+    }
+
+    /**
+     * Create the running row an execution is reported through, or fail before it starts.
+     *
+     * The insert sits outside [executeTaskOnce]'s try/finally on purpose — nothing may reach the router
+     * without a row to write the outcome into — which also made it the one step whose failure nobody
+     * handled: the affected-row count was dropped, so a rejected insert (column overflow, constraint,
+     * dead connection) left no log row, a cluster lock stuck at status=0 that every later trigger reads
+     * as "already running", and a caller that had already been answered "Task triggered".
+     *
+     * There is no row left to close out here, so releasing the lock in the catch is the only write
+     * still available; [executionGuard]'s lookup is keyed by task id + trigger time, not by log id.
+     * Null-lock-row cleanup is housekeeping's job (T4/T9); this only refuses to fake a success.
+     */
+    private fun insertRunningLog(
+        task: AgentTask,
+        triggerTime: LocalDateTime,
+    ): AgentTaskLog {
+        val taskLog = AgentTaskLog().apply {
+            taskId = task.id
+            taskName = task.name
+            prompt = task.prompt
+            startTime = LocalDateTime.now()
+            creator = task.creator
+            createTime = LocalDateTime.now()
+            status = 3 // running
+            sessionId = "task-${task.id}-${UUID.randomUUID()}"
+        }
+        val startedAt = taskLog.startTime ?: LocalDateTime.now()
+
+        try {
+            val inserted = agentTaskLogMapper.insert(taskLog)
+            // MyBatis writes the generated key back on success; 0 rows or a missing id both mean the
+            // row is not there, and an id of 0 would make every later update a no-op.
+            if (inserted <= 0 || taskLog.id <= 0L) {
+                throw IllegalStateException(
+                    "Running log row for task ${task.id} was not created (affected rows=$inserted, id=${taskLog.id})",
+                )
+            }
+            log.info("Inserted running task log: id={}, taskId={}", taskLog.id, task.id)
+        } catch (e: Exception) {
+            log.error("Task {} cannot start without its running log row: {}", task.id, e.message, e)
+            executionGuard.updateExecutionStatus(task.id, triggerTime, false, startedAt, LocalDateTime.now())
+            throw e
+        }
+        return taskLog
+    }
+
+    /**
+     * The row left status 3 while this execution was still in flight. Re-read it instead of assuming
+     * a user stop: a row the reaper had judged `timeout` is a run that finished successfully but
+     * would otherwise be remembered as a failure, and that mistake is ours to correct because we hold
+     * the real result.
+     *
+     * **Two orderings, one of which this method cannot see.** A stop lives only as `status = 4`, and the
+     * stale sweep also writes that row (4 -> 2), so the outcome depends on where the sweep lands relative
+     * to the re-read below:
+     * - sweep lands *after* the read of 4 → the 4 branch, whose guarded UPDATE misses, recovers via
+     *   `reclaimExpired` and still writes 5. Protected.
+     * - sweep lands *before* the read → the 2 branch, which cannot tell a stopped-then-reaped row from a
+     *   merely-reaped one: `expireStale` has already overwritten `error_info`, so the 4 that existed left
+     *   no trace. It writes this thread's real 0/1 and the user's stop disappears from the record — no
+     *   longer mislabelled "timeout", but still the wrong row.
+     * The second one is a known, accepted gap: closing it needs the stop intent carried by something
+     * other than a transient status (see spec `2026-09-11-scheduler-cluster-design.md` F11, S2/S3 scope).
+     */
+    private fun closeOutLateExecution(taskLog: AgentTaskLog) {
+        when (agentTaskLogMapper.selectById(taskLog.id)?.status) {
+            4 -> {
+                taskLog.status = 5 // stopped by user (final)
+                taskLog.errorInfo = "Task stopped by user"
+                val closed = agentTaskLogMapper.finalizeStopped(taskLog)
+                if (closed > 0) {
+                    log.info("Task was stopped during execution: id={}", taskLog.id)
+                } else if (agentTaskLogMapper.selectById(taskLog.id)?.status == 2) {
+                    // The window this closes: read 4, then the stale sweep reaped it to 2 *before* our
+                    // 4-guarded UPDATE ran, so that UPDATE matched nothing. Left alone, a run the user
+                    // really stopped is remembered as a timeout — the exact symptom this whole series
+                    // exists to remove. reclaimExpired is the recovery the 2 branch below already uses:
+                    // it still guards on status = 2, so the only row it can touch is one the reaper had
+                    // guessed about, and the verdict it writes stays this thread's own (5, from the stop
+                    // it observed). A sweep that got here *before* the read above never reaches this
+                    // branch — see the two-orderings note on the method: that one is the open gap.
+                    if (agentTaskLogMapper.reclaimExpired(taskLog) > 0) {
+                        log.info(
+                            "Task {} was reaped as a timeout after the stop was read; wrote stopped over it",
+                            taskLog.id,
+                        )
+                    } else {
+                        log.warn("Execution log {} moved again mid-stop; result not written", taskLog.id)
+                    }
+                } else {
+                    log.warn("Execution log {} changed again mid-stop; result not written", taskLog.id)
+                }
+            }
+
+            2 -> {
+                // reclaimExpired guards the row it replaces (status 2) but not the status it is handed,
+                // so the value stays this thread's own verdict: 0 or 1. Anything else would write a
+                // result nobody produced over a row the reaper already gave up on.
+                //
+                // This is also where a stop that the sweep reaped *before* the read above lands: such a
+                // row is indistinguishable from one nobody ever stopped (`expireStale` overwrote the
+                // error_info that carried the 4), so writing 0/1 here is exactly what erases that stop
+                // from the record. Deliberate — guessing a 5 from a row that reads 2 would fabricate a
+                // user action. Closing it needs a stop marker on the row, not a smarter branch (F11).
+                check(taskLog.status == 0 || taskLog.status == 1) {
+                    "Refusing to reclaim log ${taskLog.id} with status ${taskLog.status}"
+                }
+                if (agentTaskLogMapper.reclaimExpired(taskLog) > 0) {
+                    log.info(
+                        "Execution log {} had been auto-expired; wrote the real result (status={}) over it",
+                        taskLog.id,
+                        taskLog.status,
+                    )
+                } else {
+                    log.warn("Execution log {} moved again before it could be reclaimed", taskLog.id)
+                }
+            }
+
+            else -> log.warn(
+                "Execution log {} was already terminal elsewhere; its real result (status={}) was not written",
+                taskLog.id,
+                taskLog.status,
             )
         }
     }
@@ -404,44 +606,204 @@ class SchedulerServiceImpl(
         } else {
             // Router -> agent -> harnessAgent.interrupt(). The session is NOT cleared here: the node
             // running the task owns that cleanup, and tearing it down from here would destroy a live run.
-            routerClient.sendCommand(sessionId, CommandType.INTERRUPT)
+            when (val delivery = routerClient.sendCommand(sessionId, CommandType.INTERRUPT)) {
+                CommandDelivery.Delivered ->
+                    log.info("Interrupt reached the execution behind session {}; it closes the row", sessionId)
+
+                is CommandDelivery.Missed -> {
+                    // An instance answered that nothing is running for this session, so no node will ever
+                    // report this row's outcome and the stop is final here. Leaving it at 4 would let the
+                    // reaper label a finished run "timeout".
+                    val now = LocalDateTime.now()
+                    taskLog.status = 5
+                    taskLog.errorInfo = "No live execution to interrupt"
+                    taskLog.endTime = now
+                    taskLog.durationMs = Duration.between(taskLog.startTime ?: taskLog.createTime ?: now, now).toMillis()
+                    if (agentTaskLogMapper.finalizeStopped(taskLog) == 0) {
+                        // The row is no longer at 4, so nothing here wrote an outcome — and the caller
+                        // has been answered "stopped". This branch exists to keep the reaper from having
+                        // to guess about this execution; a silently-matched 0 rows puts the guess back.
+                        log.error(
+                            "Task log {} was reported as having no live execution but its 4 -> 5 close-out " +
+                                "matched no row; its outcome was not written by this node",
+                            logId,
+                        )
+                    } else {
+                        log.info(
+                            "Task log {} closed as stopped: the agent reported {} (session={})",
+                            logId,
+                            delivery.message ?: "no live execution",
+                            sessionId,
+                        )
+                    }
+                }
+
+                is CommandDelivery.Unanswered -> log.warn(
+                    "Task log {} stays at stopping: the command never got through ({}), so nothing is known " +
+                        "about the execution — its own node writes the outcome, or the stale sweep times it out",
+                    logId,
+                    delivery.reason,
+                )
+            }
         }
         return true
     }
 
-    override fun getScheduledTaskIds(): Set<Long> {
-        val jobKeys = scheduler.getJobKeys(org.quartz.impl.matchers.GroupMatcher.jobGroupEquals("AgentTaskGroup"))
-        return jobKeys.mapNotNull { key ->
-            key.name.removePrefix("AgentTask_").toLongOrNull()
-        }.toSet()
-    }
+    /**
+     * Kept on the interface for `SchedulerController`'s status endpoint; the read itself belongs to
+     * [QuartzJobInventory] so the health indicator and the gauge can use the same implementation without
+     * depending on this service.
+     */
+    override fun getScheduledTaskIds(): Set<Long> = jobInventory.scheduledTaskIds()
 
     /**
-     * Whether the task has a live execution. Stale rows are expired first, so a zombie left behind by
-     * a node that died mid-task cannot block the trigger forever.
+     * Whether a manual run has to wait for an execution that is already in flight.
+     *
+     * `concurrent` is the task's own answer to that question (entity/DDL: 0 = no overlap, 1 = allow),
+     * so refusing a "run now" on a concurrent=1 task rejected a conflict the task explicitly permits.
+     * It is read *first* for the same reason: for a task that permits overlap the store is not consulted
+     * at all, so a concurrent=1 "run now" no longer costs a liveness read — and no sweep.
      */
-    private fun hasActiveRunningLog(taskId: Long): Boolean {
-        expireStaleExecutions()
+    private fun blocksManualRun(task: AgentTask): Boolean = task.concurrent == 0 && hasActiveRunningExecution(task.id)
+
+    /**
+     * Whether the task has a live execution.
+     *
+     * The per-task read answers first and, when it comes back empty, answers alone: a task with no row at
+     * 3/4 has nothing to judge, and sweeping the whole log table on that answer is what put a scan-type
+     * UPDATE in front of every single fire — see [expireStaleExecutionsThrottled]. Only a row that this
+     * read did see is worth judging against its own timeout, so the reclaim runs when there is something
+     * to reclaim, and never more than once per [MIN_STALE_SWEEP_INTERVAL_MS] per process.
+     *
+     * Consequence worth knowing: a row that went stale inside that window makes a manual run get refused
+     * for up to 30 extra seconds. The window exists because the alternative is worse — a fire whose sweep
+     * loses a lock fight to a concurrent insert does not run at all.
+     *
+     * Two callers, for two different holes: the manual paths above, and a Quartz fire asking before it
+     * starts work — `@DisallowConcurrentExecution` only mutualises one JobDetail, and one task owns
+     * several (its cron job plus every one-shot), so the annotation cannot see across them. This read
+     * is keyed by task and can.
+     */
+    override fun hasActiveRunningExecution(taskId: Long): Boolean {
+        if (agentTaskLogMapper.selectRunningByTaskId(taskId).isEmpty()) {
+            return false
+        }
+        expireStaleExecutionsThrottled()
         return agentTaskLogMapper.selectRunningByTaskId(taskId).isNotEmpty()
     }
 
-    /** Reclaim executions that outran their own timeout, judged per row in SQL. */
-    private fun expireStaleExecutions() {
-        try {
-            val expired = agentTaskLogMapper.expireStale(DEFAULT_TIMEOUT_SECONDS)
-            if (expired > 0) {
-                log.info("Expired {} stale running task log(s)", expired)
-            }
+    /**
+     * The registered job class is the only channel that carries `concurrent` into Quartz:
+     * `@DisallowConcurrentExecution` is read off that class by reflection and is not `@Inherited`, so
+     * the plain class means "overlap allowed" and nothing else. Misfire instructions are not a
+     * substitute — they decide what happens to a *late* fire, never whether two live ones may overlap.
+     */
+    private fun jobClassFor(task: AgentTask): Class<out Job> = if (task.concurrent == 0) {
+        AgentTaskNonConcurrentJob::class.java
+    } else {
+        AgentTaskJob::class.java
+    }
+
+    /** Null means every active task was registered; the text doubles as the health detail. */
+    private fun describeDrift(failedIds: List<Long>, total: Int): String? {
+        if (failedIds.isEmpty()) {
+            return null
+        }
+        // Bounded: a table full of unusable crons must not turn a health detail into a megabyte.
+        val shown = failedIds.take(MAX_DRIFT_IDS).joinToString(",")
+        val hidden = if (failedIds.size > MAX_DRIFT_IDS) ",+${failedIds.size - MAX_DRIFT_IDS} more" else ""
+        val message = "${failedIds.size} of $total active tasks could not be registered: ids=[$shown$hidden]"
+        log.error("Load left drift: {}", message)
+        return message
+    }
+
+    /**
+     * Reclaim executions that outran their own timeout, judged per row in SQL.
+     *
+     * This is a *scan-type* UPDATE over every row at 3/4, i.e. over the whole live end of `idx_status`,
+     * and the runs that are starting at the same moment insert into exactly that range. On MySQL the two
+     * fight over next-key/gap locks, and whichever one it rolls back loses real work: roll back the
+     * insert and that Quartz fire does not execute at all, with only an error line to show for it. The
+     * sweep therefore has no business running once per fire — see [expireStaleExecutionsThrottled].
+     *
+     * Three kinds of caller reach this: the startup load and the housekeeping sweep (both unthrottled,
+     * and both of which *count* as this process's last sweep), and a fire asking whether a row it can see
+     * is still live. A failure is a log line plus 0: the sweep must not be the thing that takes its
+     * caller down — and it does not count as a sweep, so the next caller may try the statement again
+     * immediately. Stamping the window on the way *in* let one dead connection silence this node's
+     * retries for the full [MIN_STALE_SWEEP_INTERVAL_MS], which is the opposite of what a failed
+     * reclaim needs.
+     */
+    override fun expireStaleExecutions(): Int {
+        val expired = try {
+            agentTaskLogMapper.expireStale(executionTimeoutSeconds)
         } catch (e: Exception) {
             log.warn("Failed to expire stale running task logs: {}", e.message)
+            return 0
         }
+        // Only a statement that actually ran earns the window.
+        lastStaleSweepAtNanos = System.nanoTime()
+        if (expired > 0) {
+            log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
+        }
+        return expired
+    }
+
+    /**
+     * [expireStaleExecutions] behind a process-local rate limit: at most one sweep per
+     * [MIN_STALE_SWEEP_INTERVAL_MS] here, whatever number of fires asks.
+     *
+     * Nothing is lost by waiting. Global reclaim is housekeeping's job, and since G3 it runs on every
+     * node including disabled ones, five minutes apart; this call site only ever asks "is the row I can
+     * see still live", and the answer is the same one a *successful* sweep gave at most 30s ago — a row
+     * that crossed its own 1.5x deadline inside that window was not stale when the last sweep looked at
+     * it. One that threw is not in that count (see [expireStaleExecutions]).
+     *
+     * A plain `@Volatile` timestamp rather than a lock: two fires that arrive in the same millisecond can
+     * both pass this check and both sweep, which costs one extra statement per node per window at worst.
+     * Making it exact would mean serialising fires behind the very statement that is being rationed.
+     */
+    private fun expireStaleExecutionsThrottled(): Int {
+        val last = lastStaleSweepAtNanos
+        if (last != null) {
+            val sinceMs = (System.nanoTime() - last) / 1_000_000
+            if (sinceMs < MIN_STALE_SWEEP_INTERVAL_MS) {
+                log.debug("Skipping the stale sweep: one already ran {}ms ago", sinceMs)
+                return 0
+            }
+        }
+        return expireStaleExecutions()
+    }
+
+    /**
+     * The log table's only removal path: every run appends a row holding the prompt and the whole agent
+     * response, and nothing had ever taken one away.
+     */
+    override fun cleanupOldExecutionLogs(retentionDays: Int): Int = try {
+        val deleted = agentTaskLogMapper.deleteOldLogs(LocalDateTime.now().minusDays(retentionDays.toLong()))
+        if (deleted > 0) {
+            log.info("Removed {} execution log(s) older than {} days", deleted, retentionDays)
+        }
+        deleted
+    } catch (e: Exception) {
+        log.warn("Failed to apply the execution-log retention: {}", e.message)
+        0
     }
 
     companion object {
-        /** Fallback for a task row without a usable timeout of its own */
-        private const val DEFAULT_TIMEOUT_SECONDS = 300
         private const val INITIAL_RETRY_DELAY_MS = 2_000L
         private const val MAX_RETRY_DELAY_MS = 60_000L
         private const val ALERT_AFTER_ATTEMPTS = 5
+
+        /** Upper bound for the ids listed in a load-drift error, which shows up in /actuator/health */
+        private const val MAX_DRIFT_IDS = 20
+
+        /**
+         * Floor between two stale-execution sweeps on this node. Deliberately far below housekeeping's
+         * 5-minute round — so the throttle never suppresses the reclaim that is supposed to happen — and
+         * far above the burst of statements one task can produce (a fire, its manual run, a retry), which
+         * is what used to multiply the scan-type UPDATE.
+         */
+        private const val MIN_STALE_SWEEP_INTERVAL_MS = 30_000L
     }
 }

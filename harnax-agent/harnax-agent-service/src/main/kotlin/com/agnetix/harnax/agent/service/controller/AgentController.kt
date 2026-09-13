@@ -91,8 +91,11 @@ class AgentController(
     @Operation(summary = "Interrupt active stream", description = "Cancel the ongoing streaming response for a session")
     fun interrupt(@PathVariable sessionId: String): ResultVo<String> {
         log.info("Interrupting stream for session=$sessionId")
-        agentRunner.interrupt(sessionId)
-        return ResultVo.success("OK")
+        return if (agentRunner.interrupt(sessionId)) {
+            ResultVo.success("OK")
+        } else {
+            ResultVo.error("No live execution for session $sessionId")
+        }
     }
 
     /**

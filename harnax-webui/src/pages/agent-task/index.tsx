@@ -13,6 +13,7 @@ import {
 } from '@/services/ant-design-pro/agentTask';
 import TaskForm from './components/TaskForm';
 import TaskLogModal from './components/TaskLogModal';
+import { CODE_EXECUTION_IN_PROGRESS, CODE_SCHEDULER_SYNC_FAILED } from './constants';
 
 const AgentTaskManagement: React.FC = () => {
   const intl = useIntl();
@@ -95,12 +96,9 @@ const AgentTaskManagement: React.FC = () => {
   };
 
   const handleRunOnce = (id: number) => {
-    // Prevent triggering if task is already running
-    const currentTask = tasks.find((t) => t.id === id);
-    if (currentTask?.lastRunStatus === 3 || currentTask?.lastRunStatus === 4) {
-      message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
-      return;
-    }
+    // 这里故意不做 `lastRunStatus` 预检：只有后端分得清"真在跑"和"节点被 kill 留下的僵尸行"，
+    // 因为过期回收（expireStale）是跟着触发请求一起跑的。客户端先拦掉请求会让那条回收路径永远走不到
+    // —— 一旦有僵尸行，"立即执行"就永久不可点，本页的 3s 轮询也永远停不下来。
     Modal.confirm({
       title: intl.formatMessage({ id: 'pages.agentTask.confirmRunTitle', defaultMessage: 'Confirm Run Task' }),
       content: intl.formatMessage({ id: 'pages.agentTask.confirmRunContent', defaultMessage: 'Are you sure to execute this task now?' }),
@@ -108,7 +106,9 @@ const AgentTaskManagement: React.FC = () => {
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
       onOk: async () => {
         try {
-          const response = await triggerAgentTask(id);
+          // skipErrorHandler 只关掉全局 toast；响应拦截器仍会为 code !== 200 抛 BizError，
+          // 所以冲突一般落在下面的 catch 里。
+          const response = await triggerAgentTask(id, { skipErrorHandler: true });
           if (response.code === 200) {
             message.success(intl.formatMessage({ id: 'pages.agentTask.triggered', defaultMessage: 'Task triggered' }));
             // Auto-open log modal to watch execution progress
@@ -117,19 +117,25 @@ const AgentTaskManagement: React.FC = () => {
               setLogTask(task);
               setLogModalVisible(true);
             }
+          } else if (response.code === CODE_EXECUTION_IN_PROGRESS) {
+            // 全局 errorThrower 改造前不可达：requestErrorConfig.ts 会把任何 code !== 200 的 ResultVo 直接
+            // 抛成 BizError，冲突根本走不到"拿到 response 对象"这一步，真正生效的是下面 catch 里的那条判断。
+            // 这里保留，是为了将来全局拦截器不再对业务码抛错时，这条路径仍然给出同样的提示。
+            message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
           } else {
-            // Detect 'already running' error from backend and use i18n message
-            const isAlreadyRunning = response.message?.toLowerCase().includes('already running');
-            const errorMsg = isAlreadyRunning
-              ? intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' })
-              : intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' });
-            message.error(errorMsg);
+            message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
           }
           // Refresh task list to update last run status
           setTimeout(() => loadTasks(), 1500);
-      } catch (error) {
-        message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
-      }
+        } catch (error) {
+          // 全局 errorThrower 把非 200 的 ResultVo 变成这个 BizError，业务码在 info 里：
+          // 40901 是"已有执行在跑"，不是触发失败。
+          if ((error as any)?.info?.errorCode === CODE_EXECUTION_IN_PROGRESS) {
+            message.warning(intl.formatMessage({ id: 'pages.agentTask.alreadyRunning', defaultMessage: 'Task is already running, please wait for it to complete' }));
+          } else {
+            message.error(intl.formatMessage({ id: 'pages.agentTask.triggerFailed', defaultMessage: 'Failed to trigger task' }));
+          }
+        }
       },
     });
   };
@@ -139,7 +145,9 @@ const AgentTaskManagement: React.FC = () => {
       title: intl.formatMessage({ id: 'pages.common.deleteConfirm', defaultMessage: 'Are you sure to delete?' }),
       onOk: async () => {
         try {
-          const response = await deleteAgentTask(id);
+          // 传 skipErrorHandler 才能把下面的 40902 降级处理：全局拦截器会把非 200 抛成 BizError 并弹红，
+          // 业务码仍然在 catch 的 error.info 里。
+          const response = await deleteAgentTask(id, { skipErrorHandler: true });
           if (response.code === 200) {
             message.success(intl.formatMessage({ id: 'pages.agentTask.deleted', defaultMessage: 'Task deleted' }));
             loadTasks();
@@ -147,7 +155,17 @@ const AgentTaskManagement: React.FC = () => {
             message.error(response.message || intl.formatMessage({ id: 'pages.agentTask.deleteFailed', defaultMessage: 'Failed to delete task' }));
           }
         } catch (error) {
-          message.error(intl.formatMessage({ id: 'pages.agentTask.deleteFailed', defaultMessage: 'Failed to delete task' }));
+          if ((error as any)?.info?.errorCode === CODE_SCHEDULER_SYNC_FAILED) {
+            // 删除本身已经提交，只是给各 scheduler 实例广播 reload 没成功。报"删除失败"是错的——
+            // 下一次加载或 scheduler 重启就会对齐，这里只降级成 warning。
+            message.warning(intl.formatMessage({ id: 'pages.agentTask.savedNotReloaded', defaultMessage: 'Saved, but the scheduler did not reload yet. It will catch up on its own.' }));
+            loadTasks();
+          } else {
+            // skipErrorHandler 关掉了全局 toast，后端原文只剩这一条路能露出来：越权删除这类失败的原因
+            // （"Only the task creator can delete this task"）全在 error.info.errorMessage 里，
+            // 固定文案会把它抹掉。取不到原文才退回通用提示，与 TaskForm 的写法一致。
+            message.error((error as any)?.info?.errorMessage || intl.formatMessage({ id: 'pages.agentTask.deleteFailed', defaultMessage: 'Failed to delete task' }));
+          }
         }
       },
     });

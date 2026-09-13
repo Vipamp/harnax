@@ -1,5 +1,6 @@
 package com.agnetix.harnax.mapper
 
+import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -29,6 +30,16 @@ import kotlin.test.assertTrue
 open class AgentTaskLogMapperTest {
 
     companion object {
+        /** Both seeded tasks in schema-test.sql belong to this creator and tenant. */
+        private const val OWNER = "admin"
+        private const val TENANT = 1L
+
+        /**
+         * Used only by the R2 cases: a task stamped with this tenant still belongs to its creator, and
+         * the log reads must not narrow by tenant (the task reads do not).
+         */
+        private const val OTHER_TENANT = 2L
+
         @Container
         val mysqlContainer = MySQLContainer("mysql:8.0")
             .withDatabaseName("harnax_test")
@@ -47,6 +58,9 @@ open class AgentTaskLogMapperTest {
 
     @Autowired
     private lateinit var agentTaskLogMapper: AgentTaskLogMapper
+
+    @Autowired
+    private lateinit var agentTaskMapper: AgentTaskMapper
 
     // ==================== selectById ====================
 
@@ -159,13 +173,54 @@ open class AgentTaskLogMapperTest {
         }
 
         @Test
+        @DisplayName("reclaimExpired - 拥有真实结果的执行可以回收被误判超时的行")
+        fun `reclaimExpired should only take back a row the reaper marked timeout`() {
+            val expired = insertExecutionLog(taskId = 1L, initialStatus = 2)
+            val running = insertExecutionLog(taskId = 1L, initialStatus = 3)
+            val stopped = insertExecutionLog(taskId = 1L, initialStatus = 5)
+
+            val reclaim = AgentTaskLog().apply {
+                id = expired.id
+                status = 1
+                response = "real result"
+                errorInfo = ""
+                endTime = LocalDateTime.now()
+                durationMs = 480_000L
+            }
+            assertEquals(1, agentTaskLogMapper.reclaimExpired(reclaim))
+            assertEquals(1, agentTaskLogMapper.selectById(expired.id)?.status)
+            assertEquals("real result", agentTaskLogMapper.selectById(expired.id)?.response)
+
+            // 运行中与已停止的行都不受影响
+            assertEquals(0, agentTaskLogMapper.reclaimExpired(running.apply { status = 1 }))
+            assertEquals(3, agentTaskLogMapper.selectById(running.id)?.status)
+            assertEquals(0, agentTaskLogMapper.reclaimExpired(stopped.apply { status = 1 }))
+            assertEquals(5, agentTaskLogMapper.selectById(stopped.id)?.status)
+        }
+
+        @Test
+        @DisplayName("expireStale - 宽限窗口内的行不回收，超出才回收")
+        fun `expireStale should keep a grace window before reclaiming`() {
+            // seed: task 1 的 timeout_seconds = 300 → 回收窗口 450s
+            val insideGrace = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 400L)
+            val outsideGrace = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 700L)
+
+            val expired = agentTaskLogMapper.expireStale(300)
+            assertTrue(expired >= 1, "at least the row past the grace window must be reclaimed")
+
+            assertEquals(3, agentTaskLogMapper.selectById(insideGrace.id)?.status)
+            assertEquals(2, agentTaskLogMapper.selectById(outsideGrace.id)?.status)
+        }
+
+        @Test
         @DisplayName("expireStale - 按各任务自己的 timeout_seconds 回收残留")
         fun `expireStale should expire only rows past their own task timeout`() {
-            // seed: task 1 的 timeout_seconds = 300, task 2 的 timeout_seconds = 600
-            val stale = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 400L)
-            val staleStopping = insertExecutionLog(taskId = 1L, initialStatus = 4, startedSecondsAgo = 400L)
+            // seed: task 1 的 timeout_seconds = 300（窗口 450s）, task 2 = 600（窗口 900s）
+            val stale = insertExecutionLog(taskId = 1L, initialStatus = 3, startedSecondsAgo = 700L)
+            val staleStopping = insertExecutionLog(taskId = 1L, initialStatus = 4, startedSecondsAgo = 700L)
             val fresh = insertExecutionLog(taskId = 1L, initialStatus = 3)
-            val withinLongerTimeout = insertExecutionLog(taskId = 2L, initialStatus = 3, startedSecondsAgo = 400L)
+            // task 2 的窗口是 900s，700s 的行必须还活着
+            val withinLongerTimeout = insertExecutionLog(taskId = 2L, initialStatus = 3, startedSecondsAgo = 700L)
 
             val expired = agentTaskLogMapper.expireStale(300)
             assertTrue(expired >= 2, "至少两条残留应被回收, 实际=$expired")
@@ -195,24 +250,6 @@ open class AgentTaskLogMapperTest {
             agentTaskLogMapper.insert(log)
             return log
         }
-
-        @Test
-        @DisplayName("selectByTaskId - 根据任务 ID 查询日志列表")
-        fun `selectByTaskId should return logs for given task`() {
-            val logs = agentTaskLogMapper.selectByTaskId(1L)
-            assertTrue(logs.isNotEmpty())
-            assertTrue(logs.size >= 3) // 测试数据中有 task_id=1 的 4 条记录 (id=1,2,3,5)
-            logs.forEach {
-                assertEquals(1L, it.taskId)
-            }
-        }
-
-        @Test
-        @DisplayName("selectByTaskId - 不存在的任务返回空列表")
-        fun `selectByTaskId should return empty for non-existent task`() {
-            val logs = agentTaskLogMapper.selectByTaskId(999L)
-            assertTrue(logs.isEmpty())
-        }
     }
 
     // ==================== selectLogList ====================
@@ -231,6 +268,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertEquals(1L, it.taskId) }
@@ -246,6 +284,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -264,6 +303,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach { assertTrue(it.taskName.contains("Daily")) }
@@ -279,6 +319,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-07-02 00:00:00",
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -299,6 +340,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = "2026-07-01 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -317,6 +359,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-07-01 00:00:00",
                 startTimeTo = "2026-07-02 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             // 应该匹配 id=1 (07-01) 和 id=2 (07-02)
@@ -333,6 +376,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "breaking",
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             assertTrue(logs.any { it.prompt.contains("breaking", ignoreCase = true) })
@@ -348,6 +392,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "Weekly report content",
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(4L, logs[0].id)
@@ -363,6 +408,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "Connection timeout",
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             assertEquals(3L, logs[0].id)
@@ -378,6 +424,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2026-06-01 00:00:00",
                 startTimeTo = "2026-07-31 23:59:59",
                 keyword = "summary",
+                currentUsername = OWNER,
             )
             assertTrue(logs.isNotEmpty())
             logs.forEach {
@@ -399,6 +446,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = "2030-01-01 00:00:00",
                 startTimeTo = "2030-12-31 23:59:59",
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.isEmpty())
         }
@@ -413,6 +461,7 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = "zzzznonexistentkeyword",
+                currentUsername = OWNER,
             )
             assertTrue(logs.isEmpty())
         }
@@ -427,11 +476,292 @@ open class AgentTaskLogMapperTest {
                 startTimeFrom = null,
                 startTimeTo = null,
                 keyword = null,
+                currentUsername = OWNER,
             )
             assertTrue(logs.size >= 2)
             for (i in 0 until logs.size - 1) {
                 assertTrue(logs[i].createTime >= logs[i + 1].createTime)
             }
         }
+
+        /**
+         * The log row repeats the task prompt and the agent response, so this is the case that used to
+         * be the hole: knowing a taskId was enough to read it.
+         */
+        @Test
+        @DisplayName("selectLogList - 非属主读不到他人私有任务的执行日志")
+        fun `selectLogList should hide another user private task logs`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+
+            val asStranger = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "bob",
+            )
+            assertTrue(asStranger.isEmpty(), "非属主不应读到 ${log.id} 的 prompt/response")
+
+            // 同一行数据对属主可读：挡住 bob 的只有可见性，不是别的筛选条件
+            val asOwner = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "alice",
+            )
+            assertEquals(listOf(log.id), asOwner.map { it.id })
+        }
+
+        @Test
+        @DisplayName("selectLogList - 公开任务的日志对他人可读")
+        fun `selectLogList should return another user public task logs`() {
+            val task = insertTask(creator = "alice", isPublic = 1)
+            val log = insertLogOf(task.id)
+
+            val asStranger = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "bob",
+            )
+            assertEquals(listOf(log.id), asStranger.map { it.id })
+        }
+
+        /**
+         * R2: `agent_task.tenant_id` is only the snapshot of the tenant that happened to be active when
+         * the task was created, and the task reads carry no tenant condition at all (the automatic tenant
+         * interceptor is disabled). A tenant filter on the log read was therefore *stricter* than the
+         * task list: the task stayed visible while its own logs came back empty. The owner must read
+         * across tenants, exactly like the task list lets them see the task.
+         */
+        @Test
+        @DisplayName("selectLogList - 属主跨租户仍读到自己任务的日志（与任务列表同口径）")
+        fun `selectLogList should still return the owner logs of a task created under another tenant`() {
+            val task = insertTask(creator = "alice", isPublic = 0, tenantId = OTHER_TENANT)
+            val log = insertLogOf(task.id)
+
+            val logs = agentTaskLogMapper.selectLogList(
+                taskId = task.id,
+                taskName = null,
+                status = null,
+                startTimeFrom = null,
+                startTimeTo = null,
+                keyword = null,
+                currentUsername = "alice",
+            )
+
+            assertEquals(listOf(log.id), logs.map { it.id }, "属主不应因为任务建在别的租户而读不到自己的日志")
+            // The prompt/response still only reaches the owner: dropping the tenant filter must not have
+            // dropped the creator gate.
+            assertTrue(
+                agentTaskLogMapper.selectLogList(
+                    taskId = task.id,
+                    taskName = null,
+                    status = null,
+                    startTimeFrom = null,
+                    startTimeTo = null,
+                    keyword = null,
+                    currentUsername = "bob",
+                ).isEmpty(),
+            )
+        }
+    }
+
+    /**
+     * The gate the stop path runs before it forwards anything: a stop is a *write* against someone else's
+     * running execution, so only the task's creator may make it, and "not yours" has to answer exactly
+     * like "does not exist".
+     *
+     * Narrower than `selectLogList` on purpose — that one also shows a caller the executions of other
+     * people's public tasks. Seeing is not stopping; the public branch is what this gate drops, and the
+     * first two cases below are the two halves of that asymmetry.
+     */
+    @Nested
+    @DisplayName("selectOwnedById 单条停止门禁测试")
+    inner class SelectOwnedByIdTests {
+
+        @Test
+        @DisplayName("selectOwnedById - 非属主拿不到他人私有任务的日志（与不存在无差别）")
+        fun `selectOwnedById should hide another user private task log`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+
+            kotlin.test.assertNull(
+                agentTaskLogMapper.selectOwnedById(log.id, "bob"),
+                "非属主不应拿到这条可以被拿去停止执行的日志",
+            )
+            // Same row, same call, only the caller differs: ownership is what blocks bob.
+            assertEquals(log.id, agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id)
+        }
+
+        /**
+         * The bug this case exists for: while the stop gate reused the read rule, `is_public = 1` made
+         * every execution of somebody else's public task interruptable by anyone logged in. Public still
+         * means readable — `selectLogList` keeps listing these rows to bob — it just no longer means
+         * stoppable.
+         */
+        @Test
+        @DisplayName("selectOwnedById - 公开任务的日志对非属主不再放行：可读不等于可停")
+        fun `selectOwnedById should refuse a public task log to a non owner`() {
+            val task = insertTask(creator = "alice", isPublic = 1)
+            val log = insertLogOf(task.id)
+
+            kotlin.test.assertNull(
+                agentTaskLogMapper.selectOwnedById(log.id, "bob"),
+                "public 只给读权限，停止是写操作",
+            )
+            // The owner is unaffected by the public flag.
+            assertEquals(log.id, agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id)
+            // And the read side really is still open, which is what makes the pair an asymmetry
+            // rather than a plain restriction.
+            assertTrue(
+                agentTaskLogMapper.selectLogList(
+                    taskId = task.id,
+                    taskName = null,
+                    status = null,
+                    startTimeFrom = null,
+                    startTimeTo = null,
+                    keyword = null,
+                    currentUsername = "bob",
+                ).any { it.id == log.id },
+                "读侧仍应向 bob 展示这条 public 任务的执行",
+            )
+        }
+
+        /**
+         * This gate guards a write, so a tenant condition here would have made an owner's own stop a
+         * silent "not yours": create the task under another tenant, come back as its creator and the row
+         * is gone. The creator must still get it.
+         */
+        @Test
+        @DisplayName("selectOwnedById - 属主跨租户仍拿得到，因而仍停得掉自己的执行")
+        fun `selectOwnedById should still return the owner log of a task created under another tenant`() {
+            val task = insertTask(creator = "alice", isPublic = 0, tenantId = OTHER_TENANT)
+            val log = insertLogOf(task.id)
+
+            assertEquals(
+                log.id,
+                agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id,
+                "跨租户的属主必须停得掉自己的执行，与任务写侧口径一致",
+            )
+            // The creator gate is untouched: bob still cannot reach it.
+            kotlin.test.assertNull(agentTaskLogMapper.selectOwnedById(log.id, "bob"))
+        }
+
+        /**
+         * A task that is gone (`active = 0`) leaves no execution to stop: its logs must not stay
+         * reachable through their own ids even for its creator.
+         */
+        @Test
+        @DisplayName("selectOwnedById - 已软删任务的日志拿不到")
+        fun `selectOwnedById should drop logs of a deleted task`() {
+            val task = insertTask(creator = "alice", isPublic = 0)
+            val log = insertLogOf(task.id)
+            assertEquals(1, agentTaskMapper.deleteById(task.id, "alice"))
+
+            kotlin.test.assertNull(agentTaskLogMapper.selectOwnedById(log.id, "alice"))
+        }
+    }
+
+    /**
+     * Retention for the log table. Housekeeping is the only writer that ever removes a row here, and
+     * before it there was none: `agent_task_log` carried prompt/response for every run forever.
+     */
+    @Nested
+    @DisplayName("deleteOldLogs 保留期清理")
+    inner class DeleteOldLogsTests {
+
+        @Test
+        @DisplayName("deleteOldLogs - 只删保留期外的终态行")
+        fun `deleteOldLogs should drop only terminal rows past the cutoff`() {
+            val purged = insertLogWithAge(status = 1, ageDays = 100)
+            val recent = insertLogWithAge(status = 1, ageDays = 10)
+            // 看着还活着的行永远不能因为「太老」被删：那正是 stop 路径与 reaper 还要认的行
+            val ancientRunning = insertLogWithAge(status = 3, ageDays = 100)
+            val ancientStopping = insertLogWithAge(status = 4, ageDays = 100)
+
+            val deleted = agentTaskLogMapper.deleteOldLogs(LocalDateTime.now().minusDays(90))
+            assertEquals(1, deleted)
+
+            kotlin.test.assertNull(agentTaskLogMapper.selectById(purged.id))
+            assertNotNull(agentTaskLogMapper.selectById(recent.id))
+            assertNotNull(agentTaskLogMapper.selectById(ancientRunning.id))
+            assertNotNull(agentTaskLogMapper.selectById(ancientStopping.id))
+        }
+
+        private fun insertLogWithAge(
+            status: Int,
+            ageDays: Long,
+        ): AgentTaskLog {
+            val log = AgentTaskLog().apply {
+                taskId = 1L
+                taskName = "Daily News"
+                prompt = "retention probe"
+                response = "ok"
+                sessionId = "sess-ret-$status-$ageDays-${System.nanoTime()}"
+                this.status = status
+                errorInfo = ""
+                startTime = LocalDateTime.now().minusDays(ageDays)
+                endTime = LocalDateTime.now().minusDays(ageDays)
+                creator = OWNER
+                createTime = LocalDateTime.now().minusDays(ageDays)
+            }
+            assertEquals(1, agentTaskLogMapper.insert(log))
+            return log
+        }
+    }
+
+    private fun insertTask(
+        creator: String,
+        isPublic: Int,
+        tenantId: Long = TENANT,
+    ): AgentTask {
+        val task = AgentTask().apply {
+            name = "visibility-$creator-$isPublic-${System.nanoTime()}"
+            this.tenantId = tenantId
+            agentId = 100
+            agentName = "News Agent"
+            prompt = "Summarize today's news"
+            cronExpression = "0 0 9 * * ?"
+            taskStatus = 0
+            concurrent = 0
+            timeoutSeconds = 300
+            description = "seed"
+            this.isPublic = isPublic
+            this.creator = creator
+            active = 1
+            createTime = LocalDateTime.now()
+            updateTime = LocalDateTime.now()
+        }
+        assertEquals(1, agentTaskMapper.insert(task))
+        assertTrue(task.id > 0)
+        return task
+    }
+
+    private fun insertLogOf(taskId: Long): AgentTaskLog {
+        val log = AgentTaskLog().apply {
+            this.taskId = taskId
+            taskName = "visibility-seed"
+            prompt = "Private prompt of the task owner"
+            response = "Private response"
+            sessionId = "sess-vis-${System.nanoTime()}"
+            status = 1
+            errorInfo = ""
+            startTime = LocalDateTime.now()
+            endTime = LocalDateTime.now()
+            creator = "alice"
+        }
+        assertEquals(1, agentTaskLogMapper.insert(log))
+        assertTrue(log.id > 0)
+        return log
     }
 }

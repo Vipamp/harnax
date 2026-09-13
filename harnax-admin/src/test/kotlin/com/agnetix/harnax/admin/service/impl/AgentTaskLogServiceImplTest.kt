@@ -1,7 +1,11 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
+import com.agnetix.harnax.admin.service.AgentTaskLogService
+import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -14,7 +18,13 @@ import org.mockito.Mockito.*
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.quality.Strictness
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.LocalDateTime
 
 @ExtendWith(MockitoExtension::class)
@@ -23,6 +33,9 @@ class AgentTaskLogServiceImplTest {
 
     @Mock
     private lateinit var agentTaskLogMapper: AgentTaskLogMapper
+
+    @Mock
+    private lateinit var jwtUtil: JwtUtil
 
     @InjectMocks
     private lateinit var agentTaskLogService: AgentTaskLogServiceImpl
@@ -47,101 +60,19 @@ class AgentTaskLogServiceImplTest {
             creator = "admin"
             createTime = LocalDateTime.now()
         }
+
+        // page() resolves the caller from the request, so the list tests need a logged-in context.
+        val mockRequest = MockHttpServletRequest()
+        mockRequest.addHeader("Authorization", "Bearer mock-token")
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(mockRequest))
+        `when`(jwtUtil.validateToken(any())).thenReturn(true)
+        `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
     }
 
-    @Nested
-    @DisplayName("Save Log Tests")
-    inner class SaveLogTests {
-
-        @Test
-        fun `save should insert log successfully`() {
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            verify(agentTaskLogMapper).insert(testLog)
-        }
-
-        @Test
-        fun `save should return false when insert fails`() {
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(0)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertFalse(result)
-        }
-
-        @Test
-        fun `save should handle success status log`() {
-            testLog.status = 1
-            testLog.errorInfo = ""
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(1, testLog.status)
-        }
-
-        @Test
-        fun `save should handle failure status log`() {
-            testLog.status = 0
-            testLog.errorInfo = "Connection timeout"
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(0, testLog.status)
-            assertEquals("Connection timeout", testLog.errorInfo)
-        }
-
-        @Test
-        fun `save should handle timeout status log`() {
-            testLog.status = 2
-            testLog.errorInfo = "Execution timed out after 300 seconds"
-            `when`(agentTaskLogMapper.insert(any())).thenReturn(1)
-
-            val result = agentTaskLogService.save(testLog)
-
-            assertTrue(result)
-            assertEquals(2, testLog.status)
-        }
-    }
-
-    @Nested
-    @DisplayName("Get Logs By Task ID Tests")
-    inner class GetLogsByTaskIdTests {
-
-        @Test
-        fun `getLogsByTaskId should return logs for given task`() {
-            val logs = listOf(testLog, testLog.apply { id = 2L })
-            `when`(agentTaskLogMapper.selectByTaskId(100L)).thenReturn(logs)
-
-            val result = agentTaskLogService.getLogsByTaskId(100L)
-
-            assertEquals(2, result.size)
-            verify(agentTaskLogMapper).selectByTaskId(100L)
-        }
-
-        @Test
-        fun `getLogsByTaskId should return empty list when no logs`() {
-            `when`(agentTaskLogMapper.selectByTaskId(999L)).thenReturn(emptyList())
-
-            val result = agentTaskLogService.getLogsByTaskId(999L)
-
-            assertTrue(result.isEmpty())
-        }
-
-        @Test
-        fun `getLogsByTaskId should call mapper with correct taskId`() {
-            `when`(agentTaskLogMapper.selectByTaskId(42L)).thenReturn(emptyList())
-
-            agentTaskLogService.getLogsByTaskId(42L)
-
-            verify(agentTaskLogMapper).selectByTaskId(42L)
-        }
+    @AfterEach
+    fun tearDown() {
+        RequestContextHolder.resetRequestAttributes()
+        TenantContext.clear()
     }
 
     @Nested
@@ -228,44 +159,152 @@ class AgentTaskLogServiceImplTest {
         }
     }
 
+    /**
+     * The log read carries no tenant argument (R2): the visibility gate is the caller's username, applied
+     * through the owning task, exactly like the task list. The pass-through cases below therefore pin the
+     * seven arguments the mapper actually takes.
+     */
     @Nested
     @DisplayName("Page Query Tests")
     inner class PageTests {
 
+        private fun givenEmptyLogList() {
+            `when`(
+                agentTaskLogMapper.selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    any(),
+                ),
+            ).thenReturn(emptyList())
+        }
+
         @Test
         fun `page should pass all parameters to mapper`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword")
+            verify(agentTaskLogMapper)
+                .selectLogList(1L, "Daily", 1, "2026-07-01 00:00:00", "2026-07-31 23:59:59", "keyword", "admin")
         }
 
         @Test
         fun `page should pass null filters correctly`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(1L, null, null, null, null, null, 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null)
+            verify(agentTaskLogMapper).selectLogList(1L, null, null, null, null, null, "admin")
         }
 
         @Test
         fun `page should pass only time range filter`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null)
+            verify(agentTaskLogMapper)
+                .selectLogList(null, null, null, "2026-07-01 00:00:00", "2026-07-31 23:59:59", null, "admin")
         }
 
         @Test
         fun `page should pass only keyword filter`() {
-            `when`(agentTaskLogMapper.selectLogList(any(), any(), any(), any(), any(), any())).thenReturn(emptyList())
+            givenEmptyLogList()
 
             agentTaskLogService.page(null, null, null, null, null, "error", 1, 10)
 
-            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error")
+            verify(agentTaskLogMapper).selectLogList(null, null, null, null, null, "error", "admin")
+        }
+
+        /**
+         * The visibility rule lives in the SQL join, so the one thing this service can get wrong is
+         * failing to tell the mapper who is asking. The username is therefore captured rather than
+         * hard-coded, so the assertion reads back what the call actually carried.
+         *
+         * The second half is the R2 regression guard: a `TenantContext` was exactly what made this read
+         * stricter than the task list, so running it with and without one must produce the *same* call.
+         */
+        @Test
+        fun `page should scope the query to the caller and ignore the request tenant`() {
+            `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("alice")
+            givenEmptyLogList()
+
+            TenantContext.setTenantId(7L)
+            agentTaskLogService.page(null, null, null, null, null, null, 1, 10)
+
+            val username = argumentCaptor<String>()
+            verify(agentTaskLogMapper)
+                .selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    username.capture(),
+                )
+            assertEquals("alice", username.firstValue)
+
+            // Same request, no tenant on the context at all: nothing about the query may change.
+            TenantContext.clear()
+            agentTaskLogService.page(null, null, null, null, null, null, 1, 10)
+
+            verify(agentTaskLogMapper, times(2))
+                .selectLogList(
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    anyOrNull(),
+                    eq("alice"),
+                )
+        }
+
+        /**
+         * The mapper contract must not grow a tenant slot back: with the parameter gone there is no way
+         * to pass one, which is the point of R2 (a caller passing `null` would have left a dead argument
+         * in the interface). Runs without a database, so it is the guard that survives on a machine with
+         * Docker off.
+         */
+        @Test
+        fun `the log read contract carries no tenant parameter`() {
+            val logList = AgentTaskLogMapper::class.java.methods.first { it.name == "selectLogList" }
+            assertEquals(
+                7,
+                logList.parameterCount,
+                "selectLogList 应为 taskId/taskName/status/startFrom/startTo/keyword/currentUsername，不得再有 tenantId",
+            )
+
+            // The stop gate, i.e. the write authorisation of this table: same shape, caller only.
+            val ownedById = AgentTaskLogMapper::class.java.methods.first { it.name == "selectOwnedById" }
+            assertEquals(
+                2,
+                ownedById.parameterCount,
+                "selectOwnedById 应为 id/currentUsername，不得再有 tenantId",
+            )
+        }
+
+        /**
+         * `selectByTaskId` read the same rows with no join and no caller, and `getLogsByTaskId` exposed it
+         * on the service. Both went: an execution log carries another user's prompt and response verbatim,
+         * and a read that bypasses the visibility join makes the join a detail rather than a rule. This
+         * asserts by name, because a method that comes back is otherwise invisible to every test here.
+         */
+        @Test
+        fun `there is no unguarded read-by-task-id left to bypass the visibility join`() {
+            assertTrue(
+                AgentTaskLogMapper::class.java.methods.none { it.name == "selectByTaskId" },
+                "mapper 上不得再出现无属主过滤的 selectByTaskId",
+            )
+            assertTrue(
+                AgentTaskLogService::class.java.methods.none { it.name == "getLogsByTaskId" },
+                "service 上不得再出现绕过可见性门禁的 getLogsByTaskId",
+            )
         }
     }
 }

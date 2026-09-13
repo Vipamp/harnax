@@ -13,16 +13,20 @@ import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime
 
 @Service
 class AgentTaskServiceImpl(
     private val agentTaskMapper: AgentTaskMapper,
+    private val agentTaskLogMapper: AgentTaskLogMapper,
     private val agentService: AgentService,
     private val jwtUtil: JwtUtil,
     private val schedulerClient: SchedulerClient,
@@ -137,12 +141,10 @@ class AgentTaskServiceImpl(
             throw BizException("Only the task creator can modify this task")
         }
 
-        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config)
-        try {
-            schedulerClient.reloadTasks()
-        } catch (e: Exception) {
-            log.warn("Failed to notify scheduler after task update: {}", e.message)
-        }
+        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config).
+        // Deferred to after the commit: the scheduler reads through its own connection and cannot see
+        // this row while the transaction is still open.
+        reloadSchedulersAfterCommit("saved", "The previous definition stays live until a reload succeeds")
         return true
     }
 
@@ -158,11 +160,7 @@ class AgentTaskServiceImpl(
         if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
             throw BizException("Only the task creator can delete this task")
         }
-        try {
-            schedulerClient.reloadTasks()
-        } catch (e: Exception) {
-            log.warn("Failed to reload schedulers after task deletion: {}", e.message)
-        }
+        reloadSchedulersAfterCommit("deleted", "The deleted task can still fire until a reload succeeds")
         return true
     }
 
@@ -180,7 +178,14 @@ class AgentTaskServiceImpl(
         } else {
             schedulerClient.pauseTask(id)
         }
-        return result.code == 200
+        if (result.isSuccess()) {
+            return true
+        }
+        // Forward the scheduler's own reason. Judging a cron expression needs Quartz, which this module
+        // deliberately does not depend on, so the scheduler is the only party that can say *why* a start
+        // failed — answering `false` here used to flatten "CronExpression '0 0 0 * * *' is invalid" to a
+        // bare "Failed to toggle task status".
+        throw BizException(result.code, result.message)
     }
 
     override fun startTask(id: Long): ResultVo<Void> = schedulerClient.startTask(id)
@@ -189,13 +194,106 @@ class AgentTaskServiceImpl(
 
     override fun triggerTask(id: Long): ResultVo<Void> = schedulerClient.triggerTask(id)
 
-    override fun stopTask(logId: Long): ResultVo<Void> = schedulerClient.stopTask(logId)
+    /**
+     * A stop is a write against somebody else's running execution, so the log id alone must not be
+     * enough: it leaks easily (the log table on screen, URLs, exports). The scheduler cannot make this
+     * call — it has no end-user context — so the gate has to sit here, before the forward.
+     *
+     * [AgentTaskLogMapper.selectOwnedById] restricts the row to the **creator** of the task it belongs
+     * to. That is deliberately narrower than the execution-log list read, which also shows other people's
+     * public tasks: seeing a run is not the same as being allowed to interrupt it. Using the read rule
+     * here — as this did until now — let any logged-in user stop anyone's execution of a public task.
+     * The writes on the owning task (`updateById`, `deleteById`) have always been owner-only; this now
+     * agrees with them.
+     *
+     * Answering the not-found error for "exists but is not yours" is on purpose; a distinct "forbidden"
+     * would turn this endpoint into an id probe. No frontend change follows from that.
+     *
+     * The gate is the caller's username and nothing else — no tenant. Tenant narrowing would be
+     * stricter than the task writes this guards (which have none), and an owner who switched tenants
+     * would then be unable to stop their own running execution.
+     */
+    override fun stopTask(logId: Long): ResultVo<Void> {
+        agentTaskLogMapper.selectOwnedById(logId, UserContextUtil.getCurrentUsername(jwtUtil))
+            ?: throw BizException("Agent task log not found")
+        return schedulerClient.stopTask(logId)
+    }
 
     /**
-     * Simple cron expression validation (5 or 6 fields separated by spaces)
+     * Cheap structural pre-check: the field count of Quartz's cron grammar — 6 fields (second, minute,
+     * hour, day-of-month, month, day-of-week) plus an optional 7th year field. Nothing more.
+     *
+     * The interval used to be `5..6`, which was wrong at both ends: a 5-field unix cron (`0 9 * * 1`) is
+     * rejected by Quartz yet passed here, and the legal 7-field form with a year was refused — so this
+     * check both let through work that would fail later and blocked work that would have run.
+     *
+     * It still cannot judge an expression. Quartz rejects what this accepts (`0 0 0 * * *`, where
+     * day-of-month and day-of-week conflict), so the semantic authority is the scheduler: it builds the
+     * trigger through Quartz on `start`, and [toggleTaskStatus] forwards the reason it answers. Doing the
+     * real check here would mean adding a Quartz dependency to a module that only proxies scheduling
+     * decisions, and that is deliberately not done.
      */
     private fun isValidCron(cron: String): Boolean {
         val fields = cron.trim().split("\\s+".toRegex())
-        return fields.size in 5..6
+        return fields.size in 6..7
+    }
+
+    /**
+     * Broadcast a reload to every scheduler instance once — and only once — this transaction commits.
+     *
+     * Broadcasting inside the method body was the bug: harnax-scheduler is a separate process with its
+     * own connection pool, so it reads the row as it was *before* this transaction and re-registers the
+     * old definition (for a delete, it re-registers a task that the UI already shows as gone). Tying the
+     * notify to `afterCommit` also means a rolled-back write broadcasts nothing.
+     *
+     * Without an active transaction there is nothing to wait for, so the notify runs inline. That path
+     * exists for callers that reach this bean without going through the transactional proxy.
+     */
+    private fun reloadSchedulersAfterCommit(committed: String, staleConsequence: String) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            notifySchedulersNow(committed, staleConsequence)
+            return
+        }
+        TransactionSynchronizationManager.registerSynchronization(
+            object : TransactionSynchronization {
+                override fun afterCommit() {
+                    notifySchedulersNow(committed, staleConsequence)
+                }
+            },
+        )
+    }
+
+    /**
+     * A reload that answers non-200 is a real failure, not a warning to log away: this instance keeps
+     * firing the old definition until something reloads. It is reported as [CODE_SCHEDULER_SYNC_FAILED]
+     * rather than as a rollback, because [committed] has already reached the database by then — the
+     * caller has to learn "stored but not scheduled", which is a different fact from "not stored".
+     */
+    private fun notifySchedulersNow(committed: String, staleConsequence: String) {
+        val result = try {
+            schedulerClient.reloadTasks()
+        } catch (e: Exception) {
+            log.error("Broadcasting a scheduler reload after the task was {} threw", committed, e)
+            null
+        }
+        if (result?.code == 200) {
+            return
+        }
+        val reason = result?.message ?: "the broadcast threw"
+        log.error("Scheduler reload after the task was {} did not succeed: {}", committed, reason)
+        throw BizException(
+            CODE_SCHEDULER_SYNC_FAILED,
+            "Task $committed, but the scheduler did not reload: $reason. $staleConsequence.",
+        )
+    }
+
+    companion object {
+        /**
+         * The row is committed while no scheduler has picked the change up. Kept in the 409xx family
+         * started by `SchedulerController.CODE_EXECUTION_IN_PROGRESS`: the request was honoured, but
+         * the state the caller asked for is not in effect yet — distinct from a plain 500, which would
+         * read as "your edit was lost".
+         */
+        const val CODE_SCHEDULER_SYNC_FAILED = 40902
     }
 }

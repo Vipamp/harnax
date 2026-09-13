@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.reactivestreams.Subscription
+import org.springframework.test.util.ReflectionTestUtils
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
 import java.util.concurrent.CountDownLatch
@@ -85,16 +87,41 @@ class DefaultAgentRunnerTest {
     @Nested
     inner class ExecuteCommand {
         @Test
-        fun `executeCommand INTERRUPT cancels active stream`() {
-            val request = CommandAgentRequest(
-                sessionId = "session-1",
-                command = CommandType.INTERRUPT,
+        fun `executeCommand INTERRUPT reports the miss instead of claiming success`() {
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
             )
 
-            val response = runner.executeCommand(request)
+            assertFalse(response.success)
+            assertEquals("No live execution for this session on this instance", response.message)
+        }
+
+        @Test
+        fun `executeCommand INTERRUPT reports the hit and reaches the agent`() {
+            stubAgentCreation()
+            val insideCall = CountDownLatch(1)
+            val letCallFinish = CountDownLatch(1)
+            `when`(agentWrapper.call(any<String>(), any())).thenAnswer {
+                insideCall.countDown()
+                assertTrue(letCallFinish.await(5, TimeUnit.SECONDS), "test must let the call finish")
+                ChatResponse(sessionId = "session-1", content = "done")
+            }
+            val caller = Thread {
+                runner.process(ChatAgentRequest(sessionId = "session-1", message = "hello"))
+            }
+            caller.start()
+            assertTrue(insideCall.await(5, TimeUnit.SECONDS), "the call should have started")
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
+            )
+
+            letCallFinish.countDown()
+            caller.join(5_000)
 
             assertTrue(response.success)
             assertEquals("Stream interrupted", response.message)
+            verify(agentWrapper).interrupt()
         }
 
         @Test
@@ -546,8 +573,75 @@ class DefaultAgentRunnerTest {
     @Nested
     inner class Interrupt {
         @Test
-        fun `interrupt does nothing when no active stream`() {
-            assertDoesNotThrow { runner.interrupt("nonexistent-session") }
+        fun `interrupt reports a miss when neither an agent nor a stream is live`() {
+            // The miss is the whole point: a caller must be able to tell "stopped" from "already gone".
+            assertFalse(runner.interrupt("nonexistent-session"))
+        }
+
+        @Test
+        fun `a session whose agent is still being built counts as a live execution`() {
+            // process() registers the call before it builds the agent, because assembly plus sandbox
+            // creation takes seconds and an INTERRUPT landing in that window is addressed to a run that
+            // really is in flight. Answering "no live execution" here would let the caller finalise the
+            // row while this thread goes on to create a sandbox nobody owns.
+            stubAgentSpec()
+            val insideBuild = CountDownLatch(1)
+            val letBuildFinish = CountDownLatch(1)
+            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenAnswer {
+                insideBuild.countDown()
+                assertTrue(
+                    letBuildFinish.await(5, TimeUnit.SECONDS),
+                    "test must let the agent build finish",
+                )
+                agentWrapper
+            }
+            val caller = Thread {
+                runCatching {
+                    runner.process(ChatAgentRequest(sessionId = "session-building", message = "hello"))
+                }
+            }
+            caller.start()
+            assertTrue(insideBuild.await(5, TimeUnit.SECONDS), "the agent build should have started")
+
+            val live = runner.interrupt("session-building")
+
+            letBuildFinish.countDown()
+            caller.join(5_000)
+
+            assertTrue(live, "a session mid-build is an execution in flight, not a miss")
+        }
+
+        @Test
+        fun `an agent left in the cache with nothing running is not a live execution`() {
+            // Was: `a cached agent alone counts as a live execution`, asserting assertTrue here. That
+            // was wrong: agentCache is a 30-minute TTL cache, so a cache hit says only that this
+            // instance once served the session — not that anything is progressing it. Answering
+            // "hit" to a stop request on that basis left the scheduler node with no owning process
+            // and no final status, and the row was eventually labelled a timeout by the reaper.
+            // Now: still a miss even though interrupt() does reach into the cached wrapper.
+            stubAgentCreation()
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = "session-cached", content = "ok"),
+            )
+            runner.process(ChatAgentRequest(sessionId = "session-cached", message = "hi"))
+
+            assertFalse(runner.interrupt("session-cached"))
+            verify(agentWrapper).interrupt()
+        }
+
+        @Test
+        fun `an active stream is cancelled and counts as a live execution`() {
+            // The arm the old test name promised but never actually exercised.
+            val subscription = mock(Subscription::class.java)
+
+            @Suppress("UNCHECKED_CAST")
+            val activeStreams = ReflectionTestUtils.getField(runner, "activeStreams") as MutableMap<String, Subscription>
+            activeStreams["session-stream"] = subscription
+
+            assertTrue(runner.interrupt("session-stream"))
+
+            verify(subscription).cancel()
+            assertFalse(activeStreams.containsKey("session-stream"))
         }
     }
 

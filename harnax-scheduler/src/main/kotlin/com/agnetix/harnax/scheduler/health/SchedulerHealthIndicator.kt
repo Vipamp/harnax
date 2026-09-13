@@ -17,11 +17,18 @@ import org.springframework.stereotype.Component
  * Status rules:
  * - `UP` — a load has succeeded and nothing has failed since, or scheduling is disabled on this node
  * - `DOWN` — no load has ever succeeded, or the most recent load failed
+ *
+ * A load that registered only *some* of the active tasks counts as failed: it leaves `lastLoadError`
+ * set, which is what keeps a drifting node out of `UP`.
+ *
+ * The rules above are the whole of the verdict; `scheduledJobCount` below is a detail and never feeds
+ * into it.
  */
 @Component("scheduler")
 class SchedulerHealthIndicator(
     private val status: SchedulerStatus,
     private val schedulerFactory: SchedulerFactoryBean,
+    private val jobInventory: QuartzJobInventory,
 ) : HealthIndicator {
 
     private val log = LoggerFactory.getLogger(SchedulerHealthIndicator::class.java)
@@ -35,7 +42,7 @@ class SchedulerHealthIndicator(
         val base = Health.up()
             .withDetail("quartzStarted", quartz?.isStarted ?: false)
             .withDetail("instanceId", quartz?.metaData?.schedulerInstanceId ?: "unknown")
-            .withDetail("scheduledJobCount", status.scheduledJobCount)
+            .withDetail("scheduledJobCount", liveJobCount())
             .withDetail("lastLoadSuccessAt", status.lastLoadSuccessAt?.toString() ?: "never")
         status.lastLoadError?.let { base.withDetail("lastLoadError", it) }
 
@@ -53,4 +60,13 @@ class SchedulerHealthIndicator(
         }
         return base.build()
     }
+
+    /**
+     * What this instance is scheduling *right now*, read straight off the Quartz store: start/pause and
+     * every CRUD move jobs without going through the load path, so the number the load remembered was
+     * wrong from the first toggle onwards (that is why `SchedulerStatus.lastLoadJobCount` is no longer
+     * published here). -1 when the store cannot be read at all — the count is a detail, so a failing
+     * read must not decide the status, which is `quartzStarted`'s job.
+     */
+    private fun liveJobCount(): Int = runCatching { jobInventory.scheduledTaskIds().size }.getOrDefault(-1)
 }

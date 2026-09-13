@@ -4,9 +4,12 @@ import com.agnetix.harnax.admin.dto.AgentTaskLogResponse
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.entity.AgentTaskLog
 
+/**
+ * Reads of `agent_task_log`. [page] is the only collection read there is, and it is gated through the
+ * owning task: a log row repeats that task's prompt, response and error verbatim, so it is only readable
+ * by someone who may see the task. There is no read-by-task-id beside it to bypass that rule.
+ */
 interface AgentTaskLogService {
-
-    fun save(log: AgentTaskLog): Boolean
 
     fun page(
         taskId: Long?,
@@ -18,8 +21,6 @@ interface AgentTaskLogService {
         pageNum: Int,
         pageSize: Int,
     ): Page<AgentTaskLog>
-
-    fun getLogsByTaskId(taskId: Long): List<AgentTaskLog>
 
     fun convertToResponse(log: AgentTaskLog): AgentTaskLogResponse
 }

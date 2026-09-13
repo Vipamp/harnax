@@ -156,15 +156,31 @@ class AgentControllerIntegrationTest {
     inner class InterruptEndpoint {
         @Test
         fun `interrupt delegates to runner`() {
+            `when`(agentRunner.interrupt("sess-1")).thenReturn(true)
+
             mockMvc.perform(post("/api/agent/chat/interrupt/sess-1"))
                 .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value("OK"))
 
             verify(agentRunner).interrupt("sess-1")
         }
 
         @Test
+        fun `interrupt reports a miss instead of claiming success`() {
+            // A mock answers false by default, which is exactly the case that used to be invisible.
+            `when`(agentRunner.interrupt("sess-gone")).thenReturn(false)
+
+            mockMvc.perform(post("/api/agent/chat/interrupt/sess-gone"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.message").value("No live execution for session sess-gone"))
+        }
+
+        @Test
         fun `interrupt with special characters in sessionId`() {
+            `when`(agentRunner.interrupt("sess-abc-123")).thenReturn(true)
+
             mockMvc.perform(post("/api/agent/chat/interrupt/sess-abc-123"))
                 .andExpect(status().isOk)
 

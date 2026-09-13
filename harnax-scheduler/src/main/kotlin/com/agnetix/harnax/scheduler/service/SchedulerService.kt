@@ -44,14 +44,58 @@ interface SchedulerService {
     fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
 
     /**
+     * Whether this task already has an execution live *right now*.
+     *
+     * The read is keyed by task and cheap when nothing is running: an empty result is the answer, and no
+     * table-wide reclaim runs for it. Only a row that is actually there gets judged against its own
+     * timeout, and that reclaim is rate limited per node — it is a scan-type UPDATE competing with the
+     * inserts of the executions starting right now. A dead node therefore costs at most one window of
+     * refusal, not a forever-blocked task; the unbounded reclaim is housekeeping's.
+     *
+     * The cluster lock cannot answer this question: `agent_task_execution` is keyed by
+     * (task id, trigger time), so it only ever dedupes one fire across instances and says nothing about
+     * an earlier fire of the same task still running. A Quartz fire asks before it starts work.
+     */
+    fun hasActiveRunningExecution(taskId: Long): Boolean
+
+    /**
+     * Reclaim execution log rows that outran their own task's timeout: the rows a node leaves behind
+     * when it dies mid-task, which otherwise read as "still running" forever.
+     *
+     * @return how many rows were reclaimed; 0 both for "nothing was stale" and for "the sweep failed",
+     *   which it reports by log line rather than by throwing — a housekeeping sweep that dies on one
+     *   statement would take the rest of them down with it.
+     */
+    fun expireStaleExecutions(): Int
+
+    /**
+     * Drop execution logs older than [retentionDays], terminal rows only. The log table is otherwise
+     * append-only, and every row carries the prompt and the full agent response.
+     *
+     * @return how many rows were dropped, 0 when the sweep failed for the same reason as above
+     */
+    fun cleanupOldExecutionLogs(retentionDays: Int): Int
+
+    /**
      * Manually trigger a task execution (bypassing Quartz scheduling).
      * Executes asynchronously and returns immediately.
+     *
+     * Bypassing Quartz also means bypassing everything Quartz protects: the graceful-shutdown wait and
+     * the container's `stop_grace_period` cover the cron path, not this thread, so a restart mid-run
+     * leaves this execution's row at 3 and its lock row at 0.
      */
     fun triggerManually(id: Long): Boolean
 
     /**
-     * Stop a running task execution by logId.
-     * Sends INTERRUPT command to router and interrupts the executing thread.
+     * Ask for one execution to stop, by log id: the row is claimed for stopping (3 -> 4) and the router is
+     * asked to deliver INTERRUPT for its session.
+     *
+     * Nothing here is interrupted — no thread of this node runs the task (the Quartz job calls the router
+     * synchronously, and the session lives on whichever agent-service instance owns it). What this call
+     * reports is therefore what the router answered: delivered, in which case the owning execution closes
+     * its own row out; an explicit miss, in which case nobody will ever report that outcome and the row is
+     * settled as stopped right here; or no verdict at all, in which case the row stays at 4 and the owning
+     * node's write-back or the stale sweep decides what it becomes.
      */
     fun stopTask(logId: Long): Boolean
 

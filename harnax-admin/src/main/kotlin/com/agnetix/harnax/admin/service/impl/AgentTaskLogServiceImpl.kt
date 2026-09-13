@@ -3,6 +3,8 @@ package com.agnetix.harnax.admin.service.impl
 import com.agnetix.harnax.admin.dto.AgentTaskLogResponse
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.service.AgentTaskLogService
+import com.agnetix.harnax.admin.util.JwtUtil
+import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.github.pagehelper.PageHelper
@@ -12,14 +14,10 @@ import org.springframework.stereotype.Service
 @Service
 class AgentTaskLogServiceImpl(
     private val agentTaskLogMapper: AgentTaskLogMapper,
+    private val jwtUtil: JwtUtil,
 ) : AgentTaskLogService {
 
     private val log = LoggerFactory.getLogger(AgentTaskLogServiceImpl::class.java)
-
-    override fun save(taskLog: AgentTaskLog): Boolean {
-        log.info("Saving agent task log, taskId: {}, status: {}", taskLog.taskId, taskLog.status)
-        return agentTaskLogMapper.insert(taskLog) > 0
-    }
 
     override fun page(
         taskId: Long?,
@@ -45,10 +43,27 @@ class AgentTaskLogServiceImpl(
         val safePageNum = pageNum.coerceAtLeast(1)
         val safePageSize = pageSize.coerceIn(1, 1000)
         PageHelper.startPage<AgentTaskLog>(safePageNum, safePageSize)
-        return Page.fromPageInfo(agentTaskLogMapper.selectLogList(taskId, taskName, status, startTimeFrom, startTimeTo, keyword))
+        // A log is only readable through a task the caller may see; the join in selectLogList enforces
+        // it, and this is the one place that learns who is asking. No tenant is forwarded: the gate is
+        // the creator/public rule, which is exactly what the task list applies. agent_task.tenant_id is
+        // only the snapshot of the tenant active at creation time, so narrowing the log read by the
+        // caller's current tenant would leave a task listed while its own execution logs come back empty.
+        //
+        // "The one path" is now literal rather than a hope: the unguarded `selectByTaskId` read that sat
+        // beside it — same rows, no join, no caller — is gone, so nothing can reach this table without
+        // going through the visibility gate above.
+        return Page.fromPageInfo(
+            agentTaskLogMapper.selectLogList(
+                taskId,
+                taskName,
+                status,
+                startTimeFrom,
+                startTimeTo,
+                keyword,
+                UserContextUtil.getCurrentUsername(jwtUtil),
+            ),
+        )
     }
-
-    override fun getLogsByTaskId(taskId: Long): List<AgentTaskLog> = agentTaskLogMapper.selectByTaskId(taskId)
 
     override fun convertToResponse(taskLog: AgentTaskLog): AgentTaskLogResponse = AgentTaskLogResponse.fromEntity(taskLog)
 }

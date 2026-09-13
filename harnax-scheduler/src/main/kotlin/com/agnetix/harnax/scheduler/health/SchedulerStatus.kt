@@ -31,11 +31,31 @@ class SchedulerStatus(
 
     val lastLoadError: String? get() = loadError
 
-    val scheduledJobCount: Int get() = jobCount
+    /**
+     * How many tasks the *most recent load* registered — not what this instance is scheduling now.
+     *
+     * Nothing here sees `startTask`/`pauseTask` or any CRUD, so reading this as a live count is how the
+     * health detail and the `scheduler.jobs.scheduled` gauge ended up reporting a startup number forever.
+     * Both now read the store through `QuartzJobInventory`; this stays only as load bookkeeping
+     * (and as what [lastLoadError] drifts against).
+     */
+    val lastLoadJobCount: Int get() = jobCount
 
-    fun recordLoadSuccess(jobCount: Int) {
+    /**
+     * Records a load that registered [jobCount] jobs.
+     *
+     * [pendingError] carries the "partly" in "partly succeeded": pass it when some active tasks could
+     * not be registered and the load therefore left this instance drifting. The timestamp and the count
+     * still move — jobs *are* firing — but [lastLoadError] stays set so the health check keeps reporting
+     * DOWN instead of clearing a real problem just because something else succeeded. A clean sweep is
+     * the only thing that resets it.
+     */
+    fun recordLoadSuccess(
+        jobCount: Int,
+        pendingError: String? = null,
+    ) {
         loadSuccessAt = Instant.now()
-        loadError = null
+        loadError = pendingError
         this.jobCount = jobCount
     }
 

@@ -4,6 +4,7 @@ import { createAgentTask, updateAgentTask, getAvailableAgents } from '@/services
 import { useIntl } from '@umijs/max';
 import { ScheduleOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
+import { CODE_SCHEDULER_SYNC_FAILED } from '../constants';
 
 const { TextArea } = Input;
 
@@ -65,7 +66,9 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
 
       let response;
       if (values) {
-        response = await updateAgentTask(values.id, data);
+        // 传 skipErrorHandler 只是关掉全局红色 toast；code !== 200 仍然会以 BizError 形式抛进下面的 catch，
+        // 业务码在 error.info 里。
+        response = await updateAgentTask(values.id, data, { skipErrorHandler: true });
       } else {
         response = await createAgentTask(data);
       }
@@ -79,6 +82,13 @@ const TaskForm: React.FC<TaskFormProps> = ({ visible, values, onCancel, onSucces
         message.error(response.message || intl.formatMessage({ id: 'pages.agentTask.operationFailed', defaultMessage: 'Operation failed' }));
       }
     } catch (error: any) {
+      if (values && error?.info?.errorCode === CODE_SCHEDULER_SYNC_FAILED) {
+        // 任务已经存下来了，只是 scheduler 没有确认重载，下一次加载会自动对齐。
+        // 这里按"编辑已完成"处理（关弹窗 + 刷新列表）并只给 warning，而不是让用户以为要重来一次。
+        message.warning(intl.formatMessage({ id: 'pages.agentTask.savedNotReloaded', defaultMessage: 'Saved, but the scheduler did not reload yet. It will catch up on its own.' }));
+        onSuccess();
+        return;
+      }
       const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.agentTask.operationFailed', defaultMessage: 'Operation failed' });
       message.error(errorMsg);
     } finally {

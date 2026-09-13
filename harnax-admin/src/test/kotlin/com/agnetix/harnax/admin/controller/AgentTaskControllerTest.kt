@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.AgentTaskLogService
 import com.agnetix.harnax.admin.service.AgentTaskService
+import com.agnetix.harnax.admin.service.impl.AgentTaskServiceImpl
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentTask
@@ -296,7 +297,8 @@ class AgentTaskControllerTest {
                     .content(toJson(request)),
             )
                 .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
+                // The service's business code survives; only unexpected failures become 500.
+                .andExpect(jsonPath("$.code").value(400))
         }
 
         @Test
@@ -351,8 +353,8 @@ class AgentTaskControllerTest {
                     .content(toJson(request)),
             )
                 .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("Failed to update agent task: Invalid cron expression"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Invalid cron expression"))
         }
 
         @Test
@@ -367,8 +369,33 @@ class AgentTaskControllerTest {
                     .content(toJson(request)),
             )
                 .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("Failed to update agent task: Task name already exists"))
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value("Task name already exists"))
+        }
+
+        /**
+         * The reload broadcast leaves after the commit, so a failed one cannot be reported as "your
+         * edit did not happen". Its business code has to reach the caller intact — flattening it to 500
+         * here is what made the old failure invisible.
+         */
+        @Test
+        fun `update reports the scheduler sync code instead of hiding it in a generic failure`() {
+            val request = AgentTaskUpdateRequest(prompt = "Updated prompt")
+            `when`(agentTaskService.updateAgentTask(any(), any())).thenThrow(
+                BizException(
+                    AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED,
+                    "Task saved, but the scheduler did not reload: scheduler boom.",
+                ),
+            )
+
+            mockMvc.perform(
+                put("/api/admin/agent-tasks/1")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(toJson(request)),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED))
+                .andExpect(jsonPath("$.message").value("Task saved, but the scheduler did not reload: scheduler boom."))
         }
     }
 
@@ -394,7 +421,23 @@ class AgentTaskControllerTest {
 
             mockMvc.perform(delete("/api/admin/agent-tasks/999"))
                 .andExpect(status().isOk)
-                .andExpect(jsonPath("$.code").value(500))
+                // Business code, not a flattened 500: same rule as the update endpoint.
+                .andExpect(jsonPath("$.code").value(400))
+        }
+
+        @Test
+        fun `delete reports the scheduler sync code so a stale schedule is not a silent success`() {
+            `when`(agentTaskService.deleteAgentTask(1L)).thenThrow(
+                BizException(
+                    AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED,
+                    "Task deleted, but the scheduler did not reload: scheduler boom.",
+                ),
+            )
+
+            mockMvc.perform(delete("/api/admin/agent-tasks/1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED))
+                .andExpect(jsonPath("$.message").value("Task deleted, but the scheduler did not reload: scheduler boom."))
         }
     }
 
@@ -594,6 +637,33 @@ class AgentTaskControllerTest {
             `when`(agentTaskService.toggleTaskStatus(1L, 0)).thenReturn(false)
 
             mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "0"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(500))
+        }
+
+        /**
+         * The service forwards whatever the scheduler answered, and 40903 ("this instance has
+         * `scheduler.enabled=false`") is the one code the UI can act on — the status switch is exactly the
+         * request a standby node refuses. Flattening it to 500 made the toggle look broken here rather
+         * than pointed at the wrong node, which is what update/delete already avoid.
+         */
+        @Test
+        fun `toggle reports the scheduler business code instead of folding it into a 500`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 1)).thenThrow(
+                BizException(40903, "Scheduling is disabled on this instance"),
+            )
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "1"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(40903))
+                .andExpect(jsonPath("$.message").value("Scheduling is disabled on this instance"))
+        }
+
+        @Test
+        fun `toggle still flattens an unexpected failure`() {
+            `when`(agentTaskService.toggleTaskStatus(1L, 1)).thenThrow(RuntimeException("connection refused"))
+
+            mockMvc.perform(post("/api/admin/agent-tasks/toggle/1").param("status", "1"))
                 .andExpect(status().isOk)
                 .andExpect(jsonPath("$.code").value(500))
         }

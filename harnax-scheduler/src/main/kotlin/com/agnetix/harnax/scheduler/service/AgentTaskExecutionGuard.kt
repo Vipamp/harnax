@@ -4,6 +4,7 @@ import com.agnetix.harnax.entity.AgentTaskExecution
 import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -17,6 +18,12 @@ import java.util.UUID
 class AgentTaskExecutionGuard(
     private val executionMapper: AgentTaskExecutionMapper,
     @Value("\${scheduler.instance-id:#{null}}") private val configuredInstanceId: String?,
+    /**
+     * The same key `SchedulerServiceImpl` and `RouterClient` read: how long an execution may take, how
+     * long until its log row counts as a zombie and how long until its lock row counts as leaked have to
+     * be one number told three ways, or the sweep frees a lock whose execution is still running.
+     */
+    @Value("\${scheduler.timeout-seconds:300}") private val executionTimeoutSeconds: Int,
 ) {
     private val log = LoggerFactory.getLogger(AgentTaskExecutionGuard::class.java)
 
@@ -26,7 +33,17 @@ class AgentTaskExecutionGuard(
 
     /**
      * Try to acquire execution lock for a task at a specific trigger time.
-     * Returns true if lock acquired (this instance should execute), false otherwise.
+     *
+     * @return true if lock acquired (this instance should execute), false if the unique key said so.
+     * @throws org.springframework.dao.DataAccessException anything the insert failed for *besides* a
+     *   duplicate key — exhausted pool, deadlock rollback, statement timeout.
+     *
+     * The two answers are not interchangeable, and this method used to hand back `false` for both. Every
+     * caller reads false as "someone else has this run": `SchedulerController` turns it into business
+     * code 40901 "Task execution is already in progress", and a cron fire logs "skipping" and does
+     * nothing. A database that could not be reached therefore looked exactly like a healthy cluster with a
+     * concurrent execution, and the fire that should have run was quietly thrown away. Only the unique
+     * constraint is evidence about another instance; anything else has to reach the caller as what it is.
      */
     fun tryAcquireLock(taskId: Long, triggerTime: LocalDateTime): Boolean = try {
         val execution = AgentTaskExecution().apply {
@@ -39,8 +56,8 @@ class AgentTaskExecutionGuard(
         executionMapper.insert(execution)
         log.debug("Acquired execution lock for task {} at {}", taskId, triggerTime)
         true
-    } catch (e: Exception) {
-        // Unique constraint violation means another instance already has the lock
+    } catch (e: DuplicateKeyException) {
+        // The one failure that actually says another instance holds this (task_id, trigger_time).
         log.debug("Failed to acquire execution lock for task {} at {}: {}", taskId, triggerTime, e.message)
         false
     }
@@ -77,6 +94,27 @@ class AgentTaskExecutionGuard(
         } catch (e: Exception) {
             log.warn("Failed to cleanup old executions: {}", e.message)
         }
+    }
+
+    /**
+     * Release locks whose holder is gone. A row still at status 0 after twice the execution timeout
+     * cannot have a live owner — the execution would have been reaped by then — and leaving it in place
+     * blocks that (task_id, trigger_time) from ever being delivered again.
+     *
+     * Twice, not once: the log-side sweep runs at 1.5x the timeout with its own grace window, and a
+     * lock reaped before its execution has honestly given up would let the same trigger run twice.
+     */
+    fun cleanupLeakedLocks(): Int = try {
+        val deleted = executionMapper.deleteStaleRunning(
+            LocalDateTime.now().minusSeconds(executionTimeoutSeconds * 2L),
+        )
+        if (deleted > 0) {
+            log.info("Released {} execution lock(s) whose holder is gone", deleted)
+        }
+        deleted
+    } catch (e: Exception) {
+        log.warn("Failed to sweep leaked execution locks: {}", e.message)
+        0
     }
 
     private fun getHostName(): String = try {

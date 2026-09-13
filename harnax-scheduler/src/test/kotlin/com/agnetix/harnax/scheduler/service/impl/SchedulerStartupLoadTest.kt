@@ -4,6 +4,7 @@ import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
@@ -22,8 +23,10 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
+import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.JobKey
 import org.quartz.Scheduler
 import org.springframework.boot.health.contributor.Status
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
@@ -58,6 +61,8 @@ class SchedulerStartupLoadTest {
 
     private lateinit var status: SchedulerStatus
 
+    private lateinit var jobInventory: QuartzJobInventory
+
     private lateinit var health: SchedulerHealthIndicator
 
     private lateinit var service: SchedulerServiceImpl
@@ -68,7 +73,10 @@ class SchedulerStartupLoadTest {
         whenever(quartz.isStarted).thenReturn(true)
 
         status = SchedulerStatus(schedulerEnabled = true)
-        val metrics = SchedulerMetrics(registry, status)
+        // The live job count now has one implementation, QuartzJobInventory, shared by the gauge and the
+        // health detail; a real one over the mocked factory keeps both reads on the production path.
+        jobInventory = QuartzJobInventory(schedulerFactory)
+        val metrics = SchedulerMetrics(registry, jobInventory)
         metrics.initMeters()
         service = SchedulerServiceImpl(
             schedulerFactory,
@@ -78,9 +86,13 @@ class SchedulerStartupLoadTest {
             executionGuard,
             status,
             metrics,
+            jobInventory = jobInventory,
+            executionTimeoutSeconds = 300,
             schedulerEnabled = true,
         )
-        health = SchedulerHealthIndicator(status, schedulerFactory)
+        // Same inventory the service delegates to, so the health detail goes through the read it uses in
+        // production.
+        health = SchedulerHealthIndicator(status, schedulerFactory, jobInventory)
     }
 
     @AfterEach
@@ -98,14 +110,28 @@ class SchedulerStartupLoadTest {
     }
 
     @Test
-    fun `a successful load publishes the job count to health`() {
+    fun `a successful load recovers health and reports the live job count`() {
         whenever(agentTaskMapper.selectRunningTasks()).thenReturn(listOf(task(1L), task(2L)))
+        // The health detail is no longer the number the load remembered: it is read back off the store,
+        // which is what keeps it honest across start/pause/CRUD. Stub that read here.
+        whenever(quartz.getJobKeys(any())).thenReturn(
+            setOf(JobKey("AgentTask_1", "AgentTaskGroup"), JobKey("AgentTask_2", "AgentTaskGroup")),
+        )
 
         service.loadTasksToScheduler()
 
-        assertEquals(2, status.scheduledJobCount)
+        val healthDetails = health.health().details
+        assertEquals(2, status.lastLoadJobCount, "load bookkeeping still records what this load registered")
+        assertEquals(2, healthDetails["scheduledJobCount"], "the detail is the live store content")
         assertNotNull(status.lastLoadSuccessAt)
         assertEquals(Status.UP, health.health().status)
+        // The gauge is wired to the same inventory read as the health detail, so a scrape here sees the
+        // store rather than the startup number: that is the whole point of the real QuartzJobInventory.
+        assertEquals(
+            2.0,
+            registry.get("scheduler.jobs.scheduled").gauge().value(),
+            "the gauge has to follow the live store",
+        )
     }
 
     @Test
@@ -132,7 +158,7 @@ class SchedulerStartupLoadTest {
 
         assertTrue(sawDown, "health should report DOWN while the load is still failing")
         assertEquals(Status.UP, observed.status, "load should recover once the database answers")
-        assertEquals(1, status.scheduledJobCount)
+        assertEquals(1, status.lastLoadJobCount)
         assertNull(status.lastLoadError)
         assertEquals(
             1.0,
@@ -150,11 +176,16 @@ class SchedulerStartupLoadTest {
         val complete = service.loadTasksToScheduler()
 
         assertFalse(complete)
-        assertEquals(0, status.scheduledJobCount)
+        assertEquals(0, status.lastLoadJobCount)
         assertNotNull(status.lastLoadError)
         assertEquals(Status.DOWN, health.health().status)
     }
 
+    /**
+     * Used to read `UP`: a partial success cleared the error, so a node that lost one task to a bad
+     * cron looked perfectly healthy. Drift is a failure signal now — the count still says how much is
+     * scheduling, the error says what is not.
+     */
     @Test
     fun `a load that registers only part of the active tasks keeps retrying`() {
         whenever(agentTaskMapper.selectRunningTasks())
@@ -163,8 +194,15 @@ class SchedulerStartupLoadTest {
         val complete = service.loadTasksToScheduler()
 
         assertFalse(complete, "an incomplete load must be retried")
-        assertEquals(1, status.scheduledJobCount)
-        assertEquals(Status.UP, health.health().status, "this node is scheduling, just not everything")
+        assertEquals(1, status.lastLoadJobCount, "the tasks that did register still count")
+        assertNotNull(status.lastLoadError, "a partial load must not clear the error")
+        assertTrue(status.lastLoadError!!.contains("ids=[2]"), "got: ${status.lastLoadError}")
+        assertEquals(Status.DOWN, health.health().status, "a node missing part of its tasks is not healthy")
+        assertEquals(
+            1.0,
+            registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count(),
+            "the drift has to show up as a failed load attempt, not a success",
+        )
     }
 
     private fun task(id: Long, cron: String = "0 0/5 * * * ?") = AgentTask().apply {

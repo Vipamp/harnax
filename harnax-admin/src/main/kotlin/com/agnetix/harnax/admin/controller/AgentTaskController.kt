@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.AgentTaskCreateRequest
 import com.agnetix.harnax.admin.dto.AgentTaskResponse
 import com.agnetix.harnax.admin.dto.AgentTaskUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.AgentService
 import com.agnetix.harnax.admin.service.AgentTaskLogService
 import com.agnetix.harnax.admin.service.AgentTaskService
@@ -78,6 +79,11 @@ class AgentTaskController(
         } else {
             ResultVo.error("Update failed")
         }
+    } catch (e: BizException) {
+        // Let the business code through: the generic handler below flattens everything to 500, and
+        // 40902 ("saved, but no scheduler reloaded") has to stay distinguishable from "not saved".
+        log.warn("Failed to update agent task: id={}, code={}, message={}", id, e.code, e.message)
+        ResultVo.error(e.code, e.message ?: "Update failed")
     } catch (e: Exception) {
         log.error("Failed to update agent task", e)
         ResultVo.error("Failed to update agent task: ${e.message}")
@@ -92,6 +98,9 @@ class AgentTaskController(
         } else {
             ResultVo.error("Delete failed")
         }
+    } catch (e: BizException) {
+        log.warn("Failed to delete agent task: id={}, code={}, message={}", id, e.code, e.message)
+        ResultVo.error(e.code, e.message ?: "Delete failed")
     } catch (e: Exception) {
         log.error("Failed to delete agent task", e)
         ResultVo.error("Failed to delete agent task: ${e.message}")
@@ -112,6 +121,12 @@ class AgentTaskController(
         } else {
             ResultVo.error("Failed to toggle task status")
         }
+    } catch (e: BizException) {
+        // Business code through unchanged, same rule as update/delete: `toggle` is what the UI's status
+        // switch calls, and the service forwards the scheduler's own answer — flattening 40903
+        // ("scheduling is disabled on this instance") into a 500 left the operator with nothing to act on.
+        log.warn("Failed to toggle task status: id={}, code={}, message={}", id, e.code, e.message)
+        ResultVo.error(e.code, e.message ?: "Failed to toggle task status")
     } catch (e: Exception) {
         log.error("Failed to toggle task status", e)
         ResultVo.error(e.message ?: "Failed to toggle task status")

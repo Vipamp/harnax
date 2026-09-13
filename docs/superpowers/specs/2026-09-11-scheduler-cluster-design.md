@@ -24,7 +24,7 @@
 | D3 | 表放哪 | **独立 `harnax_scheduler` 库** | scheduler 独占 schema 所有权 |
 | D4 | sessionId 是否编码 agentId | **编码**，格式 `task-{taskId}-{agentId}-{uuid}` | 省掉 spec 热路径上的 `agent-id` 端点与一跳网络，并让 admin 不再对 `agent_task` 发 SQL。**注**：另有一条冷路径依赖（MCP 属主解析）须由 C5 承接，见 2.1 |
 | D5 | 任务级权限模式 | **本轮不做**，`permissionMode = "BYPASS"` 继续硬编码在 admin 的 `resolveFromTask` | 属新功能（任务级可配 + webui 配置项），不混入架构改造；记入 fast-follow F5 |
-| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 360s` + 部署脚本逐台滚动 | 见 6.2、6.3 的配套约束 |
+| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 400s` + 部署脚本逐台滚动。**保护范围 = Quartz 认得的路径**（cron 与 `/run-once` one-shot）；手动 `/trigger` 仍起裸 daemon 线程，停机不等它，S4 把它并入 Quartz 之前不受本条保护 | 见 6.2、6.3 的配套约束 |
 | D7 | 中断未命中的修法 | **如实返回命中结果**（跨 agent-service / router / scheduler 三侧） | 拒绝"靠超时猜"的方案，避免孤儿 sandbox |
 | D8 | 数据 | **迁任务定义，不迁历史日志** | 同实例跨库 `INSERT ... SELECT` 成本极低；历史 `agent_task_log` 价值低且量大 |
 
@@ -106,7 +106,7 @@ spring:
 
 **约束 1**：**不要显式配置 `org.quartz.jobStore.class`**。Spring Boot 会用 `LocalDataSourceJobStore` 覆盖它并接上自己的数据源；写死 `JobStoreTX` 会造成连不上 Spring 管理的数据源。
 
-**约束 2**：`waitForJobsToCompleteOnShutdown` 不是 Boot 的 `spring.quartz.*` 键，需在 scheduler 的 `@Configuration` 里用 `SchedulerFactoryBeanCustomizer` 调 `setWaitForJobsToCompleteOnShutdown(true)`（D6）。现有 `SchedulerConfig` 是加这个 bean 的位置。
+**约束 2**：`waitForJobsToCompleteOnShutdown` **不需要** `SchedulerFactoryBeanCustomizer`——它就是 Boot 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（Boot 4.0.1 的 `spring-boot-quartz` 模块，`QuartzProperties`；早先这里写的"不是 `spring.quartz.*` 键"是错的）。真正的约束是它的**默认值为 `false`**：必须显式设成 `true`，且必须与容器侧 `stop_grace_period` 配套——job 在 Quartz 线程内同步执行之后，这个开关才有东西可等，而等待一旦超过 `stop_grace_period` 就会被 SIGKILL 截断，落在中间的 execution 与 task_log 行仍要等 housekeeping 收。本分支已按属性落地（`harnax-scheduler/src/main/resources/application.yml` 的 `${QUARTZ_WAIT_FOR_JOBS:true}` + compose 的 `stop_grace_period: 400s`，取值见那里的注释）。
 
 **约束 3**：Hikari `maximum-pool-size` 从 10 提到 30，需 ≥ `threadCount` + 业务查询并发。
 
@@ -161,13 +161,15 @@ spring:
 
 ### 4.3 中断未命中如实定态（D7）
 
-现状缺陷：`DefaultAgentRunner.interrupt()` 依赖 `agentCache.getIfPresent(sessionId)`，未命中时什么都不做却返回 `success("Stream interrupted")`（`DefaultAgentRunner.kt:239-254`）；scheduler 侧 `RouterClient.sendCommand` 返回 `Unit`、响应体根本未接收。后果链：agent-service 重启过或 session 映射过期被 reroute → 中断空转、执行继续 → 日志行停在 4 → `expireStale` 判 `2 timeout` → 而任务其实成功产出，结果被丢。用户视角是"点了停止，显示停止中，最后变成超时"。
+**改造前**的缺陷（D7 要消灭的就是它；T5/G5 已修，下面按改之前的样子陈述，判据见下一条修法）：`DefaultAgentRunner.interrupt()` 只看 `agentCache.getIfPresent(sessionId)`，未命中时什么都不做却返回 `success("Stream interrupted")`；scheduler 侧 `RouterClient.sendCommand` 返回 `Unit`、响应体根本未接收。今天的对应物：`interrupt()` 已是返回 `Boolean` 的那一个（`DefaultAgentRunner.kt:253`），`sendCommand` 返回 `CommandDelivery`（`RouterClient.kt:168`）。后果链（若不修就会发生）：agent-service 重启过或 session 映射过期被 reroute → 中断空转、执行继续 → 日志行停在 4 → `expireStale` 判 `2 timeout` → 而任务其实成功产出，结果被丢。用户视角是"点了停止，显示停止中，最后变成超时"。
 
 修法三处：
 
-1. agent-service：`interrupt()` 返回是否真的命中了一个活着的执行。可用信号两个——`agentCache.getIfPresent` 与 `activeCalls` 集合（blocking 调用会注册 sessionId，`DefaultAgentRunner.kt:124`）；未命中时返回 `CommandResponse.success = false` 并带明确 message。
+1. agent-service：`interrupt()` 返回是否真的命中了一个活着的执行。**存活信号两个——在途流 || `activeCalls`**（`DefaultAgentRunner.kt:266`：前者是该 session 还挂在 `activeStreams` 上的 `Subscription`，后者由 blocking 调用注册）。**`agentCache` 命中不算存活证据**——G5 已把这条臂从判据里去掉；缓存里的 wrapper 仍然会被调一次真 `interrupt()`（`:255-256`，那是真中断动作，不是判据）。未命中时返回 `CommandResponse.success = false` 并带明确 message。
+   - **为什么缓存那条臂要去掉**：`agentCache` 是 30 分钟 TTL 的缓存，命中只说明"本实例曾服务过该 session"，不说明"现在有东西在推进这次执行"。把它算作命中，会在 owning 节点已经消失后仍然答复"已送达"，那一行于是既没有 owner 也没有终态，最后被回收器写成 `2 timeout`——正是 D7 要消灭的表象。
+   - **为什么 `registerCall` 必须早于 agent 构建**（`DefaultAgentRunner.kt:131-135`）：spec 组装 + sandbox 创建要几秒，全程都算"执行在途"。若登记晚于构建，这段窗口里的 session 在判据眼里就是未命中，一次落在构建期的停止请求会把刚起跑的执行当场定成 5，而 sandbox 已经建起来且此后无人释放——留下一个孤儿容器。构建期抛异常时也要靠 `finally` 摘掉登记。
 2. router：`/api/router/agent/command` 已经把 `CommandResponse` 原样装进 `ResultVo.data` 回传（含 failover 分支的 failure），**无需改动，仅需加一条透传断言**。
-3. scheduler：`RouterClient.sendCommand` 当前签名是 **返回 `Unit`、响应体压根没有接收**（`RouterClient.kt:127-143` 调完 `.body(...)` 直接丢弃，只 log 一行"命令已发送"）。改为返回 `Boolean`（取 `data.success`），`stopTask` 在拿到 `false` 时**立即** `finalizeStopped`（4→5）定态，不等 `expireStale`。
+3. scheduler：`RouterClient.sendCommand` 当前签名是 **返回 `Unit`、响应体压根没有接收**（调完 `.body(...)` 直接丢弃，只 log 一行"命令已发送"）。改为返回 `Boolean`（取 `data.success`），`stopTask` 在拿到 `false` 时**立即** `finalizeStopped`（4→5）定态，不等 `expireStale`。**已实现，且落地比这句更强**：返回的是三态 `CommandDelivery`（`RouterClient.kt:168`）——`Delivered` / `Missed` / `Unanswered`，只有 `Missed`（有实例明确答"我这儿没有在途执行"）才当场 4→5；`Unanswered`（命令压根没送到）留在 4 交给执行节点或回收扫描。把它压回 `Boolean` 会把这两种情形混成一谈，于是"路由器不可达"也会被当成"执行已死"而定态。
 
 语义依据：命中不了 = 没有任何进程在推进这次执行 = 它已经死了，立即定态是陈述事实，不是猜测。这也是本修法优于"轮询几秒后自行定态"的原因——后者会在执行真的还在跑时留下孤儿 sandbox。
 
@@ -179,10 +181,16 @@ spring:
 
 ### 4.5 housekeeping
 
-新增一个集群内 housekeeping job（与 reconcile 同族，周期 5min），职责：
+**已实现**（`SchedulerHousekeepingJob.kt`，5 分钟 `SimpleTrigger` 而非 cron——这个清扫与任何用户的日程无关，且用 cron 会在"恰好是留下僵尸的那次重启"期间漏掉一轮）。四条职责，按此顺序：
 
-- 挂上 `cleanupOldExecutions(retentionDays)`（`AgentTaskExecutionGuard.kt:70`，**当前全仓库零调用方**，导致 `agent_task_execution` 只进不出）；
-- 清理超过 `timeout-seconds × 2` 仍停在 `status=0` 的 guard 泄漏行（抢锁成功但进程在执行前死亡的场景）。
+1. `expireStaleExecutions()`：回收节点已死的 `status=3` 日志行，否则任务永远显示"运行中"；
+2. `cleanupOldExecutionLogs(90)`：执行日志保留 **90 天**（`LOG_RETENTION_DAYS`）——每行都是一份 prompt 加完整回复，这张表此前**没有任何删除路径**；
+3. `cleanupOldExecutions(7)`：guard 行是记账不是用户数据，**7 天**过期（`GUARD_RETENTION_DAYS`）；`AgentTaskExecutionGuard.cleanupOldExecutions` 此前全仓库零调用方；
+4. `cleanupLeakedLocks()`：清理超过 `timeout-seconds × 2` 仍停在 `status=0` 的抢锁泄漏行（抢锁成功但进程在执行前死亡）。
+
+job 注册在 `SchedulerSystemGroup`，与用户任务的 `AgentTaskGroup` 分开——后者每次 reload 会整组删除，混进去的清扫 job 会在下一次 reload 被抹掉且不再重建（注册只发生在启动时）。类上带 `@DisallowConcurrentExecution`：一轮慢过周期的清扫不该再起第二轮，两个多行 DELETE 会互相阻塞，死锁的代价是两轮都没了。
+
+RAM store 下**每个实例各自扫**（四个操作都幂等，但确有重复功）；换到 JDBC store 后同一份注册自动变成集群单例，这里一行都不用改。
 
 `expireStale` 保留现有调用点（启动加载、并发判断前），并增加在 housekeeping 内调用。
 
@@ -190,11 +198,19 @@ spring:
 
 | # | 契约 | 变更 | 影响面 |
 |---|---|---|---|
-| C1 | 定时任务 sessionId 格式 | `task-{taskId}-{uuid}` → `task-{taskId}-{agentId}-{uuid}` | 生成方 1 处（`SchedulerServiceImpl.kt:317`）；**解析方 2 处**：`InternalApiController` 的 `resolveFromTask`（`split("-", limit=3)` → `limit=4`）与 `McpSessionOwnerResolver.fromTask`（`substringBefore('-')`，**无需改动**，仅纳入回归用例）；其余三处依赖都是 `startsWith("task-")`，不受影响。`agent_task_log.session_id` VARCHAR(64) → **VARCHAR(128)**（新格式实占 49~55） |
+| C1 | 定时任务 sessionId 格式 | `task-{taskId}-{uuid}` → `task-{taskId}-{agentId}-{uuid}` | 生成方 1 处（`SchedulerServiceImpl.kt:317`）；**解析方 2 处**：`InternalApiController` 的 `resolveFromTask`（`split("-", limit=3)` → `limit=4`）与 `McpSessionOwnerResolver.fromTask`（`substringBefore('-')`，**无需改动**，仅纳入回归用例）；其余三处依赖都是 `startsWith("task-")`，不受影响。`agent_task_log.session_id` VARCHAR(64) → **VARCHAR(128)**（新格式实占 49~55）。**并给 `resolveFromTask` 加 agentId 一致性校验**（F3 的第三刀 C）：sessionId 的 `{agentId}` 段今天被完全忽略，只用 `parts[1]`，改为与该行 `agent_task.agent_id` 比对、不一致即拒绝，把"任意字符串"收成"scheduler 真发出来的形态"。**此项只能与 C1 同批**：格式仍是三段时先收紧校验，会把所有真实任务会话一并拒掉 |
 | C2 | INTERRUPT 返回值语义 | 从"恒为 success"改为"如实反映是否命中活跃执行" | agent-service 实现 + scheduler 消费；router 透传不改 |
 | C3 | trigger 冲突识别 | 从字符串匹配文案改为业务码 `40901` | scheduler 出码、admin 透传、webui 改判 code（替掉 `index.tsx:122` 的 `includes('already running')`） |
 | C4 | admin→scheduler 转发头 | `X-Forwarded-User` / `X-Tenant-Id` + internal JWT | scheduler 新拦截器；`X-Forwarded-Tenant` 必须忽略（浏览器可伪造，见原文档 8.2） |
 | **C5** | task 属主查询 | 新增 `GET /api/scheduler/agent-tasks/{id}/owner` → `{creator, tenantId}` | admin 的 `McpSessionOwnerResolver.fromTask` 改调此端点（替代 `agentTaskMapper.selectAnyById`）。冷路径，见 2.1 的残留说明 |
+
+**已落地的业务码（S0/S1）**：
+
+| 码 | 常量 | 出码方 | 语义 |
+|---|---|---|---|
+| `40901` | `CODE_EXECUTION_IN_PROGRESS`（`SchedulerController.kt:162`） | scheduler，admin 原样透传 | 该任务已有活着的执行：既覆盖本实例 `concurrent=0` 的业务拦截，也覆盖集群抢锁失败——两者对用户的含义相同，重试或回滚都不是调用方的问题 |
+| `40902` | `CODE_SCHEDULER_SYNC_FAILED`（`AgentTaskServiceImpl.kt:291`） | admin | **定义已存库、但没有任何 scheduler 重载它**。与"没保存成功"必须可区分：前者数据是对的、只需重试调度，后者要重来一遍 |
+| `40903` | `CODE_SCHEDULER_DISABLED`（`SchedulerController.kt:169`） | scheduler，admin 透传 | 目标实例 `scheduler.enabled=false`，拒绝一切调度写操作。启停/触发/reload 都出这个码，前端按提示展示而非报 500 |
 
 C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFromTask` 必须做显式校验（段数、两段的数字解析），失败时抛带明确文案的异常；格式本身写进本文档作为契约条目。
 
@@ -209,19 +225,24 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 ### 6.2 两实例与优雅停机（D6 配套）
 
 - 删 `container_name: harnax-scheduler`（compose:270）与宿主映射 `28084:8084`（compose:294），改 `expose: ["8084"]`。
+  - 状态：映射改 `expose` 已由第二轮 R1 落地（compose 里已无 `28084`，故上面两处行号会漂移），`container_name` 仍待 S1。
 - **不在 compose 里声明 `deploy.replicas`**，实例数由部署脚本显式 `--scale scheduler=2` 决定。理由：6.3 的逐台滚动要在"停掉其中一台、补齐到 2"之间来回切换，声明式 replicas 会让 `--no-recreate` 的收敛行为变得难以推理。
-- `stop_grace_period: 360s`。**为什么不是 310s**：同步执行后一次执行占用 = chat 读超时 300s + `clearSession`（快照上传 + 容器销毁，代码注释自述 10s+）+ 状态写回，310s 只剩 10 秒余量，会在正常长任务上被 SIGKILL，D6 落空。
+- `stop_grace_period: 400s` + `spring.quartz.wait-for-jobs-to-complete-on-shutdown=true`。**均已落地**（compose 的 scheduler 服务、`harnax-scheduler/src/main/resources/application.yml`，两处都有把算式写出来的注释）。**400 = 300 + 60 + 20 + 8 + 4**：chat 读超时 300s + `clearSession` 上限 60s + 两次调用各 10s 的 connect 预扣 20s + 定态写回与释放抢锁行 8s + Spring 关停钩子 4s（合计 392，向上取整到 400s；逐项推导在 compose 那段注释里，改任何一个数都要回到那里重算）。`clearSession`（快照上传 + 容器销毁）现在有自己独立的读超时 `min(scheduler.clear-session-timeout-seconds=60, timeout-seconds)`，不再沿用 chat 的 300s——沿用的话一次执行最坏占用是 600s，旧推导"300 + 40 + 20 = 360s"两头都不成立（clearSession 不是 40s，360s 也远小于真实的 600s），SIGKILL 会正好落在 DELETE 中间。**为什么不是刚好等于 timeout**：超时只管得到 router 调用，之后那几十秒才是把一次跑完的执行落成定态行的动作，砍掉它就把正常完成记成超时。
+  - **保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）。手动 `/trigger` 走 `SchedulerServiceImpl.triggerManually` 起的裸 daemon 线程，Quartz 不知道它在跑，因此 `waitForJobsToCompleteOnShutdown` 不等它、grace 也不覆盖它：执行中被重启就是 `status=3` 的行 + `status=0` 的锁行。S4 把 one-shot 并入 Quartz 之前，**不要在任务执行中重启 scheduler**。
+  - 这一项原先归在 S2，实际与 S1 同期做掉了：job 一旦在 Quartz 线程内同步执行，"停机不等就等于把一次正常执行切成僵尸行"立刻成立，不必等 JDBC store。属性方式即可（见 3.1 约束 2），`SchedulerFactoryBeanCustomizer` 是多余的。
+  - 本项剩下的只有 6.3 的逐台滚动脚本。
 - 时钟：compose 已统一挂载 `/etc/localtime`；集群要求各节点时钟偏差 < 1s，宿主机 NTP 记入运维 checklist（Quartz 集群对时钟敏感，NTP 步进会造成误判接管）。
 
 ### 6.3 部署脚本必须逐台滚动
 
-`docker-new/deploy-service.sh:132` 现在是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 360s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
+`docker-new/deploy-service.sh:132` 现在是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 400s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
 
-改为逐台：`docker stop -t 360 <其中一台容器>` → `docker-compose up -d --no-deps --scale scheduler=2 --no-recreate scheduler`（补齐缺失的那台，不动仍在跑的那台）。
+改为逐台：`docker stop -t 400 <其中一台容器>` → `docker-compose up -d --no-deps --scale scheduler=2 --no-recreate scheduler`（补齐缺失的那台，不动仍在跑的那台）。
 
 ### 6.4 暴露面
 
 - 删除 `docker-new/nginx.conf:178` 的 `location /api/scheduler/`（admin 走 `HARNAX_SCHEDULER_URL: http://scheduler:8084` 内网服务名，不需要 nginx）。
+  - 状态：第二轮 R1 已删除该 location（原位留了一段禁止回加的注释，行号已漂移），本条只剩下面那项未做。
 - scheduler 的 swagger 与 actuator 生产面收窄：`SWAGGER_ENABLED=false`、`management.endpoints.web.exposure` 去掉 `prometheus` 的匿名暴露（现随 8084 匿名可达）。属 F2，本轮只做部署层。
 
 ## 7. 里程碑
@@ -231,13 +252,13 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 - **修正 A**：同步执行（原 4.4）提前到 JDBC 集群之前，见 4.1 的顺序要求。
 - **修正 B**：reconcile（原 4.1）必须与 JDBC store 同期上线，否则存在"共享 store + 全删重建"的窗口，任一节点重启会报掉全集群任务。
 
-| 步 | 内容 | 人日 | 可独立发布 |
-|---|---|---|---|
-| **S0 行为修复** | C3（40901 三端同步）；CLI `logId`→`id` **并补 `task stop` 子命令**（当前 task.go 里不存在该命令，所谓"CLI 停止从未生效"的真实原因是功能缺失而非字段名）；删死代码（admin `AgentTaskLogService.save()`、`/internal/agent-tasks/{taskId}/spec` 端点及测试、`SchedulerClientImpl.kt:35` 与事实相反的注释） | 0.5 | ✅ |
-| **S1 执行语义** | 4.1 同步执行 + 双 job 类；4.3 中断命中语义（D7，跨三侧）；4.4 定态分支 + 3.5 超时统一；4.5 housekeeping | 2.5 | ✅ |
-| **S2 库 + 集群 + 对账 + 部署形态** | 6.1 建库与两个 Flyway 脚本；3.1 quartz 集群配置 + 约束 2/3；3.3 reconcile；D8 数据迁移（`agent_task` 一次性 `INSERT ... SELECT`）；6.2/6.3 compose 与逐台滚动；6.4 删 nginx 与宿主映射 | 4 | ✅（内部必须原子） |
-| **S3 域搬迁** | 三实体 + 三 mapper + 三 XML 从 `harnax-entity` 移入 scheduler（含 `@MapperScan`、`type-aliases-package`、XML 全限定 type）；scheduler 自带 `Page`/异常副本 + pagehelper；`/api/scheduler/agent-tasks/**` 12 端点 + C5 owner 端点 + 2.3 拦截器；admin `AgentTaskController` 瘦身为鉴权+转发、删 service/DTO/广播；C1 sessionId 编 agentId；**admin 侧 24 处 mapper 引用全部清零（实测 4 个文件：`AgentTaskServiceImpl` 12、`InternalApiController` 4（含 290 与 713 两处 `selectAnyById`）、`AgentTaskLogServiceImpl` 5、`McpSessionOwnerResolver` 3）** | 3.5 | ❌ 必须单 PR（admin 编译断裂） |
-| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ |
+| 步 | 内容 | 人日 | 可独立发布 | 状态（`fix/scheduler-exec-semantics`） |
+|---|---|---|---|---|
+| **S0 行为修复** | C3（40901 三端同步）；CLI `logId`→`id` **并补 `task stop` 子命令**（当前 task.go 里不存在该命令，所谓"CLI 停止从未生效"的真实原因是功能缺失而非字段名）；删死代码（admin `AgentTaskLogService.save()`、`/internal/agent-tasks/{taskId}/spec` 端点及测试、`SchedulerClientImpl.kt:35` 与事实相反的注释） | 0.5 | ✅ | **已完成**。死代码那条比原清单多删一处：admin 端点的唯一"调用方" `AdminApiClient.getTaskAgentSpec` 自身也是 `@Deprecated` + 全仓零引用，整条死链一并摘掉 |
+| **S1 执行语义** | 4.1 同步执行 + 双 job 类；4.3 中断命中语义（D7，跨三侧）；4.4 定态分支 + 3.5 超时统一；4.5 housekeeping | 2.5 | ✅ | **已完成**，另把 D6 的优雅停机配置（3.1 约束 2 + 6.2 的 `stop_grace_period`）提前做了——同步执行一落地，"停机不等"就立刻制造僵尸行 |
+| **S2 库 + 集群 + 对账 + 部署形态** | 6.1 建库与两个 Flyway 脚本；3.1 quartz 集群配置 + 约束 2/3；3.3 reconcile；D8 数据迁移（`agent_task` 一次性 `INSERT ... SELECT`）；6.2/6.3 compose 与逐台滚动；6.4 删 nginx 与宿主映射 | 4 | ✅（内部必须原子） | ⏳ 未开始（其中 6.4 的暴露面与 6.2 的停机两项已提前落地） |
+| **S3 域搬迁** | 三实体 + 三 mapper + 三 XML 从 `harnax-entity` 移入 scheduler（含 `@MapperScan`、`type-aliases-package`、XML 全限定 type）；scheduler 自带 `Page`/异常副本 + pagehelper；`/api/scheduler/agent-tasks/**` 12 端点 + C5 owner 端点 + 2.3 拦截器；admin `AgentTaskController` 瘦身为鉴权+转发、删 service/DTO/广播；C1 sessionId 编 agentId；**admin 侧 24 处 mapper 引用全部清零（实测 4 个文件：`AgentTaskServiceImpl` 12、`InternalApiController` 4（含 290 与 713 两处 `selectAnyById`）、`AgentTaskLogServiceImpl` 5、`McpSessionOwnerResolver` 3）** | 3.5 | ❌ 必须单 PR（admin 编译断裂） | ⏳ 未开始 |
+| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ | ⏳ 未开始。`scheduler.jobs.scheduled` **仍是本实例视图**（store 还是 RAM，见第 9 节 F9）；IT-1/2/4/5 依赖真库，与 S2 同批 |
 
 合计约 **12.5 人日**。要点是 **S0+S1 = 3 人日即可独立上线并解决全部问题③**——原计划把这些排在 M0 与最末的 M4，等于正确性修复要等 14 人日的搬迁走完才对用户生效。
 
@@ -254,7 +275,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 | IT-3 越权 | 非属主读/改/删拿不到且数据未变；`is_public=1` 可读 | 已完成项（属主校验）的回归护栏 |
 | IT-4 one-shot | 连发两次 trigger：store 出现 `_ONCE` trigger、第二发返回 40901；投递后 kill 进程，重启补火一次且仅一次 | 覆盖 4.2 与 D6 的补火语义 |
 | IT-5 guard 清理 | 造过期 `agent_task_execution` 行 → 跑 housekeeping → 过期行删除、未过期保留、`status=0` 泄漏行被清 | `cleanupOldExecutions()` 此前零调用方 |
-| **IT-6 中断未命中** | 缓存无该 session 时 `interrupt()` 返回未命中，scheduler 立即把行 4→5，`expireStale` 之后不再改动它 | 覆盖 D7。这是本轮唯一跨三个服务的断言，也是用户可见的直接收益 |
+| **IT-6 中断未命中** | 触发条件按 4.3 的判据写：**该 session 既没有在途流也没有在途调用**时 `interrupt()` 返回未命中（缓存里还留着 wrapper **不算**命中，G5），scheduler 立即把行 4→5，`expireStale` 之后不再改动它 | 覆盖 D7。这是本轮唯一跨三个服务的断言，也是用户可见的直接收益 |
 | **IT-7 超时竞争** | 执行结果返回前行已被 `expireStale` 写成 2 → 真实结果与状态被覆盖写回，`error_info` 含超时标记 | 覆盖 4.4"结果不丢" |
 
 既有测试处置：`AgentTaskServiceImplTest`(603) 迁 scheduler 重写为真库 IT；`SchedulerClientImplTest`(452) 随广播删除、保留转发用例；`AgentTaskLogServiceImplTest`(271) 删除（被测对象是死代码）；`AgentTaskControllerTest`(657) 拆为 admin 转发契约测试 + scheduler CRUD 测试；`AgentTaskSchedulerIT`(208)、`AgentTaskCrudIT`(171) 迁入 scheduler；`harnax-entity` 的 `AgentTaskMapperTest`/`AgentTaskLogMapperTest` 随迁、`schema-test.sql` 删对应段与种子；scheduler 现有 3 个 Mockito 单测（startup-load / stop 状态机 / health）保留并按新签名调整。
@@ -263,12 +284,18 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 1. **F1 scheduler 服务自鉴权**：真正装配 `harnax.auth.enabled=true` 的完整方案、端点级 `@InternalOnly`。本轮只有 2.3 的 ~20 行验签拦截器。
 2. **F2 生产匿名面收窄**：swagger、`/actuator/prometheus`。本轮只删 nginx location 与宿主端口映射。
-3. **F3 `agent-spec` 属主校验缺失**：`sessionId` 由调用方任意传入，伪造 `task-{真实taskId}-...` 即可拿到该任务的 systemPrompt/model/tools。D4 之后这个洞**不增不减**（要猜的仍是自增 ID）。真要修，需给 task 会话引入签名或建立时登记 sessionId。
+3. **F3 `agent-spec` 属主校验缺失**：🟡 **前缀策略已落地，但只覆盖 `task-`（`SessionAccessGuard` + `PrivilegedSessionPrefixes`，本批只做 B）**。原本的状况：`sessionId` 由调用方任意传入，router 侧唯一的归属校验 `SessionAccessGuard.requireAccessible` 只认 admin 的 `session` 表，而 `task-`/`chn-` 按设计**不在这张表里**（它们来自 `agent_task` / `channel`）→ lookup 恒为 `Unknown`、而 `Unknown` 是放行。于是任何一枚有效凭据——用户自己的登录 JWT 就够——伪造 `task-{受害者taskId}-...` 即可拿到该任务的 systemPrompt/model/tools/skills/MCP 清单，且 `resolveFromTask` 硬编码 `permissionMode = "BYPASS"`（免工具确认）。守卫只认一张表、admin 的解析认四张表，这个不对称就是洞本身。
+   已落地的 B：`task-` 归为"由服务端自行决定的会话"，只有 `AuthContext.userId == null` 的内部调用方（SYSTEM key、内部服务令牌）能用；带终端用户身份的调用方（登录 JWT 或代表用户的外部 API key，即 `userId != null`）在 **lookup 之前**按前缀拒绝（判定同时位于 `tenantId ?: return` 之前，无租户的终端用户 key 也拦得住）。`web-`/`mp-` 行为完全不变，仍走租户比较。stream 端点（`/chat/stream`、`/confirm`）把拒绝转成 `ErrorChatEvent`（`FORBIDDEN`）+ `EndEventChatEvent`，不再让异常落到 `GlobalExceptionHandler` 上把 JSON 错误体写成 event-stream。
+   **`chn-` 已从特权前缀集合移出**——首版（`89138c3`）把它与 `task-` 一并拦下，过宽。两个前缀的**可利用性不对等**：`task-{taskId}` 的 `{taskId}` 是自增整数，一枚有效凭据就能从 1 数到 N，读遍别人的任务配置，这是必须堵的枚举面；`chn-{uuid}`（生成处 `ChannelServiceImpl.kt:145`）是 UUID，不可枚举，能命名它的人本来就早已掌握那个具体 id。而 `chn-` 侧**确有合法的终端用户只读流量**：webui 频道管理页拿 `batchGetWorkspaceStatus(channels[].sessionId)` 查沙箱状态（`pages/channel/index.tsx:112-127`），并把同一个 sessionId 交给 `WorkspaceDrawer`（`:311-343` 的 Sandbox 列与 Workspace 按钮、`:538-542` 挂载 → `files`/`read`/`download`，`pages/session/components/WorkspaceDrawer.tsx:50,94,291`）；这些 sessionId 就是 `chn-{uuid}`，凭据是登录时下发的**用户绑定 key**（`AuthServiceImpl.kt:104-127` → `ApiKeyServiceImpl.kt:196` 写入 `userId`），即 `userId != null`，正好落在首版的拒绝里。净效果是 Sandbox 列恒为 `-`、Workspace 按钮恒 `disabled`，且失败被 `index.tsx:125-127` 的空 catch 吞掉，**静默**。而这次拒绝换来了什么？**没有任何可验证的授权**：admin 的 `/sessions/{id}/info` 只查 `session` 表，对 `chn-` 恒为 `Unknown`，这里根本不存在一个能被保护的归属查询。一条拦不住攻击者、又关掉真实功能的规则不值其代价，所以 `chn-` **恢复本分支之前的行为**（走既有租户比较分支，与本分支之前完全一致）；`chn-` 真正的归属保护归入下面的 A——那是"加检查"而不是"撤访问"，才是有信息量的修法。
+   **剩余面（A，本批不做）**：`/internal/sessions/{id}/info` 仍只查 `session` 表，应扩为按前缀解析 `agent_task` / `channel` 的归属租户，使跨租户判定对四类会话全部生效——**`chn-` 的终端用户跨租户读就挂在这一条上**：它今天的实际状态与前缀规则封堵之前的 `task-` 相同（lookup 恒 `Unknown` → 放行）。此项改变的是既有跨租户策略（今天 `chn-` 的跨租户访问被静默允许），单独一刀做会连带影响未参与本次改动的行为，需要单独设计与验证；`SessionAccessGuardTest` 已钉住"一旦 admin 能回答 `chn-`，跨租户即拒"。纵深防御的 C（`resolveFromTask` 校验 sessionId 的 agentId 段与该行 `agent_id` 一致）**前提未成立**，随 C1 一起落地，见 C1 条目。
 4. **F4 `agent_task_log.agent_task_id` 列**：现在靠解析 sessionId 字符串定位任务，应改为显式外键列。
 5. **F5 任务级权限模式**：`agent_task` 加 `permission_mode` 列，scheduler 建会话时带上，替代 admin 侧硬编码的 `BYPASS`（D5 的产物）。
 6. **F6 status 取值收敛**：`0/1`、`0/1/2`、`3/4/5` 三套散落字面量收敛为共享枚举。
 7. **F7 日志脱敏**：`SELECT *` 全文下发 `prompt`/`response`/`errorInfo`，无租户/属主过滤。
 8. **F8 域内无细粒度授权**：整域只要求"已登录"，`MybatisTenantInterceptor.intercept()` 实为 no-op，属主条件是目前唯一隔离手段。
+9. **F9 `scheduler.jobs.scheduled` 是本实例视图，不是集群视图**：gauge 读的是本进程 Quartz store 的 `getJobKeys(AgentTaskGroup)`（`QuartzJobInventory.kt`），store 还是 `memory` 时每个实例各自注册全量任务，于是 N 台各报自己的数、看板取哪台都一样"看着对"。**S2 换 JDBC 集群 store 后同一个表达式的含义会静默跳变成集群视图**（集群里只有一台 fire，但 store 是共享的，所以数值不降反升的语义完全不同）。届时必须同时重解读既有看板与告警阈值，并把指标改按 `instanceId` 之外再打一层 store 来源标签。
+10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证随 B1 一起在有 Docker 的环境补跑。
+11. **F11 停止意图只有一个瞬态列承载**：用户"点了停止"这件事目前**只写在 `agent_task_log.status = 4` 上**，没有独立的标记位，于是它只活到下一次回收扫描为止。G6 补齐的是**能区分出来的那一半**：执行线程先读到 4、随后 4 被 sweep 改成 2，`finalizeStopped` 的 4 守卫失配 → 重读发现是 2 → 改走 `reclaimExpired` 写 5（`SchedulerServiceImpl.kt:524-550`）。**没补齐的那一半**是 sweep 在**那次重读之前**就把 4 改成 2：线程按 2 分支写回自己真实的 0/1，用户那一次停止就此从记录上消失，而且**无法与"根本没被停止过"区分**——`expireStale` 已经把 `error_info` 覆盖成超时文案，4 存在过的证据被销毁了。这不是"超时"那样的错误标签，但这一行仍然不对。根治需要给行加一个 stop/owner 标记（`stop_requested` 列，或 `agent_task_execution` 上记 owner），让停止意图不依赖 status 这一瞬态——属 S2/S3 的库改动，本轮不动行为，只在 `SchedulerServiceImpl.kt:510-561` 与 `AgentTaskLogMapper.xml` 的 `expireStale`/`reclaimExpired` 注释里标明各守住哪个窗口、哪个窗口未守。
 
 ## 10. 数据迁移（D8）
 

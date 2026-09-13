@@ -21,7 +21,7 @@ type Task struct {
 }
 
 type TaskLog struct {
-	LogID     int64  `json:"logId"`
+	ID        int64  `json:"id"`
 	TaskName  string `json:"taskName"`
 	Status    int    `json:"status"`
 	StartTime string `json:"startTime"`
@@ -297,6 +297,27 @@ var taskTriggerCmd = &cobra.Command{
 	},
 }
 
+var taskStopCmd = &cobra.Command{
+	Use:   "stop <log-id>",
+	Short: "Request a stop for a running task execution",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		c, err := newAdminClient()
+		if err != nil {
+			exitError(err.Error())
+		}
+		ctx := context.Background()
+
+		// The path takes a LOG id, not a task id: one task can have several executions, and only
+		// the execution row carries the session to interrupt.
+		_, err = c.Request(ctx, "POST", fmt.Sprintf("%s/logs/%s/stop", taskPath, args[0]), nil, nil)
+		if err != nil {
+			exitAPIError(err)
+		}
+		output.PrintSuccess("Stop requested for task execution.")
+	},
+}
+
 var taskLogsCmd = &cobra.Command{
 	Use:   "logs <task-id>",
 	Short: "List task execution logs",
@@ -345,7 +366,7 @@ var taskLogsCmd = &cobra.Command{
 		rows := make([][]string, 0, len(items))
 		for _, item := range items {
 			rows = append(rows, []string{
-				fmt.Sprintf("%d", item.LogID),
+				fmt.Sprintf("%d", item.ID),
 				item.TaskName,
 				output.StatusText(item.Status),
 				item.StartTime,
@@ -390,6 +411,7 @@ func init() {
 	taskCmd.AddCommand(taskStartCmd)
 	taskCmd.AddCommand(taskPauseCmd)
 	taskCmd.AddCommand(taskTriggerCmd)
+	taskCmd.AddCommand(taskStopCmd)
 	taskCmd.AddCommand(taskLogsCmd)
 
 	rootCmd.AddCommand(taskCmd)

@@ -220,6 +220,7 @@ class SessionRouterService(
 
     fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
+        // Note: MDC is not set here for the same thread-safety reasons as proxyStreamRequest.
         try {
             // Same reasoning as proxyStreamRequest: a rejection must travel as an SSE event.
             sessionAccessGuard.requireAccessible(sessionId)
@@ -243,6 +244,13 @@ class SessionRouterService(
      * A terminating stream: the error event, then the end marker consumers wait for. Used for every
      * failure that happens before an upstream connection exists, so a caller sees one shape of
      * failure from a streaming endpoint no matter where it came from.
+     *
+     * Throwing instead does not reach the caller as a reason: it lands in
+     * [com.agnetix.harnax.router.config.GlobalExceptionHandler], which answers a `text/event-stream`
+     * request with a JSON `ResultVo` that the caller's SSE parser reads as nothing at all — and the
+     * advice itself states the rule this helper follows ("SSE proxy endpoints handle errors themselves
+     * by emitting ErrorChatEvent"). A refusal is coded `FORBIDDEN` rather than the no-instance code
+     * the surrounding catch uses, because the caller was refused, not unmatched.
      */
     private fun streamError(code: HarnaxErrorCode, message: String): Flux<ChatEvent> = Flux.just(ErrorChatEvent(code = code.code, message = message), EndEventChatEvent())
 

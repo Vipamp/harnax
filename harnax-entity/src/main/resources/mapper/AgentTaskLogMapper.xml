@@ -23,6 +23,30 @@
         SELECT * FROM agent_task_log WHERE id = #{id}
     </select>
 
+    <!--
+      The gate in front of a stop request. Stopping is a *write* against a running execution, so it is
+      authorised like the writes on the owning task (AgentTaskMapper.updateById / deleteById): creator
+      only. The read rule the list uses (see selectLogList below) also lets a caller see another user's
+      public task, and applying that here meant any logged-in user could interrupt anybody's run — the
+      asymmetry between the two statements is the point, and
+      AgentTaskLogStopGateSqlTest pins both halves of it: seeing an execution is not stopping it.
+
+      A row that exists but belongs to someone else answers exactly like a missing one, so the endpoint
+      cannot be probed for other people's log ids.
+
+      Deliberately no tenant predicate: this has to stay as wide as the task writes it gates (which have
+      none), and agent_task.tenant_id is only a snapshot of the tenant that was active when the task was
+      created. Narrowing here would mean an owner who switched tenants could no longer stop their own
+      running execution.
+    -->
+    <select id="selectOwnedById" resultMap="AgentTaskLogResultMap">
+        SELECT l.* FROM agent_task_log l
+        JOIN agent_task t ON t.id = l.task_id
+            AND t.active = 1
+            AND t.creator = #{currentUsername}
+        WHERE l.id = #{id}
+    </select>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO agent_task_log (
             task_id, task_name, prompt, response, session_id,
@@ -74,34 +98,68 @@
         WHERE id = #{id} AND status = 4
     </update>
 
+    <!--
+      2 -> {0,1,5}: the reaper guessed, and the execution then proved otherwise. Two callers get here
+      (SchedulerServiceImpl.closeOutLateExecution), and they are not symmetric. The one with its own
+      result writes 0/1; the stop path writes 5, and it reaches this statement only because it had read
+      the row at 4 itself, i.e. the sweep moved it to 2 *after* that read. 5 therefore only ever arrives
+      from a thread that actually observed the stop; nobody can put a row there on spec.
+      What this statement cannot recover: a row the sweep moved 4 -> 2 *before* the caller looked at it.
+      Read now, that row is indistinguishable from one nobody ever stopped — expireStale had already
+      replaced the error_info that carried the intent — so the caller writes its own 0/1 and the user's
+      stop is gone from the record. No longer labelled "timeout", still the wrong row; closing it needs a
+      stop marker column, not a smarter UPDATE (spec 2026-09-11-scheduler-cluster-design.md, F11).
+      Restricted to status 2 either way: it can never undo a user stop (4/5) or a real failure already
+      written (0/1), and the marker in error_info is what tells the two kinds of 0/1 apart later.
+    -->
+    <update id="reclaimExpired" parameterType="com.agnetix.harnax.entity.AgentTaskLog">
+        UPDATE agent_task_log SET
+            response = #{response},
+            status = #{status},
+            error_info = CONCAT(IFNULL(#{errorInfo}, ''), ' (completed after auto-expiry)'),
+            end_time = #{endTime},
+            duration_ms = #{durationMs}
+        WHERE id = #{id} AND status = 2
+    </update>
+
+    <!--
+      Reads are gated through the owning task, with the same visibility rule as
+      AgentTaskMapper.selectTaskList: active, and either public or created by the caller. The log row
+      repeats prompt/response/error_info verbatim, so filtering on the log columns alone let anyone who
+      guessed a task id read another user's task traffic. The join also drops logs whose task was deleted
+      (active = 0), which the task list no longer shows either.
+
+      The creator/public rule is the whole gate; no tenant predicate belongs here. tenant_id is a
+      creation-time snapshot and the task reads carry no tenant condition, so narrowing by tenant would
+      show a task in the list while its own execution logs came back empty.
+    -->
     <select id="selectLogList" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log
+        SELECT l.* FROM agent_task_log l
+        JOIN agent_task t ON t.id = l.task_id
+            AND t.active = 1
+            AND (t.is_public = 1 OR t.creator = #{currentUsername})
         WHERE 1=1
         <if test="taskId != null">
-            AND task_id = #{taskId}
+            AND l.task_id = #{taskId}
         </if>
         <if test="taskName != null and taskName != ''">
-            AND task_name LIKE CONCAT('%', #{taskName}, '%')
+            AND l.task_name LIKE CONCAT('%', #{taskName}, '%')
         </if>
         <if test="status != null">
-            AND status = #{status}
+            AND l.status = #{status}
         </if>
         <if test="startTimeFrom != null and startTimeFrom != ''">
-            AND start_time &gt;= #{startTimeFrom}
+            AND l.start_time &gt;= #{startTimeFrom}
         </if>
         <if test="startTimeTo != null and startTimeTo != ''">
-            AND start_time &lt;= #{startTimeTo}
+            AND l.start_time &lt;= #{startTimeTo}
         </if>
         <if test="keyword != null and keyword != ''">
-            AND (prompt LIKE CONCAT('%', #{keyword}, '%')
-                 OR response LIKE CONCAT('%', #{keyword}, '%')
-                 OR error_info LIKE CONCAT('%', #{keyword}, '%'))
+            AND (l.prompt LIKE CONCAT('%', #{keyword}, '%')
+                 OR l.response LIKE CONCAT('%', #{keyword}, '%')
+                 OR l.error_info LIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY create_time DESC
-    </select>
-
-    <select id="selectByTaskId" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log WHERE task_id = #{taskId} ORDER BY create_time DESC
+        ORDER BY l.create_time DESC
     </select>
 
     <select id="selectRunningByTaskId" resultMap="AgentTaskLogResultMap">
@@ -112,6 +170,17 @@
       Reclaims executions that outlived their own task's timeout — the rows a node leaves behind when
       it dies mid-task. Judged per row against agent_task.timeout_seconds, falling back to the caller's
       default where a task stored 0 or NULL.
+
+      The deadline is 1.5x that timeout, not the timeout itself: a run that is merely queued behind
+      another one in agent-service is still alive and would otherwise be judged a zombie exactly when
+      the user's own timeout fires. The message still reports the task's own timeout, because that is
+      the value the user configured and the one they can act on.
+
+      It sweeps 4 as well as 3, and that has a second cost worth naming: 4 is the only place a user's
+      stop is recorded, and this statement replaces error_info with the expiry text. So a row it touches
+      loses every trace of that stop, and the executing thread that comes back for it later can no
+      longer tell "stopped, then reaped" from "never stopped" — see the reclaimExpired comment and spec
+      2026-09-11-scheduler-cluster-design.md F11 (a stop needs its own column or flag, not a 4).
     -->
     <update id="expireStale">
         UPDATE agent_task_log l
@@ -123,7 +192,21 @@
             l.duration_ms = TIMESTAMPDIFF(SECOND, COALESCE(l.start_time, l.create_time), NOW()) * 1000
         WHERE l.status IN (3, 4)
           AND COALESCE(l.start_time, l.create_time) &lt;
-              DATE_SUB(NOW(), INTERVAL IFNULL(NULLIF(t.timeout_seconds, 0), #{defaultTimeoutSeconds}) SECOND)
+              DATE_SUB(NOW(), INTERVAL CEIL(IFNULL(NULLIF(t.timeout_seconds, 0), #{defaultTimeoutSeconds}) * 1.5) SECOND)
     </update>
+
+    <!--
+      Retention sweep, keyed on create_time (indexed) rather than start_time: a run that never got a
+      start time would otherwise stay here forever. The scheduler's housekeeping job is the only caller,
+      and until it existed no statement in this file ever removed a row.
+
+      status NOT IN (3, 4) keeps the same guard every other write carries: a row that still reads live
+      belongs to an execution someone may still report on, age is no argument against that.
+    -->
+    <delete id="deleteOldLogs">
+        DELETE FROM agent_task_log
+        WHERE create_time &lt; #{beforeTime}
+          AND status NOT IN (3, 4)
+    </delete>
 
 </mapper>

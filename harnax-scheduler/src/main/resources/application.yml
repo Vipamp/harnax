@@ -31,6 +31,17 @@ spring:
   # Quartz Configuration
   quartz:
     job-store-type: ${QUARTZ_JOB_STORE:memory}
+    # Boot's own key (spring-boot-quartz's QuartzProperties; its metadata says defaultValue=false, so
+    # this has to be stated). Since the job runs inline on the Quartz worker thread, that thread IS the
+    # execution: without waiting, a SIGTERM drops the JVM mid-run and leaves agent_task_log at status=3
+    # plus its agent_task_execution lock row at status=0 — both read as "still running" until
+    # housekeeping reaps them up to 2× scheduler.timeout-seconds later, and the user watches a timeout
+    # that never actually happened. Must be paired with stop_grace_period on the scheduler container:
+    # waiting for jobs is worthless if the kernel sends SIGKILL first.
+    # What it waits for, though, is only what Quartz knows about: the cron path and the /run-once
+    # one-shots. A manual /trigger runs on a bare daemon thread (SchedulerServiceImpl.triggerManually),
+    # invisible to the scheduler, so no grace period protects it — plan S4 closes that gap.
+    wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}
     properties:
       org:
         quartz:
@@ -87,7 +98,13 @@ logging:
 
 # Scheduler configuration
 scheduler:
-  # Enable/disable scheduler on this instance
+  # Enable/disable scheduler on this instance. Disabled means this node takes no scheduling work: it
+  # loads no task, and every Quartz-touching write is refused with 40903 by SchedulerController's
+  # requireEnabled — the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload,
+  # /tasks/{id}/start and /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is
+  # registered outside this gate on purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop
+  # writes no Quartz object), so a disabled node can still receive one and leave a row at status=4 that
+  # nothing but expireStale ever moves.
   enabled: ${SCHEDULER_ENABLED:true}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}
@@ -99,8 +116,26 @@ scheduler:
   admin-url: ${SCHEDULER_ADMIN_URL:http://localhost:8080}
   # Admin internal API secret for authentication
   admin-secret: ${SCHEDULER_ADMIN_SECRET:change-me-in-production-min-32-chars!!}
-  # Timeout for router calls (seconds)
+  # Seconds an execution may take. Two readers on purpose: the router call's read timeout and the
+  # baseline the stale sweep judges a never-reported row against. Splitting them would let the sweep
+  # expire work that is merely slow.
   timeout-seconds: ${SCHEDULER_TIMEOUT:300}
+  # Ceiling for the session cleanup that follows the router call (DELETE /api/router/agent/session/{id});
+  # effective value is min(this, timeout-seconds). It does not share timeout-seconds on purpose: that
+  # would let one execution hold its Quartz worker for twice the timeout. The container's
+  # stop_grace_period (docker-new/docker-compose.yml) is derived from
+  # timeout + min(this, timeout) + 20 (the connect allowances) + 12 (write-back and shutdown hooks), so
+  # raising this one means raising that one in the same change.
+  clear-session-timeout-seconds: ${SCHEDULER_CLEAR_SESSION_TIMEOUT:60}
+  # Ceiling for the INTERRUPT on the /stop path (POST /api/router/agent/command), which is a different
+  # question from "did the run finish" and must not be answered on the execution's clock. Its one
+  # constraint is the chain a user waits on: admin forwards /stop with a 30s read timeout
+  # (SchedulerClientImpl), and stopTask writes agent_task_log around this call, so 10s is what leaves the
+  # whole chain inside those 30s (see RouterClient.sendCommand for the budget). Nothing about it belongs
+  # in the stop_grace_period sum above — stopTask runs on a request thread, never on a Quartz worker.
+  # A timeout here is reported as an unanswered command, so the row stays at 4 for the executing node or
+  # the stale sweep — a giving-up clock never reads as "nothing is running".
+  command-timeout-seconds: ${SCHEDULER_COMMAND_TIMEOUT:10}
 
 # Auth configuration
 harnax:
