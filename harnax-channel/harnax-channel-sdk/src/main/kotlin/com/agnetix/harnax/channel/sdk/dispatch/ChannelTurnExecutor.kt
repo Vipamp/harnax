@@ -11,6 +11,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -37,6 +38,8 @@ class ChannelTurnExecutor(
     private val perChannelConcurrency: Int = DEFAULT_PER_CHANNEL_CONCURRENCY,
     private val sink: ChannelMetricsSink = NoOpChannelMetricsSink,
 ) : AutoCloseable {
+
+    private val logger = LoggerFactory.getLogger(ChannelTurnExecutor::class.java)
 
     private val threadSeq = AtomicInteger(0)
 
@@ -65,20 +68,50 @@ class ChannelTurnExecutor(
         block: suspend () -> Unit,
     ) {
         scope.launch {
-            val started = System.currentTimeMillis()
+            val queuedAt = System.currentTimeMillis()
             var error: Throwable? = null
             try {
                 val limit = channelLimits.computeIfAbsent(channelId) { Semaphore(perChannelConcurrency) }
-                limit.withPermit {
-                    withSessionLock("$channelId:$sessionId", block)
+                // Session lock first, channel permit second. In the other order a queued message
+                // holds a channel permit while it waits for its own conversation to come up, so a
+                // few slow chats could consume every permit and stall unrelated chats on the
+                // same channel. A permit now means exactly what it should: work in flight.
+                withSessionLock("$channelId:$sessionId") {
+                    limit.withPermit {
+                        warnIfQueued(channelId, sessionId, System.currentTimeMillis() - queuedAt)
+                        block()
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
                 error = e
             } finally {
-                sink.onTurnCompleted(channelId, System.currentTimeMillis() - started, error)
+                sink.onTurnCompleted(channelId, System.currentTimeMillis() - queuedAt, error)
             }
+        }
+    }
+
+    /**
+     * Surface a backlog that is otherwise invisible.
+     *
+     * Waiting here is legitimate and expected — that is the bound doing its job — so a hard timeout
+     * would be the wrong cure: it would drop the user's message to protect a queue that is meant to
+     * absorb it. What the queue lacks is a voice, so one log line names the channel, the conversation
+     * and how long this turn waited before running.
+     */
+    private fun warnIfQueued(
+        channelId: Long,
+        sessionId: String,
+        waitedMs: Long,
+    ) {
+        if (waitedMs >= QUEUE_WARN_THRESHOLD_MS) {
+            logger.warn(
+                "Channel turn queued for {}ms behind the pool/per-channel limit (channel={}, session={})",
+                waitedMs,
+                channelId,
+                sessionId,
+            )
         }
     }
 
@@ -134,6 +167,10 @@ class ChannelTurnExecutor(
         private const val SWEEP_INTERVAL_MS = 60_000L
         private const val SESSION_LOCK_IDLE_MS = 10 * 60_000L
         private const val SESSION_LOCK_PERMITS = 1
+
+        // A turn that waits this long behind the bounds is a backlog worth a log line, not a
+        // routine hiccup. See warnIfQueued().
+        private const val QUEUE_WARN_THRESHOLD_MS = 30_000L
 
         /** Fallback for standalone SDK usage (demos, tests) where Spring does not provide a bean. */
         val SHARED: ChannelTurnExecutor by lazy { ChannelTurnExecutor() }

@@ -38,8 +38,12 @@ class TextChunkerTest {
     }
 
     @Test
-    fun `empty text yields a single empty piece`() {
-        assertEquals(listOf(""), TextChunker.splitByChars("", 10))
+    fun `empty text yields no chunks at all`() {
+        // Every transport does `chunks.forEach { send(it) }`, so a single empty piece is an empty
+        // bubble on the user's screen — the same thing WechatLongPollingMode's sendTypingIndicator
+        // comment calls out as a bug. Nothing to send means nothing to post.
+        assertEquals(emptyList<String>(), TextChunker.splitByChars("", 10))
+        assertEquals(emptyList<String>(), TextChunker.splitByUtf8Bytes("", 10))
     }
 
     @Test

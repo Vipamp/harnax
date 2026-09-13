@@ -14,6 +14,7 @@ import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
 import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
 import com.agnetix.harnax.channel.sdk.util.TextChunker
 import com.dingtalk.open.app.api.OpenDingTalkClient
@@ -52,6 +53,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Lifecycle notes:
  * - One [Listener] holder per channel carries the client, the connect thread and the
  *   closing flag, replacing three maps that could disagree during a restart.
+ * - The holder is registered before the client is started and retired only by [stop]:
+ *   [OpenDingTalkClient.start] returns as soon as the SDK has scheduled its own connection
+ *   task, so a socket happily outlives the thread that kicked it off.
  * - Inbound messages are dispatched to [ChannelTurnExecutor]: bounded per-channel
  *   concurrency, and turns of the same conversation run in arrival order.
  */
@@ -59,6 +63,7 @@ class DingtalkStreamMode(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
     private val turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
     private val metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
+    private val clientFactory: (ChannelSpec, OpenDingTalkCallbackListener<ChatbotMessage, Any>) -> OpenDingTalkClient = ::buildSdkStreamClient,
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(DingtalkStreamMode::class.java)
@@ -127,9 +132,7 @@ class DingtalkStreamMode(
             return
         }
 
-        val clientId = channel.appId
-        val clientSecret = channel.appSecret
-        if (clientId.isNullOrBlank() || clientSecret.isNullOrBlank()) {
+        if (channel.appId.isNullOrBlank() || channel.appSecret.isNullOrBlank()) {
             tracker.markFailed(channel.id, "missing appId(clientId) or appSecret(clientSecret)")
             throw IllegalArgumentException("Stream mode requires appId(clientId) and appSecret(clientSecret) for channel: ${channel.id}")
         }
@@ -149,10 +152,7 @@ class DingtalkStreamMode(
         }
 
         val client = try {
-            OpenDingTalkStreamClientBuilder.custom()
-                .credential(AuthClientCredential(clientId, clientSecret))
-                .registerCallbackListener(DingTalkStreamTopics.BOT_MESSAGE_TOPIC, listener)
-                .build()
+            clientFactory(channel, listener)
         } catch (e: Exception) {
             listeners.remove(channel.id, holder)
             tracker.markFailed(channel.id, e.message ?: "client build failed")
@@ -166,15 +166,28 @@ class DingtalkStreamMode(
         }
         holder.client = client
 
-        // client.start() is synchronous and performs blocking network I/O (endpoint
-        // lookup + WebSocket handshake), so it never runs on the caller's thread: the
-        // reconcile loop must not stall behind a unreachable gateway.
+        // client.start() performs an endpoint lookup on the caller's thread before handing the
+        // socket to the SDK's own scheduler, so it never runs here on the reconcile thread.
         val thread = Thread({ runConnection(holder, client) }, "dingtalk-stream-channel-${channel.id}")
         thread.isDaemon = true
         holder.thread = thread
         thread.start()
     }
 
+    /**
+     * Kicks off the SDK connection on the listener's own thread.
+     *
+     * `OpenDingTalkClient.start()` is **not** blocking: it schedules a recurring connection task
+     * on the SDK's own thread pool and returns. Two consequences shape this method:
+     * - A clean return proves only that the task was scheduled, not that the handshake succeeded,
+     *   so no connection state is claimed here. The first inbound message is the positive proof,
+     *   which is where [tracker.markConnected] runs (see [handleBotMessage]).
+     * - The socket outlives this thread, so the holder must outlive it too. Retiring the holder
+     *   here would leave the superseded-listener guard in [handleBotMessage] discarding every
+     *   message the platform delivers, while the SDK kept reconnecting happily. Only [stop]
+     *   retires a holder; a hard failure is reported and left for the reconcile loop to restart
+     *   through the normal stop/start path.
+     */
     private fun runConnection(
         holder: Listener,
         client: OpenDingTalkClient,
@@ -188,10 +201,16 @@ class DingtalkStreamMode(
         }
         try {
             client.start()
-            if (holder.closing.get()) return
-            // start() completing means the handshake succeeded; the SDK keeps the socket up.
-            tracker.markConnected(channelId)
-            logger.info("DingTalk Stream connection started for channel: $channelId")
+            if (holder.closing.get()) {
+                // stop() raced the kickoff and closed a client that had not connected yet, so the
+                // SDK's recurring connection task is now running with no holder to stop it. Without
+                // this the zombie keeps consuming deliveries that the superseded-listener guard then
+                // drops, which is exactly the silent message loss this file is careful about.
+                runCatching { client.stop() }
+                listeners.remove(channelId, holder)
+                return
+            }
+            logger.info("DingTalk Stream connect scheduled for channel: $channelId, awaiting first message to confirm liveness")
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             if (!holder.closing.get()) tracker.markFailed(channelId, "interrupted")
@@ -199,9 +218,6 @@ class DingtalkStreamMode(
             if (holder.closing.get()) return
             logger.error("DingTalk Stream connection failed for channel: $channelId", e)
             tracker.markFailed(channelId, e.message ?: "stream client failure")
-        } finally {
-            listeners.remove(channelId, holder)
-            deduplicators.remove(channelId)
         }
     }
 
@@ -294,6 +310,10 @@ class DingtalkStreamMode(
     /**
      * Fallback sending via the DingTalk robot OpenAPI, used when the temporary
      * sessionWebhook of the conversation has expired or was never observed.
+     *
+     * One API call per chunk. Joining the chunks back into a single payload — which is what this
+     * path used to do — hands the platform a message longer than [MAX_MESSAGE_CHUNK_CHARS] and
+     * loses the whole reply, so the chunking above would only ever help the webhook path.
      */
     private suspend fun sendProactiveText(
         channel: ChannelSpec,
@@ -311,35 +331,31 @@ class DingtalkStreamMode(
                     "the user must send a new message first, or the channel is missing appId/appSecret",
             )
         }
-        val token = getAccessToken(appId, appSecret)
-        val msgParam = objectMapper.writeValueAsString(mapOf("content" to chunks.joinToString("\n")))
-        val headers = mapOf("x-acs-dingtalk-access-token" to token)
-        if (target.isGroup) {
-            val body = mapOf(
-                "robotCode" to target.robotCode,
-                "openConversationId" to target.conversationId,
-                "msgKey" to "sampleText",
-                "msgParam" to msgParam,
+        val userId = target.userId
+        if (!target.isGroup && userId.isNullOrBlank()) {
+            throw ChannelSendException(
+                channelType = ChannelType.DINGTALK,
+                platformErrorCode = null,
+                message = "Cannot send proactively to conversation $sessionId: no sender userId cached",
             )
-            handleApiResponse(httpClient.postJson("$API_BASE/v1.0/robot/groupMessages/send", body, headers))
-        } else {
-            val userId = target.userId
-            if (userId.isNullOrBlank()) {
-                throw ChannelSendException(
-                    channelType = ChannelType.DINGTALK,
-                    platformErrorCode = null,
-                    message = "Cannot send proactively to conversation $sessionId: no sender userId cached",
-                )
-            }
-            val body = mapOf(
-                "robotCode" to target.robotCode,
-                "userIds" to listOf(userId),
-                "msgKey" to "sampleText",
-                "msgParam" to msgParam,
-            )
-            handleApiResponse(httpClient.postJson("$API_BASE/v1.0/robot/oToMessages/batchSend", body, headers))
         }
-        logger.info("DingTalk message sent via robot OpenAPI for session={}", sessionId)
+        val token = getAccessToken(appId, appSecret)
+        val headers = mapOf("x-acs-dingtalk-access-token" to token)
+        val endpoint = if (target.isGroup) "/v1.0/robot/groupMessages/send" else "/v1.0/robot/oToMessages/batchSend"
+        val route: Map<String, Any> = if (target.isGroup) {
+            mapOf("openConversationId" to target.conversationId)
+        } else {
+            mapOf("userIds" to listOf(requireNotNull(userId)))
+        }
+        chunks.forEach { chunk ->
+            val body = mapOf(
+                "robotCode" to target.robotCode,
+                "msgKey" to "sampleText",
+                "msgParam" to objectMapper.writeValueAsString(mapOf("content" to chunk)),
+            ) + route
+            handleApiResponse(httpClient.postJson("$API_BASE$endpoint", body, headers))
+        }
+        logger.info("DingTalk message sent via robot OpenAPI for session={} in {} part(s)", sessionId, chunks.size)
     }
 
     // ==================== Internal ====================
@@ -367,7 +383,18 @@ class DingtalkStreamMode(
 
         val channelMessage = parseChatbotMessage(holder.channel, message)
         if (channelMessage == null) {
-            rollback()
+            // An unreadable message still deserves an answer, and the answer needs the same reply
+            // webhook an ordinary turn would — so cache the conversation before noticing.
+            val conversationId = message.conversationId ?: message.senderStaffId
+            if (conversationId.isNullOrBlank()) {
+                rollback()
+                return
+            }
+            cacheConversation(channelId, conversationId, holder.channel, message)
+            notifyUnsupportedMessage(conversationId, holder.channel, message.msgtype)
+            // Committed rather than rolled back: the platform redelivering the same unreadable
+            // message must not produce a second "unsupported" reply.
+            commit()
             return
         }
         cacheConversation(channelId, channelMessage.sessionId, holder.channel, message)
@@ -384,9 +411,30 @@ class DingtalkStreamMode(
             try {
                 handler(channelMessage)
                 commit()
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error("Failed to handle DingTalk message for channel: $channelId", e)
                 rollback()
+            }
+        }
+    }
+
+    /**
+     * Tell the user their message type cannot be handled.
+     *
+     * Best-effort on purpose: failing to explain the gap is bad, but letting it throw on the SDK
+     * callback thread is worse — that thread also carries every other message on this connection.
+     */
+    private fun notifyUnsupportedMessage(
+        sessionId: String,
+        channel: ChannelSpec,
+        platformType: String?,
+    ) {
+        val notice = ReplyMarkers.unsupportedMessageType(platformType)
+        turnExecutor.launchTurn(channel.id, sessionId) {
+            try {
+                sendMessage(channel, sessionId, notice)
+            } catch (e: Exception) {
+                logger.warn("Unable to tell session={} that {} is unsupported: {}", sessionId, platformType, e.message)
             }
         }
     }
@@ -394,7 +442,7 @@ class DingtalkStreamMode(
     private fun parseChatbotMessage(channel: ChannelSpec, message: ChatbotMessage): ChannelMessage? {
         val text = message.text?.content?.trim()
         if (text.isNullOrEmpty()) {
-            logger.debug("Ignoring non-text DingTalk message (msgtype={}) for channel={}", message.msgtype, channel.id)
+            logger.info("DingTalk message of type {} is not readable, replying with an unsupported notice (channel={})", message.msgtype, channel.id)
             return null
         }
         // conversationType: "1" = 1:1, "2" = group
@@ -550,3 +598,15 @@ class DingtalkStreamMode(
         }
     }
 }
+
+/**
+ * Production stream-client builder, kept outside the class so [DingtalkStreamMode] can be given
+ * a fake: [OpenDingTalkClient] is an interface, and the real one opens a socket from `start()`.
+ */
+private fun buildSdkStreamClient(
+    channel: ChannelSpec,
+    listener: OpenDingTalkCallbackListener<ChatbotMessage, Any>,
+): OpenDingTalkClient = OpenDingTalkStreamClientBuilder.custom()
+    .credential(AuthClientCredential(channel.appId, channel.appSecret))
+    .registerCallbackListener(DingTalkStreamTopics.BOT_MESSAGE_TOPIC, listener)
+    .build()

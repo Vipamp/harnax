@@ -1,6 +1,5 @@
 package com.agnetix.harnax.channel.service.bootstrap
 
-import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionStatus
@@ -9,7 +8,7 @@ import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import com.agnetix.harnax.channel.sdk.util.ReconnectBackoff
 import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
-import com.agnetix.harnax.channel.service.client.RouterClient
+import com.agnetix.harnax.channel.service.endpoint.CallbackModes
 import com.agnetix.harnax.channel.service.manager.ChannelAdaptorRegistry
 import com.agnetix.harnax.channel.service.mapper.ChannelEntityConverter
 import com.agnetix.harnax.channel.service.monitor.ChannelRuntimeMonitor
@@ -51,11 +50,12 @@ import java.util.concurrent.ConcurrentHashMap
 class ChannelBootstrapRunner(
     private val channelMapper: ChannelMapper,
     private val adaptorRegistry: ChannelAdaptorRegistry,
-    private val routerClient: RouterClient,
     private val sessionManager: ChannelSessionManager,
     private val monitor: ChannelRuntimeMonitor,
     private val lockGuard: ChannelListenerLockGuard,
     private val metricsSink: ChannelMetricsSink,
+    private val routerAgentAdaptor: RouterAgentAdaptor,
+    private val chatService: ChannelChatService,
     @Value("\${channel.sync.max-starts-per-cycle:5}") private val maxStartsPerCycle: Int,
     @Value("\${channel.sync.restart-backoff-initial-ms:2000}") private val restartBackoffInitialMs: Long,
     @Value("\${channel.sync.restart-backoff-max-ms:300000}") private val restartBackoffMaxMs: Long,
@@ -63,14 +63,6 @@ class ChannelBootstrapRunner(
 ) {
 
     private val log = LoggerFactory.getLogger(ChannelBootstrapRunner::class.java)
-
-    private val routerAgentAdaptor: AgentAdaptor by lazy { RouterAgentAdaptor(routerClient) }
-
-    /** Pre-configured chat service with workspace file delivery (no MinIO round-trip). */
-    private val chatService = ChannelChatService(
-        sessionManager = sessionManager,
-        workspaceFileDownloader = { sessionId, filePath -> routerClient.downloadWorkspaceFile(sessionId, filePath) },
-    )
 
     private val runningChannels = ConcurrentHashMap<Long, RunningChannel>()
 
@@ -179,18 +171,25 @@ class ChannelBootstrapRunner(
         }
 
         val state = monitor.stateOf(channelId)
+        // A half-dead socket — CONNECTED but its heartbeat went quiet — is a failure even though
+        // the transport claims to be serving. The flag also stops restartChannel from crediting
+        // that socket's long lifetime as a healthy disconnect, which is what let such a channel
+        // be rebuilt on every single poll tick instead of on a growing backoff.
+        val halfDead = isHeartbeatStale(state)
         val reason = when {
-            isHeartbeatStale(state) -> "no heartbeat for ${staleHeartbeatMs}ms"
+            halfDead -> "no heartbeat for ${staleHeartbeatMs}ms"
             state.isServing() -> {
                 backoffOf(channelId).reset()
                 null
             }
-            retryDue(channelId, running) -> "connection is ${state.status}"
-            else -> null
+            else -> "connection is ${state.status}"
         } ?: return
 
+        // Every liveness restart passes the backoff gate, the half-dead branch included.
+        if (!retryDue(channelId, running)) return
+
         result.withinBudget {
-            if (restartChannel(entity, running, reason)) result.restarted++
+            if (restartChannel(entity, running, reason, healthyLifetime = !halfDead)) result.restarted++
         }
     }
 
@@ -209,10 +208,20 @@ class ChannelBootstrapRunner(
 
         val fingerprint = configFingerprint(entity)
 
-        if (spec.communicationMode.equals("webhook", ignoreCase = true)) {
+        if (spec.communicationMode.equals(CallbackModes.WEBHOOK, ignoreCase = true)) {
             // Callback mode: the platform delivers messages to an HTTP endpoint instead of a
             // long-lived connection we own, so there is nothing to keep alive here.
             // Registering the channel still keeps it out of the "missing listener" set.
+            if (!adaptorRegistry.contains(spec.type) || !adaptorRegistry.get(spec.type).supportsCallback()) {
+                // Saying nothing here is what made a webhook channel look healthy forever: no
+                // listener is expected, so nothing ever reports a problem, yet the platform's
+                // messages have nowhere to arrive.
+                recordStartupFailure(
+                    entity,
+                    "webhook callback mode is not implemented for ${spec.type.code}; use this platform's long-connection mode",
+                )
+                return false
+            }
             monitor.clearStartupFailure(entity.id)
             monitor.trackExpected(spec)
             runningChannels[entity.id] = RunningChannel(
@@ -221,7 +230,7 @@ class ChannelBootstrapRunner(
                 listening = false,
                 lastStartAttemptAt = System.currentTimeMillis(),
             )
-            log.info("Channel id={} uses webhook callback mode, no active listener started", entity.id)
+            log.info("Channel id={} uses webhook callback mode, messages arrive on /api/channel/callback/{}", entity.id, spec.callbackKey)
             return true
         }
 
@@ -259,10 +268,15 @@ class ChannelBootstrapRunner(
         return true
     }
 
+    /**
+     * @param healthyLifetime false when this listener was forced down while it still looked alive;
+     *   its elapsed time must not reset the backoff.
+     */
     private fun restartChannel(
         entity: Channel,
         running: RunningChannel,
         reason: String,
+        healthyLifetime: Boolean = true,
     ): Boolean {
         val channelId = entity.id
         val previousState = monitor.stateOf(channelId)
@@ -277,7 +291,9 @@ class ChannelBootstrapRunner(
             previousState.lastError ?: "-",
         )
         // Advances this channel's backoff; it resets once the new listener reports CONNECTED.
-        backoffOf(channelId).onDisconnected(Duration.ofMillis(aliveMs))
+        // A forced-down-but-healthy-looking listener is deliberately credited with no lifetime so
+        // the retry spacing still grows.
+        backoffOf(channelId).onDisconnected(if (healthyLifetime) Duration.ofMillis(aliveMs) else Duration.ZERO)
         runningChannels.remove(channelId)
         try {
             running.spec?.let { stopBySpec(it) }
@@ -312,7 +328,7 @@ class ChannelBootstrapRunner(
      * connection to close.
      */
     private fun stopBySpec(spec: ChannelSpec) {
-        if (spec.communicationMode.equals("webhook", ignoreCase = true)) {
+        if (spec.communicationMode.equals(CallbackModes.WEBHOOK, ignoreCase = true)) {
             log.debug("Channel id={} uses webhook mode, no active stop required", spec.id)
             return
         }

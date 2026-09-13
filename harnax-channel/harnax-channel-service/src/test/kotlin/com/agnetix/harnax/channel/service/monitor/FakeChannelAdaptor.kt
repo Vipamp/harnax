@@ -2,6 +2,8 @@ package com.agnetix.harnax.channel.service.monitor
 
 import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.ChannelAdaptor
+import com.agnetix.harnax.channel.sdk.adaptor.ChannelCallbackPipeline
+import com.agnetix.harnax.channel.sdk.adaptor.ChannelCallbackResult
 import com.agnetix.harnax.channel.sdk.config.ChannelSpec
 import com.agnetix.harnax.channel.sdk.config.ChannelType
 import com.agnetix.harnax.channel.sdk.message.ChannelMessage
@@ -13,11 +15,20 @@ import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 /**
  * 只回答可观测性问题的 [ChannelAdaptor] 实现。真实适配器要构造就得有凭证、HTTP 客户端和平台长连接，
  * 而 [ChannelRuntimeMonitor] 做的只是把声明的频道和活的连接状态合并在一起，用不到那些东西。
+ *
+ * Callback support is declared the same way — a null `callbackResult` means "no callback contract" —
+ * so [com.agnetix.harnax.channel.service.endpoint.ChannelCallbackController] can be tested against
+ * both answers without a real Feishu client.
  */
 internal class FakeChannelAdaptor(
     private val type: ChannelType = ChannelType.FEISHU,
     private val states: MutableMap<Long, ChannelConnectionState> = mutableMapOf(),
+    private val callbackResult: ChannelCallbackResult? = null,
 ) : ChannelAdaptor {
+
+    /** What the controller handed over as the agent pipeline, for the test to assert on. */
+    var lastPipeline: ChannelCallbackPipeline? = null
+        private set
 
     fun report(
         channelId: Long,
@@ -27,6 +38,17 @@ internal class FakeChannelAdaptor(
     }
 
     override fun getType(): ChannelType = type
+
+    override fun supportsCallback(): Boolean = callbackResult != null
+
+    override fun handleCallback(
+        request: ChannelRequest,
+        channel: ChannelSpec,
+        pipeline: ChannelCallbackPipeline,
+    ): ChannelCallbackResult {
+        lastPipeline = pipeline
+        return checkNotNull(callbackResult)
+    }
 
     override fun verifySignature(
         request: ChannelRequest,

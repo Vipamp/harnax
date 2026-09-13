@@ -73,6 +73,13 @@ class DingtalkAdaptor(
 
     override fun supportsStreamingOutput(): Boolean = false
 
+    /**
+     * DingTalk cannot receive files from this service: replies go out through the session webhook
+     * or the robot text APIs, neither of which carries a file. Generated files stay in the agent
+     * workspace and the user is told to pick them up in the Web UI.
+     */
+    override fun supportsFileDelivery(): Boolean = false
+
     fun startChannel(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         streamMode.start(channel, messageHandler)
     }

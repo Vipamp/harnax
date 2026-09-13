@@ -10,6 +10,7 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.MessageRole
 import com.agnetix.harnax.channel.sdk.message.MessageType
 import com.agnetix.harnax.channel.sdk.service.ChannelChatService
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
@@ -67,6 +68,10 @@ class FileDeliveryTest {
         whenever(sessionManager.toAgentMessages(any())).thenReturn(emptyList())
         whenever(channelAdaptor.shouldUseStreaming(any())).thenReturn(false)
         whenever(channelAdaptor.supportsStreamingOutput()).thenReturn(false)
+        // These tests exercise the delivery path. The capability gate in front of it has its own
+        // case below; a Mockito mock answers false by default, which would short-circuit all of
+        // them into the "this channel cannot receive files" branch.
+        whenever(channelAdaptor.supportsFileDelivery()).thenReturn(true)
     }
 
     private fun buildMessage(content: String = "generate a report"): ChannelMessage = ChannelMessage(
@@ -211,7 +216,7 @@ class FileDeliveryTest {
             verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                argThat { contains("report.pptx") && contains("失败") },
+                argThat { contains("report.pptx") && startsWith(ReplyMarkers.FILE_SEND_FAILED_PREFIX) },
             )
         }
     }
@@ -242,7 +247,7 @@ class FileDeliveryTest {
             verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                argThat { contains("report.pptx") && contains("失败") },
+                argThat { contains("report.pptx") && startsWith(ReplyMarkers.FILE_SEND_FAILED_PREFIX) },
             )
             // Should NOT call sendFile
             verify(channelAdaptor, never()).sendFile(any(), any(), any(), any(), any())
@@ -322,6 +327,50 @@ class FileDeliveryTest {
         }
     }
 
+    // ==================== Capability gate ====================
+
+    @Nested
+    inner class ChannelWithoutFileDelivery {
+
+        @Test
+        fun `an undeliverable channel is told once, names every file, and resolves no bytes`() = runBlocking {
+            var downloads = 0
+            whenever(channelAdaptor.supportsFileDelivery()).thenReturn(false)
+            val chatService = ChannelChatService(
+                sessionManager = sessionManager,
+                workspaceFileDownloader = { _, _ ->
+                    downloads++
+                    "bytes".toByteArray()
+                },
+            )
+
+            whenever(agentAdaptor.process(any())).thenReturn(
+                AgentResponse(
+                    content = "Done",
+                    shouldReply = true,
+                    attachments = listOf(
+                        buildAttachment(fileName = "report.pptx"),
+                        buildAttachment(fileName = "chart.png", filePath = "/workspace/output/chart.png"),
+                    ),
+                ),
+            )
+
+            chatService.chat(buildMessage(), channel, agentAdaptor, channelAdaptor)
+
+            verify(channelAdaptor, never()).sendFile(any(), any(), any(), any(), any())
+            assertEquals(0, downloads, "fetching bytes for an upload nobody can perform only costs the turn its timeout")
+            verify(channelAdaptor, times(1)).sendMessage(
+                eq(channel),
+                eq(userSessionId),
+                argThat {
+                    startsWith(ReplyMarkers.FILE_UNDELIVERABLE_PREFIX) &&
+                        contains("report.pptx") &&
+                        contains("chart.png")
+                },
+            )
+        }
+    }
+
     // ==================== Edge cases ====================
 
     @Nested
@@ -381,7 +430,7 @@ class FileDeliveryTest {
             verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                argThat { contains("失败") },
+                argThat { startsWith(ReplyMarkers.FILE_SEND_FAILED_PREFIX) },
             )
         }
 
@@ -425,7 +474,7 @@ class FileDeliveryTest {
             verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                argThat { contains("report.pptx") && contains("失败") },
+                argThat { contains("report.pptx") && startsWith(ReplyMarkers.FILE_SEND_FAILED_PREFIX) },
             )
         }
 
@@ -445,7 +494,7 @@ class FileDeliveryTest {
             verify(channelAdaptor).sendMessage(
                 eq(channel),
                 eq(userSessionId),
-                argThat { contains("report.pptx") && contains("失败") },
+                argThat { contains("report.pptx") && startsWith(ReplyMarkers.FILE_SEND_FAILED_PREFIX) },
             )
         }
 

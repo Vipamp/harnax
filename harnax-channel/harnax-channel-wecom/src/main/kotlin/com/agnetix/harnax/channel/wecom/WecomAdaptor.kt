@@ -69,6 +69,13 @@ class WecomAdaptor(
 
     override fun supportsStreamingOutput(): Boolean = false
 
+    /**
+     * WeCom cannot receive files from this service: the frame protocol this adaptor speaks only
+     * carries text and markdown. Generated files stay in the agent workspace and the user is told
+     * to pick them up in the Web UI.
+     */
+    override fun supportsFileDelivery(): Boolean = false
+
     fun startChannel(channel: ChannelSpec, messageHandler: suspend (ChannelMessage) -> Unit) {
         webSocketMode.start(channel, messageHandler)
     }

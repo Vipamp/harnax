@@ -1,5 +1,7 @@
 package com.agnetix.harnax.channel.sdk.adaptor
 
+import com.agnetix.harnax.agent.protocol.FileAttachment
+
 /**
  * Agent Stream Event Types
  *
@@ -50,9 +52,12 @@ sealed class AgentStreamEvent {
      * For batch channels: triggers sending the merged complete message.
      *
      * @param fullContent Optional merged complete text content (for batch channels)
+     * @param attachments Files the run produced, so the streaming path can hand them to the same
+     *   delivery entry point the batch path uses instead of dropping them
      */
     data class EndStreamEvent(
         val fullContent: String? = null,
+        val attachments: List<FileAttachment> = emptyList(),
     ) : AgentStreamEvent()
 
     /**

@@ -259,6 +259,83 @@ class ChannelServiceImplTest {
         }
 
         @Test
+        @DisplayName("createChannel - Refuse a mode the type cannot run")
+        fun `createChannel should reject a mode the runtime cannot serve`() {
+            // Given: a transport with no bot callback at all. Nothing here used to fail until the
+            // runtime's next reconcile tick, leaving a healthy-looking channel that receives nothing.
+            val request = ChannelCreateRequest(
+                name = "DingTalk Channel",
+                type = "dingtalk",
+                agentId = 100L,
+                communicationMode = "webhook",
+            )
+
+            // When
+            val exception = assertThrows<RuntimeException> { createService().createChannel(request) }
+
+            // Then
+            assertTrue(
+                exception.message!!.contains("cannot run in mode 'webhook'"),
+                "expected a mode-specific rejection, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createChannel - Refuse an unknown communication mode")
+        fun `createChannel should reject an unknown mode`() {
+            val request = ChannelCreateRequest(
+                name = "Feishu Channel",
+                type = "feishu",
+                agentId = 100L,
+                // Anything but a transport name: this used to persist and fail only at runtime.
+                communicationMode = "Webhook",
+            )
+
+            assertThrows<RuntimeException> { createService().createChannel(request) }
+            verify(channelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createChannel - Refuse a configJson that is not a JSON object")
+        fun `createChannel should reject malformed configJson`() {
+            val request = ChannelCreateRequest(
+                name = "Feishu Channel",
+                type = "feishu",
+                agentId = 100L,
+                configJson = """{"appId":"a1""",
+            )
+
+            val exception = assertThrows<RuntimeException> { createService().createChannel(request) }
+
+            assertTrue(
+                exception.message!!.contains("must be a JSON object"),
+                "expected a config-shape rejection, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createChannel - Default to a mode the type can actually run")
+        fun `createChannel should default to the type recommended mode`() {
+            // Given: no mode named, which used to mean "webhook" for every type.
+            val request = ChannelCreateRequest(
+                name = "DingTalk Channel",
+                type = "dingtalk",
+                agentId = 100L,
+            )
+            `when`(channelMapper.insert(any())).thenReturn(1)
+
+            // When
+            createService().createChannel(request)
+
+            // Then
+            val captor = argumentCaptor<Channel>()
+            verify(channelMapper).insert(captor.capture())
+            assertEquals("stream", captor.firstValue.communicationMode)
+        }
+
+        @Test
         @DisplayName("createChannel - Set default values when optional fields not provided")
         fun `createChannel should set default values when optional fields not provided`() {
             // Given
@@ -335,7 +412,9 @@ class ChannelServiceImplTest {
             // Given
             val request = ChannelCreateRequest(
                 name = "Key Channel",
-                type = "DingTalk",
+                // The runtime resolves the type case-sensitively, so a stored type has to be a code
+                // it recognises; the callbackKey prefix is lowercased from it either way.
+                type = "dingtalk",
                 agentId = 100L,
             )
 
@@ -405,7 +484,9 @@ class ChannelServiceImplTest {
                 name = "Updated Channel",
                 type = "feishu",
                 agentId = 200L,
-                communicationMode = "long_polling",
+                // A mode the new type can actually run: `resolveCommunicationMode` now rejects
+                // combinations nothing implements, since a mismatch persisted as a deaf channel.
+                communicationMode = "websocket",
                 permissionMode = "ACCEPT_EDITS",
                 enabled = 0,
                 configJson = """{"appId":"updated"}""",
@@ -427,12 +508,34 @@ class ChannelServiceImplTest {
             assertEquals("Updated Channel", updated.name)
             assertEquals("feishu", updated.type)
             assertEquals(200L, updated.agentId)
-            assertEquals("long_polling", updated.communicationMode)
+            assertEquals("websocket", updated.communicationMode)
             assertEquals("ACCEPT_EDITS", updated.permissionMode)
             assertEquals(0, updated.enabled)
             assertEquals("""{"appId":"updated"}""", updated.configJson)
             assertEquals("Updated description", updated.description)
             assertEquals(0, updated.status)
+        }
+
+        @Test
+        @DisplayName("updateChannel - A type change cannot keep the old type's mode")
+        fun `updateChannel should revalidate the mode when the type changes`() {
+            // Given: a webhook channel, a combination only feishu can actually run.
+            testChannel.type = "feishu"
+            testChannel.communicationMode = "webhook"
+            `when`(channelMapper.selectById(1L)).thenReturn(testChannel)
+
+            val request = ChannelUpdateRequest(name = "Renamed", type = "dingtalk")
+
+            // When
+            val exception = assertThrows<RuntimeException> { createService().updateChannel(1L, request) }
+
+            // Then: the Feishu webhook mode must not survive a move to a type that has no callback
+            // endpoint — that is the healthy-but-deaf channel this validation exists to stop.
+            assertTrue(
+                exception.message!!.contains("cannot run in mode 'webhook'"),
+                "expected the stale mode to be rejected, got: ${exception.message}",
+            )
+            verify(channelMapper, never()).updateById(any())
         }
 
         @Test

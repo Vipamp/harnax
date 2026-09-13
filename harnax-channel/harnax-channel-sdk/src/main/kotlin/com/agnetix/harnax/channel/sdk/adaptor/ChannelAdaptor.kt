@@ -6,6 +6,7 @@ import com.agnetix.harnax.channel.sdk.message.ChannelMessage
 import com.agnetix.harnax.channel.sdk.message.ChannelRequest
 import com.agnetix.harnax.channel.sdk.message.RichMessage
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 
 /**
@@ -77,10 +78,23 @@ interface ChannelAdaptor {
     }
 
     /**
+     * Whether this channel can actually hand a file to the user.
+     *
+     * This is the capability the reply pipeline checks before it spends time fetching bytes:
+     * Feishu, DingTalk and WeCom have no message-upload API reachable from this service, so
+     * [sendFile] is a text notice at best, and pretending otherwise means downloading a file
+     * nobody will ever receive.
+     *
+     * @return true only when [sendFile] performs a real upload
+     */
+    fun supportsFileDelivery(): Boolean = false
+
+    /**
      * Send a file to the platform user.
      *
      * Default implementation logs a warning (channel doesn't support file sending).
-     * Channels that support file messages (WeChat, Feishu) should override this.
+     * Channels that support file messages (WeChat, Feishu) should override this,
+     * [supportsFileDelivery] along with it.
      *
      * @param channel   Channel configuration
      * @param sessionId Session identifier (maps to platform user/chat ID)
@@ -95,8 +109,8 @@ interface ChannelAdaptor {
         fileName: String,
         caption: String = "",
     ) {
-        // Default: degrade to text notification
-        sendMessage(channel, sessionId, "\uD83D\uDCCE \u6587\u4EF6\u5DF2\u751F\u6210: $fileName\uFF08\u5F53\u524D\u6E20\u9053\u4E0D\u652F\u6301\u6587\u4EF6\u53D1\u9001\uFF09")
+        // Default: degrade to the same text notice the pipeline uses for an undeliverable file.
+        sendMessage(channel, sessionId, ReplyMarkers.fileUndeliverable(listOf(fileName)))
     }
 
     /**
@@ -125,6 +139,39 @@ interface ChannelAdaptor {
      * @return Whether streaming output is supported
      */
     fun supportsStreamingOutput(): Boolean = false
+
+    /**
+     * Whether the platform this adaptor serves has an HTTP callback contract, and this service
+     * implements it.
+     *
+     * The question is worth asking before treating a channel as reachable: DingTalk Stream, the
+     * WeCom frame protocol and WeChat iLink polling have no comparable bot callback at all, so a
+     * channel configured for webhook mode on those types can never receive a message. Callers use
+     * this to say so out loud instead of leaving the channel looking healthy-but-silent.
+     */
+    fun supportsCallback(): Boolean = false
+
+    /**
+     * Accept one platform HTTP callback: verify it, decode it, and run the message through
+     * [pipeline].
+     *
+     * Verification and the reply body belong to the adaptor because the contracts differ more than
+     * a controller can absorb — a URL-verification challenge has to be echoed, an encrypted event
+     * has to be decoded before anything is readable, and each platform wants a different ack.
+     *
+     * The implementation must return promptly and run the agent turn on the channel's own
+     * executor: these platforms retry a callback that is not acknowledged within a few seconds,
+     * while an agent turn takes minutes.
+     *
+     * Only call this when [supportsCallback] is true.
+     */
+    fun handleCallback(
+        request: ChannelRequest,
+        channel: ChannelSpec,
+        pipeline: ChannelCallbackPipeline,
+    ): ChannelCallbackResult = throw UnsupportedOperationException(
+        "${getType().code} channels have no HTTP callback contract; use the long-connection communication mode",
+    )
 
     /**
      * Determine whether to use streaming output for the given agent.

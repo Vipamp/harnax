@@ -40,8 +40,17 @@ class MessageDeduplicator(
         if (committedIndex.contains(messageId) || inFlight.contains(messageId)) {
             false
         } else {
-            inFlight.add(messageId)
-            true
+            // In-flight entries are only removed by commit or rollback, so they need a ceiling too:
+            // a turn abandoned by a dying executor thread reaches neither, and an unbounded set
+            // would grow for the life of the process while quietly filtering that msgId forever.
+            // Past the ceiling the message is processed untracked — one possible duplicate is
+            // cheaper than a leak, and reaching the ceiling already means something is wrong.
+            if (inFlight.size >= MAX_IN_FLIGHT) {
+                true
+            } else {
+                inFlight.add(messageId)
+                true
+            }
         }
     }
 
@@ -67,5 +76,8 @@ class MessageDeduplicator(
 
     companion object {
         const val DEFAULT_MAX_COMMITTED = 1000
+
+        /** Ceiling for concurrently tracked in-flight messages; see [tryBegin]. */
+        const val MAX_IN_FLIGHT = 4096
     }
 }

@@ -164,13 +164,24 @@ class ChannelListenerLockGuardTest {
     }
 
     @Test
-    fun `a database outage keeps this instance serving`() {
+    fun `a blip while holding a proven lock keeps this instance serving`() {
+        val conn = lockConnection(1, failAfter = 1)
+        val guard = guard(dataSourceOf(conn))
+        assertTrue(guard.hold(), "the first round has to claim the lock before anything else matters")
+
+        assertTrue(guard.hold(), "failing closed would tear down every listener over a MySQL blip")
+    }
+
+    @Test
+    fun `an unevaluable lock is not assumed before ownership was ever proven`() {
         val dataSource = mock<DataSource>()
         whenever(dataSource.connection).thenThrow(SQLException("connection refused"))
 
-        val held = guard(dataSource).hold()
-
-        assertTrue(held, "failing closed would tear down every listener over a MySQL blip")
+        assertFalse(
+            guard(dataSource).hold(),
+            "assuming a lock this instance never proved is how two replicas both start listening; " +
+                "and with MySQL down the reconcile query has no channel list to act on either",
+        )
     }
 
     @Test

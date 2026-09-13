@@ -5,8 +5,11 @@ import com.agnetix.harnax.channel.feishu.FeishuAdaptor
 import com.agnetix.harnax.channel.sdk.dispatch.ChannelTurnExecutor
 import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.monitor.MicrometerChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.service.ChannelChatService
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
+import com.agnetix.harnax.channel.service.adaptor.RouterAgentAdaptor
 import com.agnetix.harnax.channel.service.client.RouterCircuitBreaker
+import com.agnetix.harnax.channel.service.client.RouterClient
 import com.agnetix.harnax.channel.service.session.InMemoryChannelSessionManager
 import com.agnetix.harnax.channel.wechat.WechatAdaptor
 import com.agnetix.harnax.channel.wecom.WecomAdaptor
@@ -163,6 +166,30 @@ class ChannelConfig(
             idleTtl = Duration.ofMinutes(idleTtlMinutes),
         )
     }
+
+    /**
+     * Bridges channel messages to agent-service through the router.
+     *
+     * A Bean rather than something each caller news up, because the bootstrap listeners and the
+     * webhook callback controller must run messages through the same agent pipeline.
+     */
+    @Bean
+    fun routerAgentAdaptor(routerClient: RouterClient): RouterAgentAdaptor = RouterAgentAdaptor(routerClient)
+
+    /**
+     * The message pipeline: history, agent call, output strategy, reply.
+     *
+     * Workspace-file delivery is wired here so every entry point (long connection or HTTP
+     * callback) resolves generated files the same way.
+     */
+    @Bean
+    fun channelChatService(
+        sessionManager: ChannelSessionManager,
+        routerClient: RouterClient,
+    ): ChannelChatService = ChannelChatService(
+        sessionManager = sessionManager,
+        workspaceFileDownloader = { sessionId, filePath -> routerClient.downloadWorkspaceFile(sessionId, filePath) },
+    )
 
     /**
      * Registers the WeChat adaptor Bean.

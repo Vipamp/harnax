@@ -21,10 +21,12 @@ import javax.sql.DataSource
  * connection — no lease table, no expiry column to refresh, no new schema (flyway is disabled in
  * this service; the admin service owns migrations for this DB).
  *
- * Failure policy: when the lock cannot be *evaluated* (DB blip), this instance keeps serving
- * instead of stopping every listener. A blip already makes the reconcile query fail, so the loop
- * goes idle on its own; failing closed instead would tear down and rebuild every WebSocket in
- * the deployment each time MySQL hiccups.
+ * Failure policy, and it is deliberately asymmetric: an owned lock that cannot be re-verified
+ * (a DB blip on the connection we created while holding it) keeps this instance serving, because
+ * the same blip also makes the reconcile query fail — the loop goes idle on its own, and failing
+ * closed would tear down and rebuild every WebSocket in the deployment each time MySQL hiccups.
+ * A lock this instance never proved it owns is never assumed: that path returns false, because
+ * claiming ownership there is exactly how two replicas end up listening on one set of credentials.
  */
 @Component
 class ChannelListenerLockGuard(
@@ -48,7 +50,7 @@ class ChannelListenerLockGuard(
     fun hold(): Boolean {
         if (!lockEnabled) return true
 
-        val conn = existingConnection() ?: return acquireOnNewConnection()
+        val conn = existingConnection() ?: return acquireOnNewConnection(ownershipProvenBefore = false)
         return try {
             // GET_LOCK is per-session and re-entrant: re-issuing it on the owning connection
             // returns 1, so this doubles as the liveness check for the lock.
@@ -61,9 +63,12 @@ class ChannelListenerLockGuard(
             stillOurs
         } catch (e: Exception) {
             log.warn("Lost the listener-lock connection, re-acquiring: {}", e.message)
+            // `held` records that this instance had proven ownership on the connection that just
+            // broke; only that history earns the keep-serving benefit of the doubt below.
+            val proven = held
             held = false
             closeQuietly()
-            acquireOnNewConnection()
+            acquireOnNewConnection(ownershipProvenBefore = proven)
         }
     }
 
@@ -86,7 +91,13 @@ class ChannelListenerLockGuard(
         }
     }
 
-    private fun acquireOnNewConnection(): Boolean = try {
+    /**
+     * @param ownershipProvenBefore true only when this instance held the lock on the connection
+     *   that was just lost. Without that history an unevaluable lock yields false: two replicas
+     *   listening on one credential duplicate and drop user messages, which costs more than one
+     *   round of idling while MySQL recovers.
+     */
+    private fun acquireOnNewConnection(ownershipProvenBefore: Boolean): Boolean = try {
         val conn = dataSource.connection
         connection = conn
         val acquired = getLock(conn)
@@ -99,10 +110,15 @@ class ChannelListenerLockGuard(
         }
         acquired
     } catch (e: Exception) {
-        log.error("Unable to evaluate channel listener lock '{}', continuing as owner: {}", lockName, e.message)
         held = false
         closeQuietly()
-        true
+        if (ownershipProvenBefore) {
+            log.error("Unable to re-evaluate channel listener '{}' after a connection loss; continuing as owner: {}", lockName, e.message)
+            true
+        } else {
+            log.error("Unable to evaluate channel listener lock '{}'; not claiming ownership this round: {}", lockName, e.message)
+            false
+        }
     }
 
     private fun existingConnection(): Connection? = connection?.takeIf { runCatching { !it.isClosed }.getOrDefault(false) }

@@ -128,7 +128,7 @@ class RouterAgentAdaptor(
             content = event.message,
             isLast = event.isLast,
         )
-        is EndEventChatEvent -> AgentStreamEvent.EndStreamEvent()
+        is EndEventChatEvent -> AgentStreamEvent.EndStreamEvent(attachments = event.attachments)
         is ErrorChatEvent -> AgentStreamEvent.ErrorStreamEvent(
             code = event.code,
             message = event.message,

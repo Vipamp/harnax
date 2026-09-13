@@ -14,18 +14,16 @@ import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
 import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
 import com.agnetix.harnax.channel.sdk.util.TextChunker
-import com.lark.oapi.event.EventDispatcher
 import com.lark.oapi.service.im.ImService
 import com.lark.oapi.service.im.v1.model.P2MessageReceiveV1
 import org.slf4j.LoggerFactory
 import tools.jackson.module.kotlin.jacksonObjectMapper
-import java.lang.reflect.Method
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import com.lark.oapi.ws.Client as WsClient
 
 /**
  * Feishu WebSocket Long Connection Mode Implementation
@@ -45,15 +43,13 @@ import com.lark.oapi.ws.Client as WsClient
  * - Feishu SDK uses at-least-once delivery, events may be re-delivered on reconnection or retry
  *
  * Lifecycle notes:
- * - The listener is registered in [listeners] *before* the client is started, and marked
- *   closing on stop. The previous code registered the client only after `start()` returned,
- *   so a stop() during connect could not find it and leaked a live WebSocket forever.
- * - `com.lark.oapi.ws.Client.start()` is expected to block for the lifetime of the
- *   connection (that is why it runs on a dedicated thread). Because that behaviour is not
- *   contractual, a fast return with no event ever received is treated as "liveness
- *   unconfirmed" instead of "connection died": only a listener that demonstrably worked,
- *   or one that held a connection for a while, is handed back to the reconcile loop for a
- *   restart. That asymmetry is deliberate — the wrong guess would restart healthy channels.
+ * - The listener holder is registered in [listeners] *before* the client is started, and is
+ *   retired only by [stop]. Registering early means a stop() during connect always finds the
+ *   client; not retiring it later means the socket and the holder die together rather than the
+ *   holder being dropped out from under a live connection.
+ * - [FeishuWsTransport.start] is **not** blocking — the SDK schedules the handshake on its own
+ *   executor and returns — so a clean return says nothing about liveness. The first inbound
+ *   event is the only positive proof, and that is where [tracker.markConnected] runs.
  * - Inbound events are dispatched to [ChannelTurnExecutor]; the SDK callback thread must
  *   never block on the agent, and image download (which is part of parsing) belongs to the
  *   turn, not to the reader thread.
@@ -62,6 +58,7 @@ class FeishuWebSocketMode(
     private val httpClient: PlatformHttpClient = PlatformHttpClient(),
     private val turnExecutor: ChannelTurnExecutor = ChannelTurnExecutor.SHARED,
     private val metricsSink: ChannelMetricsSink = NoOpChannelMetricsSink,
+    private val transportFactory: FeishuWsTransportFactory = SdkFeishuWsTransportFactory,
 ) : ChannelCommunicationMode {
 
     private val logger = LoggerFactory.getLogger(FeishuWebSocketMode::class.java)
@@ -83,7 +80,7 @@ class FeishuWebSocketMode(
         val closing = AtomicBoolean(false)
 
         @Volatile
-        var client: WsClient? = null
+        var transport: FeishuWsTransport? = null
 
         @Volatile
         var thread: Thread? = null
@@ -124,9 +121,7 @@ class FeishuWebSocketMode(
             return
         }
 
-        val appId = channel.appId
-        val appSecret = channel.appSecret
-        if (appId.isNullOrBlank() || appSecret.isNullOrBlank()) {
+        if (channel.appId.isNullOrBlank() || channel.appSecret.isNullOrBlank()) {
             tracker.markFailed(channel.id, "missing appId or appSecret")
             throw IllegalArgumentException("WebSocket mode requires appId and appSecret for channel: ${channel.id}")
         }
@@ -140,14 +135,8 @@ class FeishuWebSocketMode(
         tracker.markConnecting(channel.id)
         logger.info("Starting WebSocket connection for channel: ${channel.id}")
 
-        val wsClient = try {
-            val eventDispatcher = EventDispatcher.newBuilder("", "")
-                .onP2MessageReceiveV1(messageEventHandler(holder))
-                .build()
-            WsClient.Builder(appId, appSecret)
-                .eventHandler(eventDispatcher)
-                .autoReconnect(true)
-                .build()
+        val transport = try {
+            transportFactory.create(channel, messageEventHandler(holder))
         } catch (e: Exception) {
             listeners.remove(channel.id, holder)
             tracker.markFailed(channel.id, e.message ?: "client build failed")
@@ -159,10 +148,10 @@ class FeishuWebSocketMode(
                 cause = e,
             )
         }
-        holder.client = wsClient
+        holder.transport = transport
         holder.startedAt = System.currentTimeMillis()
 
-        val thread = Thread({ runConnection(holder, wsClient) }, "feishu-ws-channel-${channel.id}")
+        val thread = Thread({ runConnection(holder, transport) }, "feishu-ws-channel-${channel.id}")
         holder.thread = thread
         thread.isDaemon = true
         thread.start()
@@ -183,7 +172,7 @@ class FeishuWebSocketMode(
         }
         // Closing first makes the reader thread and any late event give up on their own.
         holder.closing.set(true)
-        disconnect(holder.client)
+        holder.transport?.close()
         val thread = holder.thread
         if (thread != null && thread !== Thread.currentThread()) {
             runCatching { thread.join(STOP_JOIN_MS) }
@@ -192,7 +181,10 @@ class FeishuWebSocketMode(
             }
         }
         tracker.markStopped(channel.id)
-        logger.info("WebSocket connection stopped for channel: ${channel.id}")
+        logger.info(
+            "WebSocket connection stopped for channel: ${channel.id} " +
+                "(served ${holder.eventsReceived} event(s) over ${System.currentTimeMillis() - holder.startedAt}ms)",
+        )
     }
 
     /** Stop every listener; called once on application shutdown. */
@@ -205,48 +197,44 @@ class FeishuWebSocketMode(
         tokenCache.clear()
     }
 
-    /** WsClient.disconnect() is not public in oapi-sdk 2.4.0, so it is invoked reflectively. */
-    private fun disconnect(client: WsClient?) {
-        if (client == null) return
-        val method = DISCONNECT_METHOD.value ?: run {
-            logger.warn("Feishu SDK exposes no disconnect(); leaving the socket to the daemon thread")
-            return
-        }
-        try {
-            method.invoke(client)
-        } catch (e: Exception) {
-            logger.error("Failed to disconnect WebSocket: ${e.message}", e)
-        }
-    }
-
     /**
-     * Runs the blocking `start()` call on the listener's own thread and translates its
-     * outcome into a connection state the reconcile loop can act on.
+     * Kicks off the SDK connection on the listener's own thread.
+     *
+     * [FeishuWsTransport.start] is **not** blocking: it schedules the handshake and hands the socket to
+     * the SDK's own ping loop, then returns. Two consequences shape this method:
+     * - A clean return says nothing about liveness, so no connection state is claimed here. The
+     *   first inbound event is the only positive proof, which is where [tracker.markConnected]
+     *   runs (see [messageEventHandler]).
+     * - The socket outlives this thread, so the holder must outlive it too. Retiring the holder
+     *   here would leave the superseded-listener guard in [messageEventHandler] discarding every
+     *   event the platform delivers, while the SDK kept the connection alive and healthy.
+     *   Only [stop] retires a holder; a hard failure is reported and left for the reconcile loop
+     *   to restart through the normal stop/start path.
      */
     private fun runConnection(
         holder: FeishuListener,
-        client: WsClient,
+        transport: FeishuWsTransport,
     ) {
         val channelId = holder.channel.id
         if (holder.closing.get()) {
             // stop() ran while this thread was being scheduled; do not open a socket nobody owns.
-            disconnect(client)
+            transport.close()
             listeners.remove(channelId, holder)
             return
         }
         try {
-            client.start()
-            if (holder.closing.get()) return
-            val aliveMs = System.currentTimeMillis() - holder.startedAt
-            if (holder.eventsReceived > 0 || aliveMs > FAST_RETURN_MS) {
-                // The socket demonstrably worked and has now ended: ask for a restart.
-                tracker.markFailed(channelId, "connection ended after ${aliveMs}ms")
-            } else {
-                logger.warn(
-                    "Feishu start() returned after ${aliveMs}ms without receiving any event for channel $channelId; " +
-                        "treating liveness as unconfirmed instead of restarting",
-                )
+            transport.start()
+            if (holder.closing.get()) {
+                // stop() raced the kickoff: it closed a transport that had not opened yet, so the
+                // socket started here is the live one and nothing else holds a reference to it.
+                // Leaving it running means a zombie connection that auto-reconnects forever, and
+                // Feishu cluster mode delivers each event to exactly one client — so a slice of
+                // real traffic would silently go to a connection nobody serves.
+                transport.close()
+                listeners.remove(channelId, holder)
+                return
             }
+            logger.info("Feishu WebSocket connect scheduled for channel: $channelId, awaiting first event to confirm liveness")
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             if (!holder.closing.get()) tracker.markFailed(channelId, "interrupted")
@@ -254,9 +242,6 @@ class FeishuWebSocketMode(
             if (holder.closing.get()) return
             logger.error("WebSocket connection failed for channel: $channelId", e)
             tracker.markFailed(channelId, e.message ?: "ws client failure")
-        } finally {
-            // Remove only our own registration, so a restart that already happened survives.
-            listeners.remove(channelId, holder)
         }
     }
 
@@ -303,16 +288,42 @@ class FeishuWebSocketMode(
                 try {
                     val channelMessage = parseFeishuEvent(data, holder.channel)
                     if (channelMessage == null) {
-                        // Nothing was forwarded, so a platform redelivery must still be accepted.
-                        rollback()
+                        notifyUnreadable(holder.channel, sessionId, data.event?.message?.messageType)
+                        // Committed, not rolled back: a redelivery of the same unreadable event must
+                        // not send the user a second notice.
+                        commit()
                         return@launchTurn
                     }
                     handler(channelMessage)
                     commit()
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     logger.error("Failed to handle Feishu message event for channel: $channelId", e)
                     rollback()
                 }
+            }
+        }
+    }
+
+    /**
+     * Tell the user their message type cannot be handled.
+     *
+     * Best-effort: an explanation that fails must not take the event thread down with it.
+     */
+    private fun notifyUnreadable(
+        channel: ChannelSpec,
+        sessionId: String,
+        platformType: String?,
+    ) {
+        if (sessionId.isBlank()) {
+            logger.warn("Feishu message type {} is unreadable and has no chat id to reply to", platformType)
+            return
+        }
+        val notice = ReplyMarkers.unsupportedMessageType(platformType)
+        turnExecutor.launchTurn(channel.id, sessionId) {
+            try {
+                sendMessage(channel, sessionId, notice)
+            } catch (e: Exception) {
+                logger.warn("Unable to tell session=$sessionId that $platformType is unsupported: ${e.message}", e)
             }
         }
     }
@@ -412,16 +423,24 @@ class FeishuWebSocketMode(
         // Call Feishu Open API to send message
         val url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"
         val started = System.currentTimeMillis()
-        val response = httpClient.postJson(
-            url,
-            messageBody,
-            mapOf(
-                "Authorization" to "Bearer $token",
-            ),
-        )
-        metricsSink.onSendCompleted(channel.id, System.currentTimeMillis() - started, null)
-
-        handleSendResponse(response)
+        var error: Throwable? = null
+        try {
+            val response = httpClient.postJson(
+                url,
+                messageBody,
+                mapOf(
+                    "Authorization" to "Bearer $token",
+                ),
+            )
+            handleSendResponse(response)
+        } catch (e: Exception) {
+            error = e
+            throw e
+        } finally {
+            // Reported after the response has actually been checked: recording a rejected send as
+            // a success is how the send-failure dashboard stayed green.
+            metricsSink.onSendCompleted(channel.id, System.currentTimeMillis() - started, error)
+        }
     }
 
     private fun requireCredentials(
@@ -509,9 +528,12 @@ class FeishuWebSocketMode(
     }
 
     /**
-     * Parse Feishu event to ChannelMessage
+     * Parse Feishu event to ChannelMessage.
+     *
+     * Shared with [FeishuAdaptor.handleCallback] so the webhook and WebSocket transports agree on
+     * what a delivered message means — including the image download that belongs to it.
      */
-    private suspend fun parseFeishuEvent(event: P2MessageReceiveV1, channel: ChannelSpec): ChannelMessage? {
+    internal suspend fun parseFeishuEvent(event: P2MessageReceiveV1, channel: ChannelSpec): ChannelMessage? {
         val channelId = channel.id
         return try {
             val message = event.event?.message
@@ -562,9 +584,11 @@ class FeishuWebSocketMode(
                     }
                 }
                 else -> {
-                    logger.info("Unsupported message type: $messageType, using raw content")
-                    textContent = message.content ?: ""
-                    imageUrls = emptyList()
+                    // Forwarding the raw content JSON would hand the model something like
+                    // {"file_key":"..."} as if the user had typed it. Refuse the message instead and
+                    // let the caller tell the user, which is what the null return means here.
+                    logger.info("Feishu message type {} is not readable for channel: $channelId", messageType)
+                    return null
                 }
             }
 
@@ -629,6 +653,8 @@ class FeishuWebSocketMode(
     ): Pair<String, List<String>> {
         val textParts = mutableListOf<String>()
         val imageUrls = mutableListOf<String>()
+        // Base64 characters collected so far for this message's images.
+        var imagePayloadChars = 0
 
         // Extract title if present
         val title = contentJson.path("title").asText("")
@@ -649,11 +675,22 @@ class FeishuWebSocketMode(
                         "img" -> {
                             val imageKey = element.path("image_key").asText("")
                             if (imageKey.isNotBlank()) {
-                                val dataUrl = downloadFeishuImage(channel, imageKey)
-                                if (dataUrl != null) {
-                                    imageUrls.add(dataUrl)
+                                if (imagePayloadChars >= MAX_AGGREGATE_IMAGE_CHARS) {
+                                    // A post can carry twenty photos, and the per-image cap does not
+                                    // bound the total. Their base64 all goes into one agent request,
+                                    // so past the budget the images are dropped and the text still
+                                    // gets answered.
+                                    logger.warn(
+                                        "Post for channel ${channel.id} passed the image payload budget; skipping image $imageKey",
+                                    )
                                 } else {
-                                    logger.warn("Failed to download image in post: $imageKey")
+                                    val dataUrl = downloadFeishuImage(channel, imageKey)
+                                    if (dataUrl != null) {
+                                        imageUrls.add(dataUrl)
+                                        imagePayloadChars += dataUrl.length
+                                    } else {
+                                        logger.warn("Failed to download image in post: $imageKey")
+                                    }
                                 }
                             }
                         }
@@ -679,7 +716,7 @@ class FeishuWebSocketMode(
      *
      * Feishu Image API: GET /open-apis/im/v1/images/{image_key}
      * Returns the raw image binary, so we need to add the Authorization header.
-     * The result is encoded as a data URL (data:image/jpeg;base64,...) for downstream consumption.
+     * The result is encoded as a data URL for downstream consumption.
      *
      * Returns null if download fails.
      */
@@ -696,16 +733,51 @@ class FeishuWebSocketMode(
             val token = getTenantAccessToken(appId, appSecret)
             val headers = mapOf("Authorization" to "Bearer $token")
             val bytes = httpClient.getBinary(url, headers)
-            if (bytes != null && bytes.isNotEmpty()) {
-                val base64 = Base64.getEncoder().encodeToString(bytes)
-                "data:image/jpeg;base64,$base64"
-            } else {
+            if (bytes == null || bytes.isEmpty()) {
                 logger.warn("Empty response when downloading image: $imageKey")
-                null
+                return null
             }
+            if (bytes.size > MAX_INBOUND_IMAGE_BYTES) {
+                // Base64 inflates by ~4/3 and the bytes go straight into the agent request, so an
+                // oversized image is dropped with a log rather than blowing up the turn.
+                logger.warn("Skipping oversized Feishu image $imageKey: {} bytes over the {} limit", bytes.size, MAX_INBOUND_IMAGE_BYTES)
+                return null
+            }
+            val mime = sniffImageMimeType(bytes, imageKey) ?: return null
+            "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
         } catch (e: Exception) {
             logger.error("Failed to download image $imageKey for channel ${channel.id}: ${e.message}", e)
             null
+        }
+    }
+
+    /**
+     * Guess the image type from its leading bytes, or null for anything unrecognised.
+     *
+     * The image API hands back raw binary with no type this client can read, and labelling every
+     * image `image/jpeg` — what this used to do — made a PNG arrive at the model as a JPEG it
+     * cannot decode. An unknown payload is *skipped* rather than passed on as
+     * `application/octet-stream`: an unsupported media type makes the whole agent turn fail, while
+     * dropping one image only costs the text reply its attachment. HEIC and AVIF land here — iPhone
+     * cameras produce them and Feishu forwards them unchanged.
+     */
+    private fun sniffImageMimeType(
+        bytes: ByteArray,
+        imageKey: String,
+    ): String? {
+        fun startsWith(prefix: ByteArray): Boolean = bytes.size >= prefix.size && prefix.indices.all { bytes[it] == prefix[it] }
+        return when {
+            startsWith(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())) -> "image/jpeg"
+            startsWith(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) -> "image/png"
+            startsWith("GIF8".toByteArray(Charsets.US_ASCII)) -> "image/gif"
+            startsWith("BM".toByteArray(Charsets.US_ASCII)) -> "image/bmp"
+            bytes.size >= 12 &&
+                startsWith("RIFF".toByteArray(Charsets.US_ASCII)) &&
+                String(bytes, 8, 4, Charsets.US_ASCII) == "WEBP" -> "image/webp"
+            else -> {
+                logger.warn("Unrecognised image format for $imageKey, skipping it rather than sending an unsupported type")
+                null
+            }
         }
     }
 
@@ -766,14 +838,11 @@ class FeishuWebSocketMode(
 
         private const val STOP_JOIN_MS = 3_000L
 
-        // start() coming back this fast tells us nothing about whether it ever connected.
-        private const val FAST_RETURN_MS = 10_000L
+        // Ceiling for an inbound image before it is base64'd into the agent request.
+        private const val MAX_INBOUND_IMAGE_BYTES = 5L * 1024 * 1024
 
-        /** Resolved once instead of on every stop; the SDK keeps disconnect() non-public. */
-        private val DISCONNECT_METHOD: Lazy<Method?> = lazy {
-            runCatching {
-                WsClient::class.java.getDeclaredMethod("disconnect").apply { isAccessible = true }
-            }.getOrNull()
-        }
+        // Ceiling for the base64 of *all* images in one message: a single per-image cap leaves a
+        // multi-photo post unbounded, and the whole set is carried in one agent request.
+        private const val MAX_AGGREGATE_IMAGE_CHARS = 8 * 1024 * 1024
     }
 }

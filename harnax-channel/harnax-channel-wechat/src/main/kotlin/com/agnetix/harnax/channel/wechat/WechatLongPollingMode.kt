@@ -13,6 +13,8 @@ import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
 import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
+import com.agnetix.harnax.channel.sdk.util.TextChunker
 import com.github.wechat.ilink.sdk.core.config.ILinkConfig
 import com.github.wechat.ilink.sdk.core.login.LoginContext
 import com.github.wechat.ilink.sdk.core.model.WeixinMessage
@@ -51,6 +53,9 @@ class WechatLongPollingMode(
 
     /** One entry per channel with a login/polling thread we own; also prevents duplicate starts. */
     private val listeners = ConcurrentHashMap<Long, Listener>()
+
+    /** getUpdates can redeliver after a retried poll, so each channel needs an idempotency guard. */
+    private val deduplicators = ConcurrentHashMap<Long, MessageDeduplicator>()
 
     private inner class Listener(val channel: ChannelSpec) {
         val closing = AtomicBoolean(false)
@@ -152,7 +157,7 @@ class WechatLongPollingMode(
             botService.getOrCreateClient(channelId, config)
             val qrCodeContent = botService.executeLogin(channelId)
             logger.info("========================================")
-            logger.info("请使用微信扫描以下二维码内容登录：")
+            logger.info("Scan the QR code below with WeChat to log in channel $channelId:")
             logger.info(qrCodeContent)
             logger.info("========================================")
 
@@ -216,6 +221,7 @@ class WechatLongPollingMode(
         holder.closing.set(true)
         runCatching { botService.closeClient(channelId) }
             .onFailure { logger.warn("Failed to close ILinkClient for channel $channelId: ${it.message}") }
+        deduplicators.remove(channelId)
         val thread = holder.thread
         if (thread != null && thread !== Thread.currentThread()) {
             thread.interrupt()
@@ -234,21 +240,32 @@ class WechatLongPollingMode(
             runCatching { stop(holder.channel) }
         }
         listeners.clear()
+        deduplicators.clear()
         botService.closeAll()
     }
 
     /**
      * Send text message
      *
-     * Sends message with typing indicator to simulate human typing effect
+     * Sends message with typing indicator to simulate human typing effect. Long replies are split:
+     * iLink documents no text cap of its own, and an over-long send fails as one opaque error that
+     * loses the whole reply, so a conservative margin beats discovering the real limit in production.
      */
     override suspend fun sendMessage(channel: ChannelSpec, sessionId: String, message: String) {
         try {
             val channelId = channel.id
-            // Send with typing indicator, typing duration calculated based on message length
-            val typingMillis = minOf(message.length * 50L, 3000L)
-            botService.sendTextWithTyping(channelId, sessionId, message, typingMillis)
-            logger.debug("Message sent to $sessionId via WeChat")
+            val chunks = TextChunker.splitByChars(message, MAX_MESSAGE_CHUNK_CHARS)
+            chunks.forEachIndexed { index, chunk ->
+                if (index == 0) {
+                    // Typing belongs to the start of the reply; repeating it per chunk would show
+                    // "typing..." again after the user already has the first part in hand.
+                    val typingMillis = minOf(chunk.length * 50L, 3000L)
+                    botService.sendTextWithTyping(channelId, sessionId, chunk, typingMillis)
+                } else {
+                    botService.sendText(channelId, sessionId, chunk)
+                }
+            }
+            logger.debug("Message sent to $sessionId via WeChat in ${chunks.size} part(s)")
         } catch (e: Exception) {
             throw ChannelSendException(
                 channelType = ChannelType.WECHAT,
@@ -327,6 +344,9 @@ class WechatLongPollingMode(
      *
      * The polling thread must get back to getUpdates() immediately: waiting for the
      * agent turn here stalls the update cursor and makes the platform see a dead bot.
+     *
+     * Deduplication is register/commit rather than register-only: a turn that throws must accept
+     * the platform's redelivery again, otherwise one failure silently deletes a user message.
      */
     private fun handleMessages(
         holder: Listener,
@@ -342,18 +362,30 @@ class WechatLongPollingMode(
                 logger.debug("Dropping WeChat message for stopped channel: $channelId")
                 return
             }
+            val msgKey = msg.message_id?.toString()?.takeIf { it.isNotBlank() }
+            val dedup = msgKey?.let { deduplicators.computeIfAbsent(channelId) { MessageDeduplicator() } }
+            if (msgKey != null && dedup != null && !dedup.tryBegin(msgKey)) {
+                logger.debug("Duplicate WeChat message ignored: messageId=$msgKey, channel=$channelId")
+                tracker.onDuplicateMessage(channelId)
+                continue
+            }
+            val rollback = { if (msgKey != null) dedup?.rollback(msgKey) }
+            val commit = { if (msgKey != null) dedup?.commit(msgKey) }
             val channelMessage = try {
                 WechatMessageConverter.toChannelMessage(msg, holder.channel)
             } catch (e: Exception) {
                 logger.error("Failed to convert WeChat message for channel $channelId: ${e.message}", e)
+                rollback()
                 continue
             }
             tracker.markMessageReceived(channelId)
             turnExecutor.launchTurn(channelId, channelMessage.sessionId) {
                 try {
                     handler(channelMessage)
-                } catch (e: Exception) {
+                    commit()
+                } catch (e: Throwable) {
                     logger.error("Error handling WeChat message for channel $channelId: ${e.message}", e)
+                    rollback()
                 }
             }
         }
@@ -406,5 +438,8 @@ class WechatLongPollingMode(
         private const val LOGIN_WAIT_MINUTES = 5L
 
         private const val STOP_JOIN_MS = 3_000L
+
+        // Conservative split point for outgoing replies; see [sendMessage].
+        private const val MAX_MESSAGE_CHUNK_CHARS = 4_000
     }
 }

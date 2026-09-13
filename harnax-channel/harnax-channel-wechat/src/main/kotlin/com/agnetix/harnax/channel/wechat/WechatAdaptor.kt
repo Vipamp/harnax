@@ -140,6 +140,12 @@ class WechatAdaptor(
     override fun supportsStreamingOutput(): Boolean = false
 
     /**
+     * WeChat is the one channel here with a working file upload (iLink), so the reply pipeline
+     * fetches the file bytes for it instead of falling back to a download notice.
+     */
+    override fun supportsFileDelivery(): Boolean = true
+
+    /**
      * Send typing indicator
      *
      * WeChat supports showing a "typing" status to the user via ILinkClient.

@@ -81,6 +81,10 @@ harnax:
   auth:
     enabled: true
     service-id: ${SERVICE_ID:channel-0}
+    # Platform callbacks cannot present a service token, so this prefix stays public and the
+    # platform's own signature is the authentication. Feishu refuses an event it cannot verify.
+    skip-paths:
+      - /api/channel/callback
     internal:
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
       token-ttl-seconds: 300

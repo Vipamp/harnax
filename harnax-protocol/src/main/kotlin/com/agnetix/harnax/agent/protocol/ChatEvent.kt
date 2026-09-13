@@ -107,9 +107,14 @@ data class ToolResultChatEvent(
 /**
  * Signals the end of the AI output event stream.
  * Consumers can use this to determine when AI output is complete.
+ *
+ * @property attachments Files the run produced in the sandbox workspace. The batch path reports
+ *   them on [ChatResponse.attachments]; carrying them here keeps the two output strategies on the
+ *   same delivery contract instead of silently dropping files for streaming consumers.
  */
 data class EndEventChatEvent(
     override val tokenUsage: TokenUsage? = null,
+    val attachments: List<FileAttachment> = emptyList(),
 ) : ChatEvent {
     override val eventType: EventType = EventType.EndEvent
 }

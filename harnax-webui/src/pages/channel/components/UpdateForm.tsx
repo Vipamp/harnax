@@ -3,9 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
 import { LinkOutlined, CopyOutlined, KeyOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
+import { allowedModes, modeFor, requiresEncryptKey } from './channelModes';
 
 const { TextArea } = Input;
 const { Text } = Typography;
+
+/** The `configJson` keys this form owns; everything else in the blob is passed through untouched. */
+const MANAGED_CONFIG_KEYS = ['token', 'encodingAesKey', 'appId', 'appSecret', 'webhookUrl'] as const;
 
 interface UpdateFormProps {
   visible: boolean;
@@ -20,6 +24,8 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('');
+  const [storedConfig, setStoredConfig] = useState<Record<string, any>>({});
+  const selectedMode = Form.useWatch('communicationMode', form);
 
   // Channel 类型选项
   const CHANNEL_TYPES = [
@@ -29,6 +35,39 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
     { label: intl.formatMessage({ id: 'pages.channel.type.dingtalk', defaultMessage: 'DingTalk' }), value: 'dingtalk' },
     { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
   ];
+
+  const MODE_LABELS: Record<string, string> = {
+    webhook: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }),
+    websocket: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }),
+    stream: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }),
+    long_polling: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }),
+  };
+
+  // 飞书 webhook 靠 Encrypt Key 验签，缺了它渠道会直接拒收回调，所以这两个字段只在 webhook 下出现
+  const renderFeishuCallbackFields = () => {
+    if (!requiresEncryptKey(selectedType, selectedMode)) {
+      return null;
+    }
+    return (
+      <>
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'Encrypt Key' })}
+          name="encodingAesKey"
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.encodingAesKey', defaultMessage: 'Feishu callback mode requires an Encrypt Key' }) }]}
+          extra={intl.formatMessage({ id: 'pages.channel.form.extra.feishuEncryptKey', defaultMessage: 'Required: Feishu signs callbacks with it, and the channel refuses unsigned events.' })}
+        >
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'Feishu event Encrypt Key' })} />
+        </Form.Item>
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Verification Token' })}
+          name="token"
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.token', defaultMessage: 'Please enter the Feishu event Verification Token' }) }]}
+        >
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'Feishu event Verification Token' })} />
+        </Form.Item>
+      </>
+    );
+  };
 
   // 初始化表单数据
   useEffect(() => {
@@ -40,11 +79,14 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
       } catch {
         config = {};
       }
+      setStoredConfig(config);
       form.setFieldsValue({
         name: values.name,
         type: values.type,
         agentId: values.agentId,
-        communicationMode: values.type === 'wechat' ? 'long_polling' : (values.communicationMode || 'webhook'),
+        // A channel created before the modes were restricted can hold a mode its type cannot run;
+        // show the runnable one instead of the stored dead one.
+        communicationMode: modeFor(values.type, values.communicationMode),
         enabled: values.enabled === 1,
         token: config.token,
         encodingAesKey: config.encodingAesKey,
@@ -62,6 +104,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
     if (!visible) {
       form.resetFields();
       setSelectedType('');
+      setStoredConfig({});
     }
   }, [visible]);
 
@@ -71,19 +114,34 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
       const formValues = await form.validateFields();
       setLoading(true);
 
-      // Extract type-specific config fields and serialize into configJson
-      const { token, encodingAesKey, appId, appSecret, webhookUrl, enabled, ...restValues } = formValues;
-      const config: Record<string, string> = {};
-      if (token) config.token = token;
-      if (encodingAesKey) config.encodingAesKey = encodingAesKey;
-      if (appId) config.appId = appId;
-      if (appSecret) config.appSecret = appSecret;
-      if (webhookUrl) config.webhookUrl = webhookUrl;
+      // `validateFields()` only returns *mounted* fields, so reading the config out of it and
+      // rewriting the whole blob is what used to erase a Feishu Encrypt Key or a WeChat bot token
+      // whenever that field happened not to be rendered. Merge over the stored config and read the
+      // managed keys from the store: an unrendered key keeps its loaded value, a cleared input
+      // removes its key, and a key this form never manages survives untouched.
+      const config: Record<string, any> = { ...storedConfig };
+      MANAGED_CONFIG_KEYS.forEach((key) => {
+        const value = form.getFieldValue(key);
+        if (typeof value === 'string' && value.trim() === '') {
+          delete config[key];
+        } else if (value !== undefined && value !== null) {
+          config[key] = value;
+        }
+      });
+
+      // The config keys live inside `configJson`; `enabled` is a Switch on the form but a 0/1 here.
+      const payload: Record<string, any> = { ...formValues };
+      MANAGED_CONFIG_KEYS.forEach((key) => {
+        delete payload[key];
+      });
+      payload.enabled = formValues.enabled ? 1 : 0;
 
       const submitData: API.ChannelUpdateRequest = {
-        ...restValues,
-        enabled: enabled ? 1 : 0,
-        configJson: Object.keys(config).length > 0 ? JSON.stringify(config) : undefined,
+        ...payload,
+        // Always send the merged blob. Omitting it when every managed credential was cleared is how
+        // "delete the secret" silently did nothing: the backend only writes `configJson` when the
+        // request carries one, so the old value stayed live while the form showed it gone.
+        configJson: JSON.stringify(config),
       };
 
       await onSubmit(submitData);
@@ -142,6 +200,7 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
             >
               <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'Feishu app App Secret' })} />
             </Form.Item>
+            {renderFeishuCallbackFields()}
           </>
         );
       case 'dingtalk':
@@ -215,9 +274,17 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
             options={CHANNEL_TYPES}
             onChange={(value) => {
               setSelectedType(value);
-              if (value === 'wechat') {
-                form.setFieldValue('communicationMode', 'long_polling');
-              }
+              // Switching type can leave the stored mode unrunnable; fall back to that type's
+              // recommended mode rather than persisting a channel that receives nothing.
+              const current = form.getFieldValue('communicationMode');
+              form.setFieldValue('communicationMode', modeFor(value, current));
+              // And drop the old platform's credentials from the form: `appId` / `appSecret` are the
+              // same field names across types, so a feishu→dingtalk edit would otherwise write the
+              // Feishu pair into the DingTalk channel and keep its Encrypt Key alongside. Non-managed
+              // keys (the WeChat login tokens) are untouched by this.
+              MANAGED_CONFIG_KEYS.forEach((key) => {
+                form.setFieldValue(key, '');
+              });
             }}
           />
         </Form.Item>
@@ -245,12 +312,9 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, agents, onCanc
           >
             <Select
               placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
-              options={[
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
-              ]}
+              // Only the modes this type can actually run: a mode with no transport becomes a
+              // channel that never receives anything, and nothing on the list page says why.
+              options={allowedModes(selectedType).map((mode) => ({ label: MODE_LABELS[mode], value: mode }))}
             />
           </Form.Item>
         )}

@@ -27,6 +27,11 @@ object TextChunker {
         measureBytes: Boolean,
     ): List<String> {
         require(limit > 0) { "Chunk limit must be positive, got $limit" }
+        // An empty message has nothing to send, and `listOf("")` below would hand callers one
+        // empty chunk — every transport loops over the result and posts it, so the user gets an
+        // empty bubble. `filter { it.isNotEmpty() }` cannot catch this: the short-circuit return
+        // above hands back the single empty string before the filter is ever reached.
+        if (text.isEmpty()) return emptyList()
         val sizeOf = costFunction(measureBytes)
         if (sizeOf(text, 0, text.length) <= limit) return listOf(text)
 

@@ -53,7 +53,10 @@ object ChannelEntityConverter {
             val map = objectMapper.readValue(json, Map::class.java) as Map<String, Any?>
             ConfigMap(map)
         } catch (e: Exception) {
-            log.warn("Failed to parse channel configJson: {}, error: {}", json, e.message)
+            // Never log the payload: it holds appSecret / bot secret / encodingAesKey, and this
+            // runs on every inbound platform callback, so one malformed row would put credentials
+            // in the log stream continuously.
+            log.warn("Failed to parse channel configJson ({} chars): {}", json.length, e.message)
             ConfigMap(emptyMap())
         }
     }

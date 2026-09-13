@@ -1,6 +1,9 @@
 package com.agnetix.harnax.channel.sdk.service
 
 import com.agnetix.harnax.agent.protocol.AgentRequest
+import com.agnetix.harnax.agent.protocol.CommandAgentRequest
+import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.agent.protocol.FileAttachment
 import com.agnetix.harnax.channel.sdk.adaptor.AgentAdaptor
 import com.agnetix.harnax.channel.sdk.adaptor.AgentContext
 import com.agnetix.harnax.channel.sdk.adaptor.AgentResponse
@@ -13,6 +16,10 @@ import com.agnetix.harnax.channel.sdk.message.MessageRole
 import com.agnetix.harnax.channel.sdk.session.ChannelSessionManager
 import kotlinx.coroutines.flow.collect
 import org.slf4j.LoggerFactory
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.URI
 import java.util.UUID
 
 /**
@@ -30,6 +37,7 @@ import java.util.UUID
  *    - Streaming: Send text fragments immediately (for channels supporting real-time output)
  *    - Batch: Buffer all text, send typing indicator, then send merged response
  * 6. Save AI replies to session history
+ * 7. Deliver any files the run produced, through the one entry point both output strategies share
  *
  * Output Strategy Decision:
  * ```
@@ -109,6 +117,14 @@ open class ChannelChatService(
             } else {
                 batchSend(context, channel, message, channelAdaptor, agentAdaptor)
             }
+
+            // 5. /clear resets the agent's own context, but the channel keeps a parallel history
+            // and replays it into every request. Left in place, the "cleared" conversation would be
+            // handed straight back on the next message.
+            if (agentRequest is CommandAgentRequest && agentRequest.command == CommandType.CLEAR) {
+                sessionManager.clearHistory(channel.id, message.sessionId)
+                logger.info("[Chat] Cleared channel-side history for session=${message.sessionId} after /clear")
+            }
         } catch (e: Exception) {
             logger.error("[$requestId] Error processing message from channel ${channel.id}: ${e.message}", e)
             handleChatError(e, message, channel, agentAdaptor, channelAdaptor, requestId)
@@ -154,6 +170,9 @@ open class ChannelChatService(
                         shouldReply = true,
                     )
                     agentAdaptor.onAfterProcess(context, response)
+                    // Same delivery entry point the batch path uses, so a streaming channel is not
+                    // the one that loses the agent's files.
+                    deliverFileAttachments(channel, channel.sessionId, message.sessionId, event.attachments, channelAdaptor)
                 }
                 is AgentStreamEvent.ErrorStreamEvent -> {
                     logger.error("[${event.code}][${event.requestId}] Stream error for session ${message.sessionId}: ${event.message}", event.cause)
@@ -210,7 +229,7 @@ open class ChannelChatService(
             if (responseText.isNotBlank()) {
                 channelAdaptor.sendMessage(channel, message.sessionId, responseText)
                 logger.info("[Batch] Response sent for session=${message.sessionId}, text length=${responseText.length}")
-            } else {
+            } else if (response.attachments.isEmpty()) {
                 // Send fallback notification to user instead of silent no-op
                 val fallbackMsg = "${ReplyMarkers.EMPTY_REPLY_PREFIX}. Please try again."
                 logger.warn("[Batch] Empty response for session=${message.sessionId}, sending fallback message")
@@ -219,6 +238,10 @@ open class ChannelChatService(
                 } catch (e: Exception) {
                     logger.error("[Batch] Failed to send fallback message for session=${message.sessionId}: ${e.message}", e)
                 }
+            } else {
+                // The file notice below already answers "what happened", so a second message
+                // claiming the agent returned nothing would only contradict it.
+                logger.info("[Batch] Empty text for session=${message.sessionId}, ${response.attachments.size} file(s) carry the reply")
             }
 
             // Save AI reply to session
@@ -227,16 +250,20 @@ open class ChannelChatService(
             agentAdaptor.onAfterProcess(context, response)
         }
 
-        // Deliver file attachments regardless of shouldReply
-        // (agent may generate files without text reply)
-        if (response.attachments.isNotEmpty()) {
-            deliverFileAttachments(channel, context.channelSpec.sessionId, message.sessionId, response.attachments, channelAdaptor)
-        }
+        // Files are delivered whether or not there was a text reply: an agent can produce output
+        // without saying anything about it.
+        deliverFileAttachments(channel, channel.sessionId, message.sessionId, response.attachments, channelAdaptor)
     }
 
     /**
-     * Deliver file attachments to the channel user.
-     * Downloads file bytes from workspace/MinIO and sends via channelAdaptor.sendFile().
+     * Deliver the files an agent run produced.
+     *
+     * This is the one delivery entry point, reached from both output strategies — `batchSend`
+     * passes the attachments on the batch response, `streamAndSend` the ones on the terminal
+     * stream event.
+     *
+     * A channel without the file capability is told once, naming every file: pulling bytes for an
+     * upload nobody can perform costs bandwidth and can hold the turn hostage behind a large file.
      *
      * @param agentSessionId Channel session ID (chn-xxx) for workspace download
      * @param userSessionId  Platform user ID for sending the file message
@@ -245,9 +272,18 @@ open class ChannelChatService(
         channel: ChannelSpec,
         agentSessionId: String,
         userSessionId: String,
-        attachments: List<com.agnetix.harnax.agent.protocol.FileAttachment>,
+        attachments: List<FileAttachment>,
         channelAdaptor: ChannelAdaptor,
     ) {
+        if (attachments.isEmpty()) return
+
+        if (!channelAdaptor.supportsFileDelivery()) {
+            val names = attachments.map { it.fileName }
+            logger.info("[Files] Channel ${channel.type.code} cannot receive files, notifying user=$userSessionId about $names")
+            notifyQuietly(channel, userSessionId, ReplyMarkers.fileUndeliverable(names), channelAdaptor)
+            return
+        }
+
         for (attachment in attachments) {
             try {
                 val fileBytes = resolveFileBytes(agentSessionId, attachment)
@@ -257,18 +293,27 @@ open class ChannelChatService(
                     sessionId = userSessionId,
                     fileBytes = fileBytes,
                     fileName = attachment.fileName,
-                    caption = "AI 生成的文件",
+                    caption = FILE_CAPTION,
                 )
-                logger.info("[Batch] File '{}' ({} bytes) delivered to user={}", attachment.fileName, fileBytes.size, userSessionId)
+                logger.info("[Files] '${attachment.fileName}' ({} bytes) delivered to user={}", fileBytes.size, userSessionId)
             } catch (e: Exception) {
-                logger.error("[Batch] Failed to deliver file '{}' for user={}: {}", attachment.fileName, userSessionId, e.message)
-                // Degrade: send text notification
-                try {
-                    channelAdaptor.sendMessage(channel, userSessionId, "\uD83D\uDCCE 文件 ${attachment.fileName} 发送失败，请通过 WebUI 下载")
-                } catch (e2: Exception) {
-                    logger.error("[Batch] Failed to send file failure notification: {}", e2.message)
-                }
+                logger.error("[Files] Failed to deliver '{}' for user={}: {}", attachment.fileName, userSessionId, e.message)
+                notifyQuietly(channel, userSessionId, ReplyMarkers.fileSendFailed(attachment.fileName), channelAdaptor)
             }
+        }
+    }
+
+    /** A notice about delivery is never allowed to be what breaks the turn. */
+    private suspend fun notifyQuietly(
+        channel: ChannelSpec,
+        userSessionId: String,
+        notice: String,
+        channelAdaptor: ChannelAdaptor,
+    ) {
+        try {
+            channelAdaptor.sendMessage(channel, userSessionId, notice)
+        } catch (e: Exception) {
+            logger.error("[Files] Failed to notify user=$userSessionId: ${e.message}", e)
         }
     }
 
@@ -279,26 +324,106 @@ open class ChannelChatService(
      *
      * Returns null if all strategies fail or return empty content.
      */
-    private fun resolveFileBytes(sessionId: String, attachment: com.agnetix.harnax.agent.protocol.FileAttachment): ByteArray? {
+    private fun resolveFileBytes(
+        sessionId: String,
+        attachment: FileAttachment,
+    ): ByteArray? {
         // Strategy 1: Direct workspace download (no MinIO round-trip)
         if (attachment.filePath.isNotBlank() && attachment.objectKey.isBlank()) {
             val bytes = workspaceFileDownloader?.invoke(sessionId, attachment.filePath)
             if (bytes != null && bytes.isNotEmpty()) {
-                logger.info("[Batch] File '{}' resolved via workspace download ({} bytes)", attachment.fileName, bytes.size)
+                logger.info("[Files] '{}' resolved via workspace download ({} bytes)", attachment.fileName, bytes.size)
                 return bytes
             }
-            logger.warn("[Batch] Workspace download failed for '{}', trying fallbacks", attachment.fileName)
+            logger.warn("[Files] Workspace download failed for '{}', trying fallbacks", attachment.fileName)
         }
 
         // Strategy 2: HTTP URL fallback
         if (attachment.url.isNotBlank()) {
-            val url = java.net.URL(attachment.url)
-            require(url.protocol == "http" || url.protocol == "https") { "Unsafe URL scheme: ${url.protocol}" }
-            val downloaded = url.readBytes()
-            if (downloaded.isNotEmpty()) return downloaded
+            val downloaded = downloadFromUrl(attachment.url)
+            if (downloaded != null && downloaded.isNotEmpty()) return downloaded
         }
 
         return null
+    }
+
+    /**
+     * Fetch an attachment over HTTP, bounded on every axis.
+     *
+     * This runs inside the channel turn, so without explicit timeouts an unresponsive host would
+     * hold the per-session lock for as long as the JVM default allows, and without a size cap a
+     * multi-gigabyte object would be pulled into heap. Redirects are refused rather than followed:
+     * following one would re-validate nothing and would let a benign-looking URL reach a forbidden
+     * host. The scheme and address checks stop a URL produced by a compromised agent from making
+     * this service read its own host (metadata endpoints, loopback admin ports).
+     *
+     * An internal MinIO host is deliberately still allowed — deployments keep the object store on
+     * private network.
+     */
+    private fun downloadFromUrl(rawUrl: String): ByteArray? {
+        val url = try {
+            URI.create(rawUrl).toURL()
+        } catch (e: Exception) {
+            logger.warn("[Files] Malformed attachment URL, skipped: ${e.message}")
+            return null
+        }
+        if (url.protocol != "http" && url.protocol != "https") {
+            logger.warn("[Files] Rejected attachment URL with unsafe scheme: ${url.protocol}")
+            return null
+        }
+        val host = url.host
+        if (host.isNullOrBlank() || !isSafeHost(host)) {
+            logger.warn("[Files] Rejected attachment URL pointing at a local address: $host")
+            return null
+        }
+        return try {
+            val connection = url.openConnection() as HttpURLConnection
+            connection.connectTimeout = DOWNLOAD_CONNECT_TIMEOUT_MS
+            connection.readTimeout = DOWNLOAD_READ_TIMEOUT_MS
+            connection.instanceFollowRedirects = false
+            connection.useCaches = false
+            connection.connect()
+            val status = connection.responseCode
+            if (status != HttpURLConnection.HTTP_OK) {
+                logger.warn("[Files] Attachment download returned HTTP {} for host={}", status, host)
+                connection.disconnect()
+                return null
+            }
+            connection.inputStream.use { input -> readCapped(input, host) }.also { connection.disconnect() }
+        } catch (e: Exception) {
+            logger.warn("[Files] Attachment download failed for host={}: {}", host, e.message)
+            null
+        }
+    }
+
+    /** Reads at most [MAX_DOWNLOAD_BYTES]; a larger body is treated as a failure, not truncated. */
+    private fun readCapped(
+        input: java.io.InputStream,
+        host: String,
+    ): ByteArray? {
+        val buffer = ByteArrayOutputStream()
+        val chunk = ByteArray(8_192)
+        var total = 0
+        while (true) {
+            val read = input.read(chunk)
+            if (read < 0) break
+            total += read
+            if (total > MAX_DOWNLOAD_BYTES) {
+                logger.warn("[Files] Attachment from host={} exceeds the {} byte limit, skipped", host, MAX_DOWNLOAD_BYTES)
+                return null
+            }
+            buffer.write(chunk, 0, read)
+        }
+        return buffer.toByteArray()
+    }
+
+    private fun isSafeHost(host: String): Boolean = try {
+        InetAddress.getAllByName(host).any { address ->
+            !address.isLoopbackAddress && !address.isAnyLocalAddress && !address.isLinkLocalAddress
+        }
+    } catch (e: Exception) {
+        logger.warn("[Files] Unable to resolve attachment host={}: {}", host, e.message)
+        false
     }
 
     /**
@@ -321,9 +446,21 @@ open class ChannelChatService(
             requestId = requestId,
         )
         val errorResponse = agentAdaptor.onError(context, error)
-        if (errorResponse.shouldReply) {
+        if (!errorResponse.shouldReply) {
+            return
+        }
+        // The notice must not throw. The failure it is reporting is very often the send itself
+        // (an expired DingTalk sessionWebhook, a closed WeCom stream), so an unguarded retry here
+        // replaces "the user got no answer" with "the turn failed", and the log then points at this
+        // second call instead of at the real cause.
+        try {
             channelAdaptor.sendMessage(channel, message.sessionId, errorResponse.content)
             saveAssistantMessage(message, errorResponse.content, channel)
+        } catch (e: Exception) {
+            logger.error(
+                "[$requestId] Unable to deliver the error notice to session=${message.sessionId} (channel ${channel.id}): ${e.message}",
+                e,
+            )
         }
     }
 
@@ -365,7 +502,7 @@ open class ChannelChatService(
      */
     protected fun buildConfirmText(tools: List<PendingToolInfo>): String {
         val sb = StringBuilder()
-        sb.appendLine("\u26a0\ufe0f AI needs to execute the following tools, please confirm:")
+        sb.appendLine(ReplyMarkers.CONFIRM_HEADER)
         sb.appendLine()
         tools.forEachIndexed { index, tool ->
             val dangerTag = if (tool.isDangerous) " [dangerous]" else ""
@@ -373,7 +510,18 @@ open class ChannelChatService(
             sb.appendLine("${index + 1}. ${tool.toolName}$dangerTag \u2014 $argsSummary")
         }
         sb.appendLine()
-        sb.appendLine("Reply /approve to confirm, or /deny to reject.")
+        sb.appendLine(ReplyMarkers.CONFIRM_FOOTER)
         return sb.toString().trimEnd()
+    }
+
+    companion object {
+        /** Caption attached to an uploaded file; shown by the platform next to it. */
+        private const val FILE_CAPTION = "AI-generated file"
+
+        private const val MAX_DOWNLOAD_BYTES = 50L * 1024 * 1024
+
+        private const val DOWNLOAD_CONNECT_TIMEOUT_MS = 5_000
+
+        private const val DOWNLOAD_READ_TIMEOUT_MS = 30_000
     }
 }

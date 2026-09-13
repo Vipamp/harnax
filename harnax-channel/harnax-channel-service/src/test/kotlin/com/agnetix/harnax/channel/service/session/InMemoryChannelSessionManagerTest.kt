@@ -28,7 +28,7 @@ class InMemoryChannelSessionManagerTest {
         imageUrls = imageUrls,
     )
 
-    private fun liveSessions(
+    private suspend fun liveSessions(
         manager: InMemoryChannelSessionManager,
         vararg sessionIds: String,
         channelId: Long = 1L,

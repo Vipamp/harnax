@@ -12,6 +12,7 @@ import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionState
 import com.agnetix.harnax.channel.sdk.monitor.ChannelConnectionTracker
 import com.agnetix.harnax.channel.sdk.monitor.ChannelMetricsSink
 import com.agnetix.harnax.channel.sdk.monitor.NoOpChannelMetricsSink
+import com.agnetix.harnax.channel.sdk.service.ReplyMarkers
 import com.agnetix.harnax.channel.sdk.util.MessageDeduplicator
 import com.agnetix.harnax.channel.sdk.util.ReconnectBackoff
 import com.agnetix.harnax.channel.sdk.util.TextChunker
@@ -338,6 +339,9 @@ class WecomWebSocketMode(
                 if (errcode != 0) {
                     val detail = node.path("errmsg").asText("")
                     logger.warn("WeCom send/reply ack error, channel: $channelId, req_id=$reqId, errcode=$errcode, errmsg=$detail")
+                    // Only the failure is sampled: [sendMessage] already reported this send when it
+                    // wrote the frame, so an ok-ack here would count one logical send twice. The
+                    // ack is the only place a platform-side refusal shows up at all.
                     metricsSink.onSendCompleted(
                         channelId,
                         0,
@@ -345,7 +349,6 @@ class WecomWebSocketMode(
                     )
                 } else {
                     logger.debug("WeCom send/reply ack ok, channel: $channelId, req_id=$reqId")
-                    metricsSink.onSendCompleted(channelId, 0, null)
                 }
             }
         }
@@ -372,6 +375,15 @@ class WecomWebSocketMode(
             var chatId = body.path("chatid").asText("")
             if (chatId.isBlank()) chatId = userId
 
+            // Cache the callback req_id before anything else decides the message is unreadable: a
+            // reply — including the "unsupported" notice below — is addressed to *this* message's
+            // stream, and sendMessage consumes the entry as it uses it.
+            if (reqId.isNotBlank() && chatId.isNotBlank()) {
+                val submap = replyReqIds.computeIfAbsent(channelId) { ConcurrentHashMap() }
+                if (submap.size >= MAX_REPLY_REQ_IDS) submap.clear()
+                submap[chatId] = reqId
+            }
+
             val text = when (msgType) {
                 "text" -> body.path("text").path("content").asText("")
                 "voice" -> {
@@ -383,19 +395,18 @@ class WecomWebSocketMode(
             }.trim()
 
             if (text.isEmpty()) {
-                logger.debug("WeCom message without text ignored (msgtype={}), channel={}", msgType, channelId)
-                dedup?.rollback(msgId)
+                // Answer instead of ignoring: a user who sent a file and heard nothing back cannot
+                // tell a capability gap from a dead connection.
+                logger.info("WeCom message of type {} is not readable, replying with an unsupported notice (channel={})", msgType, channelId)
+                notifyUnreadable(conn.channel, chatId, msgType)
+                // Committed: the platform redelivering the same unreadable message must not send a
+                // second notice.
+                dedup?.commit(msgId)
                 return
             }
 
             val isGroup = chatType == "group"
             val sessionId = chatId
-            // Cache the callback req_id so Reply() (aibot_respond_msg) can address it.
-            if (reqId.isNotBlank()) {
-                val submap = replyReqIds.computeIfAbsent(channelId) { ConcurrentHashMap() }
-                if (submap.size >= MAX_REPLY_REQ_IDS) submap.clear()
-                submap[sessionId] = reqId
-            }
 
             val channelMessage = ChannelMessage.builder()
                 .messageId(msgId)
@@ -434,7 +445,7 @@ class WecomWebSocketMode(
                 handler(message)
                 // Only a completed turn may suppress the platform's next redelivery.
                 dedup?.commit(msgId)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 logger.error("Failed to handle WeCom message for channel: ${conn.channel.id}", e)
                 dedup?.rollback(msgId)
             }
@@ -453,14 +464,18 @@ class WecomWebSocketMode(
         val started = System.currentTimeMillis()
 
         val result = runCatching {
-            // Prefer replying to the original message (aibot_respond_msg) when we have a req_id.
-            val reqId = replyReqIds[channel.id]?.get(sessionId)
+            // Reply to the original message (aibot_respond_msg) while we still hold its req_id.
+            // The entry is consumed here rather than left for reuse: a callback req_id addresses
+            // that one inbound message, so sending twice against it means the second reply goes to
+            // an already-closed stream — the write succeeds, the platform rejects it in an ack
+            // nobody is waiting on, and the user silently never gets the message.
+            val reqId = replyReqIds[channel.id]?.remove(sessionId)
             if (reqId != null) {
                 val streamId = conn.nextReqId("stream")
                 requireSent(conn, webSocket, WecomFrames.respondMsg(reqId, streamId, message))
                 logger.debug("WeCom reply sent for channel: ${channel.id}, session=$sessionId")
             } else {
-                // Fall back to proactive send (aibot_send_msg) in markdown, chunked.
+                // Proactive send (aibot_send_msg) in markdown, chunked.
                 val chunks = TextChunker.splitByChars(message, MAX_SEND_CHUNK_CHARS)
                 for (chunk in chunks) {
                     requireSent(conn, webSocket, WecomFrames.sendMsg(conn.nextReqId(WecomFrames.CMD_SEND_MSG), sessionId, chunk))
@@ -493,6 +508,31 @@ class WecomWebSocketMode(
     )
 
     // ==================== Helpers ====================
+
+    /**
+     * Tell the user their message type cannot be handled.
+     *
+     * Best-effort: the notice travels over the same socket as everything else, and a frame this
+     * path cannot queue must not surface as an exception on the WebSocket callback thread.
+     */
+    private fun notifyUnreadable(
+        channel: ChannelSpec,
+        sessionId: String,
+        platformType: String?,
+    ) {
+        if (sessionId.isBlank()) {
+            logger.warn("WeCom message type {} is unreadable and carries no chat id or user id to reply to", platformType)
+            return
+        }
+        val notice = ReplyMarkers.unsupportedMessageType(platformType)
+        turnExecutor.launchTurn(channel.id, sessionId) {
+            try {
+                sendMessage(channel, sessionId, notice)
+            } catch (e: Exception) {
+                logger.warn("Unable to tell session={} that {} is unsupported: {}", sessionId, platformType, e.message)
+            }
+        }
+    }
 
     /** @return false when OkHttp refused the frame (outbound queue full or socket closing). */
     private fun writeFrame(

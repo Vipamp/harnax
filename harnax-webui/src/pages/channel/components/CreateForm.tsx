@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useIntl } from '@umijs/max';
 import { LinkOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
+import { DEFAULT_CHANNEL_MODE, allowedModes, requiresEncryptKey } from './channelModes';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -19,6 +20,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>('');
+  const selectedMode = Form.useWatch('communicationMode', form);
 
   // Channel 类型选项
   const CHANNEL_TYPES = [
@@ -29,13 +31,37 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
     { label: intl.formatMessage({ id: 'pages.channel.type.http', defaultMessage: 'HTTP' }), value: 'http' },
   ];
 
-  // 各渠道类型推荐的默认通信模式
-  const DEFAULT_COMMUNICATION_MODE: Record<string, string> = {
-    feishu: 'websocket',
-    dingtalk: 'stream',
-    wecom: 'websocket',
-    wechat: 'long_polling',
-    http: 'webhook',
+  const MODE_LABELS: Record<string, string> = {
+    webhook: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }),
+    websocket: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }),
+    stream: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }),
+    long_polling: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }),
+  };
+
+  // 飞书 webhook 靠 Encrypt Key 验签，缺了它渠道会直接拒收回调，所以这两个字段只在 webhook 下出现
+  const renderFeishuCallbackFields = () => {
+    if (!requiresEncryptKey(selectedType, selectedMode)) {
+      return null;
+    }
+    return (
+      <>
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.encodingAesKey', defaultMessage: 'Encrypt Key' })}
+          name="encodingAesKey"
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.encodingAesKey', defaultMessage: 'Feishu callback mode requires an Encrypt Key' }) }]}
+          extra={intl.formatMessage({ id: 'pages.channel.form.extra.feishuEncryptKey', defaultMessage: 'Required: Feishu signs callbacks with it, and the channel refuses unsigned events.' })}
+        >
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.encodingAesKey', defaultMessage: 'Feishu event Encrypt Key' })} />
+        </Form.Item>
+        <Form.Item
+          label={intl.formatMessage({ id: 'pages.channel.form.label.token', defaultMessage: 'Verification Token' })}
+          name="token"
+          rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.rule.required.token', defaultMessage: 'Please enter the Feishu event Verification Token' }) }]}
+        >
+          <Input placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.token', defaultMessage: 'Feishu event Verification Token' })} />
+        </Form.Item>
+      </>
+    );
   };
 
   // 重置表单
@@ -127,6 +153,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
             >
               <Input.Password placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.appSecret', defaultMessage: 'Feishu app App Secret' })} />
             </Form.Item>
+            {renderFeishuCallbackFields()}
           </>
         );
       case 'dingtalk':
@@ -200,7 +227,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
             options={CHANNEL_TYPES}
             onChange={(value) => {
               setSelectedType(value);
-              const recommended = DEFAULT_COMMUNICATION_MODE[value];
+              const recommended = DEFAULT_CHANNEL_MODE[value];
               if (recommended) {
                 form.setFieldValue('communicationMode', recommended);
               }
@@ -228,16 +255,13 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, agents, onCancel, onSu
           <Form.Item
             label={intl.formatMessage({ id: 'pages.channel.form.label.communicationMode', defaultMessage: 'Communication Mode' })}
             name="communicationMode"
-            initialValue="webhook"
+            rules={[{ required: true, message: intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' }) }]}
           >
             <Select
               placeholder={intl.formatMessage({ id: 'pages.channel.form.placeholder.communicationMode', defaultMessage: 'Select communication mode' })}
-              options={[
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.webhook', defaultMessage: 'Webhook' }), value: 'webhook' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.websocket', defaultMessage: 'WebSocket' }), value: 'websocket' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.stream', defaultMessage: 'Stream' }), value: 'stream' },
-                { label: intl.formatMessage({ id: 'pages.channel.form.communicationMode.longPolling', defaultMessage: 'Long Polling' }), value: 'long_polling' },
-              ]}
+              // Only the modes this type can actually run: a mode with no transport becomes a
+              // channel that never receives anything, and nothing on the list page says why.
+              options={allowedModes(selectedType).map((mode) => ({ label: MODE_LABELS[mode], value: mode }))}
             />
           </Form.Item>
         )}
