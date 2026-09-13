@@ -684,9 +684,9 @@ class AgentTaskServiceImplTest {
          * before the forward: once the id is on the wire the interruption already happened.
          */
         @Test
-        fun `stopTask refuses a log whose task the caller cannot see and never forwards it`() {
+        fun `stopTask refuses a log whose task the caller does not own and never forwards it`() {
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(eq(99L), any())).thenReturn(null)
+            `when`(agentTaskLogMapper.selectOwnedById(eq(99L), any())).thenReturn(null)
 
             val error = assertThrows<BizException> { service.stopTask(99L) }
 
@@ -700,9 +700,9 @@ class AgentTaskServiceImplTest {
         }
 
         @Test
-        fun `stopTask forwards a log the caller is allowed to see`() {
+        fun `stopTask forwards a log owned by the caller`() {
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin")).thenReturn(testLog(55L))
+            `when`(agentTaskLogMapper.selectOwnedById(55L, "admin")).thenReturn(testLog(55L))
             `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
 
             val result = service.stopTask(55L)
@@ -713,21 +713,23 @@ class AgentTaskServiceImplTest {
 
         /**
          * The gate is only as good as the identity it queries with, so pin that the caller reaches the
-         * mapper. R2 is the other half of that: the request tenant must *not* participate, otherwise an
-         * owner who switched tenants gets a not-found for their own running execution and can no longer
-         * stop it — while the task itself is still listed for them.
+         * mapper — and that it is the *only* thing it queries with: the owner-only rule lives in the SQL
+         * (see AgentTaskLogStopGateSqlTest), and here the service must not quietly widen or narrow it.
+         * R2 is the other half of that: the request tenant must *not* participate, otherwise an owner who
+         * switched tenants gets a not-found for their own running execution and can no longer stop it —
+         * while the task itself is still listed for them.
          */
         @Test
         fun `stopTask gates on the caller and not on the request tenant`() {
             TenantContext.setTenantId(7L)
             val service = createService()
-            `when`(agentTaskLogMapper.selectVisibleById(55L, "admin")).thenReturn(testLog(55L))
+            `when`(agentTaskLogMapper.selectOwnedById(55L, "admin")).thenReturn(testLog(55L))
             `when`(schedulerClient.stopTask(55L)).thenReturn(ResultVo.success<Void>())
 
             val result = service.stopTask(55L)
 
             assertEquals(200, result.code, "带着租户上下文的属主必须仍能停止自己的执行")
-            verify(agentTaskLogMapper).selectVisibleById(55L, "admin")
+            verify(agentTaskLogMapper).selectOwnedById(55L, "admin")
             verify(schedulerClient).stopTask(55L)
         }
 

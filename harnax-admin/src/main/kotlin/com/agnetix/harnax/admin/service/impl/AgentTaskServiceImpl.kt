@@ -199,16 +199,22 @@ class AgentTaskServiceImpl(
      * enough: it leaks easily (the log table on screen, URLs, exports). The scheduler cannot make this
      * call — it has no end-user context — so the gate has to sit here, before the forward.
      *
-     * [AgentTaskLogMapper.selectVisibleById] applies the same rule the execution-log list read uses: the
-     * row is only reachable through a task the caller may see. Answering the not-found error for "exists
-     * but is not yours" is on purpose; a distinct "forbidden" would turn this endpoint into an id probe.
+     * [AgentTaskLogMapper.selectOwnedById] restricts the row to the **creator** of the task it belongs
+     * to. That is deliberately narrower than the execution-log list read, which also shows other people's
+     * public tasks: seeing a run is not the same as being allowed to interrupt it. Using the read rule
+     * here — as this did until now — let any logged-in user stop anyone's execution of a public task.
+     * The writes on the owning task (`updateById`, `deleteById`) have always been owner-only; this now
+     * agrees with them.
+     *
+     * Answering the not-found error for "exists but is not yours" is on purpose; a distinct "forbidden"
+     * would turn this endpoint into an id probe. No frontend change follows from that.
      *
      * The gate is the caller's username and nothing else — no tenant. Tenant narrowing would be
-     * stricter than the task reads (which have none), and an owner who switched tenants would then be
-     * unable to stop their own running execution.
+     * stricter than the task writes this guards (which have none), and an owner who switched tenants
+     * would then be unable to stop their own running execution.
      */
     override fun stopTask(logId: Long): ResultVo<Void> {
-        agentTaskLogMapper.selectVisibleById(logId, UserContextUtil.getCurrentUsername(jwtUtil))
+        agentTaskLogMapper.selectOwnedById(logId, UserContextUtil.getCurrentUsername(jwtUtil))
             ?: throw BizException("Agent task log not found")
         return schedulerClient.stopTask(logId)
     }

@@ -9,8 +9,9 @@ import java.time.LocalDateTime
  * Every write on an execution log carries a status guard in its WHERE clause. Several scheduler
  * nodes and the stop path can touch the same row, so the guard — not the caller — decides who wins:
  * 3 (running) -> {0, 1, 4, 2}, 4 (stopping) -> {5, 2}, and 2 (expired) -> {0, 1, 5} only through
- * [reclaimExpired], which is the one documented exception below. A late writer can never resurrect a
- * status the user or the stop path put there on purpose.
+ * [reclaimExpired], which is the one documented exception below — the 5 out of it is not a guess
+ * anyone may write, only the verdict of the thread that had read the row at 4. A late writer can
+ * never resurrect a status the user or the stop path put there on purpose.
  */
 @Mapper
 interface AgentTaskLogMapper {
@@ -23,16 +24,20 @@ interface AgentTaskLogMapper {
     fun selectById(@Param("id") id: Long): AgentTaskLog?
 
     /**
-     * Single-row read with the same task-visibility gate as [selectLogList]: a log is only reachable
-     * through a task the caller may see. This is the counterpart [selectById] does not have, and the
-     * stop path needs it — without a gated read, knowing a log id was enough to interrupt somebody
-     * else's running execution.
+     * The gate a stop request has to pass: single-row read restricted to the **creator** of the task the
+     * log belongs to. This is a write authorisation, not a visibility rule, and it is deliberately
+     * narrower than [selectLogList] — which also shows a caller the executions of other people's public
+     * tasks. Seeing a run is not the same as being allowed to interrupt it, and applying the read rule
+     * here let any logged-in user stop anybody's execution of a public task. The writes on the owning
+     * task (`AgentTaskMapper.updateById`, `deleteById`) have always been owner-only; this now matches them.
      *
-     * Deliberately answers null for a row that exists but is not the caller's: the caller must not be
-     * able to probe which ids belong to other users. The gate is the caller's username alone, with no
-     * tenant argument — same width as the task reads this mirrors; see [selectLogList].
+     * Deliberately answers null for a row that exists but belongs to someone else: the caller must not be
+     * able to probe which ids exist. The gate is the caller's username alone, with no tenant argument —
+     * `agent_task.tenant_id` is a creation-time snapshot and neither the task reads nor its writes carry
+     * a tenant condition, so narrowing here would leave an owner unable to stop their own execution
+     * after switching tenant.
      */
-    fun selectVisibleById(
+    fun selectOwnedById(
         @Param("id") id: Long,
         @Param("currentUsername") currentUsername: String,
     ): AgentTaskLog?

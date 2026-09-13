@@ -577,69 +577,98 @@ open class AgentTaskLogMapperTest {
     }
 
     /**
-     * The gated single-row read the stop path runs before it forwards anything: a stranger who guesses a
-     * log id must not be able to interrupt another user's execution, and "not yours" has to answer
-     * exactly like "does not exist".
+     * The gate the stop path runs before it forwards anything: a stop is a *write* against someone else's
+     * running execution, so only the task's creator may make it, and "not yours" has to answer exactly
+     * like "does not exist".
+     *
+     * Narrower than `selectLogList` on purpose — that one also shows a caller the executions of other
+     * people's public tasks. Seeing is not stopping; the public branch is what this gate drops, and the
+     * first two cases below are the two halves of that asymmetry.
      */
     @Nested
-    @DisplayName("selectVisibleById 单条可见性测试")
-    inner class SelectVisibleByIdTests {
+    @DisplayName("selectOwnedById 单条停止门禁测试")
+    inner class SelectOwnedByIdTests {
 
         @Test
-        @DisplayName("selectVisibleById - 非属主读不到他人私有任务的日志（与不存在无差别）")
-        fun `selectVisibleById should hide another user private task log`() {
+        @DisplayName("selectOwnedById - 非属主拿不到他人私有任务的日志（与不存在无差别）")
+        fun `selectOwnedById should hide another user private task log`() {
             val task = insertTask(creator = "alice", isPublic = 0)
             val log = insertLogOf(task.id)
 
             kotlin.test.assertNull(
-                agentTaskLogMapper.selectVisibleById(log.id, "bob"),
+                agentTaskLogMapper.selectOwnedById(log.id, "bob"),
                 "非属主不应拿到这条可以被拿去停止执行的日志",
             )
-            // Same row, same call, only the caller differs: visibility is what blocks bob.
-            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "alice")?.id)
-        }
-
-        @Test
-        @DisplayName("selectVisibleById - 公开任务的日志他人可读")
-        fun `selectVisibleById should return another user public task log`() {
-            val task = insertTask(creator = "alice", isPublic = 1)
-            val log = insertLogOf(task.id)
-
-            assertEquals(log.id, agentTaskLogMapper.selectVisibleById(log.id, "bob")?.id)
+            // Same row, same call, only the caller differs: ownership is what blocks bob.
+            assertEquals(log.id, agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id)
         }
 
         /**
-         * This read is the stop gate, so a tenant condition here would have made it a silent
-         * "not yours": create the task under another tenant, come back as its owner and the stop is
-         * rejected for their own execution. The owner must still get the row.
+         * The bug this case exists for: while the stop gate reused the read rule, `is_public = 1` made
+         * every execution of somebody else's public task interruptable by anyone logged in. Public still
+         * means readable — `selectLogList` keeps listing these rows to bob — it just no longer means
+         * stoppable.
          */
         @Test
-        @DisplayName("selectVisibleById - 属主跨租户仍读得到，因而仍停得掉自己的执行")
-        fun `selectVisibleById should still return the owner log of a task created under another tenant`() {
+        @DisplayName("selectOwnedById - 公开任务的日志对非属主不再放行：可读不等于可停")
+        fun `selectOwnedById should refuse a public task log to a non owner`() {
+            val task = insertTask(creator = "alice", isPublic = 1)
+            val log = insertLogOf(task.id)
+
+            kotlin.test.assertNull(
+                agentTaskLogMapper.selectOwnedById(log.id, "bob"),
+                "public 只给读权限，停止是写操作",
+            )
+            // The owner is unaffected by the public flag.
+            assertEquals(log.id, agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id)
+            // And the read side really is still open, which is what makes the pair an asymmetry
+            // rather than a plain restriction.
+            assertTrue(
+                agentTaskLogMapper.selectLogList(
+                    taskId = task.id,
+                    taskName = null,
+                    status = null,
+                    startTimeFrom = null,
+                    startTimeTo = null,
+                    keyword = null,
+                    currentUsername = "bob",
+                ).any { it.id == log.id },
+                "读侧仍应向 bob 展示这条 public 任务的执行",
+            )
+        }
+
+        /**
+         * This gate guards a write, so a tenant condition here would have made an owner's own stop a
+         * silent "not yours": create the task under another tenant, come back as its creator and the row
+         * is gone. The creator must still get it.
+         */
+        @Test
+        @DisplayName("selectOwnedById - 属主跨租户仍拿得到，因而仍停得掉自己的执行")
+        fun `selectOwnedById should still return the owner log of a task created under another tenant`() {
             val task = insertTask(creator = "alice", isPublic = 0, tenantId = OTHER_TENANT)
             val log = insertLogOf(task.id)
 
             assertEquals(
                 log.id,
-                agentTaskLogMapper.selectVisibleById(log.id, "alice")?.id,
-                "跨租户的属主必须停得掉自己的执行，与任务列表口径一致",
+                agentTaskLogMapper.selectOwnedById(log.id, "alice")?.id,
+                "跨租户的属主必须停得掉自己的执行，与任务写侧口径一致",
             )
             // The creator gate is untouched: bob still cannot reach it.
-            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "bob"))
+            kotlin.test.assertNull(agentTaskLogMapper.selectOwnedById(log.id, "bob"))
         }
 
         /**
-         * Same rule as the log list: a task that is gone (`active = 0`) is not visible any more, so its
-         * logs must not stay reachable through their own ids.
+         * A task that is gone (`active = 0`) leaves no execution to stop: its logs must not stay
+         * reachable through their own ids even for its creator.
          */
         @Test
-        @DisplayName("selectVisibleById - 已软删任务的日志读不到")
-        fun `selectVisibleById should drop logs of a deleted task`() {
+        @DisplayName("selectOwnedById - 已软删任务的日志拿不到")
+        fun `selectOwnedById should drop logs of a deleted task`() {
             val task = insertTask(creator = "alice", isPublic = 0)
             val log = insertLogOf(task.id)
             assertEquals(1, agentTaskMapper.deleteById(task.id, "alice"))
 
-            kotlin.test.assertNull(agentTaskLogMapper.selectVisibleById(log.id, "alice"))
+            kotlin.test.assertNull(agentTaskLogMapper.selectOwnedById(log.id, "alice"))
         }
     }
 

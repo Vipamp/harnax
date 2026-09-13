@@ -124,8 +124,8 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
     }
 
     /**
-     * The stop proxy refuses a log whose task the caller cannot see, so that case needs a real row that
-     * belongs to the same `admin` principal the request is signed as.
+     * The stop proxy refuses a log whose task the caller did not create, so that case needs a real row
+     * belonging to the same `admin` principal the request is signed as.
      */
     private fun seedRunningLog(taskId: Long): Long {
         val taskLog = AgentTaskLog().apply {
@@ -176,8 +176,8 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
     @Test
     @Order(4)
     fun `stop task log proxies to scheduler stop endpoint`() {
-        // The stop endpoint now gates on the log's task visibility before forwarding, so the request has
-        // to carry a real row the caller owns — an invented id is rejected, which is the point.
+        // The stop endpoint gates on the caller owning the log's task before forwarding, so the request
+        // has to carry a real row the caller created — an invented id is rejected, which is the point.
         val logId = seedRunningLog(ensureTask())
         assertOk(postJson("/api/admin/agent-tasks/logs/$logId/stop"))
 
@@ -185,11 +185,11 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
         assertEquals("POST", request.method)
         assertEquals("/api/scheduler/tasks/logs/$logId/stop", request.path)
 
-        // A log id the caller cannot see must be refused *before* the forward, not reported after it.
+        // A log id the caller does not own must be refused *before* the forward, not reported after it.
         assertErr(postJson("/api/admin/agent-tasks/logs/424242/stop"))
         assertTrue(
             scheduler.takeRequest(100, TimeUnit.MILLISECONDS) == null,
-            "an invisible log id must never reach the scheduler",
+            "a log id outside the caller's ownership must never reach the scheduler",
         )
     }
 

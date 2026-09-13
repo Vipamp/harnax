@@ -280,11 +280,12 @@ class AgentTaskLogServiceImplTest {
                 "selectLogList 应为 taskId/taskName/status/startFrom/startTo/keyword/currentUsername，不得再有 tenantId",
             )
 
-            val visibleById = AgentTaskLogMapper::class.java.methods.first { it.name == "selectVisibleById" }
+            // The stop gate, i.e. the write authorisation of this table: same shape, caller only.
+            val ownedById = AgentTaskLogMapper::class.java.methods.first { it.name == "selectOwnedById" }
             assertEquals(
                 2,
-                visibleById.parameterCount,
-                "selectVisibleById 应为 id/currentUsername，不得再有 tenantId",
+                ownedById.parameterCount,
+                "selectOwnedById 应为 id/currentUsername，不得再有 tenantId",
             )
         }
 

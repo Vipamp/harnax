@@ -24,23 +24,26 @@
     </select>
 
     <!--
-      The gated counterpart of selectById, on the same visibility rule as selectLogList (active, and
-      either public or created by the caller). Stopping an execution is a *write*, and a log id leaks
-      easily (URLs, exports, the log table on screen), so without this filter anyone who learned an id
-      could interrupt somebody else's run. A row that exists but is not the caller's answers exactly
-      like a missing one, so the endpoint cannot be probed for other people's log ids.
+      The gate in front of a stop request. Stopping is a *write* against a running execution, so it is
+      authorised like the writes on the owning task (AgentTaskMapper.updateById / deleteById): creator
+      only. The read rule the list uses (see selectLogList below) also lets a caller see another user's
+      public task, and applying that here meant any logged-in user could interrupt anybody's run — the
+      asymmetry between the two statements is the point, and
+      AgentTaskLogStopGateSqlTest pins both halves of it: seeing an execution is not stopping it.
 
-      Deliberately no tenant predicate: this has to stay as wide as the task reads it mirrors
-      (AgentTaskMapper.xml has none either), and agent_task.tenant_id is only a snapshot of the tenant
-      that was active when the task was created. Narrowing here would be stricter than the task list,
-      and an owner who simply switched tenants would lose sight of their own executions and be unable
-      to stop them.
+      A row that exists but belongs to someone else answers exactly like a missing one, so the endpoint
+      cannot be probed for other people's log ids.
+
+      Deliberately no tenant predicate: this has to stay as wide as the task writes it gates (which have
+      none), and agent_task.tenant_id is only a snapshot of the tenant that was active when the task was
+      created. Narrowing here would mean an owner who switched tenants could no longer stop their own
+      running execution.
     -->
-    <select id="selectVisibleById" resultMap="AgentTaskLogResultMap">
+    <select id="selectOwnedById" resultMap="AgentTaskLogResultMap">
         SELECT l.* FROM agent_task_log l
         JOIN agent_task t ON t.id = l.task_id
             AND t.active = 1
-            AND (t.is_public = 1 OR t.creator = #{currentUsername})
+            AND t.creator = #{currentUsername}
         WHERE l.id = #{id}
     </select>
 
@@ -96,9 +99,13 @@
     </update>
 
     <!--
-      2 -> {0,1}: the reaper guessed, and the execution then proved otherwise by returning a result.
-      Restricted to status 2 so this can never undo a user stop (4/5) or a real failure already
-      written (0/1). The marker in error_info is what tells the two kinds of 0/1 apart later.
+      2 -> {0,1,5}: the reaper guessed, and the execution then proved otherwise. Two callers get here —
+      one with its own result (0/1), and the stop path, which had read the row at 4 (the user stopped it),
+      saw the sweep move it to 2 before its own 4 -> 5 UPDATE could run, and reclaims to write 5 over the
+      reaper's guess. 5 therefore only ever arrives from a thread that actually observed the stop; nobody
+      can put a row there on spec. Restricted to status 2 either way: it can never undo a user stop
+      (4/5) or a real failure already written (0/1), and the marker in error_info is what tells the two
+      kinds of 0/1 apart later.
     -->
     <update id="reclaimExpired" parameterType="com.agnetix.harnax.entity.AgentTaskLog">
         UPDATE agent_task_log SET
