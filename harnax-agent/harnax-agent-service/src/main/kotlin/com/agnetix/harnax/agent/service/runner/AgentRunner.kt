@@ -45,8 +45,10 @@ interface AgentRunner {
 
     /**
      * Interrupt whatever is running for this session on **this** instance.
-     * @return false when neither a cached agent nor a live call/stream exists — i.e. nothing was
-     * advanced or stopped by the call. The scheduler turns that into "this execution is over".
+     * @return false unless a stream subscription or a blocking call is actually in flight — a wrapper
+     * sitting in the (30-minute TTL) agent cache proves only that this instance once served the
+     * session, so it is no longer counted as a hit. The scheduler turns that into "this execution is
+     * over"; a false hit would leave the row with no owner and no status of its own.
      */
     fun interrupt(sessionId: String): Boolean
 

@@ -579,28 +579,53 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
-        fun `a blocking call in flight counts as a live execution`() {
-            // activeCalls is what a blocking /chat registers; an interrupt must see it even when the
-            // agent wrapper itself was rebuilt out from under the cache key.
-            ReflectionTestUtils.invokeMethod<Any>(runner, "registerCall", "session-blocking")
-            try {
-                assertTrue(runner.interrupt("session-blocking"))
-            } finally {
-                ReflectionTestUtils.invokeMethod<Any>(runner, "unregisterCall", "session-blocking")
+        fun `a session whose agent is still being built counts as a live execution`() {
+            // process() registers the call before it builds the agent, because assembly plus sandbox
+            // creation takes seconds and an INTERRUPT landing in that window is addressed to a run that
+            // really is in flight. Answering "no live execution" here would let the caller finalise the
+            // row while this thread goes on to create a sandbox nobody owns.
+            stubAgentSpec()
+            val insideBuild = CountDownLatch(1)
+            val letBuildFinish = CountDownLatch(1)
+            `when`(launcher.createSingleAgent(any(), any(), any<Boolean>(), any(), any())).thenAnswer {
+                insideBuild.countDown()
+                assertTrue(
+                    letBuildFinish.await(5, TimeUnit.SECONDS),
+                    "test must let the agent build finish",
+                )
+                agentWrapper
             }
+            val caller = Thread {
+                runCatching {
+                    runner.process(ChatAgentRequest(sessionId = "session-building", message = "hello"))
+                }
+            }
+            caller.start()
+            assertTrue(insideBuild.await(5, TimeUnit.SECONDS), "the agent build should have started")
+
+            val live = runner.interrupt("session-building")
+
+            letBuildFinish.countDown()
+            caller.join(5_000)
+
+            assertTrue(live, "a session mid-build is an execution in flight, not a miss")
         }
 
         @Test
-        fun `a cached agent alone counts as a live execution`() {
-            // The first arm of the union, on its own: a finished process() leaves the wrapper in the
-            // cache with no call registered and no subscription.
+        fun `an agent left in the cache with nothing running is not a live execution`() {
+            // Was: `a cached agent alone counts as a live execution`, asserting assertTrue here. That
+            // was wrong: agentCache is a 30-minute TTL cache, so a cache hit says only that this
+            // instance once served the session — not that anything is progressing it. Answering
+            // "hit" to a stop request on that basis left the scheduler node with no owning process
+            // and no final status, and the row was eventually labelled a timeout by the reaper.
+            // Now: still a miss even though interrupt() does reach into the cached wrapper.
             stubAgentCreation()
             `when`(agentWrapper.call(any<String>(), any())).thenReturn(
                 ChatResponse(sessionId = "session-cached", content = "ok"),
             )
             runner.process(ChatAgentRequest(sessionId = "session-cached", message = "hi"))
 
-            assertTrue(runner.interrupt("session-cached"))
+            assertFalse(runner.interrupt("session-cached"))
             verify(agentWrapper).interrupt()
         }
 

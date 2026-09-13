@@ -128,11 +128,13 @@ class DefaultAgentRunner(
 
         try {
             val userIdentifier = UserIdentifier(request.userId)
-            val agent = getOrCreateAgent(sessionId, userIdentifier)
-            // Registered around the call only, and cleared here rather than in a `doFinally` the
-            // caller never sees: an eviction during the call must defer the release like a stream's.
+            // Registered before the agent is built, and cleared by the finally below rather than by a
+            // `doFinally` the caller never sees: spec assembly plus sandbox creation takes seconds, and
+            // a session in that window is an execution in flight. An eviction during the whole span must
+            // defer the release like a stream's.
             registerCall(sessionId)
             return try {
+                val agent = getOrCreateAgent(sessionId, userIdentifier)
                 agent.call(message, imageUrls)
             } finally {
                 unregisterCall(sessionId)
@@ -257,9 +259,17 @@ class DefaultAgentRunner(
         val subscription = activeStreams.remove(sessionId)
         subscription?.cancel()
 
-        val live = agent != null || subscription != null || activeCalls.contains(sessionId)
+        // A cached wrapper is not evidence of a live execution: agentCache is a 30-minute TTL cache, so
+        // it only says this instance once served the session. Counting it as a hit answered a stop
+        // request with "delivered" after the node that owned the run had already gone away, leaving the
+        // execution with no owner and no final status until the reaper labelled it a timeout.
+        val live = subscription != null || activeCalls.contains(sessionId)
         if (live) {
-            log.info("Interrupted live execution for session=$sessionId (agent={}, stream={})", agent != null, subscription != null)
+            log.info(
+                "Interrupted live execution for session=$sessionId (stream={}, blocking call={})",
+                subscription != null,
+                activeCalls.contains(sessionId),
+            )
         } else {
             log.warn("Interrupt requested for session=$sessionId but nothing is live on this instance")
         }
