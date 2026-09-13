@@ -286,6 +286,9 @@ services:
       SCHEDULER_ADMIN_URL: http://admin:8080
       SCHEDULER_ADMIN_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       SCHEDULER_TIMEOUT: ${SCHEDULER_TIMEOUT:-300}
+      # Ceiling for the session cleanup that follows every execution (DELETE /api/router/agent/session);
+      # the effective value is min(this, SCHEDULER_TIMEOUT). Second term of the stop_grace_period sum.
+      SCHEDULER_CLEAR_SESSION_TIMEOUT: ${SCHEDULER_CLEAR_SESSION_TIMEOUT:-60}
       # Auth Configuration
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # JVM Configuration
@@ -316,17 +319,26 @@ services:
     # SIGTERM, spring.quartz.wait-for-jobs-to-complete-on-shutdown=true makes it wait for the running
     # job, and SIGKILL arrives 10s later anyway — leaving agent_task_log at status=3 and its
     # agent_task_execution lock row at status=0 for housekeeping to reap (up to 2× timeout).
-    # 360s = 300 + 40 + 20, i.e. the whole time one execution holds a Quartz worker thread:
+    #
+    # THIS GRACE COVERS THE CRON PATH ONLY. A manual /api/scheduler/tasks/{id}/trigger still runs on a
+    # bare daemon thread (SchedulerServiceImpl.triggerManually) that Quartz has never heard of, so
+    # nothing waits for it on shutdown: restarting this container mid-manual-run cuts that execution into
+    # exactly the two rows above. Until one-shot runs move into Quartz (plan S4), do not restart the
+    # scheduler while a manual execution may be in flight.
+    #
+    # 380s = 300 + 60 + 20, i.e. the whole time one execution holds a Quartz worker thread:
     #   300  the router chat() read timeout (SCHEDULER_TIMEOUT, default 300 here) — the worst case for
     #        the call itself, since the job now runs inline on this thread and only returns once it ends
-    #   40   clearSession (DELETE /api/router/agent/session/{id}: snapshot upload + container destroy);
-    #        SchedulerServiceImpl's own comment budgets "10+ seconds" for it, this is that with air
+    #   60   clearSession (DELETE /api/router/agent/session/{id}: snapshot upload + container destroy),
+    #        bounded by its own read timeout min(SCHEDULER_CLEAR_SESSION_TIMEOUT, SCHEDULER_TIMEOUT).
+    #        It used to inherit the 300s chat budget, so the real worst case was 600s and this number was
+    #        wrong by a whole execution; a best-effort cleanup is not worth 300s of shutdown.
     #   20   finishExecution write-back + updateExecutionStatus release + Spring's shutdown hooks
     # Not exactly SCHEDULER_TIMEOUT on purpose: the timeout only covers the router call. The seconds
     # after it are precisely the ones that turn a finished run into a terminal row — cut them and the
     # execution is remembered as a timeout even though the answer was already in hand.
-    # If SCHEDULER_TIMEOUT is raised, raise this with it (timeout + 60).
-    stop_grace_period: 360s
+    # If SCHEDULER_TIMEOUT is raised, raise this with it: timeout + min(60, timeout) + 20.
+    stop_grace_period: 380s
     deploy:
       resources:
         limits:

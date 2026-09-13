@@ -22,6 +22,11 @@ class RouterClient(
     @Value($$"${scheduler.admin-url:http://localhost:8080}") private val adminUrl: String,
     @Value($$"${scheduler.admin-secret:}") private val adminSecret: String,
     @Value($$"${scheduler.timeout-seconds:300}") private val timeoutSeconds: Int,
+    /**
+     * Ceiling for the session-cleanup read timeout, which is otherwise the one number every router call
+     * shares. See [clearSessionReadTimeoutSeconds] for why the cleanup gets its own budget.
+     */
+    @Value($$"${scheduler.clear-session-timeout-seconds:60}") private val clearSessionTimeoutSeconds: Int,
 ) {
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
@@ -78,12 +83,19 @@ class RouterClient(
         )
     }
 
-    private val restClient: RestClient by lazy {
+    private val restClient: RestClient by lazy { requestClient(timeoutSeconds.toLong()) }
+
+    /** [clearSession]'s own template, on the capped clock: see [clearSessionReadTimeoutSeconds]. */
+    private val cleanupClient: RestClient by lazy {
+        requestClient(clearSessionReadTimeoutSeconds(timeoutSeconds, clearSessionTimeoutSeconds))
+    }
+
+    private fun requestClient(readTimeoutSeconds: Long): RestClient {
         val factory = org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
             setConnectTimeout(Duration.ofSeconds(10))
-            setReadTimeout(Duration.ofSeconds(timeoutSeconds.toLong()))
+            setReadTimeout(Duration.ofSeconds(readTimeoutSeconds))
         }
-        RestClient.builder()
+        return RestClient.builder()
             .requestFactory(factory)
             .build()
     }
@@ -173,12 +185,15 @@ class RouterClient(
     /**
      * Clear agent session cache on agent-service.
      * Called after task session completes to clean up cached agent.
+     *
+     * Best-effort, and on a clock of its own ([cleanupClient]): this is the tail of an execution, so every
+     * second it spends is a second the container's `stop_grace_period` has to cover for the whole run.
      */
     fun clearSession(sessionId: String) {
         val url = "$routerUrl/api/router/agent/session/$sessionId"
         log.info("[Scheduler\u2192Router] DELETE {} - clearing session", url)
         try {
-            restClient.delete()
+            cleanupClient.delete()
                 .uri(url)
                 .header("X-Api-Key", apiKey)
                 .retrieve()
@@ -187,5 +202,17 @@ class RouterClient(
         } catch (e: Exception) {
             log.warn("[Scheduler\u2190Router] Failed to clear session={}, error={}", sessionId, e.message)
         }
+    }
+
+    companion object {
+        /**
+         * How long [clearSession] may take on top of the router call. It gets a budget of its own because
+         * it is the tail of an execution: sharing the chat timeout, one run can hold its Quartz worker for
+         * `2 x scheduler.timeout-seconds`, and `stop_grace_period` — which is derived from the chat
+         * timeout plus the cleanup plus the write-back — would cut the JVM off mid-DELETE and leave a
+         * settled log row whose lock row still reads 0. The cleanup is already best-effort, so a shorter
+         * timeout changes no semantics.
+         */
+        internal fun clearSessionReadTimeoutSeconds(timeoutSeconds: Int, capSeconds: Int): Long = minOf(capSeconds.toLong(), timeoutSeconds.toLong())
     }
 }

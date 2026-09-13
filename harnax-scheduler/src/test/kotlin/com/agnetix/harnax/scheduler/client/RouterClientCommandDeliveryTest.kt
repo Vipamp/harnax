@@ -39,6 +39,7 @@ class RouterClientCommandDeliveryTest {
                     adminUrl = "http://127.0.0.1:1",
                     adminSecret = "unused",
                     timeoutSeconds = 5,
+                    clearSessionTimeoutSeconds = 60,
                 ).apply { init() },
             )
         } finally {

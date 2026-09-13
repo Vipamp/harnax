@@ -38,6 +38,9 @@ spring:
     # housekeeping reaps them up to 2× scheduler.timeout-seconds later, and the user watches a timeout
     # that never actually happened. Must be paired with stop_grace_period on the scheduler container:
     # waiting for jobs is worthless if the kernel sends SIGKILL first.
+    # What it waits for, though, is only what Quartz knows about: the cron path and the /run-once
+    # one-shots. A manual /trigger runs on a bare daemon thread (SchedulerServiceImpl.triggerManually),
+    # invisible to the scheduler, so no grace period protects it — plan S4 closes that gap.
     wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}
     properties:
       org:
@@ -95,7 +98,10 @@ logging:
 
 # Scheduler configuration
 scheduler:
-  # Enable/disable scheduler on this instance
+  # Enable/disable scheduler on this instance. Disabled means this node takes no scheduling work: it
+  # loads no task, and /trigger, /run-once and /reload are refused. It does NOT mean inert — the
+  # housekeeping sweep is registered outside this gate on purpose, because /tasks/logs/{id}/stop is
+  # deliberately open here and can leave a row at status=4 that nothing but expireStale ever moves.
   enabled: ${SCHEDULER_ENABLED:true}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}
@@ -111,6 +117,11 @@ scheduler:
   # baseline the stale sweep judges a never-reported row against. Splitting them would let the sweep
   # expire work that is merely slow.
   timeout-seconds: ${SCHEDULER_TIMEOUT:300}
+  # Ceiling for the session cleanup that follows the router call (DELETE /api/router/agent/session/{id});
+  # effective value is min(this, timeout-seconds). It does not share timeout-seconds on purpose: that
+  # would let one execution hold its Quartz worker for twice the timeout, and the container's
+  # stop_grace_period (docker-new/docker-compose.yml) is derived from timeout + min(60, timeout) + 20.
+  clear-session-timeout-seconds: ${SCHEDULER_CLEAR_SESSION_TIMEOUT:60}
 
 # Auth configuration
 harnax:
