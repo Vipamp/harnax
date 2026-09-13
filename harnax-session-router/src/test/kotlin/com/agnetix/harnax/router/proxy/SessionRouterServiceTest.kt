@@ -11,6 +11,7 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.AgentServiceClient
 import com.agnetix.harnax.router.service.IdempotencyService
@@ -1123,11 +1124,63 @@ class SessionRouterServiceTest {
         assertThrows(SecurityException::class.java) {
             runBlocking { service.proxyLoadHistory("session-1") }
         }
-        // Refused before routing, so no stream is ever opened: the caller gets an ordinary error
-        // response rather than an error event inside a stream it asked for.
-        assertThrows(SecurityException::class.java) {
-            service.proxyStreamRequest(ChatAgentRequest(sessionId = "session-1", message = "hi", requestId = ""))
-        }
+        // The stream endpoint runs on the same guard, but it cannot answer a refusal by throwing: the
+        // caller asked for an event stream, and an exception here lets Spring write a JSON error body
+        // onto a `text/event-stream` response. The refusal has to arrive as a stream event.
+        StepVerifier.create(service.proxyStreamRequest(ChatAgentRequest(sessionId = "session-1", message = "hi", requestId = "")))
+            .assertNext { assertTrue(it is ErrorChatEvent, "a refusal must reach the caller as an event, not as a broken response") }
+            .assertNext { assertTrue(it is EndEventChatEvent, "the stream still has to end") }
+            .verifyComplete()
+
+        verifyNoInteractions(agentServiceClient)
+        verifyNoInteractions(instanceRegistry)
+    }
+
+    /**
+     * A forged `task-` id is refused by the prefix rule inside the guard (see SessionAccessGuardTest).
+     * What the stream proxies own is the other half: the refusal must come back as an event on the
+     * stream the caller opened, because these two endpoints answer with `text/event-stream`.
+     */
+    @Test
+    fun `a forged task session is refused on the stream and comes back as an error event`() {
+        doThrow(SecurityException("Privileged session prefix requires an internal caller"))
+            .`when`(sessionAccessGuard)
+            .requireAccessible("task-7-6f1d0a2e")
+
+        StepVerifier.create(
+            service.proxyStreamRequest(ChatAgentRequest(sessionId = "task-7-6f1d0a2e", message = "hi", requestId = "")),
+        )
+            .assertNext { event ->
+                assertTrue(event is ErrorChatEvent, "the refusal must be an error event on the stream")
+                assertEquals(HarnaxErrorCode.FORBIDDEN.code, (event as ErrorChatEvent).code)
+                assertTrue(
+                    event.message.contains("Privileged session prefix"),
+                    "the caller has to be told why it was refused, got '${event.message}'",
+                )
+            }
+            .assertNext { event ->
+                assertTrue(event is EndEventChatEvent, "the refused stream has to be closed")
+            }
+            .verifyComplete()
+
+        // The stream path is gated by the same guard, and the refusal stopped it there.
+        verify(sessionAccessGuard).requireAccessible("task-7-6f1d0a2e")
+        verifyNoInteractions(agentServiceClient)
+        verifyNoInteractions(instanceRegistry)
+    }
+
+    @Test
+    fun `a forged task session is refused on the confirm stream too`() {
+        doThrow(SecurityException("Privileged session prefix requires an internal caller"))
+            .`when`(sessionAccessGuard)
+            .requireAccessible("task-7-6f1d0a2e")
+
+        StepVerifier.create(
+            service.proxyConfirmStreamRequest(ConfirmAgentRequest(sessionId = "task-7-6f1d0a2e", isConfirmed = true)),
+        )
+            .assertNext { assertTrue(it is ErrorChatEvent, "confirm is an event stream as well") }
+            .assertNext { assertTrue(it is EndEventChatEvent) }
+            .verifyComplete()
 
         verifyNoInteractions(agentServiceClient)
         verifyNoInteractions(instanceRegistry)

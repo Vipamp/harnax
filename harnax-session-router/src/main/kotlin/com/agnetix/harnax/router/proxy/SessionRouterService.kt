@@ -174,16 +174,22 @@ class SessionRouterService(
 
     fun proxyStreamRequest(request: ChatAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        sessionAccessGuard.requireAccessible(sessionId)
         val requestId = getOrGenerateRequestId(request)
         // Note: MDC is not set here because the returned Flux is subscribed to and executed
         // on a Netty event loop thread, where the servlet thread's MDC is not visible.
         // Context (sessionId, requestId) is logged directly in each operator's messages.
         try {
+            // Inside the try on purpose: this endpoint answers with `text/event-stream`, so a refusal
+            // thrown here would leave Spring writing a JSON error body onto a stream the caller asked
+            // for. It travels as an event instead.
+            sessionAccessGuard.requireAccessible(sessionId)
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Stream proxy for session=$sessionId, requestId=$requestId -> instance=${instance.instanceId}")
 
             return buildStreamFlux(sessionId, requestId, instance, request, attempt = 0, excluded = emptySet())
+        } catch (e: SecurityException) {
+            log.warn("Refused stream proxy for session=$sessionId, requestId=$requestId: ${e.message}")
+            return refusalFlux(e)
         } catch (e: Exception) {
             log.error("Failed to resolve instance for stream session=$sessionId, requestId=$requestId: ${e.message}", e)
             return Flux.just(
@@ -195,6 +201,24 @@ class SessionRouterService(
             )
         }
     }
+
+    /**
+     * A refusal on a streaming endpoint, in the shape that endpoint already speaks.
+     *
+     * Throwing here does not reach the caller as a reason: the refusal happens before any stream exists,
+     * so it lands in [com.agnetix.harnax.router.config.GlobalExceptionHandler], which answers a
+     * `text/event-stream` request with a JSON `ResultVo` — a body the caller's SSE parser reads as
+     * nothing at all. The advice itself states the rule — SSE endpoints handle errors by emitting
+     * `ErrorChatEvent` — and refusals are no exception to it. `FORBIDDEN` rather than the no-instance
+     * code the surrounding catch uses, because the caller was refused, not unmatched.
+     */
+    private fun refusalFlux(e: SecurityException): Flux<ChatEvent> = Flux.just(
+        ErrorChatEvent(
+            code = HarnaxErrorCode.FORBIDDEN.code,
+            message = e.message ?: "Access to this session is refused",
+        ),
+        EndEventChatEvent(),
+    )
 
     suspend fun proxyCommandRequest(request: CommandAgentRequest): ResultVo<CommandResponse> {
         val sessionId = request.sessionId
@@ -216,13 +240,17 @@ class SessionRouterService(
 
     fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        sessionAccessGuard.requireAccessible(sessionId)
         // Note: MDC is not set here for the same thread-safety reasons as proxyStreamRequest.
         try {
+            // Same reason as in proxyStreamRequest: this is an event stream, so a refusal is an event.
+            sessionAccessGuard.requireAccessible(sessionId)
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Confirm stream proxy for session=$sessionId -> instance=${instance.instanceId}")
 
             return buildConfirmStreamFlux(sessionId, instance, request, attempt = 0, excluded = emptySet())
+        } catch (e: SecurityException) {
+            log.warn("Refused confirm stream proxy for session=$sessionId: ${e.message}")
+            return refusalFlux(e)
         } catch (e: Exception) {
             log.error("Failed to resolve instance for confirm stream session=$sessionId: ${e.message}", e)
             return Flux.just(

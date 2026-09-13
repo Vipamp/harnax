@@ -2,6 +2,7 @@ package com.agnetix.harnax.router.service
 
 import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.router.support.IdFormat
+import com.agnetix.harnax.router.support.PrivilegedSessionPrefixes
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
@@ -26,9 +27,15 @@ import org.springframework.stereotype.Component
  * - A session admin cannot be asked about. Unknown-to-admin is still reported, because it is the one
  *   state where this guard is knowingly not in force.
  *
- * A session admin says does not exist passes too, and is not a hole: nothing is bound to it, so the
- * proxy endpoints answer "not bound" without touching an agent — and the tenant that owns it cannot be
- * proven either way.
+ * A session admin says does not exist passes too, and for the ids that really are nothing's — a fresh
+ * `web-` id the user opens with first — nothing is bound to it, so the proxy endpoints answer "not
+ * bound" without touching an agent, and the tenant that owns it cannot be proven either way.
+ *
+ * That reasoning does not cover `task-` and `chn-`. Admin resolves those from the `agent_task` and
+ * `channel` tables and they are somebody's, but the lookup here reads only the `session` table, so they
+ * arrive Unknown and would have passed with the forged id choosing whose configuration and credentials
+ * the agent runs with. A prefix rule decided before the lookup closes that; see
+ * [PrivilegedSessionPrefixes] for why it is a rule and not a query.
  */
 @Component
 class SessionAccessGuard(
@@ -45,6 +52,31 @@ class SessionAccessGuard(
         IdFormat.requireSessionId(sessionId)
 
         val context = AuthContextHolder.get() ?: return
+
+        // Server-decided sessions are the ones the caller has no business naming.
+        //
+        // This is a prefix rule and not an ownership query, because a query cannot answer it: admin
+        // resolves `task-`/`chn-` by parsing the prefix against the agent_task and channel tables,
+        // while the lookup below only reads the `session` table. Every forged id of these two shapes
+        // comes back Unknown, and Unknown passes — so the asymmetry between what this guard can see
+        // and what admin can resolve was the hole.
+        //
+        // A caller with no end user behind it keeps access. Scheduler and the channel service mint
+        // these ids themselves and are the ones that decided who the human is; refusing them would
+        // stop scheduled runs and channel chat outright. That is the same ground the no-tenant pass
+        // below stands on, and the same `userId == null` the router already trusts when it lets a
+        // service body carry the user it is acting for (see AgentProxyController.resolveUserId).
+        //
+        // `web-` and `mp-` are untouched: they are the caller's own sessions and still settle by the
+        // tenant comparison.
+        if (context.userId != null && PrivilegedSessionPrefixes.matches(sessionId)) {
+            log.warn(
+                "Rejected a privileged session prefix: caller '${context.callerId}' (user ${context.userId}) " +
+                    "named $sessionId, which only an internal caller may",
+            )
+            throw SecurityException("Privileged session prefix requires an internal caller")
+        }
+
         val callerTenant = context.tenantId ?: return
 
         when (val lookup = sessionInfoClient.lookup(sessionId)) {
