@@ -161,7 +161,7 @@ spring:
 
 ### 4.3 中断未命中如实定态（D7）
 
-现状缺陷：`DefaultAgentRunner.interrupt()` 依赖 `agentCache.getIfPresent(sessionId)`，未命中时什么都不做却返回 `success("Stream interrupted")`（`DefaultAgentRunner.kt:239-254`）；scheduler 侧 `RouterClient.sendCommand` 返回 `Unit`、响应体根本未接收。后果链：agent-service 重启过或 session 映射过期被 reroute → 中断空转、执行继续 → 日志行停在 4 → `expireStale` 判 `2 timeout` → 而任务其实成功产出，结果被丢。用户视角是"点了停止，显示停止中，最后变成超时"。
+**改造前**的缺陷（D7 要消灭的就是它；T5/G5 已修，下面按改之前的样子陈述，判据见下一条修法）：`DefaultAgentRunner.interrupt()` 只看 `agentCache.getIfPresent(sessionId)`，未命中时什么都不做却返回 `success("Stream interrupted")`；scheduler 侧 `RouterClient.sendCommand` 返回 `Unit`、响应体根本未接收。今天的对应物：`interrupt()` 已是返回 `Boolean` 的那一个（`DefaultAgentRunner.kt:253`），`sendCommand` 返回 `CommandDelivery`（`RouterClient.kt:142`）。后果链（若不修就会发生）：agent-service 重启过或 session 映射过期被 reroute → 中断空转、执行继续 → 日志行停在 4 → `expireStale` 判 `2 timeout` → 而任务其实成功产出，结果被丢。用户视角是"点了停止，显示停止中，最后变成超时"。
 
 修法三处：
 
@@ -169,7 +169,7 @@ spring:
    - **为什么缓存那条臂要去掉**：`agentCache` 是 30 分钟 TTL 的缓存，命中只说明"本实例曾服务过该 session"，不说明"现在有东西在推进这次执行"。把它算作命中，会在 owning 节点已经消失后仍然答复"已送达"，那一行于是既没有 owner 也没有终态，最后被回收器写成 `2 timeout`——正是 D7 要消灭的表象。
    - **为什么 `registerCall` 必须早于 agent 构建**（`DefaultAgentRunner.kt:131-135`）：spec 组装 + sandbox 创建要几秒，全程都算"执行在途"。若登记晚于构建，这段窗口里的 session 在判据眼里就是未命中，一次落在构建期的停止请求会把刚起跑的执行当场定成 5，而 sandbox 已经建起来且此后无人释放——留下一个孤儿容器。构建期抛异常时也要靠 `finally` 摘掉登记。
 2. router：`/api/router/agent/command` 已经把 `CommandResponse` 原样装进 `ResultVo.data` 回传（含 failover 分支的 failure），**无需改动，仅需加一条透传断言**。
-3. scheduler：`RouterClient.sendCommand` 当前签名是 **返回 `Unit`、响应体压根没有接收**（`RouterClient.kt:127-143` 调完 `.body(...)` 直接丢弃，只 log 一行"命令已发送"）。改为返回 `Boolean`（取 `data.success`），`stopTask` 在拿到 `false` 时**立即** `finalizeStopped`（4→5）定态，不等 `expireStale`。
+3. scheduler：`RouterClient.sendCommand` 当前签名是 **返回 `Unit`、响应体压根没有接收**（调完 `.body(...)` 直接丢弃，只 log 一行"命令已发送"）。改为返回 `Boolean`（取 `data.success`），`stopTask` 在拿到 `false` 时**立即** `finalizeStopped`（4→5）定态，不等 `expireStale`。**已实现，且落地比这句更强**：返回的是三态 `CommandDelivery`（`RouterClient.kt:142`）——`Delivered` / `Missed` / `Unanswered`，只有 `Missed`（有实例明确答"我这儿没有在途执行"）才当场 4→5；`Unanswered`（命令压根没送到）留在 4 交给执行节点或回收扫描。把它压回 `Boolean` 会把这两种情形混成一谈，于是"路由器不可达"也会被当成"执行已死"而定态。
 
 语义依据：命中不了 = 没有任何进程在推进这次执行 = 它已经死了，立即定态是陈述事实，不是猜测。这也是本修法优于"轮询几秒后自行定态"的原因——后者会在执行真的还在跑时留下孤儿 sandbox。
 
