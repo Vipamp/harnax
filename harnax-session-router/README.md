@@ -2,6 +2,8 @@
 
 Session Router 是 harnax 分布式 Agent 平台的核心网关层，负责将外部请求路由到正确的 agent-service 实例，并提供会话粘性、健康检查、故障转移和请求幂等性保障。
 
+> 本文聚焦**实现机制与运维**（Redis 键结构、内部流程、源码结构、告警规则）。面向调用方的能力契约——端点清单、错误语义、租户隔离边界、超时与容量预算、当前限制清单——见 [`prod_doc/session-routing.zh-CN.md`](../prod_doc/session-routing.zh-CN.md)（英文版 [`session-routing.en-US.md`](../prod_doc/session-routing.en-US.md)）；部署步骤见 [`docs/deploy-harnax-session-router.md`](../docs/deploy-harnax-session-router.md)。
+
 ## 架构概览
 
 ### 单机部署（local 模式，默认）
@@ -50,6 +52,18 @@ Channel / 外部 HTTP ── LB ──>      ├─ Router :8081 (节点 B)  ─
   缓存，实例列表读最后一次 Redis 快照（快照按心跳超时自然老化，之后宁可不路由，也不一直投向可能已经全
   灭的集群），熔断读失败时放行（fail-open）。代价是这段窗口内跨节点的会话粘性无法保证；Redis 恢复后
   一切仍以 Redis 为准。
+
+**Redis 拓扑要求：** 只支持 **standalone** 和 **Sentinel**，不支持 **Redis Cluster**。
+
+原因：Router 的状态变更大量依赖跨键 Lua 脚本——写入一个 session 绑定要同时更新该实例的反向索引，实例
+状态流转要同时更新实例 hash 与 healthy set。这些键在 Cluster 下不会落在同一个 slot，Redis 会在执行脚本
+前直接返回 `CROSSSLOT`，导致心跳、绑定和故障转移全部报错（`checkInstanceHealth` 每 5 秒抛一次）。
+
+因此设置了 `REDIS_CLUSTER_NODES` 时 **启动即失败** 并给出说明，而不是带着一个「看着正常、注册表已损坏」
+的实例上线。需要 Redis 侧高可用请用 Sentinel（`REDIS_SENTINEL_MASTER` / `REDIS_SENTINEL_NODES`）。
+
+注意区分两个「cluster」：Spring profile 名 `cluster` 指的是 **Router 多副本 + MySQL + Redis 的部署形态**，
+连的仍然是 standalone Redis，是受支持的生产模式；它与 Redis Cluster 没有关系。
 
 ### 部署模式对比
 
@@ -546,7 +560,7 @@ java -Xms2g -Xmx4g \
 | `REDIS_PORT` | Redis 端口 | `6379` |
 | `REDIS_PASSWORD` | Redis 密码 | 空 |
 | `REDIS_DATABASE` | Redis 数据库索引 | `0` |
-| `REDIS_CLUSTER_NODES` | Redis Cluster 节点（非空即按 cluster 连接） | 空（standalone） |
+| `REDIS_CLUSTER_NODES` | **不支持 Redis Cluster**：非空即启动失败（详见「分布式部署」的 Redis 拓扑要求） | 必须留空 |
 | `ROUTER_RECONCILE_INTERVAL_MS` | 反向索引对账间隔 | `300000` |
 | `ROUTER_RECONCILE_BATCH_SIZE` | 对账单批条数 | `500` |
 | `ROUTER_RECONCILE_MAX_BATCHES` | 单个索引最多扫几批 | `40` |

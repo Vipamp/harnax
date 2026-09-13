@@ -11,7 +11,6 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.data.redis.connection.RedisClusterConfiguration
 import org.springframework.data.redis.connection.RedisConnectionFactory
 import org.springframework.data.redis.connection.RedisPassword
 import org.springframework.data.redis.connection.RedisSentinelConfiguration
@@ -33,6 +32,14 @@ import java.time.Duration
  *
  * Commands fail fast when the connection is down rather than being queued, so callers can reach
  * their fallback path instead of hanging until the command timeout.
+ *
+ * Redis Cluster is deliberately not supported, and configuring it fails startup rather than being
+ * ignored: the routing scripts are multi-key by design (writing a session binding also updates the
+ * per-instance reverse index, and an instance status transition shares a script with the healthy
+ * set), so Redis would reject all of them with CROSSSLOT. That is not a silent degradation either
+ * way -- heartbeats and the health-check loop would start erroring while the service looked up.
+ * Standalone and Sentinel give the same HA story this router actually needs, since its whole
+ * dataset is a few megabytes.
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = ["router.cache.type"], havingValue = "redis")
@@ -57,11 +64,12 @@ class RedisConfig {
         @Value("\${spring.data.redis.sentinel.nodes:}") sentinelNodes: String,
         @Value("\${spring.data.redis.sentinel.password:}") sentinelPassword: String,
         @Value("\${spring.data.redis.cluster.nodes:}") clusterNodes: String,
-        @Value("\${spring.data.redis.cluster.max-redirects:3}") clusterMaxRedirects: Int,
     ): RedisConnectionFactory {
+        // Cluster is checked first: it is rejected outright, and the caller must not get a
+        // "host is missing" hint when the real problem is an unsupported topology.
         val configuration = when {
+            clusterNodes.isNotBlank() -> clusterUnsupported(clusterNodes)
             sentinelMaster.isNotBlank() -> sentinelConfiguration(sentinelMaster, sentinelNodes, sentinelPassword)
-            clusterNodes.isNotBlank() -> clusterConfiguration(clusterNodes, clusterMaxRedirects)
             else -> standaloneConfiguration(host, port, database)
         }.apply {
             if (password.isNotBlank()) setPassword(RedisPassword.of(password))
@@ -103,7 +111,7 @@ class RedisConfig {
     ): RedisStandaloneConfiguration {
         check(host.isNotBlank()) {
             "router.cache.type=redis requires spring.data.redis.host (set REDIS_HOST), " +
-                "or sentinel.master / cluster.nodes for a highly available Redis"
+                "or sentinel.master (REDIS_SENTINEL_MASTER) for a highly available Redis"
         }
         return RedisStandaloneConfiguration(host, port).apply { setDatabase(database) }
     }
@@ -125,14 +133,13 @@ class RedisConfig {
         return config
     }
 
-    private fun clusterConfiguration(
-        nodes: String,
-        maxRedirects: Int,
-    ): RedisClusterConfiguration {
-        val nodeList = nodes.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        check(nodeList.isNotEmpty()) { "spring.data.redis.cluster.nodes is set but contains no nodes" }
-        return RedisClusterConfiguration(nodeList).apply { setMaxRedirects(maxRedirects) }
-    }
+    private fun clusterUnsupported(nodes: String): Nothing = throw IllegalStateException(
+        "Redis Cluster is not supported by this router (spring.data.redis.cluster.nodes=$nodes). " +
+            "A session binding and its per-instance index entry are updated by one Lua script, and an " +
+            "instance status transition shares a script with the healthy set; those keys do not hash to " +
+            "one slot, so Redis would answer every heartbeat, binding and failover with CROSSSLOT. " +
+            "Use a standalone Redis, or Sentinel for HA (REDIS_SENTINEL_MASTER / REDIS_SENTINEL_NODES).",
+    )
 
     @Bean
     fun redisTemplate(connectionFactory: RedisConnectionFactory): RedisTemplate<String, Any> {

@@ -67,15 +67,18 @@ spring:
       timeout: 3000             # Command timeout: a Redis stall fails in 3s instead of 60s
       connect-timeout: 2000     # TCP connect timeout
       # Routing state must never be evicted: run Redis with maxmemory-policy=noeviction.
-      # For Redis HA set one of the two below (sentinel wins over cluster); otherwise this
-      # single host is a hard dependency of the whole routing layer.
+      # For Redis HA use Sentinel below; without it this single host is a hard dependency of
+      # the whole routing layer.
       sentinel:
         master: ${REDIS_SENTINEL_MASTER:}
         nodes: ${REDIS_SENTINEL_NODES:}        # host1:port1,host2:port2
         password: ${REDIS_SENTINEL_PASSWORD:}
+      # Redis Cluster is NOT supported: session keys and per-instance index keys are updated by
+      # one multi-key Lua script, which Redis rejects with CROSSSLOT. The property is kept only so
+      # RedisConfig can detect the topology and fail startup with an explanation instead of letting
+      # heartbeats and failover error out at runtime.
       cluster:
-        nodes: ${REDIS_CLUSTER_NODES:}         # host1:port1,host2:port2,host3:port3
-        max-redirects: ${REDIS_CLUSTER_MAX_REDIRECTS:3}
+        nodes: ${REDIS_CLUSTER_NODES:}         # setting this fails startup on purpose
       # Lettuce uses one shared async connection, so pooling is not configured
       # (commons-pool2 is intentionally not a dependency).
 

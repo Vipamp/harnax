@@ -174,25 +174,29 @@ class SessionRouterService(
 
     fun proxyStreamRequest(request: ChatAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        sessionAccessGuard.requireAccessible(sessionId)
         val requestId = getOrGenerateRequestId(request)
         // Note: MDC is not set here because the returned Flux is subscribed to and executed
         // on a Netty event loop thread, where the servlet thread's MDC is not visible.
         // Context (sessionId, requestId) is logged directly in each operator's messages.
         try {
+            // The ownership check sits inside the try on purpose. This endpoint produces
+            // text/event-stream, so a rejection escaping to the global handler would render a JSON
+            // ResultVo onto an event stream — or fail content negotiation outright — and callers
+            // would read a correctly denied request as a router that cannot be reached.
+            sessionAccessGuard.requireAccessible(sessionId)
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Stream proxy for session=$sessionId, requestId=$requestId -> instance=${instance.instanceId}")
 
             return buildStreamFlux(sessionId, requestId, instance, request, attempt = 0, excluded = emptySet())
+        } catch (e: SecurityException) {
+            log.warn("Stream access to session=$sessionId rejected: ${e.message}")
+            return streamError(HarnaxErrorCode.FORBIDDEN, e.message ?: "Access denied")
+        } catch (e: IllegalArgumentException) {
+            log.warn("Stream request for session=$sessionId carries an unusable id: ${e.message}")
+            return streamError(HarnaxErrorCode.INVALID_PARAM, e.message ?: "Invalid session id")
         } catch (e: Exception) {
             log.error("Failed to resolve instance for stream session=$sessionId, requestId=$requestId: ${e.message}", e)
-            return Flux.just(
-                ErrorChatEvent(
-                    code = HarnaxErrorCode.ROUTER_NO_INSTANCE.code,
-                    message = e.message ?: "No instance available",
-                ),
-                EndEventChatEvent(),
-            )
+            return streamError(HarnaxErrorCode.ROUTER_NO_INSTANCE, e.message ?: "No instance available")
         }
     }
 
@@ -216,24 +220,31 @@ class SessionRouterService(
 
     fun proxyConfirmStreamRequest(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
-        sessionAccessGuard.requireAccessible(sessionId)
-        // Note: MDC is not set here for the same thread-safety reasons as proxyStreamRequest.
         try {
+            // Same reasoning as proxyStreamRequest: a rejection must travel as an SSE event.
+            sessionAccessGuard.requireAccessible(sessionId)
             val instance = resolveInstanceBlocking(sessionId)
             log.info("Confirm stream proxy for session=$sessionId -> instance=${instance.instanceId}")
 
             return buildConfirmStreamFlux(sessionId, instance, request, attempt = 0, excluded = emptySet())
+        } catch (e: SecurityException) {
+            log.warn("Confirm stream access to session=$sessionId rejected: ${e.message}")
+            return streamError(HarnaxErrorCode.FORBIDDEN, e.message ?: "Access denied")
+        } catch (e: IllegalArgumentException) {
+            log.warn("Confirm request for session=$sessionId carries an unusable id: ${e.message}")
+            return streamError(HarnaxErrorCode.INVALID_PARAM, e.message ?: "Invalid session id")
         } catch (e: Exception) {
             log.error("Failed to resolve instance for confirm stream session=$sessionId: ${e.message}", e)
-            return Flux.just(
-                ErrorChatEvent(
-                    code = HarnaxErrorCode.ROUTER_NO_INSTANCE.code,
-                    message = e.message ?: "No instance available",
-                ),
-                EndEventChatEvent(),
-            )
+            return streamError(HarnaxErrorCode.ROUTER_NO_INSTANCE, e.message ?: "No instance available")
         }
     }
+
+    /**
+     * A terminating stream: the error event, then the end marker consumers wait for. Used for every
+     * failure that happens before an upstream connection exists, so a caller sees one shape of
+     * failure from a streaming endpoint no matter where it came from.
+     */
+    private fun streamError(code: HarnaxErrorCode, message: String): Flux<ChatEvent> = Flux.just(ErrorChatEvent(code = code.code, message = message), EndEventChatEvent())
 
     private fun buildConfirmStreamFlux(
         sessionId: String,

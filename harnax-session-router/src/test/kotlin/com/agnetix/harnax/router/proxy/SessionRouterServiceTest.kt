@@ -10,6 +10,7 @@ import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.service.AgentServiceClient
 import com.agnetix.harnax.router.service.IdempotencyService
@@ -1095,14 +1096,58 @@ class SessionRouterServiceTest {
         assertThrows(SecurityException::class.java) {
             runBlocking { service.proxyLoadHistory("session-1") }
         }
-        // Refused before routing, so no stream is ever opened: the caller gets an ordinary error
-        // response rather than an error event inside a stream it asked for.
-        assertThrows(SecurityException::class.java) {
-            service.proxyStreamRequest(ChatAgentRequest(sessionId = "session-1", message = "hi", requestId = ""))
-        }
+        // On a streaming endpoint the refusal has to travel as events. An exception escaping here
+        // reaches the global handler, which answers HTTP 200 with a JSON ResultVo — and channel
+        // reads that response with bodyToFlux(ChatEvent), where the decode failure is reported as
+        // "Failed to reach router". A correctly denied caller would look like an unreachable router.
+        val events = service.proxyStreamRequest(
+            ChatAgentRequest(sessionId = "session-1", message = "hi", requestId = ""),
+        ).collectList().block()!!
+
+        assertDeniedAsEvent(events)
 
         verifyNoInteractions(agentServiceClient)
         verifyNoInteractions(instanceRegistry)
+    }
+
+    @Test
+    fun `a confirm stream refusal is denied as an event too`() {
+        doThrow(SecurityException("Session belongs to another tenant"))
+            .`when`(sessionAccessGuard)
+            .requireAccessible("session-1")
+
+        assertDeniedAsEvent(
+            service.proxyConfirmStreamRequest(
+                ConfirmAgentRequest(sessionId = "session-1", isConfirmed = true),
+            ).collectList().block()!!,
+        )
+        verifyNoInteractions(agentServiceClient)
+        verifyNoInteractions(instanceRegistry)
+    }
+
+    @Test
+    fun `an unusable session id is denied as an invalid-parameter event`() {
+        doThrow(IllegalArgumentException("sessionId must match [A-Za-z0-9._:-]"))
+            .`when`(sessionAccessGuard)
+            .requireAccessible("bad id")
+
+        val events = service.proxyStreamRequest(
+            ChatAgentRequest(sessionId = "bad id", message = "hi", requestId = ""),
+        ).collectList().block()!!
+
+        assertEquals(2, events.size)
+        assertEquals(HarnaxErrorCode.INVALID_PARAM.code, (events.first() as ErrorChatEvent).code)
+        assert(events.last() is EndEventChatEvent)
+        verifyNoInteractions(instanceRegistry)
+    }
+
+    /** A rejection is one FORBIDDEN event followed by the end marker, with no instance lookup. */
+    private fun assertDeniedAsEvent(events: List<ChatEvent>) {
+        assertEquals(2, events.size)
+        val error = events.first() as ErrorChatEvent
+        assertEquals(HarnaxErrorCode.FORBIDDEN.code, error.code)
+        assert(error.message.contains("another tenant"))
+        assert(events.last() is EndEventChatEvent)
     }
 
     @Test
