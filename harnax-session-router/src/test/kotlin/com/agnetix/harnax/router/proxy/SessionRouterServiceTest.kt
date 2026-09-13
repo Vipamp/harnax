@@ -27,6 +27,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import org.mockito.Mockito.*
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.kotlin.any
@@ -39,10 +42,12 @@ import org.springframework.web.context.request.ServletRequestAttributes
 import org.springframework.web.reactive.function.client.WebClientResponseException
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
+import java.lang.reflect.Modifier
 import java.net.ConnectException
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.concurrent.TimeoutException
+import java.util.stream.Stream
 
 class SessionRouterServiceTest {
 
@@ -1224,5 +1229,119 @@ class SessionRouterServiceTest {
         verify(sessionAccessGuard, atLeastOnce()).requireAccessible("a")
         verify(sessionAccessGuard, atLeastOnce()).requireAccessible("b")
         verify(agentServiceClient).workspaceStatus("http://10.0.0.1:8082", "a,b")
+    }
+
+    // ==================== Every proxy entry point is guarded ====================
+
+    /**
+     * The guard is the only thing between a caller-supplied session id and another tenant's transcript,
+     * plans and sandbox files. Until now its coverage rested on each endpoint having been written
+     * correctly: the cases above check the three entry points they happen to exercise, so a fourteenth
+     * added without a `requireAccessible` call would have left the whole suite green.
+     *
+     * These two cases close that. The parameterized one asserts the property per entry point; the one
+     * beside it derives the entry points from the class itself, so forgetting to register a new
+     * endpoint here is what fails — not forgetting to write a case for it, which nobody does on purpose.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("proxyEntryPoints")
+    fun `every proxy entry point asks the guard about the caller's session`(
+        method: String,
+        call: (SessionRouterService, String) -> Unit,
+    ) {
+        val sessionId = "web-guarded"
+        doThrow(SecurityException("Session belongs to another tenant"))
+            .`when`(sessionAccessGuard)
+            .requireAccessible(sessionId)
+
+        // The refusal is how the guard announces itself on every route. The two stream endpoints answer
+        // it with an event instead of throwing — their own pinned behaviour — so the outcome here is
+        // deliberately not asserted; the verify below is.
+        try {
+            call(service, sessionId)
+        } catch (e: SecurityException) {
+            assertEquals("Session belongs to another tenant", e.message)
+        }
+
+        // A bare `verify` failure would name no endpoint, so say which one it was.
+        try {
+            verify(sessionAccessGuard).requireAccessible(sessionId)
+        } catch (e: Throwable) {
+            fail("$method never asked the guard about the caller's session id ($sessionId)", e)
+        }
+        // Reached before anything that could act on the id: no binding was looked up, no instance asked,
+        // no agent sent the caller's request.
+        verifyNoInteractions(sessionMappingService, instanceRegistry, agentServiceClient)
+    }
+
+    @Test
+    fun `the guarded-entry-point table names every public proxy method the service has`() {
+        val declared = SessionRouterService::class.java.declaredMethods
+            .filter {
+                Modifier.isPublic(it.modifiers) && !it.isSynthetic && !it.isBridge && it.name.startsWith("proxy")
+            }
+            .map { it.name }
+            .toSet()
+        val registered = PROXY_ENTRY_POINTS.map { it.method }.toSet()
+
+        assertEquals(
+            declared,
+            registered,
+            "a proxy endpoint reached this class without being registered above is an unguarded way to " +
+                "read someone else's session. Register it, and if it genuinely must not be guarded, say " +
+                "why where its entry is declared.",
+        )
+    }
+
+    /** One public proxy entry point: the method as [SessionRouterService] declares it, and how to reach it. */
+    private class ProxyEntryPoint(
+        val method: String,
+        val call: (SessionRouterService, String) -> Unit,
+    )
+
+    companion object {
+        /**
+         * Every session-scoped proxy entry point. Each one takes the session id straight from the
+         * caller — a body field or a path/query parameter — which is why each one owes the guard a call.
+         *
+         * `proxyWorkspaceStatus` takes a comma-separated list rather than one id; the entry passes a
+         * single id, and the endpoint's own list-handling cases above pin that every element is checked.
+         */
+        private val PROXY_ENTRY_POINTS = listOf(
+            ProxyEntryPoint("proxyChatRequest") { target, id ->
+                runBlocking { target.proxyChatRequest(ChatAgentRequest(sessionId = id, message = "hi", requestId = "")) }
+            },
+            ProxyEntryPoint("proxyStreamRequest") { target, id ->
+                target.proxyStreamRequest(ChatAgentRequest(sessionId = id, message = "hi", requestId = ""))
+            },
+            ProxyEntryPoint("proxyCommandRequest") { target, id ->
+                runBlocking { target.proxyCommandRequest(CommandAgentRequest(sessionId = id, command = CommandType.INTERRUPT)) }
+            },
+            ProxyEntryPoint("proxyConfirmStreamRequest") { target, id ->
+                target.proxyConfirmStreamRequest(ConfirmAgentRequest(sessionId = id, isConfirmed = true))
+            },
+            ProxyEntryPoint("proxyClearSession") { target, id -> runBlocking { target.proxyClearSession(id) } },
+            ProxyEntryPoint("proxyLoadHistory") { target, id -> runBlocking { target.proxyLoadHistory(id) } },
+            ProxyEntryPoint("proxyLoadPlans") { target, id -> runBlocking { target.proxyLoadPlans(id) } },
+            ProxyEntryPoint("proxyLoadCurrentPlan") { target, id -> runBlocking { target.proxyLoadCurrentPlan(id) } },
+            ProxyEntryPoint("proxyWorkspaceListFiles") { target, id ->
+                runBlocking { target.proxyWorkspaceListFiles(id, "/workspace") }
+            },
+            ProxyEntryPoint("proxyWorkspaceReadFile") { target, id ->
+                runBlocking { target.proxyWorkspaceReadFile(id, "/workspace/notes.md") }
+            },
+            ProxyEntryPoint("proxyWorkspaceStatus") { target, id -> runBlocking { target.proxyWorkspaceStatus(id) } },
+            ProxyEntryPoint("proxyWorkspaceUpload") { target, id ->
+                runBlocking { target.proxyWorkspaceUpload(id, "/workspace", "notes.md", byteArrayOf(1, 2, 3)) }
+            },
+            ProxyEntryPoint("proxyWorkspaceDownload") { target, id ->
+                runBlocking { target.proxyWorkspaceDownload(id, "/workspace/notes.md") }
+            },
+        )
+
+        @JvmStatic
+        fun proxyEntryPoints(): Stream<Arguments> = PROXY_ENTRY_POINTS
+            .map { Arguments.of(it.method, it.call) }
+            .stream()
     }
 }

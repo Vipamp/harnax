@@ -31,11 +31,12 @@ import org.springframework.stereotype.Component
  * `web-` id the user opens with first — nothing is bound to it, so the proxy endpoints answer "not
  * bound" without touching an agent, and the tenant that owns it cannot be proven either way.
  *
- * That reasoning does not cover `task-` and `chn-`. Admin resolves those from the `agent_task` and
- * `channel` tables and they are somebody's, but the lookup here reads only the `session` table, so they
- * arrive Unknown and would have passed with the forged id choosing whose configuration and credentials
- * the agent runs with. A prefix rule decided before the lookup closes that; see
- * [PrivilegedSessionPrefixes] for why it is a rule and not a query.
+ * That reasoning stops short of `task-`. Admin resolves those from the `agent_task` table and they are
+ * somebody's, but the lookup here reads only the `session` table, so they arrive Unknown and would have
+ * passed with the forged id choosing whose configuration and credentials the agent runs with — and
+ * `task-{taskId}` is an id a caller can count through. A prefix rule decided before the lookup closes
+ * that; see [PrivilegedSessionPrefixes] for why it is a rule and not a query, and for why `chn-` is
+ * deliberately still the Unknown-passes case above rather than a refused prefix.
  */
 @Component
 class SessionAccessGuard(
@@ -53,19 +54,24 @@ class SessionAccessGuard(
 
         val context = AuthContextHolder.get() ?: return
 
-        // Server-decided sessions are the ones the caller has no business naming.
+        // Scheduler's task sessions are the ones the caller has no business naming.
         //
         // This is a prefix rule and not an ownership query, because a query cannot answer it: admin
-        // resolves `task-`/`chn-` by parsing the prefix against the agent_task and channel tables,
-        // while the lookup below only reads the `session` table. Every forged id of these two shapes
-        // comes back Unknown, and Unknown passes — so the asymmetry between what this guard can see
-        // and what admin can resolve was the hole.
+        // resolves `task-` by parsing the prefix against the agent_task table, while the lookup below
+        // only reads the `session` table. Every forged id of that shape comes back Unknown, and
+        // Unknown passes — so the asymmetry between what this guard can see and what admin can resolve
+        // was the hole.
         //
-        // A caller with no end user behind it keeps access. Scheduler and the channel service mint
-        // these ids themselves and are the ones that decided who the human is; refusing them would
-        // stop scheduled runs and channel chat outright. That is the same ground the no-tenant pass
-        // below stands on, and the same `userId == null` the router already trusts when it lets a
-        // service body carry the user it is acting for (see AgentProxyController.resolveUserId).
+        // A caller with no end user behind it keeps access. Scheduler mints these ids itself and is the
+        // one that decided who the human is; refusing it would stop scheduled runs outright. That is
+        // the same ground the no-tenant pass below stands on, and the same `userId == null` the router
+        // already trusts when it lets a service body carry the user it is acting for (see
+        // AgentProxyController.resolveUserId).
+        //
+        // `chn-` is *not* refused here even though admin resolves it the same way. Its id is a UUID no
+        // caller can enumerate, and the lookup below cannot answer for it either way, so refusing it
+        // would only have switched off the webui channel page's legitimate end-user reads. See
+        // [PrivilegedSessionPrefixes] for the full reasoning and for what would make `chn-` guardable.
         //
         // `web-` and `mp-` are untouched: they are the caller's own sessions and still settle by the
         // tenant comparison.
