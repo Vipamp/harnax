@@ -53,6 +53,11 @@ abstract class AbstractAgentTaskJob {
         //
         // Check-then-act by nature, so two fires that read at the same instant can both pass. Closing
         // that would need a per-task lock, which the (task_id, trigger_time) key cannot express.
+        //
+        // This line is also where the table-wide zombie reclaim used to sit. It is behind a per-node rate
+        // limit now (`SchedulerServiceImpl.hasActiveRunningExecution`), and a fire that sees no live row
+        // does not ask for it at all: the statement competes for the same `idx_status` range as the
+        // running-log inserts of the executions starting right now.
         if (task.concurrent == 0 && service.hasActiveRunningExecution(task.id)) {
             log.info("Task {} already has a live execution and forbids overlap, skipping this fire", task.id)
             return

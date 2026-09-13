@@ -44,8 +44,13 @@ interface SchedulerService {
     fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
 
     /**
-     * Whether this task already has an execution live *right now*, with zombie rows reclaimed on the
-     * way so a dead node cannot block a task forever.
+     * Whether this task already has an execution live *right now*.
+     *
+     * The read is keyed by task and cheap when nothing is running: an empty result is the answer, and no
+     * table-wide reclaim runs for it. Only a row that is actually there gets judged against its own
+     * timeout, and that reclaim is rate limited per node — it is a scan-type UPDATE competing with the
+     * inserts of the executions starting right now. A dead node therefore costs at most one window of
+     * refusal, not a forever-blocked task; the unbounded reclaim is housekeeping's.
      *
      * The cluster lock cannot answer this question: `agent_task_execution` is keyed by
      * (task id, trigger time), so it only ever dedupes one fire across instances and says nothing about

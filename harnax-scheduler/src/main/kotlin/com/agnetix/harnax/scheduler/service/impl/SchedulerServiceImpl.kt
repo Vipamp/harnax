@@ -64,6 +64,15 @@ class SchedulerServiceImpl(
     @Volatile
     private var shuttingDown = false
 
+    /**
+     * When this process last ran a stale-execution sweep; null means never. Backs the rate limit in
+     * [expireStaleExecutionsThrottled]. Monotonic on purpose — a wall-clock step from an NTP correction
+     * would either freeze the window or open it early. `internal` only so the tests can move the clock
+     * back instead of waiting 30 seconds for a green run.
+     */
+    @Volatile
+    internal var lastStaleSweepAtNanos: Long? = null
+
     @PostConstruct
     fun init() {
         // Register beans in scheduler context so Quartz jobs can access them.
@@ -341,7 +350,9 @@ class SchedulerServiceImpl(
         val triggerTime = LocalDateTime.now()
 
         // Guard: an execution still in flight only counts as a conflict for a task that forbids
-        // overlap. Stale rows are expired on the way, so a zombie cannot block the trigger forever.
+        // overlap. A zombie left by a dead node cannot block the trigger forever either — the read
+        // reclaims it, rate limited per node (hasActiveRunningExecution), and housekeeping sweeps every
+        // five minutes regardless.
         if (blocksManualRun(task)) {
             log.warn("Task {} has an active running execution and allows no overlap, rejecting trigger", task.id)
             return false
@@ -630,14 +641,23 @@ class SchedulerServiceImpl(
      *
      * `concurrent` is the task's own answer to that question (entity/DDL: 0 = no overlap, 1 = allow),
      * so refusing a "run now" on a concurrent=1 task rejected a conflict the task explicitly permits.
-     * The stale sweep still runs first and for both kinds: it is what stops a zombie left by a dead node
-     * from counting as a live execution forever.
+     * It is read *first* for the same reason: for a task that permits overlap the store is not consulted
+     * at all, so a concurrent=1 "run now" no longer costs a liveness read — and no sweep.
      */
-    private fun blocksManualRun(task: AgentTask): Boolean = hasActiveRunningExecution(task.id) && task.concurrent == 0
+    private fun blocksManualRun(task: AgentTask): Boolean = task.concurrent == 0 && hasActiveRunningExecution(task.id)
 
     /**
-     * Whether the task has a live execution. Stale rows are expired first, so a zombie left behind by
-     * a node that died mid-task cannot block the trigger forever.
+     * Whether the task has a live execution.
+     *
+     * The per-task read answers first and, when it comes back empty, answers alone: a task with no row at
+     * 3/4 has nothing to judge, and sweeping the whole log table on that answer is what put a scan-type
+     * UPDATE in front of every single fire — see [expireStaleExecutionsThrottled]. Only a row that this
+     * read did see is worth judging against its own timeout, so the reclaim runs when there is something
+     * to reclaim, and never more than once per [MIN_STALE_SWEEP_INTERVAL_MS] per process.
+     *
+     * Consequence worth knowing: a row that went stale inside that window makes a manual run get refused
+     * for up to 30 extra seconds. The window exists because the alternative is worse — a fire whose sweep
+     * loses a lock fight to a concurrent insert does not run at all.
      *
      * Two callers, for two different holes: the manual paths above, and a Quartz fire asking before it
      * starts work — `@DisallowConcurrentExecution` only mutualises one JobDetail, and one task owns
@@ -645,7 +665,10 @@ class SchedulerServiceImpl(
      * is keyed by task and can.
      */
     override fun hasActiveRunningExecution(taskId: Long): Boolean {
-        expireStaleExecutions()
+        if (agentTaskLogMapper.selectRunningByTaskId(taskId).isEmpty()) {
+            return false
+        }
+        expireStaleExecutionsThrottled()
         return agentTaskLogMapper.selectRunningByTaskId(taskId).isNotEmpty()
     }
 
@@ -677,20 +700,54 @@ class SchedulerServiceImpl(
     /**
      * Reclaim executions that outran their own timeout, judged per row in SQL.
      *
-     * Three callers reach this: the startup load, every guard read that answers "is it still running"
-     * (directly, and through [hasActiveRunningExecution]), and the housekeeping sweep — which is the one
-     * that keeps working for a task that stopped firing, where no user request would ever come to ask.
-     * A failure is a log line plus 0: the sweep must not be the thing that takes its caller down.
+     * This is a *scan-type* UPDATE over every row at 3/4, i.e. over the whole live end of `idx_status`,
+     * and the runs that are starting at the same moment insert into exactly that range. On MySQL the two
+     * fight over next-key/gap locks, and whichever one it rolls back loses real work: roll back the
+     * insert and that Quartz fire does not execute at all, with only an error line to show for it. The
+     * sweep therefore has no business running once per fire — see [expireStaleExecutionsThrottled].
+     *
+     * Three kinds of caller reach this: the startup load and the housekeeping sweep (both unthrottled,
+     * and both of which *count* as this process's last sweep), and a fire asking whether a row it can see
+     * is still live. A failure is a log line plus 0: the sweep must not be the thing that takes its
+     * caller down.
      */
-    override fun expireStaleExecutions(): Int = try {
-        val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
-        if (expired > 0) {
-            log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
+    override fun expireStaleExecutions(): Int {
+        lastStaleSweepAtNanos = System.nanoTime()
+        return try {
+            val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
+            if (expired > 0) {
+                log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
+            }
+            expired
+        } catch (e: Exception) {
+            log.warn("Failed to expire stale running task logs: {}", e.message)
+            0
         }
-        expired
-    } catch (e: Exception) {
-        log.warn("Failed to expire stale running task logs: {}", e.message)
-        0
+    }
+
+    /**
+     * [expireStaleExecutions] behind a process-local rate limit: at most one sweep per
+     * [MIN_STALE_SWEEP_INTERVAL_MS] here, whatever number of fires asks.
+     *
+     * Nothing is lost by waiting. Global reclaim is housekeeping's job, and since G3 it runs on every
+     * node including disabled ones, five minutes apart; this call site only ever asks "is the row I can
+     * see still live", and the answer is the same one a sweep gave at most 30s ago — a row that crossed
+     * its own 1.5x deadline inside that window was not stale when the last sweep looked at it.
+     *
+     * A plain `@Volatile` timestamp rather than a lock: two fires that arrive in the same millisecond can
+     * both pass this check and both sweep, which costs one extra statement per node per window at worst.
+     * Making it exact would mean serialising fires behind the very statement that is being rationed.
+     */
+    private fun expireStaleExecutionsThrottled(): Int {
+        val last = lastStaleSweepAtNanos
+        if (last != null) {
+            val sinceMs = (System.nanoTime() - last) / 1_000_000
+            if (sinceMs < MIN_STALE_SWEEP_INTERVAL_MS) {
+                log.debug("Skipping the stale sweep: one already ran {}ms ago", sinceMs)
+                return 0
+            }
+        }
+        return expireStaleExecutions()
     }
 
     /**
@@ -715,5 +772,13 @@ class SchedulerServiceImpl(
 
         /** Upper bound for the ids listed in a load-drift error, which shows up in /actuator/health */
         private const val MAX_DRIFT_IDS = 20
+
+        /**
+         * Floor between two stale-execution sweeps on this node. Deliberately far below housekeeping's
+         * 5-minute round — so the throttle never suppresses the reclaim that is supposed to happen — and
+         * far above the burst of statements one task can produce (a fire, its manual run, a retry), which
+         * is what used to multiply the scan-type UPDATE.
+         */
+        private const val MIN_STALE_SWEEP_INTERVAL_MS = 30_000L
     }
 }
