@@ -198,7 +198,7 @@ RAM store 下**每个实例各自扫**（四个操作都幂等，但确有重复
 
 | # | 契约 | 变更 | 影响面 |
 |---|---|---|---|
-| C1 | 定时任务 sessionId 格式 | `task-{taskId}-{uuid}` → `task-{taskId}-{agentId}-{uuid}` | 生成方 1 处（`SchedulerServiceImpl.kt:317`）；**解析方 2 处**：`InternalApiController` 的 `resolveFromTask`（`split("-", limit=3)` → `limit=4`）与 `McpSessionOwnerResolver.fromTask`（`substringBefore('-')`，**无需改动**，仅纳入回归用例）；其余三处依赖都是 `startsWith("task-")`，不受影响。`agent_task_log.session_id` VARCHAR(64) → **VARCHAR(128)**（新格式实占 49~55） |
+| C1 | 定时任务 sessionId 格式 | `task-{taskId}-{uuid}` → `task-{taskId}-{agentId}-{uuid}` | 生成方 1 处（`SchedulerServiceImpl.kt:317`）；**解析方 2 处**：`InternalApiController` 的 `resolveFromTask`（`split("-", limit=3)` → `limit=4`）与 `McpSessionOwnerResolver.fromTask`（`substringBefore('-')`，**无需改动**，仅纳入回归用例）；其余三处依赖都是 `startsWith("task-")`，不受影响。`agent_task_log.session_id` VARCHAR(64) → **VARCHAR(128)**（新格式实占 49~55）。**并给 `resolveFromTask` 加 agentId 一致性校验**（F3 的第三刀 C）：sessionId 的 `{agentId}` 段今天被完全忽略，只用 `parts[1]`，改为与该行 `agent_task.agent_id` 比对、不一致即拒绝，把"任意字符串"收成"scheduler 真发出来的形态"。**此项只能与 C1 同批**：格式仍是三段时先收紧校验，会把所有真实任务会话一并拒掉 |
 | C2 | INTERRUPT 返回值语义 | 从"恒为 success"改为"如实反映是否命中活跃执行" | agent-service 实现 + scheduler 消费；router 透传不改 |
 | C3 | trigger 冲突识别 | 从字符串匹配文案改为业务码 `40901` | scheduler 出码、admin 透传、webui 改判 code（替掉 `index.tsx:122` 的 `includes('already running')`） |
 | C4 | admin→scheduler 转发头 | `X-Forwarded-User` / `X-Tenant-Id` + internal JWT | scheduler 新拦截器；`X-Forwarded-Tenant` 必须忽略（浏览器可伪造，见原文档 8.2） |
@@ -284,7 +284,9 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 1. **F1 scheduler 服务自鉴权**：真正装配 `harnax.auth.enabled=true` 的完整方案、端点级 `@InternalOnly`。本轮只有 2.3 的 ~20 行验签拦截器。
 2. **F2 生产匿名面收窄**：swagger、`/actuator/prometheus`。本轮只删 nginx location 与宿主端口映射。
-3. **F3 `agent-spec` 属主校验缺失**：`sessionId` 由调用方任意传入，伪造 `task-{真实taskId}-...` 即可拿到该任务的 systemPrompt/model/tools。D4 之后这个洞**不增不减**（要猜的仍是自增 ID）。真要修，需给 task 会话引入签名或建立时登记 sessionId。
+3. **F3 `agent-spec` 属主校验缺失**：✅ **前缀策略已落地（`SessionAccessGuard` + `PrivilegedSessionPrefixes`，本批只做 B）**。原本的状况：`sessionId` 由调用方任意传入，router 侧唯一的归属校验 `SessionAccessGuard.requireAccessible` 只认 admin 的 `session` 表，而 `task-`/`chn-` 按设计**不在这张表里**（它们来自 `agent_task` / `channel`）→ lookup 恒为 `Unknown`、而 `Unknown` 是放行。于是任何一枚有效凭据——用户自己的登录 JWT 就够——伪造 `task-{受害者taskId}-...` 即可拿到该任务的 systemPrompt/model/tools/skills/MCP 清单，且 `resolveFromTask` 硬编码 `permissionMode = "BYPASS"`（免工具确认）。守卫只认一张表、admin 的解析认四张表，这个不对称就是洞本身。
+   已落地的 B：`task-`/`chn-` 归为"由服务端自行决定的会话"，只有 `AuthContext.userId == null` 的内部调用方（SYSTEM key、内部服务令牌）能用；带终端用户身份的调用方（登录 JWT 或代表用户的外部 API key，即 `userId != null`）在 **lookup 之前**按前缀拒绝。`web-`/`mp-` 行为完全不变，仍走租户比较。stream 端点（`/chat/stream`、`/confirm`）把拒绝转成 `ErrorChatEvent`（`FORBIDDEN`）+ `EndEventChatEvent`，不再让异常落到 `GlobalExceptionHandler` 上把 JSON 错误体写成 event-stream。收紧前已核实**没有合法的终端用户 `task-`/`chn-` 流量**：webui/mp/cli 从不构造这两个前缀（`agent-task` 详情页只是把 sessionId 当文本展示），scheduler 与 channel-service 调 router 都走 admin 自动签发的 SYSTEM key，而 SYSTEM key 的 `user_id` 恒为 `null`——所以它们不受影响，这也是本条修复必须守住的边界。
+   **剩余面（A，本批不做）**：`/internal/sessions/{id}/info` 仍只查 `session` 表，应扩为按前缀解析 `agent_task` / `channel` 的归属租户，使跨租户判定对四类会话全部生效。它改变的是既有跨租户策略（今天 `task-`/`chn-` 的跨租户访问被静默允许），单独一刀做会连带影响未参与本次改动的行为，需要单独设计与验证。纵深防御的 C（`resolveFromTask` 校验 sessionId 的 agentId 段与该行 `agent_id` 一致）**前提未成立**，随 C1 一起落地，见 C1 条目。
 4. **F4 `agent_task_log.agent_task_id` 列**：现在靠解析 sessionId 字符串定位任务，应改为显式外键列。
 5. **F5 任务级权限模式**：`agent_task` 加 `permission_mode` 列，scheduler 建会话时带上，替代 admin 侧硬编码的 `BYPASS`（D5 的产物）。
 6. **F6 status 取值收敛**：`0/1`、`0/1/2`、`3/4/5` 三套散落字面量收敛为共享枚举。
