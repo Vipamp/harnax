@@ -73,7 +73,7 @@ harness:
   # === 沙箱配置 ===
   sandbox:
     enabled: false                  # 代码默认值。是否启用 Docker 沙箱
-    image: python:3.11-slim         # 沙箱容器镜像
+    image: harnax-sandbox:py-node   # 沙箱容器镜像（由 build.sh Step 7 构建，不再是 python:3.11-slim）
     workspaceRoot: /workspace       # 容器内工作目录
     isolationScope: SESSION         # 隔离级别: SESSION / AGENT / GLOBAL（无效值会静默回退为 SESSION）
     keepAlive: false                # 代码默认值。容器保活（请求结束后不销毁容器）
@@ -81,7 +81,7 @@ harness:
   # === MinIO 分布式存储 ===
   minio:
     enabled: false                  # 代码默认值。是否启用 MinIO
-    endpoint: http://minio:9000     # MinIO 服务地址
+    endpoint: http://minio:9000     # 代码默认是 http://localhost:9000，compose 里才写 minio:9000
     accessKey: minioadmin           # 访问密钥
     secretKey: minioadmin           # 安全密钥
     snapshotBucket: harnax-snapshots # 快照 Bucket
@@ -153,7 +153,7 @@ session:
 
 ### 环境变量
 
-> **重要**：当前 agent-service 的 `application.yml` 中，数据库、MinIO、Router 等地址为硬编码（如 `172.20.10.5`），不支持通过环境变量覆盖。部署时必须直接修改 `application.yml` 文件中的对应地址。仅 `HARNAX_AUTH_SECRET` 和 `SERVICE_ID` 支持环境变量。
+> **配置以 `docs/deploy-harnax-agent-service.md` 为准**：本文成文时数据库 / MinIO / Router 地址是硬编码，现在都已写成 `${VAR:default}` 占位，compose 还会把 `DB_URL`、`SESSION_JDBC_URL`、`MINIO_ENDPOINT`、`LOCAL_TMP_DIR`、`MYBATIS_LOG_IMPL` 等透传下去。下面各节里出现的「硬编码、不支持环境变量覆盖」一律按新文档读。
 
 ```bash
 # === 认证配置（支持环境变量） ===
@@ -186,7 +186,7 @@ session:
   database-name: agentscope
 
 harness:
-  enable-workspace-context: true
+    enable-workspace-context: false   # 沙箱只在对话阶段激活，开 true 会刷出读不到 AGENTS.md 的告警；compose 即为 false
   enable-memory-hooks: false
   enable-session-persistence: true
   sandbox:
@@ -378,7 +378,7 @@ harness:
   enable-session-persistence: true
   sandbox:
     enabled: true               # 启用 Docker 沙箱
-    image: python:3.11-slim     # 沙箱镜像（需提前拉取）
+    image: harnax-sandbox:py-node   # 沙箱镜像（需先构建，见 build.sh Step 7）
     workspace-root: /workspace
     isolation-scope: SESSION    # Session 级隔离
     keep-alive: true            # 容器保活
@@ -409,7 +409,7 @@ jwt:
 首次部署前在每个节点预拉取沙箱镜像，避免首次请求时等待下载：
 
 ```bash
-docker pull python:3.11-slim
+docker build -f sandbox-plugins/Dockerfile -t harnax-sandbox:py-node .   # 或跑 docker-new/build.sh 的 Step 7
 ```
 
 如果使用自定义镜像，修改 `harness.sandbox.image` 配置并提前拉取。
@@ -481,7 +481,7 @@ java -Xms1g -Xmx2g \
 
 ```bash
 # agent-service 健康检查
-curl http://localhost:8082/api/health
+curl -H "Authorization: Bearer <token>" http://localhost:8082/api/agent/health   # 不带凭据是 401；/actuator 在本模块不存在
 
 # MinIO 健康检查
 curl http://MINIO_HOST:9000/minio/health/live
@@ -521,14 +521,14 @@ agent-service 不直接对外暴露，所有外部请求通过 Session Router �
 > **注意**：harness-core 创建的沙箱容器没有设置特定的 Docker label，无法通过 label 过滤。需要通过容器名或镜像名来识别。
 
 ```bash
-# 查看所有 python:3.11-slim 容器（默认沙箱镜像）
-docker ps -a --filter "ancestor=python:3.11-slim" --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
+# 查看所有沙箱容器（命名规则 agentscope-sandbox-<sessionId>）
+name=agentscope-sandbox-
 
 # 清理所有已停止的沙箱容器
-docker container prune --filter "ancestor=python:3.11-slim"
+name=agentscope-sandbox-
 
 # 清理所有沙箱容器（包括运行中的）— 谨慎操作
-docker ps -a --filter "ancestor=python:3.11-slim" -q | xargs docker rm -f
+name=agentscope-sandbox-
 ```
 
 ### 沙箱容器硬编码限制

@@ -64,13 +64,17 @@ services:
     image: redis:7-alpine
     container_name: harnax-redis
     restart: always
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    # 6379 is published to the host, so it must not be unauthenticated: routing state, locks
+    # and session bindings are all writable through it.
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction --requirepass ${REDIS_PASSWORD:-harnax-redis-local}
     ports:
       - "26379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # The server now requires a password, so an anonymous `ping` answers NOAUTH: probe with the
+      # same value the command line uses (compose interpolates it before the container starts).
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-harnax-redis-local}' --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -122,28 +126,39 @@ services:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
       # Database Configuration (harnax_admin: business data, shared with channel-service)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Session Database Configuration (same as main datasource)
-      SESSION_JDBC_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SESSION_JDBC_URL: ${SESSION_JDBC_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SESSION_DATABASE_NAME: ${SESSION_DB_NAME:-harnax_admin}
       SESSION_USERNAME: ${DB_USERNAME:-harnax}
       SESSION_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Flyway Configuration
-      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_ENABLED: "${FLYWAY_ENABLED:-true}"
       SPRING_FLYWAY_LOCATIONS: classpath:db/migration
-      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_CLEAN_DISABLED: "${FLYWAY_CLEAN_DISABLED:-true}"
+      # MyBatis SQL logging: the service default sends every statement to stdout, which no
+      # running deployment wants; pin slf4j and let LOG_LEVEL set the noise level.
+      MYBATIS_LOG_IMPL: ${MYBATIS_LOG_IMPL:-org.apache.ibatis.logging.slf4j.Slf4jImpl}
       # JWT Configuration
       JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
       # Internal API Secret
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Auth Secret
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
+      # AES key for MCP / tool credentials at rest. The fallback is a string published in this
+      # repository, so a deployment that leaves it here encrypts nothing an operator cannot undo:
+      # put a real 32-character value in .env (see .env.example). Rotating it later makes the rows
+      # written under the old key unreadable, so set it before configuring MCP servers, not after.
+      HARNAX_AES_SECRET_KEY: ${HARNAX_AES_SECRET_KEY:-change-me-32-chars-secret-key!!}
+      # stdio MCP servers are processes agent-service starts, and that container mounts the host
+      # Docker socket - off until the runtime is isolated. One variable also sets the agent side.
+      HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
       # Router URL (for internal service communication)
-      HARNAX_ROUTER_URL: http://router:8081
+      HARNAX_ROUTER_URL: ${HARNAX_ROUTER_URL:-http://router:8081}
       # Scheduler URL (for task trigger/start/pause)
-      HARNAX_SCHEDULER_URL: http://scheduler:8084
+      HARNAX_SCHEDULER_URL: ${HARNAX_SCHEDULER_URL:-http://scheduler:8084}
       # Router External URL (returned to frontend/mobile apps)
       HARNAX_ROUTER_EXTERNAL_URL: http://localhost:28081
       # Public origin of this deployment. Spring reads it as `app.base-url` to build callback URLs
@@ -158,7 +173,7 @@ services:
       APP_FRONTEND_BASE_URL: ${APP_FRONTEND_BASE_URL:-}
       # MinIO Configuration (output file download proxy)
       MINIO_ENABLED: "true"
-      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       # JVM Configuration
@@ -211,6 +226,7 @@ services:
       CACHE_TYPE: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-harnax-redis-local}
       # Auth
       # These `change-me` fallbacks are not harmless here: CACHE_TYPE above is `redis`, and
       # PlaceholderSecretCheck aborts startup instead of accepting tokens signed with a key that is
@@ -218,7 +234,7 @@ services:
       SERVICE_ID: ${ROUTER_SERVICE_ID:-router-0}
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       # Admin service (for API key validation + session info)
-      ADMIN_SERVICE_URL: http://admin:8080
+      ADMIN_SERVICE_URL: ${ADMIN_SERVICE_URL:-http://admin:8080}
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # CORS — both scheme forms are needed and, crucially, the port-less ones too: nginx now
       # serves the SPA on the standard 443, so the browser sends `Origin: https://localhost`
@@ -273,17 +289,17 @@ services:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
       # Database Configuration (harnax_admin: shared with admin, read-only for task metadata)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
-      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_FLYWAY_ENABLED: "${FLYWAY_ENABLED:-false}"
       # Scheduler Configuration
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       SCHEDULER_INSTANCE_ID: ${SCHEDULER_INSTANCE_ID:-}
-      SCHEDULER_ROUTER_URL: http://router:8081
+      SCHEDULER_ROUTER_URL: ${SCHEDULER_ROUTER_URL:-http://router:8081}
       SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
-      SCHEDULER_ADMIN_URL: http://admin:8080
+      SCHEDULER_ADMIN_URL: ${SCHEDULER_ADMIN_URL:-http://admin:8080}
       SCHEDULER_ADMIN_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       SCHEDULER_TIMEOUT: ${SCHEDULER_TIMEOUT:-300}
       # Auth Configuration
@@ -329,7 +345,7 @@ services:
     restart: always
     environment:
       # Database Configuration (business data, shared with admin/channel-service)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Session Database Configuration (agent state, separate database)
@@ -339,7 +355,7 @@ services:
       SESSION_DATABASE_NAME: agentscope
       # MinIO Configuration
       MINIO_ENABLED: "true"
-      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       # Sandbox Configuration
@@ -358,13 +374,14 @@ services:
       ROUTER_SERVICE_URL: http://router:8081
       AGENT_INSTANCE_ID: ${AGENT_INSTANCE_ID:-agent-service-1}
       # Admin Service (for agent task spec fetching)
-      ADMIN_SERVICE_URL: http://admin:8080
+      ADMIN_SERVICE_URL: ${ADMIN_SERVICE_URL:-http://admin:8080}
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Auth Configuration
       HARNAX_AUTH_SECRET: ${HARNAX_AUTH_SECRET:-change-me-in-production-min-32-chars!!}
       JWT_SECRET: ${JWT_SECRET:-harnax-secret-key-2026-harnax-admin-backend-jwt-token-authentication}
       # Local temp directory
-      LOCAL_TMP_DIR: /tmp/harnax-agent
+      MYBATIS_LOG_IMPL: ${MYBATIS_LOG_IMPL:-org.apache.ibatis.logging.slf4j.Slf4jImpl}
+      LOCAL_TMP_DIR: ${LOCAL_TMP_DIR:-/tmp/harnax-agent}
       # JVM Configuration
       JAVA_OPTS: -Xms256m -Xmx1g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:+UseStringDeduplication
       # Log Configuration
@@ -372,6 +389,9 @@ services:
       # Workspace context reads AGENTS.md via sandbox filesystem, but sandbox is only
       # active during acting phase — causes noisy SandboxConfigurationException logs.
       HARNESS_ENABLE_WORKSPACE_CONTEXT: "false"
+      # Second line of defence for stdio MCP servers: this is the runtime that would spawn the
+      # process. Admin holds such rows back from delivery as well; both have to be on to run one.
+      HARNAX_MCP_STDIO_ENABLED: ${HARNAX_MCP_STDIO_ENABLED:-false}
     ports:
       - "28082:8082"
     volumes:
@@ -412,15 +432,15 @@ services:
     restart: always
     environment:
       # Database Configuration (harnax_admin: shared with admin service)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
       # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
-      SPRING_FLYWAY_ENABLED: "false"
+      SPRING_FLYWAY_ENABLED: "${FLYWAY_ENABLED:-false}"
       # Router Configuration
       ROUTER_URL: http://router:8081
       # Admin Service (for API key auto-fetch)
-      ADMIN_SERVICE_URL: http://admin:8080
+      ADMIN_SERVICE_URL: ${ADMIN_SERVICE_URL:-http://admin:8080}
       ADMIN_INTERNAL_API_SECRET: ${ADMIN_INTERNAL_API_SECRET:-change-me-in-production-min-32-chars!!}
       # Router API Key：配置后不再向 admin 申请；留空则沿用自动获取，但要求 admin 先于本容器可用。
       CHANNEL_API_KEY: ${CHANNEL_API_KEY:-}

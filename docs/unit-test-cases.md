@@ -717,6 +717,17 @@
 
 第十六轮(MCP 运行侧全链路复核)**未执行编译、也未跑任何单元测试**(按要求节省本机资源),按上一条的纪律就不改上面那个数,只登记增量:落在 `harnax-admin` 里的用例变化只有一处——`McpServerServiceImplTest` +4(MCS-25～MCS-28),下次实跑若全绿即并入。同轮另改的两个套件不在这个口径里:`McpConfigAdaptorImplTest`(harnax-agent-service,7 → 6,两条「查库兜底」用例随那条路径一起删)、`InternalTokenProviderTest`(harnax-auth,+3,`typ` 断言 / 用户 JWT 判外部 / 无身份 bearer 被拒)。
 
+第十八轮(P2-4 换发 + P3 运行侧注入 + stdio 关闭)**实跑过**,同口径数字:`harnax-admin` 单测 **1830** 全绿(上一记 1775 是第十五轮的数,第十六轮记的 +4 增量本轮一并进来),`harnax-agent-service` **141** 全绿(`McpConfigAdaptorImplTest` 的 2 条 `AuthTypeTests` 是记完 139 之后补的,同一轮内一起实跑过)。本轮新增或扩出的套件:`admin/util/McpSessionOwnerResolverTest` 新增 10、`McpOAuthUserServiceImplTest` 62 → 75(新增 `AccessTokenTests` 13,守换发侧 401 / 403 / 503 的分别是谁)、`McpServerServiceImplTest` 42 → 46(新增 `StdioGateTests` 4)、`InternalApiControllerTest` +6(`McpAuthDeliveryTests` 3 + `McpAccessTokenTests` 3)、运行侧 `AdminMcpAccessTokenSourceFactoryTest` 新增 6、`McpConfigAdaptorImplTest` 6 → 8(新增 `AuthTypeTests` 2,补上「下发的 authType 到底有没有落到实体」这一格)。
+
+本机没有 Docker,所以 `harnax-entity` 的 21 个 `*MapperTest` 与 `harnax-admin` 的 29 个 `admin.it.*IT` **一个都没跑**(全绿数字只覆盖上面两个模块的单测)。可用的排除写法:`-Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**' -Dsurefire.failIfNoSpecifiedTests=false`,配 `-am` 用。上面提到的 `IncompatibleClassChangeError` 这轮又撞上一次,原因是改构造函数参数留下陈旧 `target/test-classes`,加 `-am` 时记得 `clean`。
+
+四个新坑,都真实花过时间:
+
+1. **Mockito 对可空 `Long` 返回 0,而不是 null**。`JwtUtil.getTenantIdFromToken(token): Long?` 在 Kotlin 里编译成 `java.lang.Long`,Mockito 的默认应答把包装类型也当基础类型,于是 `tenantFromToken() ?: DEFAULT` 里的 `?:` 永不生效,当前租户变成 **0**,一次撞红 20 多个与租户无关的断言(`page`、`getMcpServer`、`deleteMcpServer` 全在)。生产侧本来不会有这个问题(真实现无声明时返回 null),但代码里 `tenantId > 0` 才是「有声明」的正确读法,补上之后测试与生产口径一致。用例侧要显式 `whenever(jwtUtil.getTenantIdFromToken(any())).thenReturn(null)` 才能表达「令牌没带声明」。
+2. **给服务/控制器加构造参数,会让用 `@InjectMocks` 的整个测试类全红**(`InjectMocksException: Parameter specified as non-null is null ... parameter mcpStdioPolicy`),不是只红用到它的那一个用例。这轮在 `InternalApiControllerTest` 与 `McpServerServiceImplTest` 各撞一次;两个文件里都已有注释写明了这条纪律,加参数时必须同步补 `@Mock`,并且 mock 的返回值若被非空参数消费(如 `BizException(refusalReason())`)还要额外桩一个非 null。
+3. **跨模块的 `val` 不能 smart cast**:`harnax-entity` 里 `McpDetailDto.authType: String?` 在本模块 `if (!it.isNullOrBlank())` 之后仍然只是 `String?`,直接赋值报 Assignment type mismatch。先落到一个局部 `val` 再判断。
+4. **KDoc 里写路径通配会吞掉注释**:`/** ... \`/api/admin/internal/**\` ... */` 里的 `/*` 在 Kotlin 里是**嵌套块注释的开头**(KDoc 注释可嵌套),于是整个文件的注释往后不闭合,报错却是「Unclosed comment」和「Missing '}'」,指向的行号毫无关系。文档字符串里的路径写成 `/api/admin/internal` 或改用行注释。
+
 `harnax-entity` 的 `*MapperTest` 与 `harnax-admin` 的 `*IT`(29 个)走 Testcontainers,**要跑起来只有两个条件**:本机 Docker 可用,且带 `TESTCONTAINERS_RYUK_DISABLED=true`——本机能拉到 `mysql:8.0`,但拉不到 `testcontainers/ryuk:0.12.0`,不设这个环境变量就会在 ryuk 拉镜像阶段失败,看起来像「环境不可用」。此前把它们记成「环境失败、不计入回归」是**错误归因**:真正的根因是 `PlanNoteMapper.xml` 的注释体里出现连续连字符,XML 注释不允许,MyBatis 解析该文件失败;三个服务的 `mybatis.mapper-locations` 都是 `classpath*:mapper/*.xml`,一个文件解析不了就建不起 `SqlSessionFactory`,于是整片集成测试一起红。详细后果见 `prod_doc/mcp-authorization-design.zh-CN.md` §11。跑法:
 
 ```

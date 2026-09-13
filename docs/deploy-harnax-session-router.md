@@ -13,7 +13,8 @@ harnax-session-router 是会话路由器，负责：
 - **数据库**: 
   - 本地模式：SQLite（嵌入式，无需外部数据库）
   - 集群模式：MySQL（harnax_router 库，用于 api_call_log）
-- **缓存模式**: `local`（单机）或 `redis`（集群），由 `CACHE_TYPE` 控制
+- **缓存模式**: `local`（单机）或 `redis`（集群）。**只有本地模式由 `CACHE_TYPE` 决定**：集群 profile 把
+  `router.cache.type` 写死成 `redis`，所以打包部署里再 `export CACHE_TYPE=redis` 是空操作
 - **认证方式**: UnifiedAuthFilter (内部 JWT)
 
 ---
@@ -33,7 +34,7 @@ harnax-session-router 是会话路由器，负责：
 
 | 组件 | 本地模式 | 集群模式 | 说明 |
 |------|---------|---------|------|
-| JDK 21 | 必须 | 必须 | 运行时 |
+| JDK 21 | 必须 | 必须 | 仅**构建**需要：打包产物是 GraalVM native image（`build.sh` 的 `-Pnative`），容器里不跑 JVM，因此 `JAVA_OPTS` 对 native 镜像无效，堆大小由 `native-image.properties` 里的 `-J-Xmx` 决定 |
 | SQLite | 内置 | 不需要 | 本地模式使用嵌入式 SQLite，无需额外安装 |
 | MySQL 8.0 | 不需要 | 必须 | 集群模式的 api_call_log 存储 |
 | Redis 7 | 不需要 | 必须 | 共享实例注册表 + 会话映射 |
@@ -96,7 +97,7 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `CACHE_TYPE` | `local` | 缓存模式: `local` 或 `redis` |
+| `CACHE_TYPE` | `local` | 缓存模式，**仅在不激活 cluster profile 时有效**；`application-cluster.yml` 直接写 `router.cache.type: redis` |
 | `SERVICE_ID` | `router-0` | 本实例在 UnifiedAuth 中的标识 |
 
 ### 数据库配置（本地模式 - SQLite）
@@ -108,7 +109,7 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 | `ROUTER_SQLITE_PATH` | `tmp/harnax-router/call-log.db` | SQLite 数据库文件路径（yml 默认是相对路径，容器部署应显式指到挂载卷） |
 | `ROUTER_DB_URL` | `jdbc:sqlite:${ROUTER_SQLITE_PATH}` | 需要整体替换数据源 URL 时使用 |
 | `ROUTER_DB_DRIVER` | `org.sqlite.JDBC` | JDBC 驱动 |
-| `ROUTER_DB_POOL_SIZE` | `10` | 连接池大小（SQLite 并发有限，通常无需调大） |
+| `ROUTER_DB_POOL_SIZE` | `10` | 连接池大小，**同样只对本地模式有效**：cluster profile 把 `maximum-pool-size` 写成字面量 20 |
 
 > **注意**：确保 SQLite 文件所在目录存在且有写权限。首次启动前需创建目录：
 > ```bash
@@ -130,7 +131,7 @@ Flyway 会在启动时自动创建 `api_call_log` 表。
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `REDIS_HOST` | `172.20.10.5` | Redis 地址 |
+| `REDIS_HOST` | 空（基础 yml）/ `172.20.10.5`（cluster profile） | Redis 地址。**打包的集群部署不显式给就会连那个局域网 IP** |
 | `REDIS_PORT` | `6379` | Redis 端口 |
 | `REDIS_PASSWORD` | (空) | Redis 密码 (无密码留空) |
 | `REDIS_DATABASE` | `0` | Redis DB 编号 |
@@ -355,7 +356,7 @@ java -Xms512m -Xmx1024m \
 > - `router:instances:healthy` / `router:instances:all` — 实例集合 (Set)
 > - `router:session:{sessionId}` — 会话映射 (String, 24h TTL)
 > - `router:instance_sessions:{instanceId}` — 实例会话反向索引 (Set)
-> - `router:lock:session:{sessionId}` — reroute 分布式锁 (String, 5s TTL)
+> - `router:lock:session:{sessionId}` — reroute 分布式锁 (String, **10s** TTL，`RedisSessionMappingService.LOCK_TIMEOUT_SECONDS`)
 > - `router:circuit:{instanceId}` — 熔断器状态 (Hash，Lua 原子改写)
 > - `router:lock:index_reconcile` — 反向索引对账锁 (String, 4min TTL，仅一个节点执行)
 >
