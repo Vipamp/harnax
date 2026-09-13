@@ -312,6 +312,21 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+    # Docker's default is 10s, which cuts a shutdown right through a live execution: the JVM gets
+    # SIGTERM, spring.quartz.wait-for-jobs-to-complete-on-shutdown=true makes it wait for the running
+    # job, and SIGKILL arrives 10s later anyway — leaving agent_task_log at status=3 and its
+    # agent_task_execution lock row at status=0 for housekeeping to reap (up to 2× timeout).
+    # 360s = 300 + 40 + 20, i.e. the whole time one execution holds a Quartz worker thread:
+    #   300  the router chat() read timeout (SCHEDULER_TIMEOUT, default 300 here) — the worst case for
+    #        the call itself, since the job now runs inline on this thread and only returns once it ends
+    #   40   clearSession (DELETE /api/router/agent/session/{id}: snapshot upload + container destroy);
+    #        SchedulerServiceImpl's own comment budgets "10+ seconds" for it, this is that with air
+    #   20   finishExecution write-back + updateExecutionStatus release + Spring's shutdown hooks
+    # Not exactly SCHEDULER_TIMEOUT on purpose: the timeout only covers the router call. The seconds
+    # after it are precisely the ones that turn a finished run into a terminal row — cut them and the
+    # execution is remembered as a timeout even though the answer was already in hand.
+    # If SCHEDULER_TIMEOUT is raised, raise this with it (timeout + 60).
+    stop_grace_period: 360s
     deploy:
       resources:
         limits:

@@ -31,6 +31,14 @@ spring:
   # Quartz Configuration
   quartz:
     job-store-type: ${QUARTZ_JOB_STORE:memory}
+    # Boot's own key (spring-boot-quartz's QuartzProperties; its metadata says defaultValue=false, so
+    # this has to be stated). Since the job runs inline on the Quartz worker thread, that thread IS the
+    # execution: without waiting, a SIGTERM drops the JVM mid-run and leaves agent_task_log at status=3
+    # plus its agent_task_execution lock row at status=0 — both read as "still running" until
+    # housekeeping reaps them up to 2× scheduler.timeout-seconds later, and the user watches a timeout
+    # that never actually happened. Must be paired with stop_grace_period on the scheduler container:
+    # waiting for jobs is worthless if the kernel sends SIGKILL first.
+    wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}
     properties:
       org:
         quartz:
