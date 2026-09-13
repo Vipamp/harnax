@@ -180,7 +180,7 @@ spring:
 - **时钟要求**。集群靠比对 `QRTZ_SCHEDULER_STATE.LAST_CHECKIN_TIME` 判断节点死活，节点间时钟偏移超过 checkin 间隔会误判死亡并触发误抢。所有节点必须 NTP 同步。另外 cron 表达式在 JVM 默认时区解释，各节点 TZ 要一致（compose 已统一挂载 `/etc/localtime`）。
 - **`threadCount` 从 10 提到 25**：执行改由 Quartz 工作线程同步跑（见 7.3），一次执行的 HTTP 读超时默认 300s（`scheduler.timeout-seconds`），10 个线程会被长任务占满。相应地 Hikari `maximum-pool-size` 从 10 提到 30——JDBC store 的每次 trigger 获取与每个执行线程都要占连接，经验值是 ≥ `threadCount + 5`。
 - **`useProperties: true`**：JobDataMap 以文本 kv 存进 `QRTZ_JOB_DETAILS`，配合 7.2 的"只放 taskId"，引擎表里不再有任何 Java 序列化 BLOB，实体字段变更不会让存量任务反序列化失败。注意此时 **taskId 必须放成 String**（Long 会被拒）。
-- **`waitForJobsToCompleteOnShutdown: true`** 会让停机最多等一个任务超时，需要与编排的 stop grace period 一起调，否则会被 kill 窗口截断。**已落地**：它就是 Boot 4.0.1 `spring-boot-quartz` 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（该版本 configuration metadata 里 `defaultValue=false`，所以必须显式写），**不需要** `SchedulerFactoryBeanCustomizer`；`application.yml` 写 `${QUARTZ_WAIT_FOR_JOBS:true}`，compose 侧配 `stop_grace_period: 360s`（= chat 读超时 300 + clearSession 40 + 写回 20，算式在两处注释里）。
+- **`waitForJobsToCompleteOnShutdown: true`** 会让停机最多等一个任务超时，需要与编排的 stop grace period 一起调，否则会被 kill 窗口截断。**已落地**：它就是 Boot 4.0.1 `spring-boot-quartz` 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（该版本 configuration metadata 里 `defaultValue=false`，所以必须显式写），**不需要** `SchedulerFactoryBeanCustomizer`；`application.yml` 写 `${QUARTZ_WAIT_FOR_JOBS:true}`，compose 侧配 `stop_grace_period: 380s`（= chat 读超时 300 + clearSession 60 + 写回/释放锁 20，算式在两处注释里；`clearSession` 自第三批起有自己的读超时上限 `scheduler.clear-session-timeout-seconds=60`，不再共用 chat 的 300s，否则一次执行最坏占用是 600s）。**保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）：手动 `/trigger` 走裸 daemon 线程，停机不等它，S4 之前不要在任务执行中重启 scheduler。
 
 ## 6. 任务生命周期全链路
 
@@ -368,7 +368,7 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 | 1.2 | `V2__agent_task_domain.sql`（三表 DDL 落新库） | ⏳ |
 | 1.3 | `application.yml`：数据源指新库、Flyway 开、quartz 集群段、Hikari 池 | ⏳ |
 | 1.4 | pom：testcontainers + failsafe/surefire IT profile（照 `harnax-admin/pom.xml:344-393`） | ⏳ |
-| 1.5 | 部署：`init-databases.sql` 建库授权、compose 环境变量、删 `container_name`、删 28084 映射、`.env.example` 补全 | ⏳ 部分：**暴露面两半已落**（R1：宿主映射 `28084:8084` 改 `expose`、nginx 的 `/api/scheduler/` location 已删并留禁止回加的注释）；**D6 优雅停机已落**（compose `stop_grace_period: 360s` + `application.yml` 显式 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`，两处都有算式注释）。仍未做：建库授权、删 `container_name`、`.env.example` |
+| 1.5 | 部署：`init-databases.sql` 建库授权、compose 环境变量、删 `container_name`、删 28084 映射、`.env.example` 补全 | ⏳ 部分：**暴露面两半已落**（R1：宿主映射 `28084:8084` 改 `expose`、nginx 的 `/api/scheduler/` location 已删并留禁止回加的注释）；**D6 优雅停机已落**（compose `stop_grace_period: 380s` + `application.yml` 显式 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`，两处都有算式注释；只覆盖 cron 路径，手动 `/trigger` 见 5 节那条）。仍未做：建库授权、删 `container_name`、`.env.example` |
 
 **里程碑验收**：scheduler 单实例以 JDBC store 正常启动；两实例连同库时日志出现 `ClusterManager` checkin、`QRTZ_SCHEDULER_STATE` 两行；kill 一个节点另一个能接管。
 
@@ -442,7 +442,7 @@ M1 2.5 + M2 2 + M3 3.5 + M4 3 + M5 2 = 共通 13 人日，加形态 B 的转发�
 2. **生产收窄匿名面**：关 `SWAGGER_ENABLED`，`management.endpoints.web.exposure` 收窄（现在 `/actuator/prometheus` 随 8084 匿名可达）。
 3. **日志脱敏**：`agent_task_log` 查询 `SELECT *` 全文下发 `prompt`/`response`/`errorInfo`，且无租户/属主过滤。admin 侧已有 `AgentTaskLogResponse`（1:1 全字段、当前未被 controller 使用），本可作为裁剪出口，本轮未启用。属主口径已修（读日志要通过任务可见性join），脱敏仍未做。
 4. **`/api/admin/agent-tasks/{id}` 之外无细粒度授权**：整个域只要求"已登录"（`SecurityConfig.kt:52-53` 兜底），无角色/权限码；`tenant_id` 只在 create 用一次（`AgentTaskServiceImpl.kt:79`），`MybatisTenantInterceptor` 的 `intercept()` 实际是 no-op。属主条件（M0.1）是目前唯一的隔离手段，比租户隔离更弱。
-5. **`agent_task_execution` 缺索引**：现表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，`status` 与 `create_time` 都没有索引。S1 的 housekeeping 把 `deleteOldExecutions`（按 `create_time`）与 `deleteStaleRunning`（按 `status = 0 AND create_time < ...`）挂成每 5 分钟一轮，而这张表按触发次数线性增长 → 每轮两次全表扫。需一条 Flyway 迁移补 `(status, create_time)` 与 `create_time` 索引；建表脚本属 admin 域且要与 `harnax-entity` 的 `schema-test.sql` 同步，故未随 S1 一起改。对应 spec 第 9 节 F10。
+5. **`agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，V27）**——补了 `(status, create_time)` 与 `(create_time)`，并同步了 `harnax-entity` 的 `schema-test.sql`。原本的状况：现表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，`status` 与 `create_time` 都没有索引，而 S1 的 housekeeping 把 `deleteOldExecutions`（按 `create_time`）与 `deleteStaleRunning`（按 `status = 0 AND create_time < ...`）挂成每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，扫描范围锁与 `tryAcquireLock` 的 INSERT 互顶。真库 `EXPLAIN` 命中验证随 B1 在有 Docker 的环境补跑。对应 spec 第 9 节 F10。
 6. **`scheduler.jobs.scheduled` 的语义跳变**：现在（RAM store）它是**本实例视图**，S2 换 JDBC 集群 store 后同一表达式静默变成集群视图，看板与告警阈值必须届权重解读。对应 spec 第 9 节 F9。
 
 ## 14. 运维 checklist

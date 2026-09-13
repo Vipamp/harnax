@@ -74,6 +74,10 @@ interface SchedulerService {
     /**
      * Manually trigger a task execution (bypassing Quartz scheduling).
      * Executes asynchronously and returns immediately.
+     *
+     * Bypassing Quartz also means bypassing everything Quartz protects: the graceful-shutdown wait and
+     * the container's `stop_grace_period` cover the cron path, not this thread, so a restart mid-run
+     * leaves this execution's row at 3 and its lock row at 0.
      */
     fun triggerManually(id: Long): Boolean
 

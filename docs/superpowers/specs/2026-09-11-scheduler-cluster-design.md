@@ -24,7 +24,7 @@
 | D3 | 表放哪 | **独立 `harnax_scheduler` 库** | scheduler 独占 schema 所有权 |
 | D4 | sessionId 是否编码 agentId | **编码**，格式 `task-{taskId}-{agentId}-{uuid}` | 省掉 spec 热路径上的 `agent-id` 端点与一跳网络，并让 admin 不再对 `agent_task` 发 SQL。**注**：另有一条冷路径依赖（MCP 属主解析）须由 C5 承接，见 2.1 |
 | D5 | 任务级权限模式 | **本轮不做**，`permissionMode = "BYPASS"` 继续硬编码在 admin 的 `resolveFromTask` | 属新功能（任务级可配 + webui 配置项），不混入架构改造；记入 fast-follow F5 |
-| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 360s` + 部署脚本逐台滚动 | 见 6.2、6.3 的配套约束 |
+| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 380s` + 部署脚本逐台滚动。**保护范围 = Quartz 认得的路径**（cron 与 `/run-once` one-shot）；手动 `/trigger` 仍起裸 daemon 线程，停机不等它，S4 把它并入 Quartz 之前不受本条保护 | 见 6.2、6.3 的配套约束 |
 | D7 | 中断未命中的修法 | **如实返回命中结果**（跨 agent-service / router / scheduler 三侧） | 拒绝"靠超时猜"的方案，避免孤儿 sandbox |
 | D8 | 数据 | **迁任务定义，不迁历史日志** | 同实例跨库 `INSERT ... SELECT` 成本极低；历史 `agent_task_log` 价值低且量大 |
 
@@ -106,7 +106,7 @@ spring:
 
 **约束 1**：**不要显式配置 `org.quartz.jobStore.class`**。Spring Boot 会用 `LocalDataSourceJobStore` 覆盖它并接上自己的数据源；写死 `JobStoreTX` 会造成连不上 Spring 管理的数据源。
 
-**约束 2**：`waitForJobsToCompleteOnShutdown` **不需要** `SchedulerFactoryBeanCustomizer`——它就是 Boot 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（Boot 4.0.1 的 `spring-boot-quartz` 模块，`QuartzProperties`；早先这里写的"不是 `spring.quartz.*` 键"是错的）。真正的约束是它的**默认值为 `false`**：必须显式设成 `true`，且必须与容器侧 `stop_grace_period` 配套——job 在 Quartz 线程内同步执行之后，这个开关才有东西可等，而等待一旦超过 `stop_grace_period` 就会被 SIGKILL 截断，落在中间的 execution 与 task_log 行仍要等 housekeeping 收。本分支已按属性落地（`harnax-scheduler/src/main/resources/application.yml` 的 `${QUARTZ_WAIT_FOR_JOBS:true}` + compose 的 `stop_grace_period: 360s`，取值见那里的注释）。
+**约束 2**：`waitForJobsToCompleteOnShutdown` **不需要** `SchedulerFactoryBeanCustomizer`——它就是 Boot 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（Boot 4.0.1 的 `spring-boot-quartz` 模块，`QuartzProperties`；早先这里写的"不是 `spring.quartz.*` 键"是错的）。真正的约束是它的**默认值为 `false`**：必须显式设成 `true`，且必须与容器侧 `stop_grace_period` 配套——job 在 Quartz 线程内同步执行之后，这个开关才有东西可等，而等待一旦超过 `stop_grace_period` 就会被 SIGKILL 截断，落在中间的 execution 与 task_log 行仍要等 housekeeping 收。本分支已按属性落地（`harnax-scheduler/src/main/resources/application.yml` 的 `${QUARTZ_WAIT_FOR_JOBS:true}` + compose 的 `stop_grace_period: 380s`，取值见那里的注释）。
 
 **约束 3**：Hikari `maximum-pool-size` 从 10 提到 30，需 ≥ `threadCount` + 业务查询并发。
 
@@ -225,16 +225,17 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 - 删 `container_name: harnax-scheduler`（compose:270）与宿主映射 `28084:8084`（compose:294），改 `expose: ["8084"]`。
   - 状态：映射改 `expose` 已由第二轮 R1 落地（compose 里已无 `28084`，故上面两处行号会漂移），`container_name` 仍待 S1。
 - **不在 compose 里声明 `deploy.replicas`**，实例数由部署脚本显式 `--scale scheduler=2` 决定。理由：6.3 的逐台滚动要在"停掉其中一台、补齐到 2"之间来回切换，声明式 replicas 会让 `--no-recreate` 的收敛行为变得难以推理。
-- `stop_grace_period: 360s` + `spring.quartz.wait-for-jobs-to-complete-on-shutdown=true`。**均已落地**（compose 的 scheduler 服务、`harnax-scheduler/src/main/resources/application.yml`，两处都有把算式写出来的注释）。**为什么不是 310s**：同步执行后一次执行占用 = chat 读超时 300s + `clearSession`（快照上传 + 容器销毁，代码注释自述 10s+）+ 状态写回，310s 只剩 10 秒余量，会在正常长任务上被 SIGKILL，D6 落空。
+- `stop_grace_period: 380s` + `spring.quartz.wait-for-jobs-to-complete-on-shutdown=true`。**均已落地**（compose 的 scheduler 服务、`harnax-scheduler/src/main/resources/application.yml`，两处都有把算式写出来的注释）。**380 = 300 + 60 + 20**：chat 读超时 300s + `clearSession` + 状态写回/释放锁 20s。`clearSession`（快照上传 + 容器销毁）现在有自己独立的读超时 `min(scheduler.clear-session-timeout-seconds=60, timeout-seconds)`，不再沿用 chat 的 300s——沿用的话一次执行最坏占用是 600s，旧推导"300 + 40 + 20 = 360s"两头都不成立（clearSession 不是 40s，360s 也远小于真实的 600s），SIGKILL 会正好落在 DELETE 中间。**为什么不是刚好等于 timeout**：超时只管得到 router 调用，之后那几十秒才是把一次跑完的执行落成定态行的动作，砍掉它就把正常完成记成超时。
+  - **保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）。手动 `/trigger` 走 `SchedulerServiceImpl.triggerManually` 起的裸 daemon 线程，Quartz 不知道它在跑，因此 `waitForJobsToCompleteOnShutdown` 不等它、grace 也不覆盖它：执行中被重启就是 `status=3` 的行 + `status=0` 的锁行。S4 把 one-shot 并入 Quartz 之前，**不要在任务执行中重启 scheduler**。
   - 这一项原先归在 S2，实际与 S1 同期做掉了：job 一旦在 Quartz 线程内同步执行，"停机不等就等于把一次正常执行切成僵尸行"立刻成立，不必等 JDBC store。属性方式即可（见 3.1 约束 2），`SchedulerFactoryBeanCustomizer` 是多余的。
   - 本项剩下的只有 6.3 的逐台滚动脚本。
 - 时钟：compose 已统一挂载 `/etc/localtime`；集群要求各节点时钟偏差 < 1s，宿主机 NTP 记入运维 checklist（Quartz 集群对时钟敏感，NTP 步进会造成误判接管）。
 
 ### 6.3 部署脚本必须逐台滚动
 
-`docker-new/deploy-service.sh:132` 现在是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 360s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
+`docker-new/deploy-service.sh:132` 现在是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 380s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
 
-改为逐台：`docker stop -t 360 <其中一台容器>` → `docker-compose up -d --no-deps --scale scheduler=2 --no-recreate scheduler`（补齐缺失的那台，不动仍在跑的那台）。
+改为逐台：`docker stop -t 380 <其中一台容器>` → `docker-compose up -d --no-deps --scale scheduler=2 --no-recreate scheduler`（补齐缺失的那台，不动仍在跑的那台）。
 
 ### 6.4 暴露面
 
@@ -288,7 +289,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 7. **F7 日志脱敏**：`SELECT *` 全文下发 `prompt`/`response`/`errorInfo`，无租户/属主过滤。
 8. **F8 域内无细粒度授权**：整域只要求"已登录"，`MybatisTenantInterceptor.intercept()` 实为 no-op，属主条件是目前唯一隔离手段。
 9. **F9 `scheduler.jobs.scheduled` 是本实例视图，不是集群视图**：gauge 读的是本进程 Quartz store 的 `getJobKeys(AgentTaskGroup)`（`QuartzJobInventory.kt`），store 还是 `memory` 时每个实例各自注册全量任务，于是 N 台各报自己的数、看板取哪台都一样"看着对"。**S2 换 JDBC 集群 store 后同一个表达式的含义会静默跳变成集群视图**（集群里只有一台 fire，但 store 是共享的，所以数值不降反升的语义完全不同）。届时必须同时重解读既有看板与告警阈值，并把指标改按 `instanceId` 之外再打一层 store 来源标签。
-10. **F10 `agent_task_execution` 缺索引**：现表（`V1__init_schema.sql:524`）只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**。S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，而这张表按触发次数线性增长 → 每轮两次全表扫。需一条 Flyway 迁移补 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`；建表脚本属 admin 域、且要与 `harnax-entity` 的 `schema-test.sql` 同步，故未随 S1 一起改。
+10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证随 B1 一起在有 Docker 的环境补跑。
 
 ## 10. 数据迁移（D8）
 
