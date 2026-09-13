@@ -125,6 +125,10 @@ class SchedulerController(
      * to 4 and asks the router to interrupt the live session, both of which are exactly as correct on a
      * node that refuses to *schedule* new work. Refusing it here would strand executions that are
      * already running.
+     *
+     * The one thing that made this exception dangerous — a row left at 4 with no reclaim path on an inert
+     * node — is closed by the sweep registered outside the same gate, see
+     * `SchedulerServiceImpl.onApplicationReady`.
      */
     @Operation(summary = "Stop a running task execution")
     @PostMapping("/tasks/logs/{logId}/stop")
@@ -141,11 +145,12 @@ class SchedulerController(
     }
 
     /**
-     * `scheduler.enabled=false` is meant to make this node inert, but it only ever skipped the startup
-     * load and the scheduler-context registration: [SchedulerFactoryBean] starts regardless, so a write
-     * here still registers a job that fires and then dies inside `AgentTaskJob` — `null as SchedulerService`
-     * on a context nobody populated — while the caller has already been answered 200. Answering on the
-     * write surface is the only place that can tell the difference, and it is where the gate belongs.
+     * `scheduler.enabled=false` is meant to make this node inert, and the only thing that still makes it
+     * inert is this gate: [SchedulerFactoryBean] starts regardless, and `SchedulerServiceImpl.init()`
+     * fills the Quartz scheduler context even on a disabled node (the housekeeping sweep has to be able to
+     * fire there). A write that got through would therefore register a job that fires *and runs* here —
+     * while the caller has already been answered 200. Answering on the write surface is the only place
+     * that can tell the difference, and it is where the gate belongs.
      *
      * @return null when scheduling is enabled here, otherwise the response the caller gets.
      */

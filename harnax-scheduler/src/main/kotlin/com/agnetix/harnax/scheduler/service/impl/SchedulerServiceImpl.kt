@@ -66,23 +66,36 @@ class SchedulerServiceImpl(
 
     @PostConstruct
     fun init() {
-        if (!schedulerEnabled) {
-            log.info("Scheduler is disabled on this instance")
-            return
-        }
-
-        // Register beans in scheduler context so Quartz jobs can access them
+        // Register beans in scheduler context so Quartz jobs can access them.
+        //
+        // Deliberately outside the `scheduler.enabled` gate: the housekeeping sweep is registered on every
+        // node (see onApplicationReady) and takes its collaborators out of *this* context, so gating the
+        // registration too would register a job that fires and quietly does nothing — which is precisely
+        // the hole that left a stopped execution's row at status 4 forever on an inert node.
+        //
+        // These are references, not work: with the in-memory job store an inert node holds no user job at
+        // all, because the load below is what puts them in Quartz. When the JDBC store lands (S2) the
+        // enabled check has to move into the fire path as well — a shared store can hand this node a
+        // trigger it never registered itself.
         val schedulerContext = scheduler.context
         schedulerContext["schedulerService"] = this
         schedulerContext["executionGuard"] = executionGuard
+
+        if (!schedulerEnabled) {
+            log.info("Scheduler is disabled on this instance: no task load, zombie reclaim still runs")
+        }
     }
 
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
+        // Sweeping is not scheduling. It touches no user task, it lives in its own Quartz group, and it is
+        // the only reclaim path for a row this node can still write: `stopTask` is deliberately open on a
+        // disabled node (it writes no Quartz object), so without this the 4 it leaves behind would be
+        // unrecoverable here — no load, no fire and no manual run ever calls expireStale on this instance.
+        registerHousekeepingJob()
         if (!schedulerEnabled) {
             return
         }
-        registerHousekeepingJob()
         loadExecutor.execute { loadTasksWithRetry() }
     }
 
@@ -345,6 +358,12 @@ class SchedulerServiceImpl(
         // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation).
         // Same shape as AgentTaskJob: an exception escaping here would die with the thread — the caller
         // has already been answered "Task triggered", so the log line is the only trace left.
+        //
+        // Quartz knows nothing about this thread, and that is a promise the reader has to be told:
+        // `waitForJobsToCompleteOnShutdown` waits for worker threads, so neither it nor the container's
+        // stop_grace_period covers a manual run — a restart while this is in flight leaves agent_task_log
+        // at 3 and its lock row at 0 for housekeeping to reap. Merging one-shot runs into Quartz (S4) is
+        // what would put this path under the same protection as the cron one.
         Thread {
             try {
                 executeTaskOnce(task, triggerTime)
@@ -380,7 +399,9 @@ class SchedulerServiceImpl(
             taskLog.status = 0 // failed
             taskLog.errorInfo = e.message?.take(4000) ?: "Unknown error"
         } finally {
-            // Compute end time and duration BEFORE any slow I/O (clearSession can take 10+ seconds)
+            // Compute end time and duration BEFORE any slow I/O: clearSession is the tail of the
+            // execution, and its own capped read timeout (scheduler.clear-session-timeout-seconds,
+            // 60s by default) is what makes the shutdown budget below a number rather than a hope.
             val endTime = LocalDateTime.now()
             taskLog.endTime = endTime
             taskLog.durationMs = if (taskLog.startTime != null) {

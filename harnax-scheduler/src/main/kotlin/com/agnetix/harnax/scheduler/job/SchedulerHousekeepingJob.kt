@@ -34,8 +34,10 @@ class SchedulerHousekeepingJob : Job {
         val guard = schedulerContext["executionGuard"] as? AgentTaskExecutionGuard
         val service = schedulerContext["schedulerService"] as? SchedulerService
         if (guard == null || service == null) {
-            // `scheduler.enabled = false` skips the registration in SchedulerServiceImpl.init(), so this
-            // is the expected state on an inert node — not a failure to log every five minutes.
+            // Defensive only: `scheduler.enabled = false` no longer skips the context registration, because
+            // the sweep is what reclaims the row an inert node's own stop leaves behind, and the job cannot
+            // be on the clock before init() has filled this context. Quiet either way — a fire five minutes
+            // from now is the retry.
             log.debug("Housekeeping has no collaborators registered on this instance, skipping")
             return
         }

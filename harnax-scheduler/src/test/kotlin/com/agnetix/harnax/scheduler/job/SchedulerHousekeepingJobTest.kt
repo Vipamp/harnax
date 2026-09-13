@@ -85,8 +85,9 @@ class SchedulerHousekeepingJobTest {
     }
 
     /**
-     * `scheduler.enabled = false` skips the context registration, so a fire that reaches this job with
-     * nothing in the context has to come back quietly instead of throwing on every five minutes.
+     * Defensive branch only: the context is filled on a disabled node too (the sweep has to reclaim what
+     * its stop path leaves behind there), so reaching this job with an empty context means a fire beat
+     * `init()`. It has to come back quietly rather than throw on every five minutes.
      */
     @Test
     fun `a fire with no collaborators registered is not an error`() {
