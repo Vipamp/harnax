@@ -1,6 +1,7 @@
 package com.agnetix.harnax.harness.spring
 
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
+import com.agnetix.harnax.agent.adaptor.McpAccessTokenSourceFactory
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
 import com.agnetix.harnax.agent.adaptor.ProcessLogAdaptor
@@ -63,6 +64,13 @@ class HarnessProperties {
     var enableWorkspaceContext: Boolean = false
     var enableMemoryHooks: Boolean = false
     var enableSessionPersistence: Boolean = true
+
+    /**
+     * Whether an MCP server of type stdio may be started as a process in this runtime. Off by
+     * default: see the admin's `McpStdioPolicy`, which holds those rows back from delivery as well.
+     * Bound from `harness.mcp-stdio-enabled`, and set from `HARNAX_MCP_STDIO_ENABLED`.
+     */
+    var mcpStdioEnabled: Boolean = false
 }
 
 @ConfigurationProperties(prefix = "harness.output-detection")
@@ -171,6 +179,7 @@ class HarnessAutoConfiguration {
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,
         enableSessionPersistence = harnessProps.enableSessionPersistence,
+        mcpStdioEnabled = harnessProps.mcpStdioEnabled,
     )
 
     /**
@@ -197,6 +206,7 @@ class HarnessAutoConfiguration {
         minioConfig: MinioConfig?,
         outputFileDetectorProvider: ObjectProvider<OutputFileDetector>,
         outputFileStoreProvider: ObjectProvider<OutputFileStore>,
+        mcpTokenSourceFactoryProvider: ObjectProvider<McpAccessTokenSourceFactory>,
     ): HarnessAgentLauncher {
         val toolCallLogAdaptor = toolCallLogAdaptorProvider.ifAvailable
             ?: ToolCallLogAdaptor { /* no-op */ }
@@ -224,6 +234,9 @@ class HarnessAutoConfiguration {
             toolRegistry = toolRegistry,
             outputFileDetector = outputFileDetectorProvider.ifAvailable,
             outputFileStore = outputFileStoreProvider.ifAvailable,
+            // Absent means an OAuth MCP server cannot be connected: this runtime then has no way to
+            // present a user's authorization, which is a smaller lie than connecting unauthenticated.
+            mcpTokenSourceFactory = mcpTokenSourceFactoryProvider.ifAvailable,
         )
     }
 }

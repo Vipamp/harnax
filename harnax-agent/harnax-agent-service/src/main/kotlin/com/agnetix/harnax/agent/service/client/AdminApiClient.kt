@@ -1,7 +1,9 @@
 package com.agnetix.harnax.agent.service.client
 
+import com.agnetix.harnax.agent.adaptor.mcp.McpAuthRequiredException
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.SkillDetailDto
 import com.agnetix.harnax.entity.dto.TaskAgentSpecResponse
 import org.slf4j.LoggerFactory
@@ -162,6 +164,42 @@ class AdminApiClient(
             log.warn("[Agent←Admin] Update permission mode failed: sessionId={}, mode={}, msg={}", sessionId, mode, response?.message)
         }
         return success
+    }
+
+    /**
+     * Mint (or renew) the access token that the owner of this session granted for one OAuth MCP server.
+     *
+     * The session id is the whole request: admin resolves who owns it and answers for that person, so
+     * there is no way to ask for somebody else's token by naming a user id (design section 7.2).
+     *
+     * Failures become exceptions instead of a null, because the caller has to tell the two kinds apart
+     * and they are fixed by different people: 401 means the grant is gone and only the user can get it
+     * back, anything else means admin or the authorization server is unreachable and retrying is enough.
+     */
+    fun getMcpAccessToken(sessionId: String, mcpId: Long): McpAccessTokenResponse {
+        val url = "$adminUrl/api/admin/internal/mcp/access-token"
+        log.debug("[Agent→Admin] POST {} - fetching MCP access token for sessionId={}, mcpId={}", url, sessionId, mcpId)
+
+        val body = mapOf("sessionId" to sessionId, "mcpId" to mcpId)
+        val responseType = object : ParameterizedTypeReference<ResultVo<McpAccessTokenResponse>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.POST, HttpEntity(body), responseType).body
+        } catch (e: Exception) {
+            // Never log or forward the token itself; the message above is admin's own text.
+            log.error("[Agent←Admin] Failed to get MCP access token: sessionId={}, mcpId={}: {}", sessionId, mcpId, e.message)
+            throw RuntimeException("Failed to get MCP access token from admin: ${e.message}", e)
+        }
+
+        val data = response?.data
+        if (data == null || response.code != 200 || data.accessToken.isBlank()) {
+            val code = response?.code ?: 500
+            val message = response?.message ?: "No response from admin"
+            if (code == 401) {
+                throw McpAuthRequiredException("MCP authorization is required for session $sessionId (mcpId=$mcpId): $message")
+            }
+            throw RuntimeException("Admin refused the MCP access token (code=$code): $message")
+        }
+        return data
     }
 
     /**

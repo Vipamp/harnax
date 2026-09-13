@@ -7,7 +7,9 @@ import com.agnetix.harnax.admin.dto.McpServerResponse
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.McpServerService
+import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.admin.util.UserContextUtil
@@ -39,6 +41,7 @@ class McpServerServiceImpl(
     private val objectMapper: ObjectMapper,
     private val agentMcpBindingMapper: AgentMcpBindingMapper,
     private val mcpUserCredentialMapper: McpUserCredentialMapper,
+    private val mcpStdioPolicy: McpStdioPolicy,
 ) : McpServerService {
 
     private val log = LoggerFactory.getLogger(McpServerServiceImpl::class.java)
@@ -79,7 +82,32 @@ class McpServerServiceImpl(
      */
     override fun getMcpServer(id: Long): McpServer? = mcpServerMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
 
-    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: 1
+    /**
+     * The tenant this request acts within.
+     *
+     * `X-Tenant-ID` stays first because switching workspace is the point of it, and
+     * [com.agnetix.harnax.admin.interceptor.TenantInterceptor] verifies the caller belongs to that
+     * tenant. What must not happen is a request with *no* header landing in tenant 1 by default:
+     * that writes rows into a workspace the caller may not belong to and reads everyone's. So the
+     * tenant the token itself carries is the fallback, and 1 remains only for a token issued before
+     * the claim existed.
+     */
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: tenantFromToken() ?: tenantFromUserRecord() ?: DEFAULT_TENANT_ID
+
+    /**
+     * The tenant the account itself carries, read from its row rather than from anything the request
+     * sends. A token issued before the claim existed still belongs to somebody who has a tenant, and
+     * defaulting that person's writes into tenant 1 would mix one workspace's rows into another's.
+     */
+    private fun tenantFromUserRecord(): Long? = runCatching {
+        SecurityUtils.getCurrentUser()?.tenantId?.takeIf { it > 0 }
+    }.getOrNull()
+
+    private fun tenantFromToken(): Long? = UserContextUtil.getToken()?.let { token ->
+        // A claim that states 0 is refused rather than trusted: ids start at 1, and acting as
+        // "tenant 0" would list nobody's rows while writing new ones into a tenant that does not exist.
+        runCatching { jwtUtil.getTenantIdFromToken(token) }.getOrNull()?.takeIf { it > 0 }
+    }
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createMcpServer(request: McpServerCreateRequest): Boolean {
@@ -93,6 +121,7 @@ class McpServerServiceImpl(
         }
 
         // Validate type and field linkage logic
+        requireStdioAllowed(request.type)
         validateTypeAndFields(request.type, request.command, request.url)
         val authType = resolveAuthType(request.authType)
         validateAuthType(request.type, authType)
@@ -150,6 +179,9 @@ class McpServerServiceImpl(
         }
         request.description?.let { mcpServer.description = it }
         request.type?.let { newType ->
+            // Entering stdio is refused while the switch is off; a row that is already stdio stays
+            // editable (rename, describe, disable) and is simply never delivered - see McpStdioPolicy.
+            requireStdioEntering(mcpServer.type, newType)
             if (!newType.equals(mcpServer.type, ignoreCase = true)) {
                 // `validateTypeAndFields` only requires the field the new type uses, so without this a
                 // row keeps the previous transport's parameters: an sse server that still stores
@@ -301,6 +333,23 @@ class McpServerServiceImpl(
     }
 
     /**
+     * stdio runs a process on the agent side, which is what [McpStdioPolicy] exists to gate. Checked
+     * on the way in only: blocking edits of existing rows would leave them undeletable-by-maintenance
+     * and un-disable-able, which is worse than the state being guarded against.
+     */
+    private fun requireStdioAllowed(type: String?) {
+        if (!mcpStdioPolicy.enabled && mcpStdioPolicy.isStdio(type)) {
+            throw BizException(mcpStdioPolicy.refusalReason())
+        }
+    }
+
+    private fun requireStdioEntering(currentType: String?, newType: String?) {
+        if (mcpStdioPolicy.isStdio(newType) && !mcpStdioPolicy.isStdio(currentType)) {
+            requireStdioAllowed(newType)
+        }
+    }
+
+    /**
      * Validate type and command/url field linkage logic
      *
      * @param type MCP type
@@ -379,6 +428,23 @@ class McpServerServiceImpl(
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
         val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
+        if (mcpServer.authType == McpAuthTypes.OAUTH2) {
+            // Answering this check needs someone's token, and an admin-side probe has no user to
+            // spend: the grant belongs to whoever owns the session, not to whoever clicks "test".
+            // Listing tools with the requester's own grant would also make the tool set depend on
+            // who asked, which is not what a connectivity check claims to show.
+            throw BizException(
+                "MCP server '${mcpServer.name}' authorizes per user (${McpAuthTypes.OAUTH2}), so this check " +
+                    "cannot reach it: it runs without a user token. The runtime connects as the owner of " +
+                    "each session with that owner's authorization - use the OAuth panel on the detail " +
+                    "page to check the flow end to end",
+            )
+        }
         return McpHelper.listTools(mcpServer, secretFieldEncryptor::decryptToMap, secretFieldEncryptor::decryptToolEnvParamsToMap)
+    }
+
+    companion object {
+        /** Fallback for a token that carries no tenant claim; not a workspace anyone may write into by default. */
+        private const val DEFAULT_TENANT_ID = 1L
     }
 }

@@ -138,3 +138,9 @@ harnax:
     secret-key: ${HARNAX_AES_SECRET_KEY:change-me-32-chars-secret-key!!}
   scheduler:
     url: ${HARNAX_SCHEDULER_URL:http://localhost:8084}
+  mcp:
+    # A stdio MCP server is a process this service starts, and the command comes from a form field.
+    # Off by default, so such a row is refused at creation and held back from delivery; the agent
+    # runtime has the same switch (`harness.mcp-stdio-enabled`) and one env var sets both. Turning it
+    # on means accepting arbitrary command execution in whichever container runs the agent.
+    stdio-enabled: ${HARNAX_MCP_STDIO_ENABLED:false}

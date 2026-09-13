@@ -13,6 +13,7 @@ import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.McpOAuthStateStore
+import com.agnetix.harnax.admin.util.McpSessionOwnerResolver
 import com.agnetix.harnax.admin.util.PendingAuthorization
 import com.agnetix.harnax.admin.util.RemoteFetch
 import com.agnetix.harnax.admin.util.RemoteJsonFetcher
@@ -20,10 +21,14 @@ import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.admin.util.normalizeIssuer
 import com.agnetix.harnax.admin.util.optString
 import com.agnetix.harnax.entity.McpAuthTypes
+import com.agnetix.harnax.entity.McpCallLog
 import com.agnetix.harnax.entity.McpOauthClient
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.McpUserCredential
+import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
+import com.agnetix.harnax.mapper.McpCallLogMapper
 import com.agnetix.harnax.mapper.McpOauthClientMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.McpUserCredentialMapper
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DuplicateKeyException
@@ -35,7 +40,9 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Base64
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * The authorization code flow with PKCE, per user and per MCP server (design sections 6.2 and 6.4).
@@ -62,11 +69,21 @@ class McpOAuthUserServiceImpl(
     private val remoteJsonFetcher: RemoteJsonFetcher,
     private val stateStore: McpOAuthStateStore,
     private val objectMapper: ObjectMapper,
+    private val mcpServerMapper: McpServerMapper,
+    private val mcpCallLogMapper: McpCallLogMapper,
+    private val sessionOwnerResolver: McpSessionOwnerResolver,
 ) : McpOAuthUserService {
 
     private val log = LoggerFactory.getLogger(McpOAuthUserServiceImpl::class.java)
 
     private val random = SecureRandom()
+
+    /**
+     * One lock per stripe rather than one per credential: refresh tokens rotate, so two simultaneous
+     * refreshes of the same grant make the loser's answer dead and look like a user who needs to
+     * consent again. A fixed set of stripes serialises that without a map growing per (user, server).
+     */
+    private val refreshLocks = Array(LOCK_STRIPES) { ReentrantLock() }
 
     override fun authorizeUrl(
         mcpId: Long,
@@ -286,14 +303,343 @@ class McpOAuthUserServiceImpl(
         )
     }
 
+    /**
+     * The runtime's view of a grant: hand out what is still usable, refresh what is not.
+     *
+     * Reached only through the internal API, and the session id is the whole request - which is the
+     * point. agent-service cannot ask for somebody else's token by naming a user, because it does not
+     * know any user ids: this resolves the session back to its owner the same way the agent-spec
+     * endpoint does, and answers for that person only.
+     */
+    override fun accessToken(
+        sessionId: String,
+        mcpId: Long,
+    ): McpAccessTokenResponse {
+        val started = System.nanoTime()
+        // Read by id through the mapper rather than through McpServerService: that guard compares the
+        // row against the *request's* tenant header, and an internal call from agent-service has none.
+        // What scopes this answer is the server's own tenant, which is also the key the grant was
+        // stored under by [redeem].
+        val server = mcpServerMapper.selectById(mcpId) ?: throw BizException("MCP server not found")
+        if (server.authType != McpAuthTypes.OAUTH2) {
+            throw BizException(
+                "MCP server '${server.name}' has auth type ${server.authType}, so there is no per-user token to issue",
+            )
+        }
+        val owner = sessionOwnerResolver.resolve(sessionId)
+            ?: throw needsConsent(server, null, null, sessionId, started, "This session has no user identity to authorize as")
+        // Delivery only ever sends an agent servers from its own tenant, so this should be unreachable.
+        // It stays checked here because the credential below is keyed by the *server's* tenant: without
+        // the guard, a session in tenant B could spend tenant A's grant for a server it was never given.
+        if (owner.tenantId != server.tenantId) {
+            throw BizException(403, "MCP server '${server.name}' belongs to another tenant than session $sessionId")
+        }
+        val credential = mcpUserCredentialMapper.selectByUserAndMcp(server.tenantId, owner.userId, server.id)
+            ?: throw needsConsent(server, null, owner.userId, sessionId, started, "This MCP server is not authorized for your account yet")
+        if (credential.status == McpUserCredential.STATUS_REVOKED) {
+            // Its tokens were cleared by `revoke`, so there is nothing to renew - but the status stays
+            // REVOKED. Overwriting it with NEEDS_CONSENT would erase the one thing this row still
+            // records: that this person revoked this grant on purpose.
+            audit(server, owner.userId, sessionId, McpCallLog.ACTION_ISSUE, McpCallLog.OUTCOME_NEEDS_CONSENT, started)
+            throw BizException(401, "You revoked this MCP server's authorization for your account - please authorize it again")
+        }
+        usableToken(server, credential)?.let {
+            audit(server, owner.userId, sessionId, McpCallLog.ACTION_ISSUE, McpCallLog.OUTCOME_OK, started)
+            return it
+        }
+        return refreshGrant(server, credential, owner.userId, sessionId, started)
+    }
+
+    /** The stored access token while it still has life in it, or null when a refresh is due. */
+    private fun usableToken(
+        server: McpServer,
+        credential: McpUserCredential,
+    ): McpAccessTokenResponse? {
+        if (credential.status != McpUserCredential.STATUS_ACTIVE) {
+            return null
+        }
+        val ciphertext = credential.accessTokenEnc ?: return null
+        val expiresAt = credential.accessExpiresAt
+        // Refresh before the expiry rather than after: a tool call that fails because a token aged out
+        // one second into a long run reads as a broken MCP server, and the user has no way to tell
+        // that from an outage. A row with no expiry keeps its token until something refuses it.
+        if (expiresAt != null && expiresAt.isBefore(LocalDateTime.now().plusSeconds(REFRESH_SKEW_SECONDS))) {
+            return null
+        }
+        // Undecryptable (the AES key moved since this was written) is the same as absent here; the
+        // refresh path reports it as a lost grant rather than sending garbage upstream.
+        return openToken(ciphertext, server.id)?.let {
+            McpAccessTokenResponse(accessToken = it, expiresAtEpochSecond = toEpochSecond(expiresAt))
+        }
+    }
+
+    /**
+     * The expiry as the wire carries it: epoch seconds, not a date-time. Every comparison inside admin
+     * is in local terms, but the caller is another process that reads this against its own clock and
+     * is not guaranteed to share this one's time zone.
+     */
+    private fun toEpochSecond(expiresAt: LocalDateTime?): Long? = expiresAt?.atZone(ZoneId.systemDefault())?.toEpochSecond()
+
+    /**
+     * Spend the refresh token, store what comes back, and hand the new access token over.
+     *
+     * What the answer can say about the grant falls into two groups, and telling them apart is the
+     * whole design of this method: `invalid_grant` means the authorization is gone and only the user
+     * can get it back, while a 5xx or an unreachable server means nothing about the grant changed and
+     * retrying is enough. Marking the second kind as consent-needed would push users through an
+     * authorization page because of a network blip, and clearing a working grant to do it would be
+     * worse than the outage.
+     */
+    private fun refreshGrant(
+        server: McpServer,
+        credential: McpUserCredential,
+        userId: Long,
+        sessionId: String,
+        started: Long,
+    ): McpAccessTokenResponse {
+        val lock = refreshLocks[(credential.id % LOCK_STRIPES).toInt().let { if (it < 0) it + LOCK_STRIPES else it }]
+        lock.lock()
+        try {
+            // Re-read under the lock: whoever held it a moment ago may have refreshed this very grant,
+            // and doing it twice would burn the rotation that call just stored.
+            val current = mcpUserCredentialMapper.selectByUserAndMcp(server.tenantId, userId, server.id) ?: credential
+            usableToken(server, current)?.let {
+                audit(server, userId, sessionId, McpCallLog.ACTION_ISSUE, McpCallLog.OUTCOME_OK, started)
+                return it
+            }
+            val refreshToken = current.refreshTokenEnc?.let { openToken(it, server.id) }
+                ?: throw needsConsent(
+                    server,
+                    current,
+                    userId,
+                    sessionId,
+                    started,
+                    if (current.refreshTokenEnc == null) {
+                        "This grant has no refresh token, so it cannot be renewed silently"
+                    } else {
+                        "The stored refresh token cannot be decrypted with the current key"
+                    },
+                )
+            val config = readConfig(server)
+            val issuer = normalizeIssuer(config.authorizationServer)
+            val client = mcpOauthClientMapper.selectByTenantAndIssuer(server.tenantId, issuer)
+                ?: throw BizException("No client registration exists for $issuer: run discovery again")
+            if (client.clientId.isBlank()) {
+                throw BizException("No client_id is registered for $issuer: save the OAuth client again")
+            }
+            val tokenEndpoint = client.tokenEndpoint?.trim().orEmpty()
+            if (tokenEndpoint.isEmpty()) {
+                throw BizException("The token endpoint of this authorization server is unknown; run discovery again")
+            }
+            val resource = server.url.trim().takeIf { config.resourceIndicator && it.isNotEmpty() }
+            val form = mutableMapOf(
+                "grant_type" to "refresh_token",
+                "refresh_token" to refreshToken,
+                "client_id" to client.clientId,
+            )
+            client.clientSecretEnc?.let { enc ->
+                // Undecryptable means this deployment's key moved, not that the user's consent lapsed:
+                // said here rather than reaching the token endpoint without a secret and coming back as
+                // `invalid_client`, which reads like a broken registration.
+                form["client_secret"] = openToken(enc, client.id, "OAuth client")
+                    ?: throw transientFailure(
+                        server,
+                        current,
+                        userId,
+                        sessionId,
+                        started,
+                        "the stored client secret cannot be decrypted with the current key; re-save the OAuth client",
+                        null,
+                    )
+            }
+            // RFC 8707 §2.3: a refreshed token has to be re-bound to the resource, or the AS may hand
+            // back one whose audience is whatever it defaults to - which the MCP server then refuses.
+            resource?.let { form["resource"] = it }
+
+            val response = try {
+                remoteJsonFetcher.postForm(tokenEndpoint, form)
+            } catch (e: Exception) {
+                throw transientFailure(server, current, userId, sessionId, started, "the authorization server could not be reached (${e.javaClass.simpleName})", e)
+            }
+            if (!response.ok) {
+                val error = response.json?.optString("error")?.takeIf { it.isNotBlank() }
+                if (error == "invalid_grant" || (error == null && response.status in 400..499)) {
+                    throw needsConsent(
+                        server,
+                        current,
+                        userId,
+                        sessionId,
+                        started,
+                        "The authorization server refused to renew this grant${error?.let { " ($it)" } ?: ""} (HTTP ${response.status})",
+                    )
+                }
+                // invalid_client/unauthorized_client is this deployment's registration, not the user's
+                // consent; a 5xx is the server's problem. Neither may touch the stored grant.
+                throw transientFailure(
+                    server,
+                    current,
+                    userId,
+                    sessionId,
+                    started,
+                    "the token endpoint refused the refresh with HTTP ${response.status}${error?.let { ": $it" } ?: ""}",
+                    null,
+                )
+            }
+            val json = try {
+                response.answerOrThrow("The token refresh")
+            } catch (e: BizException) {
+                // A 200 that is not a token answer says nothing about the grant, so it is a failure to
+                // retry rather than a reason to drop the user's consent.
+                throw transientFailure(server, current, userId, sessionId, started, e.message ?: "the token refresh failed", e)
+            }
+            val accessToken = json.optString(ACCESS_TOKEN_FIELD)
+                ?: throw transientFailure(server, current, userId, sessionId, started, "the authorization server answered without an access_token", null)
+            val rotated = json.optString(REFRESH_TOKEN_FIELD)
+            val grantedScopes = json.optString("scope")?.splitScopeList().orEmpty()
+            try {
+                validateAgainstIssuer(json, accessToken, issuer, resource, server.id)
+            } catch (e: BizException) {
+                // Refused here rather than stored: a token for another issuer or another resource would
+                // fail at the MCP server with an error nobody can trace back to this row.
+                throw transientFailure(server, current, userId, sessionId, started, e.message ?: "the refreshed token does not match this server", e)
+            }
+
+            val now = LocalDateTime.now()
+            // An answer without `expires_in` (RFC 6749 §5.1 makes it optional) keeps the lifetime the
+            // previous token had, as long as that is still ahead: nothing here learns that the MCP
+            // server refused a token, so a row with no expiry at all reads as "valid forever" and the
+            // runtime would keep presenting a dead one.
+            val expiresAt = json.path(EXPIRES_IN_FIELD).takeIf { it.isNumber }?.asInt()?.let { now.plusSeconds(it.toLong()) }
+                ?: current.accessExpiresAt?.takeIf { it.isAfter(now) }
+            current.accessTokenEnc = aesUtil.encrypt(accessToken)
+            // Only replaced when the answer carries one: RFC 6749 §6 lets an AS issue no new refresh
+            // token, and dropping the stored one then would end a grant that is still good.
+            rotated?.let { current.refreshTokenEnc = aesUtil.encrypt(it) }
+            current.accessExpiresAt = expiresAt
+            val refreshedScopes = grantedScopes.ifEmpty { null }?.joinToString(",")
+            if (refreshedScopes != null && refreshedScopes.length > SCOPES_MAX_LEN) {
+                // Same rule as the exchange: a truncated list would read as "these are what you were
+                // granted" with a fragment at the end, so the previous value is kept and said so.
+                log.warn(
+                    "MCP {} refresh granted {} characters of scope, over {}, so the recorded scopes are unchanged",
+                    server.id,
+                    refreshedScopes.length,
+                    SCOPES_MAX_LEN,
+                )
+            }
+            current.scopes = refreshedScopes?.takeIf { it.length <= SCOPES_MAX_LEN } ?: current.scopes
+            current.status = McpUserCredential.STATUS_ACTIVE
+            current.lastError = null
+            current.lastRefreshedAt = now
+            current.updateTime = now
+            mcpUserCredentialMapper.updateById(current)
+            log.info(
+                "MCP {} refreshed the OAuth grant of user {} (expiresIn={}, rotatedRefreshToken={})",
+                server.id,
+                userId,
+                json.path(EXPIRES_IN_FIELD).takeIf { it.isNumber }?.asInt() ?: -1,
+                rotated != null,
+            )
+            audit(server, userId, sessionId, McpCallLog.ACTION_REFRESH, McpCallLog.OUTCOME_OK, started)
+            return McpAccessTokenResponse(accessToken = accessToken, expiresAtEpochSecond = toEpochSecond(expiresAt))
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    /** The grant is gone and only the user can bring it back: record that, then refuse. */
+    private fun needsConsent(
+        server: McpServer,
+        credential: McpUserCredential?,
+        userId: Long?,
+        sessionId: String,
+        started: Long,
+        reason: String,
+    ): BizException {
+        // The ciphertexts stay: `revoke` is the user's way of also telling the authorization server,
+        // and it needs what is stored to do that. Status is what makes the grant unusable.
+        credential?.let { markStatus(it, McpUserCredential.STATUS_NEEDS_CONSENT, reason) }
+        audit(server, userId, sessionId, McpCallLog.ACTION_ISSUE, McpCallLog.OUTCOME_NEEDS_CONSENT, started)
+        return BizException(401, "$reason - please authorize this MCP server again")
+    }
+
+    /** Nothing about the grant changed; this is a failure to retry, not one to re-authorize. */
+    private fun transientFailure(
+        server: McpServer,
+        credential: McpUserCredential,
+        userId: Long,
+        sessionId: String,
+        started: Long,
+        reason: String,
+        cause: Throwable?,
+    ): BizException {
+        markStatus(credential, credential.status, reason)
+        audit(server, userId, sessionId, McpCallLog.ACTION_REFRESH, McpCallLog.OUTCOME_ERROR, started)
+        // The cause is logged, not chained: BizException has no (code, message, cause) constructor, and
+        // the stack behind a 503 is admin's own detail rather than something the caller can act on.
+        log.warn("MCP {} grant of user {} could not be renewed: {}", server.id, userId, reason, cause)
+        return BizException(503, "MCP server '${server.name}' is unavailable right now: $reason")
+    }
+
+    private fun markStatus(
+        credential: McpUserCredential,
+        status: String,
+        reason: String,
+    ) {
+        try {
+            credential.status = status
+            credential.lastError = reason.take(MAX_ERROR_CHARS)
+            credential.updateTime = LocalDateTime.now()
+            mcpUserCredentialMapper.updateById(credential)
+        } catch (e: Exception) {
+            // A row that cannot be written must not hide the answer the caller needs; the next attempt
+            // reads whatever status is still stored and reaches the same conclusion.
+            log.warn("The status of MCP credential {} could not be updated: {}", credential.id, e.javaClass.simpleName)
+        }
+    }
+
+    /**
+     * One audit row per token decision (design section 7.2). Outcome and latency only - never a token,
+     * a scope list or a response body, because admins who are not the grant's owner read this table.
+     * Failing to write it must not fail the call.
+     */
+    private fun audit(
+        server: McpServer,
+        userId: Long?,
+        sessionId: String,
+        action: String,
+        outcome: String,
+        started: Long,
+    ) {
+        try {
+            mcpCallLogMapper.insert(
+                McpCallLog().apply {
+                    tenantId = server.tenantId
+                    this.userId = userId
+                    mcpId = server.id
+                    this.sessionId = sessionId
+                    toolName = null
+                    this.action = action
+                    this.outcome = outcome
+                    latencyMs = (System.nanoTime() - started) / 1_000_000
+                    createTime = LocalDateTime.now()
+                },
+            )
+        } catch (e: Exception) {
+            log.warn("The MCP call audit row for server {} could not be written: {}", server.id, e.javaClass.simpleName)
+        }
+    }
+
     /** The plaintext of a stored token, or null when it cannot be opened. Never logs material. */
     private fun openToken(
         ciphertext: String,
-        mcpId: Long,
+        /** `mcp_server.id` for a grant, `mcp_oauth_client.id` for a registration. */
+        rowId: Long,
+        what: String = "MCP",
     ): String? = try {
         aesUtil.decrypt(ciphertext)
     } catch (e: Exception) {
-        log.warn("The stored token of MCP {} could not be decrypted with the current key: {}", mcpId, e.javaClass.simpleName)
+        log.warn("The stored credential of {} {} could not be decrypted with the current key: {}", what, rowId, e.javaClass.simpleName)
         null
     }
 
@@ -342,7 +688,12 @@ class McpOAuthUserServiceImpl(
             // because every implementation takes it and it needs no second code path.
             "code_verifier" to pending.codeVerifier,
         )
-        client.clientSecretEnc?.let { form["client_secret"] = aesUtil.decrypt(it) }
+        client.clientSecretEnc?.let { enc ->
+            // Same rule as the refresh: a secret that will not open means the key moved, and the page
+            // has to hear that rather than "Authorization failed - please start again".
+            form["client_secret"] = openToken(enc, pending.mcpId)
+                ?: throw BizException("The stored client secret cannot be decrypted with the current key; re-save the OAuth client")
+        }
         pending.resource?.let { form["resource"] = it }
 
         val json = remoteJsonFetcher.postForm(tokenEndpoint, form).answerOrThrow("The token exchange")
@@ -350,7 +701,7 @@ class McpOAuthUserServiceImpl(
             ?: throw BizException("The authorization server answered without an access_token")
         val refreshToken = json.optString(REFRESH_TOKEN_FIELD)
         val grantedScopes = json.optString("scope")?.splitScopeList().orEmpty()
-        validateAgainstIssuer(json, accessToken, pending)
+        validateAgainstIssuer(json, accessToken, pending.issuer, pending.resource, pending.mcpId)
 
         val now = LocalDateTime.now()
         val expiresInSeconds = json.path(EXPIRES_IN_FIELD).takeIf { it.isNumber }?.asInt()
@@ -434,22 +785,23 @@ class McpOAuthUserServiceImpl(
     private fun validateAgainstIssuer(
         json: JsonNode,
         accessToken: String,
-        pending: PendingAuthorization,
+        issuer: String,
+        resource: String?,
+        mcpId: Long,
     ) {
-        json.optString("iss")?.let { assertIssuer(it, pending.issuer) }
+        json.optString("iss")?.let { assertIssuer(it, issuer) }
         val claims = jwtClaims(accessToken)
         if (claims == null) {
-            log.info("MCP {} got an opaque access token; its iss and aud cannot be inspected here", pending.mcpId)
+            log.info("MCP {} got an opaque access token; its iss and aud cannot be inspected here", mcpId)
             return
         }
-        claims.optString("iss")?.let { assertIssuer(it, pending.issuer) }
-        val resource = pending.resource
+        claims.optString("iss")?.let { assertIssuer(it, issuer) }
         val audience = claims.audienceValues()
         if (resource != null && audience.isEmpty()) {
             // A JWT carrying no `aud` is as uninspectable as an opaque one, and gets the same
             // treatment: said out loud rather than counted as a pass. The resource binding then rests
             // on the authorization server having honoured the `resource` parameter.
-            log.info("MCP {} got a token carrying no aud claim; its audience cannot be inspected here", pending.mcpId)
+            log.info("MCP {} got a token carrying no aud claim; its audience cannot be inspected here", mcpId)
         } else if (resource != null && audience.none { it == resource }) {
             throw BizException(
                 "The token audience (${audience.joinToString(", ")}) does not include this MCP server, " +
@@ -478,7 +830,11 @@ class McpOAuthUserServiceImpl(
         hint: String,
     ): Boolean {
         val form = mutableMapOf("token" to token, "token_type_hint" to hint, "client_id" to client.clientId)
-        client.clientSecretEnc?.let { form["client_secret"] = aesUtil.decrypt(it) }
+        // A secret that will not open (the AES key moved) is a secret that cannot be presented, not a
+        // reason to abandon the revocation: this call is the user's only way out, and the local row is
+        // the half this deployment controls. Without the secret a confidential client's revocation is
+        // refused upstream, and `upstreamRevoked` says so.
+        client.clientSecretEnc?.let { enc -> runCatching { aesUtil.decrypt(enc) }.getOrNull()?.let { form["client_secret"] = it } }
         return try {
             val response = remoteJsonFetcher.postForm(endpoint, form)
             if (response.ok) {
@@ -658,6 +1014,15 @@ class McpOAuthUserServiceImpl(
 
         /** `mcp_user_credential.scopes` is VARCHAR(512). */
         private const val SCOPES_MAX_LEN = 512
+
+        /** `mcp_user_credential.last_error` is VARCHAR(512); leave room for nothing else to be lost. */
+        private const val MAX_ERROR_CHARS = 500
+
+        /** Refresh this many seconds before the stored expiry, so no call runs on a dying token. */
+        private const val REFRESH_SKEW_SECONDS = 60L
+
+        /** Locks guarding concurrent refreshes; see [refreshLocks]. */
+        private const val LOCK_STRIPES = 64
 
         /** Anything longer from upstream is a dump, not a message. */
         private const val MAX_ANSWER_CHARS = 200

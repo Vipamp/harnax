@@ -354,23 +354,30 @@ const McpManagement: React.FC = () => {
     });
 
     try {
-      //  race between API call and timeout
+      // race between API call and timeout. skipErrorHandler keeps the refusal here, where the modal can
+      // show its reason, instead of the global handler toasting it and resolving this to undefined.
       const res = await Promise.race([
-        connectivityTestMcpServer(id),
+        connectivityTestMcpServer(id, { skipErrorHandler: true }),
         timeoutPromise,
       ]);
 
       // API返回成功
       setTestLoading(false);
-      if (res.data === true) {
+      // `res` can be undefined: the global error handler eats a failed body and returns nothing, and
+      // reading `res.data` off it would show "Cannot read properties of undefined" as the result.
+      if (res?.code === 200 && res?.data === true) {
         setTestResult({
           success: true,
           message: intl.formatMessage({ id: 'pages.message.mcpTestSuccess', defaultMessage: 'MCP connectivity test passed, service connection is normal' }, { name }),
         });
       } else {
+        // The backend's own reason first. "Service unreachable" would send the admin to check a
+        // network that is fine when the real answer is "this server authorizes per user" or
+        // "stdio is disabled on this deployment".
         setTestResult({
           success: false,
-          message: intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name }),
+          message: res?.message?.trim()
+            || intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name }),
         });
       }
     } catch (error: any) {
@@ -518,7 +525,8 @@ const McpManagement: React.FC = () => {
             }
           } catch (error: any) {
             // 显示错误信息给用户
-            const errorMsg = error?.message || error?.info?.errorMessage || '创建失败，请重试';
+            const errorMsg = error?.message || error?.info?.errorMessage
+              || intl.formatMessage({ id: 'pages.message.createFailed', defaultMessage: 'Create failed, please try again' });
             messageApi.error(errorMsg);
           }
         }}
@@ -548,19 +556,26 @@ const McpManagement: React.FC = () => {
               }
             } catch (error: any) {
               // 显示错误信息给用户
-              const errorMsg = error?.message || error?.info?.errorMessage || '更新失败，请重试';
+              const errorMsg = error?.message || error?.info?.errorMessage
+              || intl.formatMessage({ id: 'pages.message.updateFailed', defaultMessage: 'Update failed, please try again' });
               messageApi.error(errorMsg);
             }
           }}
           onConnectivityTest={async (id) => {
             const hide = message.loading(intl.formatMessage({ id: 'pages.mcp.testing', defaultMessage: 'Testing connectivity...' }));
+            const genericFailure = intl.formatMessage(
+              { id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' },
+              { name: currentRow.name },
+            );
             try {
-              const res = await connectivityTestMcpServer(id);
+              const res = await connectivityTestMcpServer(id, { skipErrorHandler: true });
               hide();
-              return res.data === true;
-            } catch (error) {
+              // null means "passed", anything else is the line to show - so a failure with no reason
+              // attached must not come back as null and read as a pass.
+              return res?.code === 200 && res?.data === true ? null : (res?.message?.trim() || genericFailure);
+            } catch (error: any) {
               hide();
-              return false;
+              return error?.info?.errorMessage || error?.message || genericFailure;
             }
           }}
         />
@@ -585,7 +600,7 @@ const McpManagement: React.FC = () => {
               setTestLoading(false);
             }}
           >
-            关闭
+            {intl.formatMessage({ id: 'pages.common.close', defaultMessage: 'Close' })}
           </Button>,
         ]}
         maskClosable={false}

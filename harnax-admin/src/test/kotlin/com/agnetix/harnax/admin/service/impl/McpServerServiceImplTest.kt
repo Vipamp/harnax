@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.McpOAuthConfig
 import com.agnetix.harnax.admin.dto.McpServerCreateRequest
 import com.agnetix.harnax.admin.dto.McpServerUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.McpAuthTypes
@@ -27,6 +28,7 @@ import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.never
 import org.mockito.quality.Strictness
@@ -67,8 +69,20 @@ class McpServerServiceImplTest {
     @Mock
     private lateinit var mcpUserCredentialMapper: McpUserCredentialMapper
 
+    @Mock
+    private lateinit var mcpStdioPolicy: McpStdioPolicy
+
     @InjectMocks
     private lateinit var mcpServerService: McpServerServiceImpl
+
+    /**
+     * Opens the stdio switch. It is off by default, exactly like `harnax.mcp.stdio-enabled:false`, so
+     * only the cases that measure stdio's own field logic need it on - the rest would stop at the gate
+     * and test the gate instead.
+     */
+    private fun allowStdio() {
+        `when`(mcpStdioPolicy.enabled).thenReturn(true)
+    }
 
     private lateinit var testMcpServer: McpServer
 
@@ -99,6 +113,15 @@ class McpServerServiceImplTest {
         // Mock JwtUtil
         `when`(jwtUtil.validateToken(anyString())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn("admin")
+
+        // The gate as production configures it: off. `isStdio` still has to recognise the type, or an
+        // unstubbed mock calls every stdio row a network one and the gate never fires at all.
+        // `refusalReason` cannot be left null either - BizException's message is non-null.
+        `when`(mcpStdioPolicy.enabled).thenReturn(false)
+        `when`(mcpStdioPolicy.isStdio(anyOrNull())).thenAnswer { invocation ->
+            (invocation.getArgument<String?>(0))?.trim()?.lowercase() == "stdio"
+        }
+        `when`(mcpStdioPolicy.refusalReason()).thenReturn("stdio MCP servers are disabled on this deployment")
     }
 
     @Nested
@@ -299,7 +322,8 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("createMcpServer - Create stdio type successfully")
         fun `createMcpServer should create stdio type successfully`() {
-            // Given
+            // Given - stdio 默认被闸门拒掉，这里先把它打开：本用例要测的是这个类型自己的字段与落库
+            allowStdio()
             val request = McpServerCreateRequest(
                 name = "Stdio MCP",
                 type = "stdio",
@@ -340,7 +364,8 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("createMcpServer - Throw BizException when stdio type without command")
         fun `createMcpServer should throw BizException when stdio type without command`() {
-            // Given
+            // Given - 先放行闸门，否则这里红的是闸门而不是「缺 command」
+            allowStdio()
             val request = McpServerCreateRequest(
                 name = "Invalid Stdio MCP",
                 type = "stdio",
@@ -513,7 +538,8 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("updateMcpServer - Throw BizException when stdio type without command")
         fun `updateMcpServer should throw BizException when stdio type without command`() {
-            // Given
+            // Given - 切进 stdio 本身要被闸门放行，才能走到「缺 command」这一步
+            allowStdio()
             val request = McpServerUpdateRequest(
                 type = "stdio",
                 command = "",
@@ -532,6 +558,8 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("updateMcpServer - 换成 stdio 时清掉网络型字段")
         fun `updateMcpServer should clear the http-only fields when switching to stdio`() {
+            // The gate refuses entering stdio by default; this case is about what happens after it is allowed
+            allowStdio()
             val stored = McpServer().apply {
                 id = 1L
                 tenantId = 1L
@@ -773,6 +801,8 @@ class McpServerServiceImplTest {
         @Test
         @DisplayName("createMcpServer - stdio 不接受 OAuth")
         fun `createMcpServer should reject OAuth on a stdio server`() {
+            // Without this the gate answers first, and the test would prove only that stdio is off
+            allowStdio()
             val request = McpServerCreateRequest(
                 name = "Stdio OAuth",
                 type = "stdio",
@@ -973,6 +1003,8 @@ class McpServerServiceImplTest {
                 active = 1
             }
             `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+            // Same reason as the create case above: the gate would otherwise be what refuses this
+            allowStdio()
 
             val exception = assertThrows<BizException> {
                 mcpServerService.updateMcpServer(1L, McpServerUpdateRequest(type = "stdio", command = "python mcp.py"))
@@ -1040,6 +1072,95 @@ class McpServerServiceImplTest {
             val exception = assertThrows<BizException> { mcpServerService.createMcpServer(request) }
             assertTrue(exception.message!!.contains("must be an http(s) URL"))
             verify(mcpServerMapper, never()).insert(any())
+        }
+    }
+
+    /**
+     * The stdio gate on its own terms. Saving such a row means a process agent-service will start, so
+     * while `harnax.mcp.stdio-enabled` is off it is refused on the way in - but rows that already
+     * exist must stay reachable, or an operator could neither rename nor disable nor re-point them.
+     */
+    @Nested
+    @DisplayName("Stdio 闸门")
+    inner class StdioGateTests {
+
+        @Test
+        @DisplayName("createMcpServer - 开关关着时 stdio 被拒且不落库")
+        fun `createMcpServer should refuse stdio while the switch is off`() {
+            val request = McpServerCreateRequest(
+                name = "Stdio Gate MCP",
+                type = "stdio",
+                command = "python app.py",
+            )
+            `when`(mcpServerMapper.selectByName("Stdio Gate MCP", 1L)).thenReturn(null)
+
+            val exception = assertThrows<BizException> { mcpServerService.createMcpServer(request) }
+
+            assertTrue(exception.message!!.contains("stdio MCP servers are disabled"))
+            verify(mcpServerMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("updateMcpServer - 已经是 stdio 的行开关关着仍可编辑")
+        fun `updateMcpServer should keep editing an existing stdio row`() {
+            val stored = McpServer().apply {
+                id = 1L
+                tenantId = 1L
+                name = "Legacy Stdio MCP"
+                type = "stdio"
+                command = "python app.py"
+                url = ""
+                status = 1
+                active = 1
+                creator = "admin"
+            }
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+            `when`(mcpServerMapper.updateById(any())).thenReturn(1)
+
+            // Refusing this would strand the row: it could not be disabled or renamed by anyone but an
+            // operator with the database, which is a worse exposure than the row itself.
+            mcpServerService.updateMcpServer(1L, McpServerUpdateRequest(description = "kept for reference"))
+
+            val captor = argumentCaptor<McpServer>()
+            verify(mcpServerMapper).updateById(captor.capture())
+            assertEquals("stdio", captor.firstValue.type)
+            assertEquals("kept for reference", captor.firstValue.description)
+        }
+
+        @Test
+        @DisplayName("updateMcpServer - 从网络型切进 stdio 要被拒")
+        fun `updateMcpServer should refuse switching a network server into stdio`() {
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(testMcpServer)
+
+            val exception = assertThrows<BizException> {
+                mcpServerService.updateMcpServer(1L, McpServerUpdateRequest(type = "stdio", command = "python app.py"))
+            }
+
+            assertTrue(exception.message!!.contains("stdio MCP servers are disabled"))
+            verify(mcpServerMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("listTools - OAuth 服务由连通性测试明确拒绝")
+        fun `listTools should refuse an OAuth server instead of probing it unauthenticated`() {
+            val stored = McpServer().apply {
+                id = 1L
+                tenantId = 1L
+                name = "OAuth MCP"
+                type = "streamablehttp"
+                url = "http://localhost:8080/mcp"
+                authType = McpAuthTypes.OAUTH2
+                status = 1
+                active = 1
+                creator = "admin"
+            }
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+
+            // The probe has no user to spend, so answering it would either fail upstream with a
+            // misleading "server unreachable" or list a tool set that depends on who clicked.
+            val exception = assertThrows<BizException> { mcpServerService.listTools(1L) }
+
+            assertTrue(exception.message!!.contains("authorizes per user"))
         }
     }
 }

@@ -23,9 +23,10 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
   const [isPublic, setIsPublic] = useState(false);
   const [status, setStatus] = useState<number>(1);
 
-  // MCP 类型选项 - 后端与运行时均支持 stdio（McpHelper.buildMcpConfig），不再屏蔽
+  // MCP 类型选项 - 这里没有 stdio：它是在 agent 容器里起一个由表单字段指定的进程，后端
+  // `McpStdioPolicy` 默认拒绝（`HARNAX_MCP_STDIO_ENABLED=false`）。下面判断 `stdio` 的分支先留着，
+  // 某个部署确认要放开时只改开关即可，不必回来补表单逻辑。
   const mcpTypeOptions = [
-    { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
   ];
@@ -209,7 +210,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit, on
           name="authType"
           label={intl.formatMessage({ id: 'pages.mcp.oauth.authType', defaultMessage: 'Auth Method' })}
           initialValue="NONE"
-          extra={intl.formatMessage({ id: 'pages.mcp.oauth.authExtra', defaultMessage: 'OAuth only enables the two admin endpoints (discovery and client registration); the service itself still connects with the headers above until per-user token injection lands.' })}
+          extra={intl.formatMessage({ id: 'pages.mcp.oauth.authExtra', defaultMessage: 'OAuth 2.1 authorizes per user: administration configures the authorization server here, and every user clicks Authorize on the detail page. The agent then connects with that user\'s own token, not with the headers above - a static Authorization header on an OAuth server is ignored.' })}
         >
           <Select
             options={authTypeOptions}

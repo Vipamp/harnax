@@ -13,7 +13,8 @@ export interface UpdateFormProps {
   values: API.McpServerItem;
   onCancel: () => void;
   onSubmit: (values: API.McpServerUpdateRequest) => Promise<void>;
-  onConnectivityTest?: (id: number) => Promise<boolean>;
+  /** null = 通过；字符串 = 要在页面上原样说出的原因 */
+  onConnectivityTest?: (id: number) => Promise<string | null>;
 }
 
 const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSubmit, onConnectivityTest }) => {
@@ -72,8 +73,13 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     },
   ];
 
+  // 新建不给 stdio 选项（见 CreateForm），但已有的 stdio 记录还得能打开：后端允许它继续被编辑、
+  // 禁用和删除，只是不下发。所以只保留它当前这一个 stdio 值，不给“切进 stdio”的入口——那种改动会被
+  // `McpStdioPolicy` 拒掉，摆在表单里只会让人撞上一个写不进去的下拉项。
   const mcpTypeOptions = [
-    { label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' },
+    ...(values?.type === 'stdio'
+      ? [{ label: intl.formatMessage({ id: 'pages.mcp.type.stdio', defaultMessage: 'STDIO' }), value: 'stdio' }]
+      : []),
     { label: intl.formatMessage({ id: 'pages.mcp.type.sse', defaultMessage: 'SSE' }), value: 'sse' },
     { label: intl.formatMessage({ id: 'pages.mcp.type.streamablehttp', defaultMessage: 'Streamable HTTP' }), value: 'streamablehttp' },
   ];
@@ -86,14 +92,19 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
     }
     setTesting(true);
     try {
-      const result = await onConnectivityTest(values.id);
-      if (result) {
+      const reason = await onConnectivityTest(values.id);
+      if (reason === null) {
         message.success(intl.formatMessage({ id: 'pages.message.mcpTestSuccess', defaultMessage: 'MCP connectivity test passed, service connection is normal' }, { name: values.name }));
       } else {
-        message.error(intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name: values.name }));
+        // The caller's text is the backend's own: "authorizes per user" and "stdio is disabled" both
+        // look nothing like an unreachable service, and a generic line sends the admin to check ping.
+        message.error(reason);
       }
-    } catch (error) {
-      message.error(intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name: values.name }));
+    } catch (error: any) {
+      message.error(
+        error?.info?.errorMessage || error?.message
+        || intl.formatMessage({ id: 'pages.message.mcpTestFailed', defaultMessage: 'MCP connectivity test failed, service unreachable' }, { name: values.name }),
+      );
     } finally {
       setTesting(false);
     }
@@ -171,6 +182,11 @@ const UpdateForm: React.FC<UpdateFormProps> = ({ visible, values, onCancel, onSu
           <Select
             placeholder={intl.formatMessage({ id: 'pages.mcp.typePlaceholder', defaultMessage: 'Please select MCP type' })}
             onChange={(val: string) => {
+              // 选回当前类型不算切换：否则重选一次 STDIO 就把认证方式按成 NONE，
+              // 而 stdio + STATIC_HEADER 是后端接受的组合，下一次保存就悄悄改掉了。
+              if (val === mcpType) {
+                return;
+              }
               setMcpType(val);
               // 隐藏字段的旧值仍会被提交出去（Form 默认 preserve），而后端把「没带」当作「保留」，
               // 所以切类型时不主动清掉，另一种传输方式的连接参数就一直留着。

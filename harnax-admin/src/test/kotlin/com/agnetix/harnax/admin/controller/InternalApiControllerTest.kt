@@ -1,6 +1,9 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
+import com.agnetix.harnax.admin.service.McpOAuthUserService
+import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
@@ -14,9 +17,11 @@ import com.agnetix.harnax.entity.ApiKeyEntity
 import com.agnetix.harnax.entity.Channel
 import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.CliSkillBinding
+import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -40,6 +45,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.never
@@ -124,6 +130,12 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var envVariableService: EnvVariableService
+
+    @Mock
+    private lateinit var mcpOAuthUserService: McpOAuthUserService
+
+    @Mock
+    private lateinit var mcpStdioPolicy: McpStdioPolicy
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -951,6 +963,150 @@ class InternalApiControllerTest {
 
             assertNotNull(tool)
             assertEquals(0, tool?.status)
+        }
+    }
+
+    /**
+     * MCP 的鉴权方式与执行面在下发时的口径：`authType` 必须随配置给出，运行时才知道这个服务要按人
+     * 挂 token 还是用静态头；stdio 行在开关关闭时整条不下发——它是让 agent-service 起一个进程。
+     */
+    @Nested
+    @DisplayName("MCP 鉴权类型下发与 stdio 扣留")
+    inner class McpAuthDeliveryTests {
+
+        private fun stubWebSessionWithMcps(vararg servers: McpServer) {
+            val session = Session().apply {
+                sessionId = "web-mcp-auth"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-mcp-auth", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "MCP Agent"
+                    systemPrompt = "You are an MCP agent"
+                    modelId = 5L
+                },
+            )
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                servers.map {
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = it.id
+                    }
+                },
+            )
+            `when`(mcpServerMapper.selectByIds(servers.map { it.id })).thenReturn(servers.toList())
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - authType 随 MCP 配置一起下发")
+        fun `getAgentSpec should deliver the auth type`() {
+            stubWebSessionWithMcps(
+                McpServer().apply {
+                    id = 7L
+                    name = "oauth-mcp"
+                    type = "streamablehttp"
+                    authType = McpAuthTypes.OAUTH2
+                },
+            )
+
+            val mcp = controller.getAgentSpec("web-mcp-auth").data?.mcpDetails?.firstOrNull()
+
+            // 少了这个字段，按人的 token 在运行侧无处可挂，而 OAuth 服务看起来和一个静态头服务一样
+            assertEquals(McpAuthTypes.OAUTH2, mcp?.authType)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - stdio 关闭时两半都不出现")
+        fun `getAgentSpec should hold a stdio server back from both halves`() {
+            stubWebSessionWithMcps(
+                McpServer().apply {
+                    id = 7L
+                    name = "local-process"
+                    type = "stdio"
+                    command = "npx -y some-package"
+                },
+                McpServer().apply {
+                    id = 8L
+                    name = "remote-sse"
+                    type = "sse"
+                },
+            )
+            `when`(mcpStdioPolicy.isStdio("stdio")).thenReturn(true)
+
+            val data = controller.getAgentSpec("web-mcp-auth").data
+
+            assertEquals(listOf(8L), data?.mcpDetails?.map { it.id })
+            // 与技能那两半同理：兼容用的 mcpList 若从绑定关系直接拼，就会把扣下的进程列进去让运行侧去起
+            assertEquals("""[{"id":8,"env_bindings":[]}]""", data?.mcpList)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - stdio 开关打开后照常下发")
+        fun `getAgentSpec should deliver a stdio server once the switch is on`() {
+            stubWebSessionWithMcps(
+                McpServer().apply {
+                    id = 7L
+                    name = "local-process"
+                    type = "stdio"
+                },
+            )
+            `when`(mcpStdioPolicy.enabled).thenReturn(true)
+
+            val data = controller.getAgentSpec("web-mcp-auth").data
+
+            assertEquals(listOf(7L), data?.mcpDetails?.map { it.id })
+            // 开关是唯一依据：关了才逐行判断类型，开着时连类型都不必问
+            verify(mcpStdioPolicy, never()).isStdio(anyString())
+        }
+    }
+
+    @Nested
+    @DisplayName("MCP 按人换发访问令牌")
+    inner class McpAccessTokenTests {
+
+        @Test
+        @DisplayName("getMcpAccessToken - 只凭 sessionId 换发并原样带回令牌")
+        fun `getMcpAccessToken should ask for the session owner token`() {
+            `when`(mcpOAuthUserService.accessToken("web-abc", 7L))
+                .thenReturn(McpAccessTokenResponse(accessToken = "at-1", expiresAtEpochSecond = 123L))
+
+            val result = controller.getMcpAccessToken(
+                InternalApiController.McpAccessTokenRequest(sessionId = "web-abc", mcpId = 7L),
+            )
+
+            assertTrue(result.isSuccess())
+            assertEquals("at-1", result.data?.accessToken)
+            assertEquals(123L, result.data?.expiresAtEpochSecond)
+        }
+
+        @Test
+        @DisplayName("getMcpAccessToken - 授权已失效时保留 401 而非压成 500")
+        fun `getMcpAccessToken should keep the 401 of a lost grant`() {
+            `when`(mcpOAuthUserService.accessToken("web-abc", 7L))
+                .thenThrow(BizException(401, "This MCP server is not authorized for your account yet"))
+
+            val result = controller.getMcpAccessToken(
+                InternalApiController.McpAccessTokenRequest(sessionId = "web-abc", mcpId = 7L),
+            )
+
+            // 401 与 503 的分别是运行侧唯一的判断依据：前者要用户重新授权，后者只要重试一次
+            assertEquals(401, result.code)
+        }
+
+        @Test
+        @DisplayName("getMcpAccessToken - 空 sessionId 直接拒绝，不查库")
+        fun `getMcpAccessToken should reject a blank session id`() {
+            val result = controller.getMcpAccessToken(
+                InternalApiController.McpAccessTokenRequest(sessionId = "  ", mcpId = 7L),
+            )
+
+            assertEquals(400, result.code)
+            verifyNoInteractions(mcpOAuthUserService)
         }
     }
 }

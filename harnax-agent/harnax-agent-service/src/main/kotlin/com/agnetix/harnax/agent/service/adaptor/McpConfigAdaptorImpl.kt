@@ -50,6 +50,21 @@ class McpConfigAdaptorImpl(
         entity.type = dto.type
         entity.command = dto.command
         entity.url = dto.url
+        // How to authenticate, not just where to connect: an OAuth server that arrives without this
+        // looks like a plain one, gets no per-user token attached, and fails at the first tool call
+        // with an error pointing at the server. Blank behaves as absent, so the entity default (NONE)
+        // is never overwritten with an empty string nothing matches.
+        val deliveredAuthType = dto.authType
+        if (deliveredAuthType.isNullOrBlank()) {
+            log.warn(
+                "MCP {} ({}) arrived with no auth type, so it is treated as unauthenticated - an OAuth " +
+                    "server needs an admin that delivers the field",
+                dto.id,
+                dto.name,
+            )
+        } else {
+            entity.authType = deliveredAuthType
+        }
         entity.headers = dto.headers
         entity.envParams = dto.envParams
         entity.status = dto.status

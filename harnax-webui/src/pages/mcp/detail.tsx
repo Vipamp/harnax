@@ -91,18 +91,20 @@ const McpDetail: React.FC = () => {
   const loadTools = async (mcpId: number) => {
     setToolsLoading(true);
     try {
-      const res = await getMcpTools(mcpId);
-      if (res.code === 200 && res.data) {
+      // skipErrorHandler: a refusal carries the reason the admin has to read, and the global handler
+      // would both toast it and hand this call site `undefined` to crash on.
+      const res = await getMcpTools(mcpId, { skipErrorHandler: true });
+      if (res?.code === 200 && res.data) {
         setTools(res.data);
       } else {
         // 显示后端返回的错误信息
-        const errorMsg = res.message || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
+        const errorMsg = res?.message?.trim() || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
         message.error(errorMsg);
       }
     } catch (error: any) {
       console.error(intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' }), error);
-      // 显示错误信息给用户
-      const errorMsg = error?.message || error?.info?.errorMessage || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
+      // 显示错误信息给用户：BizError 把后端原文放在 info.errorMessage，error.message 是同一个串
+      const errorMsg = error?.info?.errorMessage || error?.message || intl.formatMessage({ id: 'pages.message.loadToolListFailed', defaultMessage: 'Failed to load tool list' });
       message.error(errorMsg);
     } finally {
       setToolsLoading(false);

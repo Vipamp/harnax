@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.McpOAuthExchangeRequest
 import com.agnetix.harnax.admin.dto.McpOAuthExchangeResponse
 import com.agnetix.harnax.admin.dto.McpOAuthRevokeResponse
 import com.agnetix.harnax.admin.dto.McpOAuthStatusResponse
+import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 
 /**
  * The per-user authorization code flow of one MCP server (design section 6.2 and 6.4).
@@ -52,4 +53,24 @@ interface McpOAuthUserService {
      * RFC 7009 revocation.
      */
     fun revoke(mcpId: Long): McpOAuthRevokeResponse
+
+    /**
+     * The token the runtime presents when [sessionId] calls [mcpId] (design section 7.2).
+     *
+     * This is the internal-API counterpart of [status]: the caller is agent-service rather than a
+     * browser, there is no authenticated user to ask, and so the grant is found by resolving the
+     * session back to the person who owns it. A stored token that is still usable is handed out
+     * unchanged; one that has passed its expiry - or is about to - is refreshed with the stored
+     * refresh token first, which is what keeps a long conversation from dying mid-tool-call.
+     *
+     * @throws com.agnetix.harnax.admin.exception.BizException with code 401 when the session has no
+     * user identity, the user never authorized this server, or the grant is gone (revoked upstream,
+     * refresh token rotated away) - in each case the answer is the same for the user: authorize
+     * again; and with code 503 when the authorization server could not be reached, which asks for a
+     * retry rather than a re-authorization
+     */
+    fun accessToken(
+        sessionId: String,
+        mcpId: Long,
+    ): McpAccessTokenResponse
 }

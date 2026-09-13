@@ -26,6 +26,14 @@ data class McpDetailDto(
     @Schema(description = "Service URL (for sse/streamablehttp type)")
     val url: String = "",
 
+    /**
+     * Upstream auth method, delivered so the runtime knows *how* to authenticate. Without it an OAuth
+     * server is indistinguishable from a header one and a per-user token has nowhere to be injected.
+     * Values: see `com.agnetix.harnax.entity.McpAuthTypes`.
+     */
+    @Schema(description = "Upstream auth method (NONE/STATIC_HEADER/OAUTH2)")
+    val authType: String? = null,
+
     @Schema(description = "HTTP headers JSON string")
     val headers: String? = null,
 

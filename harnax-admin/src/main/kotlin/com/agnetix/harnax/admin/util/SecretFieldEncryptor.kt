@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.dto.McpConfigEntry
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 
@@ -16,6 +17,8 @@ class SecretFieldEncryptor(
     private val aesUtil: AesUtil,
     private val objectMapper: ObjectMapper,
 ) : McpConfigDecryptor {
+
+    private val log = LoggerFactory.getLogger(SecretFieldEncryptor::class.java)
 
     /**
      * 对配置列表中 secret=true 的条目加密 value，然后序列化为 JSON
@@ -34,7 +37,11 @@ class SecretFieldEncryptor(
             .filter { it.secret && it.value.isNotBlank() }
             .associate { it.key to it.value }
         val encryptedEntries = entries.map { entry ->
-            if (!entry.secret || entry.value.isBlank()) {
+            if (!entry.secret) {
+                rejectMask(entry.key, entry.value)
+                entry
+            } else if (entry.value.isBlank()) {
+                // Typed-and-empty stays empty rather than becoming a ciphertext of nothing.
                 entry
             } else if (isMaskedValue(entry.value)) {
                 val carried = stored[entry.key]
@@ -53,6 +60,29 @@ class SecretFieldEncryptor(
      * convention already used for model provider api keys.
      */
     private fun isMaskedValue(value: String): Boolean = value.contains("****")
+
+    /**
+     * A field that is *not* marked secret has nothing carried over from the stored row, so a mask
+     * coming back from the edit form would be written to the database as the value - and delivered to
+     * the runtime as a header that looks like a key and authenticates as nothing. That happens on the
+     * path where a user turns the "secret" toggle off an already-saved row: the form still holds the
+     * masked text it was shown. Refused rather than stored, because the alternative is a credential
+     * silently replaced by its own mask.
+     *
+     * The masked text itself never reaches the message: a real value may contain four asterisks, and
+     * this one goes to the browser.
+     */
+    private fun rejectMask(
+        key: String,
+        value: String,
+    ) {
+        if (value.isNotBlank() && isMaskedValue(value)) {
+            throw BizException(
+                "\"$key\" carries a masked display value from the edit form, and this field is not marked as " +
+                    "secret, so there is nothing stored to keep. Type the real value, or mark the field as secret",
+            )
+        }
+    }
 
     /**
      * Resolve one stand-alone secret (a column, not a JSON entry) against what is already stored.
@@ -90,6 +120,10 @@ class SecretFieldEncryptor(
                 entry.key to value
             }
         } catch (e: Exception) {
+            // Was a silent empty map, which reads as "this server has no headers" downstream. A rotated
+            // or truncated AES key shows up here as an MCP server whose tools stopped working, so the
+            // reason has to be in the log - without the value, which is a credential, in it.
+            log.warn("A stored MCP header set could not be decrypted ({}), delivering no headers", e.javaClass.simpleName)
             emptyMap()
         }
     }
@@ -135,7 +169,11 @@ class SecretFieldEncryptor(
         storedSecrets: Map<String, String>,
     ): String? {
         val value = entry.defaultValue
-        if (!entry.secret || value.isNullOrBlank()) return entry.defaultValue
+        if (!entry.secret) {
+            rejectMask(entry.envParamName, value ?: "")
+            return entry.defaultValue
+        }
+        if (value.isNullOrBlank()) return entry.defaultValue
         if (!isMaskedValue(value)) return aesUtil.encrypt(value)
         return storedSecrets[entry.envParamName]
             ?: throw BizException("Secret value of \"${entry.envParamName}\" cannot be kept, please re-enter it")
@@ -156,6 +194,7 @@ class SecretFieldEncryptor(
                 entry.envParamName to value
             }
         } catch (e: Exception) {
+            log.warn("A stored tool env-param set could not be decrypted ({}), delivering no parameters", e.javaClass.simpleName)
             emptyMap()
         }
     }

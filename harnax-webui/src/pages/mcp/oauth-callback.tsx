@@ -9,7 +9,8 @@ const { Text } = Typography;
 const CALLBACK_PATH = '/mcp/oauth/callback';
 
 type Outcome = {
-  authorized: boolean;
+  /** `info` is not a failure: it says this page has nothing to act on, which is also true after a reload that followed a *successful* exchange. */
+  status: 'success' | 'error' | 'info';
   message: string;
   scopes: string[];
   expiresAt?: string;
@@ -46,7 +47,7 @@ const McpOAuthCallbackPage: React.FC = () => {
       // 直接打开这个地址（书签、误点）：没有可提交的东西，也就不去打扰后端。
       setWaiting(false);
       setOutcome({
-        authorized: false,
+        status: 'info',
         message: intl.formatMessage({
           id: 'pages.mcp.oauth.nothingToFinish',
           defaultMessage: 'There is nothing to complete here: an authorization server sends you to this page with a code.',
@@ -60,7 +61,7 @@ const McpOAuthCallbackPage: React.FC = () => {
     const fail = (reason?: string) => {
       if (alive) {
         setOutcome({
-          authorized: false,
+          status: 'error',
           message: reason || intl.formatMessage({ id: 'pages.mcp.oauth.exchangeFailed', defaultMessage: 'The authorization could not be completed' }),
           scopes: [],
         });
@@ -75,7 +76,7 @@ const McpOAuthCallbackPage: React.FC = () => {
         }
         if (res.code === 200 && res.data) {
           setOutcome({
-            authorized: res.data.authorized,
+            status: res.data.authorized ? 'success' : 'error',
             message: res.data.message || '',
             scopes: res.data.scopes || [],
             expiresAt: res.data.accessExpiresAt,
@@ -100,6 +101,14 @@ const McpOAuthCallbackPage: React.FC = () => {
     </Button>
   );
 
+  const granted = outcome?.status === 'success';
+  const title = outcome?.status === 'info'
+    ? intl.formatMessage({ id: 'pages.mcp.oauth.noteTitle', defaultMessage: 'For your information' })
+    : intl.formatMessage({
+      id: granted ? 'pages.mcp.oauth.authorizeSuccess' : 'pages.mcp.oauth.authorizeFailed',
+      defaultMessage: granted ? 'Authorized' : 'Authorization did not go through',
+    });
+
   return (
     <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 64 }}>
       <Card variant="borderless" style={{ minWidth: 480 }}>
@@ -114,15 +123,12 @@ const McpOAuthCallbackPage: React.FC = () => {
           </div>
         ) : (
           <Result
-            status={outcome?.authorized ? 'success' : 'error'}
-            title={intl.formatMessage({
-              id: outcome?.authorized ? 'pages.mcp.oauth.authorizeSuccess' : 'pages.mcp.oauth.authorizeFailed',
-              defaultMessage: outcome?.authorized ? 'Authorized' : 'Authorization did not go through',
-            })}
+            status={outcome?.status ?? 'error'}
+            title={title}
             subTitle={outcome?.message}
             extra={
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                {outcome?.authorized && outcome.scopes.length > 0 && (
+                {granted && outcome?.scopes.length > 0 && (
                   <Space size={[4, 4]} wrap>
                     <Text type="secondary">
                       {intl.formatMessage({ id: 'pages.mcp.oauth.grantedScopes', defaultMessage: 'Granted scopes' })}
@@ -134,7 +140,7 @@ const McpOAuthCallbackPage: React.FC = () => {
                     ))}
                   </Space>
                 )}
-                {outcome?.authorized && outcome.expiresAt && (
+                {granted && outcome?.expiresAt && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     {intl.formatMessage(
                       { id: 'pages.mcp.oauth.expiresAt', defaultMessage: 'This authorization expires at {time}' },

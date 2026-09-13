@@ -1,7 +1,10 @@
 package com.agnetix.harnax.admin.controller
 
 import com.agnetix.harnax.admin.constant.BuiltinRepository
+import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
+import com.agnetix.harnax.admin.service.McpOAuthUserService
+import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
@@ -9,6 +12,7 @@ import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.CliDetailDto
+import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
 import com.agnetix.harnax.entity.dto.SkillDetailDto
@@ -59,6 +63,8 @@ class InternalApiController(
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
+    private val mcpOAuthUserService: McpOAuthUserService,
+    private val mcpStdioPolicy: McpStdioPolicy,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -90,6 +96,13 @@ class InternalApiController(
     data class SystemKeyRequest(val serviceName: String)
 
     data class SystemKeyResponse(val rawKey: String, val keyPrefix: String)
+
+    /**
+     * Asks for one MCP access token on behalf of a runtime session. There is no user field on
+     * purpose: the session is the only identity agent-service holds, and the admin resolves it back
+     * to its owner, so a caller cannot name a user whose grant it wants to spend.
+     */
+    data class McpAccessTokenRequest(val sessionId: String, val mcpId: Long)
 
     /**
      * List all active skills from the built-in skill repository.
@@ -172,6 +185,31 @@ class InternalApiController(
         }
         val rawKey = aesUtil.decrypt(entity.rawKeyEncrypted!!)
         return ResultVo.success(SystemKeyResponse(rawKey = rawKey, keyPrefix = entity.keyPrefix))
+    }
+
+    /**
+     * One OAuth access token for the user who owns a runtime session, presented to one MCP server
+     * (design section 7.2).
+     *
+     * Behind [com.agnetix.harnax.admin.config.InternalApiAuthFilter] like every route under this
+     * prefix, which is what keeps it unreachable from a browser. The codes matter: 401 means the user
+     * has no usable grant and needs to authorize, 503 means the authorization server did not answer
+     * and the call is worth retrying - conflating them would send users to a consent page because of
+     * a network problem.
+     */
+    @PostMapping("/mcp/access-token")
+    fun getMcpAccessToken(@RequestBody request: McpAccessTokenRequest): ResultVo<McpAccessTokenResponse> {
+        if (request.sessionId.isBlank()) {
+            return ResultVo.error(400, "sessionId is required")
+        }
+        return try {
+            ResultVo.success(mcpOAuthUserService.accessToken(request.sessionId.trim(), request.mcpId))
+        } catch (e: BizException) {
+            ResultVo.error(e.code, e.message ?: "MCP token issuance failed")
+        } catch (e: Exception) {
+            log.error("MCP token issuance failed for session {}", request.sessionId, e)
+            ResultVo.error(500, "MCP token issuance failed")
+        }
     }
 
     // ========================================
@@ -357,7 +395,7 @@ class InternalApiController(
         val mcpBindings = mcpBindingMapper.selectByAgentId(agentId)
 
         val mcpIdsToDeliver = mcpBindings.map { it.mcpId }.distinct()
-        val mcpById = if (mcpIdsToDeliver.isEmpty()) {
+        val resolvedMcp = if (mcpIdsToDeliver.isEmpty()) {
             emptyMap()
         } else {
             // selectByIds has no tenant condition and an internal call carries no trustworthy tenant
@@ -367,12 +405,24 @@ class InternalApiController(
                 .filter { it.tenantId == agentTenantId }
                 .associateBy { it.id }
         }
+        // A stdio row is a process for agent-service to start, and that runtime is not isolated for
+        // it (see McpStdioPolicy), so while the switch is off such rows are simply not delivered -
+        // they stay editable, and nothing spawns them. Held back here rather than at the agent so the
+        // rule lives where the row does; harness-core refuses one too, in case an older admin sends it.
+        val heldStdio = if (mcpStdioPolicy.enabled) emptyMap() else resolvedMcp.filterValues { mcpStdioPolicy.isStdio(it.type) }
+        val mcpById = resolvedMcp - heldStdio.keys
         val missingMcpIds = mcpIdsToDeliver - mcpById.keys
         if (missingMcpIds.isNotEmpty()) {
             log.warn(
                 "MCP servers not resolved (deleted, or outside agent tenant {}), skipped from spec: mcpIds={}",
                 agentTenantId,
-                missingMcpIds,
+                missingMcpIds - heldStdio.keys,
+            )
+        }
+        if (heldStdio.isNotEmpty()) {
+            log.warn(
+                "MCP server(s) {} are stdio and stdio is disabled on this deployment, so they were skipped from the spec",
+                heldStdio.values.map { "${it.id}(${it.name})" },
             )
         }
         // Derived from what was actually resolved, like skillList above: a binding whose server row is
@@ -391,6 +441,9 @@ class InternalApiController(
                     type = mcp.type,
                     command = mcp.command,
                     url = mcp.url,
+                    // Tells the runtime *how* to authenticate. Without it an OAuth server looks like a
+                    // header one, and the per-user token has nowhere to go.
+                    authType = mcp.authType,
                     // Delivered decrypted: agent-service holds no AES key. See plainConfigJson().
                     headers = plainConfigJson(mcp.headers),
                     envParams = plainToolEnvJson(mcp.envParams),

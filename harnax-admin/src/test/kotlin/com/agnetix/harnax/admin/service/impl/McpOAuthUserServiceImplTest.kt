@@ -7,15 +7,20 @@ import com.agnetix.harnax.admin.service.McpServerService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.McpOAuthStateStore
+import com.agnetix.harnax.admin.util.McpSessionOwner
+import com.agnetix.harnax.admin.util.McpSessionOwnerResolver
 import com.agnetix.harnax.admin.util.PendingAuthorization
 import com.agnetix.harnax.admin.util.RemoteFetch
 import com.agnetix.harnax.admin.util.RemoteFetchException
 import com.agnetix.harnax.admin.util.RemoteJsonFetcher
 import com.agnetix.harnax.entity.McpAuthTypes
+import com.agnetix.harnax.entity.McpCallLog
 import com.agnetix.harnax.entity.McpOauthClient
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.McpUserCredential
+import com.agnetix.harnax.mapper.McpCallLogMapper
 import com.agnetix.harnax.mapper.McpOauthClientMapper
+import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.McpUserCredentialMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -30,6 +35,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.atLeastOnce
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -46,6 +52,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.Base64
 
 /**
@@ -69,6 +76,9 @@ class McpOAuthUserServiceImplTest {
     private val fetcher = mock<RemoteJsonFetcher>()
     private val stateStore = McpOAuthStateStore()
     private val objectMapper = jacksonObjectMapper()
+    private val mcpServerMapper = mock<McpServerMapper>()
+    private val mcpCallLogMapper = mock<McpCallLogMapper>()
+    private val sessionOwnerResolver = mock<McpSessionOwnerResolver>()
 
     private lateinit var service: McpOAuthUserServiceImpl
 
@@ -108,6 +118,9 @@ class McpOAuthUserServiceImplTest {
             fetcher,
             stateStore,
             objectMapper,
+            mcpServerMapper,
+            mcpCallLogMapper,
+            sessionOwnerResolver,
         )
     }
 
@@ -1118,6 +1131,245 @@ class McpOAuthUserServiceImplTest {
             service.revoke(mcpId)
 
             verify(credentialMapper).selectByUserAndMcp(1L, 7L, mcpId)
+        }
+    }
+
+    /**
+     * The endpoint agent-service calls at runtime. Its answer decides whether a tool call carries a
+     * person's identity, so the refusals have to be distinguishable from each other: 401 means the
+     * user must authorize, 503 means only retry, and a wrong choice here either spams a consent page
+     * over a network blip or leaves a dead grant in place.
+     */
+    @Nested
+    @DisplayName("accessToken (runtime)")
+    inner class AccessTokenTests {
+
+        private val session = "web-1"
+
+        private fun delivered(tenantId: Long = 1L, authType: String = McpAuthTypes.OAUTH2): McpServer {
+            val server = server(authType = authType, tenantId = tenantId)
+            whenever(mcpServerMapper.selectById(mcpId)).thenReturn(server)
+            return server
+        }
+
+        private fun ownedBy(userId: Long = 7L, tenantId: Long = 1L) {
+            whenever(sessionOwnerResolver.resolve(session)).thenReturn(McpSessionOwner(userId, tenantId))
+        }
+
+        private fun audits(): List<McpCallLog> {
+            val captor = argumentCaptor<McpCallLog>()
+            verify(mcpCallLogMapper, atLeastOnce()).insert(captor.capture())
+            return captor.allValues
+        }
+
+        @Test
+        @DisplayName("服务不是 OAuth:没有逐人令牌可发")
+        fun `a server that does not authorize per user has no token to issue`() {
+            delivered(authType = McpAuthTypes.STATIC_HEADER)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertTrue(error.message!!.contains("no per-user token"), error.message)
+            verify(fetcher, never()).postForm(any(), any())
+        }
+
+        @Test
+        @DisplayName("会话解析不出人:401 并记下这一笔")
+        fun `a session with no owner is refused and audited`() {
+            delivered()
+            whenever(sessionOwnerResolver.resolve(session)).thenReturn(null)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(401, error.code)
+            assertTrue(error.message!!.contains("no user identity"), error.message)
+            assertEquals(McpCallLog.OUTCOME_NEEDS_CONSENT, audits().single().outcome)
+            verify(credentialMapper, never()).selectByUserAndMcp(any(), any(), any())
+        }
+
+        @Test
+        @DisplayName("会话与服务不同租户:403，连凭据都不去查")
+        fun `a session from another tenant cannot spend this server's grant`() {
+            // The credential row is keyed by the server's tenant, so without this guard a session in
+            // tenant B could ask for tenant A's token for the same user id.
+            delivered(tenantId = 2L)
+            ownedBy(tenantId = 1L)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(403, error.code)
+            verify(credentialMapper, never()).selectByUserAndMcp(any(), any(), any())
+            verify(fetcher, never()).postForm(any(), any())
+        }
+
+        @Test
+        @DisplayName("还没授权过的账号:401 指向授权")
+        fun `an account with no grant yet is told to authorize`() {
+            delivered()
+            ownedBy()
+            whenever(credentialMapper.selectByUserAndMcp(1L, 7L, mcpId)).thenReturn(null)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(401, error.code)
+            assertTrue(error.message!!.contains("not authorized for your account"), error.message)
+        }
+
+        @Test
+        @DisplayName("可用令牌直接从库里给出,不打授权服务器")
+        fun `a live grant is answered from storage without touching the authorization server`() {
+            delivered()
+            ownedBy()
+            val expiry = LocalDateTime.now().plusHours(1)
+            storedGrant(credential(accessExpiresAt = expiry))
+
+            val response = service.accessToken(session, mcpId)
+
+            assertEquals("at-1", response.accessToken)
+            assertEquals(expiry.atZone(ZoneId.systemDefault()).toEpochSecond(), response.expiresAtEpochSecond)
+            verify(fetcher, never()).postForm(any(), any())
+            verifyNoCredentialWrites()
+            assertEquals(McpCallLog.OUTCOME_OK, audits().single().outcome)
+            assertEquals(7L, audits().single().userId)
+            assertEquals(session, audits().single().sessionId)
+        }
+
+        @Test
+        @DisplayName("用户自己撤销过的:拒绝但不改写状态")
+        fun `a revoked row is refused without being rewritten`() {
+            delivered()
+            ownedBy()
+            storedGrant(credential(status = McpUserCredential.STATUS_REVOKED, accessTokenEnc = null, refreshTokenEnc = null))
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(401, error.code)
+            assertTrue(error.message!!.contains("revoked"), error.message)
+            // NEEDS_CONSENT would erase the only thing this row still records: that this person took
+            // the grant back on purpose.
+            verifyNoCredentialWrites()
+            verify(fetcher, never()).postForm(any(), any())
+        }
+
+        @Test
+        @DisplayName("过期就刷新:表单带 resource 与密钥,轮换后的成对写回")
+        fun `an expired grant is refreshed and the rotated pair is stored`() {
+            delivered()
+            ownedBy()
+            registration()
+            storedGrant(credential(accessExpiresAt = LocalDateTime.now().minusMinutes(5)))
+            postAnswers[tokenUrl] = jsonFetch("""{"access_token":"at-2","refresh_token":"rt-2","expires_in":3600}""")
+
+            val response = service.accessToken(session, mcpId)
+
+            assertEquals("at-2", response.accessToken)
+            val form = capturedForm(tokenUrl)
+            assertEquals("refresh_token", form["grant_type"])
+            assertEquals("rt-1", form["refresh_token"])
+            assertEquals("harnax-web", form["client_id"])
+            assertEquals("s3cret", form["client_secret"])
+            // RFC 8707 §2.3: a refreshed token has to be re-bound to the resource it was consented for.
+            assertEquals(mcpUrl, form["resource"])
+            val updated = argumentOfUpdate()
+            assertEquals("enc:at-2", updated.accessTokenEnc)
+            assertEquals("enc:rt-2", updated.refreshTokenEnc)
+            assertEquals(McpUserCredential.STATUS_ACTIVE, updated.status)
+            assertNull(updated.lastError)
+            assertEquals(McpCallLog.ACTION_REFRESH, audits().single().action)
+        }
+
+        @Test
+        @DisplayName("刷新回答里没有 expires_in:沿用库里还没到期的那个性命期")
+        fun `a refresh answer with no expires_in keeps the lifetime the row already had`() {
+            delivered()
+            ownedBy()
+            registration()
+            val carried = LocalDateTime.now().plusSeconds(30)
+            storedGrant(credential(accessExpiresAt = carried))
+            postAnswers[tokenUrl] = jsonFetch("""{"access_token":"at-2"}""")
+
+            val response = service.accessToken(session, mcpId)
+
+            // Null here would read as "valid until refused", and nothing here ever hears that refusal:
+            // the runtime would keep presenting a token nobody accepts.
+            assertEquals(carried.atZone(ZoneId.systemDefault()).toEpochSecond(), response.expiresAtEpochSecond)
+            assertEquals(carried, argumentOfUpdate().accessExpiresAt)
+        }
+
+        @Test
+        @DisplayName("AS 认 invalid_grant:授权确实没了,标成待重新授权")
+        fun `an invalid_grant marks the grant as needing consent`() {
+            delivered()
+            ownedBy()
+            registration()
+            storedGrant(credential(accessExpiresAt = LocalDateTime.now().minusMinutes(1)))
+            postAnswers[tokenUrl] = RemoteFetch(400, null, objectMapper.readTree("""{"error":"invalid_grant"}"""))
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(401, error.code)
+            assertTrue(error.message!!.contains("authorize this MCP server again"), error.message)
+            assertEquals(McpUserCredential.STATUS_NEEDS_CONSENT, argumentOfUpdate().status)
+        }
+
+        @Test
+        @DisplayName("上游 5xx 不改用户的授权:那是重试不是重新授权")
+        fun `an upstream outage leaves the grant alone`() {
+            delivered()
+            ownedBy()
+            registration()
+            storedGrant(credential(accessExpiresAt = LocalDateTime.now().minusMinutes(1)))
+            postAnswers[tokenUrl] = RemoteFetch(503, null, null)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(503, error.code)
+            assertTrue(error.message!!.contains("unavailable right now"), error.message)
+            // Marking this NEEDS_CONSENT would send a user through a consent page over a network blip.
+            assertEquals(McpUserCredential.STATUS_ACTIVE, argumentOfUpdate().status)
+        }
+
+        @Test
+        @DisplayName("客户端密钥解不开:说清是密钥换了,503 可修")
+        fun `an undecryptable client secret is a configuration failure, not a lost grant`() {
+            delivered()
+            ownedBy()
+            registration()
+            storedGrant(credential(accessExpiresAt = LocalDateTime.now().minusMinutes(1)))
+            whenever(aesUtil.decrypt("enc:s3cret")).thenThrow(IllegalStateException("AES-GCM: decryption failed"))
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(503, error.code)
+            assertTrue(error.message!!.contains("re-save the OAuth client"), error.message)
+            // Asking for consent would be the wrong fix: the registration is what cannot be read.
+            verify(fetcher, never()).postForm(any(), any())
+        }
+
+        @Test
+        @DisplayName("refresh token 解不开:这次才真的要重新授权")
+        fun `an undecryptable refresh token sends the user to authorize`() {
+            delivered()
+            ownedBy()
+            storedGrant(credential(accessExpiresAt = LocalDateTime.now().minusMinutes(1)))
+            whenever(aesUtil.decrypt("enc:rt-1")).thenThrow(IllegalStateException("AES-GCM: decryption failed"))
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertEquals(401, error.code)
+            assertTrue(error.message!!.contains("cannot be decrypted"), error.message)
+            assertEquals(McpUserCredential.STATUS_NEEDS_CONSENT, argumentOfUpdate().status)
+            verify(fetcher, never()).postForm(any(), any())
+        }
+
+        @Test
+        @DisplayName("服务行不存在时按找不到回答,不拿 null 去比租户")
+        fun `a server row that is gone is reported as missing`() {
+            whenever(mcpServerMapper.selectById(mcpId)).thenReturn(null)
+
+            val error = assertThrows(BizException::class.java) { service.accessToken(session, mcpId) }
+
+            assertTrue(error.message!!.contains("not found"), error.message)
         }
     }
 

@@ -369,10 +369,7 @@ class HarnessAgentWrapper(
         val ctxResult = buildRuntimeContext()
         // Ensure configured permission rules are merged into loaded state before setting mode
         ensurePermissionRulesMerged()
-        // Channel sessions (chn-*) cannot support interactive tool approval (no /approve /deny UI),
-        // so force BYPASS to prevent PERMISSION_ASKING from blocking tool execution.
-        val effectiveMode = if (sessionId.startsWith("chn-")) "BYPASS" else permissionMode
-        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(effectiveMode))
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         try {
             val mono = harnessAgent.call(msgs, ctxResult.runtimeContext)
                 .timeout(Duration.ofMinutes(5))
@@ -413,8 +410,9 @@ class HarnessAgentWrapper(
                     // Detect and persist output files generated during this call
                     val attachments = detectAndPersistOutputFiles(callStartTime)
                     if (attachments.isNotEmpty() && !sessionId.startsWith("chn-")) {
-                        // Only append download links for WebUI sessions.
-                        // Channel sessions receive files via sendFile() directly.
+                        // Only append download links for WebUI sessions: a channel attachment has no
+                        // public URL (it is still in the sandbox workspace), so the link would be
+                        // dead — channel-service delivers those files instead.
                         content = appendDownloadLinks(content, attachments)
                     }
 
@@ -677,13 +675,11 @@ class HarnessAgentWrapper(
     private fun callStreamInternal(
         vararg msg: Msg = arrayOf(),
     ): Flux<ChatEvent> {
+        val streamStartTime = System.currentTimeMillis()
         val ctxResult = buildRuntimeContext()
         // Ensure configured permission rules are merged into loaded state before setting mode
         ensurePermissionRulesMerged()
-        // Channel sessions (chn-*) cannot support interactive tool approval (no /approve /deny UI),
-        // so force BYPASS to prevent PERMISSION_ASKING from blocking tool execution.
-        val effectiveMode = if (sessionId.startsWith("chn-")) "BYPASS" else permissionMode
-        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(effectiveMode))
+        harnessAgent.setPermissionMode(ctxResult.runtimeContext, PermissionMode.fromString(permissionMode))
         return harnessAgent.streamEvents(msg.toList(), ctxResult.runtimeContext)
             .doOnNext { agentEvent ->
                 // Intercept RequireUserConfirmEvent BEFORE flatMap to cache pending tool calls
@@ -746,7 +742,14 @@ class HarnessAgentWrapper(
             }
             .doOnNext { extracted(it) }
             .doFinally { persistKeepAliveSnapshot(ctxResult) }
-            .concatWith(Flux.just(EndEventChatEvent()))
+            // Output files are detected as the stream completes, the way the batch path in call()
+            // does it. Deferred so the work happens per subscription, moved off the emitting thread
+            // because detection runs a blocking `ls` in the sandbox, and best-effort by contract:
+            // a failure yields an empty list rather than a lost reply.
+            .concatWith(
+                Flux.defer { Flux.just(EndEventChatEvent(attachments = detectAndPersistOutputFiles(streamStartTime))) }
+                    .subscribeOn(Schedulers.boundedElastic()),
+            )
             .onErrorResume { e ->
                 log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
                 val errorEvent = if (e is HarnaxException) {

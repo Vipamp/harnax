@@ -2,6 +2,7 @@ package com.agnetix.harnax.admin.config
 
 import com.agnetix.harnax.admin.service.SysTokenBlacklistService
 import com.agnetix.harnax.admin.util.JwtUtil
+import jakarta.annotation.PostConstruct
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ServletException
 import jakarta.servlet.http.HttpServletRequest
@@ -27,6 +28,18 @@ class JwtAuthenticationFilter(
 ) : OncePerRequestFilter() {
 
     private val log = LoggerFactory.getLogger(JwtAuthenticationFilter::class.java)
+
+    /**
+     * Whether the configured shared secret may authenticate a caller at all.
+     *
+     * Presenting it here grants a principal on **every** admin path this filter covers, not just the
+     * internal API routes (which are handled by [InternalApiAuthFilter] and skipped below). The
+     * value shipped as the default in `application.yml` is a string in this repository, so accepting
+     * it would mean the admin API of any deployment that never overrode it - including the MCP, agent
+     * and user routes - opens to whoever can read the docs. A placeholder is treated as "not
+     * configured", which is what it is.
+     */
+    private val sharedSecretUsable = internalApiSecret.isNotBlank() && internalApiSecret != SHARED_SECRET_PLACEHOLDER
 
     /**
      * Skip JWT validation for internal API endpoints and public auth endpoints.
@@ -55,7 +68,7 @@ class JwtAuthenticationFilter(
             val token = resolveToken(request)
             if (token == null) {
                 log.info("[JWT Filter] Request without token: {}", requestURI)
-            } else if (internalApiSecret.isNotBlank() && token == internalApiSecret) {
+            } else if (sharedSecretUsable && token == internalApiSecret) {
                 // Internal service authentication (e.g. CLI in sandbox via shared secret)
                 val authentication = UsernamePasswordAuthenticationToken(
                     "internal-service",
@@ -113,5 +126,26 @@ class JwtAuthenticationFilter(
             return bearerToken.substring(7)
         }
         return null
+    }
+
+    @PostConstruct
+    fun warnOnPlaceholderSecret() {
+        if (internalApiSecret.isBlank()) {
+            log.warn(
+                "admin.internal-api.secret is not configured: service-to-service callers cannot authenticate " +
+                    "with a shared secret (see docker-new/.env.example)",
+            )
+        } else if (!sharedSecretUsable) {
+            log.warn(
+                "admin.internal-api.secret is still the placeholder shipped in application.yml. It is therefore " +
+                    "refused as a credential on /api/admin/** - set ADMIN_INTERNAL_API_SECRET to a real value " +
+                    "and restart, otherwise callers that present it (the sandbox harnax-cli) will get 401",
+            )
+        }
+    }
+
+    companion object {
+        /** The value `application.yml` defaults to. Public, and therefore not a secret. */
+        private const val SHARED_SECRET_PLACEHOLDER = "change-me-in-production-min-32-chars!!"
     }
 }

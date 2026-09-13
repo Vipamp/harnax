@@ -325,8 +325,8 @@ const OAuthPanel: React.FC<OAuthPanelProps> = ({ mcpId, config }) => {
         showIcon
         style={{ marginBottom: 16 }}
         message={intl.formatMessage({
-          id: 'pages.mcp.oauth.runtimePending',
-          defaultMessage: 'Authorizing here stores a credential for your account. The runtime still connects with the headers configured above until token injection is wired (design P3).',
+          id: 'pages.mcp.oauth.runtimeNote',
+          defaultMessage: 'This credential is what the agent presents when it calls the server from one of your sessions; a scheduled task runs as whoever created it. A channel conversation has no user identity behind it, so an OAuth server is not loaded there at all.',
         })}
       />
 

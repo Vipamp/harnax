@@ -3,6 +3,7 @@ package com.agnetix.harnax.harness
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpec
 import com.agnetix.harnax.agent.adaptor.ChatModelConfigAdaptor
+import com.agnetix.harnax.agent.adaptor.McpAccessTokenSourceFactory
 import com.agnetix.harnax.agent.adaptor.McpConfigAdaptor
 import com.agnetix.harnax.agent.adaptor.PlanNote
 import com.agnetix.harnax.agent.adaptor.PlanNoteAdaptor
@@ -19,6 +20,7 @@ import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
+import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.minio.MinioBaseStore
@@ -78,6 +80,8 @@ import java.util.UUID
  * @param planNoteAdaptor adaptor for plan note persistence
  * @param workspaceRoot local workspace root directory
  * @param harnessConfig harness runtime configuration
+ * @param mcpTokenSourceFactory binds the per-user OAuth token source to one agent instance; absent
+ * means an OAuth MCP server cannot be connected at all (design section 7.3)
  * @param minioConfig optional MinIO configuration for distributed storage
  */
 class HarnessAgentLauncher(
@@ -100,6 +104,7 @@ class HarnessAgentLauncher(
     val cliImageBuilder: CliImageBuilder? = null,
     val outputFileDetector: OutputFileDetector? = null,
     val outputFileStore: OutputFileStore? = null,
+    val mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentLauncher::class.java)
@@ -189,6 +194,46 @@ class HarnessAgentLauncher(
                 log.info("MCP server '{}' (id={}) is disabled, skipping", mcpConfig.name, mcpConfig.id)
                 return@forEach
             }
+            // Second line of defence against stdio, which is a process started here rather than a
+            // connection made: the admin holds such rows back from delivery while its own switch is
+            // off, so arriving here means the two services are configured differently. Refuse anyway -
+            // this is the container that runs without isolation against the host.
+            if (mcpConfig.type.equals(STDIO_TYPE, ignoreCase = true) && !harnessConfig.mcpStdioEnabled) {
+                log.warn(
+                    "MCP server '{}' (id={}) is stdio and stdio is disabled on this runtime, skipping",
+                    mcpConfig.name,
+                    mcpConfig.id,
+                )
+                return@forEach
+            }
+            // OAuth belongs to a person, and this instance serves one person: the source is bound here
+            // so no later request through this client can present anyone else's token. A session with
+            // no user behind it (a channel conversation, a service key) has no grant to spend, and an
+            // OAuth server is left out of the toolkit rather than connected unauthenticated.
+            val tokenSource = if (mcpConfig.authType == McpAuthTypes.OAUTH2) {
+                mcpTokenSourceFactory?.forUser(sessionId, userIdentifier.userId) ?: run {
+                    log.warn(
+                        "MCP server '{}' (id={}) authorizes per user (${McpAuthTypes.OAUTH2}) but session {} " +
+                            "has no user identity to authorize as, skipping",
+                        mcpConfig.name,
+                        mcpConfig.id,
+                        sessionId,
+                    )
+                    return@forEach
+                }
+            } else {
+                null
+            }
+            // Warm it here, on the thread that is already building this agent. The customizer reads the
+            // same source from whichever pool the MCP client sends on - the async handshake runs on the
+            // common fork-join pool - and a cold mint there parks one of its few threads for a whole
+            // admin round trip. A failure is not fatal and is not reported: the user may authorize
+            // mid-session, and the per-request callback is what surfaces that to them.
+            tokenSource?.let { source ->
+                runCatching { source.accessToken(mcpConfig.id) }.exceptionOrNull()?.let {
+                    log.debug("MCP server '{}' (id={}) has no token yet: {}", mcpConfig.name, mcpConfig.id, it.message)
+                }
+            }
             // One unreachable server must not cost the agent every tool it has: same shape as Admin
             // dropping an unresolvable binding from the spec. `client` is closed on the way out of a
             // failed registration because `addMcp` gives up on a timer while its registration thread
@@ -200,6 +245,7 @@ class HarnessAgentLauncher(
                     mcpSpec.isAsync,
                     mcpConfigDecryptor?.let { d -> d::decryptToMap },
                     mcpConfigDecryptor?.let { d -> d::decryptToolEnvParamsToMap },
+                    tokenSource,
                 )
                 client = created
                 agentBuilder.addMcp(created)
@@ -213,6 +259,18 @@ class HarnessAgentLauncher(
                 )
                 client?.let { c -> McpHelper.closeQuietly(c, mcpConfig.name) }
             }
+        }
+
+        // Say it once in aggregate as well. Every skip above has its own line, but the symptom someone
+        // reports is "the agent has no MCP tools", and that is only visible here.
+        if (mcpClients.size < agentSpec.mcpServices.size) {
+            log.warn(
+                "Agent '{}' for session {} was built with {} of {} bound MCP servers",
+                agentSpec.name,
+                sessionId,
+                mcpClients.size,
+                agentSpec.mcpServices.size,
+            )
         }
 
         // ----- Tools -----
@@ -631,6 +689,7 @@ class HarnessAgentLauncher(
             toolRegistry: ToolRegistry? = null,
             outputFileDetector: OutputFileDetector? = null,
             outputFileStore: OutputFileStore? = null,
+            mcpTokenSourceFactory: McpAccessTokenSourceFactory? = null,
         ): HarnessAgentLauncher {
             minioConfig?.ensureBuckets()
 
@@ -694,7 +753,11 @@ class HarnessAgentLauncher(
                 cliImageBuilder = cliImageBuilder,
                 outputFileDetector = outputFileDetector,
                 outputFileStore = outputFileStore,
+                mcpTokenSourceFactory = mcpTokenSourceFactory,
             )
         }
+
+        /** The one MCP type that is a local process rather than a connection; see [HarnessConfig.mcpStdioEnabled]. */
+        private const val STDIO_TYPE = "stdio"
     }
 }

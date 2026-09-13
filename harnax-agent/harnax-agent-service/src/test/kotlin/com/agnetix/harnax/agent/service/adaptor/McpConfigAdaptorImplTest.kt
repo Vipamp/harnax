@@ -1,6 +1,7 @@
 package com.agnetix.harnax.agent.service.adaptor
 
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
+import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import org.junit.jupiter.api.Assertions.*
@@ -115,6 +116,44 @@ class McpConfigAdaptorImplTest {
         fun `getConfig should return null for negative mcpId`() {
             val result = adaptor.getConfig(-1)
             assertNull(result)
+        }
+    }
+
+    /**
+     * The one place the delivered auth method becomes something the runtime can act on: `McpHelper`
+     * and `HarnessAgentLauncher` both branch on `McpServer.authType`, so a value lost here means an
+     * OAuth server gets connected without anybody's token.
+     */
+    @Nested
+    @DisplayName("authType mapping")
+    inner class AuthTypeTests {
+
+        private fun delivered(authType: String?): com.agnetix.harnax.entity.McpServer? {
+            stubContext(
+                listOf(
+                    McpDetailDto(
+                        id = 7L,
+                        name = "oauth-mcp",
+                        type = "streamablehttp",
+                        url = "http://localhost:3000/mcp",
+                        authType = authType,
+                    ),
+                ),
+            )
+            return adaptor.getConfig(7L)
+        }
+
+        @Test
+        fun `getConfig should carry the delivered auth type onto the runtime entity`() {
+            assertEquals(McpAuthTypes.OAUTH2, delivered(McpAuthTypes.OAUTH2)?.authType)
+        }
+
+        @Test
+        fun `getConfig should leave the entity default when the delivery says nothing`() {
+            // An older admin sends no field at all. Falling back to NONE is the only safe reading, but
+            // it must not arrive as an empty string: nothing downstream compares against that.
+            assertEquals(McpAuthTypes.NONE, delivered(null)?.authType)
+            assertEquals(McpAuthTypes.NONE, delivered("  ")?.authType)
         }
     }
 }
