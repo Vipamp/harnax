@@ -539,7 +539,12 @@ CREATE TABLE IF NOT EXISTS `agent_task_execution` (
     `create_time`     DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY `uk_task_trigger` (`task_id`, `trigger_time`),
     INDEX `idx_task_id` (`task_id`),
-    INDEX `idx_trigger_time` (`trigger_time`)
+    INDEX `idx_trigger_time` (`trigger_time`),
+    -- V27: the two housekeeping sweeps (deleteStaleRunning on status + create_time, deleteOldExecutions
+    -- on create_time) had nothing to walk but the whole table, and a scanning DELETE locks the gaps
+    -- tryAcquireLock inserts through
+    INDEX `idx_status_create_time` (`status`, `create_time`),
+    INDEX `idx_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent task execution lock (multi-instance dedup)';
 
 -- ============================================
