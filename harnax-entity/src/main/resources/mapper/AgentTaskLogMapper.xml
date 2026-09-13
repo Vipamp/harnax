@@ -99,13 +99,18 @@
     </update>
 
     <!--
-      2 -> {0,1,5}: the reaper guessed, and the execution then proved otherwise. Two callers get here —
-      one with its own result (0/1), and the stop path, which had read the row at 4 (the user stopped it),
-      saw the sweep move it to 2 before its own 4 -> 5 UPDATE could run, and reclaims to write 5 over the
-      reaper's guess. 5 therefore only ever arrives from a thread that actually observed the stop; nobody
-      can put a row there on spec. Restricted to status 2 either way: it can never undo a user stop
-      (4/5) or a real failure already written (0/1), and the marker in error_info is what tells the two
-      kinds of 0/1 apart later.
+      2 -> {0,1,5}: the reaper guessed, and the execution then proved otherwise. Two callers get here
+      (SchedulerServiceImpl.closeOutLateExecution), and they are not symmetric. The one with its own
+      result writes 0/1; the stop path writes 5, and it reaches this statement only because it had read
+      the row at 4 itself, i.e. the sweep moved it to 2 *after* that read. 5 therefore only ever arrives
+      from a thread that actually observed the stop; nobody can put a row there on spec.
+      What this statement cannot recover: a row the sweep moved 4 -> 2 *before* the caller looked at it.
+      Read now, that row is indistinguishable from one nobody ever stopped — expireStale had already
+      replaced the error_info that carried the intent — so the caller writes its own 0/1 and the user's
+      stop is gone from the record. No longer labelled "timeout", still the wrong row; closing it needs a
+      stop marker column, not a smarter UPDATE (spec 2026-09-11-scheduler-cluster-design.md, F11).
+      Restricted to status 2 either way: it can never undo a user stop (4/5) or a real failure already
+      written (0/1), and the marker in error_info is what tells the two kinds of 0/1 apart later.
     -->
     <update id="reclaimExpired" parameterType="com.agnetix.harnax.entity.AgentTaskLog">
         UPDATE agent_task_log SET
@@ -170,6 +175,12 @@
       another one in agent-service is still alive and would otherwise be judged a zombie exactly when
       the user's own timeout fires. The message still reports the task's own timeout, because that is
       the value the user configured and the one they can act on.
+
+      It sweeps 4 as well as 3, and that has a second cost worth naming: 4 is the only place a user's
+      stop is recorded, and this statement replaces error_info with the expiry text. So a row it touches
+      loses every trace of that stop, and the executing thread that comes back for it later can no
+      longer tell "stopped, then reaped" from "never stopped" — see the reclaimExpired comment and spec
+      2026-09-11-scheduler-cluster-design.md F11 (a stop needs its own column or flag, not a 4).
     -->
     <update id="expireStale">
         UPDATE agent_task_log l

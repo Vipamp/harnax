@@ -165,7 +165,9 @@ spring:
 
 修法三处：
 
-1. agent-service：`interrupt()` 返回是否真的命中了一个活着的执行。可用信号两个——`agentCache.getIfPresent` 与 `activeCalls` 集合（blocking 调用会注册 sessionId，`DefaultAgentRunner.kt:124`）；未命中时返回 `CommandResponse.success = false` 并带明确 message。
+1. agent-service：`interrupt()` 返回是否真的命中了一个活着的执行。**存活信号两个——在途流 || `activeCalls`**（`DefaultAgentRunner.kt:266`：前者是该 session 还挂在 `activeStreams` 上的 `Subscription`，后者由 blocking 调用注册）。**`agentCache` 命中不算存活证据**——G5 已把这条臂从判据里去掉；缓存里的 wrapper 仍然会被调一次真 `interrupt()`（`:255-256`，那是真中断动作，不是判据）。未命中时返回 `CommandResponse.success = false` 并带明确 message。
+   - **为什么缓存那条臂要去掉**：`agentCache` 是 30 分钟 TTL 的缓存，命中只说明"本实例曾服务过该 session"，不说明"现在有东西在推进这次执行"。把它算作命中，会在 owning 节点已经消失后仍然答复"已送达"，那一行于是既没有 owner 也没有终态，最后被回收器写成 `2 timeout`——正是 D7 要消灭的表象。
+   - **为什么 `registerCall` 必须早于 agent 构建**（`DefaultAgentRunner.kt:131-135`）：spec 组装 + sandbox 创建要几秒，全程都算"执行在途"。若登记晚于构建，这段窗口里的 session 在判据眼里就是未命中，一次落在构建期的停止请求会把刚起跑的执行当场定成 5，而 sandbox 已经建起来且此后无人释放——留下一个孤儿容器。构建期抛异常时也要靠 `finally` 摘掉登记。
 2. router：`/api/router/agent/command` 已经把 `CommandResponse` 原样装进 `ResultVo.data` 回传（含 failover 分支的 failure），**无需改动，仅需加一条透传断言**。
 3. scheduler：`RouterClient.sendCommand` 当前签名是 **返回 `Unit`、响应体压根没有接收**（`RouterClient.kt:127-143` 调完 `.body(...)` 直接丢弃，只 log 一行"命令已发送"）。改为返回 `Boolean`（取 `data.success`），`stopTask` 在拿到 `false` 时**立即** `finalizeStopped`（4→5）定态，不等 `expireStale`。
 
@@ -273,7 +275,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 | IT-3 越权 | 非属主读/改/删拿不到且数据未变；`is_public=1` 可读 | 已完成项（属主校验）的回归护栏 |
 | IT-4 one-shot | 连发两次 trigger：store 出现 `_ONCE` trigger、第二发返回 40901；投递后 kill 进程，重启补火一次且仅一次 | 覆盖 4.2 与 D6 的补火语义 |
 | IT-5 guard 清理 | 造过期 `agent_task_execution` 行 → 跑 housekeeping → 过期行删除、未过期保留、`status=0` 泄漏行被清 | `cleanupOldExecutions()` 此前零调用方 |
-| **IT-6 中断未命中** | 缓存无该 session 时 `interrupt()` 返回未命中，scheduler 立即把行 4→5，`expireStale` 之后不再改动它 | 覆盖 D7。这是本轮唯一跨三个服务的断言，也是用户可见的直接收益 |
+| **IT-6 中断未命中** | 触发条件按 4.3 的判据写：**该 session 既没有在途流也没有在途调用**时 `interrupt()` 返回未命中（缓存里还留着 wrapper **不算**命中，G5），scheduler 立即把行 4→5，`expireStale` 之后不再改动它 | 覆盖 D7。这是本轮唯一跨三个服务的断言，也是用户可见的直接收益 |
 | **IT-7 超时竞争** | 执行结果返回前行已被 `expireStale` 写成 2 → 真实结果与状态被覆盖写回，`error_info` 含超时标记 | 覆盖 4.4"结果不丢" |
 
 既有测试处置：`AgentTaskServiceImplTest`(603) 迁 scheduler 重写为真库 IT；`SchedulerClientImplTest`(452) 随广播删除、保留转发用例；`AgentTaskLogServiceImplTest`(271) 删除（被测对象是死代码）；`AgentTaskControllerTest`(657) 拆为 admin 转发契约测试 + scheduler CRUD 测试；`AgentTaskSchedulerIT`(208)、`AgentTaskCrudIT`(171) 迁入 scheduler；`harnax-entity` 的 `AgentTaskMapperTest`/`AgentTaskLogMapperTest` 随迁、`schema-test.sql` 删对应段与种子；scheduler 现有 3 个 Mockito 单测（startup-load / stop 状态机 / health）保留并按新签名调整。
@@ -290,6 +292,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 8. **F8 域内无细粒度授权**：整域只要求"已登录"，`MybatisTenantInterceptor.intercept()` 实为 no-op，属主条件是目前唯一隔离手段。
 9. **F9 `scheduler.jobs.scheduled` 是本实例视图，不是集群视图**：gauge 读的是本进程 Quartz store 的 `getJobKeys(AgentTaskGroup)`（`QuartzJobInventory.kt`），store 还是 `memory` 时每个实例各自注册全量任务，于是 N 台各报自己的数、看板取哪台都一样"看着对"。**S2 换 JDBC 集群 store 后同一个表达式的含义会静默跳变成集群视图**（集群里只有一台 fire，但 store 是共享的，所以数值不降反升的语义完全不同）。届时必须同时重解读既有看板与告警阈值，并把指标改按 `instanceId` 之外再打一层 store 来源标签。
 10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证随 B1 一起在有 Docker 的环境补跑。
+11. **F11 停止意图只有一个瞬态列承载**：用户"点了停止"这件事目前**只写在 `agent_task_log.status = 4` 上**，没有独立的标记位，于是它只活到下一次回收扫描为止。G6 补齐的是**能区分出来的那一半**：执行线程先读到 4、随后 4 被 sweep 改成 2，`finalizeStopped` 的 4 守卫失配 → 重读发现是 2 → 改走 `reclaimExpired` 写 5（`SchedulerServiceImpl.kt:512-536`）。**没补齐的那一半**是 sweep 在**那次重读之前**就把 4 改成 2：线程按 2 分支写回自己真实的 0/1，用户那一次停止就此从记录上消失，而且**无法与"根本没被停止过"区分**——`expireStale` 已经把 `error_info` 覆盖成超时文案，4 存在过的证据被销毁了。这不是"超时"那样的错误标签，但这一行仍然不对。根治需要给行加一个 stop/owner 标记（`stop_requested` 列，或 `agent_task_execution` 上记 owner），让停止意图不依赖 status 这一瞬态——属 S2/S3 的库改动，本轮不动行为，只在 `SchedulerServiceImpl.kt:510-562` 与 `AgentTaskLogMapper.xml` 的 `expireStale`/`reclaimExpired` 注释里标明各守住哪个窗口、哪个窗口未守。
 
 ## 10. 数据迁移（D8）
 

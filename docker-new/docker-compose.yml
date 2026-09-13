@@ -337,7 +337,14 @@ services:
     # Not exactly SCHEDULER_TIMEOUT on purpose: the timeout only covers the router call. The seconds
     # after it are precisely the ones that turn a finished run into a terminal row — cut them and the
     # execution is remembered as a timeout even though the answer was already in hand.
-    # If SCHEDULER_TIMEOUT is raised, raise this with it: timeout + min(60, timeout) + 20.
+    # If SCHEDULER_TIMEOUT is raised, raise this with it. The rule is:
+    #     timeout + min(clearSessionCap, timeout) + 20      with clearSessionCap = SCHEDULER_CLEAR_SESSION_TIMEOUT (60)
+    # so the 380s here is 300 + min(60, 300) + 20. Both knobs move it: raising SCHEDULER_CLEAR_SESSION_TIMEOUT
+    # to 300 without touching this puts SIGKILL back in the middle of the DELETE — the exact comment-that-
+    # lies-by-default G1 removed. Do not read the +20 as free slack either: the 10s connect timeout on the
+    # router client (SchedulerConfig.kt / RouterClient.kt) is additive to the read timeouts above, so what
+    # is actually left for finishExecution's write-back, updateExecutionStatus' release and Spring's own
+    # shutdown hooks is nearer 10s.
     stop_grace_period: 380s
     deploy:
       resources:

@@ -65,10 +65,10 @@ class SchedulerServiceImpl(
     private var shuttingDown = false
 
     /**
-     * When this process last ran a stale-execution sweep; null means never. Backs the rate limit in
-     * [expireStaleExecutionsThrottled]. Monotonic on purpose — a wall-clock step from an NTP correction
-     * would either freeze the window or open it early. `internal` only so the tests can move the clock
-     * back instead of waiting 30 seconds for a green run.
+     * When this process last ran a stale-execution sweep to completion; null means never (or only
+     * failures). Backs the rate limit in [expireStaleExecutionsThrottled]. Monotonic on purpose — a
+     * wall-clock step from an NTP correction would either freeze the window or open it early.
+     * `internal` only so the tests can move the clock back instead of waiting 30 seconds for a green run.
      */
     @Volatile
     internal var lastStaleSweepAtNanos: Long? = null
@@ -506,6 +506,18 @@ class SchedulerServiceImpl(
      * a user stop: a row the reaper had judged `timeout` is a run that finished successfully but
      * would otherwise be remembered as a failure, and that mistake is ours to correct because we hold
      * the real result.
+     *
+     * **Two orderings, one of which this method cannot see.** A stop lives only as `status = 4`, and the
+     * stale sweep also writes that row (4 -> 2), so the outcome depends on where the sweep lands relative
+     * to the re-read below:
+     * - sweep lands *after* the read of 4 → the 4 branch, whose guarded UPDATE misses, recovers via
+     *   `reclaimExpired` and still writes 5. Protected.
+     * - sweep lands *before* the read → the 2 branch, which cannot tell a stopped-then-reaped row from a
+     *   merely-reaped one: `expireStale` has already overwritten `error_info`, so the 4 that existed left
+     *   no trace. It writes this thread's real 0/1 and the user's stop disappears from the record — no
+     *   longer mislabelled "timeout", but still the wrong row.
+     * The second one is a known, accepted gap: closing it needs the stop intent carried by something
+     * other than a transient status (see spec `2026-09-11-scheduler-cluster-design.md` F11, S2/S3 scope).
      */
     private fun closeOutLateExecution(taskLog: AgentTaskLog) {
         when (agentTaskLogMapper.selectById(taskLog.id)?.status) {
@@ -516,12 +528,14 @@ class SchedulerServiceImpl(
                 if (closed > 0) {
                     log.info("Task was stopped during execution: id={}", taskLog.id)
                 } else if (agentTaskLogMapper.selectById(taskLog.id)?.status == 2) {
-                    // Read 4, then the row moved: another fire's stale sweep reaped it to 2 in between,
-                    // so the 4-guarded UPDATE matched nothing. Left alone, a run the user really stopped
-                    // is remembered as a timeout — the exact symptom this whole series exists to remove.
-                    // reclaimExpired is the recovery the 2 branch below already uses: it still guards on
-                    // status = 2, so the only row it can touch is one the reaper had guessed about, and
-                    // the verdict it writes stays this thread's own (5, from the stop it observed).
+                    // The window this closes: read 4, then the stale sweep reaped it to 2 *before* our
+                    // 4-guarded UPDATE ran, so that UPDATE matched nothing. Left alone, a run the user
+                    // really stopped is remembered as a timeout — the exact symptom this whole series
+                    // exists to remove. reclaimExpired is the recovery the 2 branch below already uses:
+                    // it still guards on status = 2, so the only row it can touch is one the reaper had
+                    // guessed about, and the verdict it writes stays this thread's own (5, from the stop
+                    // it observed). A sweep that got here *before* the read above never reaches this
+                    // branch — see the two-orderings note on the method: that one is the open gap.
                     if (agentTaskLogMapper.reclaimExpired(taskLog) > 0) {
                         log.info(
                             "Task {} was reaped as a timeout after the stop was read; wrote stopped over it",
@@ -539,6 +553,12 @@ class SchedulerServiceImpl(
                 // reclaimExpired guards the row it replaces (status 2) but not the status it is handed,
                 // so the value stays this thread's own verdict: 0 or 1. Anything else would write a
                 // result nobody produced over a row the reaper already gave up on.
+                //
+                // This is also where a stop that the sweep reaped *before* the read above lands: such a
+                // row is indistinguishable from one nobody ever stopped (`expireStale` overwrote the
+                // error_info that carried the 4), so writing 0/1 here is exactly what erases that stop
+                // from the record. Deliberate — guessing a 5 from a row that reads 2 would fabricate a
+                // user action. Closing it needs a stop marker on the row, not a smarter branch (F11).
                 check(taskLog.status == 0 || taskLog.status == 1) {
                     "Refusing to reclaim log ${taskLog.id} with status ${taskLog.status}"
                 }
@@ -709,20 +729,24 @@ class SchedulerServiceImpl(
      * Three kinds of caller reach this: the startup load and the housekeeping sweep (both unthrottled,
      * and both of which *count* as this process's last sweep), and a fire asking whether a row it can see
      * is still live. A failure is a log line plus 0: the sweep must not be the thing that takes its
-     * caller down.
+     * caller down — and it does not count as a sweep, so the next caller may try the statement again
+     * immediately. Stamping the window on the way *in* let one dead connection silence this node's
+     * retries for the full [MIN_STALE_SWEEP_INTERVAL_MS], which is the opposite of what a failed
+     * reclaim needs.
      */
     override fun expireStaleExecutions(): Int {
-        lastStaleSweepAtNanos = System.nanoTime()
-        return try {
-            val expired = agentTaskLogMapper.expireStale(executionTimeoutSeconds)
-            if (expired > 0) {
-                log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
-            }
-            expired
+        val expired = try {
+            agentTaskLogMapper.expireStale(executionTimeoutSeconds)
         } catch (e: Exception) {
             log.warn("Failed to expire stale running task logs: {}", e.message)
-            0
+            return 0
         }
+        // Only a statement that actually ran earns the window.
+        lastStaleSweepAtNanos = System.nanoTime()
+        if (expired > 0) {
+            log.info("Expired {} stale running task log(s) (baseline {}s)", expired, executionTimeoutSeconds)
+        }
+        return expired
     }
 
     /**
@@ -731,8 +755,9 @@ class SchedulerServiceImpl(
      *
      * Nothing is lost by waiting. Global reclaim is housekeeping's job, and since G3 it runs on every
      * node including disabled ones, five minutes apart; this call site only ever asks "is the row I can
-     * see still live", and the answer is the same one a sweep gave at most 30s ago — a row that crossed
-     * its own 1.5x deadline inside that window was not stale when the last sweep looked at it.
+     * see still live", and the answer is the same one a *successful* sweep gave at most 30s ago — a row
+     * that crossed its own 1.5x deadline inside that window was not stale when the last sweep looked at
+     * it. One that threw is not in that count (see [expireStaleExecutions]).
      *
      * A plain `@Volatile` timestamp rather than a lock: two fires that arrive in the same millisecond can
      * both pass this check and both sweep, which costs one extra statement per node per window at worst.

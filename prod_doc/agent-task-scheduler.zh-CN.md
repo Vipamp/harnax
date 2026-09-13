@@ -2,6 +2,8 @@
 
 > 本文覆盖「智能体定时任务」（Agent Task）这个业务域的完整链路：数据模型、harnax-scheduler 独立服务的职责、Quartz 调度引擎、任务生命周期（创建→注册→触发→执行→停止→回收）、跨服务边界与鉴权、以及本轮集群化改造的方案决策与实施计划。
 >
+> **关于英文版**：`prod_doc` 的约定是中英成对，但本文自始**只有中文**（无 `agent-task-scheduler.en-US.md`）。改本文时不需要同步英文版，也**不要**为此新建半份英文文档；真要建，就得在同一批改动里把本文完整翻过去。
+>
 > **本轮改造的设计与实施计划已于 2026-09-11 定稿并移至** [docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md](../docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md)（决策清单 D1~D8、里程碑 S0~S4、跨服务契约 C1~C4、测试 IT-1~IT-7、验收标准）。本文此后是**现状链路与方案推理**的参考：改代码前先对齐那份 spec 的里程碑表，本文第 10~11 节保留作工作项清单与被取代决策的备查记录。
 >
 > 相关文档：会话路由能力契约见 [session-routing.zh-CN.md](./session-routing.zh-CN.md)（部署步骤见 [docs/deploy-harnax-session-router.md](../docs/deploy-harnax-session-router.md)），渠道监听器单实例化（MySQL `GET_LOCK` 范式）见 [docs/channel-to-agent-flow.md](../docs/channel-to-agent-flow.md)，后端分层规范见 [docs/backend-code-conventions.md](../docs/backend-code-conventions.md)，库表规范见 [docs/database-design-conventions.md](../docs/database-design-conventions.md)。
@@ -115,15 +117,22 @@ scheduler 回收  AgentTaskLogMapper.xml:116-127  UPDATE agent_task_log l
 `agent_task_log` 的状态机是这套设计里最需要小心的部分：
 
 ```
-  3 running ──正常结束──> 1 success
-      │        └─异常──> 0 failed
+  3 running ──正常结束：finishExecution──> 1 success
+      │        └───异常─────────────────> 0 failed
       │
       ├── 任意节点请求停止：markStopping  3 ──> 4 stopping（前端立刻反馈）
       │                                    │
-      │                          执行线程收尾 finalizeStopped  4 ──> 5 stopped
+      │                    执行线程收尾 finalizeStopped            4 ──> 5 stopped
+      │                    停止节点收到"无在途执行"（Missed）        4 ──> 5 stopped
+      │                      —— 不等回收扫描，见 6.4
       │
       └── 超时未被收尾（节点死了）：expireStale  3|4 ──> 2 timeout
+                                              │
+                        真实结果事后回来：reclaimExpired  2 ──> {0,1}（覆盖回收的猜测，error_info 留标记）
+                        停止确曾被读到过：reclaimExpired  2 ──> 5  （只有读到 4 的那个线程写得动）
 ```
+
+即：`3 → {0,1,4,2}`、`4 → {5,2}`、`2 → {0,1,5}`，与 `AgentTaskLogMapper` 的类注释同源。`2 → 5` 是唯一的例外通道，写它的资格来自"我亲眼读到过 4"，不是来自能拼出这条 UPDATE。有一条拼不回来：sweep 在执行线程**重读之前**就把 4 改成 2，那一行和"从没被停止过"的行一模一样（`expireStale` 已覆盖 `error_info`），线程于是写回真实的 0/1，用户那次停止从记录上消失——根治要给停止意图一个独立列，见 spec 第 9 节 F11。
 
 `finishExecution` / `finalizeStopped` / `markStopping` 都是**带状态条件的 UPDATE**，靠"影响行数为 0"判断被别的节点抢先定态（`SchedulerServiceImpl.kt:347-357`）。这套 CAS 语义要求日志表必须是执行节点能用 SQL 直连的库——这正是"日志表不能留在 admin 库、否则得把状态机包成 HTTP 条件更新接口"的原因。
 
@@ -232,14 +241,20 @@ QRTZ_TRIGGERS.NEXT_FIRE_TIME 到期
 前端点「停止」→ admin 转发 → scheduler 任一节点 stopTask(logId)
   ├─ markStopping: 3→4（CAS，抢不到说明已定态）
   ├─ routerClient.sendCommand(sessionId, INTERRUPT)   ← 会话 ID 存在日志行里，所以任何节点都能发
-  └─ 真正执行的那个线程在收尾时看到 4，写成 5
+  ├─ 送达（有实例答"我这儿有在途执行"）→ 真正执行的那个线程收尾时看到 4，写成 5
+  ├─ Missed（没有任何实例在推进它）→ **停止节点当场** finalizeStopped 4→5，不等回收扫描
+  └─ Unanswered（命令根本没送到）→ 行留在 4：谁也不知道执行是否还活着，交给执行节点或回收扫描
 ```
 
-正因为状态在 DB 行上而不是内存里，admin 不需要知道"这个任务在哪个节点上跑"，转发也不必定向到某个实例——这是第 10 节淘汰"固定发 `urls[0]`"的依据。
+写 5 的因此是**两个**地方：执行线程（它拿到过真实结果）与受理停止的节点（它拿到过一个"未命中"答复，那本身就是结论）。第二条边是 D7/G5 换回来的——未命中不再被折叠成"已送达"，否则一行停在 4 的执行最后会被 `expireStale` 写成 `2 timeout`。
+
+正因为状态在 DB 行上而不是内存里，admin 不需要知道"这个任务在哪个节点上跑"，转发也不必定向到某个实例——这是第 10 节淘汰"固定发 `urls[0]`"的依据。注意它反过来也成立：**受理停止的节点不是执行节点时，它写 5 的依据只有那个"未命中"答复**，所以 `SchedulerClientImpl.broadcast` 的多实例折叠会直接把这条边变成 bug（该处的债注释）。
 
 ### 6.5 回收
 
-`expireStale` 在启动加载、并发判断前、以及新的 housekeeping job 里被调用，把超过 `timeout_seconds` 仍未定态的行判为 `2 timeout`。它是节点被 kill 之后不留永久"运行中"僵尸的最后防线。
+`expireStale` 把超过 `timeout_seconds × 1.5` 仍未定态的行（3 或 4）判为 `2 timeout`，调用点是启动加载、housekeeping 每 5 分钟一轮、以及 fire 前的并发判断——最后这一处自 G7 起被限流成**每节点每 30s 至多一次**（它是扫 `idx_status` 活跃端的 UPDATE，和同一时刻插入新行的抢锁在 MySQL 上互撞，输的那方丢的是真执行）。它是节点被 kill 之后不留永久"运行中"僵尸的最后防线。
+
+"最后"是关键字：`2` 不是不可逆的。执行线程事后带着真实结果回来时走 `reclaimExpired`，把这一行覆盖成 `0/1`（并在 `error_info` 留"完成于自动超时之后"的标记），或在自己读到过 4 的情况下覆盖成 `5`（见 4.1 状态图的 `2 → {0,1,5}` 三条边）。回收扫描因此只能是猜测的兜底，不能当定论的出口。
 
 ## 7. 三处引擎层逻辑改动
 

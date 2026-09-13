@@ -11,6 +11,8 @@ import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -36,10 +38,11 @@ import java.time.Duration
  * with next-key/gap locks, and the side it rolls back is the one that loses real work: roll back the
  * insert and that Quartz fire silently does not execute.
  *
- * So the sweep may not run once per fire. These cases pin the three properties that replace it: the
+ * So the sweep may not run once per fire. These cases pin the four properties that replace it: the
  * per-task read answers on its own when it sees nothing, the global reclaim behind a *live* row is rate
- * limited per process, and the unthrottled callers (housekeeping, the startup load) still get theirs and
- * count as the last sweep.
+ * limited per process, the unthrottled callers (housekeeping, the startup load) still get theirs and
+ * count as the last sweep, and a sweep whose statement threw counts as none of that — the window stays
+ * open for the next ask.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -172,18 +175,38 @@ class SchedulerStaleSweepThrottleTest {
         verify(agentTaskLogMapper, never()).expireStale(anyInt())
     }
 
+    /**
+     * A sweep that threw swept nothing, so it must not spend the window. Stamping the timestamp on the
+     * way *into* the statement let one dead connection silence this node's reclaim for the full 30s — the
+     * retries that exist precisely because the first attempt failed were the ones being suppressed.
+     */
+    @Test
+    fun `a failed sweep leaves the window open for the next ask`() {
+        whenever(agentTaskLogMapper.selectRunningByTaskId(TASK_ID)).thenReturn(listOf(liveRow()))
+        whenever(agentTaskLogMapper.expireStale(anyInt()))
+            .thenThrow(RuntimeException("connection dropped"))
+            .thenReturn(0)
+
+        // The ask survives its own failing sweep: the answer comes from the re-read, not the reclaim.
+        assertTrue(service.hasActiveRunningExecution(TASK_ID))
+        assertNull(service.lastStaleSweepAtNanos, "the failed attempt must not have opened a window")
+
+        // Microseconds later, and the retry is still allowed.
+        assertTrue(service.hasActiveRunningExecution(TASK_ID))
+        verify(agentTaskLogMapper, times(2)).expireStale(eq(TIMEOUT))
+        assertNotNull(service.lastStaleSweepAtNanos, "the sweep that did run opened it")
+    }
+
     private fun givenLiveRow() {
         whenever(agentTaskLogMapper.expireStale(anyInt())).thenReturn(0)
-        whenever(agentTaskLogMapper.selectRunningByTaskId(TASK_ID)).thenReturn(
-            listOf(
-                AgentTaskLog().apply {
-                    id = 11L
-                    taskId = TASK_ID
-                    status = 3
-                    sessionId = "sess-11"
-                },
-            ),
-        )
+        whenever(agentTaskLogMapper.selectRunningByTaskId(TASK_ID)).thenReturn(listOf(liveRow()))
+    }
+
+    private fun liveRow() = AgentTaskLog().apply {
+        id = 11L
+        taskId = TASK_ID
+        status = 3
+        sessionId = "sess-11"
     }
 
     private fun task(concurrent: Int) = AgentTask().apply {

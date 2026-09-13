@@ -99,9 +99,12 @@ logging:
 # Scheduler configuration
 scheduler:
   # Enable/disable scheduler on this instance. Disabled means this node takes no scheduling work: it
-  # loads no task, and /trigger, /run-once and /reload are refused. It does NOT mean inert — the
-  # housekeeping sweep is registered outside this gate on purpose, because /tasks/logs/{id}/stop is
-  # deliberately open here and can leave a row at status=4 that nothing but expireStale ever moves.
+  # loads no task, and every Quartz-touching write is refused with 40903 by SchedulerController's
+  # requireEnabled — the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload,
+  # /tasks/{id}/start and /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is
+  # registered outside this gate on purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop
+  # writes no Quartz object), so a disabled node can still receive one and leave a row at status=4 that
+  # nothing but expireStale ever moves.
   enabled: ${SCHEDULER_ENABLED:true}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}
@@ -119,8 +122,9 @@ scheduler:
   timeout-seconds: ${SCHEDULER_TIMEOUT:300}
   # Ceiling for the session cleanup that follows the router call (DELETE /api/router/agent/session/{id});
   # effective value is min(this, timeout-seconds). It does not share timeout-seconds on purpose: that
-  # would let one execution hold its Quartz worker for twice the timeout, and the container's
-  # stop_grace_period (docker-new/docker-compose.yml) is derived from timeout + min(60, timeout) + 20.
+  # would let one execution hold its Quartz worker for twice the timeout. The container's
+  # stop_grace_period (docker-new/docker-compose.yml) is derived from timeout + min(this, timeout) + 20,
+  # so raising this one means raising that one in the same change.
   clear-session-timeout-seconds: ${SCHEDULER_CLEAR_SESSION_TIMEOUT:60}
 
 # Auth configuration
