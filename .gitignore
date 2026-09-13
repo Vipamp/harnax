@@ -63,3 +63,6 @@ sandbox-plugins/harnax-cli/SKILL.md
 
 # Per-plan scratch (progress ledger, task briefs, review packages)
 .superpowers/
+# CLI build artifacts
+harnax-cli/harnax
+harnax-cli/harnax-cli
