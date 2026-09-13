@@ -40,6 +40,9 @@ class RouterClientCommandDeliveryTest {
                     adminSecret = "unused",
                     timeoutSeconds = 5,
                     clearSessionTimeoutSeconds = 60,
+                    // Never reached as a timeout here: every handler answers at once. The suite is about
+                    // which verdict a reply turns into, so it only needs a budget it will not outrun.
+                    commandTimeoutSeconds = 5,
                 ).apply { init() },
             )
         } finally {

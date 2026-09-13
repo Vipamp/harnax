@@ -23,10 +23,16 @@ class RouterClient(
     @Value($$"${scheduler.admin-secret:}") private val adminSecret: String,
     @Value($$"${scheduler.timeout-seconds:300}") private val timeoutSeconds: Int,
     /**
-     * Ceiling for the session-cleanup read timeout, which is otherwise the one number every router call
-     * shares. See [clearSessionReadTimeoutSeconds] for why the cleanup gets its own budget.
+     * Ceiling for the session-cleanup read timeout. `scheduler.timeout-seconds` is the execution's own
+     * clock and stays the one [chat] runs on; see [clearSessionReadTimeoutSeconds] for why the cleanup
+     * gets a budget of its own instead.
      */
     @Value($$"${scheduler.clear-session-timeout-seconds:60}") private val clearSessionTimeoutSeconds: Int,
+    /**
+     * Ceiling for the [sendCommand] read timeout, for the reasons in [sendCommand] — chiefly that admin
+     * stops listening for the stop's answer long before an execution is over.
+     */
+    @Value($$"${scheduler.command-timeout-seconds:10}") private val commandTimeoutSeconds: Int,
 ) {
     private val log = LoggerFactory.getLogger(RouterClient::class.java)
 
@@ -90,6 +96,12 @@ class RouterClient(
         requestClient(clearSessionReadTimeoutSeconds(timeoutSeconds, clearSessionTimeoutSeconds))
     }
 
+    /**
+     * [sendCommand]'s own template, on the clock the operator configures. Why it is not [restClient] is
+     * the chain budget in [sendCommand].
+     */
+    private val commandClient: RestClient by lazy { requestClient(commandTimeoutSeconds.toLong()) }
+
     private fun requestClient(readTimeoutSeconds: Long): RestClient {
         val factory = org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
             setConnectTimeout(Duration.ofSeconds(10))
@@ -138,12 +150,26 @@ class RouterClient(
      * @return what the call learned — see [CommandDelivery]. Deliberately not a boolean: "nothing is
      * running" and "we could not ask" must not arrive as the same answer, or a router blip lets the
      * scheduler close a live execution out as stopped.
+     *
+     * On [commandClient], and the ceiling has one constraint behind it: this call sits in the middle of a
+     * request a user is waiting on. Admin forwards `/stop` with a 30s read timeout
+     * (`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/SchedulerClientImpl.kt`), so
+     * the whole chain — this call's 10s connect allowance plus its read timeout, plus the two or three
+     * `agent_task_log` writes `SchedulerServiceImpl.stopTask` does around it — has to answer inside those
+     * 30s. 10s leaves room for all of that; the 300s execution clock on `restClient` did not, and the
+     * failure had two halves: the user saw a failed stop at 30s while this thread kept parking to 300s
+     * with the outcome still unknown.
+     *
+     * A timeout here is a transport failure and takes the [CommandDelivery.Unanswered] branch below like
+     * any other exception — never a [CommandDelivery.Missed]. That is the reason this budget exists
+     * rather than being folded into the execution's: giving up sooner must not let a slow router read as
+     * "no live execution", or the stop would close out a run that is still producing a result.
      */
     fun sendCommand(sessionId: String, command: CommandType): CommandDelivery {
         val url = "$routerUrl/api/router/agent/command"
         log.info("[Scheduler→Router] POST {} - command: {}", url, command)
         val response = try {
-            restClient.post()
+            commandClient.post()
                 .uri(url)
                 .header("X-Api-Key", apiKey)
                 .contentType(MediaType.APPLICATION_JSON)

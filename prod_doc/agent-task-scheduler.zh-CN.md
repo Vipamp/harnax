@@ -189,7 +189,7 @@ spring:
 - **时钟要求**。集群靠比对 `QRTZ_SCHEDULER_STATE.LAST_CHECKIN_TIME` 判断节点死活，节点间时钟偏移超过 checkin 间隔会误判死亡并触发误抢。所有节点必须 NTP 同步。另外 cron 表达式在 JVM 默认时区解释，各节点 TZ 要一致（compose 已统一挂载 `/etc/localtime`）。
 - **`threadCount` 从 10 提到 25**：执行改由 Quartz 工作线程同步跑（见 7.3），一次执行的 HTTP 读超时默认 300s（`scheduler.timeout-seconds`），10 个线程会被长任务占满。相应地 Hikari `maximum-pool-size` 从 10 提到 30——JDBC store 的每次 trigger 获取与每个执行线程都要占连接，经验值是 ≥ `threadCount + 5`。
 - **`useProperties: true`**：JobDataMap 以文本 kv 存进 `QRTZ_JOB_DETAILS`，配合 7.2 的"只放 taskId"，引擎表里不再有任何 Java 序列化 BLOB，实体字段变更不会让存量任务反序列化失败。注意此时 **taskId 必须放成 String**（Long 会被拒）。
-- **`waitForJobsToCompleteOnShutdown: true`** 会让停机最多等一个任务超时，需要与编排的 stop grace period 一起调，否则会被 kill 窗口截断。**已落地**：它就是 Boot 4.0.1 `spring-boot-quartz` 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（该版本 configuration metadata 里 `defaultValue=false`，所以必须显式写），**不需要** `SchedulerFactoryBeanCustomizer`；`application.yml` 写 `${QUARTZ_WAIT_FOR_JOBS:true}`，compose 侧配 `stop_grace_period: 380s`（= chat 读超时 300 + clearSession 60 + 写回/释放锁 20，算式在两处注释里；`clearSession` 自第三批起有自己的读超时上限 `scheduler.clear-session-timeout-seconds=60`，不再共用 chat 的 300s，否则一次执行最坏占用是 600s）。**保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）：手动 `/trigger` 走裸 daemon 线程，停机不等它，S4 之前不要在任务执行中重启 scheduler。
+- **`waitForJobsToCompleteOnShutdown: true`** 会让停机最多等一个任务超时，需要与编排的 stop grace period 一起调，否则会被 kill 窗口截断。**已落地**：它就是 Boot 4.0.1 `spring-boot-quartz` 的标准属性 `spring.quartz.wait-for-jobs-to-complete-on-shutdown`（该版本 configuration metadata 里 `defaultValue=false`，所以必须显式写），**不需要** `SchedulerFactoryBeanCustomizer`；`application.yml` 写 `${QUARTZ_WAIT_FOR_JOBS:true}`，compose 侧配 `stop_grace_period: 400s`（逐项相加 = chat 读超时 300 + clearSession 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回/释放锁 8 + Spring 关停钩子 4 = 392，向上取整；算式在两处注释里；`clearSession` 自第三批起有自己的读超时上限 `scheduler.clear-session-timeout-seconds=60`，不再共用 chat 的 300s，否则一次执行最坏占用是 600s）。**保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）：手动 `/trigger` 走裸 daemon 线程，停机不等它，S4 之前不要在任务执行中重启 scheduler。
 
 ## 6. 任务生命周期全链路
 
@@ -241,6 +241,8 @@ QRTZ_TRIGGERS.NEXT_FIRE_TIME 到期
 前端点「停止」→ admin 转发 → scheduler 任一节点 stopTask(logId)
   ├─ markStopping: 3→4（CAS，抢不到说明已定态）
   ├─ routerClient.sendCommand(sessionId, INTERRUPT)   ← 会话 ID 存在日志行里，所以任何节点都能发
+  │     它走自己的 10s 读超时（scheduler.command-timeout-seconds），不共用 chat 的 300s：整条 /stop 必须
+  │     落在 admin 转发那 30s 之内，否则用户先看到失败、状态却仍不确定；超时照样是 Unanswered 而非 Missed
   ├─ 送达（有实例答"我这儿有在途执行"）→ 真正执行的那个线程收尾时看到 4，写成 5
   ├─ Missed（没有任何实例在推进它）→ **停止节点当场** finalizeStopped 4→5，不等回收扫描
   └─ Unanswered（命令根本没送到）→ 行留在 4：谁也不知道执行是否还活着，交给执行节点或回收扫描
@@ -383,7 +385,7 @@ C 方案下 scheduler 需要两个数据源（业务库 + 引擎库，靠 `@Quar
 | 1.2 | `V2__agent_task_domain.sql`（三表 DDL 落新库） | ⏳ |
 | 1.3 | `application.yml`：数据源指新库、Flyway 开、quartz 集群段、Hikari 池 | ⏳ |
 | 1.4 | pom：testcontainers + failsafe/surefire IT profile（照 `harnax-admin/pom.xml:344-393`） | ⏳ |
-| 1.5 | 部署：`init-databases.sql` 建库授权、compose 环境变量、删 `container_name`、删 28084 映射、`.env.example` 补全 | ⏳ 部分：**暴露面两半已落**（R1：宿主映射 `28084:8084` 改 `expose`、nginx 的 `/api/scheduler/` location 已删并留禁止回加的注释）；**D6 优雅停机已落**（compose `stop_grace_period: 380s` + `application.yml` 显式 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`，两处都有算式注释；只覆盖 cron 路径，手动 `/trigger` 见 5 节那条）。仍未做：建库授权、删 `container_name`、`.env.example` |
+| 1.5 | 部署：`init-databases.sql` 建库授权、compose 环境变量、删 `container_name`、删 28084 映射、`.env.example` 补全 | ⏳ 部分：**暴露面两半已落**（R1：宿主映射 `28084:8084` 改 `expose`、nginx 的 `/api/scheduler/` location 已删并留禁止回加的注释）；**D6 优雅停机已落**（compose `stop_grace_period: 400s` + `application.yml` 显式 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`，两处都有算式注释；只覆盖 cron 路径，手动 `/trigger` 见 5 节那条）。仍未做：建库授权、删 `container_name`、`.env.example` |
 
 **里程碑验收**：scheduler 单实例以 JDBC store 正常启动；两实例连同库时日志出现 `ClusterManager` checkin、`QRTZ_SCHEDULER_STATE` 两行；kill 一个节点另一个能接管。
 

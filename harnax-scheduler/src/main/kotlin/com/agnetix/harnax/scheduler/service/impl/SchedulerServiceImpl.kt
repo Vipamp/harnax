@@ -40,9 +40,9 @@ class SchedulerServiceImpl(
     private val metrics: SchedulerMetrics,
     private val jobInventory: QuartzJobInventory,
     /**
-     * The same key [RouterClient] builds its read timeout from, on purpose: how long an execution may
-     * take and how long until a row without one counts as a zombie have to be one number, or the sweep
-     * expires work that is merely slow.
+     * The same key [RouterClient] builds its `chat` read timeout from, on purpose: how long an execution
+     * may take and how long until a row without one counts as a zombie have to be one number, or the
+     * sweep expires work that is merely slow.
      */
     @Value("\${scheduler.timeout-seconds:300}") private val executionTimeoutSeconds: Int,
     @Value("\${scheduler.enabled:true}") private val schedulerEnabled: Boolean,
