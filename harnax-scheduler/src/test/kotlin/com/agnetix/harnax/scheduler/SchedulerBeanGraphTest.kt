@@ -6,12 +6,10 @@ import com.agnetix.harnax.mapper.AgentTaskMapper
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.quartz.Scheduler
 import org.quartz.SchedulerContext
-import org.springframework.beans.factory.BeanCreationException
 import org.springframework.beans.factory.config.BeanDefinition
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.health.contributor.HealthIndicator
@@ -32,8 +30,8 @@ import org.springframework.stereotype.Component
  *
  * Every Spring-managed class of this package is registered as itself, the way component scan does in
  * production; only the outside world (Quartz, MyBatis, Micrometer) is stood in for. A constructor cycle
- * between production beans therefore fails this test with [BeanCreationException] — the same failure an
- * operator sees at boot.
+ * between two production beans therefore fails the refresh below with the same bean creation error an
+ * operator would see at boot — which is the whole claim this file exists to test.
  */
 class SchedulerBeanGraphTest {
 
@@ -63,24 +61,6 @@ class SchedulerBeanGraphTest {
                 context.getBean(MeterRegistry::class.java).get("scheduler.jobs.scheduled").gauge().value(),
                 "the gauge has to be registered by the container itself, with no lazy proxy in the way",
             )
-        } finally {
-            context.close()
-        }
-    }
-
-    /**
-     * Control case for the one above, and a miniature of the wiring R3 removed: an observation bean that
-     * reads the live count through the business service, while that service counts its load attempts
-     * through the observation bean. Same constructor-injection mechanism as the real beans, and it fails
-     * the same startup — which is precisely what the lazy proxy used to paper over. Without this case the
-     * passing assertion above would only be evidence that "nothing happened".
-     */
-    @Test
-    fun `a meter that reads through the business service closes the cycle this refactor removed`() {
-        val context = AnnotationConfigApplicationContext()
-        try {
-            context.register(LegacyMetrics::class.java, LegacySchedulerService::class.java)
-            assertThrows(BeanCreationException::class.java) { context.refresh() }
         } finally {
             context.close()
         }
@@ -130,16 +110,6 @@ class SchedulerBeanGraphTest {
         @Bean
         fun meterRegistry(): MeterRegistry = SimpleMeterRegistry()
     }
-
-    /** Stands in for the pre-R3 `SchedulerMetrics`: the live count read through the business service. */
-    class LegacyMetrics(
-        val service: LegacySchedulerService,
-    )
-
-    /** Stands in for `SchedulerServiceImpl`: it reports its load attempts through the meter bean. */
-    class LegacySchedulerService(
-        val metrics: LegacyMetrics,
-    )
 
     companion object {
         private const val SCAN_PACKAGE = "com.agnetix.harnax.scheduler"

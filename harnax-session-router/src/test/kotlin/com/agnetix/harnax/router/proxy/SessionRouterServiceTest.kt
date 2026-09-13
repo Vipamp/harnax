@@ -617,21 +617,25 @@ class SessionRouterServiceTest {
      * The scheduler decides "this execution is over" from this body: agent-service answers 200 with
      * `success = false` when nothing was live on the instance it reached, and the router must hand
      * that verdict back untouched rather than dress it up as a delivered command.
+     *
+     * Only the verdict's own fields are asserted here. What the scheduler actually reads is the JSON this
+     * call is serialised into, and that is pinned one layer up, at the endpoint itself — see
+     * `AgentProxyCommandContractTest`.
      */
     @Test
     fun `proxyCommandRequest passes a failed command through untouched`() = runBlocking {
         `when`(sessionMappingService.getInstanceId("session-1")).thenReturn("inst-1")
         `when`(instanceRegistry.getInstance("inst-1")).thenReturn(healthyInstance("inst-1"))
-        val verdict = ResultVo.success(
-            CommandResponse.failure("session-1", "No live execution for this session on this instance"),
+        `when`(agentServiceClient.command(any(), any())).thenReturn(
+            ResultVo.success(
+                CommandResponse.failure("session-1", "No live execution for this session on this instance"),
+            ),
         )
-        `when`(agentServiceClient.command(any(), any())).thenReturn(verdict)
 
         val result = service.proxyCommandRequest(
             CommandAgentRequest(sessionId = "session-1", command = CommandType.INTERRUPT),
         )
 
-        assertSame(verdict, result)
         assertFalse(result.data?.success ?: true)
         assertEquals("No live execution for this session on this instance", result.data?.message)
     }

@@ -111,7 +111,5 @@ interface AgentTaskLogMapper {
         @Param("currentUsername") currentUsername: String,
     ): List<AgentTaskLog>
 
-    fun selectByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>
-
     fun selectRunningByTaskId(@Param("taskId") taskId: Long): List<AgentTaskLog>
 }

@@ -87,8 +87,15 @@ interface SchedulerService {
     fun triggerManually(id: Long): Boolean
 
     /**
-     * Stop a running task execution by logId.
-     * Sends INTERRUPT command to router and interrupts the executing thread.
+     * Ask for one execution to stop, by log id: the row is claimed for stopping (3 -> 4) and the router is
+     * asked to deliver INTERRUPT for its session.
+     *
+     * Nothing here is interrupted — no thread of this node runs the task (the Quartz job calls the router
+     * synchronously, and the session lives on whichever agent-service instance owns it). What this call
+     * reports is therefore what the router answered: delivered, in which case the owning execution closes
+     * its own row out; an explicit miss, in which case nobody will ever report that outcome and the row is
+     * settled as stopped right here; or no verdict at all, in which case the row stays at 4 and the owning
+     * node's write-back or the stale sweep decides what it becomes.
      */
     fun stopTask(logId: Long): Boolean
 

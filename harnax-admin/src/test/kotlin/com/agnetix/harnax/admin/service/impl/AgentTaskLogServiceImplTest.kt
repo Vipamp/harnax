@@ -1,6 +1,7 @@
 package com.agnetix.harnax.admin.service.impl
 
 import com.agnetix.harnax.admin.context.TenantContext
+import com.agnetix.harnax.admin.service.AgentTaskLogService
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
@@ -72,40 +73,6 @@ class AgentTaskLogServiceImplTest {
     fun tearDown() {
         RequestContextHolder.resetRequestAttributes()
         TenantContext.clear()
-    }
-
-    @Nested
-    @DisplayName("Get Logs By Task ID Tests")
-    inner class GetLogsByTaskIdTests {
-
-        @Test
-        fun `getLogsByTaskId should return logs for given task`() {
-            val logs = listOf(testLog, testLog.apply { id = 2L })
-            `when`(agentTaskLogMapper.selectByTaskId(100L)).thenReturn(logs)
-
-            val result = agentTaskLogService.getLogsByTaskId(100L)
-
-            assertEquals(2, result.size)
-            verify(agentTaskLogMapper).selectByTaskId(100L)
-        }
-
-        @Test
-        fun `getLogsByTaskId should return empty list when no logs`() {
-            `when`(agentTaskLogMapper.selectByTaskId(999L)).thenReturn(emptyList())
-
-            val result = agentTaskLogService.getLogsByTaskId(999L)
-
-            assertTrue(result.isEmpty())
-        }
-
-        @Test
-        fun `getLogsByTaskId should call mapper with correct taskId`() {
-            `when`(agentTaskLogMapper.selectByTaskId(42L)).thenReturn(emptyList())
-
-            agentTaskLogService.getLogsByTaskId(42L)
-
-            verify(agentTaskLogMapper).selectByTaskId(42L)
-        }
     }
 
     @Nested
@@ -318,6 +285,24 @@ class AgentTaskLogServiceImplTest {
                 2,
                 visibleById.parameterCount,
                 "selectVisibleById 应为 id/currentUsername，不得再有 tenantId",
+            )
+        }
+
+        /**
+         * `selectByTaskId` read the same rows with no join and no caller, and `getLogsByTaskId` exposed it
+         * on the service. Both went: an execution log carries another user's prompt and response verbatim,
+         * and a read that bypasses the visibility join makes the join a detail rather than a rule. This
+         * asserts by name, because a method that comes back is otherwise invisible to every test here.
+         */
+        @Test
+        fun `there is no unguarded read-by-task-id left to bypass the visibility join`() {
+            assertTrue(
+                AgentTaskLogMapper::class.java.methods.none { it.name == "selectByTaskId" },
+                "mapper 上不得再出现无属主过滤的 selectByTaskId",
+            )
+            assertTrue(
+                AgentTaskLogService::class.java.methods.none { it.name == "getLogsByTaskId" },
+                "service 上不得再出现绕过可见性门禁的 getLogsByTaskId",
             )
         }
     }

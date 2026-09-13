@@ -150,10 +150,6 @@
         ORDER BY l.create_time DESC
     </select>
 
-    <select id="selectByTaskId" resultMap="AgentTaskLogResultMap">
-        SELECT * FROM agent_task_log WHERE task_id = #{taskId} ORDER BY create_time DESC
-    </select>
-
     <select id="selectRunningByTaskId" resultMap="AgentTaskLogResultMap">
         SELECT * FROM agent_task_log WHERE task_id = #{taskId} AND status IN (3, 4) ORDER BY create_time DESC
     </select>

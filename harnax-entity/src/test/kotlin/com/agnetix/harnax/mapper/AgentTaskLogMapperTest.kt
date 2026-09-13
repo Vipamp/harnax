@@ -250,24 +250,6 @@ open class AgentTaskLogMapperTest {
             agentTaskLogMapper.insert(log)
             return log
         }
-
-        @Test
-        @DisplayName("selectByTaskId - 根据任务 ID 查询日志列表")
-        fun `selectByTaskId should return logs for given task`() {
-            val logs = agentTaskLogMapper.selectByTaskId(1L)
-            assertTrue(logs.isNotEmpty())
-            assertTrue(logs.size >= 3) // 测试数据中有 task_id=1 的 4 条记录 (id=1,2,3,5)
-            logs.forEach {
-                assertEquals(1L, it.taskId)
-            }
-        }
-
-        @Test
-        @DisplayName("selectByTaskId - 不存在的任务返回空列表")
-        fun `selectByTaskId should return empty for non-existent task`() {
-            val logs = agentTaskLogMapper.selectByTaskId(999L)
-            assertTrue(logs.isEmpty())
-        }
     }
 
     // ==================== selectLogList ====================

@@ -4,6 +4,7 @@ import com.agnetix.harnax.entity.AgentTaskExecution
 import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -32,7 +33,17 @@ class AgentTaskExecutionGuard(
 
     /**
      * Try to acquire execution lock for a task at a specific trigger time.
-     * Returns true if lock acquired (this instance should execute), false otherwise.
+     *
+     * @return true if lock acquired (this instance should execute), false if the unique key said so.
+     * @throws org.springframework.dao.DataAccessException anything the insert failed for *besides* a
+     *   duplicate key — exhausted pool, deadlock rollback, statement timeout.
+     *
+     * The two answers are not interchangeable, and this method used to hand back `false` for both. Every
+     * caller reads false as "someone else has this run": `SchedulerController` turns it into business
+     * code 40901 "Task execution is already in progress", and a cron fire logs "skipping" and does
+     * nothing. A database that could not be reached therefore looked exactly like a healthy cluster with a
+     * concurrent execution, and the fire that should have run was quietly thrown away. Only the unique
+     * constraint is evidence about another instance; anything else has to reach the caller as what it is.
      */
     fun tryAcquireLock(taskId: Long, triggerTime: LocalDateTime): Boolean = try {
         val execution = AgentTaskExecution().apply {
@@ -45,8 +56,8 @@ class AgentTaskExecutionGuard(
         executionMapper.insert(execution)
         log.debug("Acquired execution lock for task {} at {}", taskId, triggerTime)
         true
-    } catch (e: Exception) {
-        // Unique constraint violation means another instance already has the lock
+    } catch (e: DuplicateKeyException) {
+        // The one failure that actually says another instance holds this (task_id, trigger_time).
         log.debug("Failed to acquire execution lock for task {} at {}: {}", taskId, triggerTime, e.message)
         false
     }

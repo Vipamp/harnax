@@ -48,6 +48,10 @@ class AgentTaskLogServiceImpl(
         // the creator/public rule, which is exactly what the task list applies. agent_task.tenant_id is
         // only the snapshot of the tenant active at creation time, so narrowing the log read by the
         // caller's current tenant would leave a task listed while its own execution logs come back empty.
+        //
+        // "The one path" is now literal rather than a hope: the unguarded `selectByTaskId` read that sat
+        // beside it — same rows, no join, no caller — is gone, so nothing can reach this table without
+        // going through the visibility gate above.
         return Page.fromPageInfo(
             agentTaskLogMapper.selectLogList(
                 taskId,
@@ -60,8 +64,6 @@ class AgentTaskLogServiceImpl(
             ),
         )
     }
-
-    override fun getLogsByTaskId(taskId: Long): List<AgentTaskLog> = agentTaskLogMapper.selectByTaskId(taskId)
 
     override fun convertToResponse(taskLog: AgentTaskLog): AgentTaskLogResponse = AgentTaskLogResponse.fromEntity(taskLog)
 }

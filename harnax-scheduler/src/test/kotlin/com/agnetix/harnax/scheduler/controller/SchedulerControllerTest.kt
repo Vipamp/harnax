@@ -18,8 +18,11 @@ import org.mockito.quality.Strictness
  * survives the admin proxy, because the proxy forwards the message verbatim and the message has
  * already drifted from what the frontend matches on.
  *
- * Every assertion below compares against the controller's own constants: a test pinned to the literal
- * `40901` would stay green while someone changed the constant and move the drift out of reach.
+ * The codes are asserted as literals on purpose. `40901`/`40903` leave this module as numbers: admin
+ * forwards them to the browser (and declares its own `40902` beside them), and
+ * `harnax-webui/src/pages/agent-task/constants.ts` spells all three as literals. Comparing the response
+ * against `SchedulerController`'s own constant would stay green while someone edited that constant, which
+ * is precisely the change this test has to catch — the drift would only show up in the frontend.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -37,7 +40,7 @@ class SchedulerControllerTest {
 
         val result = controller.trigger(7L)
 
-        assertEquals(SchedulerController.CODE_EXECUTION_IN_PROGRESS, result.code)
+        assertEquals(40901, result.code)
     }
 
     @Test
@@ -49,7 +52,7 @@ class SchedulerControllerTest {
 
         val result = controller.runOnce(10L)
 
-        assertEquals(SchedulerController.CODE_EXECUTION_IN_PROGRESS, result.code)
+        assertEquals(40901, result.code)
     }
 
     @Test
@@ -78,11 +81,11 @@ class SchedulerControllerTest {
     fun `every write endpoint refuses the request while scheduling is disabled`() {
         val controller = controller(enabled = false)
 
-        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.trigger(1L).code)
-        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.start(1L).code)
-        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.pause(1L).code)
-        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.runOnce(1L).code)
-        assertEquals(SchedulerController.CODE_SCHEDULER_DISABLED, controller.reload().code)
+        assertEquals(40903, controller.trigger(1L).code)
+        assertEquals(40903, controller.start(1L).code)
+        assertEquals(40903, controller.pause(1L).code)
+        assertEquals(40903, controller.runOnce(1L).code)
+        assertEquals(40903, controller.reload().code)
 
         // Refusing has to happen before the work, not as a report afterwards.
         verifyNoInteractions(schedulerService)
