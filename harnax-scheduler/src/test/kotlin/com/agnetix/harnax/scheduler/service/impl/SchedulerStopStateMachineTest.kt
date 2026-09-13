@@ -1,5 +1,8 @@
 package com.agnetix.harnax.scheduler.service.impl
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandType
 import com.agnetix.harnax.entity.AgentTask
@@ -30,8 +33,10 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 import org.quartz.Scheduler
+import org.slf4j.LoggerFactory
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import java.time.LocalDateTime
+import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
  * The stop signal is a status on the log row, not a memory on one node: any node can request a stop,
@@ -125,6 +130,25 @@ class SchedulerStopStateMachineTest {
         verify(agentTaskLogMapper).finalizeStopped(written.capture())
         assertEquals(5, written.firstValue.status)
         assertEquals("No live execution to interrupt", written.firstValue.errorInfo)
+    }
+
+    @Test
+    fun `a missed stop whose row refused to close is an error, not a log line`() {
+        whenever(agentTaskLogMapper.selectById(18L)).thenReturn(log(18L, status = 3, sessionId = "sess-18"))
+        whenever(agentTaskLogMapper.markStopping(18L, "Stopping...")).thenReturn(1)
+        whenever(routerClient.sendCommand("sess-18", CommandType.INTERRUPT))
+            .thenReturn(CommandDelivery.Missed("No live execution for this session on this instance"))
+        // 0 rows: the row had already moved out from under the stop, so this node wrote nothing and the
+        // caller was still told the stop succeeded. This branch exists precisely so the reaper never has
+        // to guess about this execution — guessing anyway would be the bug back again.
+        whenever(agentTaskLogMapper.finalizeStopped(any())).thenReturn(0)
+
+        val events = captureSchedulerLogs { service.stopTask(18L) }
+
+        assertTrue(
+            events.any { it.level == Level.ERROR && it.formattedMessage.contains("18") },
+            "expected an ERROR naming log 18, got ${events.map { it.level.toString() }}",
+        )
     }
 
     @Test
@@ -228,6 +252,29 @@ class SchedulerStopStateMachineTest {
     }
 
     @Test
+    fun `a stop the reaper outran mid-write still ends up stopped rather than timed out`() {
+        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "partial"))
+        whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(0)
+        // The reachable race: this thread reads 4, and before its 4 -> 5 UPDATE another fire's
+        // expireStale moves the row to 2. finalizeStopped then matches nothing, and leaving it at a
+        // warning would report a run the user really stopped as a timeout — the same symptom G-series
+        // exists to remove, reached from the other side.
+        whenever(agentTaskLogMapper.selectById(any())).thenReturn(
+            log(100L, status = 4, sessionId = "sess-23"),
+            log(100L, status = 2, sessionId = "sess-23"),
+        )
+        whenever(agentTaskLogMapper.finalizeStopped(any())).thenReturn(0)
+        whenever(agentTaskLogMapper.reclaimExpired(any())).thenReturn(1)
+
+        service.executeTaskOnce(task().apply { id = 23L }, LocalDateTime.now())
+
+        val written = argumentCaptor<AgentTaskLog>()
+        verify(agentTaskLogMapper).reclaimExpired(written.capture())
+        assertEquals(5, written.firstValue.status)
+        assertEquals("Task stopped by user", written.firstValue.errorInfo)
+    }
+
+    @Test
     fun `a row already terminal for another reason is left alone`() {
         whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "late"))
         whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(0)
@@ -290,6 +337,23 @@ class SchedulerStopStateMachineTest {
         this.status = status
         this.sessionId = sessionId
         startTime = LocalDateTime.now().minusSeconds(5)
+    }
+
+    /**
+     * Events the service logged while [block] ran. Some refusals to write a row have no return value to
+     * assert on — the level they are reported at is the whole contract.
+     */
+    private fun captureSchedulerLogs(block: () -> Unit): List<ILoggingEvent> {
+        val logger = LoggerFactory.getLogger(SchedulerServiceImpl::class.java) as LogbackLogger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        return try {
+            block()
+            appender.list
+        } finally {
+            logger.detachAppender(appender)
+        }
     }
 
     companion object {

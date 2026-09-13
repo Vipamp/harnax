@@ -501,8 +501,24 @@ class SchedulerServiceImpl(
             4 -> {
                 taskLog.status = 5 // stopped by user (final)
                 taskLog.errorInfo = "Task stopped by user"
-                if (agentTaskLogMapper.finalizeStopped(taskLog) > 0) {
+                val closed = agentTaskLogMapper.finalizeStopped(taskLog)
+                if (closed > 0) {
                     log.info("Task was stopped during execution: id={}", taskLog.id)
+                } else if (agentTaskLogMapper.selectById(taskLog.id)?.status == 2) {
+                    // Read 4, then the row moved: another fire's stale sweep reaped it to 2 in between,
+                    // so the 4-guarded UPDATE matched nothing. Left alone, a run the user really stopped
+                    // is remembered as a timeout — the exact symptom this whole series exists to remove.
+                    // reclaimExpired is the recovery the 2 branch below already uses: it still guards on
+                    // status = 2, so the only row it can touch is one the reaper had guessed about, and
+                    // the verdict it writes stays this thread's own (5, from the stop it observed).
+                    if (agentTaskLogMapper.reclaimExpired(taskLog) > 0) {
+                        log.info(
+                            "Task {} was reaped as a timeout after the stop was read; wrote stopped over it",
+                            taskLog.id,
+                        )
+                    } else {
+                        log.warn("Execution log {} moved again mid-stop; result not written", taskLog.id)
+                    }
                 } else {
                     log.warn("Execution log {} changed again mid-stop; result not written", taskLog.id)
                 }
@@ -572,13 +588,23 @@ class SchedulerServiceImpl(
                     taskLog.errorInfo = "No live execution to interrupt"
                     taskLog.endTime = now
                     taskLog.durationMs = Duration.between(taskLog.startTime ?: taskLog.createTime ?: now, now).toMillis()
-                    agentTaskLogMapper.finalizeStopped(taskLog)
-                    log.info(
-                        "Task log {} closed as stopped: the agent reported {} (session={})",
-                        logId,
-                        delivery.message ?: "no live execution",
-                        sessionId,
-                    )
+                    if (agentTaskLogMapper.finalizeStopped(taskLog) == 0) {
+                        // The row is no longer at 4, so nothing here wrote an outcome — and the caller
+                        // has been answered "stopped". This branch exists to keep the reaper from having
+                        // to guess about this execution; a silently-matched 0 rows puts the guess back.
+                        log.error(
+                            "Task log {} was reported as having no live execution but its 4 -> 5 close-out " +
+                                "matched no row; its outcome was not written by this node",
+                            logId,
+                        )
+                    } else {
+                        log.info(
+                            "Task log {} closed as stopped: the agent reported {} (session={})",
+                            logId,
+                            delivery.message ?: "no live execution",
+                            sessionId,
+                        )
+                    }
                 }
 
                 is CommandDelivery.Unanswered -> log.warn(
