@@ -13,6 +13,7 @@ import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -321,6 +322,7 @@ class SchedulerStopStateMachineTest {
             SchedulerStatus(schedulerEnabled = true),
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
+            registrar = TaskQuartzRegistrar(schedulerFactory),
             schedulerEnabled = true,
             executionTimeoutSeconds = timeoutSeconds,
         )

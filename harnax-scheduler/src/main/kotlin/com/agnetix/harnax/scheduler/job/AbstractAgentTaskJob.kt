@@ -1,6 +1,7 @@
 package com.agnetix.harnax.scheduler.job
 
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.quartz.JobExecutionContext
@@ -13,6 +14,11 @@ import java.time.ZoneId
  *
  * Quartz instantiates jobs itself, so the collaborators come out of the scheduler context rather than
  * from injection.
+ *
+ * What a fire belongs to is re-read from `agent_task` every time (see [taskToRun]): the stored job carries
+ * only its id, so the row is also the only place the current prompt, cron and status live. That is what
+ * lets this class notice it is running on a node with scheduling turned off, or on a task somebody has
+ * since paused or deleted.
  *
  * Execution is deliberately synchronous, and that is the whole point of this class hierarchy: the job
  * class is the only thing that tells Quartz "this execution is live". Hand the work to a background
@@ -33,9 +39,25 @@ abstract class AbstractAgentTaskJob {
     protected fun executionGuard(context: JobExecutionContext): AgentTaskExecutionGuard = context.scheduler.context["executionGuard"] as AgentTaskExecutionGuard
 
     protected fun run(context: JobExecutionContext) {
-        val task = context.jobDetail.jobDataMap["agentTask"] as? AgentTask
-        if (task == null) {
-            log.error("Agent task not found in job data map")
+        val task = taskToRun(context) ?: return
+
+        // A shared store hands this node a fire for a job it never registered — including on an instance
+        // that was started with scheduler.enabled=false. Refusing here is the only place that can tell
+        // the difference: the row will be picked up by whichever node is scheduling.
+        if (!schedulerService(context).schedulingEnabled) {
+            log.info("Task {} fired on an instance with scheduling disabled, leaving it to another node", task.id)
+            return
+        }
+
+        // The cron is read off the store at fire time, so a task edited without a re-register (or a job
+        // left behind by a delete that never reached the store) cannot run on stale configuration.
+        if (task.taskStatus != 1 || task.active != 1) {
+            log.info(
+                "Task {} is no longer an active running task (status={}, active={}), skipping",
+                task.id,
+                task.taskStatus,
+                task.active,
+            )
             return
         }
 
@@ -78,5 +100,46 @@ abstract class AbstractAgentTaskJob {
             throw e
         }
         log.info("Agent task execution finished: id={}, name={}", task.id, task.name)
+    }
+
+    /**
+     * The task this fire belongs to, or null when it must not run.
+     *
+     * The JobDataMap holds only an id ([TaskQuartzRegistrar.KEY_TASK_ID]) — `useProperties: true` forbids
+     * anything else, and an entity in the store would be a snapshot of a prompt somebody has since edited.
+     * A row that has since disappeared means the task was deleted while its job survived in the store, and
+     * the job itself is the stale thing: deleting it here converges whatever left the two apart, and the
+     * reconciler would do the same on its next round.
+     */
+    private fun taskToRun(context: JobExecutionContext): AgentTask? {
+        val taskId = context.jobDetail.jobDataMap.getString(TaskQuartzRegistrar.KEY_TASK_ID)?.toLongOrNull()
+        if (taskId == null) {
+            log.error(
+                "Job {} carries no usable {} in its data map",
+                context.jobDetail.key,
+                TaskQuartzRegistrar.KEY_TASK_ID,
+            )
+            return null
+        }
+        val mapper = context.scheduler.context["agentTaskMapper"] as? AgentTaskMapper
+        if (mapper == null) {
+            // Not a configuration anyone can pick: `SchedulerServiceImpl.init()` puts the mapper in this
+            // context on every node, gated on nothing, so reaching a fire without it means the scheduler
+            // handed work to this node before the context was filled — a startup-order bug, not a state
+            // a task can legitimately be in.
+            log.error(
+                "Startup order is wrong: no agentTaskMapper in the scheduler context, so task {} cannot be " +
+                    "loaded and this fire is refused",
+                taskId,
+            )
+            return null
+        }
+        val task = mapper.selectAnyById(taskId)
+        if (task == null) {
+            log.warn("Task {} no longer exists; deleting its orphaned job from the store", taskId)
+            runCatching { context.scheduler.deleteJob(context.jobDetail.key) }
+                .onFailure { log.warn("Could not delete orphaned job for task {}: {}", taskId, it.message) }
+        }
+        return task
     }
 }

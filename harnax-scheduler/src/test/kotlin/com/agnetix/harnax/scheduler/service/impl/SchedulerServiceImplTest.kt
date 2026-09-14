@@ -9,6 +9,7 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -28,8 +29,10 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 import org.quartz.JobDetail
@@ -80,19 +83,43 @@ class SchedulerServiceImplTest {
         // The job count lives in QuartzJobInventory now; a real one over the mocked factory keeps the
         // service delegation and the health read on the production path.
         jobInventory = QuartzJobInventory(schedulerFactory)
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), jobInventory)
-        service = SchedulerServiceImpl(
-            schedulerFactory,
-            agentTaskMapper,
-            agentTaskLogMapper,
-            routerClient,
-            executionGuard,
-            status,
-            metrics,
-            jobInventory = jobInventory,
-            executionTimeoutSeconds = 300,
-            schedulerEnabled = true,
-        )
+        // The registrar is the service's one writer into the store, and the cases below assert what
+        // reaches Quartz (one replace call, a bad cron refused before anything is written), so it is the
+        // real one over the same mocked factory. Delegation itself is the next test's job.
+        service = serviceWith(TaskQuartzRegistrar(schedulerFactory))
+    }
+
+    private fun serviceWith(registrar: TaskQuartzRegistrar) = SchedulerServiceImpl(
+        schedulerFactory,
+        agentTaskMapper,
+        agentTaskLogMapper,
+        routerClient,
+        executionGuard,
+        status,
+        SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
+        jobInventory = jobInventory,
+        registrar = registrar,
+        executionTimeoutSeconds = 300,
+        schedulerEnabled = true,
+    )
+
+    /**
+     * The store write is the registrar's alone: a second copy of the job-key/cron/misfire rules in this
+     * service is what the reconciler would then drift from.
+     */
+    @Test
+    fun `scheduleTask and unscheduleTask hand the store write to the registrar`() {
+        val registrar = mock<TaskQuartzRegistrar>()
+        val task = cronTask(TASK_ID, "0 0 9 * * ?")
+
+        serviceWith(registrar).apply {
+            scheduleTask(task)
+            unscheduleTask(task)
+        }
+
+        verify(registrar).register(task)
+        verify(registrar).unregister(TASK_ID)
+        verifyNoInteractions(quartz)
     }
 
     @Test

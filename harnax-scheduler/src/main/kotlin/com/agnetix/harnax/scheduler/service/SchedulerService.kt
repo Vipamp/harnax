@@ -6,6 +6,15 @@ import java.time.LocalDateTime
 interface SchedulerService {
 
     /**
+     * Whether this instance is allowed to run scheduled work (`scheduler.enabled`).
+     *
+     * A job has to ask it rather than assume it: the JDBC store is shared by the whole cluster, so a fire
+     * can be claimed by a node that registered nothing — including one started with the flag off. The load
+     * gate cannot express that, and the fire path is the only place left that can (`AbstractAgentTaskJob.run`).
+     */
+    val schedulingEnabled: Boolean
+
+    /**
      * Schedule a task for recurring execution based on its cron expression.
      */
     fun scheduleTask(task: AgentTask)

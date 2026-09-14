@@ -9,9 +9,8 @@ import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
-import com.agnetix.harnax.scheduler.job.AgentTaskJob
-import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
 import com.agnetix.harnax.scheduler.job.SchedulerHousekeepingJob
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
@@ -39,6 +38,8 @@ class SchedulerServiceImpl(
     private val status: SchedulerStatus,
     private val metrics: SchedulerMetrics,
     private val jobInventory: QuartzJobInventory,
+    /** The single writer of agent tasks into the Quartz store; see [TaskQuartzRegistrar]. */
+    private val registrar: TaskQuartzRegistrar,
     /**
      * The same key [RouterClient] builds its `chat` read timeout from, on purpose: how long an execution
      * may take and how long until a row without one counts as a zombie have to be one number, or the
@@ -82,13 +83,16 @@ class SchedulerServiceImpl(
         // registration too would register a job that fires and quietly does nothing — which is precisely
         // the hole that left a stopped execution's row at status 4 forever on an inert node.
         //
-        // These are references, not work: with the in-memory job store an inert node holds no user job at
-        // all, because the load below is what puts them in Quartz. When the JDBC store lands (S2) the
-        // enabled check has to move into the fire path as well — a shared store can hand this node a
-        // trigger it never registered itself.
+        // These are references, not work — and the store is shared, so they are not decoration either: a
+        // JDBC cluster hands a fire to whichever node claims it, which can be this one even when the job
+        // in it was registered by another instance, and even on an instance started with
+        // `scheduler.enabled=false` that loaded nothing of its own. That is why the enabled check lives in
+        // the fire path (see `AbstractAgentTaskJob.run`) rather than being implied by who registered the
+        // job, and why the task itself is re-read from `agent_task` there instead of being carried in.
         val schedulerContext = scheduler.context
         schedulerContext["schedulerService"] = this
         schedulerContext["executionGuard"] = executionGuard
+        schedulerContext["agentTaskMapper"] = agentTaskMapper
 
         if (!schedulerEnabled) {
             log.info("Scheduler is disabled on this instance: no task load, zombie reclaim still runs")
@@ -197,50 +201,14 @@ class SchedulerServiceImpl(
         null
     }
 
-    override fun scheduleTask(task: AgentTask) {
-        val jobKey = JobKey("AgentTask_${task.id}", "AgentTaskGroup")
-        val triggerKey = TriggerKey("AgentTask_${task.id}_trigger", "AgentTaskGroup")
+    /**
+     * Registering is the registrar's job alone now: it owns the job/trigger identity, the cron and the
+     * misfire rules, and — the part that matters on a JDBC store — the JobDataMap, which carries only the
+     * task id so a fire reads the *current* row rather than a snapshot taken when this call last ran.
+     */
+    override fun scheduleTask(task: AgentTask) = registrar.register(task)
 
-        val jobDataMap = JobDataMap()
-        jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(jobClassFor(task))
-            .withIdentity(jobKey)
-            .usingJobData(jobDataMap)
-            .storeDurably()
-            .build()
-
-        val trigger = TriggerBuilder.newTrigger()
-            .withIdentity(triggerKey)
-            .forJob(jobKey)
-            .withSchedule(
-                CronScheduleBuilder.cronSchedule(task.cronExpression)
-                    .apply {
-                        if (task.concurrent == 0) {
-                            withMisfireHandlingInstructionDoNothing()
-                        } else {
-                            withMisfireHandlingInstructionFireAndProceed()
-                        }
-                    },
-            )
-            .build()
-
-        // Replace the live schedule in one store call: the job detail and the cron trigger above are
-        // fully built (and the cron validated by Quartz) before anything is written, and
-        // scheduleJob(.., replace = true) swaps job + trigger atomically — it also recovers a job row
-        // that is somehow left without a trigger. The previous checkExists -> deleteJob -> scheduleJob
-        // sequence had a window in which the old job was gone and the new write had not happened yet:
-        // anything failing inside it (paused scheduler, job-store error) left the task unscheduled while
-        // agent_task still read task_status=1. `rescheduleJob` is not a usable substitute here — it
-        // answers a boxed null rather than false when the trigger key is unknown.
-        scheduler.scheduleJob(jobDetail, setOf(trigger), true)
-        log.info("Scheduled agent task: id={}, name={}, cron={}", task.id, task.name, task.cronExpression)
-    }
-
-    override fun unscheduleTask(task: AgentTask) {
-        val jobKey = JobKey("AgentTask_${task.id}", "AgentTaskGroup")
-        scheduler.deleteJob(jobKey)
-        log.info("Unscheduled agent task: id={}, name={}", task.id, task.name)
-    }
+    override fun unscheduleTask(task: AgentTask) = registrar.unregister(task.id)
 
     override fun loadTasksToScheduler(): Boolean {
         log.info("Loading agent tasks to scheduler")
@@ -250,7 +218,8 @@ class SchedulerServiceImpl(
 
         // Step 1: Clean up all existing Quartz jobs in AgentTaskGroup
         try {
-            val existingKeys = scheduler.getJobKeys(org.quartz.impl.matchers.GroupMatcher.jobGroupEquals("AgentTaskGroup"))
+            val existingKeys =
+                scheduler.getJobKeys(org.quartz.impl.matchers.GroupMatcher.jobGroupEquals(TaskQuartzRegistrar.GROUP_AGENT_TASK))
             for (key in existingKeys) {
                 scheduler.deleteJob(key)
             }
@@ -327,9 +296,10 @@ class SchedulerServiceImpl(
 
         val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
         val jobKey = JobKey("AgentTask_${task.id}_ONCE_$uniqueId", "AgentTaskGroup_ONCE")
-        val jobDataMap = JobDataMap()
-        jobDataMap.put("agentTask", task)
-        val jobDetail = JobBuilder.newJob(jobClassFor(task))
+        // Same contract as the cron registration: this store cannot hold an AgentTask, and the job re-reads
+        // the row when it fires (`AbstractAgentTaskJob.taskToRun`).
+        val jobDataMap = JobDataMap().apply { put(TaskQuartzRegistrar.KEY_TASK_ID, task.id.toString()) }
+        val jobDetail = JobBuilder.newJob(registrar.jobClassFor(task))
             .withIdentity(jobKey)
             .usingJobData(jobDataMap)
             .build()
@@ -693,16 +663,11 @@ class SchedulerServiceImpl(
     }
 
     /**
-     * The registered job class is the only channel that carries `concurrent` into Quartz:
-     * `@DisallowConcurrentExecution` is read off that class by reflection and is not `@Inherited`, so
-     * the plain class means "overlap allowed" and nothing else. Misfire instructions are not a
-     * substitute — they decide what happens to a *late* fire, never whether two live ones may overlap.
+     * What the fire path checks before it runs anything: with a shared store a job can reach a node that
+     * registered nothing, so `scheduler.enabled` has to be answered at fire time rather than at load time.
      */
-    private fun jobClassFor(task: AgentTask): Class<out Job> = if (task.concurrent == 0) {
-        AgentTaskNonConcurrentJob::class.java
-    } else {
-        AgentTaskJob::class.java
-    }
+    override val schedulingEnabled: Boolean
+        get() = schedulerEnabled
 
     /** Null means every active task was registered; the text doubles as the health detail. */
     private fun describeDrift(failedIds: List<Long>, total: Int): String? {

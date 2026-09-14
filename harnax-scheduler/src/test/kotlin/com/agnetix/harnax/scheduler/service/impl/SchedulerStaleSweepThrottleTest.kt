@@ -7,6 +7,7 @@ import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -81,6 +82,7 @@ class SchedulerStaleSweepThrottleTest {
             SchedulerStatus(schedulerEnabled = true),
             SchedulerMetrics(SimpleMeterRegistry(), QuartzJobInventory(schedulerFactory)),
             jobInventory = QuartzJobInventory(schedulerFactory),
+            registrar = TaskQuartzRegistrar(schedulerFactory),
             executionTimeoutSeconds = TIMEOUT,
             schedulerEnabled = true,
         )

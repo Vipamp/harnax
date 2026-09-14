@@ -1,6 +1,7 @@
 package com.agnetix.harnax.scheduler.job
 
 import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -23,6 +24,7 @@ import org.quartz.InterruptableJob
 import org.quartz.JobDataMap
 import org.quartz.JobDetail
 import org.quartz.JobExecutionContext
+import org.quartz.JobKey
 import org.quartz.Scheduler
 import org.quartz.SchedulerContext
 import java.time.LocalDateTime
@@ -55,38 +57,63 @@ class AgentTaskJobExecutionTest {
     @Mock
     private lateinit var executionGuard: AgentTaskExecutionGuard
 
+    @Mock
+    private lateinit var agentTaskMapper: AgentTaskMapper
+
     private val fireTime = Date.from(
         LocalDateTime.of(2026, 9, 11, 2, 30, 0).atZone(ZoneId.systemDefault()).toInstant(),
     )
 
+    private val cronJobKey = JobKey("AgentTask_$TASK_ID", TaskQuartzRegistrar.GROUP_AGENT_TASK)
+
     /**
-     * @param concurrent what the task says about overlap; @param activeExecution what the store answers
+     * @param concurrent what the row says about overlap; @param activeExecution what the store answers
      * when the fire asks whether a run of this task is already live.
+     *
+     * The stored job carries the task id and nothing else, so everything the fire runs on comes back out of
+     * [agentTaskMapper] — which is why the row's own status is a parameter here rather than a given.
      */
     private fun setUpJob(
         concurrent: Int = 0,
         activeExecution: Boolean = false,
         lockAcquired: Boolean = true,
+        schedulingEnabled: Boolean = true,
+        taskStatus: Int = 1,
+        active: Int = 1,
+        taskExists: Boolean = true,
+        jobDataMap: JobDataMap = JobDataMap().apply { put(TaskQuartzRegistrar.KEY_TASK_ID, TASK_ID.toString()) },
     ) {
-        val task = AgentTask().apply {
-            id = 3L
-            name = "Nightly"
-            agentId = 9L
-            prompt = "go"
-            this.concurrent = concurrent
-        }
         whenever(context.jobDetail).thenReturn(jobDetail)
-        whenever(jobDetail.jobDataMap).thenReturn(JobDataMap().apply { put("agentTask", task) })
+        whenever(jobDetail.jobDataMap).thenReturn(jobDataMap)
+        whenever(jobDetail.key).thenReturn(cronJobKey)
         whenever(context.scheduler).thenReturn(scheduler)
         whenever(scheduler.context).thenReturn(
             SchedulerContext().apply {
                 put("schedulerService", schedulerService)
                 put("executionGuard", executionGuard)
+                put("agentTaskMapper", agentTaskMapper)
             },
         )
         whenever(context.scheduledFireTime).thenReturn(fireTime)
         whenever(executionGuard.tryAcquireLock(any(), any())).thenReturn(lockAcquired)
         whenever(schedulerService.hasActiveRunningExecution(any())).thenReturn(activeExecution)
+        whenever(schedulerService.schedulingEnabled).thenReturn(schedulingEnabled)
+        whenever(agentTaskMapper.selectAnyById(TASK_ID))
+            .thenReturn(if (taskExists) task(concurrent = concurrent, taskStatus = taskStatus, active = active) else null)
+    }
+
+    private fun task(
+        concurrent: Int,
+        taskStatus: Int = 1,
+        active: Int = 1,
+    ) = AgentTask().apply {
+        id = TASK_ID
+        name = "Nightly"
+        agentId = 9L
+        prompt = "go"
+        this.concurrent = concurrent
+        this.taskStatus = taskStatus
+        this.active = active
     }
 
     @Test
@@ -198,6 +225,80 @@ class AgentTaskJobExecutionTest {
         AgentTaskJob().execute(context)
 
         verify(schedulerService, never()).executeTaskOnce(any(), any())
+    }
+
+    /**
+     * A delete that never reached the store leaves a job that fires for no row. The job is the stale half
+     * of that pair, so the fire is what converges them — and nothing may run in between.
+     */
+    @Test
+    fun `a task deleted since registration takes its job out of the store`() {
+        setUpJob(concurrent = 1, taskExists = false)
+
+        AgentTaskJob().execute(context)
+
+        verify(scheduler).deleteJob(cronJobKey)
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
+    }
+
+    /**
+     * The store is shared, so this node can be the one Quartz hands a fire to even though it registered
+     * nothing and runs with `scheduler.enabled=false`. Leaving it alone is the whole point: the other node
+     * claims the next fire.
+     */
+    @Test
+    fun `a fire handed to a node with scheduling disabled does nothing`() {
+        setUpJob(concurrent = 1, schedulingEnabled = false)
+
+        AgentTaskJob().execute(context)
+
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
+        // Not the job's fault either: a disabled node must not delete a schedule the enabled one owns.
+        verify(scheduler, never()).deleteJob(any())
+    }
+
+    /** A pause (or a soft delete) that outlived its registration must not run on the next cron tick. */
+    @Test
+    fun `a task that has since been paused does not run`() {
+        setUpJob(concurrent = 1, taskStatus = 0)
+
+        AgentTaskJob().execute(context)
+
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
+        verify(scheduler, never()).deleteJob(any())
+    }
+
+    /** A job nobody registered through the registrar is a broken job, not a task to guess about. */
+    @Test
+    fun `a fire whose job carries no task id is refused without touching the store`() {
+        setUpJob(concurrent = 1, jobDataMap = JobDataMap())
+
+        AgentTaskJob().execute(context)
+
+        verify(agentTaskMapper, never()).selectAnyById(any())
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
+        verify(scheduler, never()).deleteJob(any())
+    }
+
+    /**
+     * The reason the entity left the store: a job registered before an edit must not keep firing the
+     * pre-edit prompt. Only the row can answer for what a fire runs.
+     */
+    @Test
+    fun `the fire runs the row as it is now rather than anything the job carried`() {
+        setUpJob(concurrent = 1)
+        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(
+            task(concurrent = 1).apply { prompt = "the edited prompt" },
+        )
+
+        AgentTaskJob().execute(context)
+
+        val captor = argumentCaptor<AgentTask>()
+        verify(schedulerService).executeTaskOnce(captor.capture(), any())
+        assertEquals("the edited prompt", captor.firstValue.prompt)
     }
 
     /**

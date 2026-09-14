@@ -8,6 +8,7 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.SchedulerHousekeepingJob
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -87,6 +88,7 @@ class SchedulerHousekeepingTest {
             SchedulerStatus(schedulerEnabled = true),
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
+            registrar = TaskQuartzRegistrar(schedulerFactory),
             executionTimeoutSeconds = TIMEOUT,
             schedulerEnabled = true,
         )
@@ -212,6 +214,7 @@ class SchedulerHousekeepingTest {
         SchedulerStatus(schedulerEnabled = false),
         SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
         jobInventory = jobInventory,
+        registrar = TaskQuartzRegistrar(schedulerFactory),
         executionTimeoutSeconds = TIMEOUT,
         schedulerEnabled = false,
     )

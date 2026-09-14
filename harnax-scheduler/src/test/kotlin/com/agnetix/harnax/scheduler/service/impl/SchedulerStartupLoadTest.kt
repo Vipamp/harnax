@@ -7,6 +7,7 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -87,6 +88,7 @@ class SchedulerStartupLoadTest {
             status,
             metrics,
             jobInventory = jobInventory,
+            registrar = TaskQuartzRegistrar(schedulerFactory),
             executionTimeoutSeconds = 300,
             schedulerEnabled = true,
         )
