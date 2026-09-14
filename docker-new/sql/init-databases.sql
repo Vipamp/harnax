@@ -7,6 +7,7 @@
 --   harnax        - Agent-Service (business data)
 --   agentscope    - Agent-Service (agent session state)
 --   harnax_router - Router (api_call_log, Flyway managed)
+--   harnax_scheduler - Scheduler (Quartz cluster store + agent task domain, Flyway managed)
 -- =====================================================
 
 -- Admin + Channel-Service business database (Flyway managed by admin)
@@ -29,9 +30,17 @@ CREATE DATABASE IF NOT EXISTS `harnax_router`
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
+-- Scheduler service database (Quartz cluster store + agent task domain, Flyway managed by scheduler).
+-- The Quartz tables land here in release 2: release 1 keeps them in harnax_admin because admin is still
+-- the only writer of agent_task, and a table cannot live in two databases while two services write it.
+CREATE DATABASE IF NOT EXISTS `harnax_scheduler`
+    DEFAULT CHARACTER SET utf8mb4
+    DEFAULT COLLATE utf8mb4_unicode_ci;
+
 -- Create harnax user and grant privileges
 GRANT ALL PRIVILEGES ON `harnax_admin`.* TO 'harnax'@'%';
 GRANT ALL PRIVILEGES ON `harnax`.* TO 'harnax'@'%';
 GRANT ALL PRIVILEGES ON `agentscope`.* TO 'harnax'@'%';
 GRANT ALL PRIVILEGES ON `harnax_router`.* TO 'harnax'@'%';
+GRANT ALL PRIVILEGES ON `harnax_scheduler`.* TO 'harnax'@'%';
 FLUSH PRIVILEGES;
