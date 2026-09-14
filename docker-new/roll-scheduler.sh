@@ -20,13 +20,14 @@
 # scheduler.enabled=false (or one that never joined the shared QRTZ_* tables) answers happily and still
 # satisfies the guard. There is nothing here that could do better: compose interpolates SCHEDULER_ENABLED
 # identically for every replica, so no per-node signal exists to reject. "Do not keep a disabled node
-# registered under this service name" is therefore a topology rule the release docs own — see the
-# two-instance section of docs/deploy-harnax-scheduler.md — and this script's guarantee has to be read as
-# "another replica is alive", never as "another replica will take my triggers over".
+# registered under this service name" is therefore a topology rule the release docs own — docs/deploy-
+# harnax-scheduler.md is the file that carries scheduler deployment rules — and this script's guarantee has to
+# be read as "another replica is alive", never as "another replica will take my triggers over".
 #
 # Two rolls of the same cluster at once defeat all of the above (each one sees the other's replica healthy and
 # each stops its own), so the script holds an exclusive lock for its whole run and refuses to start without
-# it. See LOCK_DIR below.
+# it. See LOCK_DIR below. Ctrl-C and SIGTERM end the roll — they do not merely drop the lock out from under a
+# script that would then keep working (see on_signal).
 #
 # Usage: docker-new/roll-scheduler.sh
 #
@@ -51,11 +52,40 @@ REPLICAS="${SCHEDULER_REPLICAS:-2}"
 GRACE="${SCHEDULER_STOP_GRACE:-400}"
 HEALTH_WAIT="${SCHEDULER_HEALTH_WAIT:-300}"
 HEALTH_POLL_SECONDS=5
-# Keyed to the checkout and placed somewhere both an operator shell and a cron deploy agree on; the deploy
-# host has exactly one. Two checkouts of this repo on one host would share a compose project name anyway
-# (both derive it from the compose file's directory, `docker-new`) and collide at the daemon long before
-# anything a lock guards against.
-LOCK_DIR="${TMPDIR:-/tmp}/harnax-roll-scheduler-$(basename "${PROJECT_DIR}").lock"
+# What the lock has to name: the *cluster*, not the directory this copy of the repo sits in. Two rolls of one
+# compose project are the failure the lock prevents, and every checkout of this repo drives the same one —
+# compose takes the project name from the directory that holds the compose file, so `docker-new` here in all
+# three of this repo's worktrees (verified: `docker-compose -f docker-new/docker-compose.yml config` prints
+# `name: docker-new` from both the main checkout and .worktrees/scheduler-cluster-cutover, while
+# basename "${PROJECT_DIR}" differed between them). The previous key, basename of the checkout, therefore gave
+# one cluster as many locks as there are checkouts — which is exactly the concurrency the lock exists to stop.
+#
+# Chosen source for the name: compose's own rule, applied locally, rather than asking the CLI. `docker
+# compose config` is the more authoritative answer, but it interpolates the whole file, and the `name:` field
+# in that output only exists on compose v2 — a host whose `docker-compose` is the old python 1.x prints no
+# project name at all, so the CLI is not a portable authority for a key that has to be identical on every
+# shell that may start a roll. The rule is: COMPOSE_PROJECT_NAME if set, else the base name of the directory
+# holding the compose file, lowercased and stripped to the characters compose allows. This file sets no
+# top-level `name:` (grep for '^name:' is empty), so the directory rule is what applies; add it there, or
+# export COMPOSE_PROJECT_NAME, and this derivation has to follow.
+#
+# The daemon joins the key so a shell pointed at a different one — a test daemon, a second context — is not
+# blocked by an unrelated cluster's roll. Its name comes from the reachability preflight below, i.e. from the
+# daemon itself rather than from DOCKER_HOST or the current context, which is the whole point: however you
+# get there, the same daemon gives the same key.
+#
+# Base directory is a literal /tmp, *not* ${TMPDIR:-/tmp}: an operator shell with TMPDIR exported (macOS gives
+# every GUI login a per-user $TMPDIR) and a cron or sudo deploy without it have to contend for one lock, and
+# /tmp is the one place both see, including across users. The cost is that /tmp must be writable — a failure
+# there is reported as "cannot create the lock", never as "another roll is running" (see acquire_lock).
+LOCK_BASE_DIR="/tmp"
+# The rest of the key — compose project name plus daemon name — is assembled with the daemon preflight below,
+# where both have actually been answered for.
+LOCK_DIR=""
+# The traps below run on every exit path, including the ones that die before a lock was ever taken, so both
+# have to exist for `set -u`.
+LOCK_HELD=0
+LOCK_TOKEN=""
 
 cd "$PROJECT_DIR"
 
@@ -68,10 +98,54 @@ compose() {
   docker-compose -f "$COMPOSE_FILE" "$@"
 }
 
+# compose accepts only [a-z0-9_-] in a project name (and docker in a daemon name), lowercased. Applied to both
+# halves of the lock key so that two shells deriving the key from differently-spelled but identical inputs get
+# the same path.
+normalize_name() {
+  printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'
+}
+
+# Whether the lock at LOCK_DIR is this process's to give back. Two independent conditions, because the plain
+# `rm -rf` this replaces ran from the EXIT trap of every exit path — including the refusal exit, where the
+# directory belongs to the *other* roll, and including a roll that finished while a second one had already
+# taken the lock over. The token carries a pid and a per-run nonce, so a match means "the directory here is
+# the one mkdir made for me".
+lock_is_mine() {
+  [ -n "${LOCK_DIR}" ] \
+    && [ "${LOCK_HELD}" -eq 1 ] \
+    && [ "$(cat "${LOCK_DIR}/owner" 2>/dev/null || true)" = "${LOCK_TOKEN}" ]
+}
+
 release_lock() {
-  # The trap runs on a clean exit, a die and a Ctrl-C alike; only SIGKILL leaves the directory behind.
-  [ -n "${LOCK_DIR}" ] && rm -rf "${LOCK_DIR}"
+  # Called on a clean exit, a die, an INT and a TERM alike — and twice on the signal paths, since exiting from
+  # the signal handler runs the EXIT trap too. Only SIGKILL leaves the directory behind now.
+  if lock_is_mine; then
+    rm -rf "${LOCK_DIR}"
+  fi
+  LOCK_HELD=0
   return 0
+}
+
+# A signal has to *end* the roll, not just unlock it. Nothing else here stops it: every CLI call in the roll
+# loop is wrapped in `if ! …` or `|| …`, so the interrupted `docker stop` is caught, reported and followed by
+# the `docker rm`, the replacement `up` and the next replica — a roll the operator believes aborted, running
+# without a lock. Exiting from the handler is what makes the release honest.
+#
+# Exit status is 128+signo, the shell's own convention for dying of a signal, so a caller (deploy-service.sh,
+# a cron wrapper) sees "interrupted" rather than "the roll failed".
+on_signal() {
+  local sig_name="$1" exit_status="$2" note="no lock had been taken yet"
+  if [ "${LOCK_HELD}" -eq 1 ]; then
+    release_lock
+    note="lock ${LOCK_DIR} released"
+  fi
+  echo "❌ ${sig_name}: this roll is stopping here (${note})." >&2
+  echo "   A replica this roll had already stopped may still be without its replacement. Check the cluster" \
+    >&2
+  echo "   ('docker-compose -f ${COMPOSE_FILE} ps --all ${SERVICE}'), then re-run this script — it re-lists" \
+    >&2
+  echo "   the replicas and rolls what is left." >&2
+  exit "${exit_status}"
 }
 
 # Two rolls at once is the one failure mode this script cannot reason its way out of: each invocation sees the
@@ -83,15 +157,44 @@ release_lock() {
 # lack (flock ships with util-linux, and nothing in this repo's deploy scripts has ever required it), and
 # leaves nothing half-written for the next reader.
 acquire_lock() {
-  local holder
-  if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
-    holder="$(cat "${LOCK_DIR}/owner" 2>/dev/null || echo 'holder unknown')"
-    die "another scheduler roll is already running: ${holder}. Two concurrent rolls can each stop their own replica and leave the cluster with no scheduler, so this one refuses to start. Wait for the running roll to finish; if you are certain none is (the last one was SIGKILLed), remove ${LOCK_DIR} by hand."
+  local mkdir_error holder holder_pid
+  # Traps first, while LOCK_HELD is still 0: the handlers above do nothing unless this process both took the
+  # lock and can prove it, so arming them before mkdir costs nothing and closes the window in which a Ctrl-C
+  # between mkdir and trap could leave the directory behind.
+  trap 'release_lock' EXIT
+  trap 'on_signal INT 130' INT
+  trap 'on_signal TERM 143' TERM
+  if ! mkdir_error="$(mkdir "${LOCK_DIR}" 2>&1)"; then
+    if [ ! -d "${LOCK_DIR}" ]; then
+      # A failed mkdir with nothing at the target is not contention — it is an unwritable or missing parent, a
+      # read-only or full filesystem, or a non-directory squatting on the path. Saying "another roll is already
+      # running" there sends the operator off to hunt a process that does not exist while the roll that needs
+      # to happen quietly never does; and this script must not roll unguarded either.
+      die "cannot create the scheduler roll lock at ${LOCK_DIR}: ${mkdir_error:-mkdir gave no reason}. This is not another roll holding it — there is nothing at that path — so the roll cannot start guarded and refuses to start at all. ${LOCK_BASE_DIR} is hardcoded rather than taken from TMPDIR so that an operator shell, cron and sudo all contend for one lock; make it writable, or point LOCK_BASE_DIR at a directory every caller of this script can create in."
+    fi
+    holder="$(cat "${LOCK_DIR}/owner" 2>/dev/null || true)"
+    holder_pid=""
+    case "${holder}" in
+      pid=[0-9]*) holder_pid="${holder#pid=}"; holder_pid="${holder_pid%% *}" ;;
+    esac
+    if [ -n "${holder_pid}" ] && ! kill -0 "${holder_pid}" 2>/dev/null; then
+      # Report the dead holder, do not steal from it. kill -0 cannot tell "the roll that made this directory was
+      # SIGKILLed" from "that pid was recycled onto something else that is a roll", and guessing wrong in the
+      # optimistic direction is the concurrency this lock exists to prevent.
+      die "the scheduler roll lock at ${LOCK_DIR} belongs to a process that is no longer running (it recorded: ${holder}). Nothing is rolling right now, but this script will not clear a lock it did not create. Check that no roll is really in flight — 'ps -p ${holder_pid}', plus any terminal, cron job or CI step that runs this script — then remove ${LOCK_DIR} by hand and run this again."
+    fi
+    die "another scheduler roll is already running (${holder:-holder unknown, from a roll that recorded nothing}). Two concurrent rolls can each stop their own replica and leave the cluster with no scheduler, so this one refuses to start. Wait for the running roll to finish; if you are certain none is (the holder above is not among the running processes, or this lock predates a SIGKILL), remove ${LOCK_DIR} by hand and run this again."
   fi
-  printf 'pid=%s user=%s started=%s cwd=%s\n' \
-    "$$" "${USER:-unknown}" "$(date '+%Y-%m-%d %H:%M:%S %z')" "${PROJECT_DIR}" \
-    > "${LOCK_DIR}/owner" 2>/dev/null || true
-  trap 'release_lock' EXIT INT TERM
+  LOCK_TOKEN="$(printf 'pid=%s user=%s nonce=%s started=%s cwd=%s project=%s daemon=%s' \
+    "$$" "${USER:-unknown}" "${RANDOM}${RANDOM}$(date +%s)" \
+    "$(date '+%Y-%m-%d %H:%M:%S %z')" "${PROJECT_DIR}" "${COMPOSE_PROJECT}" "${DAEMON_KEY}")"
+  if ! printf '%s\n' "${LOCK_TOKEN}" > "${LOCK_DIR}/owner" 2>/dev/null; then
+    # Without the owner file a later release_lock cannot prove the directory is ours, and would have to leave
+    # it for the next operator to find. Better to undo a lock taken a microsecond ago — we know we made it.
+    rm -rf "${LOCK_DIR}"
+    die "created the roll lock directory ${LOCK_DIR} but could not write its owner file; nothing was touched. Check that ${LOCK_BASE_DIR} is writable."
+  fi
+  LOCK_HELD=1
 }
 
 # Ids of the scheduler replicas compose considers running, space separated.
@@ -231,7 +334,23 @@ for knob in "REPLICAS:SCHEDULER_REPLICAS" "GRACE:SCHEDULER_STOP_GRACE" "HEALTH_W
 done
 
 [ -f "${COMPOSE_FILE}" ] || die "compose file not found: ${COMPOSE_FILE} (run it from a checkout or set COMPOSE_FILE)"
-docker info >/dev/null 2>&1 || die "docker daemon is not reachable; refusing to roll the scheduler cluster"
+# One round trip does both jobs: it proves the daemon is there (this roll is pointless without it) and it
+# answers *which* daemon, in the daemon's own words rather than via DOCKER_HOST or the current context, which
+# is the half of the lock key that says "the cluster I am about to touch". A daemon that answers with no name
+# gets no lock key, so this dies instead of guessing one — see LOCK_BASE_DIR above.
+if ! DAEMON_NAME="$(docker info -f '{{.Name}}' 2>/dev/null)"; then
+  die "docker daemon is not reachable; refusing to roll the scheduler cluster"
+fi
+DAEMON_KEY="$(normalize_name "${DAEMON_NAME}")"
+[ -n "${DAEMON_KEY}" ] \
+  || die "the docker daemon answered the preflight but reported no name, so this roll cannot key its lock on it; refusing to run unguarded"
+# Compose's own rule for the project name, applied to the directory holding the compose file (COMPOSE_FILE is
+# relative to PROJECT_DIR, which the script already cd-ed into, and which is where compose gets it too).
+compose_project_raw="${COMPOSE_PROJECT_NAME:-$(basename "$(cd "$(dirname "${COMPOSE_FILE}")" && pwd)")}"
+COMPOSE_PROJECT="$(normalize_name "${compose_project_raw}")"
+[ -n "${COMPOSE_PROJECT}" ] \
+  || die "the compose project name derives to nothing ('${compose_project_raw}' has no [a-z0-9_-] in it); cannot key the roll lock"
+LOCK_DIR="${LOCK_BASE_DIR}/harnax-roll-scheduler-${COMPOSE_PROJECT}+${DAEMON_KEY}.lock"
 compose config --services 2>/dev/null | grep -qx "${SERVICE}" \
   || die "no ${SERVICE} service in ${COMPOSE_FILE}"
 
@@ -319,7 +438,10 @@ for victim in "${containers[@]}"; do
   # here, and a running-only listing would have called it gone.
   if ! existing="$(list_existing_strict 2>/dev/null)"; then
     report_replicas "${victim}" >&2
-    die "cannot list ${SERVICE} replicas after removing ${victim}, so cannot confirm it is gone. Refusing to bring the replacement up without that proof — ${victim} may still exist and --no-recreate would reuse it. At least one healthy peer is still serving: check 'docker-compose -f ${COMPOSE_FILE} ps --all ${SERVICE}', then re-run this script."
+    # Say what was just measured, not what this roll would have liked: the stop above may have burned the whole
+    # grace period, so whatever peer covered this replica before the stop is not a fact about now.
+    healthy_now="$(healthy_count)"
+    die "cannot list ${SERVICE} replicas after removing ${victim}, so cannot confirm it is gone. Refusing to bring the replacement up without that proof — ${victim} may still exist and --no-recreate would reuse it. Just re-read, after a stop that may have used the whole ${GRACE}s: ${healthy_now} replica(s) of this project answer healthy right now (the listing above is every replica the daemon had, with the state each reported). If that is not at least one, the cluster has no scheduler until you fix a replica — start one with 'docker-compose -f ${COMPOSE_FILE} up -d --no-deps --scale ${SERVICE}=${REPLICAS} ${SERVICE}' and watch it. Then clear ${victim} (docker ps -a, docker rm -f ${victim} if it is wedged) and re-run this script: the replicas above are what the cluster has, and this roll stopped there."
   fi
   if list_has "${victim}" "${existing}"; then
     report_replicas "${victim}" >&2
