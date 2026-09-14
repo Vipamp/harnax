@@ -3,10 +3,12 @@ package com.agnetix.harnax.admin.service
 import com.agnetix.harnax.common.dto.ResultVo
 
 /**
- * 与 harnax-scheduler 服务通信的客户端接口
+ * Client that talks to the harnax-scheduler service
  *
- * 五个方法都是一次调用、一个实例：调度状态存在共享的 Quartz JDBC store 里，已经没有"某个节点自己持有、
- * 需要逐个通知"的状态，所以发给任意一个可达实例就等于发给全集群。
+ * All five methods are one call to one instance: start/pause/reload land in the shared Quartz JDBC store
+ * and a trigger is a one-shot the shared execution guard dedups, so there is no per-node state left to
+ * notify and posting to any reachable scheduling-enabled instance is posting to the whole cluster (an
+ * inert one refuses the write with 40903 and changes nothing). [stopTask] is single on purpose instead.
  */
 interface SchedulerClient {
 

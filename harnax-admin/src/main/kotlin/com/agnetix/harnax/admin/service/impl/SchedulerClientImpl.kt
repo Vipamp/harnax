@@ -52,8 +52,9 @@ class SchedulerClientImpl(
     override fun stopTask(logId: Long): ResultVo<Void> = postToScheduler("/api/scheduler/tasks/logs/$logId/stop")
 
     /**
-     * One call, one instance. Every scheduling write lands in the shared Quartz store, so there is no
-     * per-node state left to notify — and no `anySuccess`-style folding to invent business codes for.
+     * One call, one instance. Start/pause/reload land in the shared Quartz store and a manual trigger is
+     * a one-shot the shared execution guard dedups, so in neither case is there per-node state left to
+     * notify — and no `anySuccess`-style folding to invent business codes for.
      * A single instance failing therefore means exactly one thing: the definition is saved and nothing
      * has scheduled it, which is what 40902 tells the caller.
      *
