@@ -49,13 +49,24 @@ interface SchedulerService {
     fun pauseTask(id: Long): Boolean
 
     /**
-     * Trigger a one-time execution of a task via Quartz.
+     * Run a task once, now: the single manual entry point behind both `/tasks/{id}/trigger` and
+     * `/tasks/{id}/run-once`.
+     *
+     * It delivers a one-shot job into the Quartz store rather than running anything itself, so the execution
+     * is protected by exactly the same shutdown wait and container grace as a cron fire, and a node that dies
+     * before the trigger lands hands it to a peer instead of losing the user's click. It takes no cluster
+     * lock either: that is the job's decision at fire time, on whichever node claims the trigger
+     * (`AbstractAgentTaskJob`).
+     *
+     * @return false when the task forbids overlap and one of its executions is live, which the controller
+     *   reports as the 40901 conflict; the delivery never reaches the router from here.
      */
     fun runTaskOnce(id: Long): Boolean
 
     /**
-     * Execute a task once (shared logic for both Quartz and manual trigger).
-     * Creates task log, registers in runningTasks, calls router, handles result/cleanup.
+     * The execution body of one fire — cron and manual one-shot alike — called by
+     * [com.agnetix.harnax.scheduler.job.AbstractAgentTaskJob] on the Quartz worker that claimed the trigger.
+     * Creates task log, calls router, handles result/cleanup.
      * This method is synchronous and blocks until execution completes.
      */
     fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
@@ -92,16 +103,6 @@ interface SchedulerService {
      * @return how many rows were dropped, 0 when the sweep failed for the same reason as above
      */
     fun cleanupOldExecutionLogs(retentionDays: Int): Int
-
-    /**
-     * Manually trigger a task execution (bypassing Quartz scheduling).
-     * Executes asynchronously and returns immediately.
-     *
-     * Bypassing Quartz also means bypassing everything Quartz protects: the graceful-shutdown wait and
-     * the container's `stop_grace_period` cover the cron path, not this thread, so a restart mid-run
-     * leaves this execution's row at 3 and its lock row at 0.
-     */
-    fun triggerManually(id: Long): Boolean
 
     /**
      * Ask for one execution to stop, by log id: the row is claimed for stopping (3 -> 4) and the router is

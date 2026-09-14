@@ -63,10 +63,10 @@ abstract class AbstractAgentTaskJob {
         // left behind by a delete that never reached the store) cannot run on stale configuration.
         //
         // `taskStatus` is exempt for a one-shot: that guard exists because a stored cron job is a lagging
-        // copy of agent_task, but a one-shot's registration IS the user's current intent, made seconds
-        // ago, so a task paused between the click and the fire must still run — refusing it would make
-        // /run-once stricter than /trigger, which has always run a paused task. A soft-deleted task is
-        // refused either way, and the group is what decides, because the JobDataMap is string-only.
+        // copy of agent_task, but a one-shot's registration IS the user's current intent, made seconds ago,
+        // so a task paused between the click and the fire must still run — both manual endpoints deliver that
+        // one-shot, and neither of them ever asked the task whether it was still switched on. A soft-deleted
+        // task is refused either way, and the group is what decides, because the JobDataMap is string-only.
         val scheduledFire = context.jobDetail.key.group == TaskQuartzRegistrar.GROUP_AGENT_TASK
         if (task.active != 1 || (scheduledFire && task.taskStatus != 1)) {
             log.info(

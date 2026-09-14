@@ -375,13 +375,16 @@ services:
     # job, and SIGKILL arrives 10s later anyway — leaving agent_task_log at status=3 and its
     # agent_task_execution lock row at status=0 for housekeeping to reap (up to 2× timeout).
     #
-    # THIS GRACE COVERS THE CRON PATH ONLY. A manual /api/scheduler/tasks/{id}/trigger still runs on a
-    # bare daemon thread (SchedulerServiceImpl.triggerManually) that Quartz has never heard of, so
-    # nothing waits for it on shutdown: restarting this container mid-manual-run cuts that execution into
-    # exactly the two rows above. Until one-shot runs move into Quartz (plan S4), do not restart the
-    # scheduler while a manual execution may be in flight — and with two replicas "which one" is not
-    # knowable from the peer: admin's forward reaches whichever node Docker DNS picked, so the roll has to
-    # assume either of them is busy and gives both the full grace.
+    # THIS GRACE COVERS EVERY EXECUTION PATH. A cron fire and a manual run are one kind of object now: both
+    # /api/scheduler/tasks/{id}/trigger and /run-once deliver a one-shot job that a Quartz worker executes
+    # inline, so the wait above has something to wait for whichever way the run started, and a restart
+    # mid-execution ends with a completed run instead of the two rows above. The price of the merge is the
+    # same fact seen from the other side: one manual run occupies one of the QUARTZ_THREAD_COUNT workers on
+    # the node that claims it, which is the intended concurrency gate (there is no separate manual pool).
+    #
+    # With two replicas "which node is busy" is still not knowable from the peer: admin's forward reaches
+    # whichever node Docker DNS picked, so the roll has to assume either of them is busy and gives both the
+    # full grace.
     #
     # What one execution can hold its Quartz worker for, added up term by term. Every term is a timeout
     # this repo sets, so the number is a sum and not a rounded guess:

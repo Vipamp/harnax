@@ -1,6 +1,5 @@
 package com.agnetix.harnax.scheduler.service.impl
 
-import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTaskLog
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
@@ -128,15 +127,22 @@ class SchedulerServiceImplTest {
         verifyNoInteractions(quartz)
     }
 
+    /**
+     * Re-aimed at the one-shot delivery, which `/trigger` and `/run-once` now share. The property that made
+     * this a separate case is the one the merged path has to keep: a refusal writes nothing anywhere, and
+     * the cluster lock is not this call's business.
+     */
     @Test
-    fun `a manual trigger on a task with a live execution is rejected as false, not as an exception`() {
+    fun `a manual run on a task with a live execution is rejected as false, with no lock and no store write`() {
         givenTaskWithActiveRunningLog()
 
-        val rejected = assertDoesNotThrow { service.triggerManually(TASK_ID) }
+        val rejected = assertDoesNotThrow { service.runTaskOnce(TASK_ID) }
 
         assertFalse(rejected)
-        // Rejected before the cluster lock, so no other instance can be told to run it either.
+        // No lock at delivery time at all: the job takes it when it fires, on whichever node claims the
+        // trigger. Nothing was scheduled either, so the refused click leaves no orphan behind.
         verify(executionGuard, never()).tryAcquireLock(any(), any())
+        verify(quartz, never()).scheduleJob(any<JobDetail>(), any<Trigger>())
     }
 
     @Test
@@ -151,17 +157,22 @@ class SchedulerServiceImplTest {
 
     /**
      * `concurrent = 1` is the task saying "another run may overlap this one" (entity/DDL: 0 = no
-     * overlap, 1 = allow). Refusing a manual trigger anyway turns that flag into a lie and answers the
+     * overlap, 1 = allow). Refusing a manual run anyway turns that flag into a lie and answers the
      * user with 40901 for a conflict their own task declared acceptable.
+     *
+     * The lock check is the inversion this task is about: the path that used to serve `/trigger` acquired
+     * the cluster lock here, on the node that happened to be asked, and then ran the work on a thread. A
+     * one-shot cannot do that — the fire may land on a different node, and a lock taken for a run nobody
+     * started is a leaked row housekeeping only reaps after twice the timeout.
      */
     @Test
-    fun `a manual trigger on a concurrency-tolerant task is accepted while an execution is live`() {
+    fun `a manual run on a concurrency-tolerant task is delivered while an execution is live, lockless`() {
         givenTaskWithActiveRunningLog(concurrent = 1)
 
-        assertTrue(service.triggerManually(TASK_ID), "concurrent=1 must not be blocked by a live execution")
+        assertTrue(service.runTaskOnce(TASK_ID), "concurrent=1 must not be blocked by a live execution")
 
-        // Past the log guard and into the cluster lock, which is what actually dedupes instances.
-        verify(executionGuard).tryAcquireLock(any(), any())
+        verify(quartz).scheduleJob(any<JobDetail>(), any<Trigger>())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
     }
 
     @Test
@@ -273,29 +284,16 @@ class SchedulerServiceImplTest {
     /**
      * The running-log guard expires stale rows before reading, so that read is stubbed too — otherwise
      * a test would pass on a mocked-out mapper rather than on the guard's own decision.
+     *
+     * Nothing else is stubbed, and that is the point of the delivery path: it reads the task, reads the log
+     * table at most once, hands one job and one trigger to the store and returns. No lock row is written, no
+     * log row is inserted and the router is never called — a run that gets this far executes when Quartz
+     * fires it, not here.
      */
     private fun givenTaskWithActiveRunningLog(concurrent: Int = 0) {
         whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(task(concurrent = concurrent))
         whenever(agentTaskLogMapper.expireStale(anyInt())).thenReturn(0)
         whenever(agentTaskLogMapper.selectRunningByTaskId(TASK_ID)).thenReturn(listOf(runningLog()))
-        // Not the source of the rejection on purpose: if the log guard ever stops short-circuiting,
-        // the manual-trigger case still has to fail instead of slipping through the lock path.
-        whenever(executionGuard.tryAcquireLock(any(), any())).thenReturn(true)
-        givenExecutionPathIsHarmless()
-    }
-
-    /**
-     * A trigger that gets past the guards hands the run to a background thread. Stub its whole path so
-     * the thread finishes on its own: an assertion that races a still-running mock is how suites turn
-     * flaky.
-     */
-    private fun givenExecutionPathIsHarmless() {
-        whenever(agentTaskLogMapper.insert(any())).thenAnswer {
-            it.getArgument<AgentTaskLog>(0).id = 77L
-            1
-        }
-        whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(1)
-        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "ok"))
     }
 
     private fun task(concurrent: Int = 0) = AgentTask().apply {

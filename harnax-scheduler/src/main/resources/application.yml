@@ -65,9 +65,11 @@ spring:
     # housekeeping reaps them up to 2× scheduler.timeout-seconds later, and the user watches a timeout
     # that never actually happened. Must be paired with stop_grace_period on the scheduler container:
     # waiting for jobs is worthless if the kernel sends SIGKILL first.
-    # What it waits for, though, is only what Quartz knows about: the cron path and the /run-once
-    # one-shots. A manual /trigger runs on a bare daemon thread (SchedulerServiceImpl.triggerManually),
-    # invisible to the scheduler, so no grace period protects it — plan S4 closes that gap.
+    # Every execution path this module has is now one of those jobs: a cron fire and a manual run are the
+    # same kind of object (both `/trigger` and `/run-once` deliver a one-shot into the store), so both are
+    # waited for, and neither is the bare daemon thread a restart used to cut in half. The capacity side of
+    # that trade is the same fact: a manual run holds one of the `threadCount` workers below until it ends,
+    # which is the intended model — that count, not a private pool, is a node's concurrency gate.
     wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}
     properties:
       org:

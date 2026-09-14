@@ -18,16 +18,22 @@ class SchedulerController(
 
     private val log = LoggerFactory.getLogger(SchedulerController::class.java)
 
+    /**
+     * The endpoint admin and the CLI use. It delivers the same one-shot as `/run-once` — the bare thread that
+     * used to answer this call is what a restart kept cutting in half, and a Quartz job is the only shape the
+     * shutdown wait and the container's grace period can see.
+     */
     @Operation(summary = "Manually trigger a one-time task execution")
     @PostMapping("/tasks/{id}/trigger")
     fun trigger(@PathVariable id: Long): ResultVo<String> {
         requireEnabled("trigger task $id")?.let { return it }
         return try {
-            if (schedulerService.triggerManually(id)) {
+            if (schedulerService.runTaskOnce(id)) {
                 ResultVo.success("Task triggered")
             } else {
-                // 40901, not a message: both "already running" and "another instance won the lock" mean
-                // the same thing to the caller — try again later.
+                // 40901: the task forbids overlap and one of its executions is live. The cluster lock is no
+                // longer a possible answer here — the job takes it at fire time, on whichever node claims the
+                // trigger — so this is the only conflict a delivery can still hit.
                 ResultVo.error(CODE_EXECUTION_IN_PROGRESS, "Task execution is already in progress")
             }
         } catch (e: Exception) {
@@ -70,6 +76,7 @@ class SchedulerController(
         }
     }
 
+    /** The other manual door: same `runTaskOnce` as `/trigger`, kept for the clients already calling it. */
     @Operation(summary = "Trigger a one-time execution via Quartz")
     @PostMapping("/tasks/{id}/run-once")
     fun runOnce(@PathVariable id: Long): ResultVo<String> {
@@ -77,6 +84,8 @@ class SchedulerController(
         return try {
             val success = schedulerService.runTaskOnce(id)
             if (success) {
+                // Its own string, on purpose: `/trigger` above answers "Task triggered" and a client that
+                // reads either message keeps reading what it always read.
                 ResultVo.success("Task run once scheduled")
             } else {
                 // Same code as trigger: runTaskOnce returns false only for a conflict, so a plain 500

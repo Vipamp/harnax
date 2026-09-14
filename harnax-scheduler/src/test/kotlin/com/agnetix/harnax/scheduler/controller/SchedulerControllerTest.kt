@@ -38,7 +38,7 @@ class SchedulerControllerTest {
     @Test
     fun `a rejected trigger because an execution is in flight answers with business code 40901`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(7L)).thenReturn(false)
+        whenever(schedulerService.runTaskOnce(7L)).thenReturn(false)
 
         val result = controller.trigger(7L)
 
@@ -60,15 +60,19 @@ class SchedulerControllerTest {
     @Test
     fun `a successful trigger still answers 200`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(8L)).thenReturn(true)
+        whenever(schedulerService.runTaskOnce(8L)).thenReturn(true)
 
         assertEquals(200, controller.trigger(8L).code)
+
+        // Both manual doors share the one-shot delivery now; the bare thread `/trigger` used to start was
+        // the one execution path no shutdown wait could see.
+        verify(schedulerService).runTaskOnce(8L)
     }
 
     @Test
     fun `an unexpected failure stays a generic error, not a conflict`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(9L)).thenThrow(RuntimeException("db down"))
+        whenever(schedulerService.runTaskOnce(9L)).thenThrow(RuntimeException("db down"))
 
         assertEquals(500, controller.trigger(9L).code)
     }

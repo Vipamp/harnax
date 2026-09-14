@@ -413,6 +413,17 @@ class SchedulerServiceImpl(
         return agentTaskMapper.updateStatus(id, 0) > 0
     }
 
+    /**
+     * Run a task once, now, on a Quartz worker thread.
+     *
+     * Both manual endpoints land here. It is a persisted one-shot rather than a thread on purpose:
+     * `waitForJobsToCompleteOnShutdown` and the container's stop_grace_period can only protect work the
+     * scheduler knows about, and with a JDBC store the trigger also survives a crash before the fire —
+     * the run is delivered by another node instead of vanishing.
+     *
+     * No `storeDurably()`: a one-shot job whose trigger has fired and completed is garbage, and Quartz
+     * removes it; a durable one would leave a row for reconcile to puzzle over forever.
+     */
     override fun runTaskOnce(id: Long): Boolean {
         val task = agentTaskMapper.selectAnyById(id)
             ?: throw RuntimeException("Agent task not found: $id")
@@ -423,7 +434,7 @@ class SchedulerServiceImpl(
             return false
         }
 
-        val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
+        val uniqueId = UUID.randomUUID().toString().substring(0, 8)
         // GROUP_ONCE rather than the task group: reconcile deletes what the table no longer asks for, and a
         // click that is still waiting for its fire is nobody's stale schedule. The fire path reads this same
         // constant to decide it is running a user's intent and not a lagging cron.
@@ -437,63 +448,19 @@ class SchedulerServiceImpl(
             .build()
 
         val trigger = TriggerBuilder.newTrigger()
-            .withIdentity(TriggerKey("AgentTask_${task.id}_ONCE_${uniqueId}_trigger", TaskQuartzRegistrar.GROUP_ONCE))
+            .withIdentity(TriggerKey("${jobKey.name}_trigger", TaskQuartzRegistrar.GROUP_ONCE))
+            .forJob(jobKey)
             .startNow()
             .build()
 
         scheduler.scheduleJob(jobDetail, trigger)
-        return true
-    }
-
-    override fun triggerManually(id: Long): Boolean {
-        val task = agentTaskMapper.selectAnyById(id)
-            ?: throw RuntimeException("Agent task not found: $id")
-
-        val triggerTime = LocalDateTime.now()
-
-        // Guard: an execution still in flight only counts as a conflict for a task that forbids
-        // overlap. A zombie left by a dead node cannot block the trigger forever either — the read
-        // reclaims it, rate limited per node (hasActiveRunningExecution), and housekeeping sweeps every
-        // five minutes regardless.
-        if (blocksManualRun(task)) {
-            log.warn("Task {} has an active running execution and allows no overlap, rejecting trigger", task.id)
-            return false
-        }
-
-        // Multi-instance guard (synchronous check)
-        if (!executionGuard.tryAcquireLock(task.id, triggerTime)) {
-            log.info("Task {} already being executed by another instance, skipping", task.id)
-            return false
-        }
-
-        log.info("Manually triggering agent task: id={}, name={}", task.id, task.name)
-
-        // Execute asynchronously via separate thread (Spring @Async doesn't work on self-invocation).
-        // Same shape as AgentTaskJob: an exception escaping here would die with the thread — the caller
-        // has already been answered "Task triggered", so the log line is the only trace left.
-        //
-        // Quartz knows nothing about this thread, and that is a promise the reader has to be told:
-        // `waitForJobsToCompleteOnShutdown` waits for worker threads, so neither it nor the container's
-        // stop_grace_period covers a manual run — a restart while this is in flight leaves agent_task_log
-        // at 3 and its lock row at 0 for housekeeping to reap. Merging one-shot runs into Quartz (S4) is
-        // what would put this path under the same protection as the cron one.
-        Thread {
-            try {
-                executeTaskOnce(task, triggerTime)
-            } catch (e: Exception) {
-                log.error("Manual task execution failed: id={}, name={}, error={}", task.id, task.name, e.message, e)
-            }
-        }.apply {
-            name = "manual-trigger-${task.id}"
-            isDaemon = true
-            start()
-        }
-
+        log.info("Scheduled a one-shot execution of task {} ({})", task.id, jobKey.name)
         return true
     }
 
     /**
-     * Shared task execution logic used by both Quartz jobs and manual triggers.
+     * The one execution body a Quartz fire runs, cron and manual one-shot alike, on the worker thread that
+     * claimed it.
      * Inserts the running log row, calls the router, then closes the row out through a
      * status-guarded update.
      */
@@ -781,7 +748,7 @@ class SchedulerServiceImpl(
      * for up to 30 extra seconds. The window exists because the alternative is worse — a fire whose sweep
      * loses a lock fight to a concurrent insert does not run at all.
      *
-     * Two callers, for two different holes: the manual paths above, and a Quartz fire asking before it
+     * Two callers, for two different holes: the manual delivery above, and a Quartz fire asking before it
      * starts work — `@DisallowConcurrentExecution` only mutualises one JobDetail, and one task owns
      * several (its cron job plus every one-shot), so the annotation cannot see across them. This read
      * is keyed by task and can.

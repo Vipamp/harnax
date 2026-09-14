@@ -197,10 +197,10 @@ class SchedulerStopStateMachineTest {
         whenever(agentTaskLogMapper.selectRunningByTaskId(1L)).thenReturn(listOf(log(31L, status = 3, sessionId = "sess-31")))
         whenever(agentTaskLogMapper.expireStale(any())).thenReturn(0)
 
-        // A sweep on a service configured for 900s must judge zombies against 900s. The trigger itself
+        // A sweep on a service configured for 900s must judge zombies against 900s. The manual run itself
         // is rejected (the row above is live and this task forbids overlap) — only the argument the
         // sweep got is under test here.
-        serviceWith(timeoutSeconds = 900).triggerManually(1L)
+        serviceWith(timeoutSeconds = 900).runTaskOnce(1L)
 
         val captor = argumentCaptor<Int>()
         verify(agentTaskLogMapper).expireStale(captor.capture())
