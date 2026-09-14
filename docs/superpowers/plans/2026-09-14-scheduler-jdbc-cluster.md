@@ -601,6 +601,7 @@ git commit -m "refactor(调度): JobDataMap 只携带 taskId，job 触发时回�
 
 **Files:**
 - Create: `.../service/TaskScheduleReconciler.kt`、`.../job/SchedulerReconcileJob.kt`
+- Modify: `harnax-scheduler/src/main/resources/application.yml`（Step 6 的 `quartz.auto-startup`、`scheduler.reconcile-interval-seconds`）
 - Modify: `.../service/SchedulerService.kt`、`.../service/impl/SchedulerServiceImpl.kt:157-297`、`.../health/QuartzJobInventory.kt`、`.../health/SchedulerStatus.kt`、`.../health/SchedulerHealthIndicator.kt`、`.../metrics/SchedulerMetrics.kt`、`.../controller/SchedulerController.kt:107-121`
 - Test: Create `.../service/TaskScheduleReconcilerTest.kt`；Modify `SchedulerStartupLoadTest.kt`、`SchedulerHealthIndicatorTest.kt`、`SchedulerMetricsTest.kt`、`SchedulerControllerTest.kt`、`QuartzJobInventoryTest.kt`
 
@@ -1032,7 +1033,53 @@ class SchedulerReconcileJob : Job {
 - `SchedulerController.reload()`：`if (schedulerService.reconcileTasks().converged) ResultVo.success("Tasks reconciled") else ResultVo.error("Some active tasks could not be scheduled, see /actuator/health for details")`。
 - `SchedulerServiceImpl` 里 `hasActiveRunningExecution` 等其余逻辑不变；`describeDrift`/`MAX_DRIFT_IDS` 从 service 迁到 reconciler 后删除 service 内的私有副本。
 
-- [ ] **Step 6: 更新既有测试并跑全绿**
+- [ ] **Step 6: 禁用节点不得加入集群（Task 3 评审发现）**
+
+`spring.quartz.auto-startup` 的 Boot 默认是 `true`，于是 `scheduler.enabled=false` 的实例**照样进集群、照样抢 trigger**，抢到之后被 fire 路径的 enabled 守卫拒掉——那次触发就没了，别的节点不会重领；cron 只是错过一次，`/run-once` 则**永久丢失**且只有一行 INFO。`docs/deploy-harnax-scheduler.md` 记录的就是"1 台启用 + N 台禁用"这种恰好把该洞打满的拓扑。
+
+改法（数据源即 yml）：
+
+```yaml
+  quartz:
+    # A disabled instance must not be a cluster member at all. Boot starts the scheduler by default, so
+    # such a node checks in, acquires triggers and then refuses to run them — the fire is consumed, not
+    # handed over, and a one-shot lost that way is lost forever. Leaving the cluster is the only refusal
+    # that does not eat work; standby is still legal for registering the housekeeping job.
+    auto-startup: ${SCHEDULER_QUARTZ_AUTO_STARTUP:${scheduler.enabled:true}}
+```
+
+并把 `AbstractAgentTaskJob.run()` 的 enabled 守卫**提到回查 `agent_task` 之前**：日志需要的 task id 由 `TaskQuartzRegistrar.taskIdOf(context.jobDetail.key)` 拿到，不需要一次数据库读。顺带修掉一处自相矛盾——禁用节点原先会在拒执行前替集群删掉孤儿 job，而"禁用节点不做调度动作"正是 `SchedulerController.requireEnabled` 的立场。
+
+测试：
+- `SchedulerQuartzConfigTest` 加一条：`auto-startup` 默认跟随 `scheduler.enabled`（读 yml 字面量即可）。
+- `AgentTaskJobExecutionTest` 把"禁用节点跳过"用例改成断言 `verify(agentTaskMapper, never()).selectAnyById(any())`——不执行、也不读库、也不删 job。
+- 若 `registerHousekeepingJob()` 因 standby 抛异常，改为在 `schedulerEnabled` 为假时跳过注册并写明原因：**共享 store 下清扫由启用节点以集群单例的方式跑**，禁用节点不再需要自己的清扫路径（G3 的理由是 RAM store 时代每台各扫各的，换 store 后自动失效，这条要在注释里讲清）。
+
+- [ ] **Step 7: one-shot 不受 `taskStatus` 守卫管辖（Task 3 评审发现）**
+
+fire 时的 `task.taskStatus != 1` 守卫存在的理由是"store 里的 cron job 是 `agent_task` 的滞后副本"。这个前提对 one-shot 不成立：它的注册**就是**用户此刻的意图，几毫秒前产生、只 fire 一次。当前实现让 `/api/scheduler/tasks/{id}/run-once` 打到一个已暂停任务上时静默不跑（webui 的"立即执行"走的是 `/trigger`，不在此路径；`/run-once` 目前无在树调用方，所以影响面小但不是零）。
+
+改法：把一次性 job 的组名提升为 registrar 常量，并按组豁免该守卫（**不**豁免"行已消失"的拒绝——被删的任务无论如何都不该跑）。
+
+```kotlin
+    /** One-shot runs live outside [GROUP_AGENT_TASK] so reconcile never deletes a user's click. */
+    const val GROUP_ONCE = "AgentTaskGroup_ONCE"
+```
+
+```kotlin
+        // The taskStatus guard exists because a stored cron job is a lagging copy of agent_task. A
+        // one-shot's registration IS the user's current intent, made seconds ago, so a task paused between
+        // the click and the fire must still run — refusing it would make /run-once stricter than /trigger,
+        // which has always run a paused task.
+        val scheduledFire = context.jobDetail.key.group == TaskQuartzRegistrar.GROUP_AGENT_TASK
+        if (scheduledFire && task.taskStatus != 1) {
+```
+
+并把 `SchedulerServiceImpl.runTaskOnce` 里的两处 `"AgentTaskGroup_ONCE"` 字面量、`SchedulerScheduleTaskTest` 的对应断言改为引用该常量。测试新增：`a paused task still runs when it was asked to run once`（组为 `AgentTaskGroup_ONCE` + `taskStatus = 0` → 执行）与既有的 `a task that has since been paused does not run`（组为 `AgentTaskGroup` → 不执行）成对钉住这条边界。
+
+同时把 `TaskQuartzRegistrar` 里重复的 `"AgentTask_"` 字面量收成 `private const val JOB_NAME_PREFIX`，让 `jobKeyOf` 与 `taskIdOf` 共用一个来源；并在 `TaskQuartzRegistrarTest` 补两条断言：`unregister(id)` 删的正是 `AgentTask_<id>@AgentTaskGroup`，以及 `triggerKeyOf` 的形态——Task 4 的对账要依赖这两个键完全一致。
+
+- [ ] **Step 8: 更新既有测试并跑全绿**
 
 - `SchedulerStartupLoadTest.kt`：类名与断言改为 reconcile 语义（mock `TaskScheduleReconciler`），保留"退避重试直到收敛""中断即停""5 次后 error 日志"三条断言。
 - `SchedulerHealthIndicatorTest.kt`：detail 键名 + `storeType` 断言。
@@ -1046,7 +1093,7 @@ $MVN -o -pl harnax-scheduler -am test -Dtest='!com.agnetix.harnax.mapper.**' -Ds
 ```
 期望：EXIT=0。
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add harnax-scheduler/src
