@@ -282,9 +282,13 @@ services:
 
   # Scheduler Service (agent task scheduling and execution)
   #
-  # Two instances, and exactly two places decide that number: `--scale scheduler=2` at the command line
-  # and roll-scheduler.sh below. No `deploy.replicas` here on purpose — a declarative replica count
-  # fights the stop-one/replace-one dance the rolling update has to do.
+  # Two instances. Nothing in this file decides that number — `deploy.replicas` is missing on purpose, since a
+  # declarative replica count fights the stop-one/replace-one dance the rolling update has to do — so it comes
+  # from the command line, and exactly three places put it there: roll-scheduler.sh (what
+  # `deploy-service.sh scheduler` ends up running, SCHEDULER_REPLICAS default 2), deploy-all.sh's cold
+  # `up -d --scale scheduler=$SCHEDULER_REPLICAS`, and your own hand-run `up -d --scale scheduler=2`. Any `up`
+  # for this service that omits --scale asks for one replica and compose will scale the service back down to
+  # it, so add the flag whenever you bring this service up outside those scripts.
   # The cluster itself lives in the shared QRTZ_* tables: same instanceName, instanceId=AUTO per node,
   # and a 15s check-in, so a dead node's triggers move to its peer inside 15~75s.
   #

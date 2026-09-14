@@ -98,7 +98,12 @@ echo "✅ 旧容器已停止"
 # 6. 启动所有服务（包括 redis、minio、mysql）
 echo ""
 echo "🚀 步骤 6/6: 启动所有服务..."
-docker-compose -f docker-new/docker-compose.yml up -d
+# scheduler 已经是双实例服务，这里必须先 down 再起（全新集群，不是滚动），所以直接给 --scale，
+# 不必走 roll-scheduler.sh——那条路径是给"有副本在跑时换镜像"用的，需要逐台停；此刻全部已停，
+# 一次 up --scale 就是它的冷启动形态。compose 文件里不写 deploy.replicas（与 stop-one/replace-one
+# 冲突），副本数只在命令行决定，所以这一行漏掉 --scale 就会把 scheduler 缩回一台。
+SCHEDULER_REPLICAS="${SCHEDULER_REPLICAS:-2}"
+docker-compose -f docker-new/docker-compose.yml up -d --scale "scheduler=${SCHEDULER_REPLICAS}"
 
 echo ""
 echo "=========================================="
