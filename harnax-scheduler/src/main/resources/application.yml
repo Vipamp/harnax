@@ -45,6 +45,11 @@ spring:
   # Quartz Configuration
   quartz:
     job-store-type: ${QUARTZ_JOB_STORE:jdbc}
+    # A disabled instance must not be a cluster member at all. Boot starts the scheduler by default, so
+    # such a node checks in, acquires triggers and then refuses to run them — the fire is consumed, not
+    # handed over, and a one-shot lost that way is lost forever. Leaving the cluster is the only refusal
+    # that does not eat work; standby is still legal for registering the housekeeping job.
+    auto-startup: ${SCHEDULER_QUARTZ_AUTO_STARTUP:${scheduler.enabled:true}}
     # `never`, and there is no setting to argue with: Boot's `always` runs the bundled Quartz script on
     # every start, and that script begins with DROP TABLE IF EXISTS — on a cluster that deletes the
     # schedule state every node shares each time one node restarts. V1__quartz_tables.sql creates it once.
@@ -135,13 +140,19 @@ logging:
 # Scheduler configuration
 scheduler:
   # Enable/disable scheduler on this instance. Disabled means this node takes no scheduling work: it
-  # loads no task, and every Quartz-touching write is refused with 40903 by SchedulerController's
-  # requireEnabled — the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload,
-  # /tasks/{id}/start and /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is
-  # registered outside this gate on purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop
-  # writes no Quartz object), so a disabled node can still receive one and leave a row at status=4 that
-  # nothing but expireStale ever moves.
+  # reconciles no task, registers no reconcile sweep, and stays out of the Quartz cluster altogether
+  # (spring.quartz.auto-startup follows this key) rather than joining it just to consume fires it will
+  # refuse. Every Quartz-touching write is refused with 40903 by SchedulerController's requireEnabled —
+  # the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload, /tasks/{id}/start and
+  # /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is registered outside this gate on
+  # purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop writes no Quartz object), so a
+  # disabled node can still receive one and leave a row at status=4 that nothing but expireStale ever
+  # moves.
   enabled: ${SCHEDULER_ENABLED:true}
+  # Upper bound on how long a lost reload notification stays invisible: the store and agent_task are not
+  # one transaction, so a CRUD that reached no node is repaired by this sweep instead. Raising it trades
+  # a longer blind window for fewer store reads; below ~15s the reads stop being negligible.
+  reconcile-interval-seconds: ${SCHEDULER_RECONCILE_INTERVAL:60}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}
   # Router URL for executing agent tasks

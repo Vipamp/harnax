@@ -2,6 +2,7 @@ package com.agnetix.harnax.scheduler.job
 
 import com.agnetix.harnax.entity.AgentTask
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -12,6 +13,7 @@ import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.quartz.JobKey
 import org.quartz.Scheduler
+import org.quartz.TriggerKey
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 
 /**
@@ -51,5 +53,54 @@ class TaskQuartzRegistrarTest {
         assertEquals(7L, TaskQuartzRegistrar.taskIdOf(JobKey("AgentTask_7", TaskQuartzRegistrar.GROUP_AGENT_TASK)))
         assertNull(TaskQuartzRegistrar.taskIdOf(JobKey("somethingElse", TaskQuartzRegistrar.GROUP_AGENT_TASK)))
         assertEquals(JobKey("AgentTask_7", "AgentTaskGroup"), registrar.jobKeyOf(7L))
+    }
+
+    /**
+     * A bare number is not a task job. The reconcile diff deletes every id the table no longer asks for, so
+     * a hand-made job that merely *parses* after stripping a prefix would be somebody else's schedule, and
+     * reading it back as task 7 would have the cluster delete a job nobody here registered.
+     */
+    @Test
+    fun `a name without the task prefix never reads back as a task id`() {
+        assertNull(TaskQuartzRegistrar.taskIdOf(JobKey("7", TaskQuartzRegistrar.GROUP_AGENT_TASK)))
+        assertNull(TaskQuartzRegistrar.taskIdOf(JobKey("AgentTask_7_ONCE_a1b2c3d4", TaskQuartzRegistrar.GROUP_ONCE)))
+    }
+
+    /**
+     * The identity the diff reads back has to be the identity it deletes: `unregister` reaching any other
+     * key would leave the task's job in the shared store while the table said it was gone (and the next
+     * fire would find no row and self-delete it — one round later, on whichever node claimed it).
+     */
+    @Test
+    fun `unregistering deletes exactly the job that registering wrote`() {
+        registrar.register(task(7L))
+        registrar.unregister(7L)
+
+        val captor = argumentCaptor<JobKey>()
+        verify(quartz).deleteJob(captor.capture())
+        assertEquals(registrar.jobKeyOf(7L), captor.firstValue)
+        assertEquals(JobKey("AgentTask_7", TaskQuartzRegistrar.GROUP_AGENT_TASK), captor.firstValue)
+    }
+
+    /**
+     * Same key shape the `_ONCE` path uses (`_trigger` suffix, same group as its job): the store's trigger
+     * rows are what a cluster node acquires, and a second group here would put a task's two halves in two
+     * different places for a reader to guess between.
+     */
+    @Test
+    fun `the trigger key is the job key plus the trigger suffix in the same group`() {
+        assertEquals(
+            TriggerKey("AgentTask_7_trigger", TaskQuartzRegistrar.GROUP_AGENT_TASK),
+            registrar.triggerKeyOf(7L),
+        )
+        assertEquals(registrar.jobKeyOf(7L).group, registrar.triggerKeyOf(7L).group)
+    }
+
+    /** Two groups, on purpose: one is the schedule reconcile owns, the other is a user's pending click. */
+    @Test
+    fun `the one-shot group is not the group reconcile edits`() {
+        assertEquals("AgentTaskGroup", TaskQuartzRegistrar.GROUP_AGENT_TASK)
+        assertEquals("AgentTaskGroup_ONCE", TaskQuartzRegistrar.GROUP_ONCE)
+        assertNotEquals(TaskQuartzRegistrar.GROUP_AGENT_TASK, TaskQuartzRegistrar.GROUP_ONCE)
     }
 }

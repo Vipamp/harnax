@@ -9,8 +9,9 @@ import org.springframework.stereotype.Component
 /**
  * Meters for the scheduler's own bookkeeping.
  *
- * Both meters move a handful of times per minute, so they go through [MeterRegistry.counter] and
- * [Gauge] directly instead of the pre-cached-field style the router uses on its per-request path.
+ * None of them moves at request rate — the busiest caller is the reconcile sweep, once a minute, and only
+ * `/reload` reaches them from a request — so they go through [MeterRegistry.counter] and [Gauge] directly
+ * instead of the pre-cached-field style the router uses on its per-request path.
  */
 @Component
 class SchedulerMetrics(
@@ -32,10 +33,31 @@ class SchedulerMetrics(
         Gauge.builder("scheduler.jobs.scheduled", jobInventory) { inventory ->
             runCatching { inventory.scheduledTaskIds().size.toDouble() }.getOrDefault(Double.NaN)
         }
-            .description("Agent tasks registered in the Quartz store this instance reads")
+            .description("Agent tasks registered in the shared Quartz store (cluster view when job-store-type=jdbc)")
             .register(registry)
     }
 
+    /**
+     * Divergence the reconcile had to repair, counted per action. A steady non-zero stream here means CRUD
+     * notifications and the store are out of step — the failure mode a broadcast-per-node design hid.
+     * Registered lazily so a round that changed nothing costs no samples.
+     */
+    fun recordReconcileDrift(
+        action: String,
+        count: Int,
+    ) {
+        if (count <= 0) {
+            return
+        }
+        registry.counter("scheduler.reconcile.drift", "action", action).increment(count.toDouble())
+    }
+
+    /**
+     * One round's verdict, from either caller: the startup converge loop and the 60-second sweep. The name
+     * is the one this meter shipped with before reconcile replaced the startup load; since that sweep exists,
+     * the rate is "rounds per minute on this node" and not "restarts per hour", so only the `failure` tag is
+     * worth alerting on.
+     */
     fun recordLoadAttempt(success: Boolean) {
         registry.counter(
             "scheduler.load.attempts",

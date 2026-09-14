@@ -104,13 +104,13 @@ class SchedulerController(
         ResultVo.error("Failed to get scheduler status: ${e.message}")
     }
 
-    @Operation(summary = "Reload all tasks from database")
+    @Operation(summary = "Reconcile the scheduler store with the task table")
     @PostMapping("/reload")
     fun reload(): ResultVo<String> {
         requireEnabled("reload tasks")?.let { return it }
         return try {
-            if (schedulerService.loadTasksToScheduler()) {
-                ResultVo.success("Tasks reloaded")
+            if (schedulerService.reconcileTasks().converged) {
+                ResultVo.success("Tasks reconciled")
             } else {
                 ResultVo.error("Some active tasks could not be scheduled, see /actuator/health for details")
             }

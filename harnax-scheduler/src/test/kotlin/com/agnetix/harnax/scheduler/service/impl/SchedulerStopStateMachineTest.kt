@@ -16,6 +16,7 @@ import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -29,6 +30,7 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -323,8 +325,11 @@ class SchedulerStopStateMachineTest {
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
             registrar = TaskQuartzRegistrar(schedulerFactory),
+            // This suite never reconciles: it walks the stop state machine.
+            reconciler = mock<TaskScheduleReconciler>(),
             schedulerEnabled = true,
             executionTimeoutSeconds = timeoutSeconds,
+            reconcileIntervalSeconds = 60,
         )
     }
 

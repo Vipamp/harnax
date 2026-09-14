@@ -1,9 +1,16 @@
 package com.agnetix.harnax.scheduler.health
 
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
+import org.quartz.CronTrigger
 import org.quartz.impl.matchers.GroupMatcher
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import org.springframework.stereotype.Component
+
+/** What the store holds for one agent task, read back for the diff. */
+data class RegisteredJob(
+    val cronExpression: String?,
+    val jobClassName: String,
+)
 
 /**
  * What this instance has in the Quartz store *right now*.
@@ -28,6 +35,12 @@ class QuartzJobInventory(
      *
      * Both halves of that identity — the group and the name shape — come from [TaskQuartzRegistrar], the
      * bean that writes them, because a second copy here is how the read and the write drift apart.
+     * [agentTaskJobs] shares that same source and is the one that also reads each job's content.
+     *
+     * It deliberately does *not* answer from [agentTaskJobs]: reading the cron and the class back costs one
+     * `getJobDetail` and one `getTriggersOfJob` per job against a JDBC store, and this is the count behind
+     * the `/actuator/health` detail and the `scheduler.jobs.scheduled` gauge, both of which a probe hits
+     * every few seconds. The reconcile round pays that per minute; a scrape must not.
      *
      * `_ONCE` runs live in their own group, so they never show up here; a name that does not parse back
      * to a long (a job somebody created by hand in that group) is skipped rather than failing the read.
@@ -35,5 +48,29 @@ class QuartzJobInventory(
     fun scheduledTaskIds(): Set<Long> {
         val jobKeys = schedulerFactory.scheduler.getJobKeys(GroupMatcher.jobGroupEquals(TaskQuartzRegistrar.GROUP_AGENT_TASK))
         return jobKeys.mapNotNull { key -> TaskQuartzRegistrar.taskIdOf(key) }.toSet()
+    }
+
+    /**
+     * Every agent-task job in [TaskQuartzRegistrar.GROUP_AGENT_TASK] keyed by the task id encoded in its
+     * name, with the cron and the registered class read off the store rather than off what this node
+     * thinks it wrote: under a shared store the question "what is scheduled" has exactly one answer for
+     * the whole cluster.
+     *
+     * A job with no cron trigger (someone registered one by hand, or a delete left a durable job behind)
+     * comes back with `cronExpression = null`, which the reconciler treats as "not matching" and rewrites.
+     */
+    fun agentTaskJobs(): Map<Long, RegisteredJob> {
+        val scheduler = schedulerFactory.scheduler
+        return scheduler.getJobKeys(GroupMatcher.jobGroupEquals(TaskQuartzRegistrar.GROUP_AGENT_TASK))
+            .mapNotNull { key ->
+                val taskId = TaskQuartzRegistrar.taskIdOf(key) ?: return@mapNotNull null
+                val detail = scheduler.getJobDetail(key) ?: return@mapNotNull null
+                val cron = scheduler.getTriggersOfJob(detail.key)
+                    .filterIsInstance<CronTrigger>()
+                    .firstOrNull()
+                    ?.cronExpression
+                taskId to RegisteredJob(cron, detail.jobClass.name)
+            }
+            .toMap()
     }
 }

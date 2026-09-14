@@ -59,4 +59,26 @@ class SchedulerQuartzConfigTest {
         assertEquals("flyway_schema_history_scheduler", value("flyway.table"))
         assertEquals("never", value("quartz.jdbc.initialize-schema"))
     }
+
+    /**
+     * The one line standing between a disabled instance and a consumed fire. Boot's own default for
+     * `auto-startup` is true, so a node with `scheduler.enabled=false` would otherwise join the cluster,
+     * acquire triggers and then refuse to run them — the fire is gone, not handed over, and a one-shot
+     * lost that way never comes back. The default has to *follow* the feature switch rather than restate
+     * it, or the two drift apart the first time somebody sets only one.
+     */
+    @Test
+    fun `a disabled instance does not start the scheduler so it never joins the cluster`() {
+        assertEquals(
+            "\${SCHEDULER_QUARTZ_AUTO_STARTUP:\${scheduler.enabled:true}}",
+            value("quartz.auto-startup"),
+        )
+    }
+
+    /** The bound on how long a lost CRUD notification stays invisible; read straight from the yaml. */
+    @Test
+    fun `the cluster re-checks the store against the table every minute by default`() {
+        val interval = props.getProperty("scheduler.reconcile-interval-seconds")
+        assertTrue(interval != null && interval.endsWith(":60}"), "got: $interval")
+    }
 }

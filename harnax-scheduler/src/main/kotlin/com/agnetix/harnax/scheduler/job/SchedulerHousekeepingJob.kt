@@ -50,9 +50,9 @@ class SchedulerHousekeepingJob : Job {
 
     companion object {
         /**
-         * Deliberately outside `AgentTaskGroup`: a reload deletes every job in that group, and a sweep
-         * registered there would be erased on the next one and never re-registered, because registration
-         * only happens on boot.
+         * Deliberately outside `AgentTaskGroup`: that is the group the reconcile diff converges against
+         * `agent_task`, and a job registered there that the task table does not account for is exactly what
+         * it deletes. Both system sweeps live here, one literal deep.
          */
         const val GROUP = "SchedulerSystemGroup"
         const val JOB_NAME = "AgentTaskExecutionHousekeeping"

@@ -12,10 +12,11 @@ import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.ReconcileReport
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -89,7 +90,10 @@ class SchedulerServiceImplTest {
         service = serviceWith(TaskQuartzRegistrar(schedulerFactory))
     }
 
-    private fun serviceWith(registrar: TaskQuartzRegistrar) = SchedulerServiceImpl(
+    private fun serviceWith(
+        registrar: TaskQuartzRegistrar,
+        reconciler: TaskScheduleReconciler = mock<TaskScheduleReconciler>(),
+    ) = SchedulerServiceImpl(
         schedulerFactory,
         agentTaskMapper,
         agentTaskLogMapper,
@@ -99,7 +103,9 @@ class SchedulerServiceImplTest {
         SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
         jobInventory = jobInventory,
         registrar = registrar,
+        reconciler = reconciler,
         executionTimeoutSeconds = 300,
+        reconcileIntervalSeconds = 60,
         schedulerEnabled = true,
     )
 
@@ -238,26 +244,25 @@ class SchedulerServiceImplTest {
     }
 
     /**
-     * Registering 1 of 2 active tasks is drift, not a success: the health signal and the /reload
-     * answer both have to keep saying so, otherwise the instance quietly stops scheduling one task
-     * while every probe reads UP.
+     * The service owns none of the converge any more — it hands the round to
+     * [com.agnetix.harnax.scheduler.service.TaskScheduleReconciler] and answers with its report. What the
+     * report *means* is pinned there and in `SchedulerStartupReconcileTest`; what is pinned here is that a
+     * round leaving drift reaches the caller as drift, since `/reload`'s answer and the health verdict both
+     * read it off this return value.
      */
     @Test
-    fun `a load that registers only part of the active tasks keeps the load error and reports false`() {
-        val badCronTaskId = 2L
-        whenever(agentTaskMapper.selectRunningTasks())
-            .thenReturn(listOf(cronTask(1L, "0 0 9 * * ?"), cronTask(badCronTaskId, "definitely not a cron")))
+    fun `reconcileTasks answers with the reconciler's report so a drifting round is not a success`() {
+        val report = ReconcileReport(added = 0, removed = 0, updated = 1, unchanged = 3, failedIds = listOf(2L))
+        val reconciler = mock<TaskScheduleReconciler>()
+        whenever(reconciler.reconcile()).thenReturn(report)
         whenever(quartz.isStarted).thenReturn(true)
+        status.recordReconcile(jobCount = 4, pendingError = "1 of 5 active tasks could not be registered: ids=[2]")
 
-        val reloaded = service.loadTasksToScheduler()
+        val answered = serviceWith(TaskQuartzRegistrar(schedulerFactory), reconciler).reconcileTasks()
 
-        assertFalse(reloaded, "a partial registration must not be reported as a completed reload")
-        val error = status.lastLoadError
-        assertNotNull(error, "a partial registration must leave lastLoadError set")
-        assertTrue(
-            error!!.contains("ids=[$badCronTaskId]"),
-            "the error has to name the task that could not be registered, got: $error",
-        )
+        verify(reconciler).reconcile()
+        assertEquals(report, answered)
+        assertFalse(answered.converged, "a partial round must not be reported as a completed reload")
         assertEquals(
             Status.DOWN,
             SchedulerHealthIndicator(status, schedulerFactory, jobInventory).health().status,

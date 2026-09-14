@@ -76,30 +76,45 @@ class TaskQuartzRegistrar(
         log.info("Removed agent task from the Quartz store: id={}", taskId)
     }
 
-    /**
-     * The registered class is the only channel that carries `concurrent` into Quartz:
-     * `@DisallowConcurrentExecution` is read off that class by reflection and is not `@Inherited`, so the
-     * plain class means "overlap allowed" and nothing else. Misfire instructions are not a substitute —
-     * they decide what happens to a *late* fire, never whether two live ones may overlap.
-     *
-     * Public because the one-shot job that `SchedulerServiceImpl.runTaskOnce` registers is the other place
-     * picking a job class for a task, and a second copy of this decision is how the two drift apart.
-     */
-    fun jobClassFor(task: AgentTask): Class<out Job> = if (task.concurrent == 0) {
-        AgentTaskNonConcurrentJob::class.java
-    } else {
-        AgentTaskJob::class.java
-    }
-
     companion object {
         const val GROUP_AGENT_TASK = "AgentTaskGroup"
+
+        /**
+         * The registered class is the only channel that carries `concurrent` into Quartz:
+         * `@DisallowConcurrentExecution` is read off that class by reflection and is not `@Inherited`, so the
+         * plain class means "overlap allowed" and nothing else. Misfire instructions are not a substitute —
+         * they decide what happens to a *late* fire, never whether two live ones may overlap.
+         *
+         * On the companion, because three callers have to answer it the same way: [register], the one-shot
+         * job `SchedulerServiceImpl.runTaskOnce` builds, and `TaskScheduleReconciler` — which compares it
+         * against the class already in the store, so a second copy of this decision would have the diff see
+         * a change that is not one and rewrite every job on every round.
+         */
+        fun jobClassFor(task: AgentTask): Class<out Job> = if (task.concurrent == 0) {
+            AgentTaskNonConcurrentJob::class.java
+        } else {
+            AgentTaskJob::class.java
+        }
+
+        /** One-shot runs live outside [GROUP_AGENT_TASK] so reconcile never deletes a user's click. */
+        const val GROUP_ONCE = "AgentTaskGroup_ONCE"
 
         /** The only JobDataMap key an agent-task job carries; the value is the task id as a string. */
         const val KEY_TASK_ID = "taskId"
 
-        private fun jobName(taskId: Long): String = "AgentTask_$taskId"
+        /**
+         * The one source of the *task job* name shape (the one-shot names in [GROUP_ONCE] are the
+         * service's own and nothing reads them back). [jobKeyOf] writes it and [taskIdOf] reads it back, and
+         * the reconcile diff is only safe because the two cannot disagree — so neither of them spells it out.
+         */
+        private const val JOB_NAME_PREFIX = "AgentTask_"
+
+        private fun jobName(taskId: Long): String = JOB_NAME_PREFIX + taskId
 
         /** Null for a name that is not of the `AgentTask_<id>` shape (a hand-made job, say). */
-        fun taskIdOf(jobKey: JobKey): Long? = jobKey.name.removePrefix("AgentTask_").toLongOrNull()
+        fun taskIdOf(jobKey: JobKey): Long? = jobKey.name
+            .takeIf { it.startsWith(JOB_NAME_PREFIX) }
+            ?.removePrefix(JOB_NAME_PREFIX)
+            ?.toLongOrNull()
     }
 }

@@ -10,6 +10,7 @@ import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -25,6 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -83,7 +85,10 @@ class SchedulerStaleSweepThrottleTest {
             SchedulerMetrics(SimpleMeterRegistry(), QuartzJobInventory(schedulerFactory)),
             jobInventory = QuartzJobInventory(schedulerFactory),
             registrar = TaskQuartzRegistrar(schedulerFactory),
+            // This file never reconciles: it counts stale-sweep statements.
+            reconciler = mock<TaskScheduleReconciler>(),
             executionTimeoutSeconds = TIMEOUT,
+            reconcileIntervalSeconds = 60,
             schedulerEnabled = true,
         )
     }

@@ -8,22 +8,27 @@ import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.SchedulerHousekeepingJob
+import com.agnetix.harnax.scheduler.job.SchedulerReconcileJob
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Mock
+import org.mockito.Mockito.atLeastOnce
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argThat
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
@@ -31,6 +36,7 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.Job
 import org.quartz.JobDetail
 import org.quartz.JobExecutionContext
 import org.quartz.JobKey
@@ -89,7 +95,9 @@ class SchedulerHousekeepingTest {
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
             registrar = TaskQuartzRegistrar(schedulerFactory),
+            reconciler = mock<TaskScheduleReconciler>(),
             executionTimeoutSeconds = TIMEOUT,
+            reconcileIntervalSeconds = RECONCILE_INTERVAL,
             schedulerEnabled = true,
         )
     }
@@ -103,18 +111,41 @@ class SchedulerHousekeepingTest {
     fun `boot registers the housekeeping sweep as a repeating job`() {
         service.onApplicationReady()
 
-        val jobCaptor = ArgumentCaptor.forClass(JobDetail::class.java)
-        val triggerCaptor = ArgumentCaptor.forClass(Trigger::class.java)
-        verify(quartz).scheduleJob(jobCaptor.capture(), triggerCaptor.capture())
-
-        assertEquals(SchedulerHousekeepingJob::class.java, jobCaptor.value.jobClass)
+        val trigger = scheduledTrigger(SchedulerHousekeepingJob::class.java)
         assertEquals(
             JobKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP),
-            jobCaptor.value.key,
+            jobOf(trigger).key,
         )
-        val trigger = triggerCaptor.value as SimpleTrigger
-        assertEquals(SimpleTrigger.REPEAT_INDEFINITELY, trigger.repeatCount, "a one-shot sweep sweeps once")
-        assertEquals(5 * 60 * 1000L, trigger.repeatInterval, "the sweep is meant to run every five minutes")
+        val simple = trigger as SimpleTrigger
+        assertEquals(SimpleTrigger.REPEAT_INDEFINITELY, simple.repeatCount, "a one-shot sweep sweeps once")
+        assertEquals(5 * 60 * 1000L, simple.repeatInterval, "the sweep is meant to run every five minutes")
+    }
+
+    /**
+     * The sweep is what bounds the damage of a lost CRUD notification, and it is a Quartz job because the
+     * shared store makes exactly one node fire it — which is what the same registration on a memory store
+     * could not promise, since there it ran once per node.
+     */
+    @Test
+    fun `an enabled node registers the reconcile sweep at the configured interval`() {
+        service.onApplicationReady()
+
+        val trigger = scheduledTrigger(SchedulerReconcileJob::class.java) as SimpleTrigger
+        assertEquals(
+            JobKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP),
+            jobOf(trigger).key,
+        )
+        // One system group for both sweeps, and deliberately not the group the diff converges: a job there
+        // that the task table does not account for is exactly what the next round deletes.
+        assertEquals("SchedulerSystemGroup", SchedulerReconcileJob.GROUP)
+        assertEquals(SchedulerHousekeepingJob.GROUP, SchedulerReconcileJob.GROUP)
+        assertNotEquals(TaskQuartzRegistrar.GROUP_AGENT_TASK, SchedulerReconcileJob.GROUP)
+        assertEquals(
+            RECONCILE_INTERVAL * 1000L,
+            trigger.repeatInterval,
+            "the sweep runs on scheduler.reconcile-interval-seconds",
+        )
+        assertEquals(SimpleTrigger.REPEAT_INDEFINITELY, trigger.repeatCount)
     }
 
     /** A second boot on a store that kept the job must not put a second sweep on the same table. */
@@ -131,17 +162,23 @@ class SchedulerHousekeepingTest {
      * `scheduler.enabled=false` means "this node takes no scheduling work", not "nothing on this node may
      * ever write to the database again". Sweeping touches no user task and lives in its own Quartz
      * group, so an inert node must still run it — see the next test for what happens when it does not.
-     * The task load, which *is* scheduling work, must stay off.
+     * The task *reconcile* is a scheduling write over the shared store, so it stays off: an enabled node
+     * registers that sweep once, in the store, and the cluster fires it from there.
      */
     @Test
-    fun `a disabled instance still registers the sweep`() {
+    fun `a disabled instance still registers the sweep but not the reconcile`() {
         val disabled = disabledInstance()
 
         disabled.onApplicationReady()
 
-        val jobCaptor = ArgumentCaptor.forClass(JobDetail::class.java)
-        verify(quartz).scheduleJob(jobCaptor.capture(), any<Trigger>())
-        assertEquals(SchedulerHousekeepingJob::class.java, jobCaptor.value.jobClass)
+        assertEquals(
+            SchedulerHousekeepingJob::class.java,
+            jobOf(scheduledTrigger(SchedulerHousekeepingJob::class.java)).jobClass,
+        )
+        verify(quartz, never()).scheduleJob(
+            argThat<JobDetail> { jobClass == SchedulerReconcileJob::class.java },
+            any<Trigger>(),
+        )
         verify(agentTaskMapper, never()).selectRunningTasks()
     }
 
@@ -215,9 +252,26 @@ class SchedulerHousekeepingTest {
         SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
         jobInventory = jobInventory,
         registrar = TaskQuartzRegistrar(schedulerFactory),
+        reconciler = mock<TaskScheduleReconciler>(),
         executionTimeoutSeconds = TIMEOUT,
+        reconcileIntervalSeconds = RECONCILE_INTERVAL,
         schedulerEnabled = false,
     )
+
+    /**
+     * The boot path registers one system job per responsibility, so "what did it write" has to be answered
+     * per job class rather than by assuming there is exactly one `scheduleJob` call to capture.
+     */
+    private fun scheduledPairs(): List<Pair<JobDetail, Trigger>> {
+        val details = ArgumentCaptor.forClass(JobDetail::class.java)
+        val triggers = ArgumentCaptor.forClass(Trigger::class.java)
+        verify(quartz, atLeastOnce()).scheduleJob(details.capture(), triggers.capture())
+        return details.allValues.zip(triggers.allValues)
+    }
+
+    private fun scheduledTrigger(jobClass: Class<out Job>): Trigger = scheduledPairs().first { it.first.jobClass == jobClass }.second
+
+    private fun jobOf(trigger: Trigger): JobDetail = scheduledPairs().first { it.second === trigger }.first
 
     /** A row a stop put at 4: written by this node, owned by no execution it can still report on. */
     private fun stoppingLog(id: Long) = AgentTaskLog().apply {
@@ -231,5 +285,8 @@ class SchedulerHousekeepingTest {
 
     companion object {
         private const val TIMEOUT = 300
+
+        /** Not the 60 default: the assertion has to prove the value travels from the key to the trigger. */
+        private const val RECONCILE_INTERVAL = 45
     }
 }

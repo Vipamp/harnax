@@ -1,6 +1,10 @@
 package com.agnetix.harnax.scheduler.health
 
+import com.agnetix.harnax.scheduler.job.AgentTaskJob
+import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -11,15 +15,20 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.CronScheduleBuilder
+import org.quartz.JobBuilder
 import org.quartz.JobKey
 import org.quartz.Scheduler
+import org.quartz.Trigger
+import org.quartz.TriggerBuilder
+import org.quartz.TriggerKey
 import org.quartz.impl.matchers.GroupMatcher
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 
 /**
- * The single implementation of "what is in the Quartz store right now", shared by the service, the health
- * detail and the `scheduler.jobs.scheduled` gauge. Those three used to be two copies plus a proxy hop, so
- * the read itself is what this suite pins down.
+ * The single implementation of "what is in the Quartz store right now", shared by the reconcile diff, the
+ * health detail and the `scheduler.jobs.scheduled` gauge. Those three used to be two copies plus a proxy
+ * hop, so the read itself is what this suite pins down.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -40,27 +49,30 @@ class QuartzJobInventoryTest {
 
     /**
      * A one-off run is an execution, not a schedule: it lives in `AgentTaskGroup_ONCE`, and counting it
-     * would make the gauge move every time somebody pressed "run now". The mock answers through the
-     * matcher the inventory passes, so this fails if that read ever stops being group-scoped.
+     * would make the gauge move every time somebody pressed "run now" — and reconcile would delete a click
+     * that has not fired yet. The mock answers through the matcher the inventory passes, so this fails if
+     * that read ever stops being group-scoped.
      */
     @Test
     fun `the read is scoped to the recurring group so one-off runs are not counted`() {
         val store = setOf(
-            JobKey("AgentTask_7", "AgentTaskGroup"),
-            JobKey("AgentTask_8_ONCE_a1b2c3d4", "AgentTaskGroup_ONCE"),
+            JobKey("AgentTask_7", TaskQuartzRegistrar.GROUP_AGENT_TASK),
+            JobKey("AgentTask_8_ONCE_a1b2c3d4", TaskQuartzRegistrar.GROUP_ONCE),
         )
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
-        whenever(quartz.getJobKeys(any())).thenAnswer { call ->
-            val matcher = call.getArgument<GroupMatcher<JobKey>>(0)
-            store.filter { matcher.isMatch(it) }.toSet()
-        }
+        stubStore(store)
 
         assertEquals(setOf(7L), inventory().scheduledTaskIds())
     }
 
+    /**
+     * A name that only *looks* like a task is not one: reconcile deletes what the table no longer asks
+     * for, so mistaking a hand-made job for task 7 would take away a schedule nobody registered here. The
+     * bare "7" is the case a plain "strip the prefix and parse the rest" reader gets wrong.
+     */
     @Test
     fun `a name that is not a task job is skipped instead of failing the whole read`() {
-        givenJobs("AgentTask_3", "somebody_manual_job")
+        givenJobs("AgentTask_3", "somebody_manual_job", "7")
 
         assertEquals(setOf(3L), inventory().scheduledTaskIds())
     }
@@ -70,6 +82,39 @@ class QuartzJobInventoryTest {
         givenJobs()
 
         assertTrue(inventory().scheduledTaskIds().isEmpty())
+    }
+
+    /**
+     * The diff compares *this* against the table, so both halves of what a job is have to come off the
+     * store: the cron the trigger really carries and the class that really got registered. A node that
+     * asked its own memory instead would conclude "nothing changed" after another node re-registered a
+     * task with a different cron, and would then never repair it.
+     */
+    @Test
+    fun `the snapshot carries the cron and the registered class back off the store`() {
+        givenJobs("AgentTask_7")
+        withCron(7L, "0 0 5 * * ?")
+        withJobClass(7L, AgentTaskJob::class.java)
+
+        assertEquals(
+            mapOf(7L to RegisteredJob("0 0 5 * * ?", AgentTaskJob::class.java.name)),
+            inventory().agentTaskJobs(),
+        )
+    }
+
+    /**
+     * A durable job left behind by a delete, or one somebody registered by hand, has no cron to compare.
+     * `null` is what tells the reconciler "not matching, rewrite it" instead of quietly treating it as a
+     * schedule that is already right.
+     */
+    @Test
+    fun `a job with no trigger snapshots as a missing cron`() {
+        givenJobs("AgentTask_7")
+
+        val snapshot = inventory().agentTaskJobs()
+
+        assertEquals(AgentTaskNonConcurrentJob::class.java.name, snapshot[7L]?.jobClassName)
+        assertNull(snapshot[7L]?.cronExpression)
     }
 
     /**
@@ -88,6 +133,50 @@ class QuartzJobInventoryTest {
 
     private fun givenJobs(vararg names: String) {
         whenever(schedulerFactory.scheduler).thenReturn(quartz)
-        whenever(quartz.getJobKeys(any())).thenReturn(names.map { JobKey(it, "AgentTaskGroup") }.toSet())
+        stubStore(names.map { JobKey(it, TaskQuartzRegistrar.GROUP_AGENT_TASK) }.toSet())
     }
+
+    /**
+     * Answer the three reads the snapshot makes through the store's own keys, so a test that asks for a
+     * different group gets a different answer rather than the whole table.
+     */
+    private fun stubStore(keys: Set<JobKey>) {
+        whenever(quartz.getJobKeys(any<GroupMatcher<JobKey>>())).thenAnswer { call ->
+            val matcher = call.getArgument<GroupMatcher<JobKey>>(0)
+            keys.filter { matcher.isMatch(it) }.toSet()
+        }
+        keys.forEach { key ->
+            whenever(quartz.getJobDetail(key)).thenReturn(
+                JobBuilder.newJob(AgentTaskNonConcurrentJob::class.java).withIdentity(key).storeDurably().build(),
+            )
+            whenever(quartz.getTriggersOfJob(key)).thenReturn(emptyList<Trigger>())
+        }
+    }
+
+    /**
+     * A real cron trigger rather than a mock of the interface: the snapshot picks the cron out with a type
+     * filter, and only Quartz's own trigger implementation proves that filter matches what the store hands
+     * back. A mock would keep the test green while the read went through the wrong class.
+     */
+    private fun withCron(
+        taskId: Long,
+        cron: String,
+    ) {
+        val trigger = TriggerBuilder.newTrigger()
+            .withIdentity(TriggerKey("AgentTask_${taskId}_trigger", TaskQuartzRegistrar.GROUP_AGENT_TASK))
+            .withSchedule(CronScheduleBuilder.cronSchedule(cron))
+            .build()
+        whenever(quartz.getTriggersOfJob(keyOf(taskId))).thenReturn(listOf(trigger))
+    }
+
+    private fun withJobClass(
+        taskId: Long,
+        jobClass: Class<out org.quartz.Job>,
+    ) {
+        whenever(quartz.getJobDetail(keyOf(taskId))).thenReturn(
+            JobBuilder.newJob(jobClass).withIdentity(keyOf(taskId)).storeDurably().build(),
+        )
+    }
+
+    private fun keyOf(taskId: Long) = JobKey("AgentTask_$taskId", TaskQuartzRegistrar.GROUP_AGENT_TASK)
 }

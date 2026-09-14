@@ -1,5 +1,6 @@
 package com.agnetix.harnax.scheduler.health
 
+import org.quartz.Scheduler
 import org.slf4j.LoggerFactory
 import org.springframework.boot.health.contributor.Health
 import org.springframework.boot.health.contributor.HealthIndicator
@@ -15,14 +16,14 @@ import org.springframework.stereotype.Component
  * probes stay on `/actuator/health/liveness`; this indicator is for `/actuator/health` and alerting.
  *
  * Status rules:
- * - `UP` — a load has succeeded and nothing has failed since, or scheduling is disabled on this node
- * - `DOWN` — no load has ever succeeded, or the most recent load failed
+ * - `UP` — a reconcile round has completed with no drift left, or scheduling is disabled on this node
+ * - `DOWN` — no reconcile has ever completed, or the most recent one left drift or failed
  *
- * A load that registered only *some* of the active tasks counts as failed: it leaves `lastLoadError`
+ * A round that registered only *some* of the active tasks counts as failed: it leaves `lastReconcileError`
  * set, which is what keeps a drifting node out of `UP`.
  *
- * The rules above are the whole of the verdict; `scheduledJobCount` below is a detail and never feeds
- * into it.
+ * The rules above are the whole of the verdict; `scheduledJobCount` and `storeType` below are details and
+ * never feed into it.
  */
 @Component("scheduler")
 class SchedulerHealthIndicator(
@@ -42,19 +43,20 @@ class SchedulerHealthIndicator(
         val base = Health.up()
             .withDetail("quartzStarted", quartz?.isStarted ?: false)
             .withDetail("instanceId", quartz?.metaData?.schedulerInstanceId ?: "unknown")
+            .withDetail("storeType", storeType(quartz))
             .withDetail("scheduledJobCount", liveJobCount())
-            .withDetail("lastLoadSuccessAt", status.lastLoadSuccessAt?.toString() ?: "never")
-        status.lastLoadError?.let { base.withDetail("lastLoadError", it) }
+            .withDetail("lastReconcileAt", status.lastReconcileAt?.toString() ?: "never")
+        status.lastReconcileError?.let { base.withDetail("lastReconcileError", it) }
 
         val downReason = when {
             quartz == null || !quartz.isStarted -> "Quartz scheduler is not started"
-            status.lastLoadSuccessAt == null -> "No task load has succeeded since startup"
-            status.lastLoadError != null -> "Most recent task load failed"
+            status.lastReconcileAt == null -> "No reconcile has succeeded since startup"
+            status.lastReconcileError != null -> "Most recent reconcile failed"
             else -> null
         }
 
         if (downReason != null) {
-            // Polled every few seconds by probes and scrapers; the load loop already logged the cause.
+            // Polled every few seconds by probes and scrapers; the reconcile loop already logged the cause.
             log.debug("Scheduler health DOWN: {}", downReason)
             return base.down().withDetail("reason", downReason).build()
         }
@@ -62,9 +64,21 @@ class SchedulerHealthIndicator(
     }
 
     /**
+     * Which job store this node is on — `RAMJobStore`, or Boot's `LocalDataSourceJobStore` for the cluster.
+     *
+     * The cluster promises one thing and the yaml can say it while a stray `job-store-type` override means
+     * something else, so the running value is the only one worth publishing. Quartz exposes the class
+     * through its own meta-data; anything short of a readable class here is just "unknown", because the
+     * store being unreadable is already what `quartzStarted` says DOWN about.
+     */
+    private fun storeType(quartz: Scheduler?): String = runCatching {
+        quartz?.metaData?.jobStoreClass?.simpleName ?: "unknown"
+    }.getOrDefault("unknown")
+
+    /**
      * What this instance is scheduling *right now*, read straight off the Quartz store: start/pause and
-     * every CRUD move jobs without going through the load path, so the number the load remembered was
-     * wrong from the first toggle onwards (that is why `SchedulerStatus.lastLoadJobCount` is no longer
+     * every CRUD move jobs without going through the reconcile path, so the number the round remembered was
+     * wrong from the first toggle onwards (that is why `SchedulerStatus.lastReconcileJobCount` is no longer
      * published here). -1 when the store cannot be read at all — the count is a detail, so a failing
      * read must not decide the status, which is `quartzStarted`'s job.
      */

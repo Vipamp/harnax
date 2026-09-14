@@ -66,6 +66,9 @@ class AgentTaskJobExecutionTest {
 
     private val cronJobKey = JobKey("AgentTask_$TASK_ID", TaskQuartzRegistrar.GROUP_AGENT_TASK)
 
+    /** The name and group `SchedulerServiceImpl.runTaskOnce` writes: the fire path reads the *group*. */
+    private val onceJobKey = JobKey("AgentTask_${TASK_ID}_ONCE_a1b2c3d4", TaskQuartzRegistrar.GROUP_ONCE)
+
     /**
      * @param concurrent what the row says about overlap; @param activeExecution what the store answers
      * when the fire asks whether a run of this task is already live.
@@ -81,11 +84,12 @@ class AgentTaskJobExecutionTest {
         taskStatus: Int = 1,
         active: Int = 1,
         taskExists: Boolean = true,
+        jobKey: JobKey = cronJobKey,
         jobDataMap: JobDataMap = JobDataMap().apply { put(TaskQuartzRegistrar.KEY_TASK_ID, TASK_ID.toString()) },
     ) {
         whenever(context.jobDetail).thenReturn(jobDetail)
         whenever(jobDetail.jobDataMap).thenReturn(jobDataMap)
-        whenever(jobDetail.key).thenReturn(cronJobKey)
+        whenever(jobDetail.key).thenReturn(jobKey)
         whenever(context.scheduler).thenReturn(scheduler)
         whenever(scheduler.context).thenReturn(
             SchedulerContext().apply {
@@ -246,6 +250,10 @@ class AgentTaskJobExecutionTest {
      * The store is shared, so this node can be the one Quartz hands a fire to even though it registered
      * nothing and runs with `scheduler.enabled=false`. Leaving it alone is the whole point: the other node
      * claims the next fire.
+     *
+     * And it leaves *early*: no `agent_task` read either, because the read is what notices a row that has
+     * gone away — and deleting that orphaned job is a scheduling write, which is exactly what this instance
+     * exists not to perform (`SchedulerController.requireEnabled` refuses the same thing on the API).
      */
     @Test
     fun `a fire handed to a node with scheduling disabled does nothing`() {
@@ -253,6 +261,7 @@ class AgentTaskJobExecutionTest {
 
         AgentTaskJob().execute(context)
 
+        verify(agentTaskMapper, never()).selectAnyById(any())
         verify(schedulerService, never()).executeTaskOnce(any(), any())
         verify(executionGuard, never()).tryAcquireLock(any(), any())
         // Not the job's fault either: a disabled node must not delete a schedule the enabled one owns.
@@ -269,6 +278,31 @@ class AgentTaskJobExecutionTest {
         verify(schedulerService, never()).executeTaskOnce(any(), any())
         verify(executionGuard, never()).tryAcquireLock(any(), any())
         verify(scheduler, never()).deleteJob(any())
+    }
+
+    /**
+     * The other half of that boundary: `taskStatus` guards a *cron*, because a stored cron job is a lagging
+     * copy of `agent_task`. A one-shot's registration is the user's intent, made seconds ago, so a task
+     * paused between the click and the fire still runs — `/run-once` must not be stricter than `/trigger`,
+     * which has always run a paused task. The group is what tells the two apart.
+     */
+    @Test
+    fun `a paused task still runs when it was asked to run once`() {
+        setUpJob(concurrent = 1, taskStatus = 0, jobKey = onceJobKey)
+
+        AgentTaskJob().execute(context)
+
+        verify(schedulerService).executeTaskOnce(any(), any())
+    }
+
+    /** A delete is not a pause: not even a click buys a soft-deleted task a run. */
+    @Test
+    fun `a one-shot does not run a task that has been deleted`() {
+        setUpJob(concurrent = 1, active = 0, jobKey = onceJobKey)
+
+        AgentTaskJob().execute(context)
+
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
     }
 
     /** A job nobody registered through the registrar is a broken job, not a task to guess about. */
