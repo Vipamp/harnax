@@ -124,7 +124,8 @@ git commit -m "chore(部署): 预建 harnax_scheduler 库并授权（scheduler �
 - Test: `harnax-scheduler/src/test/kotlin/com/agnetix/harnax/scheduler/config/SchedulerQuartzConfigTest.kt`（Create）
 
 **Interfaces:**
-- Produces: store 类型由 `spring.quartz.job-store-type` 决定；`SchedulerStatus.schedulerEnabled` 不变；`AbstractAgentTaskJob` 仍能用现有 JobDataMap 读到实体（Task 3 改）。
+- Produces: store 类型由 `spring.quartz.job-store-type` 决定；`SchedulerStatus.schedulerEnabled` 不变。
+- **本任务落地后到 Task 3 之前，任务注册是坏的**：`useProperties: true` 下 `StdJDBCDelegate.convertToProperty` 对非字符串值抛 `IOException("JobDataMap values must be Strings…")`，而 `SchedulerServiceImpl` 此刻仍往 JobDataMap 里放 `AgentTask` 实体。这是有意的中间态——**发布 1 只能在 Task 3 之后切版本**，不得在 Task 2 与 Task 3 之间取任何提交部署。
 
 - [ ] **Step 1: 写失败的配置测试**
 
@@ -155,8 +156,9 @@ class SchedulerQuartzConfigTest {
 
     @Test
     fun `the job store is jdbc by default so a cluster shares one store`() {
-        // The placeholder form is `${QUARTZ_JOB_STORE:jdbc}` — the default after the colon is the claim.
-        assertTrue(value("quartz.job-store-type")!!.endsWith(":jdbc"), value("quartz.job-store-type"))
+        // `YamlPropertiesFactoryBean` leaves the scalar unresolved, so the claim is read off the default
+        // after the colon — an assertion of equality against `:jdbc` can never hold.
+        assertTrue(value("quartz.job-store-type")!!.endsWith(":jdbc}"), value("quartz.job-store-type"))
     }
 
     @Test
@@ -233,7 +235,7 @@ unzip -p "$QJ" org/quartz/impl/jdbcjobstore/tables_mysql_innodb.sql > /tmp/qz.sq
 grep -c "^CREATE TABLE" harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql  # 期望 11
 grep -c "DROP TABLE" harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql     # 期望 0
 grep -c "DEFAULT CHARSET=utf8mb4" harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql  # 期望 11
-grep -c "^CREATE INDEX" harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql  # 期望 18
+grep -c "^CREATE INDEX" harnax-scheduler/src/main/resources/db/migration/V1__quartz_tables.sql  # 期望 20（官方脚本在 2.3.2/2.5.1/2.5.2 都是 20 条，别按更少的数删索引）
 ```
 
 - [ ] **Step 4: 改 `application.yml`**
@@ -1721,6 +1723,17 @@ git commit -m "test(调度): 集成测试脚手架与集群单触发/对账收�
 **Files:**
 - Modify: `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md`（§7 里程碑表 S2 行、§6.1、§9 F9）
 - Modify: `prod_doc/agent-task-scheduler.zh-CN.md`（部署形态、对账语义、QRTZ 临时落 admin 库的说明）
+- Modify: `docs/deploy-harnax-scheduler.md`（**本发布把它最主要的运维指引变成了错误指示**：`:18`/`:27`/`:66`/`:67`/`:73` 附近仍写着 scheduler 的 `FLYWAY_ENABLED` 默认 `false` 且"不要去开（会和 admin 抢同一批表）"、`QUARTZ_JOB_STORE` 默认 `memory`、"改 jdbc 会因为缺表而失败"、`DB_POOL_SIZE` 为 `10`。手工部署路径读的是 yml 的 `${FLYWAY_ENABLED:true}`，照旧文档设成 `false` 就会没有 `QRTZ_*` 而起不来。）
+- Modify: `harnax-scheduler/src/main/resources/application.yml`（`initialize-schema: never` 上方注释补一句事实：Boot 对该键的默认值是 `embedded`，MySQL 下本来就不会跑脚本，显式 `never` 是防误改而非当前唯一屏障。）
+
+- [ ] **Step 0: 修 `docs/deploy-harnax-scheduler.md`**
+
+逐条改到与本发布一致，并保留原有的"回滚开关"这一有用信息（仓库里只有这里写了逃生门）：
+- `FLYWAY_ENABLED`：默认 `true`；scheduler 用独立历史表 `flyway_schema_history_scheduler`，与 admin 的 `flyway_schema_history` 互不干扰（旧文"会和 admin 抢表"的说法作废）。compose 侧的开关名已改为 `SCHEDULER_FLYWAY_ENABLED`。
+- `QUARTZ_JOB_STORE`：默认 `jdbc`；`=memory` 仅供本地无库启动与回滚，代价是该实例不加入集群。
+- `DB_POOL_SIZE`：默认 `30`，并注明它与 `QUARTZ_THREAD_COUNT` 的下界关系。
+- 新增一段"回滚"：`QUARTZ_JOB_STORE=memory` + `SCHEDULER_FLYWAY_ENABLED=false` 指回旧库形态即可，`QRTZ_*` 表与数据保留不删。
+- 新增一段"两实例"：`--scale scheduler=2` 与 `roll-scheduler.sh`（引用 Task 6 的脚本），以及 `SELECT INSTANCE_NAME, LAST_CHECKIN_TIME FROM harnax_admin.QRTZ_SCHEDULER_STATE;` 的核对方法。
 
 - [ ] **Step 1: 更新 spec 状态**
 
