@@ -1,7 +1,7 @@
 # 定时任务域集群化与业务下沉 · 设计规格
 
 - 日期：2026-09-11
-- 状态：**设计已确认，待编写实现计划**
+- 状态：**S0/S1 已发布（执行语义）；S2 已随发布 1 落地（`feat/scheduler-cluster-cutover`，见下方修正 C 的范围注）；S3 域搬迁与 S4 收口未开始**。实现计划：`docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`
 - 范围：`harnax-scheduler`、`harnax-admin`、`harnax-entity`、`harnax-session-router`、`harnax-agent-service`、`harnax-cli`、`harnax-webui`、`docker-new`
 - 关联文档：[prod_doc/agent-task-scheduler.zh-CN.md](../../../prod_doc/agent-task-scheduler.zh-CN.md)（现状调研与全流程说明）。本文取代其第 10.3、10.4、11、12 节的方案与里程碑；那份文档的其余章节仍是现状事实的来源。
 
@@ -9,8 +9,8 @@
 
 | # | 问题 | 现状证据 |
 |---|---|---|
-| ① | 调度器单实例，进程挂起即停止调度 | `spring.quartz.job-store-type: memory`（`harnax-scheduler/src/main/resources/application.yml:33`）；无 `QRTZ_*` 建表脚本、无 `isClustered` |
-| ② | 任务定义在 admin、调度执行在 scheduler，两边靠广播与回调缝合 | 每次 CRUD 后 `schedulerClient.reloadTasks()` 广播（`AgentTaskServiceImpl`）；agent-service 用 `task-` 前缀反查 admin 组 spec（`InternalApiController.resolveFromTask`） |
+| ① | 调度器单实例，进程挂起即停止调度 | **（2026-09-11 的快照，S2 已把这条翻过来）** 当时 `spring.quartz.job-store-type` 默认 `memory`、无 `QRTZ_*` 建表脚本、无 `isClustered`。现状见本文 3.1 与 `docs/deploy-harnax-scheduler.md` |
+| ② | 任务定义在 admin、调度执行在 scheduler，两边靠广播与回调缝合 | **（同样是 2026-09-11 的快照）** 当时每次 CRUD 后 `schedulerClient.reloadTasks()` 广播给所有节点——S2 已把它塌缩成一次转发（见 3.3 与部署文档），但"CRUD 在 admin"这件事要到 S3 才消失。agent-service 用 `task-` 前缀反查 admin 组 spec（`InternalApiController.resolveFromTask`）**至今仍在**，随 C1 才退化成字符串解析 |
 | ③ | **完成/停止流程有正确性洞** | 见第 4 节逐条 |
 
 **目标一句话**：定时任务的调度、执行发起、状态记录全部归 `harnax-scheduler`（独立库 + Quartz JDBC 集群，compose 固定 2 实例）；`harnax-admin` 只做用户 JWT 鉴权 + 带身份转发，三客户端接口契约不变；实际跑 agent 的仍是 `harnax-agent-service`，此点不变。
@@ -112,11 +112,11 @@ spring:
 
 ### 3.2 JobDataMap 与 `useProperties`
 
-`useProperties: true` 下 JobDataMap 只允许字符串值，**放 Long 会抛 `ObjectNotSupportedException`**。所以 `scheduleTask` 与 `runTaskOnce` 里现有的 `jobDataMap.put("agentTask", task)`（`SchedulerServiceImpl.kt:136`、`:253`）改为只放 `taskId` 字符串，`AgentTaskJob` 在 fire 时回查 `agent_task` 拿最新定义。这顺带修掉一个既有缺陷：任务改过 prompt 之后，已注册的 job 里仍是旧实体。
+`useProperties: true` 下 JobDataMap 只允许字符串值，**放 Long 会抛 `ObjectNotSupportedException`**。所以设计时的改动是把 `scheduleTask` 与 `runTaskOnce` 里当时的 `jobDataMap.put("agentTask", task)` 换成只放 `taskId` 字符串，`AgentTaskJob` 在 fire 时回查 `agent_task` 拿最新定义。**这一条已由发布 1 落地**：`TaskQuartzRegistrar.KEY_TASK_ID` 是注册的唯一写入口，实体不再进 store。这顺带修掉一个既有缺陷：任务改过 prompt 之后，已注册的 job 里仍是旧实体。
 
 ### 3.3 reconcile 取代全删重建
 
-`loadTasksToScheduler()` 现在的第 1 步是"把 `AgentTaskGroup` 里所有 job 删掉"（`SchedulerServiceImpl.kt:178-189`）。共享 JobStore 下这等价于**任一节点重启就报掉全集群任务并重注册**。改为 diff 收敛：
+**（下面是设计时的现状；本节已由发布 1 落地——`loadTasksToScheduler()` 已从 `SchedulerService` 删除，`SchedulerServiceImpl` 的对应位置换成 `reconcileTasks()`，引用的行号是当时的快照）**`loadTasksToScheduler()` 的第 1 步是"把 `AgentTaskGroup` 里所有 job 删掉"。共享 JobStore 下这等价于**任一节点重启就报掉全集群任务并重注册**。改为 diff 收敛：
 
 - 库里应有的（`task_status=1 AND active=1`）与 store 里现有的按 `jobKey` 比对；
 - 缺则注册；多则删；cron 表达式或 job 类不一致则 reschedule；**一致则完全不动**，以保留 `PREV_FIRE_TIME` / `NEXT_FIRE_TIME`；
@@ -188,9 +188,9 @@ spring:
 3. `cleanupOldExecutions(7)`：guard 行是记账不是用户数据，**7 天**过期（`GUARD_RETENTION_DAYS`）；`AgentTaskExecutionGuard.cleanupOldExecutions` 此前全仓库零调用方；
 4. `cleanupLeakedLocks()`：清理超过 `timeout-seconds × 2` 仍停在 `status=0` 的抢锁泄漏行（抢锁成功但进程在执行前死亡）。
 
-job 注册在 `SchedulerSystemGroup`，与用户任务的 `AgentTaskGroup` 分开——后者每次 reload 会整组删除，混进去的清扫 job 会在下一次 reload 被抹掉且不再重建（注册只发生在启动时）。类上带 `@DisallowConcurrentExecution`：一轮慢过周期的清扫不该再起第二轮，两个多行 DELETE 会互相阻塞，死锁的代价是两轮都没了。
+job 注册在 `SchedulerSystemGroup`，与用户任务的 `AgentTaskGroup` 分开——后者是 reconcile 收敛的目标：**`agent_task` 没有对应行的 job 正是 diff 要删的东西**，所以混进去的清扫 job 会在下一轮对账里被抹掉，而清扫只在启动时注册，它不会自己回来。（这一条在 S2 之前同样成立，只是机制不同：那时 reload 是"整组删掉再重建"。）类上带 `@DisallowConcurrentExecution`：一轮慢过周期的清扫不该再起第二轮，两个多行 DELETE 会互相阻塞，死锁的代价是两轮都没了。
 
-RAM store 下**每个实例各自扫**（四个操作都幂等，但确有重复功）；换到 JDBC store 后同一份注册自动变成集群单例，这里一行都不用改。
+**已按预期发生**：RAM store 下**每个实例各自扫**（四个操作都幂等，但确有重复功），换成 JDBC store 后同一份注册自动变成**集群单例**，代码一行都没改。运维后果写在 `SchedulerHousekeepingJob` 与 `SchedulerServiceImpl.registerHousekeepingJob` 的注释里：回收在"集群里至少有一台开着"时持续存在，一台禁用节点没有也不需要私有的回收路径；唯一没人回收的形态是"只有一个副本且它是关着的"。
 
 `expireStale` 保留现有调用点（启动加载、并发判断前），并增加在 housekeeping 内调用。
 
@@ -218,26 +218,36 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 ### 6.1 库
 
-- `docker-new/sql/init-databases.sql` 增加 `CREATE DATABASE harnax_scheduler` + 对 `harnax` 用户 `GRANT`（与既有四个库同构，两行）。
-- scheduler 开 Flyway：`enabled: true`、`locations: classpath:db/migration`、`table: flyway_schema_history_scheduler`（**独立 history 表名**，避免与 admin 在同一 MySQL 实例里混淆）。
-- 迁移脚本：`V1__quartz_tables.sql`（官方 11 张 `QRTZ_*`，剥掉所有 DROP 语句、补齐每表 COMMENT）、`V2__agent_task_domain.sql`（三张业务表按库表规范重写，含 `session_id VARCHAR(128)`）。
+- `docker-new/sql/init-databases.sql` 增加 `CREATE DATABASE harnax_scheduler` + 对 `harnax` 用户 `GRANT`（与既有四个库同构，两行）。**已落地**，但发布 1 用不到它：数据源要到 S3 才切过去。**注意这脚本只在 MySQL 首次初始化空数据目录时执行**——存量部署要手工补那两行（建库 + `FLUSH PRIVILEGES`）。
+- scheduler 开 Flyway：`enabled: true`、`locations: classpath:db/migration`、`table: flyway_schema_history_scheduler`（**独立 history 表名**，避免与 admin 在同一 MySQL 实例里混淆）。**已落地**；compose 侧的开关叫 `SCHEDULER_FLYWAY_ENABLED`，与 admin 的 `FLYWAY_ENABLED` 分家。
+- 迁移脚本：`V1__quartz_tables.sql`（官方 11 张 `QRTZ_*`，剥掉所有 DROP 语句、补齐每表 COMMENT，另含官方脚本自带的 20 条 `CREATE INDEX`）——**已落地**。`V2__agent_task_domain.sql`（三张业务表按库表规范重写，含 `session_id VARCHAR(128)`）——**未落地，随 S3**。
+- **发布 1 的实际位置（修正 C）**：数据源仍是 `harnax_admin`，所以 11 张 `QRTZ_*` 与本服务自己的历史表都落在 admin 库里。Quartz 的行是可再生数据（reconcile 按 `agent_task` 重建全部 job），所以 S3 切库时不搬 `QRTZ_*`，在新库建表后跑一轮 reconcile 即可；旧的 `harnax_admin.QRTZ_*` 观察期后由运维 DROP。
 
 ### 6.2 两实例与优雅停机（D6 配套）
 
 - 删 `container_name: harnax-scheduler`（compose:270）与宿主映射 `28084:8084`（compose:294），改 `expose: ["8084"]`。
-  - 状态：映射改 `expose` 已由第二轮 R1 落地（compose 里已无 `28084`，故上面两处行号会漂移），`container_name` 仍待 S1。
+  - 状态：**两项都已落地**——映射改 `expose` 由第二轮 R1 做掉，`container_name` 由发布 1 删掉（留着它 Docker 会直接拒绝 `--scale`，两副本这个形态就不成立）。上面两处行号是 2026-09-11 当时的快照，此后该文件一直在长，读现在的 scheduler 段注释为准。
 - **不在 compose 里声明 `deploy.replicas`**，实例数由部署脚本显式 `--scale scheduler=2` 决定。理由：6.3 的逐台滚动要在"停掉其中一台、补齐到 2"之间来回切换，声明式 replicas 会让 `--no-recreate` 的收敛行为变得难以推理。
 - `stop_grace_period: 400s` + `spring.quartz.wait-for-jobs-to-complete-on-shutdown=true`。**均已落地**（compose 的 scheduler 服务、`harnax-scheduler/src/main/resources/application.yml`，两处都有把算式写出来的注释）。**400 = 300 + 60 + 20 + 8 + 4**：chat 读超时 300s + `clearSession` 上限 60s + 两次调用各 10s 的 connect 预扣 20s + 定态写回与释放抢锁行 8s + Spring 关停钩子 4s（合计 392，向上取整到 400s；逐项推导在 compose 那段注释里，改任何一个数都要回到那里重算）。`clearSession`（快照上传 + 容器销毁）现在有自己独立的读超时 `min(scheduler.clear-session-timeout-seconds=60, timeout-seconds)`，不再沿用 chat 的 300s——沿用的话一次执行最坏占用是 600s，旧推导"300 + 40 + 20 = 360s"两头都不成立（clearSession 不是 40s，360s 也远小于真实的 600s），SIGKILL 会正好落在 DELETE 中间。**为什么不是刚好等于 timeout**：超时只管得到 router 调用，之后那几十秒才是把一次跑完的执行落成定态行的动作，砍掉它就把正常完成记成超时。
   - **保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）。手动 `/trigger` 走 `SchedulerServiceImpl.triggerManually` 起的裸 daemon 线程，Quartz 不知道它在跑，因此 `waitForJobsToCompleteOnShutdown` 不等它、grace 也不覆盖它：执行中被重启就是 `status=3` 的行 + `status=0` 的锁行。S4 把 one-shot 并入 Quartz 之前，**不要在任务执行中重启 scheduler**。
   - 这一项原先归在 S2，实际与 S1 同期做掉了：job 一旦在 Quartz 线程内同步执行，"停机不等就等于把一次正常执行切成僵尸行"立刻成立，不必等 JDBC store。属性方式即可（见 3.1 约束 2），`SchedulerFactoryBeanCustomizer` 是多余的。
-  - 本项剩下的只有 6.3 的逐台滚动脚本。
+  - 本项剩下的只有 6.3 的逐台滚动脚本——**发布 1 已交付**（`docker-new/roll-scheduler.sh`，见 6.3 的状态）。
 - 时钟：compose 已统一挂载 `/etc/localtime`；集群要求各节点时钟偏差 < 1s，宿主机 NTP 记入运维 checklist（Quartz 集群对时钟敏感，NTP 步进会造成误判接管）。
 
 ### 6.3 部署脚本必须逐台滚动
 
-`docker-new/deploy-service.sh:132` 现在是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 400s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
+**改造前**：`docker-new/deploy-service.sh` 的 scheduler 分支是 `up -d --force-recreate --no-deps scheduler`，`--force-recreate` 作用于整个 service → **两实例同时下线**，最长 400s 全集群无调度。触发在 `QRTZ_TRIGGERS` 堆积，节点回来后按 misfire 处理，而 `concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing` → **错过的触发被永久跳过**，与 D6"绝不丢执行"的初衷正好相反。
 
-改为逐台：`docker stop -t 400 <其中一台容器>` → `docker-compose up -d --no-deps --scale scheduler=2 --no-recreate scheduler`（补齐缺失的那台，不动仍在跑的那台）。
+**发布 1 已落地**：`docker-new/roll-scheduler.sh`，由 `deploy-service.sh scheduler` 的第 4 步调用。它保证的是这些（逐条对着脚本读）：
+
+- 停任何东西之前先把集群**补齐到 `SCHEDULER_REPLICAS`**，所以首次拉起、1→2 增长与 N 副本滚动都是满员进行的；
+- 有副本在跑时**拒绝把目标副本数定在 2 以下**——只剩一台的集群没有"另一台"可接管；
+- 每次 `docker stop` 之前要求**另一个副本应答它的容器健康检查**；停机用 `docker stop -t ${SCHEDULER_STOP_GRACE}`（默认 400，与本节上面的 `stop_grace_period` 是同一个数，两处要一起改）；
+- stop 之后 `docker rm`，并**验证这台真的没了**才 `up -d --no-recreate`：留下的 Stopped 容器会被 `--no-recreate` 按**旧镜像**重新拉起，脚本就会报一个"跑着新构建"的旧部署；
+- 整个进程持一把按 **compose 项目名 + daemon 名**定键的独占锁，两次并发滚动会各自看见对方的副本健康、各自停自己那台，所以这把锁是必要的；`Ctrl-C`/`SIGTERM` **结束滚动**而不是只把锁从手里掉出去。
+- 结尾回读 `QRTZ_SCHEDULER_STATE`，并明确写了**别把行数读成副本数**：节点不删自己那行，刚滚完是"活成员 + 本轮回还没被对端清掉的尸行"。
+
+**这条护栏看不到的东西要写清**：健康检查是 liveness，不是集群成员身份——一台 `scheduler.enabled=false`（因此根本没进集群）或跑在 `QUARTZ_JOB_STORE=memory`（因此进不去）的副本会高高兴兴应答 liveness 并满足这条检查。compose 对同一 service 的所有副本插值同一个 `SCHEDULER_ENABLED`，脚本这边不存在能区分的信号，所以**"禁用实例不要继续注册在同一个 service 名下"是拓扑规则，只能由文档承担**——正文在 `docs/deploy-harnax-scheduler.md`。
 
 ### 6.4 暴露面
 
@@ -247,31 +257,38 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 ## 7. 里程碑
 
-原 M1→M5 的顺序按"改动类型"分组而非按"依赖"分组，有两处会导致中间态比现状更危险，本表已修正：
+原 M1→M5 的顺序按"改动类型"分组而非按"依赖"分组，有两处会导致中间态比现状更危险；发布 1 的实施计划又添了一处范围修正。三处都在本表里：
 
-- **修正 A**：同步执行（原 4.4）提前到 JDBC 集群之前，见 4.1 的顺序要求。
-- **修正 B**：reconcile（原 4.1）必须与 JDBC store 同期上线，否则存在"共享 store + 全删重建"的窗口，任一节点重启会报掉全集群任务。
+- **修正 A（顺序）**：同步执行（原 4.4）提前到 JDBC 集群之前，见 4.1 的顺序要求。
+- **修正 B（顺序）**：reconcile（原 4.1）必须与 JDBC store 同期上线，否则存在"共享 store + 全删重建"的窗口，任一节点重启会报掉全集群任务。
+- **修正 C（范围）**：D8 的 `agent_task` 迁移**不能与域搬迁分开**——admin 还在写这张表的时候，它只能在 `harnax_admin` 里有一份真相，否则两份副本立刻分叉。所以 S2 只做到"QRTZ 层独立"：`QRTZ_*` 临时建在 `harnax_admin`，用 scheduler 自有的历史表 `flyway_schema_history_scheduler` 记账；业务表与数据迁移随 S3。D3（scheduler 独占 schema）在 S3 结束时才完整成立，本发布不破坏它。
 
-| 步 | 内容 | 人日 | 可独立发布 | 状态（`fix/scheduler-exec-semantics`） |
+| 步 | 内容 | 人日 | 可独立发布 | 状态（`fix/scheduler-exec-semantics` / `feat/scheduler-cluster-cutover`） |
 |---|---|---|---|---|
 | **S0 行为修复** | C3（40901 三端同步）；CLI `logId`→`id` **并补 `task stop` 子命令**（当前 task.go 里不存在该命令，所谓"CLI 停止从未生效"的真实原因是功能缺失而非字段名）；删死代码（admin `AgentTaskLogService.save()`、`/internal/agent-tasks/{taskId}/spec` 端点及测试、`SchedulerClientImpl.kt:35` 与事实相反的注释） | 0.5 | ✅ | **已完成**。死代码那条比原清单多删一处：admin 端点的唯一"调用方" `AdminApiClient.getTaskAgentSpec` 自身也是 `@Deprecated` + 全仓零引用，整条死链一并摘掉 |
 | **S1 执行语义** | 4.1 同步执行 + 双 job 类；4.3 中断命中语义（D7，跨三侧）；4.4 定态分支 + 3.5 超时统一；4.5 housekeeping | 2.5 | ✅ | **已完成**，另把 D6 的优雅停机配置（3.1 约束 2 + 6.2 的 `stop_grace_period`）提前做了——同步执行一落地，"停机不等"就立刻制造僵尸行 |
-| **S2 库 + 集群 + 对账 + 部署形态** | 6.1 建库与两个 Flyway 脚本；3.1 quartz 集群配置 + 约束 2/3；3.3 reconcile；D8 数据迁移（`agent_task` 一次性 `INSERT ... SELECT`）；6.2/6.3 compose 与逐台滚动；6.4 删 nginx 与宿主映射 | 4 | ✅（内部必须原子） | ⏳ 未开始（其中 6.4 的暴露面与 6.2 的停机两项已提前落地） |
+| **S2 库 + 集群 + 对账 + 部署形态** | 6.1 建库与两个 Flyway 脚本；3.1 quartz 集群配置 + 约束 2/3；3.3 reconcile；D8 数据迁移（`agent_task` 一次性 `INSERT ... SELECT`）；6.2/6.3 compose 与逐台滚动；6.4 删 nginx 与宿主映射 | 4 | ✅（内部必须原子） | ✅ **已完成，带范围注（见修正 C）**。落地的是：QRTZ 层（`V1__quartz_tables.sql` + scheduler 自己的 Flyway 历史表 + `job-store-type=jdbc` 集群配置）、reconcile 取代全删重建与 60s 集群清扫、部署形态（compose 两副本、`roll-scheduler.sh` 逐台滚动、admin 的广播塌缩成一次转发）。**没做、随 S3**：`V2__agent_task_domain.sql`、数据源切到 `harnax_scheduler`、D8 的 `agent_task` 迁移。**IT-1/IT-2/IT-5 已写、从未执行**（交付机器无 Docker 守护进程），所以本行的"完成"不含集成测试通过 |
 | **S3 域搬迁** | 三实体 + 三 mapper + 三 XML 从 `harnax-entity` 移入 scheduler（含 `@MapperScan`、`type-aliases-package`、XML 全限定 type）；scheduler 自带 `Page`/异常副本 + pagehelper；`/api/scheduler/agent-tasks/**` 12 端点 + C5 owner 端点 + 2.3 拦截器；admin `AgentTaskController` 瘦身为鉴权+转发、删 service/DTO/广播；C1 sessionId 编 agentId；**admin 侧 24 处 mapper 引用全部清零（实测 4 个文件：`AgentTaskServiceImpl` 12、`InternalApiController` 4（含 290 与 713 两处 `selectAnyById`）、`AgentTaskLogServiceImpl` 5、`McpSessionOwnerResolver` 3）** | 3.5 | ❌ 必须单 PR（admin 编译断裂） | ⏳ 未开始 |
-| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ | ⏳ 未开始。`scheduler.jobs.scheduled` **仍是本实例视图**（store 还是 RAM，见第 9 节 F9）；IT-1/2/4/5 依赖真库，与 S2 同批 |
+| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ | ⏳ 未开始。**指标两半已被 S2 提前做掉**：`scheduler.reconcile.drift{action}` 与健康/指标的集群语义随发布 1 落地，`scheduler.jobs.scheduled` 因此**已经是集群视图**（store 不再是 RAM，F9 剩下的只是看板阈值重读）。S4 实际还欠：4.2 的 one-shot 合并（连带删 `SchedulerConfig.taskExecutor`，它至今无人使用）、依赖它的 IT-4、以及第 8 节测试补全 |
 
 合计约 **12.5 人日**。要点是 **S0+S1 = 3 人日即可独立上线并解决全部问题③**——原计划把这些排在 M0 与最末的 M4，等于正确性修复要等 14 人日的搬迁走完才对用户生效。
 
-回滚点：S0/S1/S4 各自独立可 revert；S2 回滚 = 指回 `harnax_admin` 库 + `job-store-type: memory`（旧库数据保留不删）；S3 回滚 = revert 整个 PR。`harnax_admin` 里的三张旧表**本轮不 DROP**，留到 S2 上线并观察过至少一个完整 cron 周期后由运维签认再单独合迁移脚本——原 M5.1 的硬约束仍然有效。
+回滚点：S0/S1/S4 各自独立可 revert；S3 回滚 = revert 整个 PR。**S2 的回滚不是"指回 `harnax_admin` 库"**——修正 C 之后数据源本来就在 `harnax_admin` 库，那一步是空操作；真正的退路只有"离开集群"：`QUARTZ_JOB_STORE=memory` + `SCHEDULER_FLYWAY_ENABLED=false`（compose 侧开关；手工部署对应 `FLYWAY_ENABLED=false`）。`QRTZ_*` 表与其中的数据**保留不删**，它们是 reconcile 可以按 `agent_task` 重生成的可再生数据。代价写在部署文档里：memory 实例**不是集群成员**，两副本里退掉哪台，哪台就只剩转发面的作用。这个退路是**逐台、临时的**：compose 的环境变量对所有副本同源，一旦整个 service 都跑成 memory，就没有任何东西在两副本之间去重一次 cron——回滚期间要把 `SCHEDULER_ENABLED=false` 的副本从同名 service 里摘掉（同一条拓扑约束），或直接缩到一台，回到 jdbc 后再恢复两副本。
+
+`harnax_admin` 里的三张业务表**发布 1 没有 DROP，也没有迁**（S2 只动 QRTZ 层）；DROP 属 S3，硬约束照旧：晚于 scheduler 稳定上线、观察过至少一个完整 cron 周期、运维签认后才合入——原 M5.1 的约束仍然有效，`harnax_admin.QRTZ_*` 在 S3 之前是活的、之后同样交运维签认后 DROP。
 
 ## 8. 测试
 
-集成测试放 scheduler 模块，testcontainers 起真 MySQL，走 failsafe profile（`-Pintegration-test`，形态照 `harnax-admin/pom.xml:344-393`）。本域难点（集群抢锁、CAS 定态、diff 收敛）全部 mock 不出来。
+集成测试放 scheduler 模块，testcontainers 起真 MySQL，走 failsafe profile（`-Pintegration-test`）。本域难点（集群抢锁、CAS 定态、diff 收敛）全部 mock 不出来。
+
+**发布 1 落地的形态与原设想不同，三处都是实测出来的**：surefire 侧不能只靠 `<excludes>` 挡 `*IT`——命令行一旦出现 `-Dtest`，插件就会用表达式覆盖 `<excludes>`，所以护栏是 `@Tag("integration")` + `excludedGroups`（基类标一次，`@Tag` 是 `@Inherited`）；failsafe 挂在 `-Pintegration-test` 之后；且本模块的 `repackage` 没有 classifier，必须给 failsafe 加 `additionalClasspathElements=${project.build.outputDirectory}`，否则测试发现死在 `BOOT-INF` 遮蔽上。手工用 `StdSchedulerFactory` 建第二个集群成员时还必须显式 `org.quartz.dataSource.<name>.provider=hikaricp`——Quartz 2.5.2 对手工数据源默认走 c3p0，而 c3p0 在本仓是 `provided` 且无人声明；生产路径不受此影响（Spring 的 `LocalDataSourceJobStore` 自带 provider），所以**不要**把这行抄进 `application.yml`。
+
+**执行状态**：IT-1（`ClusterSingleFireIT`）、IT-2（`ReconcileConvergenceIT`）、IT-5（`HousekeepingGuardIT`）已经是能编译的类，**一次都没跑过**——交付机器上没有 Docker 守护进程。IT-4 要等 S4 的 one-shot 合并；IT-3 的属主校验在 admin 侧，随 S3 才有被测对象。"跑通它们"是验收机器的工作：`mvn -o -pl harnax-scheduler verify -Pintegration-test`。**在这之前任何地方都不该出现"IT 全绿"。**
 
 | 用例 | 断言 | 为什么值得写 |
 |---|---|---|
-| IT-1 集群单触发 | 两实例连同库，1s cron 跑 8s：`agent_task_log` 行数 ≈ 触发次数（不是 2×）；`QRTZ_FIRED_TRIGGERS` 里出现过两个实例名 | "真集群"与"各节点各 fire"的唯一硬证据。**必须建在 S1 之后**，否则同步执行没做，这个测试会被假通过 |
-| IT-2 对账收敛 | SQL 手造漂移（多删/少建/改 cron）→ `reconcile()` → store 收敛，且未变更 job 的 `PREV_FIRE_TIME` 未被清零 | 后半句是"没有回归成全删重建"的直接证据，缺了它这个测试会被错误实现骗过 |
+| IT-1 集群单触发 | 两个手工建的 Quartz 成员连同库，1s cron 跑 8s：`it_cluster_fire` 行数 ≈ 触发次数（不是 2×）、两个节点的计数相加**等于**行数、`QRTZ_SCHEDULER_STATE` 在该测试自己的 `SCHED_NAME` 下正好两行、且没有任何一个不属于这两台的实例 id 计到过 fire | "真集群"与"各节点各 fire"的唯一硬证据。**必须建在 S1 之后**，否则同步执行没做，这个测试会被假通过。它**故意不断言工作怎么在两台之间分配**：谁先拿到行锁谁跑，一台全输不是 bug，所以计数是按实例 id 分组后再相加的。为什么不用 `agent_task_log`：这两个成员不经过应用的任务链路，写库的是 job 自己插的那张证据表 |
+| IT-2 对账收敛 | SQL 手造三种漂移（改 store 里的 cron / 表里删一行留 job / 一条完全不动）→ `reconcile()` → 报告的四个桶正好是 `added=0/updated=1/removed=1/unchanged=1` 的划分、`failedIds` 为空、被删任务失去 job、漂移的 cron 被拉回表里的值；**未动的那条保留它自己的 `NEXT_FIRE_TIME`，且它 trigger 行的 `START_TIME` 从未变过**（同一轮里被重写的那条 `START_TIME` 确实前移，作为正向对照） | 后半句是"没有回归成全删重建"的直接证据：一个把所有 job 都重注册的实现**也能过**前四条断言（它重写出来的值同样是表里的值），只有这两条时间戳断言能抓住它。"完全不动"的那条故意用小写 cron（webui 自己的预设形态），所以它同时是"按 Quartz 归一化结果比较"这条规则的证人 |
 | IT-3 越权 | 非属主读/改/删拿不到且数据未变；`is_public=1` 可读 | 已完成项（属主校验）的回归护栏 |
 | IT-4 one-shot | 连发两次 trigger：store 出现 `_ONCE` trigger、第二发返回 40901；投递后 kill 进程，重启补火一次且仅一次 | 覆盖 4.2 与 D6 的补火语义 |
 | IT-5 guard 清理 | 造过期 `agent_task_execution` 行 → 跑 housekeeping → 过期行删除、未过期保留、`status=0` 泄漏行被清 | `cleanupOldExecutions()` 此前零调用方 |
@@ -293,20 +310,22 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 6. **F6 status 取值收敛**：`0/1`、`0/1/2`、`3/4/5` 三套散落字面量收敛为共享枚举。
 7. **F7 日志脱敏**：`SELECT *` 全文下发 `prompt`/`response`/`errorInfo`，无租户/属主过滤。
 8. **F8 域内无细粒度授权**：整域只要求"已登录"，`MybatisTenantInterceptor.intercept()` 实为 no-op，属主条件是目前唯一隔离手段。
-9. **F9 `scheduler.jobs.scheduled` 是本实例视图，不是集群视图**：gauge 读的是本进程 Quartz store 的 `getJobKeys(AgentTaskGroup)`（`QuartzJobInventory.kt`），store 还是 `memory` 时每个实例各自注册全量任务，于是 N 台各报自己的数、看板取哪台都一样"看着对"。**S2 换 JDBC 集群 store 后同一个表达式的含义会静默跳变成集群视图**（集群里只有一台 fire，但 store 是共享的，所以数值不降反升的语义完全不同）。届时必须同时重解读既有看板与告警阈值，并把指标改按 `instanceId` 之外再打一层 store 来源标签。
-10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证随 B1 一起在有 Docker 的环境补跑。
+9. **F9 指标语义（🟡 已随 S2 落地；剩下的是看板重读）**：代码这一侧已经全部改完——`scheduler.jobs.scheduled` 与健康 detail 的 `scheduledJobCount` 都**当场读共享 store**，因此它们是**集群视图**（两副本取相同值，不再有"每台各报自己那一份"的含义），读不出 store 时 gauge 给 NaN 而不是一个像样的 0；`scheduler.load.attempts` 已改名 `scheduler.reconcile.rounds{outcome}`，语义是**一轮一个样本**（谁来跑都算：启动收敛、admin 的一次 `/reload` 转发、60s 清扫），不再是每次启动一到 n 个；`scheduler.reconcile.drift{action}` 每轮只由跑它的那一台发布，所以按 `instance` 求和得到的是集群总量，而读单台不等于读集群。**留给运维的动作**：既有看板与告警阈值必须按新语义重读，特别是任何把旧名读成"启动失败次数"的面板——那条读数现在会一直涨，涨速是每轮一次而不是每次重启一次。
+10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证**仍然没做过**。它的归属现在很明确：全仓库唯一有真 MySQL 的地方就是 scheduler 的 failsafe 套件，而 `HousekeepingGuardIT` 已经在真库上跑这两条清扫语句——`EXPLAIN` 就顺着它读一次。前提是那套 IT 第一次真的跑起来（`mvn -o -pl harnax-scheduler verify -Pintegration-test`，需要 Docker 守护进程，发布 1 只交付了代码）。在那之前，"索引被命中"是推测，不是观察结果。
 11. **F11 停止意图只有一个瞬态列承载**：用户"点了停止"这件事目前**只写在 `agent_task_log.status = 4` 上**，没有独立的标记位，于是它只活到下一次回收扫描为止。G6 补齐的是**能区分出来的那一半**：执行线程先读到 4、随后 4 被 sweep 改成 2，`finalizeStopped` 的 4 守卫失配 → 重读发现是 2 → 改走 `reclaimExpired` 写 5（`SchedulerServiceImpl.kt:524-550`）。**没补齐的那一半**是 sweep 在**那次重读之前**就把 4 改成 2：线程按 2 分支写回自己真实的 0/1，用户那一次停止就此从记录上消失，而且**无法与"根本没被停止过"区分**——`expireStale` 已经把 `error_info` 覆盖成超时文案，4 存在过的证据被销毁了。这不是"超时"那样的错误标签，但这一行仍然不对。根治需要给行加一个 stop/owner 标记（`stop_requested` 列，或 `agent_task_execution` 上记 owner），让停止意图不依赖 status 这一瞬态——属 S2/S3 的库改动，本轮不动行为，只在 `SchedulerServiceImpl.kt:510-561` 与 `AgentTaskLogMapper.xml` 的 `expireStale`/`reclaimExpired` 注释里标明各守住哪个窗口、哪个窗口未守。
 
 ## 10. 数据迁移（D8）
 
-- `agent_task`：**迁移**。同 MySQL 实例内跨库一次性 `INSERT INTO harnax_scheduler.agent_task SELECT * FROM harnax_admin.agent_task`，`harnax` 用户已对两库都有权限（`init-databases.sql:33-36` 已 GRANT，新库补一行即可）。迁移后必须跑一次 `reconcile()`，因为从旧库带过来的 `QRTZ_*` 不存在、store 需按新库重建。
+> **状态：发布 1 没有执行本节任何一步。** D8 与 `agent_task` 的搬迁随 S3（见修正 C）——本发布只把 `QRTZ_*` 建了起来，业务三表原地留在 `harnax_admin`。
+
+- `agent_task`：**迁移**。同 MySQL 实例内跨库一次性 `INSERT INTO harnax_scheduler.agent_task SELECT * FROM harnax_admin.agent_task`，`harnax` 用户已对两库都有权限（`init-databases.sql` 已 GRANT，新库补一行即可）。迁移后必须跑一次 `reconcile()`，因为从旧库带过来的 `QRTZ_*` 不存在、store 需按新库重建。
 - `agent_task_log`、`agent_task_execution`：**不迁移**。旧表保留在 `harnax_admin` 直到运维签认 DROP，历史日志在页面上会表现为"任务存在但无历史"，发布公告需写明。
-- 发布顺序：建库授权 → 起 scheduler 单实例（Flyway 自动建表）→ 迁 `agent_task` → reconcile 生效 → 起第二实例 → 核对 `QRTZ_SCHEDULER_STATE` 两行 → 观察一个完整 cron 周期。
+- 发布顺序：建库授权 → 起 scheduler 单实例（Flyway 自动建表）→ 迁 `agent_task` → reconcile 生效 → 起第二实例 → 核对 `QRTZ_SCHEDULER_STATE`（**看每行的 `LAST_CHECKIN_TIME` 有没有各自在推进**，不是数行数——节点不删自己那行，刚起完表里可能还有没被对端清掉的尸行）→ 观察一个完整 cron 周期。
 
 ## 11. 验收标准
 
-1. `mvn verify -Pintegration-test -pl harnax-scheduler` 通过，IT-1~IT-7 全绿。
-2. `docker-compose up -d --scale scheduler=2` 后 `QRTZ_SCHEDULER_STATE` 两行；kill 其一，另一个在 15~75s 内接管其未完成 trigger。
+1. `mvn -o -pl harnax-scheduler verify -Pintegration-test` 通过，IT-1/IT-2/IT-5 全绿。**发布 1 只交付到"这三个类写好了"**：交付机器没有 Docker 守护进程，它们一次都没执行过，所以这一条**现在是未决项，不是已完成项**——它要有 Docker 的机器（本机或验收机）跑一次才算数。IT-4 依赖 S4 的 one-shot 合并，IT-6/IT-7 属中断命中与超时竞争两批，都不在本条之内。
+2. `docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2` 后 `QRTZ_SCHEDULER_STATE` 有两个实例的 `INSTANCE_NAME`，且每行的 `LAST_CHECKIN_TIME` 每 15s 各自前进（**行数不等于副本数**，见上）；kill 其一，另一个接管它未完成的 trigger。接管窗口是**算出来的 22.5~52.5s**，不是范围猜的：死节点那行的 `LAST_CHECKIN_TIME` + `CHECKIN_INTERVAL` 15000ms + Quartz 硬编码的 7500ms = **22.5s** 之后才被 `calcFailedIfAfter` 判为失效，而对端只在自己的 ClusterManager 线程醒来时求值这个式子（睡的就是一个 checkin 周期）→ **+至多 15s**；那一轮对端自己被慢库拖过一整个周期时 `max()` 取 30s 而非 15s → **再 +15s**，最坏 52.5s。整个窗口都落在 `misfireThreshold: 60000` 之内，所以**单节点死亡不丢触发**，而一次全 service 的 `--force-recreate`（最长 400s）必然越过它——那条边由 `roll-scheduler.sh` 关住（见 6.3）。
 3. 带执行中任务重启 scheduler：该行最终为真实结果（1 或 0），**不是** 2 timeout；`stop_grace_period` 生效证据可见于容器退出耗时。
 4. 对一个正在执行的任务点"停止"：agent-service 已重启过的场景下，日志状态在秒级变为 5，不出现 timeout。
 5. webui 列表（含 `lastRunStatus`/`lastRunTime`）、创建/编辑/启停/删除、立即执行（含二次确认与冲突提示走 40901）、日志弹窗轮询全通；CLI 与小程序各跑一遍。

@@ -53,6 +53,9 @@ spring:
     # `never`, and there is no setting to argue with: Boot's `always` runs the bundled Quartz script on
     # every start, and that script begins with DROP TABLE IF EXISTS — on a cluster that deletes the
     # schedule state every node shares each time one node restarts. V1__quartz_tables.sql creates it once.
+    # For completeness about the default: Boot's own value for this key is `embedded`, so with a MySQL
+    # datasource the script would not run even if this line were absent. Pinning `never` is therefore defence
+    # against someone setting it to `always`, not the only barrier between this cluster and that DROP.
     jdbc:
       initialize-schema: never
     # Boot's own key (spring-boot-quartz's QuartzProperties; its metadata says defaultValue=false, so
@@ -78,8 +81,13 @@ spring:
             driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
             tablePrefix: QRTZ_
             isClustered: "true"
-            # A dead node's triggers go to the survivors one check-in window late: 15s here, so the
-            # takeover lands inside the 15~75s the runbook promises.
+            # How long until a dead node's triggers move to a survivor, which is what the misfireThreshold
+            # below has to outlive. Quartz 2.5.2 (JobStoreSupport.calcFailedIfAfter) calls a state row stale
+            # at its own last check-in + max(CHECKIN_INTERVAL, the checking node's own distance since its last
+            # check-in) + 7500ms — 15000 + 7500 = 22.5s here — and a peer only evaluates that when its
+            # ClusterManager thread wakes, which sleeps one check-in interval: +15s of poll granularity, and
+            # +15s more if that peer's own check-in is a full interval late. 22.5~52.5s, never 15s.
+            # docs/deploy-harnax-scheduler.md carries the same sum for operators.
             clusterCheckinInterval: 15000
             misfireThreshold: 60000
             # With clustering there is no local lock protecting trigger acquisition; without this two

@@ -89,7 +89,7 @@ Flyway 会在服务启动时自动执行 `db/migration` 下的建表脚本，无
 | `MINIO_ENABLED` / `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_OUTPUT_BUCKET` | `false` / `http://localhost:9000` / `minioadmin` / `minioadmin` / `harnax-output` | 输出文件的下载代理。**admin 与 agent 两侧都要配同一个桶**，否则用户在网页上看不到 agent 产出的文件 |
 | `HARNAX_AUTH_SECRET` | 占位串 | **出向**服务间 token 的签名密钥（scheduler 调用等），与 `ADMIN_INTERNAL_API_SECRET` 是两条不同的东西，别混用 |
 | `HARNAX_ROUTER_EXTERNAL_URL` | 空 | 返给前端 / 小程序的路由地址 |
-| `HARNAX_SCHEDULER_URL` | `http://localhost:8084` | admin → scheduler 的任务控制地址（compose 里是字面量，`.env` 改不动） |
+| `HARNAX_SCHEDULER_URL` | `http://localhost:8084`；compose 侧是 `${HARNAX_SCHEDULER_URL:-http://scheduler:8084}`，**可在 `.env` 覆盖** | admin → scheduler 的任务控制地址。**逗号分隔时只用第一个**：共享 Quartz store 之后转发塌缩成一次调用，不再逐实例广播。落到的那台必须是开着调度的实例——同名 service 下挂一台 `SCHEDULER_ENABLED=false` 的副本，就会按负载均衡的运气偶发 40903（reload 路径到用户那边表现为 40902），约束正文在 `docs/deploy-harnax-scheduler.md` |
 | `CAPTCHA_TEST_MASTER_CODE` | 空 | **仅供 UI 测试的登录验证码万能码**。生产留空；一旦设了值，任何人用这串码即可过验证码——这是认证绕过，不是便利开关 |
 
 真正仍为硬编码、需要改 `application.yml` 的只剩少量项：`springdoc` 的分组配置、`spring.jackson` 的时间格式与时区、`management` 端点暴露列表，以及 `mybatis` 的 `mapper-locations` / `type-aliases-package`。这些一般不需要动。

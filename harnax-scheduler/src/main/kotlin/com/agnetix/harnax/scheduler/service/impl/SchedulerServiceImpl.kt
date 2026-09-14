@@ -129,15 +129,16 @@ class SchedulerServiceImpl(
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
         // Both sweeps are attempted here, on the boot thread, before the converge loop's first database read:
-        // that ordering is what lets a node which schedules nothing still sweep (and see [registerHousekeepingJob]
-        // for why registering is legal on a standby node). What boot's attempt could not do is fail twice — a
+        // that ordering is what lets a node which schedules nothing still get the sweeps *into the store*
+        // (and see [registerHousekeepingJob] for why registering is legal on a standby node, and for what it
+        // does not buy there). What boot's attempt could not do is fail twice — a
         // database still starting used to cost a WARN line and nothing more, and the cluster then ran without
         // its sweeps for the lifetime of the process. [registerSweepsIfPending] is the retry.
         systemSweepsPending = !registerSystemSweeps()
         if (!schedulerEnabled) {
-            // A disabled node runs no converge loop, so it is the one node whose sweep would still be lost
-            // for good; it owes itself the retry. The *reconcile* sweep stays off an inert node either way
-            // (see [registerSystemSweeps]).
+            // A disabled node runs no converge loop, so it is the one node whose sweep *registration* would
+            // still be lost for good; it owes itself the retry. The *reconcile* sweep stays off an inert node
+            // either way (see [registerSystemSweeps]).
             if (systemSweepsPending) loadExecutor.execute { registerSweepsUntilStored() }
             return
         }
@@ -190,11 +191,14 @@ class SchedulerServiceImpl(
      * task and lives in its own Quartz group — and since the store became shared the job is a *cluster
      * singleton*: the row this node registers is the row whichever node fires runs, so reclamation keeps
      * happening while at least one node in the cluster is enabled and an inert node's own `stopTask` row is
-     * reaped with the rest. This node keeps registering it because that costs nothing and because a
-     * single-node deployment with the flag off would otherwise never sweep at all. Registering is legal in
-     * standby: Quartz only refuses a write after `shutdown()`, so `spring.quartz.auto-startup=false` (which
-     * is what keeps a disabled node out of the cluster at all, see application.yml) does not cost this job
-     * its registration.
+     * reaped with the rest. This node keeps registering it because the write costs nothing and because the
+     * row is then in the store for whichever node does start. What registering cannot buy is a sweep on a
+     * deployment whose only replica has the flag off: `spring.quartz.auto-startup` follows that flag, so this
+     * scheduler stays in standby and fires nothing it registers — such a deployment reclaims nothing until
+     * some node runs with scheduling enabled, and that is a topology rule for the docs, not something a
+     * registration can fix. Registering is legal in standby: Quartz only refuses a write after `shutdown()`,
+     * so `spring.quartz.auto-startup=false` (which is what keeps a disabled node out of the cluster at all,
+     * see application.yml) does not cost this job its registration.
      */
     private fun registerHousekeepingJob(): Boolean = registerSweep(
         label = "housekeeping",
@@ -834,11 +838,14 @@ class SchedulerServiceImpl(
      * [expireStaleExecutions] behind a process-local rate limit: at most one sweep per
      * [MIN_STALE_SWEEP_INTERVAL_MS] here, whatever number of fires asks.
      *
-     * Nothing is lost by waiting. Global reclaim is housekeeping's job, and since G3 it runs on every
-     * node including disabled ones, five minutes apart; this call site only ever asks "is the row I can
-     * see still live", and the answer is the same one a *successful* sweep gave at most 30s ago — a row
-     * that crossed its own 1.5x deadline inside that window was not stale when the last sweep looked at
-     * it. One that threw is not in that count (see [expireStaleExecutions]).
+     * Nothing is lost by waiting. Global reclaim is housekeeping's job, and since the store became shared
+     * that job is a *cluster singleton*: one row in `QRTZ_*`, fired every five minutes by whichever node
+     * claims it — not one sweep per node, and not by a disabled node at all (auto-startup keeps it out of the
+     * cluster, so it fires nothing; the single-node deployment with `scheduler.enabled=false` is the one shape
+     * where nobody reclaims, which is the topology rule `docs/deploy-harnax-scheduler.md` carries). This call
+     * site only ever asks "is the row I can see still live", and the answer is the same one a *successful*
+     * sweep gave at most 30s ago — a row that crossed its own 1.5x deadline inside that window was not stale
+     * when the last sweep looked at it. One that threw is not in that count (see [expireStaleExecutions]).
      *
      * A plain `@Volatile` timestamp rather than a lock: two fires that arrive in the same millisecond can
      * both pass this check and both sweep, which costs one extra statement per node per window at worst.

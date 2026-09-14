@@ -290,7 +290,13 @@ services:
   # for this service that omits --scale asks for one replica and compose will scale the service back down to
   # it, so add the flag whenever you bring this service up outside those scripts.
   # The cluster itself lives in the shared QRTZ_* tables: same instanceName, instanceId=AUTO per node,
-  # and a 15s check-in, so a dead node's triggers move to its peer inside 15~75s.
+  # and a 15s check-in. Takeover window, term by term: quartz 2.5.2 JobStoreSupport.calcFailedIfAfter calls a
+  # row stale at its own LAST_CHECKIN_TIME + max(CHECKIN_INTERVAL, the checking node's own distance since its
+  # last check-in) + 7500ms = 15000 + 7500 = 22.5s after the dead node's last heartbeat, and a survivor only
+  # evaluates that when its ClusterManager thread wakes, which sleeps one check-in interval — so +15s of poll
+  # granularity, and +15s more when that peer's own check-in is a full interval late (max() then takes 30s
+  # instead of 15s). 22.5~52.5s; 15s is not reachable. All of it stays inside misfireThreshold (60s), which is
+  # why one dead node costs no fire while a cluster-wide recreate does — see roll-scheduler.sh.
   #
   # This service deliberately has no `container_name`: a pinned name is unique, so Docker refuses to
   # scale the service at all — which is also why nothing here may be reached as `docker exec

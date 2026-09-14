@@ -144,7 +144,10 @@ class AgentTaskServiceImpl(
         // Reconcile the shared Quartz store (drops the old job, applies the updated config).
         // Deferred to after the commit: the scheduler reads through its own connection and cannot see
         // this row while the transaction is still open.
-        reloadSchedulersAfterCommit("saved", "The previous definition stays live until a reload succeeds")
+        reloadSchedulersAfterCommit(
+            "saved",
+            "The previous definition stays scheduled until a reconcile round converges it (the 60s cluster sweep runs one anyway)",
+        )
         return true
     }
 
@@ -160,7 +163,10 @@ class AgentTaskServiceImpl(
         if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
             throw BizException("Only the task creator can delete this task")
         }
-        reloadSchedulersAfterCommit("deleted", "The deleted task can still fire until a reload succeeds")
+        reloadSchedulersAfterCommit(
+            "deleted",
+            "Its orphaned job will not run the deleted task — it deletes itself on its next fire, or with the 60s sweep",
+        )
         return true
     }
 

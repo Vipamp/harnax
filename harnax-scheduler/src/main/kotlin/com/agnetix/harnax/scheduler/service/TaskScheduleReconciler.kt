@@ -53,11 +53,11 @@ class TaskScheduleReconciler(
      */
     fun reconcile(): ReconcileReport {
         // The store first, then the table, and the order is load-bearing rather than stylistic. A CRUD that
-        // commits between the two reads (admin's `/reload` broadcast makes that the routine path, not an
-        // edge case) must land in the table but not in the snapshot, so this round re-registers it — a
-        // benign `replace=true` write. Read the table first and the same commit lands only in the snapshot:
-        // the job then looks like an extra key and this round deletes a schedule the cluster just asked for,
-        // taking whatever cron boundary fell inside the window with it.
+        // commits between the two reads (admin's one `/reload` forward after every committed CRUD makes that
+        // the routine path, not an edge case) must land in the table but not in the snapshot, so this round
+        // re-registers it — a benign `replace=true` write. Read the table first and the same commit lands only
+        // in the snapshot: the job then looks like an extra key and this round deletes a schedule the cluster
+        // just asked for, taking whatever cron boundary fell inside the window with it.
         val actual = inventory.agentTaskJobs()
         val expected = agentTaskMapper.selectRunningTasks().associateBy { it.id }
 

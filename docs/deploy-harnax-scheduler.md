@@ -4,9 +4,9 @@
 
 `harnax-scheduler` 是**定时任务触发器**：读 `agent_task` 表里的任务定义，按 cron 到点后经 router 发起一次智能体执行，并回写执行状态。它不做业务 CRUD（那些在 admin），也不跑智能体（那些在 agent-service）。
 
-一句话结论先说：**当前形态只允许一个调度实例开着 `SCHEDULER_ENABLED=true`**。原因见「Quartz 存储模式」，这是本文件最重要的一节。
+一句话结论先说：**既定形态是两个调度实例同时开着 `SCHEDULER_ENABLED=true`**。Quartz 跑真正的 JDBC 集群 store（`isClustered=true`，11 张 `QRTZ_*` 表是全集群唯一的调度真相），一次 cron 触发在集群里只投递一次、只由一个节点执行；一台死了另一台接管。怎么核对与怎么滚动见「双实例与逐台滚动」，这是本文件最重要的一节。
 
-端口默认 `8084`（`SCHEDULER_PORT`），对外发布 `28084`。
+端口默认 `8084`（`SCHEDULER_PORT`）。compose 里**不发布宿主端口**，只有 `expose: ["8084"]`：admin 走容器网络 `http://scheduler:8084`。
 
 ---
 
@@ -15,35 +15,78 @@
 | 依赖 | 要求 | 说明 |
 |---|---|---|
 | JDK | 21 | |
-| MySQL | `harnax_admin` 库 | 与 admin **共用**：读 `agent_task` / 写 `agent_task_log`。表结构由 admin 的 Flyway 维护，本服务 `FLYWAY_ENABLED` 默认 `false`，**不要去开** |
+| MySQL | `harnax_admin` 库 | 与 admin **共用同一个库、但各管各的表**：本服务读 `agent_task` / 写 `agent_task_log`，并且**自己建自己的 `QRTZ_*` 集群表**。表结构由两边的 Flyway 各写一份历史表（本服务 `flyway_schema_history_scheduler`、admin `flyway_schema_history`），互不干扰，所以本服务 `FLYWAY_ENABLED` 默认 `true` 且**必须保持开**——关掉就没有 `QRTZ_*`，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。发布 2 才把数据源搬进 `harnax_scheduler`（`docker-new/sql/init-databases.sql` 已预建该库并授权，发布 1 用不上它） |
 | router | 必须可达 | 执行入口 `SCHEDULER_ROUTER_URL` |
 | admin | 必须可达 | 会话管理与系统 Key 获取 |
 | Redis / MinIO | 不需要 | |
+| 时钟同步 | **必须** | 集群靠比对 `QRTZ_SCHEDULER_STATE.LAST_CHECKIN_TIME` 判断节点死活，各节点时钟都取自 MySQL 之外自己的 JVM。宿主机 NTP 偏差必须 < 1s：偏差超过 checkin 间隔会把活节点判死并触发误抢 |
 
 ---
 
 ## Quartz 存储模式（决定能不能多实例）
 
-`QUARTZ_JOB_STORE` 默认 `memory`：调度状态活在进程内存里。
+`QUARTZ_JOB_STORE` 默认 `jdbc`：调度状态在共享的 `QRTZ_*` 表里，`instanceName=HarnaxScheduler` 是集群名（两实例必须同值，它是每张 `QRTZ_*` 表的主键首列 `SCHED_NAME`），`instanceId=AUTO` 把节点区分开。
 
-| 模式 | 现状 | 后果 |
+| 模式 | 定位 | 后果 |
 |---|---|---|
-| `memory` | **当前唯一可用**：仓库里没有任何 `QRTZ_*` 建表脚本（admin 的迁移目录与本模块都没有） | 两个实例同时开启调度 = 每个实例自己 fire 一次，**任务重复执行**。第二实例不会接管也不会去重 |
-| `jdbc` | **目标形态，尚未落地**：独立 `harnax_scheduler` 库 + `QRTZ_*` 表 + 集群配置，见 `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md` | 落地后才可跑 2 实例并具备故障接管与 misfire 补偿 |
+| `jdbc` | **当前默认与目标形态**：`V1__quartz_tables.sql` 由本服务的 Flyway 建表，`isClustered=true` + `clusterCheckinInterval=15000` + `acquireTriggersWithinLock=true` | 多实例安全：一次触发全集群只有一个节点抢到；故障接管与 misfire 补偿都由引擎负责 |
+| `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。混在一组副本里就是任务重复执行、`agent_task_log` 成对记录 |
 
-所以今天部署多实例的唯一正确姿势是：**一个实例 `SCHEDULER_ENABLED=true`，其余实例 `false`**（只作为 API 侧的转发存在，不参与调度）。设成两个 `true` 的后果不是性能问题，是用户会看到同一任务跑两遍、`agent_task_log` 出现成对记录。
+`org.quartz.jobStore.class` 故意**不写**：Boot 注入 DataSource 后会强制覆盖成 `LocalDataSourceJobStore`，写死 `JobStoreTX` 反而连不上 Spring 管理的数据源。
 
-`SCHEDULER_INSTANCE_ID` 留空时启动自动生成，供执行守卫（`AgentTaskExecutionGuard`）标记「这条执行是谁发起的」；它是同库多实例之间的写入归属标记，**不是**跨实例去重锁——不要指望它能替代 JDBC 集群。
+`SCHEDULER_INSTANCE_ID` 留空时启动自动生成，供执行守卫（`AgentTaskExecutionGuard`）标记「这条执行是谁发起的」；它是同库多实例之间的写入归属标记，**不是**跨实例去重锁，也不是 Quartz 的集群身份（后者是 `instanceId=AUTO`）。compose 里把它留空成**一份插值**，所以给所有副本配同一个值只会让 `agent_task_execution.instance_id` 在两台上说同一句话——保持留空。
 
-## 优雅停机（当前与目标不一致，务必知道）
+### 回滚（回到内存 store）
 
-- 本模块 compose 里**没有** `stop_grace_period`，于是沿用 Docker 默认的 10s。
-- 一次任务执行的预算是 `SCHEDULER_TIMEOUT=300s`（到 router 的调用超时）。
-- 两者相加意味着：**发布或重启时，正在跑的执行最多只有 10 秒收尾窗口**，之后容器被 SIGKILL。表现为该次执行停在 `agent_task_log` 的中间态，而不是等它跑完。
-- 设计文档里 D6 定的目标是 `waitForJobsToCompleteOnShutdown=true` + `stop_grace_period: 360s` + 逐台滚动；**这部分尚未实现**，所以别按 360s 安排发布窗口。
-- 在此之前，可用的缓解是：避开任务密集时刻重启，并在重启后核对停在中间态的执行记录。
+仓库里只有这里写全了退路。两个开关一起动，只动一个会把节点留在集群外却没有 store：
 
-`QUARTZ_THREAD_COUNT` 默认 `10`，是并发执行的上限；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力）。
+```bash
+QUARTZ_JOB_STORE=memory             # 本实例退出集群
+SCHEDULER_FLYWAY_ENABLED=false     # compose 侧的开关；手工部署路径对应 FLYWAY_ENABLED=false
+```
+
+`QRTZ_*` 表与其中的数据**保留不删**：行是可再生数据（reconcile 会按 `agent_task` 重建全部 job），所以回滚不需要迁数据，重新开启集群也不需要。代价写在上一节的表里——memory 节点不是集群成员，两实例里退掉哪台，哪台就只剩「接收 admin 转发的 HTTP 面」这一个作用。
+
+## 双实例与逐台滚动
+
+副本数**不由 compose 决定**：`docker-compose.yml` 里 scheduler 既没有 `deploy.replicas`，也**故意没有 `container_name`**（固定名唯一，Docker 会直接拒绝 `--scale`）。数字只从命令行来，一共三处会写它：`roll-scheduler.sh`（`SCHEDULER_REPLICAS`，默认 2）、`deploy-all.sh` 的冷启动 `up -d --scale scheduler=$SCHEDULER_REPLICAS`、以及你自己手敲的 `up`。**任何不带 `--scale` 的 `up` 都是在要求 1 个副本，compose 会把服务缩回一台**——所以从脚本之外拉起这个服务时，`--scale` 必须带上。
+
+```bash
+docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-recreate scheduler
+```
+
+发布新版本走 `docker-new/roll-scheduler.sh`（`deploy-service.sh scheduler` 的第 4 步就是它）。它先补齐到 `SCHEDULER_REPLICAS`、再逐台 `docker stop -t <grace>` + `rm` + `up --no-recreate` 换掉，全程集群里至少有一台在跑。
+
+**禁止对 scheduler 用 `--force-recreate`**：`up -d --force-recreate scheduler` 一次重建该 service 的**所有**副本，等于最长 400s（一台容器从 SIGTERM 到被 SIGKILL 的宽限）全集群无调度。这期间 `QRTZ_TRIGGERS` 里堆起来的过期触发会走 misfire 路径，而 `concurrent=0` 的任务用的正是 `withMisfireHandlingInstructionDoNothing`——**堆起来的触发被直接丢弃**，发布于是静默跳过本该跑的定时任务，和 400s 宽限「绝不丢执行」的初衷正好相反。同理，`SCHEDULER_REPLICAS=1` 的滚动会被脚本拒绝：一台都停的话，就没有第二台可接管了。
+
+集群成员的直接读数是 `QRTZ_SCHEDULER_STATE`（发布 1 里它在 `harnax_admin` 库，因为本服务的数据源此刻还指那边）：
+
+```sql
+SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ_SCHEDULER_STATE;
+```
+
+- 每行是一个成员，`LAST_CHECKIN_TIME` 是 unix 毫秒，存活节点的这一列每 15s 前进一次。**看这一列有没有在动**，比数行数可靠。
+- **刚滚完 2 副本时看到 3~4 行是正常的**：一个节点优雅停机**不会**删掉自己那行（Quartz 2.5.2 的 `JobStoreSupport.shutdown()` 只停集群线程并关连接池），行是由**对端**在判定它心跳过期后、于 `clusterRecover` 里顺手 `deleteSchedulerState` 清掉的。判定线 = 死节点行的 `LAST_CHECKIN_TIME` + `CHECKIN_INTERVAL`(15s) + Quartz 硬编码的 7500ms ≈ **22.5s**，而这条判据只在存活节点自己的 ClusterManager 线程醒来时求值（间隔同样是一个 checkin 周期 15s），所以清行落在 **22.5~37.5s**；对端那一轮若被慢库拖过一整个周期，`max()` 取到的是它自己实际的间隔，判据线再外推 15s → 最坏 **52.5s**。想行数等于副本数，一分钟后再跑一次这条 SQL。
+
+故障接管的窗口就是上面那串算式：**约 22.5~52.5s**（22.5 = 15000ms checkin 间隔 + 7500ms 常量；+15s 对端轮询粒度；+15s 对端自身 checkin 滞后）。写在这里而不是写一个约数，是因为这三个数都来自 `application.yml` 与 Quartz 源码，改 `clusterCheckinInterval` 就是要回到这段重算。它还解释了为什么单节点死掉不丢触发：接管最坏 52.5s，仍在 `misfireThreshold: 60000` 之内，那一发根本不会被判成 misfire——而 400s 的全集群下线一定越过它。
+
+**约束：`SCHEDULER_ENABLED=false` 的实例不要继续注册在同一个 compose service 名下。** admin 现在只发**一次**转发（`SchedulerClientImpl`，共享 store 之后广播已失去意义），Docker 的 DNS 轮询会把这一发落到任意一个同名副本上；落到一台关了调度的实例上，用户就看到 40903（`CODE_SCHEDULER_DISABLED`），而且是**按运气出现的**——重试一次可能就通了。更糟的是 reload 路径：那台实例答的 40903 会被 admin 改判成 40902（只有它的文案留在 message 里），运维读到的意思是「已存库但没人调度它」。要么把这台从 service 里摘掉，要么给它另一个 compose service 名（另一份 `docker-compose.*.yml`），让 `HARNAX_SCHEDULER_URL` 只指向开着的实例。compose 侧做不到按副本区分——`SCHEDULER_ENABLED` 是一份插值、对所有副本生效，所以这只能是拓扑规则。
+
+`SCHEDULER_ENABLED=false` 也不意味着这台完全 inert，需要知道的边界：
+
+- 它**不进集群**：`spring.quartz.auto-startup` 跟着 `scheduler.enabled` 走。这不是保守，是因为一个开着但拒跑的成员会照样 acquire 触发、然后拒绝执行——那一发被吃掉了，不是交出去；one-shot 丢了就是永远丢了。留在集群外是唯一不吃工作的拒绝方式。
+- 它仍然接受 `/tasks/logs/{id}/stop`（那是一行状态改写，不是调度写），仍然注册 housekeeping 清扫，也**仍可能被共享 store 分到一次 fire**（比如上面那条拓扑规则被违反时）——那次 fire 会在 `AbstractAgentTaskJob` 的 enabled 检查处让给别的节点。
+- 僵尸回收是**集群级**的：清扫 job 只有一行、每 5 分钟由一个节点 fire，所以只要集群里还有一台开着，回收就还在跑；一台 `SCHEDULER_ENABLED=false` 的节点没有、也不需要私有的回收路径。
+- 它会拒绝 `/reload`、`/tasks/{id}/start`、`/pause`、`/trigger`、`/run-once`，全部回 40903。
+
+## 优雅停机
+
+- 本模块 compose 有 `stop_grace_period: 400s`，`application.yml` 显式写了 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`（Boot 的默认是 `false`，必须写出来）。**400 是一串求和的上取整**：chat 读超时 300 + `clearSession` 上限 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回 8 + Spring 关停钩子 4 = 392。逐项推导写在 `docker-new/docker-compose.yml` 的 scheduler 段注释里，改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 都要回到那里重算，别让注释变成谎话。
+- 宽限和 `waitForJobsToCompleteOnShutdown` 必须成对：等任务的前提是内核没先 SIGKILL；`docker stop -t` 的默认 10s 会把一次跑到一半的执行切成 `agent_task_log` 的 `status=3` 与 `agent_task_execution` 的 `status=0`，等 housekeeping 最坏 2× 超时后才回收。
+- **`roll-scheduler.sh` 里有一份同一个数**（`SCHEDULER_STOP_GRACE`，默认 400），滚动时逐台花掉这个窗口；两处要一起改——滚动超时短于 `stop_grace_period` 等于在 mid-run 上 SIGKILL，正是这个宽限要挡的事。
+- **保护范围只到 Quartz 认得的路径**：cron 与 `/run-once` 的一次性投递。手动 `/api/scheduler/tasks/{id}/trigger` 仍起裸 daemon 线程（`SchedulerServiceImpl.triggerManually`），Quartz 不知道它在跑，于是既没有接管也没有等待：**手动执行可能在进行中时，不要重启 scheduler**。两副本下也猜不出是哪台——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。one-shot 并入 Quartz 属计划 S4。
+
+`QUARTZ_THREAD_COUNT` 默认 `10`，是**每节点**并发执行的上限（2 实例 = 全集群最多 20）；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力，而 agent-service 仍是单实例）。它与 `DB_POOL_SIZE` 之间是下界关系，见数据源一节。
 
 ---
 
@@ -53,28 +96,33 @@
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SCHEDULER_PORT` | `8084` | HTTP 端口 |
-| `SCHEDULER_ENABLED` | `true` | 本实例是否参与调度。**多实例时只留一个 true** |
-| `SCHEDULER_INSTANCE_ID` | 空（自动生成） | 执行归属标记 |
+| `SCHEDULER_PORT` | `8084` | HTTP 端口（compose 不发布到宿主） |
+| `SCHEDULER_ENABLED` | `true` | 本实例是否参与调度。**两个副本都该是 true**；`false` 的实例不进集群，因此不该继续留在同名 service 里（见上一节的约束）。compose 里这是一份插值，对所有副本同时生效——没有「这台开、那台关」的配法 |
+| `SCHEDULER_INSTANCE_ID` | 空（自动生成） | 执行归属标记，保持留空 |
 
 ### 数据源
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_admin?...` | 与 admin 同库 |
-| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | |
-| `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `10` / `3` | Hikari（注意与 admin 的 20/5 不同） |
-| `FLYWAY_ENABLED` | `false` | 迁移归 admin；本服务开了会和 admin 抢同一套表 |
+| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_admin?...` | 与 admin 同库；`QRTZ_*` 就建在这里，发布 2 才搬走 |
+| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD` |
+| `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `30` / `3` | Hikari。30 是按下界选的：≥ `QUARTZ_THREAD_COUNT`(10) 个 worker（每个在一次 fire 里占一条连接）+ 业务查询 + 集群 checkin，全走这一个池。**`QUARTZ_THREAD_COUNT` 与它要一起动**——只加 worker 不加池不会多出容量，只是把等待从调度线程挪到 30s 的 connection-timeout 上。与 admin 的 20/5 不同 |
+| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：`V1__quartz_tables.sql` 建 `QRTZ_*`，历史记在自有的 `flyway_schema_history_scheduler`，与 admin 的 `flyway_schema_history` 互不干扰。compose 侧另有独立开关 `SCHEDULER_FLYWAY_ENABLED`（默认 true，映射到 `SPRING_FLYWAY_ENABLED`），不复用 admin 的 `FLYWAY_ENABLED`，免得手工恢复时改 admin 那个值顺手把调度节点停了迁移 |
+| `SCHEDULER_FLYWAY_ENABLED` | `true` | 仅 compose：`SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"`。它是 env 覆盖，优先级高于 yml 里的 `${FLYWAY_ENABLED:true}`，所以这个键才是集群建不建表的决定者 |
 
 ### 调度与下游
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `QUARTZ_JOB_STORE` | `memory` | 见上一节，改 `jdbc` 目前会因缺表失败 |
-| `QUARTZ_THREAD_COUNT` | `10` | 并发执行上限，不建议上调 |
+| `QUARTZ_JOB_STORE` | `jdbc` | 见前两节。`=memory` 只用于本地无库启动与回滚，代价是该实例不进集群 |
+| `QUARTZ_THREAD_COUNT` | `10` | 每节点并发执行上限，不建议上调；上调必须同时上调 `DB_POOL_SIZE` |
+| `QUARTZ_WAIT_FOR_JOBS` | `true` | 见「优雅停机」，必须与 `stop_grace_period` 配对 |
+| `SCHEDULER_RECONCILE_INTERVAL` | `60` | 对账扫描的周期（秒）。**清扫行在共享 store 里，所以这是整个集群一个值**：后启动的节点若配了不同值，会把 store 里那条 trigger 改成自己的——请在 `application.yml` 一侧定死，不要按实例改。低于 ~15s 时 store 读取不再是可忽略的量 |
 | `SCHEDULER_ROUTER_URL` | `http://localhost:8081` | 执行入口 |
 | `SCHEDULER_API_KEY` | 空 | 留空则启动时向 admin 申请一把 SYSTEM 型 Key（`RouterClient` 里显式判断）；显式配置可去掉这条启动依赖，代价是 admin 必须先于本服务可用 |
-| `SCHEDULER_TIMEOUT` | `300` | 单次到 router 的调用超时（秒） |
+| `SCHEDULER_TIMEOUT` | `300` | 单次到 router 的调用超时（秒），同时也是回收扫描判僵尸的基线（×1.5）；上调它要一并上调 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` |
+| `SCHEDULER_CLEAR_SESSION_TIMEOUT` | `60` | 执行后 session 清理的上限，生效值 `min(此值, SCHEDULER_TIMEOUT)`；它是停机预算求和的第二项 |
+| `SCHEDULER_COMMAND_TIMEOUT` | `10` | `/stop` 的 INTERRUPT 上限，与执行超时是两回事：它必须落在 admin 转发 `/stop` 的 30s 读超时之内，也**不进**停机预算的求和（`/stop` 跑在请求线程上，不占 Quartz worker） |
 | `SCHEDULER_ADMIN_URL` | `http://localhost:8080` | 会话管理等 |
 | `SCHEDULER_ADMIN_SECRET` | 占位串 | 调 admin 内部 API 的密钥，compose 里取 `${ADMIN_INTERNAL_API_SECRET}`，**必须与 admin 同值** |
 
@@ -91,7 +139,7 @@
 
 ## 认证边界（读代码得到的事实）
 
-`harnax.auth.enabled: false` —— 本服务的**入向**统一鉴权是关掉的，`HARNAX_AUTH_SECRET` 只用于出向签 token。也就是说 `8084` 上的接口不是靠服务间 token 保护的，暴露面必须靠网络：只让 admin / 内网可达，**不要**把 `28084` 直接放到公网。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
+`harnax.auth.enabled: false` —— 本服务的**入向**统一鉴权是关掉的，`HARNAX_AUTH_SECRET` 只用于出向签 token。也就是说 `8084` 上的接口不是靠服务间 token 保护的，暴露面必须靠网络：只让 admin / 内网可达，**不要**把 `28084` 之类的宿主映射加回来（compose 现在只有 `expose`），更不要放到公网。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
 
 ## 与 MCP / 用户身份的关系
 
@@ -105,9 +153,11 @@
 
 | 端点 | 内容 |
 |---|---|
-| `/actuator/health/liveness` | 进程是否活着（**刻意不与"有没有在调度"绑定**，数据库慢不该让容器被重拉） |
-| `/actuator/health` | 聚合视图，含 `scheduler` 指示器与实际执行状态 |
-| `/actuator/metrics`、`/actuator/prometheus` | tag `application=harnax-scheduler` |
+| `/actuator/health/liveness` | 进程是否活着（**刻意不与"有没有在调度"绑定**，数据库慢不该让容器被重拉）。compose 的健康检查与滚动脚本看的都是它 |
+| `/actuator/health` | 聚合视图，含 `scheduler` 指示器：`quartzStarted`、`instanceId`（集群下的真实实例名）、`storeType`（`LocalDataSourceJobStore` 才算进了集群，`RAMJobStore` 说明这台在集群外）、`scheduledJobCount`（**读 store，因此是集群视图**）、`lastReconcileAt` / `lastReconcileError` |
+| `/actuator/metrics`、`/actuator/prometheus` | tag `application=harnax-scheduler`。指标口径见 `prod_doc/agent-task-scheduler.zh-CN.md` §9 |
+
+`lastReconcileAt` 只能当**本节点**的观察读：推进它的有两处——60s 的清扫（集群单例，只有 fire 它的那台会更新）和 admin 转发的 `/reload`（只落到调用方解析到的那一台）。所以某台的这个字段很旧，意思只是"最近没人叫它收敛过"，不等于集群没在收敛；要看集群得看**真的跑过一轮的那台**的 `lastReconcileError`。别对这个时间戳的年龄设告警——它告的是这份工作怎么分配到副本上的。
 
 `/actuator/channels` 之类没有；`show-details` 未开 `always`（与 channel 服务不同）。
 
@@ -115,19 +165,21 @@
 
 | 现象 | 先看什么 |
 |---|---|
-| 任务跑了两遍 | 是否有两个实例都 `SCHEDULER_ENABLED=true`（`memory` 模式不去重，见上文） |
-| 任务到点不触发 | 本实例是否 `SCHEDULER_ENABLED=false`；cron 表达式；`agent_task` 的启用状态 |
+| 任务跑了两遍 | 是否有实例以 `QUARTZ_JOB_STORE=memory` 起（memory 节点不进集群、不去重，见前两节）；或有两套不同 `instanceName` 的部署共用了同一个库 |
+| 任务到点不触发 | 集群里是否**至少一台** `SCHEDULER_ENABLED=true`；`QRTZ_SCHEDULER_STATE` 有没有行、`LAST_CHECKIN_TIME` 有没有在动（空表说明没人进过集群）；cron 表达式；`agent_task` 的启用状态 |
 | 触发后无执行 | `SCHEDULER_ROUTER_URL` 是否可达、`SCHEDULER_API_KEY` 是否拿到了（留空时要问 admin） |
 | 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin 现在**拒绝占位默认值**走业务接口，两边都得换成真值 |
-| 发布后出现中间态执行 | 就是那个 10s 的 `stop_grace_period` 缺口，目前无解，只能挑时段重启 |
+| 用户看到 40903 / 40902 但任务确实保存了 | admin 那一发转发落到了关了调度的实例上——检查同名 service 下是否还挂着 `SCHEDULER_ENABLED=false` 的副本 |
+| 发布后出现中间态执行 | 手动 `/trigger` 的那条路径不受停机宽限保护（见「优雅停机」最后一条）；cron 路径出现中间态则核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过 |
 | 执行里缺 MCP 工具 | 任务创建人是否有有效授权；挂的是 OAuth 类 MCP 而未授权就会缺 |
 
 ---
 
 ## 相关文档
 
-- `prod_doc/agent-task-scheduler.zh-CN.md`：职责划分、数据归属、admin↔scheduler 契约
+- `prod_doc/agent-task-scheduler.zh-CN.md`：职责划分、数据归属、admin↔scheduler 契约、指标口径
 - `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md`：真集群（JDBC JobStore、2 实例、D6 停机语义）的设计与里程碑
-- `docs/superpowers/plans/2026-09-11-scheduler-execution-semantics.md`：执行语义修复计划
+- `docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`：本发布的实现计划（发布 1 = 里程碑 S2）
+- `docker-new/roll-scheduler.sh`：逐台滚动脚本，头部注释是这段拓扑规则的出处
 - `docs/deploy-harnax-session-router.md`：router 部署（执行入口）
 - `docs/deploy-harnax-agent-service.md`：运行时侧的 MCP 与身份语义

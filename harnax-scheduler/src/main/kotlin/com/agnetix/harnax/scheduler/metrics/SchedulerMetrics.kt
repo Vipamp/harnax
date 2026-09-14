@@ -42,11 +42,12 @@ class SchedulerMetrics(
      * notifications and the store are out of step — the failure mode a broadcast-per-node design hid.
      * Registered lazily so a round that changed nothing costs no samples.
      *
-     * **Per node, about cluster work.** A scheduled round is a cluster singleton, so a quiet cluster
-     * publishes from one instance only; but admin's `/reload` reaches every enabled node and each of them
-     * converges the same diff, so the repair is counted once per node. Summing this series over `instance`
-     * therefore over-reports by the node count — read it per instance (or with `max()`), and alert on
-     * "any instance non-zero", which is what the meter is for.
+     * **One node publishes each round, but not always the same one.** The scheduled sweep is a cluster
+     * singleton, and admin's forward is a single call to a single instance (see `SchedulerClientImpl`), so a
+     * round's samples come from exactly one node — which is why summing this series over `instance` gives the
+     * cluster total rather than multiplying it. What that sum does not survive is reading a single instance's
+     * series as the cluster's: which replica a `/reload` lands on is decided upstream of this process, so the
+     * node that never served one is not a node that saw no drift. Alert on "any instance non-zero".
      */
     fun recordReconcileDrift(
         action: String,
@@ -63,10 +64,10 @@ class SchedulerMetrics(
      * `/reload` forward or the 60-second sweep.
      *
      * The meter used to be `scheduler.load.attempts`, which was honest when the only caller was the startup
-     * load — one to n samples per process start. The sweep made it one sample per minute per enabled node, so
-     * the name started lying about every `rate()` panel and about the "restarts that failed to schedule"
-     * reading in particular. Renamed rather than kept-and-documented: no dashboard consumes it yet, and the
-     * old name is the bug.
+     * load — one to n samples per process start. The 60-second sweep made it a sample every minute as well,
+     * published by whichever node fired that round, so the name started lying about every `rate()` panel and
+     * about the "restarts that failed to schedule" reading in particular. Renamed rather than kept-and-documented:
+     * no dashboard consumes it yet, and the old name is the bug.
      */
     fun recordReconcileRound(success: Boolean) {
         registry.counter(

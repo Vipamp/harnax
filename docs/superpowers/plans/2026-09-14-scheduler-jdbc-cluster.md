@@ -278,8 +278,10 @@ grep -c "^CREATE INDEX" harnax-scheduler/src/main/resources/db/migration/V1__qua
             driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
             tablePrefix: QRTZ_
             isClustered: "true"
-            # A dead node's triggers go to the survivors one check-in window late: 15s here, so the
-            # takeover lands inside the 15~75s the runbook promises.
+            # Takeover arithmetic goes here — the shipped comment derives it term by term (22.5~52.5s) in
+            # harnax-scheduler/src/main/resources/application.yml. Do NOT write 15~75s: the 15s lower bound
+            # is unreachable, because calcFailedIfAfter adds the dead row's own CHECKIN_INTERVAL to the
+            # 7500ms constant before anything else. (Task 8 corrected both this line and the runbook.)
             clusterCheckinInterval: 15000
             misfireThreshold: 60000
             # With clustering there is no local lock protecting trigger acquisition; without this two
@@ -1191,7 +1193,10 @@ git commit -m "refactor(调度): 共享 store 后 admin 的调度写转发折叠
   # and roll-scheduler.sh below. No `deploy.replicas` here on purpose — a declarative replica count
   # fights the stop-one/replace-one dance the rolling update has to do.
   # The cluster itself lives in the shared QRTZ_* tables: same instanceName, instanceId=AUTO per node,
-  # and a 15s check-in, so a dead node's triggers move to its peer inside 15~75s.
+  # and a 15s check-in. A dead node's triggers move to its peer 22.5~52.5s after its last heartbeat — never
+  # "inside 15s" (that bound is unreachable; calcFailedIfAfter adds the dead row's own CHECKIN_INTERVAL plus
+  # 7500ms first). Task 8 rewrote this comment with the term-by-term sum; docs/deploy-harnax-scheduler.md
+  # carries the same numbers for operators.
 ```
 
 - [ ] **Step 2: 写逐台滚动脚本**
@@ -1794,8 +1799,8 @@ git commit -m "test(调度): 集成测试脚手架与集群单触发/对账收�
 
 新增小节「双实例部署与逐台滚动」，写清：
 1. `docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-recreate scheduler`；
-2. 核对集群：`SELECT INSTANCE_NAME, LAST_CHECKIN_TIME FROM harnax_admin.QRTZ_SCHEDULER_STATE;` 期望 2 行，且每 15s 更新；
-3. 故障接管：`docker kill` 其一，另一台在 15~75s 内接管未完成 trigger；
+2. 核对集群：`SELECT INSTANCE_NAME, LAST_CHECKIN_TIME FROM harnax_admin.QRTZ_SCHEDULER_STATE;` — **期望的是"两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进"**，不是"期望 2 行"：优雅停机不删自己那行，行是对端判它过期后才清的，所以刚起完/刚滚完看到 3~4 行是正常答案。
+3. 故障接管：`docker kill` 其一，另一台在 22.5~52.5s 内接管未完成 trigger（算式：死节点行的 `LAST_CHECKIN_TIME` + `CHECKIN_INTERVAL` 15000ms + Quartz 硬编码 7500ms = 22.5s，+ 至多一个 15s 的 ClusterManager 轮询粒度，对端自身 checkin 滞后一整周期时 `max()` 再 +15s）。**不要写 15~75s**——15s 这条下界根本不可达。
 4. **禁止**再用 `deploy-service.sh` 的 `--force-recreate` 路径（已改为 `roll-scheduler.sh`）；
 5. 宿主机 NTP 时钟偏差必须 < 1s；
 6. 观察一个完整 cron 周期后，`harnax_admin.QRTZ_*` 才能在 S3 之后 DROP（S3 之前它们是活的）。
@@ -1813,5 +1818,5 @@ git commit -m "docs(调度): S2 完成状态与双实例运维说明"
 
 1. `$MVN -o clean test -Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**,!com.agnetix.harnax.channel.service.it.**' -Dsurefire.failIfNoSpecifiedTests=false > verify.log 2>&1; echo EXIT=$?` → **EXIT=0**（本发布必须自己验）。
 2. `mvn -o -pl harnax-scheduler -am verify -Pintegration-test` → IT-2/IT-5 绿（**本机 Docker 不可用，此项未验证**）。
-3. 真实环境：建库 → `up -d --scale scheduler=2` → `QRTZ_SCHEDULER_STATE` 两行 → kill 一台看接管 → 编辑任务 cron 后 `QRTZ_CRON_TRIGGERS.CRON_EXPRESSION` 变、未编辑任务的 `PREV_FIRE_TIME` 不清零。
+3. 真实环境：建库 → `up -d --scale scheduler=2` → `QRTZ_SCHEDULER_STATE` 里两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进（**别数行数**，见 Task 8 Step 2 第 2 条）→ kill 一台看接管 → 编辑任务 cron 后 `QRTZ_CRON_TRIGGERS.CRON_EXPRESSION` 变、未编辑任务的 `PREV_FIRE_TIME` 不清零。
 4. 明确不在本发布范围：`harnax_scheduler` 数据源切换、三张业务表迁移、C1 sessionId、域搬迁、one-shot 合并、F3-A、call-logs 过滤。

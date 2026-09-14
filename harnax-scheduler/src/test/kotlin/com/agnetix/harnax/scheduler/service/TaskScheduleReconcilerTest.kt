@@ -89,11 +89,12 @@ class TaskScheduleReconcilerTest {
     }
 
     /**
-     * The two reads have to happen in this order, and admin's `/reload` broadcast is what makes the
-     * interleaving routine rather than theoretical: a create+register committing *between* them has to land in
-     * the table but not in the store snapshot, so the round re-registers it (a benign replace). Read the table
-     * first and the same commit lands only in the snapshot — the job then looks like an extra key, and this
-     * round deletes a schedule the cluster just asked for along with any cron boundary inside the window.
+     * The two reads have to happen in this order, and admin's one `/reload` forward after every committed CRUD
+     * is what makes the interleaving routine rather than theoretical: a create+register committing *between*
+     * them has to land in the table but not in the store snapshot, so the round re-registers it (a benign
+     * replace). Read the table first and the same commit lands only in the snapshot — the job then looks like an
+     * extra key, and this round deletes a schedule the cluster just asked for along with any cron boundary
+     * inside the window.
      */
     @Test
     fun `a task created between the two reads is re-registered rather than deleted`() {

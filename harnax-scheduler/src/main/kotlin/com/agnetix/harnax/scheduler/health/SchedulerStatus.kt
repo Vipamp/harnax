@@ -32,13 +32,14 @@ class SchedulerStatus(
      * the health check reads as "this node has never converged the store". A round that left drift still
      * stamps it: it did reach the store, and [lastReconcileError] is what keeps it from reading as healthy.
      *
-     * Read it as a node-local observation and nothing more. The 60-second sweep is a cluster singleton — one
-     * node fires it, and only that node's [lastReconcileAt] moves — so on two enabled nodes the one that
-     * never won the sweep keeps the timestamp of its own startup round for the life of the process, however
-     * healthy the cluster is. An alert on this field's age would page on that, which is why there is no such
-     * rule here and why the alert belongs on the drift side: [lastReconcileError] on this node and
-     * `scheduler.reconcile.drift` say what the store could not be made to match, and they are wrong only
-     * when the work actually failed.
+     * Read it as a node-local observation and nothing more. Two things move it — the 60-second sweep, which is
+     * a cluster singleton and stamps only the node that fired it, and admin's `/reload` forward, which reaches
+     * the one instance its caller resolved to. A node whose stamp is old has therefore not been told to
+     * converge anything recently, which is not the same statement as "the cluster is not converging"; the
+     * latter is visible on whichever node *did* run the round. An alert on this field's age would page on the
+     * distribution of that work, which is why there is no such rule here and why the alert belongs on the
+     * drift side: [lastReconcileError] on this node and `scheduler.reconcile.drift` say what the store could
+     * not be made to match, and they are wrong only when the work actually failed.
      */
     val lastReconcileAt: Instant? get() = reconcileAt
 

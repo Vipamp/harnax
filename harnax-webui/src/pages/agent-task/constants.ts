@@ -12,8 +12,9 @@
 export const CODE_EXECUTION_IN_PROGRESS = 40901;
 
 /**
- * 对应后端 `AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED`：数据已经提交，只是没有任何 scheduler 实例
- * 确认重载成功。用户要的那次操作本身并没有失败。
+ * 对应后端 `AgentTaskServiceImpl.CODE_SCHEDULER_SYNC_FAILED`：数据已经提交，但 admin 够着的那一台实例没能把
+ * store 收敛掉（转发只有一次调用，不再有"问所有实例"这一步）。用户要的那次操作本身并没有失败。
+ * 注意：这一次转发落到 `scheduler.enabled=false` 的实例上时，后端的 40903 也是以 40902 的形式到这里。
  */
 export const CODE_SCHEDULER_SYNC_FAILED = 40902;
 
