@@ -2,6 +2,9 @@
 # Harnax 单服务部署脚本
 # 用法: ./deploy-service.sh <service-name>
 # 支持的服务: admin, router, agent-service, channel-service, scheduler, frontend
+# scheduler 一项走的是逐台滚动（docker-new/roll-scheduler.sh），它会读 SCHEDULER_REPLICAS（目标实例数，
+# 默认 2）与 MYSQL_ROOT_PASSWORD（只用于滚动结束后回读 harnax_admin.QRTZ_SCHEDULER_STATE 做确认）；
+# 两者放在 docker-new/.env 里即可，本脚本会 source 它并导出给滚动脚本。
 
 set -e
 
@@ -128,8 +131,8 @@ case $SERVICE in
         docker rmi -f harnax-scheduler:latest 2>/dev/null || true
         docker build --no-cache -f docker-new/Dockerfile.scheduler -t harnax-scheduler:latest . -q
 
-        echo "🚀 步骤 4/4: 重启服务..."
-        docker-compose -f docker-new/docker-compose.yml up -d --force-recreate --no-deps scheduler
+        echo "🚀 步骤 4/4: 逐台滚动 scheduler（保持至少 1 个实例在跑）..."
+        bash docker-new/roll-scheduler.sh
         ;;
 
     frontend)
@@ -167,4 +170,6 @@ sleep 8
 
 echo ""
 echo "📊 服务状态:"
-docker-compose -f docker-new/docker-compose.yml ps | grep "harnax-$SERVICE"
+# 按服务过滤而不是 grep 容器名：scheduler 现在没有固定容器名，且同一服务可能有多台在跑，
+# grep "harnax-$SERVICE" 匹配不到就会让脚本在部署成功后以非 0 退出。
+docker-compose -f docker-new/docker-compose.yml ps "$SERVICE"
