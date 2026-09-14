@@ -374,7 +374,7 @@ class AgentTaskControllerTest {
         }
 
         /**
-         * The reload broadcast leaves after the commit, so a failed one cannot be reported as "your
+         * The reload leaves after the commit, so a failed one cannot be reported as "your
          * edit did not happen". Its business code has to reach the caller intact — flattening it to 500
          * here is what made the old failure invisible.
          */

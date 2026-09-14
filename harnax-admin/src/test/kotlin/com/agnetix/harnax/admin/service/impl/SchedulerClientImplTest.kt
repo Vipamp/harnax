@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 /**
  * SchedulerClientImpl 单元测试
  * 使用 MockWebServer 模拟 harnax-scheduler 的 HTTP 端点,
- * 覆盖单实例/多实例广播、非200、服务不可达等分支
+ * 覆盖单点转发（逗号分隔的多地址配置也只取第一个）、非200、服务不可达等分支
  *
  * @author agnetix
  * @since 2026-06-28
@@ -213,8 +213,8 @@ class SchedulerClientImplTest {
         }
 
         @Test
-        @DisplayName("startTask - 多实例广播全部实例")
-        fun `startTask should broadcast to all instances`() {
+        @DisplayName("startTask - 多实例配置下只发到第一个实例")
+        fun `startTask should only reach the first instance`() {
             // Given
             val server2 = MockWebServer()
             server2.start()
@@ -226,19 +226,20 @@ class SchedulerClientImplTest {
                 // When
                 val result = service.startTask(3L)
 
-                // Then
+                // Then: the start writes the shared store, so the second instance has nothing to be told
                 assertEquals(200, result.code)
                 assertEquals(1, server.requestCount)
-                assertEquals(1, server2.requestCount)
+                assertEquals(0, server2.requestCount)
             } finally {
                 server2.shutdown()
             }
         }
 
         @Test
-        @DisplayName("startTask - 部分实例失败只要有一个成功即成功")
-        fun `startTask should succeed when at least one instance succeeds`() {
-            // Given
+        @DisplayName("startTask - 第一个实例失败不会被第二个实例的成功盖掉")
+        fun `startTask does not let another instance cover a failure`() {
+            // Given: the old anySuccess fold turned this into a 200, which is exactly how a half-synced
+            // cluster used to hide from 40902.
             val server2 = MockWebServer()
             server2.start()
             try {
@@ -250,21 +251,22 @@ class SchedulerClientImplTest {
                 val result = service.startTask(3L)
 
                 // Then
-                assertEquals(200, result.code)
+                assertEquals(500, result.code)
+                assertEquals(0, server2.requestCount)
             } finally {
                 server2.shutdown()
             }
         }
 
         @Test
-        @DisplayName("startTask - 全部实例失败返回最后一个错误")
-        fun `startTask should fail when all instances fail`() {
+        @DisplayName("startTask - 该实例的失败原因原样透传且不做降级重试")
+        fun `startTask forwards the one instance failure`() {
             // Given
             val server2 = MockWebServer()
             server2.start()
             try {
-                server.enqueue(MockResponse().setResponseCode(500).setBody("boom1"))
-                server2.enqueue(bizErrorResponse("boom2"))
+                server.enqueue(bizErrorResponse("boom1"))
+                server2.enqueue(successResponse())
                 val service = createService("${baseUrl()},${baseUrl(server2)}")
 
                 // When
@@ -272,7 +274,9 @@ class SchedulerClientImplTest {
 
                 // Then
                 assertEquals(500, result.code)
-                assertEquals("boom2", result.message)
+                assertEquals("boom1", result.message)
+                assertEquals(1, server.requestCount)
+                assertEquals(0, server2.requestCount)
             } finally {
                 server2.shutdown()
             }
@@ -363,23 +367,23 @@ class SchedulerClientImplTest {
         }
 
         @Test
-        @DisplayName("reloadTasks - 多实例广播且全部收到请求")
-        fun `reloadTasks should broadcast reload to all instances`() {
-            // Given
+        @DisplayName("reloadTasks - 共享 store 下一次 reload 只打一个实例")
+        fun `a reload goes to one instance because the store is shared`() {
+            // Two instances used to need two calls: each held its own in-memory schedule. With a JDBC store
+            // any node's write lands in the store every node reads, so a broadcast would only multiply the
+            // number of places the same reconcile can fail.
             val server2 = MockWebServer()
             server2.start()
             try {
                 server.enqueue(successResponse())
                 server2.enqueue(successResponse())
-                val service = createService("${baseUrl()},${baseUrl(server2)}")
-
-                // When
-                val result = service.reloadTasks()
+                val response = createService("${baseUrl()},${baseUrl(server2)}").reloadTasks()
 
                 // Then
-                assertEquals(200, result.code)
+                assertTrue(response.isSuccess())
+                assertEquals(1, server.requestCount)
+                assertEquals(0, server2.requestCount)
                 assertEquals("/api/scheduler/reload", server.takeRequest(3, TimeUnit.SECONDS)!!.path)
-                assertEquals("/api/scheduler/reload", server2.takeRequest(3, TimeUnit.SECONDS)!!.path)
             } finally {
                 server2.shutdown()
             }
@@ -418,6 +422,30 @@ class SchedulerClientImplTest {
             assertEquals(200, result.code)
             val request = server.takeRequest(3, TimeUnit.SECONDS)
             assertEquals("/api/scheduler/tasks/logs/77/stop", request!!.path)
+        }
+
+        @Test
+        @DisplayName("stopTask - 多实例配置下也只发一次，避免同一停止被服务两遍")
+        fun `a stop reaches one instance because a serviced stop must not be replayed`() {
+            // The second node to receive the same stop would see "nothing live", write the 4 -> 5 close-out
+            // itself and take the result away from the thread that owns the execution.
+            val server2 = MockWebServer()
+            server2.start()
+            try {
+                server.enqueue(successResponse())
+                server2.enqueue(successResponse())
+                val service = createService("${baseUrl()},${baseUrl(server2)}")
+
+                // When
+                val result = service.stopTask(77L)
+
+                // Then
+                assertEquals(200, result.code)
+                assertEquals(1, server.requestCount)
+                assertEquals(0, server2.requestCount)
+            } finally {
+                server2.shutdown()
+            }
         }
 
         @Test

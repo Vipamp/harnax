@@ -95,7 +95,7 @@ class AgentTaskServiceImplTest {
 
         `when`(jwtUtil.validateToken(any())).thenReturn(true)
         `when`(jwtUtil.getUsernameFromToken(any())).thenReturn("admin")
-        // The write paths now act on the broadcast result, so a bare mock would fail every case.
+        // The write paths now act on the reload result, so a bare mock would fail every case.
         `when`(schedulerClient.reloadTasks()).thenReturn(ResultVo.success<Void>())
     }
 
@@ -750,9 +750,9 @@ class AgentTaskServiceImplTest {
     // ==================== Scheduler Reload Notification ====================
 
     /**
-     * The reload broadcast must leave only from a *committed* transaction: harnax-scheduler is a
-     * separate process on its own connection pool, so a reload issued before the commit reads the
-     * old row and re-registers the old definition — while rolled-back work must not broadcast at all.
+     * The reload must leave only from a *committed* transaction: harnax-scheduler is a separate process
+     * on its own connection pool, so a reload issued before the commit reads the old row and
+     * re-registers the old definition — while rolled-back work must notify nothing at all.
      *
      * Written against [TransactionSynchronizationManager] directly instead of a Spring context: the
      * unit test cannot drive a real commit, so it fires the registered callback itself. That is
@@ -771,26 +771,26 @@ class AgentTaskServiceImplTest {
         }
 
         @Test
-        fun `update broadcasts nothing while the transaction is open and nothing at all when it rolls back`() {
+        fun `update notifies nothing while the transaction is open and nothing at all when it rolls back`() {
             givenUpdateSucceeds()
             TransactionSynchronizationManager.initSynchronization()
 
             val service = createService()
             assertTrue(service.updateAgentTask(1L, AgentTaskUpdateRequest(prompt = "New prompt")))
 
-            // Still inside the transaction: broadcasting here is the bug this closes.
+            // Still inside the transaction: reloading here is the bug this closes.
             verify(schedulerClient, never()).reloadTasks()
 
             val callbacks = TransactionSynchronizationManager.getSynchronizations()
             assertEquals(1, callbacks.size, "the reload has to be registered as an after-commit callback")
 
-            // Rollback: afterCommit never runs, so the broadcast never runs.
+            // Rollback: afterCommit never runs, so the reload never runs.
             callbacks.forEach { it.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK) }
             verify(schedulerClient, never()).reloadTasks()
         }
 
         @Test
-        fun `update broadcasts the reload once the transaction commits`() {
+        fun `update sends the reload once the transaction commits`() {
             givenUpdateSucceeds()
             TransactionSynchronizationManager.initSynchronization()
 
@@ -802,7 +802,7 @@ class AgentTaskServiceImplTest {
         }
 
         @Test
-        fun `delete broadcasts the reload only on commit and never on rollback`() {
+        fun `delete sends the reload only on commit and never on rollback`() {
             `when`(agentTaskMapper.selectById(1L, "admin")).thenReturn(testTask)
             `when`(agentTaskMapper.deleteById(1L, "admin")).thenReturn(1)
             TransactionSynchronizationManager.initSynchronization()
@@ -841,7 +841,7 @@ class AgentTaskServiceImplTest {
                 exception.message!!.contains("saved"),
                 "the caller has to learn the row itself was kept, got: ${exception.message}",
             )
-            // The write is not undone by the failed broadcast.
+            // The write is not undone by the failed reload.
             verify(agentTaskMapper).updateById(any(), eq("admin"))
         }
 

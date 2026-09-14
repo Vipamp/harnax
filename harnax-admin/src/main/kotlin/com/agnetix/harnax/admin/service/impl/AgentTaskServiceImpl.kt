@@ -141,7 +141,7 @@ class AgentTaskServiceImpl(
             throw BizException("Only the task creator can modify this task")
         }
 
-        // Notify all scheduler instances to reload (removes old Quartz job, applies updated config).
+        // Reconcile the shared Quartz store (drops the old job, applies the updated config).
         // Deferred to after the commit: the scheduler reads through its own connection and cannot see
         // this row while the transaction is still open.
         reloadSchedulersAfterCommit("saved", "The previous definition stays live until a reload succeeds")
@@ -156,7 +156,7 @@ class AgentTaskServiceImpl(
         agentTaskMapper.selectById(id, currentUsername)
             ?: throw BizException("Agent task not found")
 
-        // Delete from DB first, then reload all scheduler instances to remove stale Quartz jobs
+        // Delete from DB first, then reconcile the shared store to remove the stale Quartz job
         if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
             throw BizException("Only the task creator can delete this task")
         }
@@ -239,12 +239,13 @@ class AgentTaskServiceImpl(
     }
 
     /**
-     * Broadcast a reload to every scheduler instance once — and only once — this transaction commits.
+     * Reconcile the scheduler once — and only once — this transaction commits. It is one call to one
+     * instance, because the reconcile it runs rewrites the Quartz store every instance reads.
      *
-     * Broadcasting inside the method body was the bug: harnax-scheduler is a separate process with its
-     * own connection pool, so it reads the row as it was *before* this transaction and re-registers the
-     * old definition (for a delete, it re-registers a task that the UI already shows as gone). Tying the
-     * notify to `afterCommit` also means a rolled-back write broadcasts nothing.
+     * Reloading inside the method body was the bug: harnax-scheduler is a separate process with its own
+     * connection pool, so it reads the row as it was *before* this transaction and re-registers the old
+     * definition (for a delete, it re-registers a task that the UI already shows as gone). Tying the
+     * notify to `afterCommit` also means a rolled-back write notifies nothing.
      *
      * Without an active transaction there is nothing to wait for, so the notify runs inline. That path
      * exists for callers that reach this bean without going through the transactional proxy.
@@ -264,22 +265,23 @@ class AgentTaskServiceImpl(
     }
 
     /**
-     * A reload that answers non-200 is a real failure, not a warning to log away: this instance keeps
-     * firing the old definition until something reloads. It is reported as [CODE_SCHEDULER_SYNC_FAILED]
-     * rather than as a rollback, because [committed] has already reached the database by then — the
-     * caller has to learn "stored but not scheduled", which is a different fact from "not stored".
+     * A reload that answers non-200 is a real failure, not a warning to log away: the store every
+     * instance reads keeps serving the old definition until a round converges. It is reported as
+     * [CODE_SCHEDULER_SYNC_FAILED] rather than as a rollback, because [committed] has already reached the
+     * database by then — the caller has to learn "stored but not scheduled", which is a different fact
+     * from "not stored".
      */
     private fun notifySchedulersNow(committed: String, staleConsequence: String) {
         val result = try {
             schedulerClient.reloadTasks()
         } catch (e: Exception) {
-            log.error("Broadcasting a scheduler reload after the task was {} threw", committed, e)
+            log.error("Reloading the scheduler after the task was {} threw", committed, e)
             null
         }
         if (result?.code == 200) {
             return
         }
-        val reason = result?.message ?: "the broadcast threw"
+        val reason = result?.message ?: "the reload call threw"
         log.error("Scheduler reload after the task was {} did not succeed: {}", committed, reason)
         throw BizException(
             CODE_SCHEDULER_SYNC_FAILED,
