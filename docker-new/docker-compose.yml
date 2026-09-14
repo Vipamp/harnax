@@ -288,12 +288,18 @@ services:
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
-      # Database Configuration (harnax_admin: shared with admin, read-only for task metadata)
+      # Database Configuration (harnax_admin in release 1: agent_task metadata read, QRTZ_* cluster store
+      # written; release 2 moves this URL to harnax_scheduler and the store moves with it)
       SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
-      SPRING_FLYWAY_ENABLED: "${FLYWAY_ENABLED:-false}"
+      # Flyway Configuration. The scheduler owns the Quartz schema's migrations now, and in this release it
+      # runs them against the harnax_admin database into its own history table
+      # flyway_schema_history_scheduler — admin's ledger in that database stays untouched. This override is
+      # what decides whether QRTZ_* gets created at all: an env var beats the yml default, so leaving the
+      # old `${FLYWAY_ENABLED:-false}` here would boot the node against a store that does not exist.
+      # SCHEDULER_FLYWAY_ENABLED=false is the escape hatch for a rollback.
+      SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"
       # Scheduler Configuration
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       SCHEDULER_INSTANCE_ID: ${SCHEDULER_INSTANCE_ID:-}

@@ -5,7 +5,10 @@ spring:
   application:
     name: harnax-scheduler
 
-  # Datasource configuration (connects to harnax_admin DB for reading agent_task metadata)
+  # Datasource configuration. Release 1 leaves this on harnax_admin: the service reads agent_task metadata
+  # there, and this is the database its own Flyway migration creates the QRTZ_* cluster tables in. There is
+  # deliberately one DataSource — Quartz auto-wires the primary one, which is what keeps the Spring-managed
+  # pool and the cluster store the same thing. Release 2 moves the URL to harnax_scheduler.
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
@@ -13,7 +16,11 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       minimum-idle: ${DB_POOL_MIN_IDLE:3}
-      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Sizing: 30 ≥ threadCount(10) Quartz workers, each holding one connection for the length of a fire,
+      # + the business queries + the cluster check-in, all from this one pool. QUARTZ_THREAD_COUNT and this
+      # number move together — raising the worker count without raising the pool does not add capacity, it
+      # just moves the wait from the scheduler onto the connection timeout.
+      maximum-pool-size: ${DB_POOL_SIZE:30}
       idle-timeout: 30000
       pool-name: SchedulerHikariCP
       max-lifetime: 1800000
@@ -24,13 +31,25 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
-  # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
+  # Flyway owns the Quartz cluster schema. A dedicated history table because this service's migrations
+  # currently land in harnax_admin, whose own history belongs to admin's Flyway: two tools, two ledgers,
+  # one database. `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
+  # clean, and baselining would let a half-migrated schema pass as complete.
   flyway:
-    enabled: ${FLYWAY_ENABLED:false}
+    enabled: ${FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    table: flyway_schema_history_scheduler
+    validate-on-migrate: true
+    clean-disabled: true
 
   # Quartz Configuration
   quartz:
-    job-store-type: ${QUARTZ_JOB_STORE:memory}
+    job-store-type: ${QUARTZ_JOB_STORE:jdbc}
+    # `never`, and there is no setting to argue with: Boot's `always` runs the bundled Quartz script on
+    # every start, and that script begins with DROP TABLE IF EXISTS — on a cluster that deletes the
+    # schedule state every node shares each time one node restarts. V1__quartz_tables.sql creates it once.
+    jdbc:
+      initialize-schema: never
     # Boot's own key (spring-boot-quartz's QuartzProperties; its metadata says defaultValue=false, so
     # this has to be stated). Since the job runs inline on the Quartz worker thread, that thread IS the
     # execution: without waiting, a SIGTERM drops the JVM mid-run and leaves agent_task_log at status=3
@@ -48,6 +67,23 @@ spring:
           scheduler:
             instanceName: HarnaxScheduler
             instanceId: AUTO
+          jobStore:
+            # No `class` here on purpose: Boot installs LocalDataSourceJobStore so the store uses the
+            # Spring-managed DataSource. Pinning org.quartz.impl.jdbcjobstore.JobStoreTX disconnects it.
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+            tablePrefix: QRTZ_
+            isClustered: "true"
+            # A dead node's triggers go to the survivors one check-in window late: 15s here, so the
+            # takeover lands inside the 15~75s the runbook promises.
+            clusterCheckinInterval: 15000
+            misfireThreshold: 60000
+            # With clustering there is no local lock protecting trigger acquisition; without this two
+            # nodes can each claim the same fire and one of them loses after doing the work.
+            acquireTriggersWithinLock: "true"
+            # JobDataMap values must be strings — which is exactly why it carries a taskId and the job
+            # re-reads agent_task when it fires. A serialized AgentTask would also make every stored job
+            # carry a stale copy of the prompt.
+            useProperties: "true"
           threadPool:
             class: org.quartz.simpl.SimpleThreadPool
             threadCount: ${QUARTZ_THREAD_COUNT:10}
