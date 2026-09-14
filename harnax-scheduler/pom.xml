@@ -146,7 +146,8 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers: a real MySQL 8 for the cluster / reconcile / guard integration tests (*IT) -->
+        <!-- Testcontainers: the real MySQL 8 the cluster / reconcile / guard integration tests (*IT) run on.
+             Only these two are on the call path — `MySQLContainer` comes from `mysql`, which brings `core`. -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
@@ -159,6 +160,10 @@
             <version>1.21.4</version>
             <scope>test</scope>
         </dependency>
+        <!-- Unused today, and kept on purpose: the plan asked for the same trio the other modules declare
+             (harnax-entity/pom.xml), and `BaseSchedulerIT` starts its shared container in the companion `init`
+             instead, so there is no `@Testcontainers` annotation to run and this extension has nothing to do.
+             It becomes load-bearing the moment an IT switches to `@Testcontainers`/`@Container`. -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>

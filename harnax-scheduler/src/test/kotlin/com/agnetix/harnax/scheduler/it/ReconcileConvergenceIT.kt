@@ -28,6 +28,12 @@ import org.springframework.beans.factory.annotation.Autowired
  * expression, the store hands that back, and `matches()` compares the two case-insensitively; a compare that
  * honoured case would call it a change and report `updated = 2`. That is the difference between a round that
  * writes one job and a round that rewrites the whole group on every sweep.
+ *
+ * Under all of it sits one property the counts are worthless without: no seeded task may *fire* while this
+ * test runs. Nothing here is mocked, so a fire would call the router and leave a lock row behind — the same
+ * table whose leaked locks IT-5 counts as exactly one. It is bought twice: every cron pins a weekday so the
+ * nearest reachable fire is days away, and `assertNoSeededTaskFired` checks the two tables that only a fire
+ * writes, once after the setup and once after the measured round.
  */
 class ReconcileConvergenceIT : BaseSchedulerIT() {
 
@@ -71,23 +77,46 @@ class ReconcileConvergenceIT : BaseSchedulerIT() {
         val untouchedStartTime = storedStartTimeOf(untouchedKey)
         val driftedStartTime = storedStartTimeOf(driftedKey)
 
-        jdbc.update(
-            "UPDATE QRTZ_CRON_TRIGGERS SET CRON_EXPRESSION = ? WHERE SCHED_NAME = ? AND TRIGGER_NAME = ? AND TRIGGER_GROUP = ?",
-            DRIFTED_CRON_101,
-            schedulerName,
-            driftedKey.name,
-            driftedKey.group,
+        // The row count of each write is asserted, because both `WHERE` clauses name a row this test just
+        // created and neither can legitimately match zero rows or two: a drift that reached nothing leaves the
+        // round with nothing to converge, and without this the symptom is `updated = 0` — a verdict on the
+        // reconciler that belongs to the fixture.
+        assertEquals(
+            1,
+            jdbc.update(
+                "UPDATE QRTZ_CRON_TRIGGERS SET CRON_EXPRESSION = ? WHERE SCHED_NAME = ? AND TRIGGER_NAME = ? AND TRIGGER_GROUP = ?",
+                DRIFTED_CRON_101,
+                schedulerName,
+                driftedKey.name,
+                driftedKey.group,
+            ),
+            "the drift has to land on 101's cron row and on nobody else's",
         )
-        jdbc.update("DELETE FROM agent_task WHERE id = 102")
+        assertEquals(
+            1,
+            jdbc.update("DELETE FROM agent_task WHERE id = 102"),
+            "102 has to lose its own table row and only its own",
+        )
+        assertNoSeededTaskFired("the setup")
         val beforeRound = registeredTaskIds()
-        require(101L in beforeRound && 103L in beforeRound) { "writing the drift must not unregister anything: $beforeRound" }
+        require(beforeRound == SEADED_IDS.toSet()) {
+            "writing the drift must not unregister anything: $beforeRound. A 102 missing here means it fired " +
+                "after this test deleted its table row, and AbstractAgentTaskJob.taskToRun answers that by " +
+                "deleting the orphaned job"
+        }
 
-        // A re-registration stamps START_TIME with the build moment rounded up to the next second, so two
-        // rounds inside the same second would leave it unchanged even for a rebuild — the comparison below
-        // has to straddle a second boundary to say anything at all.
+        // A re-registration stamps START_TIME with the build moment truncated to the whole second:
+        // `CronTriggerImpl.setStartTime` zeroes the milliseconds (quartz-2.5.2-sources `:162-181`, the
+        // `cl.set(Calendar.MILLISECOND, 0)` at :179), and the store persists that Date as epoch millis. So two
+        // rounds inside the same second would leave it unchanged even for a rebuild — the comparison below has
+        // to straddle a second boundary to say anything at all.
         Thread.sleep(1_500)
 
         val report = reconciler.reconcile()
+
+        // Before the counts, on purpose. Every count below is only about the round if nothing else executed a
+        // task in the window, and this package mocks nothing — see the crons' KDoc.
+        assertNoSeededTaskFired("the measured round")
 
         assertEquals(emptyList<Long>(), report.failedIds, "nothing may have failed to apply")
         assertEquals(0, report.added, "no task the store had never seen")
@@ -102,7 +131,7 @@ class ReconcileConvergenceIT : BaseSchedulerIT() {
             "a cron edited only in the store must be pulled back to the table's value",
         )
         assertEquals(
-            "0 0 9 ? * SUN",
+            CRON_103_NORMALIZED,
             (scheduler.getTrigger(untouchedKey) as CronTrigger).cronExpression,
             "the premise of the case-insensitive compare: the store hands Quartz's normalized form back",
         )
@@ -163,23 +192,74 @@ class ReconcileConvergenceIT : BaseSchedulerIT() {
         )
     }
 
+    /**
+     * The check for the one assumption [CRON_101] and its neighbours carry: no seeded task fires while this
+     * test runs.
+     *
+     * Both tables are the fire's own paper trail — `AbstractAgentTaskJob.run()` takes the execution lock before
+     * it reaches the router and `SchedulerServiceImpl` logs the run — so a zero in both is evidence the
+     * schedules stayed unreachable, and a non-zero is a fire naming itself. Without it, the same coincidence
+     * arrives as `updated = 0` or as IT-5's leaked-lock count off by one, and both read as a bug in the code
+     * under test. Called after the setup and after the measured round, which together bracket every window a
+     * fire could have landed in.
+     */
+    private fun assertNoSeededTaskFired(
+        stage: String,
+    ) {
+        val ids = SEADED_IDS.joinToString(",")
+        val locks = requireNotNull(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM agent_task_execution WHERE task_id IN ($ids)",
+                Int::class.java,
+            ),
+        ) { "no lock count for the seeded tasks" }
+        val logs = requireNotNull(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM agent_task_log WHERE task_id IN ($ids)",
+                Int::class.java,
+            ),
+        ) { "no log count for the seeded tasks" }
+        assertTrue(
+            locks == 0 && logs == 0,
+            "A seeded task fired before or during $stage: $locks execution lock(s) and $logs log row(s) for ids " +
+                "[$ids]. This package mocks nothing, so that fire also called the router, and every count " +
+                "asserted after this line measures it rather than the reconcile round",
+        )
+    }
+
     private companion object {
         /**
-         * Daily and weekly at off hours, on purpose: nothing is mocked in these tests, so a seeded task that
-         * fired would call the router and write execution rows. The reconciler's diff does not need a fire.
+         * Every cron here pins a weekday *and* a minute of the hour, and the three live schedules sit on three
+         * different days of the week. That is the guard against a fire, and a fire is the one thing this test
+         * cannot survive: nothing is mocked here, so `AbstractAgentTaskJob.run()` would call the router at its
+         * default URL and write `agent_task_execution` + `agent_task_log` rows — rows IT-5 then counts.
+         * [assertNoSeededTaskFired] reports such a row as a fire instead of as a wrong count.
+         *
+         * A bare nightly time is not enough, and the `0 0 4 * * ?` this file used to seed is not one: 04:00 is
+         * an ordinary CI window, and one fire inside the measurement window is all it takes. With the weekday
+         * pinned, any one of these can only fire during one minute of one week. The drift value is not a live
+         * schedule at all — writing `CRON_EXPRESSION` in place leaves `NEXT_FIRE_TIME` alone, which is exactly
+         * the drift this test converges — so it only has to be a different expression, not another day.
+         *
+         * "Days away" is the strongest form Quartz accepts: `scheduleJob` refuses a trigger whose first fire
+         * time cannot be computed (quartz-2.5.2-sources `QuartzScheduler.java:835-839`), so a schedule that
+         * never fires is not an option here.
          */
-        const val CRON_101 = "0 0 4 * * ?"
+        const val CRON_101 = "0 7 3 ? * WED"
 
-        const val CRON_102 = "0 30 4 * * ?"
+        const val CRON_102 = "0 40 22 ? * FRI"
 
-        const val DRIFTED_CRON_101 = "0 0 5 * * ?"
+        const val DRIFTED_CRON_101 = "0 7 4 ? * WED"
 
         /**
          * Lowercase, because that is what the webui writes and what `agent_task` keeps: `CronExpression`
-         * uppercases its argument, so the store hands back `0 0 9 ? * SUN` and only the ignoreCase compare in
+         * uppercases its argument, so the store hands back `0 20 5 ? * SAT` and only the ignoreCase compare in
          * `TaskScheduleReconciler.matches()` keeps this job out of the `updated` bucket.
          */
-        const val CRON_103_IN_TABLE = "0 0 9 ? * sun"
+        const val CRON_103_IN_TABLE = "0 20 5 ? * sat"
+
+        /** What the store gives back for [CRON_103_IN_TABLE]: the same expression, uppercased. */
+        const val CRON_103_NORMALIZED = "0 20 5 ? * SAT"
 
         val SEADED_IDS = listOf(101L, 102L, 103L)
     }

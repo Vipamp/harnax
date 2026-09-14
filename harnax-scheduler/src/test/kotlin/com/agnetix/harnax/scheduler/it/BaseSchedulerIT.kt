@@ -23,8 +23,9 @@ import org.testcontainers.containers.MySQLContainer
  * Nothing reaches the network, and nothing is mocked. `scheduler.api-key` is set to a non-blank value in
  * `application-it.yml`, which is the only branch of `RouterClient.init()` that does not fetch a SYSTEM key
  * from admin (Boot 4 has no `@MockBean`, and this repo has no `@MockitoBean` either — by design). That in
- * turn means no seeded task may *fire* inside these tests: every cron in this package is daily or weekly at
- * an off hour, and an IT that executes a task has to give `RouterClient` a stub first.
+ * turn means no seeded task may *fire* inside these tests: every cron this package seeds pins one weekday and
+ * one minute of it, so the nearest fire is days away, and the IT that seeds tasks also asserts that nothing
+ * fired. An IT that executes a task has to give `RouterClient` a stub first.
  *
  * [freezeBackgroundSweeps] is the other half of that promise. The store is shared and the sweeps in it are
  * cluster work, so a round landing inside a test would repair the very drift the test is about to assert on

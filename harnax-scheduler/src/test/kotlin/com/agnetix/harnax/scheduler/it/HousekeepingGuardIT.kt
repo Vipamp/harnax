@@ -47,6 +47,14 @@ class HousekeepingGuardIT : BaseSchedulerIT() {
 
     @Test
     fun `retention and leaked-lock sweeps only touch what they may`() {
+        // Entry state, not only exit state. `cleanupLeakedLocks()` is asserted as *one*, so a `status = 0` row
+        // this test did not write — another IT's leaked lock, a row left by a fire of the application's own
+        // scheduler — takes the count up for a reason that has nothing to do with the sweep under test. Wiping
+        // the table (the way IT-1 wipes its own evidence table) is the only reading that makes `1` mean "the
+        // row I made stale and nothing else". The @AfterEach still runs afterwards, because 203 and 204 are
+        // themselves such rows for whoever measures an exact count next.
+        jdbc.update("DELETE FROM agent_task_execution")
+
         val now = LocalDateTime.now()
         insert(201L, now.minusDays(SchedulerHousekeepingJob.GUARD_RETENTION_DAYS * 4L), status = 1)
         insert(202L, now.minusHours(1), status = 1)

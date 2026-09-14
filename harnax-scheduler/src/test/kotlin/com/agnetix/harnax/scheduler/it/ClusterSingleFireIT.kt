@@ -10,6 +10,7 @@ import org.quartz.JobExecutionContext
 import org.quartz.Scheduler
 import org.quartz.TriggerBuilder
 import org.quartz.impl.StdSchedulerFactory
+import org.quartz.utils.PoolingConnectionProvider
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.Properties
@@ -45,10 +46,13 @@ class ClusterSingleFireIT : BaseSchedulerIT() {
         update("DELETE FROM it_cluster_fire")
         val schedulers = mutableListOf<Scheduler>()
         try {
-            val first = scheduler(NODE_ONE)
-            val second = scheduler(NODE_TWO)
-            schedulers += first
-            schedulers += second
+            // Registered for cleanup as it is created, not once both exist. `SimpleThreadPool.initialize()`
+            // starts its workers and `makeThreadsDaemons` defaults to false
+            // (quartz-2.5.2-sources `SimpleThreadPool.java:71` and `:238-278`, and this config does not set
+            // the flag), so a scheduler built and then dropped holds two non-daemon threads: the forked JVM
+            // would outlive the test instead of reporting it.
+            val first = scheduler(NODE_ONE).also { schedulers += it }
+            val second = scheduler(NODE_TWO).also { schedulers += it }
             first.start()
             second.start()
             first.scheduleJob(
@@ -61,7 +65,17 @@ class ClusterSingleFireIT : BaseSchedulerIT() {
 
             Thread.sleep(FIRE_WINDOW_MS)
 
-            // Read membership before stopping anything: `shutdown()` is what deletes a node's state row.
+            // Read membership before stopping anything — but not because stopping would erase the rows: it
+            // would not. `JobStoreSupport.shutdown()` (quartz-2.5.2-sources `:730-755`) stops the cluster and
+            // misfire threads and closes the pool, and `ClusterManager.shutdown()` (`:3857-3860`) only flips a
+            // flag and interrupts its thread; neither touches the owner's own `QRTZ_SCHEDULER_STATE` row. A row
+            // is deleted by a *peer* that has judged the owner's check-in stale — `clusterCheckIn` (`:3390`) →
+            // `findFailedInstances` (`:3304`) with `calcFailedIfAfter` (`:3383`), then the delete in
+            // `clusterRecover` (`:3547-3549`). While both nodes are alive they check in every 5s, so this count
+            // is stable; after the shutdowns below it depends on when a peer notices — the threshold is the
+            // stale row's own last check-in plus ~12.5s, evaluated only on a peer's next 5s tick — which is a
+            // race this assertion has no business taking. Worth the length: the release runbook must not say
+            // "stale rows disappear on a clean restart" — only a peer's timeout clears them.
             val nodes = queryCount(
                 "SELECT COUNT(*) FROM QRTZ_SCHEDULER_STATE WHERE SCHED_NAME = ?",
                 CLUSTER_NAME,
@@ -103,7 +117,11 @@ class ClusterSingleFireIT : BaseSchedulerIT() {
 
     /**
      * Built by hand rather than through Spring, because the claim is about two schedulers and the context
-     * holds one. Everything but the identity is the set of values `application.yml` ships.
+     * holds one. Everything but the identity is the set of values `application.yml` ships — with one addition,
+     * the `dataSource` block, which the Spring path has no equivalent of: Boot hands `SchedulerFactoryBean` a
+     * `DataSource` and Spring's `LocalDataSourceJobStore` registers its own connection providers, so
+     * `application.yml` never has to name a pool. A hand-made scheduler goes through
+     * `StdSchedulerFactory`'s own property branch, which does.
      *
      * `instanceId` is a fixed string instead of AUTO: AUTO derives host+timestamp, which is unique but
      * unreadable from an assertion. Sharing `instanceName` is what joins a cluster; the id only has to be
@@ -124,6 +142,20 @@ class ClusterSingleFireIT : BaseSchedulerIT() {
             setProperty("org.quartz.jobStore.misfireThreshold", "60000")
             setProperty("org.quartz.jobStore.acquireTriggersWithinLock", "true")
             setProperty("org.quartz.jobStore.dataSource", "itDs")
+            // Mandatory, not cosmetic: `StdSchedulerFactory` only reaches HikariCP when this key equals
+            // "hikaricp" (quartz-2.5.2-sources `StdSchedulerFactory.java:1031`, comparing
+            // `PoolingConnectionProvider.POOLING_PROVIDER_HIKARICP` against `…dataSource.<name>.provider`),
+            // and every other value — including absent — instantiates
+            // `org.quartz.utils.C3p0PoolingConnectionProvider` instead (:1034). c3p0 is `provided` in
+            // quartz-2.5.2.pom and declared by no pom of this reactor, so leaving the key out was measured to
+            // fail on the very first `scheduler(..)` call — `SchedulerException: Could not initialize
+            // DataSource: itDs` caused by `NoClassDefFoundError: com/mchange/v2/c3p0/ComboPooledDataSource` —
+            // which is before any assertion in this file runs. Naming HikariCP gets past it; the pool is
+            // `com.zaxxer:HikariCP`, which `spring-boot-starter-quartz` already ships.
+            setProperty(
+                "org.quartz.dataSource.itDs.${PoolingConnectionProvider.POOLING_PROVIDER}",
+                PoolingConnectionProvider.POOLING_PROVIDER_HIKARICP,
+            )
             setProperty("org.quartz.dataSource.itDs.driver", "com.mysql.cj.jdbc.Driver")
             setProperty("org.quartz.dataSource.itDs.URL", BaseSchedulerIT.mysql.jdbcUrl)
             setProperty("org.quartz.dataSource.itDs.user", BaseSchedulerIT.mysql.username)
