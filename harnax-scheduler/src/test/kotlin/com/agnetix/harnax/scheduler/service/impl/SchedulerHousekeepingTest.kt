@@ -12,17 +12,20 @@ import com.agnetix.harnax.scheduler.job.SchedulerReconcileJob
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.ReconcileReport
 import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.fail
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Mock
+import org.mockito.Mockito
 import org.mockito.Mockito.atLeastOnce
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
@@ -37,13 +40,18 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 import org.quartz.Job
+import org.quartz.JobBuilder
 import org.quartz.JobDetail
 import org.quartz.JobExecutionContext
 import org.quartz.JobKey
 import org.quartz.Scheduler
 import org.quartz.SchedulerContext
+import org.quartz.SchedulerException
+import org.quartz.SimpleScheduleBuilder
 import org.quartz.SimpleTrigger
 import org.quartz.Trigger
+import org.quartz.TriggerBuilder
+import org.quartz.TriggerKey
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import java.time.Duration
 import java.time.LocalDateTime
@@ -77,6 +85,9 @@ class SchedulerHousekeepingTest {
 
     private lateinit var jobInventory: QuartzJobInventory
 
+    /** Stubbed because this suite is about what boot *registers*; its own behaviour is pinned elsewhere. */
+    private val reconciler = mock<TaskScheduleReconciler>()
+
     private lateinit var service: SchedulerServiceImpl
 
     @BeforeEach
@@ -95,7 +106,7 @@ class SchedulerHousekeepingTest {
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
             registrar = TaskQuartzRegistrar(schedulerFactory),
-            reconciler = mock<TaskScheduleReconciler>(),
+            reconciler = reconciler,
             executionTimeoutSeconds = TIMEOUT,
             reconcileIntervalSeconds = RECONCILE_INTERVAL,
             schedulerEnabled = true,
@@ -159,11 +170,97 @@ class SchedulerHousekeepingTest {
     }
 
     /**
+     * The shape this used to have: one attempt, on the `ApplicationReadyEvent` thread, whose catch logged a
+     * WARN and moved on. A database slower than the JVM therefore cost the cluster its sweeps for the rest of
+     * the process's life — while the loop that keeps retrying reconcile rounds ran next to it and proved the
+     * store answering. Under a shared store the sweep is not one idle node's business: it is the bound on
+     * how long a lost CRUD notification stays invisible for everybody.
+     */
+    @Test
+    fun `a sweep the store refused at boot is registered by a later round`() {
+        // Boot's two `checkExists` calls are the two refusals; the retry from the converge loop is next.
+        var refusals = 2
+        whenever(quartz.checkExists(any<JobKey>())).thenAnswer {
+            if (refusals-- > 0) throw SchedulerException("database has not answered yet") else false
+        }
+        whenever(reconciler.reconcile()).thenReturn(CONVERGED)
+
+        service.onApplicationReady()
+
+        awaitScheduled(SchedulerHousekeepingJob::class.java)
+        awaitScheduled(SchedulerReconcileJob::class.java)
+    }
+
+    /**
+     * A disabled node runs no converge loop, so it is the one node whose sweep would still be lost for good
+     * — which matters exactly when the cluster is only disabled nodes, since that is when this node's own
+     * registration is the one the store gets.
+     */
+    @Test
+    fun `a disabled node retries the sweep it could not register`() {
+        // One refusal: boot's attempt. The retry the node owes itself is the next call.
+        var refusals = 1
+        whenever(quartz.checkExists(any<JobKey>())).thenAnswer {
+            if (refusals-- > 0) throw SchedulerException("database has not answered yet") else false
+        }
+        val disabled = disabledInstance()
+
+        disabled.onApplicationReady()
+
+        awaitScheduled(SchedulerHousekeepingJob::class.java)
+        // Retrying the sweeps is not the same as taking scheduling work: the reconcile one is still off-limits.
+        verify(quartz, never()).scheduleJob(
+            argThat<JobDetail> { jobClass == SchedulerReconcileJob::class.java },
+            any<Trigger>(),
+        )
+    }
+
+    /**
+     * `checkExists -> return` was harmless while the store was per-process. On a JDBC cluster store the job
+     * row is shared, so that shape let the *first* node to boot fix the period for every node and made
+     * `SCHEDULER_RECONCILE_INTERVAL` on the others a number nothing read again. Comparing the stored interval
+     * is what lets the configured value win.
+     */
+    @Test
+    fun `a sweep already in the store on another interval is moved to the configured one`() {
+        givenStoreAlreadyHasTheSweeps(reconcileIntervalSeconds = RECONCILE_INTERVAL + 30)
+
+        service.onApplicationReady()
+
+        val rescheduled = argumentAt<Trigger>(quartz, "rescheduleJob", 1)
+        assertEquals(
+            RECONCILE_INTERVAL * 1000L,
+            (rescheduled as SimpleTrigger).repeatInterval,
+            "the configured interval has to win over the one another node booted with",
+        )
+        verify(quartz, never()).scheduleJob(any<JobDetail>(), any<Trigger>())
+    }
+
+    /**
+     * The same read when the stored period agrees: nothing is written. A reschedule resets NEXT_FIRE_TIME, so
+     * a round that "fixed" a trigger that was already right would be doing to the system sweep exactly what
+     * the reconcile diff exists to forbid for a user's schedule.
+     */
+    @Test
+    fun `a sweep already on the configured interval is left exactly as it is`() {
+        givenStoreAlreadyHasTheSweeps(reconcileIntervalSeconds = RECONCILE_INTERVAL)
+
+        service.onApplicationReady()
+
+        verify(quartz, never()).rescheduleJob(any<TriggerKey>(), any<Trigger>())
+        verify(quartz, never()).scheduleJob(any<JobDetail>(), any<Trigger>())
+    }
+
+    /**
      * `scheduler.enabled=false` means "this node takes no scheduling work", not "nothing on this node may
-     * ever write to the database again". Sweeping touches no user task and lives in its own Quartz
-     * group, so an inert node must still run it — see the next test for what happens when it does not.
-     * The task *reconcile* is a scheduling write over the shared store, so it stays off: an enabled node
-     * registers that sweep once, in the store, and the cluster fires it from there.
+     * ever write to the database again". Sweeping touches no user task and lives in its own Quartz group, so
+     * an inert node still registers it — but read that for what it is now: with a shared store the sweep is
+     * *one row in that store*, so reclamation keeps running while at least one node in the cluster is
+     * enabled and a disabled node has no private reclaim path of its own. What registering here buys is that
+     * a cluster which is nothing but disabled nodes still sweeps, and that whoever fires the job — any node
+     * claiming it, not only the one that wrote the row — finds its collaborators in place. The task
+     * *reconcile* is a scheduling write over the shared store, so it stays off: one enabled node registers
+     * that sweep once, in the store, and the cluster fires it from there.
      */
     @Test
     fun `a disabled instance still registers the sweep but not the reconcile`() {
@@ -184,13 +281,17 @@ class SchedulerHousekeepingTest {
 
     /**
      * Registration alone would be a fiction: the job takes its collaborators out of the Quartz scheduler
-     * context, and `init()` used to fill that context behind the very same `scheduler.enabled` gate. This
-     * is the sequence that used to be unrecoverable — `/tasks/logs/{id}/stop` is deliberately open on an
-     * inert node, so the row can be written there, and `expireStale` (which matches status 3 *and* 4) was
-     * reachable from nowhere else on that node. The row sat at 4 for the rest of its life.
+     * context, and `init()` used to fill that context behind the very same `scheduler.enabled` gate — so an
+     * inert node could put a sweep on the clock that found nothing to call.
+     *
+     * What this pins is that half, and it is worth being exact about the shape: it calls
+     * [SchedulerHousekeepingJob.execute] by hand on a context built by a disabled node. It is *not* a Quartz
+     * fire and it does not claim a disabled node gets one — under a shared store whichever node claims the
+     * trigger runs the sweep, and `/tasks/logs/{id}/stop` being open here only means this node can leave a
+     * row at 4 for whoever fires it to reap.
      */
     @Test
-    fun `a disabled node's own sweep reclaims the row its stop left behind`() {
+    fun `a sweep fired on an inert node finds the collaborators its own stop needs`() {
         whenever(quartz.context).thenReturn(SchedulerContext())
         val disabled = disabledInstance()
         disabled.init()
@@ -252,11 +353,61 @@ class SchedulerHousekeepingTest {
         SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
         jobInventory = jobInventory,
         registrar = TaskQuartzRegistrar(schedulerFactory),
-        reconciler = mock<TaskScheduleReconciler>(),
+        reconciler = reconciler,
         executionTimeoutSeconds = TIMEOUT,
         reconcileIntervalSeconds = RECONCILE_INTERVAL,
         schedulerEnabled = false,
-    )
+    ).apply { initialRetryDelayMs = RETRY_DELAY_MS }
+
+    /**
+     * A store that has both sweeps already, as the *first* node to boot left them: `reconcileIntervalSeconds`
+     * is the period that node happened to have configured, which is the thing the next node has to notice.
+     */
+    private fun givenStoreAlreadyHasTheSweeps(reconcileIntervalSeconds: Int) {
+        whenever(quartz.checkExists(any<JobKey>())).thenReturn(true)
+        val jobKey = JobKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP)
+        whenever(quartz.getJobDetail(jobKey)).thenReturn(
+            JobBuilder.newJob(SchedulerReconcileJob::class.java).withIdentity(jobKey).storeDurably().build(),
+        )
+        val stored = TriggerBuilder.newTrigger()
+            .withIdentity(TriggerKey(jobKey.name, jobKey.group))
+            .forJob(jobKey)
+            .startNow()
+            .withSchedule(
+                SimpleScheduleBuilder.simpleSchedule()
+                    .withIntervalInSeconds(reconcileIntervalSeconds)
+                    .repeatForever(),
+            )
+            .build()
+        whenever(quartz.getTriggersOfJob(jobKey)).thenReturn(listOf(stored))
+    }
+
+    /**
+     * The registration retry runs on the converge thread, so "did it land" has to be waited for rather than
+     * asserted the moment `onApplicationReady()` returns — which is itself the point of the finding: the boot
+     * thread used to be the only one that ever tried.
+     */
+    private fun awaitScheduled(jobClass: Class<out Job>) {
+        val deadline = System.currentTimeMillis() + AWAIT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (jobClass in scheduledJobClasses()) return
+            Thread.sleep(50L)
+        }
+        fail<Unit>(
+            "job class $jobClass was never registered; the store got ${scheduledJobClasses().map { it.simpleName }}",
+        )
+    }
+
+    /** Every `scheduleJob` the mock has seen so far, as the job classes it was handed. */
+    private fun scheduledJobClasses(): Set<Class<out Job>> = Mockito.mockingDetails(quartz).invocations
+        .mapNotNull { call -> call.arguments.firstOrNull() as? JobDetail }
+        .mapNotNull { it.jobClass }
+        .toSet()
+
+    /** One argument of one call the sweep registration made against the scheduler, read back for assertions. */
+    private inline fun <reified T : Any> argumentAt(mock: Any, methodName: String, index: Int): T = Mockito.mockingDetails(mock).invocations
+        .first { it.method.name == methodName }
+        .getArgument<T>(index)
 
     /**
      * The boot path registers one system job per responsibility, so "what did it write" has to be answered
@@ -288,5 +439,19 @@ class SchedulerHousekeepingTest {
 
         /** Not the 60 default: the assertion has to prove the value travels from the key to the trigger. */
         private const val RECONCILE_INTERVAL = 45
+
+        /** The registration retry runs on the converge thread, so the cases above wait for it. */
+        private const val AWAIT_MS = 10_000L
+
+        /** Not the 2s production backoff: this suite is not waiting on a database that is not there. */
+        private const val RETRY_DELAY_MS = 20L
+
+        private val CONVERGED = ReconcileReport(
+            added = 0,
+            removed = 0,
+            updated = 0,
+            unchanged = 1,
+            failedIds = emptyList(),
+        )
     }
 }

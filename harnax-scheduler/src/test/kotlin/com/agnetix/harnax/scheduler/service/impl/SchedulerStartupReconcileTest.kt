@@ -1,5 +1,8 @@
 package com.agnetix.harnax.scheduler.service.impl
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.mapper.AgentTaskLogMapper
 import com.agnetix.harnax.mapper.AgentTaskMapper
@@ -32,11 +35,16 @@ import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
+import org.quartz.CronScheduleBuilder
 import org.quartz.JobBuilder
 import org.quartz.JobKey
 import org.quartz.Scheduler
+import org.quartz.TriggerBuilder
+import org.quartz.TriggerKey
+import org.slf4j.LoggerFactory
 import org.springframework.boot.health.contributor.Status
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
+import ch.qos.logback.classic.Logger as LogbackLogger
 
 /**
  * Covers the startup converge loop: the path that used to run the load once, swallow nothing but log the
@@ -141,6 +149,12 @@ class SchedulerStartupReconcileTest {
         val report = service.reconcileTasks()
 
         assertTrue(report.converged)
+        assertEquals(
+            2,
+            report.unchanged,
+            "the store matching the table is the path this name claims: nothing rewritten",
+        )
+        assertEquals(0, report.added + report.updated + report.removed)
         assertEquals(2, status.lastReconcileJobCount, "reconcile bookkeeping still records what this round converged")
         assertEquals(2, health.health().details["scheduledJobCount"], "the detail is the live store content")
         assertNotNull(status.lastReconcileAt)
@@ -187,10 +201,41 @@ class SchedulerStartupReconcileTest {
         assertNull(status.lastReconcileError)
         assertEquals(
             1.0,
-            registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count(),
-            "exactly one failed attempt expected",
+            registry.get("scheduler.reconcile.rounds").tag("outcome", "failure").counter().count(),
+            "exactly one failed round expected",
         )
-        assertEquals(1.0, registry.get("scheduler.load.attempts").tag("outcome", "success").counter().count())
+        assertEquals(1.0, registry.get("scheduler.reconcile.rounds").tag("outcome", "success").counter().count())
+    }
+
+    /**
+     * The loop's last resort for a human, and the one behaviour of the startup retry that had no test
+     * anywhere: after five rounds that all failed, this node is not "still trying", it is scheduling nothing,
+     * and that has to reach the log at ERROR — exactly once, rather than as one line per round forever.
+     *
+     * The backoff is what the wait costs, so it is shortened rather than slept through: five real rounds would
+     * sit in 2s + 4s + 8s + 16s of backoff to prove a log level.
+     */
+    @Test
+    fun `a node whose rounds never converge says so at error level after five attempts`() {
+        whenever(agentTaskMapper.selectRunningTasks()).thenThrow(RuntimeException("connection refused"))
+        service.initialRetryDelayMs = 20L
+
+        val events = captureSchedulerLogs {
+            service.onApplicationReady()
+            awaitRounds(ALERT_AFTER_ATTEMPTS)
+            // Past the trigger point, to show the alert is a one-time statement and not one line per round.
+            awaitRounds(ALERT_AFTER_ATTEMPTS + 2)
+        }
+
+        val alerts = events.filter {
+            it.level == Level.ERROR && it.formattedMessage.contains("still not scheduling anything after 5 attempts")
+        }
+        assertEquals(
+            1,
+            alerts.size,
+            "expected exactly one error-level alert, got " +
+                events.filter { it.level == Level.ERROR }.map { it.formattedMessage },
+        )
     }
 
     /**
@@ -243,7 +288,7 @@ class SchedulerStartupReconcileTest {
         assertEquals(Status.DOWN, health.health().status, "a node missing part of its tasks is not healthy")
         assertEquals(
             1.0,
-            registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count(),
+            registry.get("scheduler.reconcile.rounds").tag("outcome", "failure").counter().count(),
             "the drift has to show up as a failed attempt, not a success",
         )
     }
@@ -260,15 +305,29 @@ class SchedulerStartupReconcileTest {
         doThrow(RuntimeException("invalid cron")).`when`(registrar).register(argThat { cronExpression == cron })
     }
 
-    /** What the store holds afterwards, as the inventory reads it: keys plus the durable job for each. */
+    /**
+     * What the store holds afterwards, as the inventory reads it: keys plus the durable job for each *and*
+     * the cron its trigger carries. The trigger half is not decoration — a snapshot without it reads "no cron
+     * to compare" and the round rewrites every job in it, which is the `updated` path, not the matching one.
+     * A test that asserted "unchanged" over this fixture would have been asserting the wrong path.
+     */
     private fun givenStoreHolds(vararg taskIds: Long) {
         whenever(quartz.getJobKeys(any())).thenReturn(taskIds.map { JobKey("AgentTask_$it", GROUP) }.toSet())
         taskIds.forEach { id ->
-            whenever(quartz.getJobDetail(JobKey("AgentTask_$id", GROUP))).thenReturn(
+            val key = JobKey("AgentTask_$id", GROUP)
+            whenever(quartz.getJobDetail(key)).thenReturn(
                 JobBuilder.newJob(AgentTaskNonConcurrentJob::class.java)
-                    .withIdentity(JobKey("AgentTask_$id", GROUP))
+                    .withIdentity(key)
                     .storeDurably()
                     .build(),
+            )
+            whenever(quartz.getTriggersOfJob(key)).thenReturn(
+                listOf(
+                    TriggerBuilder.newTrigger()
+                        .withIdentity(TriggerKey("AgentTask_${id}_trigger", GROUP))
+                        .withSchedule(CronScheduleBuilder.cronSchedule(DEFAULT_CRON))
+                        .build(),
+                ),
             )
         }
     }
@@ -285,9 +344,35 @@ class SchedulerStartupReconcileTest {
     private fun roundsRun(): Int = Mockito.mockingDetails(agentTaskMapper)
         .invocations.count { it.method.name == "selectRunningTasks" }
 
+    /** Wait until the converge thread has reached [count] rounds, so a claim about round N is not a race. */
+    private fun awaitRounds(count: Int) {
+        val deadline = System.currentTimeMillis() + AWAIT_MS
+        while (roundsRun() < count && System.currentTimeMillis() < deadline) {
+            Thread.sleep(20L)
+        }
+        assertTrue(roundsRun() >= count, "the loop only reached ${roundsRun()} rounds of $count")
+    }
+
+    /**
+     * Events the service logged while [block] ran. What a node reports when it has given up scheduling is a
+     * claim about a log level, and a log level is the only return value that call has.
+     */
+    private fun captureSchedulerLogs(block: () -> Unit): List<ILoggingEvent> {
+        val logger = LoggerFactory.getLogger(SchedulerServiceImpl::class.java) as LogbackLogger
+        val appender = ListAppender<ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        return try {
+            block()
+            appender.list
+        } finally {
+            logger.detachAppender(appender)
+        }
+    }
+
     private fun task(
         id: Long,
-        cron: String = "0 0/5 * * * ?",
+        cron: String = DEFAULT_CRON,
     ) = AgentTask().apply {
         this.id = id
         name = "task-$id"
@@ -306,5 +391,14 @@ class SchedulerStartupReconcileTest {
 
         private const val INVALID_CRON = "definitely not a cron"
         private const val GROUP = "AgentTaskGroup"
+
+        /** `SchedulerServiceImpl.ALERT_AFTER_ATTEMPTS`, which the error-level alert fires at. */
+        private const val ALERT_AFTER_ATTEMPTS = 5
+
+        /** Generous: the loop under test is on a 20ms backoff, not the production one. */
+        private const val AWAIT_MS = 10_000L
+
+        /** What a task is built with and what the stubbed store answers back, so the two can match. */
+        private const val DEFAULT_CRON = "0 0/5 * * * ?"
     }
 }

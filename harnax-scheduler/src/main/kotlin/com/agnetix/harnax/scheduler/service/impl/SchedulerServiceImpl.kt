@@ -73,6 +73,21 @@ class SchedulerServiceImpl(
     private var shuttingDown = false
 
     /**
+     * Whether the store still owes one of the sweeps this node is responsible for registering. Set by the
+     * boot-time attempt and cleared by [registerSweepsIfPending], which the converge loop keeps calling:
+     * a registration that failed because the database was slower than the JVM used to be lost for the rest
+     * of the process's life, and the sweeps it cost the cluster are what bound a lost CRUD notification.
+     */
+    @Volatile
+    private var systemSweepsPending = false
+
+    /**
+     * Backoff base of the startup loop. `internal` only so the test that pins the five-attempt alert does
+     * not have to sit through 2s + 4s + 8s + 16s of real backoff; nothing else moves it.
+     */
+    internal var initialRetryDelayMs = INITIAL_RETRY_DELAY_MS
+
+    /**
      * When this process last ran a stale-execution sweep to completion; null means never (or only
      * failures). Backs the rate limit in [expireStaleExecutionsThrottled]. Monotonic on purpose — a
      * wall-clock step from an NTP correction would either freeze the window or open it early.
@@ -85,17 +100,21 @@ class SchedulerServiceImpl(
     fun init() {
         // Register beans in scheduler context so Quartz jobs can access them.
         //
-        // Deliberately outside the `scheduler.enabled` gate: the housekeeping sweep is registered on every
-        // node (see onApplicationReady) and takes its collaborators out of *this* context, so gating the
-        // registration too would register a job that fires and quietly does nothing — which is precisely
-        // the hole that left a stopped execution's row at status 4 forever on an inert node.
+        // Deliberately outside the `scheduler.enabled` gate, and the reason is no longer the one G3 left
+        // behind. It is still true that the sweep is registered on every node (see onApplicationReady) and
+        // takes its collaborators out of *this* context, so gating this too would register a job that fires
+        // and quietly does nothing. What has changed is *whose* reclaim that job is: with a shared store the
+        // sweep is a cluster singleton, so a row an inert node's own `stopTask` leaves at 4 is reaped by
+        // whichever node in the cluster fires it. Reclamation continues while at least one node is enabled,
+        // and a disabled node has no private sweep to lose.
         //
-        // These are references, not work — and the store is shared, so they are not decoration either: a
-        // JDBC cluster hands a fire to whichever node claims it, which can be this one even when the job
-        // in it was registered by another instance, and even on an instance started with
-        // `scheduler.enabled=false` that loaded nothing of its own. That is why the enabled check lives in
-        // the fire path (see `AbstractAgentTaskJob.run`) rather than being implied by who registered the
-        // job, and why the task itself is re-read from `agent_task` there instead of being carried in.
+        // The other half of the reason stands on its own: these are references, not work — and the shared
+        // store means they are not decoration either. A JDBC cluster hands a fire to whichever node claims
+        // it, which can be this one even when the job in it was registered by another instance, and even on
+        // an instance started with `scheduler.enabled=false` that loaded nothing of its own. That is why the
+        // enabled check lives in the fire path (see `AbstractAgentTaskJob.run`) rather than being implied by
+        // who registered the job, and why the task itself is re-read from `agent_task` there instead of
+        // being carried in.
         val schedulerContext = scheduler.context
         schedulerContext["schedulerService"] = this
         schedulerContext["executionGuard"] = executionGuard
@@ -109,98 +128,183 @@ class SchedulerServiceImpl(
 
     @EventListener(ApplicationReadyEvent::class)
     fun onApplicationReady() {
-        // Sweeping is not scheduling. It touches no user task, it lives in its own Quartz group, and it is
-        // the only reclaim path for a row this node can still write: `stopTask` is deliberately open on a
-        // disabled node (it writes no Quartz object), so without this the 4 it leaves behind would be
-        // unrecoverable here — no reconcile, no fire and no manual run ever calls expireStale on this
-        // instance. Registering it is legal in standby: Quartz only refuses a write after `shutdown()`, so
-        // `spring.quartz.auto-startup=false` (which is what keeps a disabled node out of the cluster at
-        // all, see application.yml) does not cost this job its registration.
-        registerHousekeepingJob()
+        // Both sweeps are attempted here, on the boot thread, before the converge loop's first database read:
+        // that ordering is what lets a node which schedules nothing still sweep (and see [registerHousekeepingJob]
+        // for why registering is legal on a standby node). What boot's attempt could not do is fail twice — a
+        // database still starting used to cost a WARN line and nothing more, and the cluster then ran without
+        // its sweeps for the lifetime of the process. [registerSweepsIfPending] is the retry.
+        systemSweepsPending = !registerSystemSweeps()
         if (!schedulerEnabled) {
+            // A disabled node runs no converge loop, so it is the one node whose sweep would still be lost
+            // for good; it owes itself the retry. The *reconcile* sweep stays off an inert node either way
+            // (see [registerSystemSweeps]).
+            if (systemSweepsPending) loadExecutor.execute { registerSweepsUntilStored() }
             return
         }
-        // Inside the gate on purpose: a reconcile *is* a scheduling write over the shared store, and with a
-        // JDBC store the sweep is registered *in that store*, so an enabled node already fires it for the
-        // whole cluster. A disabled node registering it would only add a second claim path to the same work.
-        registerReconcileJob()
         loadExecutor.execute { loadTasksWithRetry() }
     }
 
     /**
-     * The sweeps have no other caller: until this registration existed, a guard row could only ever be
-     * added and an execution log row never removed at all. Registered before the converge loop and on the
-     * main thread, because none of it reads the database — the *sweeps* do, five minutes later, by which
-     * time the retry loop may well have brought the database up.
+     * The two periodic sweeps this node is responsible for putting in the store.
      *
-     * A repeating trigger rather than a cron: the sweep has no relationship to any user's schedule, and a
-     * cron would make it miss while this instance was down for the very restart that leaves zombies.
+     * @return false when the store refused either one, which is the state [registerSweepsIfPending] retries
+     * out of the converge loop.
      */
-    private fun registerHousekeepingJob() {
-        try {
-            val jobKey = JobKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP)
-            if (scheduler.checkExists(jobKey)) {
-                log.info("Housekeeping job is already registered, leaving it alone")
-                return
-            }
-            val jobDetail = JobBuilder.newJob(SchedulerHousekeepingJob::class.java)
-                .withIdentity(jobKey)
-                .storeDurably()
-                .build()
-            val trigger = TriggerBuilder.newTrigger()
-                .withIdentity(TriggerKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP))
-                .forJob(jobKey)
-                .startNow()
-                .withSchedule(SimpleScheduleBuilder.simpleSchedule().withIntervalInMinutes(5).repeatForever())
-                .build()
-            scheduler.scheduleJob(jobDetail, trigger)
-            log.info("Registered scheduler housekeeping job (every 5 minutes)")
-        } catch (e: Exception) {
-            // Loud but fatal is the wrong way round here: a node that cannot sweep is degraded, and the
-            // converge loop that follows is the one that decides whether it schedules anything at all.
-            log.warn("Housekeeping job could not be registered: {}", e.message)
+    private fun registerSystemSweeps(): Boolean {
+        val housekeeping = registerHousekeepingJob()
+        // The reconcile sweep is registered inside the `schedulerEnabled` gate on purpose: a reconcile *is*
+        // a scheduling write over the shared store, and with a JDBC store the sweep lands *in that store*,
+        // so one enabled node registers it for the whole cluster. A disabled node registering it would only
+        // add a second claim path to the same work.
+        val reconcile = !schedulerEnabled || registerReconcileJob()
+        return housekeeping && reconcile
+    }
+
+    /** No-op once boot's attempt got both sweeps into the store; see [systemSweepsPending]. */
+    private fun registerSweepsIfPending() {
+        if (systemSweepsPending) {
+            systemSweepsPending = !registerSystemSweeps()
         }
     }
 
     /**
-     * The convergence sweep. Cluster-singleton for free: with a JDBC store a Quartz job is registered in
-     * the shared store, so exactly one node fires it — which is what makes a periodic reconcile safe on
-     * two instances where the same registration on a memory store ran twice.
-     *
-     * The interval is configurable because the integration tests have to freeze it: a sweep landing
-     * between "hand the store some drift" and "reconcile it" would repair the drift first and the
-     * assertion about what one round did would then be about the wrong round.
+     * The retries a disabled node owes itself: it starts no converge loop, so nothing else would ever try
+     * again. Same backoff as the rounds and the same exit on shutdown. What it owes is the housekeeping sweep
+     * alone — [registerSystemSweeps] short-circuits the reconcile one on `schedulerEnabled`, so a retry from
+     * an inert node cannot smuggle in the scheduling write it must not make.
      */
-    private fun registerReconcileJob() {
-        try {
-            val jobKey = JobKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP)
-            if (scheduler.checkExists(jobKey)) {
-                log.info("Reconcile job is already registered, leaving it alone")
-                return
-            }
-            val jobDetail = JobBuilder.newJob(SchedulerReconcileJob::class.java)
-                .withIdentity(jobKey)
-                .storeDurably()
-                .build()
-            val trigger = TriggerBuilder.newTrigger()
-                .withIdentity(TriggerKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP))
-                .forJob(jobKey)
-                .startNow()
-                .withSchedule(
-                    SimpleScheduleBuilder.simpleSchedule()
-                        .withIntervalInSeconds(reconcileIntervalSeconds)
-                        .repeatForever(),
-                )
-                .build()
-            scheduler.scheduleJob(jobDetail, trigger)
-            log.info("Registered the task reconcile sweep (every {}s)", reconcileIntervalSeconds)
-        } catch (e: Exception) {
-            // Same trade as the housekeeping registration: without the sweep a lost CRUD notification stays
-            // invisible forever, but the startup converge below is what decides whether this node schedules
-            // anything, and a node that cannot register one system job is degraded rather than broken.
-            log.warn("Reconcile job could not be registered: {}", e.message)
+    private fun registerSweepsUntilStored() {
+        var delayMs = initialRetryDelayMs
+        while (systemSweepsPending && !shuttingDown) {
+            delayMs = sleepBeforeRetry(delayMs) ?: return
+            registerSweepsIfPending()
         }
     }
+
+    /**
+     * The stale-execution and retention sweep. A repeating trigger rather than a cron: the sweep has no
+     * relationship to any user's schedule, and a cron would make it miss while this instance was down for
+     * the very restart that leaves zombies.
+     *
+     * Registered on every node, including a disabled one. Sweeping is not scheduling — it touches no user
+     * task and lives in its own Quartz group — and since the store became shared the job is a *cluster
+     * singleton*: the row this node registers is the row whichever node fires runs, so reclamation keeps
+     * happening while at least one node in the cluster is enabled and an inert node's own `stopTask` row is
+     * reaped with the rest. This node keeps registering it because that costs nothing and because a
+     * single-node deployment with the flag off would otherwise never sweep at all. Registering is legal in
+     * standby: Quartz only refuses a write after `shutdown()`, so `spring.quartz.auto-startup=false` (which
+     * is what keeps a disabled node out of the cluster at all, see application.yml) does not cost this job
+     * its registration.
+     */
+    private fun registerHousekeepingJob(): Boolean = registerSweep(
+        label = "housekeeping",
+        jobClass = SchedulerHousekeepingJob::class.java,
+        jobKey = JobKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP),
+        triggerKey = TriggerKey(SchedulerHousekeepingJob.JOB_NAME, SchedulerHousekeepingJob.GROUP),
+        intervalMs = HOUSEKEEPING_INTERVAL_MINUTES * 60_000L,
+    )
+
+    /**
+     * The convergence sweep. Cluster-singleton by construction: with a JDBC store the registration lands in
+     * the shared store, so exactly one node fires it — which is what makes a periodic reconcile safe on two
+     * instances where the same registration on a memory store ran twice.
+     *
+     * The interval is configurable because the integration tests have to freeze it: a sweep landing between
+     * "hand the store some drift" and "reconcile it" would repair the drift first, and the assertion about
+     * what one round did would then be about the wrong round.
+     */
+    private fun registerReconcileJob(): Boolean = registerSweep(
+        label = "task reconcile",
+        jobClass = SchedulerReconcileJob::class.java,
+        jobKey = JobKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP),
+        triggerKey = TriggerKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP),
+        intervalMs = reconcileIntervalSeconds * 1000L,
+    )
+
+    /**
+     * Put one repeating system sweep in the store, or leave the one the cluster already has — unless it sits
+     * on a different period than this node was configured with, in which case the stored trigger is
+     * replaced.
+     *
+     * `checkExists -> return`, the whole of what this method used to do on a hit, was harmless while the
+     * store was per-process: the worst a second boot could cause was a duplicate sweep of its own. On a JDBC
+     * cluster store the job row is shared, so that shape made *the first node to boot* the one that fixed the
+     * period for every node in the cluster, and turned `SCHEDULER_RECONCILE_INTERVAL` on the others into a
+     * number nothing would ever read again. Comparing the stored interval is what lets the configured value
+     * win.
+     *
+     * @return false when the store refused the read or the write; the caller retries (see
+     * [registerSweepsIfPending]), because a database that is merely slow at boot must not cost the cluster
+     * its sweeps for the life of the process.
+     */
+    private fun registerSweep(
+        label: String,
+        jobClass: Class<out Job>,
+        jobKey: JobKey,
+        triggerKey: TriggerKey,
+        intervalMs: Long,
+    ): Boolean = try {
+        if (scheduler.checkExists(jobKey)) {
+            keepStoredIntervalOrMoveIt(jobKey, triggerKey, intervalMs, label)
+        } else {
+            scheduler.scheduleJob(
+                JobBuilder.newJob(jobClass).withIdentity(jobKey).storeDurably().build(),
+                sweepTrigger(jobKey, triggerKey, intervalMs),
+            )
+            log.info("Registered the {} sweep (every {}s)", label, intervalMs / 1000)
+            true
+        }
+    } catch (e: Exception) {
+        // Loud but fatal is the wrong way round here: a node that cannot sweep is degraded, and the converge
+        // loop that follows is the one that decides whether it schedules anything at all.
+        log.warn("The {} sweep could not be registered: {}", label, e.message)
+        false
+    }
+
+    /**
+     * The stored trigger decides the cluster's period, so this only speaks up when it disagrees. A job with
+     * no trigger of ours to compare against — somebody registered it by hand, or a partial write left a
+     * durable job — is left alone: this exists to move an interval, not to guess at a shape somebody else
+     * chose.
+     */
+    private fun keepStoredIntervalOrMoveIt(
+        jobKey: JobKey,
+        triggerKey: TriggerKey,
+        intervalMs: Long,
+        label: String,
+    ): Boolean {
+        val stored = scheduler.getTriggersOfJob(jobKey)
+            .filterIsInstance<SimpleTrigger>()
+            .firstOrNull { it.key == triggerKey }
+        if (stored == null) {
+            log.info("The {} sweep is already registered, leaving it alone", label)
+            return true
+        }
+        if (stored.repeatInterval == intervalMs) {
+            log.info("The {} sweep is already registered (every {}s), leaving it alone", label, intervalMs / 1000)
+            return true
+        }
+        scheduler.rescheduleJob(stored.key, sweepTrigger(jobKey, triggerKey, intervalMs))
+        log.info(
+            "Moved the {} sweep to the configured interval: {}s -> {}s",
+            label,
+            stored.repeatInterval / 1000,
+            intervalMs / 1000,
+        )
+        return true
+    }
+
+    /** One system sweep's trigger: repeating, and starting now rather than on the next matching minute. */
+    private fun sweepTrigger(
+        jobKey: JobKey,
+        triggerKey: TriggerKey,
+        intervalMs: Long,
+    ): Trigger = TriggerBuilder.newTrigger()
+        .withIdentity(triggerKey)
+        .forJob(jobKey)
+        .startNow()
+        .withSchedule(SimpleScheduleBuilder.simpleSchedule().withIntervalInMilliseconds(intervalMs).repeatForever())
+        .build()
 
     @PreDestroy
     fun shutdownLoadExecutor() {
@@ -219,9 +323,14 @@ class SchedulerServiceImpl(
     private fun loadTasksWithRetry() {
         expireStaleExecutions()
         var attempt = 0
-        var delayMs = INITIAL_RETRY_DELAY_MS
+        var delayMs = initialRetryDelayMs
         while (!shuttingDown) {
             attempt++
+            // A sweep this node could not register at boot is retried from here, from the loop that has
+            // always retried rounds: the store answering one write means it can answer the other, and the
+            // alternative was a WARN line at startup and no sweep for the rest of the process's life. A
+            // no-op on every healthy round — the flag is only set when the store refused us.
+            registerSweepsIfPending()
             val failure: String? = try {
                 val report = reconciler.reconcile()
                 if (report.converged) {
@@ -238,11 +347,14 @@ class SchedulerServiceImpl(
             } catch (e: Exception) {
                 val reason = e.message ?: e.javaClass.simpleName
                 status.recordReconcileFailure(reason)
-                metrics.recordLoadAttempt(success = false)
+                metrics.recordReconcileRound(success = false)
                 log.warn("Agent task reconcile attempt {} threw", attempt, e)
                 reason
             }
             if (failure == null) {
+                // One last chance, taken on the round that just proved the store answers: the attempt at the
+                // top of this round could have run against a database still on its way up.
+                registerSweepsIfPending()
                 return
             }
             if (attempt == ALERT_AFTER_ATTEMPTS) {
@@ -763,6 +875,13 @@ class SchedulerServiceImpl(
         private const val INITIAL_RETRY_DELAY_MS = 2_000L
         private const val MAX_RETRY_DELAY_MS = 60_000L
         private const val ALERT_AFTER_ATTEMPTS = 5
+
+        /**
+         * How often the stale/retention sweep repeats. A constant rather than a configured value, and now a
+         * load-bearing one: the registration compares it against the interval already in the shared store,
+         * so what this says is what the cluster runs.
+         */
+        private const val HOUSEKEEPING_INTERVAL_MINUTES = 5L
 
         /**
          * Floor between two stale-execution sweeps on this node. Deliberately far below housekeeping's

@@ -69,16 +69,17 @@ class SchedulerMetricsTest {
         )
     }
 
+    /** One sample per round, tagged by its verdict — the meter used to be named for the startup load. */
     @Test
-    fun `load attempts are counted per outcome so a retrying node is visible`() {
+    fun `reconcile rounds are counted per outcome so a retrying node is visible`() {
         val metrics = SchedulerMetrics(registry, jobInventory)
 
-        metrics.recordLoadAttempt(success = true)
-        metrics.recordLoadAttempt(success = true)
-        metrics.recordLoadAttempt(success = false)
+        metrics.recordReconcileRound(success = true)
+        metrics.recordReconcileRound(success = true)
+        metrics.recordReconcileRound(success = false)
 
-        assertEquals(2.0, registry.get("scheduler.load.attempts").tag("outcome", "success").counter().count())
-        assertEquals(1.0, registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count())
+        assertEquals(2.0, registry.get("scheduler.reconcile.rounds").tag("outcome", "success").counter().count())
+        assertEquals(1.0, registry.get("scheduler.reconcile.rounds").tag("outcome", "failure").counter().count())
     }
 
     /**

@@ -19,6 +19,7 @@ import org.quartz.CronScheduleBuilder
 import org.quartz.JobBuilder
 import org.quartz.JobKey
 import org.quartz.Scheduler
+import org.quartz.SchedulerException
 import org.quartz.Trigger
 import org.quartz.TriggerBuilder
 import org.quartz.TriggerKey
@@ -100,6 +101,47 @@ class QuartzJobInventoryTest {
             mapOf(7L to RegisteredJob("0 0 5 * * ?", AgentTaskJob::class.java.name)),
             inventory().agentTaskJobs(),
         )
+    }
+
+    /**
+     * What the diff actually compares against: `CronExpression`'s constructor uppercases its argument
+     * (`cronExpression.toUpperCase(Locale.US)`), the trigger hands that string back and a JDBC store persists
+     * and re-reads exactly it, so `0 0 9 ? * mon-fri` comes back as `0 0 9 ? * MON-FRI`. The webui presets ship
+     * the lettered form, so a reconciler that compared against the raw column would rewrite such a job's
+     * trigger on every round. Pinned on data rather than on a mock's string, because it is Quartz's own
+     * normalization the compare has to follow.
+     */
+    @Test
+    fun `the cron comes back in the normalized form quartz stores`() {
+        givenJobs("AgentTask_7")
+        withCron(7L, "0 0 9 ? * mon-fri")
+
+        assertEquals("0 0 9 ? * MON-FRI", inventory().agentTaskJobs()[7L]?.cronExpression)
+    }
+
+    /**
+     * One unreadable job must not wedge every round. `getJobDetail` loads the class, so a rolling deploy
+     * that renames a job class while its row survives in the *shared* store makes this read throw for that
+     * key on every node — and a snapshot that throws takes the whole round with it, leaving this node
+     * converging nothing at all, including the tasks it could have fixed. The unparseable key is skipped and
+     * logged; its task is either re-registered by the same round (absent from the snapshot, wanted by the
+     * table) or left for a build that has the class.
+     */
+    @Test
+    fun `one job the store cannot load is skipped instead of failing the whole snapshot`() {
+        givenJobs("AgentTask_7", "AgentTask_8")
+        withCron(7L, "0 0 5 * * ?")
+        whenever(quartz.getJobDetail(keyOf(8L))).thenThrow(
+            SchedulerException(
+                "Couldn't load job class name: com.agnetix.harnax.scheduler.job.RenamedJob",
+                ClassNotFoundException("com.agnetix.harnax.scheduler.job.RenamedJob"),
+            ),
+        )
+
+        val snapshot = inventory().agentTaskJobs()
+
+        assertEquals(setOf(7L), snapshot.keys, "the readable half of the store is still a usable diff")
+        assertEquals("0 0 5 * * ?", snapshot[7L]?.cronExpression)
     }
 
     /**

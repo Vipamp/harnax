@@ -28,10 +28,17 @@ class SchedulerStatus(
     private var jobCount: Int = 0
 
     /**
-     * When a reconcile round last ran to completion on this instance, null while none has — which is the
-     * state the health check reads as "this node has never converged the store". A round that left drift
-     * still stamps it: it did reach the store, and [lastReconcileError] is what keeps it from reading as
-     * healthy.
+     * When *this instance* last ran a reconcile round to completion; null while none has, which is the state
+     * the health check reads as "this node has never converged the store". A round that left drift still
+     * stamps it: it did reach the store, and [lastReconcileError] is what keeps it from reading as healthy.
+     *
+     * Read it as a node-local observation and nothing more. The 60-second sweep is a cluster singleton — one
+     * node fires it, and only that node's [lastReconcileAt] moves — so on two enabled nodes the one that
+     * never won the sweep keeps the timestamp of its own startup round for the life of the process, however
+     * healthy the cluster is. An alert on this field's age would page on that, which is why there is no such
+     * rule here and why the alert belongs on the drift side: [lastReconcileError] on this node and
+     * `scheduler.reconcile.drift` say what the store could not be made to match, and they are wrong only
+     * when the work actually failed.
      */
     val lastReconcileAt: Instant? get() = reconcileAt
 

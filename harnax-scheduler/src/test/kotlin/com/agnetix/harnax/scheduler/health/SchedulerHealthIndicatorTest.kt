@@ -67,9 +67,13 @@ class SchedulerHealthIndicatorTest {
 
     /**
      * A round that left drift stamps the timestamp (it did reach the store) and keeps the error, so the
-     * verdict is DOWN on the *error* rule rather than on "never ran". That distinction is the point of the
-     * rename: `lastReconcileAt` is now when the sweep last ran, and an alert on its age catches a sweep
-     * that stopped running, which no rule here could see when the field only moved on a full success.
+     * verdict is DOWN on the *error* rule rather than on "never ran".
+     *
+     * What this case deliberately does **not** license is an alert on the age of `lastReconcileAt`: the
+     * scheduled round is a cluster singleton, so the node that never won the sweep only ever stamps its own
+     * startup round and the field goes arbitrarily old on a healthy cluster. Drift is the signal — the error
+     * detail here and `scheduler.reconcile.drift` — because it moves only when the store could not be made
+     * to match the table.
      */
     @Test
     fun `a round that left drift is down on the drift rule not on the timestamp rule`() {

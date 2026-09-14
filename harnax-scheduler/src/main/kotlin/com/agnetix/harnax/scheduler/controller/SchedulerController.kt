@@ -112,7 +112,7 @@ class SchedulerController(
             if (schedulerService.reconcileTasks().converged) {
                 ResultVo.success("Tasks reconciled")
             } else {
-                ResultVo.error("Some active tasks could not be scheduled, see /actuator/health for details")
+                ResultVo.error("The Quartz store did not converge with agent_task, see /actuator/health for details")
             }
         } catch (e: Exception) {
             log.error("Failed to reload tasks", e)
@@ -147,10 +147,11 @@ class SchedulerController(
     /**
      * `scheduler.enabled=false` is meant to make this node inert, and the only thing that still makes it
      * inert is this gate: [SchedulerFactoryBean] starts regardless, and `SchedulerServiceImpl.init()`
-     * fills the Quartz scheduler context even on a disabled node (the housekeeping sweep has to be able to
-     * fire there). A write that got through would therefore register a job that fires *and runs* here —
-     * while the caller has already been answered 200. Answering on the write surface is the only place
-     * that can tell the difference, and it is where the gate belongs.
+     * fills the Quartz scheduler context even on a disabled node (the shared store can hand this node any
+     * fire, the system sweeps included, so the collaborators have to be there when it does). A write that got
+     * through would therefore register a job that fires *and runs* here — while the caller has already been
+     * answered 200. Answering on the write surface is the only place that can tell the difference, and it is
+     * where the gate belongs.
      *
      * @return null when scheduling is enabled here, otherwise the response the caller gets.
      */

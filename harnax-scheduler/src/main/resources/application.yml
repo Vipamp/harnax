@@ -152,6 +152,9 @@ scheduler:
   # Upper bound on how long a lost reload notification stays invisible: the store and agent_task are not
   # one transaction, so a CRUD that reached no node is repaired by this sweep instead. Raising it trades
   # a longer blind window for fewer store reads; below ~15s the reads stop being negligible.
+  # The sweep lives in the shared store, so this is one setting for the whole cluster rather than one per
+  # node: a node booting with a different value reschedules the stored trigger to its own, which makes the
+  # last node to boot the one that decides. Set it here, not per instance.
   reconcile-interval-seconds: ${SCHEDULER_RECONCILE_INTERVAL:60}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}

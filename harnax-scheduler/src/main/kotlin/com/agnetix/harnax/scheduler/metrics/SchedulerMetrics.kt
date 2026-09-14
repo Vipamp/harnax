@@ -18,7 +18,7 @@ class SchedulerMetrics(
     private val registry: MeterRegistry,
 
     // The job count comes from [QuartzJobInventory] — a bean that only knows the Quartz store — rather
-    // than from `SchedulerService`: that service depends on *this* bean to count its load attempts, so
+    // than from `SchedulerService`: that service depends on *this* bean to count its reconcile rounds, so
     // reading the live count through it is a construction cycle. Going through the inventory keeps the
     // observation layer below the business layer and needs no lazy proxy to stay bootable.
     private val jobInventory: QuartzJobInventory,
@@ -41,6 +41,12 @@ class SchedulerMetrics(
      * Divergence the reconcile had to repair, counted per action. A steady non-zero stream here means CRUD
      * notifications and the store are out of step — the failure mode a broadcast-per-node design hid.
      * Registered lazily so a round that changed nothing costs no samples.
+     *
+     * **Per node, about cluster work.** A scheduled round is a cluster singleton, so a quiet cluster
+     * publishes from one instance only; but admin's `/reload` reaches every enabled node and each of them
+     * converges the same diff, so the repair is counted once per node. Summing this series over `instance`
+     * therefore over-reports by the node count — read it per instance (or with `max()`), and alert on
+     * "any instance non-zero", which is what the meter is for.
      */
     fun recordReconcileDrift(
         action: String,
@@ -53,14 +59,18 @@ class SchedulerMetrics(
     }
 
     /**
-     * One round's verdict, from either caller: the startup converge loop and the 60-second sweep. The name
-     * is the one this meter shipped with before reconcile replaced the startup load; since that sweep exists,
-     * the rate is "rounds per minute on this node" and not "restarts per hour", so only the `failure` tag is
-     * worth alerting on.
+     * One reconcile round's verdict, from whichever caller ran it: the startup converge loop, admin's
+     * `/reload` forward or the 60-second sweep.
+     *
+     * The meter used to be `scheduler.load.attempts`, which was honest when the only caller was the startup
+     * load — one to n samples per process start. The sweep made it one sample per minute per enabled node, so
+     * the name started lying about every `rate()` panel and about the "restarts that failed to schedule"
+     * reading in particular. Renamed rather than kept-and-documented: no dashboard consumes it yet, and the
+     * old name is the bug.
      */
-    fun recordLoadAttempt(success: Boolean) {
+    fun recordReconcileRound(success: Boolean) {
         registry.counter(
-            "scheduler.load.attempts",
+            "scheduler.reconcile.rounds",
             "outcome",
             if (success) "success" else "failure",
         ).increment()

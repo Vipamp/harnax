@@ -22,6 +22,10 @@ import org.springframework.stereotype.Component
  * A round that registered only *some* of the active tasks counts as failed: it leaves `lastReconcileError`
  * set, which is what keeps a drifting node out of `UP`.
  *
+ * `lastReconcileAt` is this node's own last round, not the cluster's: the 60-second sweep is a singleton and
+ * only the node that fires it stamps the field, so on a healthy two-node cluster the other one's can be
+ * hours old. No rule here reads its age, and neither should an alert — see [SchedulerStatus.lastReconcileAt].
+ *
  * The rules above are the whole of the verdict; `scheduledJobCount` and `storeType` below are details and
  * never feed into it.
  */

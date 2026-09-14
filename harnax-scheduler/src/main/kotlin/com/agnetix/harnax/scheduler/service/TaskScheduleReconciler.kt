@@ -52,26 +52,35 @@ class TaskScheduleReconciler(
      * [ReconcileReport.failedIds]; the next round retries it.
      */
     fun reconcile(): ReconcileReport {
-        val expected = agentTaskMapper.selectRunningTasks().associateBy { it.id }
+        // The store first, then the table, and the order is load-bearing rather than stylistic. A CRUD that
+        // commits between the two reads (admin's `/reload` broadcast makes that the routine path, not an
+        // edge case) must land in the table but not in the snapshot, so this round re-registers it — a
+        // benign `replace=true` write. Read the table first and the same commit lands only in the snapshot:
+        // the job then looks like an extra key and this round deletes a schedule the cluster just asked for,
+        // taking whatever cron boundary fell inside the window with it.
         val actual = inventory.agentTaskJobs()
+        val expected = agentTaskMapper.selectRunningTasks().associateBy { it.id }
 
         var added = 0
         var removed = 0
         var updated = 0
         var unchanged = 0
-        val failed = mutableListOf<Long>()
+        // Two directions, because they are two different problems for whoever reads the health detail: a
+        // task the store will not take, and a job the store will not give back.
+        val failedApply = mutableListOf<Long>()
+        val failedRemoval = mutableListOf<Long>()
 
         for ((taskId, task) in expected) {
             val registered = actual[taskId]
             when {
                 registered == null -> {
                     added++
-                    applyDiff(failed, taskId) { registrar.register(task) }
+                    applyDiff(failedApply, taskId) { registrar.register(task) }
                 }
 
                 !matches(task, registered) -> {
                     updated++
-                    applyDiff(failed, taskId) { registrar.register(task) }
+                    applyDiff(failedApply, taskId) { registrar.register(task) }
                 }
 
                 else -> unchanged++
@@ -79,23 +88,37 @@ class TaskScheduleReconciler(
         }
         for (taskId in actual.keys - expected.keys) {
             removed++
-            applyDiff(failed, taskId) { registrar.unregister(taskId) }
+            applyDiff(failedRemoval, taskId) { registrar.unregister(taskId) }
         }
 
         reportDrift(added, removed, updated)
-        val drift = describeDrift(failed, expected.size)
-        val scheduled = unchanged + updated + added - failed.count { expected.containsKey(it) }
+        val drift = describeDrift(failedApply, failedRemoval, expected.size)
+        val scheduled = unchanged + updated + added - failedApply.size
         status.recordReconcile(scheduled, drift)
-        metrics.recordLoadAttempt(success = drift == null)
+        metrics.recordReconcileRound(success = drift == null)
         logRound(added, removed, updated, unchanged, scheduled)
-        return ReconcileReport(added, removed, updated, unchanged, failed)
+        return ReconcileReport(added, removed, updated, unchanged, failedApply + failedRemoval)
     }
 
-    /** An old job that predates the concurrent flag, or a task whose flag moved, must be re-registered. */
+    /**
+     * Whether the stored job *is* what the table asks for.
+     *
+     * The cron is compared case-insensitively on purpose: Quartz normalizes it. `CronExpression`'s String
+     * constructor uppercases its argument, `CronTriggerImpl.getCronExpression()` hands that back, and the
+     * JDBC store persists and re-reads exactly it — so the webui's own `0 0 9 ? * MON` preset sits in
+     * `agent_task` as typed and comes out of the store uppercased. A case-sensitive compare calls every
+     * lettered cron a change: `updated++` and a `scheduleJob(replace=true)` on every 60-second round, which
+     * deletes the trigger row, recomputes NEXT_FIRE_TIME and clears PREV_FIRE_TIME. That is the state this
+     * class exists to make impossible, permanently, and it feeds the drift metric that was added to say
+     * "CRUD and the store are out of step".
+     *
+     * An old job that predates the concurrent flag, or a task whose flag moved, is a real change and must be
+     * re-registered.
+     */
     private fun matches(
         task: AgentTask,
         registered: RegisteredJob,
-    ): Boolean = registered.cronExpression == task.cronExpression &&
+    ): Boolean = registered.cronExpression.equals(task.cronExpression, ignoreCase = true) &&
         registered.jobClassName == TaskQuartzRegistrar.jobClassFor(task).name
 
     /**
@@ -135,20 +158,46 @@ class TaskScheduleReconciler(
         }
     }
 
-    /** Null means the store now matches the table. The text doubles as the /actuator/health detail. */
+    /**
+     * Null means the store now matches the table. The text doubles as the /actuator/health detail.
+     *
+     * The two directions say different things, because they are different work for the operator reading it:
+     * the first is an active task the store refused (its schedule is missing), the second a job the store
+     * refused to give back (a delete that has not landed). One sentence covering both used to announce a
+     * failed *unregister* as "could not be registered", and — since the count it quoted was always the size
+     * of `agent_task` — an empty table printed "1 of 0 active tasks could not be registered".
+     */
     private fun describeDrift(
-        failedIds: List<Long>,
+        failedApply: List<Long>,
+        failedRemoval: List<Long>,
         total: Int,
     ): String? {
-        if (failedIds.isEmpty()) {
+        val parts = listOfNotNull(
+            if (failedApply.isEmpty()) {
+                null
+            } else {
+                "${failedApply.size} of $total active tasks could not be registered: ids=[${idsOf(failedApply)}]"
+            },
+            if (failedRemoval.isEmpty()) {
+                null
+            } else {
+                val noun = if (failedRemoval.size == 1) "job" else "jobs"
+                "${failedRemoval.size} scheduled $noun the table no longer wants could not be unregistered: " +
+                    "ids=[${idsOf(failedRemoval)}]"
+            },
+        )
+        if (parts.isEmpty()) {
             return null
         }
-        // Bounded: a table full of unusable crons must not turn a health detail into a megabyte.
-        val shown = failedIds.take(MAX_DRIFT_IDS).joinToString(",")
-        val hidden = if (failedIds.size > MAX_DRIFT_IDS) ",+${failedIds.size - MAX_DRIFT_IDS} more" else ""
-        val message = "${failedIds.size} of $total active tasks could not be registered: ids=[$shown$hidden]"
+        val message = parts.joinToString("; ")
         log.error("Reconcile left drift: {}", message)
         return message
+    }
+
+    /** Bounded: a table full of unusable crons must not turn a health detail into a megabyte. */
+    private fun idsOf(failedIds: List<Long>): String {
+        val shown = failedIds.take(MAX_DRIFT_IDS).joinToString(",")
+        return if (failedIds.size > MAX_DRIFT_IDS) "$shown,+${failedIds.size - MAX_DRIFT_IDS} more" else shown
     }
 
     /**

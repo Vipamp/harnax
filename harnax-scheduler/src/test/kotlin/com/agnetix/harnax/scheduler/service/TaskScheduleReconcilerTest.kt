@@ -20,12 +20,18 @@ import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 
 /**
  * The whole point of a shared store is that a restart must not unregister what another node is running.
  * These cases are that promise as a table: register what is missing, drop what is gone, reschedule what
  * changed, and — the one an "easier" implementation gets wrong — leave a matching job completely alone,
  * because touching it resets its prev/next fire history.
+ *
+ * The last two of those four need real care rather than a bigger diff: what the store hands back is
+ * Quartz's *normalized* cron, not what the table holds, and the two reads that make the diff have to happen
+ * in one particular order. Both are pinned below with data, because a mock that agrees with the code under
+ * test proves nothing about either.
  */
 class TaskScheduleReconcilerTest {
 
@@ -57,6 +63,63 @@ class TaskScheduleReconcilerTest {
         assertTrue(report.converged)
         // a round that changed nothing must not publish drift samples
         verify(metrics, never()).recordReconcileDrift(any(), anyInt())
+    }
+
+    /**
+     * The store does not hand back what was typed into it: `CronExpression`'s constructor uppercases its
+     * argument, the trigger answers with that string and a JDBC store persists and re-reads exactly it, so
+     * `0 0 9 ? * mon-fri` comes back `0 0 9 ? * MON-FRI` (pinned on a real trigger in `QuartzJobInventoryTest`).
+     * The webui's own presets ship the lettered form
+     * (`harnax-webui/src/pages/agent-task/components/TaskForm.tsx`) and admin stores the field verbatim, so a
+     * case-sensitive compare makes one such task a permanent `updated++` — a `scheduleJob(replace=true)` every
+     * 60 seconds, which deletes the trigger row and recomputes NEXT_FIRE_TIME. That is the state this class
+     * exists to make impossible, and it feeds the drift metric forever.
+     */
+    @Test
+    fun `a cron whose stored form differs only in letter case is the same schedule`() {
+        stubTasks(task(1L, cron = "0 0 9 ? * mon-fri"))
+        doReturn(mapOf(1L to RegisteredJob("0 0 9 ? * MON-FRI", nonConcurrent))).`when`(inventory).agentTaskJobs()
+
+        val report = reconciler.reconcile()
+
+        assertEquals(1, report.unchanged)
+        assertEquals(0, report.updated, "a case difference is Quartz's normalization, not a cron change")
+        verifyNoInteractionsOnRegistrar()
+        assertTrue(report.converged)
+    }
+
+    /**
+     * The two reads have to happen in this order, and admin's `/reload` broadcast is what makes the
+     * interleaving routine rather than theoretical: a create+register committing *between* them has to land in
+     * the table but not in the store snapshot, so the round re-registers it (a benign replace). Read the table
+     * first and the same commit lands only in the snapshot — the job then looks like an extra key, and this
+     * round deletes a schedule the cluster just asked for along with any cron boundary inside the window.
+     */
+    @Test
+    fun `a task created between the two reads is re-registered rather than deleted`() {
+        val table = mutableMapOf<Long, AgentTask>()
+        val store = mutableMapOf<Long, RegisteredJob>()
+        var reads = 0
+
+        // The CRUD commits after whichever read ran first: that is the only difference between the two
+        // orders, so it is also the only way to pin one of them down.
+        fun crudCommits() {
+            if (++reads == 1) {
+                table[9L] = task(9L, cron = "0 0 9 ? * MON-FRI")
+                store[9L] = RegisteredJob("0 0 9 ? * MON-FRI", nonConcurrent)
+            }
+        }
+        whenever(inventory.agentTaskJobs()).thenAnswer { store.toMap().also { crudCommits() } }
+        whenever(mapper.selectRunningTasks()).thenAnswer { table.values.toList().also { crudCommits() } }
+
+        val report = reconciler.reconcile()
+
+        assertEquals(1, report.added, "a schedule the table wants must never read as an extra key")
+        assertEquals(0, report.removed)
+        assertEquals(0, report.unchanged)
+        verify(registrar).register(argThat { id == 9L })
+        verify(registrar, never()).unregister(any())
+        assertTrue(report.converged)
     }
 
     @Test
@@ -106,6 +169,49 @@ class TaskScheduleReconcilerTest {
         assertEquals(listOf(1L), report.failedIds)
         assertFalse(report.converged)
         assertEquals("1 of 2 active tasks could not be registered: ids=[1]", status.lastReconcileError)
+    }
+
+    /**
+     * A delete that would not land is not a registration failure, and the text used to say it was: an
+     * operator reading "1 of 2 active tasks could not be registered: ids=[9]" goes looking for an active task
+     * 9 that is in fact a job trying and failing to leave. The other half of why this sentence is now
+     * direction-specific is the empty table, where the same code printed "1 of 0 active tasks".
+     */
+    @Test
+    fun `a job the store will not give back is reported as a removal not as a failed registration`() {
+        stubTasks()
+        doReturn(mapOf(9L to RegisteredJob(CRON, nonConcurrent))).`when`(inventory).agentTaskJobs()
+        doThrow(RuntimeException("row locked")).`when`(registrar).unregister(9L)
+
+        val report = reconciler.reconcile()
+
+        assertEquals(listOf(9L), report.failedIds)
+        assertFalse(report.converged)
+        assertEquals(
+            "1 scheduled job the table no longer wants could not be unregistered: ids=[9]",
+            status.lastReconcileError,
+        )
+    }
+
+    /** Both directions in one round, because neither may be folded into the other's sentence. */
+    @Test
+    fun `a round that failed both ways names both`() {
+        stubTasks(task(1L))
+        doReturn(mapOf(9L to RegisteredJob(CRON, nonConcurrent))).`when`(inventory).agentTaskJobs()
+        doThrow(RuntimeException("bad cron")).`when`(registrar).register(any())
+        doThrow(RuntimeException("row locked")).`when`(registrar).unregister(9L)
+
+        val report = reconciler.reconcile()
+
+        assertEquals(
+            "1 of 1 active tasks could not be registered: ids=[1]; " +
+                "1 scheduled job the table no longer wants could not be unregistered: ids=[9]",
+            status.lastReconcileError,
+        )
+        // What the round left scheduled is the apply side only: a job that would not be deleted is not a task
+        // this node is running.
+        assertEquals(0, status.lastReconcileJobCount)
+        assertEquals(listOf(1L, 9L), report.failedIds)
     }
 
     /**
