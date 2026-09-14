@@ -1,0 +1,63 @@
+#
+# Integration profile (Testcontainers). Keys not repeated here come from src/main/resources/application.yml,
+# which this profile only overrides — the datasource apart, since that one is injected by BaseSchedulerIT
+# through @DynamicPropertySource. Nothing in this file is a connection or a host.
+#
+scheduler:
+  enabled: true
+  # Leaked-lock and zombie thresholds are derived from this (2x / 1.5x), and HousekeepingGuardIT places its
+  # rows' ages off the same key it reads. 30s puts both thresholds a minute or less out — inside the test's
+  # own runtime — while leaving the "lock a live execution still holds" row far enough under the deadline that
+  # a slow box cannot age it out mid-test.
+  timeout-seconds: 30
+  clear-session-timeout-seconds: 1
+  command-timeout-seconds: 1
+  # Any non-blank value. RouterClient.init() only reaches for admin's SYSTEM key when this one is empty, so
+  # the boot path never touches the network and no bean had to be mocked (Boot 4 removed @MockBean).
+  api-key: it-key
+  # The periodic sweep is a SimpleTrigger registered with startNow(), so this interval still buys one round at
+  # boot — which the base class pauses and waits out. What it rules out is the *next* round landing inside a
+  # test: 3600s is longer than the whole suite.
+  reconcile-interval-seconds: 3600
+
+spring:
+  flyway:
+    enabled: true
+    # V1__quartz_tables.sql from this module's own resources, into the container, before Quartz is created.
+    table: flyway_schema_history_scheduler
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      # Never Boot's own script: it opens with DROP TABLE IF EXISTS and the point of these tests is a store
+      # that survives a restart. Flyway's V1 creates it once.
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          scheduler:
+            # Distinct from production's HarnaxScheduler, and the reason ClusterSingleFireIT can hand-build two
+            # extra members under a *third* name without touching this cluster's rows.
+            instanceName: HarnaxSchedulerIT
+            instanceId: AUTO
+          jobStore:
+            isClustered: "true"
+            clusterCheckinInterval: 5000
+            useProperties: "true"
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+          threadPool:
+            threadCount: 3
+
+mybatis:
+  mapper-locations: classpath*:mapper/*.xml
+  type-aliases-package: com.agnetix.harnax.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    # The ITs assert through JdbcTemplate as well; per-statement SQL logging only buries the failure output.
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    root: WARN
+    com.agnetix.harnax: INFO
+    # Cluster membership is the thing these tests are about; keep the failover/takeover lines visible.
+    org.quartz: INFO
