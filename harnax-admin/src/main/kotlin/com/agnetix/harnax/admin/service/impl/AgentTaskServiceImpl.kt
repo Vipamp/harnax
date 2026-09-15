@@ -144,7 +144,7 @@ class AgentTaskServiceImpl(
         // Reconcile the shared Quartz store (drops the old job, applies the updated config).
         // Deferred to after the commit: the scheduler reads through its own connection and cannot see
         // this row while the transaction is still open.
-        reloadSchedulersAfterCommit(
+        reloadSchedulerAfterCommit(
             "saved",
             "The previous definition stays scheduled until a reconcile round converges it (the 60s cluster sweep runs one anyway)",
         )
@@ -163,7 +163,7 @@ class AgentTaskServiceImpl(
         if (agentTaskMapper.deleteById(id, currentUsername) == 0) {
             throw BizException("Only the task creator can delete this task")
         }
-        reloadSchedulersAfterCommit(
+        reloadSchedulerAfterCommit(
             "deleted",
             "Its orphaned job will not run the deleted task — it deletes itself on its next fire, or with the 60s sweep",
         )
@@ -256,15 +256,15 @@ class AgentTaskServiceImpl(
      * Without an active transaction there is nothing to wait for, so the notify runs inline. That path
      * exists for callers that reach this bean without going through the transactional proxy.
      */
-    private fun reloadSchedulersAfterCommit(committed: String, staleConsequence: String) {
+    private fun reloadSchedulerAfterCommit(committed: String, staleConsequence: String) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            notifySchedulersNow(committed, staleConsequence)
+            notifySchedulerNow(committed, staleConsequence)
             return
         }
         TransactionSynchronizationManager.registerSynchronization(
             object : TransactionSynchronization {
                 override fun afterCommit() {
-                    notifySchedulersNow(committed, staleConsequence)
+                    notifySchedulerNow(committed, staleConsequence)
                 }
             },
         )
@@ -277,7 +277,7 @@ class AgentTaskServiceImpl(
      * database by then — the caller has to learn "stored but not scheduled", which is a different fact
      * from "not stored".
      */
-    private fun notifySchedulersNow(committed: String, staleConsequence: String) {
+    private fun notifySchedulerNow(committed: String, staleConsequence: String) {
         val result = try {
             schedulerClient.reloadTasks()
         } catch (e: Exception) {
