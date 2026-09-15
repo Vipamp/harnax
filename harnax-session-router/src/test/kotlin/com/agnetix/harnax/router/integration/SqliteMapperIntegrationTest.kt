@@ -72,15 +72,21 @@ class SqliteMapperIntegrationTest {
         dataSource.close()
     }
 
+    /**
+     * `tenantId` defaults to the one tenant every pre-existing row here belongs to; pass null for a row
+     * written by an internal caller, which carries no tenant at all.
+     */
     private fun createLogEntry(
         id: Int = 1,
         sessionId: String = "sess-$id",
         statusCode: Int = 200,
         durationMs: Long = 100,
+        tenantId: Long? = 1L,
+        callerId: String? = null,
     ): ApiCallLog = ApiCallLog().apply {
-        callerId = "caller-$id"
+        this.callerId = callerId ?: "caller-$id"
         callerType = "EXTERNAL_API"
-        tenantId = 1L
+        this.tenantId = tenantId
         this.sessionId = sessionId
         agentId = 10L
         agentName = "test-agent"
@@ -284,6 +290,36 @@ class SqliteMapperIntegrationTest {
             assertEquals("sess-a", it.sessionId)
             assertEquals(200, it.statusCode)
         }
+    }
+
+    @Test
+    fun `query filters by tenant and leaves unattributed rows to the operator view`() {
+        mapper.insert(createLogEntry(sessionId = "web-a", tenantId = 1L, callerId = "k1"))
+        mapper.insert(createLogEntry(sessionId = "web-b", tenantId = 2L, callerId = "k2"))
+        // An internal caller wrote this one and carried no tenant, so there is no tenant to stamp.
+        mapper.insert(createLogEntry(sessionId = "web-c", tenantId = null, callerId = "internal"))
+
+        val scoped = ApiCallLogQuery(tenantId = 1L, limit = 10, offset = 0)
+        assertEquals(listOf("web-a"), mapper.query(scoped).map { it.sessionId })
+        // Same fragment for both statements: a page and a total that disagree is the shape of a filter
+        // that was added to `query` and forgotten in `count`.
+        assertEquals(1, mapper.count(scoped))
+
+        val other = ApiCallLogQuery(tenantId = 2L, limit = 10, offset = 0)
+        assertEquals(listOf("web-b"), mapper.query(other).map { it.sessionId })
+        assertEquals(1, mapper.count(other))
+
+        // Narrowing by another tenant's session is an AND, not an escape hatch around the scope.
+        assertTrue(
+            mapper.query(ApiCallLogQuery(tenantId = 1L, sessionId = "web-b", limit = 10, offset = 0)).isEmpty(),
+            "A tenant scope combined with another tenant's session must narrow to nothing, never widen",
+        )
+
+        // The unattributed row is an internal caller's; only a caller with no tenant may see it, which is
+        // the same "no tenant means internal" convention the session guard already runs on.
+        val unscoped = ApiCallLogQuery(limit = 10, offset = 0)
+        assertEquals(3, mapper.query(unscoped).size)
+        assertEquals(3, mapper.count(unscoped))
     }
 
     @Test

@@ -1,6 +1,10 @@
 package com.agnetix.harnax.router.controller
 
+import com.agnetix.harnax.auth.AuthContext
+import com.agnetix.harnax.auth.AuthContextHolder
+import com.agnetix.harnax.auth.CallerType
 import com.agnetix.harnax.router.dto.ApiCallLogPage
+import com.agnetix.harnax.router.dto.ApiCallLogQuery
 import com.agnetix.harnax.router.entity.AgentInstance
 import com.agnetix.harnax.router.entity.ApiCallLog
 import com.agnetix.harnax.router.service.ApiCallLogService
@@ -12,6 +16,8 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.*
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.verify
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
@@ -157,6 +163,39 @@ class RouterMonitorControllerTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.total").value(0))
                 .andExpect(jsonPath("$.data.items").isArray)
+        }
+
+        @Test
+        fun `a tenant-scoped caller only ever reads its own tenant's logs`() {
+            val page = ApiCallLogPage(items = emptyList(), total = 0, limit = 100, offset = 0)
+            `when`(apiCallLogService.query(any())).thenReturn(page)
+            AuthContextHolder.set(AuthContext(callerId = "key", userId = 9L, callerType = CallerType.EXTERNAL_API, tenantId = 3L))
+            try {
+                mockMvc.perform(get("/api/router/monitor/call-logs")).andExpect(status().isOk)
+
+                val captor = argumentCaptor<ApiCallLogQuery>()
+                verify(apiCallLogService).query(captor.capture())
+                assertEquals(3L, captor.firstValue.tenantId)
+            } finally {
+                AuthContextHolder.clear()
+            }
+        }
+
+        @Test
+        fun `a query parameter cannot widen a caller's own tenant scope`() {
+            val page = ApiCallLogPage(items = emptyList(), total = 0, limit = 100, offset = 0)
+            `when`(apiCallLogService.query(any())).thenReturn(page)
+            AuthContextHolder.set(AuthContext(callerId = "key", userId = 9L, callerType = CallerType.EXTERNAL_API, tenantId = 3L))
+            try {
+                mockMvc.perform(get("/api/router/monitor/call-logs").param("tenantId", "4"))
+                    .andExpect(status().isOk)
+
+                val captor = argumentCaptor<ApiCallLogQuery>()
+                verify(apiCallLogService).query(captor.capture())
+                assertEquals(3L, captor.firstValue.tenantId)
+            } finally {
+                AuthContextHolder.clear()
+            }
         }
     }
 

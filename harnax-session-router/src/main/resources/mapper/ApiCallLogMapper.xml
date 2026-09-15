@@ -27,7 +27,9 @@
         <result column="create_time" property="createTime"/>
     </resultMap>
 
-    <!-- Reusable WHERE fragment: only emits conditions for non-null/non-blank filters. -->
+    <!-- Reusable WHERE fragment: only emits conditions for non-null/non-blank filters.
+         `query` and `count` both include this one fragment, which is the only reason a page and its
+         total can be relied on to describe the same rows. Keep every predicate here. -->
     <sql id="queryWhere">
         <where>
             <if test="q.sessionId != null and q.sessionId != ''">
@@ -47,6 +49,13 @@
             </if>
             <if test="q.minDurationMs != null">
                 AND duration_ms &gt;= #{q.minDurationMs}
+            </if>
+            <!-- Scope, not filter: the caller's own tenant as the server derived it from the credential.
+                 An unattributable row (`tenant_id IS NULL`, written by an internal caller that carried no
+                 tenant) is deliberately invisible to a tenant-scoped caller, and reachable only by a
+                 caller that has no tenant either. -->
+            <if test="q.tenantId != null">
+                AND tenant_id = #{q.tenantId}
             </if>
         </where>
     </sql>
