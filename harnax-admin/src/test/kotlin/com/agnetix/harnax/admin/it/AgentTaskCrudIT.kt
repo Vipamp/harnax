@@ -1,9 +1,6 @@
 package com.agnetix.harnax.admin.it
 
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
-import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.MethodOrderer
 import org.junit.jupiter.api.Order
@@ -18,15 +15,20 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Agent task CRUD regression: /api/admin/agent-tasks
+ * The task endpoints as a browser uses them, end to end: `/api/admin/agent-tasks` and everything below it in, a forwarded call to
+ * [FakeTaskScheduler] out, and the answer handed back unchanged.
  *
- * Only DB-backed endpoints are covered here: start/pause/trigger/toggle proxy
- * to the external scheduler service which is not part of this IT environment.
+ * Release 2 moved the domain, so this class is no longer a database regression for `agent_task` — that table is
+ * in the scheduler's own test suite now ([com.agnetix.harnax.scheduler] `AgentTaskOwnerScopeIT`). What it
+ * still covers, and nothing else here does, is the whole request chain of this service on those paths: the
+ * security filter that has to accept the JWT, the tenant filter, the real `SchedulerClient` bean with its
+ * internal bearer and identity headers, and the JSON converter that has to hand back the relayed tree without
+ * touching it. The agent half of the flow stays genuinely database-backed, because `agent` is admin's own
+ * domain and the agent name the forwarded create has to carry comes out of that table.
  *
- * Update and delete do call the scheduler though — to reload it — and they now report a
- * failed reload instead of ignoring it, so the default URL would make this class fail on a port that
- * nothing is listening on. A local MockWebServer answers the reload with 200; what the *scheduler*
- * does with it is [AgentTaskSchedulerIT]'s business.
+ * The assertions that used to prove the moved rules (a duplicate name, an invalid cron, an unresolvable agent)
+ * are kept on purpose: they pin that the refusal the scheduler answers still reaches the caller with the same
+ * code and the same sentence, which is the client-visible half of those rules.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
@@ -35,12 +37,7 @@ class AgentTaskCrudIT : BaseAdminIT() {
     companion object {
         @JvmStatic
         val scheduler: MockWebServer = MockWebServer().apply {
-            dispatcher = object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest): MockResponse = MockResponse()
-                    .setResponseCode(200)
-                    .setHeader("Content-Type", "application/json")
-                    .setBody("""{"code":200,"message":"success","data":null}""")
-            }
+            dispatcher = FakeTaskScheduler()
             start()
         }
 
@@ -104,6 +101,10 @@ class AgentTaskCrudIT : BaseAdminIT() {
         assertTrue(locateTaskId() > 0)
     }
 
+    /**
+     * The record on the way back is the one the other service made, and `agentName` is the proof that admin
+     * resolved and stamped it: that column is a snapshot of this service's `agent` table, which did not move.
+     */
     @Test
     @Order(3)
     fun `get detail returns created task paused by default`() {
@@ -139,6 +140,10 @@ class AgentTaskCrudIT : BaseAdminIT() {
         assertErr(postJson("/api/admin/agent-tasks", body))
     }
 
+    /**
+     * Unresolvable here means unresolvable in this service's own `agent` table, and the forward then carries no
+     * name at all — which is the case the moved create refuses with "Agent not found".
+     */
     @Test
     @Order(6)
     fun `create task with nonexistent agent fails`() {
@@ -174,15 +179,32 @@ class AgentTaskCrudIT : BaseAdminIT() {
         assertEquals(600, data["timeoutSeconds"].asInt())
     }
 
+    /**
+     * The rename case the handoff named: moving a task to another agent has to carry that agent's name, because
+     * the other service cannot look one up. A legal rename answered with "Agent not found" is what this fails.
+     */
     @Test
     @Order(9)
+    fun `update task to another agent carries the new name`() {
+        assertOk(postJson("/api/admin/agents", mapOf("name" to "${agentName}_2", "status" to 1)))
+        val second = findInPage("/api/admin/agents/page", "name=${agentName}_2") {
+            it["name"]?.asText() == "${agentName}_2"
+        }
+        assertNotNull(second, "second agent should exist")
+
+        assertOk(putJson("/api/admin/agent-tasks/${locateTaskId()}", mapOf("agentId" to second["id"].asLong())))
+        assertEquals("${agentName}_2", (scheduler.dispatcher as FakeTaskScheduler).agentNameOf(taskId))
+    }
+
+    @Test
+    @Order(10)
     fun `task logs are empty for new task`() {
         val data = assertOk(getJson("/api/admin/agent-tasks/${locateTaskId()}/logs"))
         assertEquals(0, data["total"].asLong())
     }
 
     @Test
-    @Order(10)
+    @Order(11)
     fun `available agents list contains prerequisite agent`() {
         val data = assertOk(getJson("/api/admin/agent-tasks/agents"))
         assertTrue(data.isArray)
@@ -190,7 +212,7 @@ class AgentTaskCrudIT : BaseAdminIT() {
     }
 
     @Test
-    @Order(11)
+    @Order(12)
     fun `delete task then detail returns error`() {
         assertOk(deleteJson("/api/admin/agent-tasks/${locateTaskId()}"))
 
@@ -201,7 +223,7 @@ class AgentTaskCrudIT : BaseAdminIT() {
         }
         assertTrue(record == null, "deleted task should not appear in page result")
 
-        // Cleanup prerequisite agent
+        // Cleanup prerequisite agents
         assertOk(deleteJson("/api/admin/agents/$agentId"))
     }
 }

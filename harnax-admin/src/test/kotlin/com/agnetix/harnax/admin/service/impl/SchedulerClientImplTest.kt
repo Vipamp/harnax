@@ -15,10 +15,14 @@ import org.junit.jupiter.api.function.ThrowingSupplier
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
+import org.springframework.http.HttpMethod
 import org.springframework.security.authentication.AnonymousAuthenticationToken
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder
+import tools.jackson.databind.ObjectMapper
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 /**
@@ -588,6 +592,185 @@ class SchedulerClientImplTest {
     }
 
     @Nested
+    @DisplayName("泛化转发测试(release 2 的定时任务面)")
+    inner class Forwarding {
+
+        /**
+         * The one method every task call now goes through, so the seven cases below are the whole of what this
+         * module still does with that domain: carry the request out as it came, bring the answer back as it was.
+         */
+        @Test
+        @DisplayName("forward - GET 的方法、路径与查询参数原样出站")
+        fun `forward should carry the method path and query to the scheduler`() {
+            server.enqueue(successResponse())
+
+            createService().forward(
+                HttpMethod.GET,
+                "/api/scheduler/agent-tasks/page",
+                mapOf("name" to "Daily", "agentId" to "100", "pageNum" to "2", "pageSize" to "20"),
+            )
+
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertNotNull(request)
+            assertEquals("GET", request!!.method)
+            assertEquals(
+                "/api/scheduler/agent-tasks/page?name=Daily&agentId=100&pageNum=2&pageSize=20",
+                request.path,
+                "names, order and values all still the caller's",
+            )
+        }
+
+        @Test
+        @DisplayName("forward - 为空的过滤条件不发出去（缺失与空串在另一端不是一回事）")
+        fun `forward should leave an absent query parameter off the wire`() {
+            server.enqueue(successResponse())
+
+            createService().forward(
+                HttpMethod.GET,
+                "/api/scheduler/agent-tasks/page",
+                mapOf("name" to null, "agentId" to null, "pageNum" to "1", "pageSize" to "10"),
+            )
+
+            assertEquals(
+                "/api/scheduler/agent-tasks/page?pageNum=1&pageSize=10",
+                server.takeRequest(3, TimeUnit.SECONDS)!!.path,
+                "an empty filter would reach the other side as a filter that matches nothing",
+            )
+        }
+
+        @Test
+        @DisplayName("forward - 带空格与冒号的时间范围参数完成转义")
+        fun `forward should encode a query value that carries spaces and colons`() {
+            server.enqueue(successResponse())
+
+            createService().forward(
+                HttpMethod.GET,
+                "/api/scheduler/agent-tasks/7/logs",
+                mapOf("startTimeFrom" to "2026-07-01 00:00:00", "keyword" to "error rate"),
+            )
+
+            val path = server.takeRequest(3, TimeUnit.SECONDS)!!.path!!
+            assertFalse(path.contains(' '), "an unencoded space is an illegal URI, not a filter")
+            assertEquals(
+                listOf("startTimeFrom" to "2026-07-01 00:00:00", "keyword" to "error rate"),
+                path.substringAfter('?').split('&').map {
+                    URLDecoder.decode(it.substringBefore('='), StandardCharsets.UTF_8) to
+                        URLDecoder.decode(it.substringAfter('=', ""), StandardCharsets.UTF_8)
+                },
+                "the scheduler binds the value the log screen sent",
+            )
+        }
+
+        @Test
+        @DisplayName("forward - 请求体按 JSON 出站，不要求本模块拥有任何任务 DTO")
+        fun `forward should send a body as json without owning a DTO for it`() {
+            server.enqueue(successResponse())
+
+            createService().forward(
+                HttpMethod.POST,
+                "/api/scheduler/agent-tasks",
+                body = mapOf("name" to "Daily", "agentId" to 100, "agentName" to "News Agent"),
+            )
+
+            val request = server.takeRequest(3, TimeUnit.SECONDS)!!
+            assertEquals("POST", request.method)
+            assertTrue(
+                request.getHeader("Content-Type")?.startsWith("application/json") == true,
+                "the other service binds a typed DTO from this body",
+            )
+            val sent = ObjectMapper().readTree(request.body.readUtf8())
+            assertEquals("News Agent", sent.path("agentName").asText())
+            assertEquals(100, sent.path("agentId").asInt())
+        }
+
+        @Test
+        @DisplayName("forward - 响应树原样带回，含一个存在但为 null 的字段")
+        fun `forward should relay the answer tree including a present-but-null field`() {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """{"code":200,"message":"success","data":{"total":1,"records":[{"id":7,"taskStatus":1,""" +
+                            """"lastRunStatus":null,"lastRunTime":null}]},"timestamp":1704067200000}""",
+                    ),
+            )
+
+            val result = createService().forward(HttpMethod.GET, "/api/scheduler/agent-tasks/page")
+
+            assertEquals(200, result.code)
+            val record = result.data!!.path("records").get(0)
+            assertTrue(record.has("lastRunStatus"), "a null the client reads as never-run must survive")
+            assertTrue(record.path("lastRunStatus").isNull, "and stay null rather than becoming a default")
+            assertEquals(7L, record.path("id").asLong())
+        }
+
+        @Test
+        @DisplayName("forward - 非 200 业务码与文案原样透传（40902 靠它才可区分）")
+        fun `forward should pass the business code and message through unchanged`() {
+            val body = """{"code":40902,"message":"Task saved, but the scheduler did not reload: read timed out.""" +
+                """ The previous definition stays scheduled until a reconcile round converges it.",""" +
+                """"data":null,"timestamp":1704067200000}"""
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(body),
+            )
+
+            val result = createService().forward(HttpMethod.DELETE, "/api/scheduler/agent-tasks/7")
+
+            assertEquals(40902, result.code)
+            assertEquals(
+                "Task saved, but the scheduler did not reload: read timed out. " +
+                    "The previous definition stays scheduled until a reconcile round converges it.",
+                result.message,
+                "40902 has to stay distinguishable from a lost edit, in the same words",
+            )
+        }
+
+        @Test
+        @DisplayName("forward - 对端以 HTTP 400 回答时读的仍是它的响应体，不是传输错误")
+        fun `forward should relay a non-2xx answer body instead of folding it`() {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(400)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"code":400,"message":"prompt: Prompt is required","data":null,"timestamp":1704067200000}"""),
+            )
+
+            val result = createService().forward(HttpMethod.POST, "/api/scheduler/agent-tasks", body = mapOf("name" to "x"))
+
+            // Bean validation answers 400, and the field-colon-message text is what the webui shows verbatim.
+            assertEquals(400, result.code)
+            assertEquals("prompt: Prompt is required", result.message)
+        }
+
+        @Test
+        @DisplayName("forward - 服务不可达折叠成错误结果而不是抛出")
+        fun `forward should fold an unreachable scheduler into an error result`() {
+            val deadUrl = baseUrl()
+            server.shutdown()
+
+            val result = assertDoesNotThrow(ThrowingSupplier { createService(deadUrl).forward(HttpMethod.GET, "/api/scheduler/agent-tasks/7") })
+
+            assertEquals(500, result.code)
+            assertTrue(result.message.startsWith("Scheduler service unavailable"), result.message)
+        }
+
+        @Test
+        @DisplayName("forward - 空响应体折叠成无响应错误")
+        fun `forward should fold an empty body into the no-response error`() {
+            server.enqueue(MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json"))
+
+            val result = createService().forward(HttpMethod.GET, "/api/scheduler/agent-tasks/7")
+
+            assertEquals(500, result.code)
+            assertEquals("No response from scheduler", result.message)
+        }
+    }
+
+    @Nested
     @DisplayName("身份转发头测试(契约 C4)")
     inner class IdentityHeaders {
 
@@ -672,6 +855,31 @@ class SchedulerClientImplTest {
             val request = server.takeRequest(3, TimeUnit.SECONDS)
             assertNull(request!!.getHeader("X-Forwarded-User"))
             assertNull(request.getHeader("X-Tenant-Id"))
+            assertNull(request.getHeader("X-Forwarded-Tenant"))
+        }
+
+        /**
+         * The task domain leaves through [SchedulerClient.forward] alone since release 2, and the scheduler
+         * applies its owner-scoped rules to the name in these headers — so the one method that replaced eleven
+         * call sites has to stamp them the same way, or every list silently narrows to the public rows.
+         */
+        @Test
+        @DisplayName("转发任务面 - 泛化 forward 同样带上两个身份头")
+        fun `a forwarded task call carries the identity headers`() {
+            authenticate("carol")
+            TenantContext.setTenantId(3L)
+            server.enqueue(successResponse())
+
+            createService().forward(
+                HttpMethod.GET,
+                "/api/scheduler/agent-tasks/page",
+                mapOf("pageNum" to "1"),
+            )
+
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertEquals("GET", request!!.method)
+            assertEquals("carol", request.getHeader("X-Forwarded-User"))
+            assertEquals("3", request.getHeader("X-Tenant-Id"))
             assertNull(request.getHeader("X-Forwarded-Tenant"))
         }
 

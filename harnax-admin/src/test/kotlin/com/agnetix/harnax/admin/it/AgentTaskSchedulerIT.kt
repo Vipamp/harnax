@@ -1,9 +1,5 @@
 package com.agnetix.harnax.admin.it
 
-import com.agnetix.harnax.entity.AgentTaskLog
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import okhttp3.mockwebserver.Dispatcher
-import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import org.junit.jupiter.api.AfterAll
@@ -13,10 +9,9 @@ import org.junit.jupiter.api.Order
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.TestMethodOrder
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
-import java.time.LocalDateTime
+import tools.jackson.databind.JsonNode
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.test.assertEquals
@@ -24,37 +19,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Agent task scheduler proxy regression: /api/admin/agent-tasks
- * start/pause/trigger/toggle/stop endpoints.
+ * The scheduling half of the task endpoints, as the browser calls them: `/api/admin/agent-tasks` and everything below it in,
+ * [FakeTaskScheduler] out.
  *
- * These endpoints proxy to the external harnax-scheduler service, which is
- * not part of the IT environment. A local okhttp3 MockWebServer stands in for
- * it: harnax.scheduler.url is pointed at the mock via @DynamicPropertySource,
- * and each test controls the stubbed ResultVo response.
+ * Since release 2 these five verbs are nothing but a forward — the state they act on is the scheduler's Quartz
+ * store and its own task row — so what is left to test here is the forwarding contract over this service's real
+ * security filter, tenant filter and `SchedulerClient` bean: the method, path and query that go out, the
+ * identity that goes with them, and the answer that comes back. The scheduling behaviour itself belongs to
+ * `harnax-scheduler`'s own suite.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class AgentTaskSchedulerIT : BaseAdminIT() {
 
     companion object {
-        private const val OK_BODY = """{"code":200,"message":"success","data":null}"""
-        private const val ERR_BODY = """{"code":500,"message":"scheduler boom","data":null}"""
-
-        /** When true the mock scheduler answers every request with a ResultVo error. */
-        @Volatile
-        private var failNext: Boolean = false
+        @JvmStatic
+        val fake: FakeTaskScheduler = FakeTaskScheduler()
 
         @JvmStatic
         val scheduler: MockWebServer = MockWebServer().apply {
-            dispatcher = object : Dispatcher() {
-                override fun dispatch(request: RecordedRequest): MockResponse {
-                    val body = if (failNext) ERR_BODY else OK_BODY
-                    return MockResponse()
-                        .setResponseCode(200)
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(body)
-                }
-            }
+            dispatcher = fake
             start()
         }
 
@@ -65,9 +49,6 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
         }
     }
 
-    @Autowired
-    private lateinit var agentTaskLogMapper: AgentTaskLogMapper
-
     private val suffix = Random.nextInt(100000, 999999)
     private val agentName = "it_sched_agent_$suffix"
     private val taskName = "it_sched_task_$suffix"
@@ -77,7 +58,7 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
 
     @BeforeEach
     fun resetSchedulerStub() {
-        failNext = false
+        fake.failNext = false
         drainRecordedRequests()
     }
 
@@ -95,10 +76,14 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
 
     private fun takeSchedulerRequest(): RecordedRequest {
         val request = scheduler.takeRequest(5, TimeUnit.SECONDS)
-        assertNotNull(request, "a request should have reached the mock scheduler")
+        assertNotNull(request, "a request should have reached the scheduler stand-in")
         return request
     }
 
+    /**
+     * A task the way a caller gets one: created through this service, which resolves the agent name out of its
+     * own `agent` table and hands the row over to the other service.
+     */
     private fun ensureTask(): Long {
         if (taskId > 0) return taskId
         assertOk(postJson("/api/admin/agents", mapOf("name" to agentName, "status" to 1)))
@@ -123,119 +108,135 @@ class AgentTaskSchedulerIT : BaseAdminIT() {
         return taskId
     }
 
-    /**
-     * The stop proxy refuses a log whose task the caller did not create, so that case needs a real row
-     * belonging to the same `admin` principal the request is signed as.
-     */
-    private fun seedRunningLog(taskId: Long): Long {
-        val taskLog = AgentTaskLog().apply {
-            this.taskId = taskId
-            taskName = this@AgentTaskSchedulerIT.taskName
-            prompt = "IT scheduler proxy"
-            status = 3 // running
-            sessionId = "it-sched-$taskId"
-            startTime = LocalDateTime.now()
-            creator = "admin"
-            createTime = LocalDateTime.now()
-        }
-        assertEquals(1, agentTaskLogMapper.insert(taskLog), "the running log row must be created")
-        assertTrue(taskLog.id > 0, "the generated log id should be written back")
-        return taskLog.id
-    }
+    /** The whole `ResultVo` shell, which is what a relay has to leave intact — [assertOk] hands back `data`. */
+    private fun post(path: String): JsonNode = postJson(path)
 
     @Test
     @Order(1)
-    fun `start task proxies to scheduler start endpoint`() {
-        assertOk(postJson("/api/admin/agent-tasks/${ensureTask()}/start"))
+    fun `start task is forwarded to the task surface`() {
+        val answer = post("/api/admin/agent-tasks/${ensureTask()}/start")
+        assertOk(answer)
 
         val request = takeSchedulerRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/tasks/$taskId/start", request.path)
+        assertEquals("/api/scheduler/agent-tasks/$taskId/start", request.path)
+        // The answer is the shell, with no payload: the older scheduling surface puts "Task started" in `data`,
+        // and a client of this API has never seen that string.
+        assertTrue(answer.path("data").isNull, "a forwarded start must not grow a data payload: $answer")
     }
 
     @Test
     @Order(2)
-    fun `pause task proxies to scheduler pause endpoint`() {
-        assertOk(postJson("/api/admin/agent-tasks/${ensureTask()}/pause"))
+    fun `pause task is forwarded to the task surface`() {
+        assertOk(post("/api/admin/agent-tasks/${ensureTask()}/pause"))
 
         val request = takeSchedulerRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/tasks/$taskId/pause", request.path)
+        assertEquals("/api/scheduler/agent-tasks/$taskId/pause", request.path)
+        assertEquals(0, fake.taskStatusOf(taskId), "the forwarded pause is what moved the schedule state")
     }
 
     @Test
     @Order(3)
-    fun `trigger task proxies to scheduler trigger endpoint`() {
-        assertOk(postJson("/api/admin/agent-tasks/${ensureTask()}/trigger"))
+    fun `trigger task is forwarded to the task surface`() {
+        assertOk(post("/api/admin/agent-tasks/${ensureTask()}/trigger"))
 
         val request = takeSchedulerRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/tasks/$taskId/trigger", request.path)
+        assertEquals("/api/scheduler/agent-tasks/$taskId/trigger", request.path)
     }
 
+    /**
+     * The creator-only gate on a log id moved with `agent_task_log`: this service no longer reads a row before
+     * forwarding, so a log the caller does not own is refused by the other service and the refusal is relayed —
+     * which is why this case no longer seeds anything into a database.
+     */
     @Test
     @Order(4)
-    fun `stop task log proxies to scheduler stop endpoint`() {
-        // The stop endpoint gates on the caller owning the log's task before forwarding, so the request
-        // has to carry a real row the caller created — an invented id is rejected, which is the point.
-        val logId = seedRunningLog(ensureTask())
-        assertOk(postJson("/api/admin/agent-tasks/logs/$logId/stop"))
+    fun `stop is forwarded by log id and an unowned one is the other service refusal`() {
+        val logId = 777L
+        fake.seedOwnedLog(logId)
 
+        assertOk(post("/api/admin/agent-tasks/logs/$logId/stop"))
         val request = takeSchedulerRequest()
         assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/tasks/logs/$logId/stop", request.path)
+        assertEquals("/api/scheduler/agent-tasks/logs/$logId/stop", request.path)
 
-        // A log id the caller does not own must be refused *before* the forward, not reported after it.
-        assertErr(postJson("/api/admin/agent-tasks/logs/424242/stop"))
-        assertTrue(
-            scheduler.takeRequest(100, TimeUnit.MILLISECONDS) == null,
-            "a log id outside the caller's ownership must never reach the scheduler",
-        )
+        val refused = post("/api/admin/agent-tasks/logs/424242/stop")
+        assertErr(refused)
+        assertEquals("Agent task log not found", refused.path("message").asText())
+        assertEquals("/api/scheduler/agent-tasks/logs/424242/stop", takeSchedulerRequest().path)
     }
 
     @Test
     @Order(5)
-    fun `toggle task on and off proxies to start and pause`() {
-        assertOk(postJson("/api/admin/agent-tasks/toggle/${ensureTask()}?status=1"))
-        assertEquals("/api/scheduler/tasks/$taskId/start", takeSchedulerRequest().path)
+    fun `toggle forwards the status switch to the task surface`() {
+        assertOk(post("/api/admin/agent-tasks/toggle/${ensureTask()}?status=1"))
+        assertEquals("/api/scheduler/agent-tasks/toggle/$taskId?status=1", takeSchedulerRequest().path)
+        assertEquals(1, fake.taskStatusOf(taskId), "status=1 goes out as the query parameter the switch sends")
 
-        assertOk(postJson("/api/admin/agent-tasks/toggle/$taskId?status=0"))
-        assertEquals("/api/scheduler/tasks/$taskId/pause", takeSchedulerRequest().path)
+        assertOk(post("/api/admin/agent-tasks/toggle/$taskId?status=0"))
+        assertEquals("/api/scheduler/agent-tasks/toggle/$taskId?status=0", takeSchedulerRequest().path)
+        assertEquals(0, fake.taskStatusOf(taskId))
     }
 
+    /**
+     * This case used to assert the opposite, and had to change direction rather than disappear: `toggle` used to
+     * read `agent_task` here and refuse an unknown id without a call. That table moved to the other service, so
+     * the visibility gate moved with it and an unknown id now has to reach it. Unchanged is the answer the
+     * caller sees — "Agent task not found" — which is the half of the claim the client depends on.
+     */
     @Test
     @Order(6)
-    fun `toggle unknown task fails without calling scheduler`() {
-        assertErr(postJson("/api/admin/agent-tasks/toggle/99999999?status=1"))
-        assertTrue(
-            scheduler.takeRequest(100, TimeUnit.MILLISECONDS) == null,
-            "unknown task should be rejected before any scheduler call",
-        )
+    fun `toggle of an unknown task is the scheduler not-found answer`() {
+        val answer = post("/api/admin/agent-tasks/toggle/99999999?status=1")
+        assertErr(answer)
+
+        assertEquals("/api/scheduler/agent-tasks/toggle/99999999?status=1", takeSchedulerRequest().path)
+        assertEquals("Agent task not found", answer.path("message").asText())
+        assertEquals(400, answer.path("code").asInt())
     }
 
     @Test
     @Order(7)
-    fun `scheduler error result is propagated to caller`() {
-        failNext = true
-        assertErr(postJson("/api/admin/agent-tasks/${ensureTask()}/start"))
-        assertErr(postJson("/api/admin/agent-tasks/toggle/$taskId?status=1"))
+    fun `a failure the scheduler answers is propagated to the caller`() {
+        ensureTask()
+        fake.failNext = true
+
+        val start = post("/api/admin/agent-tasks/$taskId/start")
+        assertErr(start)
+        assertEquals(500, start.path("code").asInt())
+        assertEquals("scheduler boom", start.path("message").asText())
+
+        val toggle = post("/api/admin/agent-tasks/toggle/$taskId?status=1")
+        assertErr(toggle)
+        assertEquals("scheduler boom", toggle.path("message").asText())
     }
 
+    /**
+     * A reload used to be admin's job after a committed write, over HTTP, with a 40902 when it did not take. The
+     * reconcile is that service's own after-commit step now, so a forwarded update has to be exactly one call.
+     */
     @Test
     @Order(8)
-    fun `update task notifies scheduler reload`() {
+    fun `update task is one forwarded call and notifies no reload`() {
         assertOk(putJson("/api/admin/agent-tasks/${ensureTask()}", mapOf("prompt" to "Updated by scheduler IT")))
 
         val request = takeSchedulerRequest()
-        assertEquals("POST", request.method)
-        assertEquals("/api/scheduler/reload", request.path)
+        assertEquals("PUT", request.method)
+        assertEquals("/api/scheduler/agent-tasks/$taskId", request.path)
+        assertTrue(fake.otherPaths.isEmpty(), "no second call after a write: ${fake.otherPaths}")
     }
 
     @Test
     @Order(9)
-    fun `delete task notifies scheduler reload and cleans up`() {
+    fun `delete task is one forwarded call and cleans up`() {
         assertOk(deleteJson("/api/admin/agent-tasks/${ensureTask()}"))
-        assertEquals("/api/scheduler/reload", takeSchedulerRequest().path)
+
+        val request = takeSchedulerRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/api/scheduler/agent-tasks/$taskId", request.path)
+        assertTrue(fake.otherPaths.isEmpty(), "the reload notify is gone: ${fake.otherPaths}")
 
         assertErr(getJson("/api/admin/agent-tasks/$taskId"))
 
