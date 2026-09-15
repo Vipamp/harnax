@@ -12,7 +12,9 @@
 
 - spec §5 C1 的"F3 第三刀 C"——**在 admin 比对 sessionId 的 agentId 与 `agent_task.agent_id`**——域搬迁后 admin 读不到那张表，**不可执行**。替代物见 Task 3/4（单源生成 + 消费者严格格式校验 + C5 带 agentId 供冷路径核对），并把残留面登记为 F15（Task 10）。
 - spec §7 的 S3"必须单 PR，因为 admin 编译断裂"由本方案的包名分离消解：每个提交都能编译、能跑测试。
-- spec §10 的"迁 `agent_task`、不迁历史日志"照做，但**新库必须建 `agent_task_log`**：`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus/lastRunTime`，表不存在则列表接口 500。因此第二条用户可见后果是"列表页的最近一次运行两列也会空"（发布公告必须写，spec 只写了第一条）。
+- **用户已确认无历史包袱，D8 退化**：`agent_task` 与两张子表**都不迁移**，新库从空开始，切口后由用户在界面重建任务。因此 Task 9 不再有迁移脚本、不再有自校验查询、不再有"历史清空/最近运行两列变空"的公告（没有历史可失去），旧库三张表切口后**直接 DROP**，不要观察期。
+- 但 **`agent_task_log` 仍必须在新库建出来**：`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus/lastRunTime`，表不存在则列表接口 500。这是 schema 完整性，与是否迁数据无关。
+- **同窗口升级仍然要**，但理由换成两条与数据无关的：① Task 5 的写面鉴权一上，旧 admin 不发内部 JWT 与身份头，所有转发 401；② C1 的四段 sessionId 双向不兼容，所以不得新旧混跑。落到操作上只是"admin 与 scheduler 一起重启"，不再是停服搬数据。
 - 验收线 `grep -rn "agentTaskMapper|agentTaskLogMapper|AgentTaskExecution" harnax-admin/src/main` 的基线实测是 **19 处**（spec 写 24 已过时），且编译边界比这条 grep 更宽：**7 个** admin 文件 import `com.agnetix.harnax.entity.AgentTask*`（含两个 DTO、两个 service 接口），必须一起改。
 
 ## Global Constraints
