@@ -24,7 +24,7 @@
 | D3 | 表放哪 | **独立 `harnax_scheduler` 库** | scheduler 独占 schema 所有权 |
 | D4 | sessionId 是否编码 agentId | **编码**，格式 `task-{taskId}-{agentId}-{uuid}` | 省掉 spec 热路径上的 `agent-id` 端点与一跳网络，并让 admin 不再对 `agent_task` 发 SQL。**注**：另有一条冷路径依赖（MCP 属主解析）须由 C5 承接，见 2.1 |
 | D5 | 任务级权限模式 | **本轮不做**，`permissionMode = "BYPASS"` 继续硬编码在 admin 的 `resolveFromTask` | 属新功能（任务级可配 + webui 配置项），不混入架构改造；记入 fast-follow F5 |
-| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 400s` + 部署脚本逐台滚动。**保护范围 = Quartz 认得的路径**（cron 与 `/run-once` one-shot）；手动 `/trigger` 仍起裸 daemon 线程，停机不等它，S4 把它并入 Quartz 之前不受本条保护 | 见 6.2、6.3 的配套约束 |
+| D6 | 停机语义 | **绝不丢执行**：`waitForJobsToCompleteOnShutdown = true` + `stop_grace_period: 400s` + 部署脚本逐台滚动。**保护范围 = 本模块的全部执行路径**：4.2 落地之后，cron 与手动执行在 store 里是同一类对象（`/trigger` 与 `/run-once` 都只投 one-shot），停机两条都等 | 见 6.2、6.3 的配套约束。**同一事实的另一面**：一次手动执行占用一个 Quartz worker，容量规则（含"1~2 个 worker 不是可用配置"的下限）写在 6.2 与 `docs/deploy-harnax-scheduler.md` |
 | D7 | 中断未命中的修法 | **如实返回命中结果**（跨 agent-service / router / scheduler 三侧） | 拒绝"靠超时猜"的方案，避免孤儿 sandbox |
 | D8 | 数据 | **迁任务定义，不迁历史日志** | 同实例跨库 `INSERT ... SELECT` 成本极低；历史 `agent_task_log` 价值低且量大 |
 
@@ -141,23 +141,35 @@ spring:
 
 ## 4. 执行与停止链路
 
-### 4.1 同步执行 + 双 job 类
+### 4.1 同步执行 + 双 job 类 —— ✅ 已落地（S1）
 
-`AgentTaskJob.execute()` 现在起 daemon 线程后立刻返回（`AgentTaskJob.kt:55-65`），Quartz 于是认为 job 秒完、`QRTZ_FIRED_TRIGGERS` 不留行。后果是三个能力**同时失效**：故障接管接不到正在跑的执行、`waitForJobsToCompleteOnShutdown` 空转（D6 直接落空）、`@DisallowConcurrentExecution` 无对象可互斥。
+**改造前**：`AgentTaskJob.execute()` 起 daemon 线程后立刻返回，Quartz 于是认为 job 秒完、`QRTZ_FIRED_TRIGGERS` 不留行。后果是三个能力**同时失效**：故障接管接不到正在跑的执行、`waitForJobsToCompleteOnShutdown` 空转（D6 直接落空）、`@DisallowConcurrentExecution` 无对象可互斥。
 
 改造：
 
-- 在 Quartz 线程内同步执行完整链路（调 router → 定态 → clearSession），删除裸线程；
+- 在 Quartz 线程内同步执行完整链路（调 router → 定态 → clearSession），删掉那条线程；
 - 摘掉 `InterruptableJob`（其 `interrupt()` 是空实现，真中断走 INTERRUPT 命令），改回 `Job`——同时清掉文档 13.5 记的名义接口；
-- 新增 `AgentTaskNonConcurrentJob`（带 `@DisallowConcurrentExecution`），注册时按 `task.concurrent` 选 job 类。现状 `concurrent=0` 只靠 `withMisfireHandlingInstructionDoNothing`，那只在触发被错过时生效，拦不住重叠执行。
+- 新增 `AgentTaskNonConcurrentJob`（带 `@DisallowConcurrentExecution`），注册时按 `task.concurrent` 选 job 类（`TaskQuartzRegistrar.jobClassFor`，cron 注册与手动 one-shot 共用这一个决定）。改造前 `concurrent=0` 只靠 `withMisfireHandlingInstructionDoNothing`，那只在触发被错过时生效，拦不住重叠执行。
 
 **顺序要求：本项必须早于或同于 3.1 上线。** 这是本次评审对原 M1→M4 顺序的实质修正。
 
-### 4.2 手动执行合并为 one-shot
+### 4.2 手动执行合并为 one-shot —— ✅ 已落地（发布 3）
 
-`triggerManually`（抢锁 + 起线程）与 `runTaskOnce`（投 `AgentTaskGroup_ONCE` one-shot trigger）是两套并行逻辑，前者还绕过了 Quartz。合并为一条：只保留 one-shot 投递（非 durable、JobDataMap 只放 taskId、`startNow()`），集群里任意节点 fire，进程崩了由 Quartz 补火。`hasActiveRunningLog` 保留为"同一任务不许并发手动跑"的业务拦截，`agent_task_execution` 抢锁降级为兜底防线保留。
+**改造前**是两套并行逻辑：`triggerManually`（抢锁 + 起线程，绕过 Quartz）与 `runTaskOnce`（投 `AgentTaskGroup_ONCE` one-shot trigger），而 admin 用的是前者。
 
-顺带清理：`SchedulerConfig.taskExecutor()`（core 2 / max 10 / queue 50，注释写"Async thread pool for manual task execution"）实际无人使用——裸线程路径没走它。本项做完后删除该 bean。
+**现在的样子**：`triggerManually` 已从接口与实现里删除，`/tasks/{id}/trigger`（admin 与 CLI 在用）与 `/tasks/{id}/run-once` 都落到同一个 `SchedulerServiceImpl.runTaskOnce`，它是唯一的手动投递路径，两条 HTTP 契约不变（只有成功文案各自保留）。投出去的东西是：`AgentTask_{id}_ONCE_{uuid8}` @ `TaskQuartzRegistrar.GROUP_ONCE`，trigger 同名加 `_trigger`、`startNow()`、**不带 `storeDurably()`**（跑完的 one-shot 是可再生垃圾，durable 版会留下一行 reconcile 永远读不懂的 job），JobDataMap 只放 `taskId` 字符串，job 类仍由 `jobClassFor(task)` 按 `concurrent` 选——与 cron 那条注册完全同一个契约。集群里任意节点 fire，进程在 fire 前崩掉由 Quartz 补火（持久 + 非 durable 的 trigger 在 MisfireHandler 那一轮被重新置回 WAITING，不是丢弃）。
+
+三道闸口的**位置**是这一节的关键，因为它们的可见性不同：
+
+- 投递时只有一道，`blocksManualRun(task)` = `concurrent == 0 && hasActiveRunningExecution(taskId)`，命中即 `runTaskOnce` 返回 false → 业务码 `40901`。这是"同一任务不许并发手动跑"的业务拦截（原 `hasActiveRunningLog` 的当代形态）。
+- fire 时另有两道，都在 `AbstractAgentTaskJob.run()` 里、**都早于插 `agent_task_log` 那行**：`concurrent=0` 且已有活执行（重叠闸口）、`guard.tryAcquireLock` 输给别的节点（集群锁，降级为兜底防线）。命中任一条就是 `log.info` + `return`，**没有日志行**。所以"HTTP 200 之后打开日志列表"完全可以是空的，这是设计而不是缺陷（运维读法见 `docs/deploy-harnax-scheduler.md` 的「优雅停机」）。
+- `@DisallowConcurrentExecution` 帮不上忙：它是按 JobDetail 互斥的，而一个任务握着两个（cron 的 `AgentTask_{id}@AgentTaskGroup` 与每一次点击的 `AgentTask_{id}_ONCE_*@AgentTaskGroup_ONCE`），只有那把按 task 键的读能跨过去。
+
+**`taskStatus` 守卫对 one-shot 例外**，且是刻意的：那个守卫存在是因为 store 里的 cron job 是 `agent_task` 的滞后副本，而一次点击的注册本身就是用户几秒前刚表达的意图，所以**任务在点击与 fire 之间被暂停也照样跑**；软删除（`active != 1`）两边都拒。判定读的是 group 常量，不是 data-map 标记——`useProperties: true` 下 JobDataMap 只能放字符串。
+
+顺带清理**已做**：`SchedulerConfig.taskExecutor()`（core 2 / max 10 / queue 50）随本项删除，`SchedulerConfig` 现在只剩 `restClient()`。留一行事实备查：`SchedulerApplication` 上的 `@EnableAsync` 因此在本模块已无任何使用者（全模块零 `@Async`），它没有被一并删掉——删它是另一次改动，不要把它当"手动执行还在用异步池"的证据。
+
+容量代价是同一件事的另一面，写在 6.2 与部署文档：一次手动执行占用一个 Quartz worker，`SimpleThreadPool` 无队列。
 
 ### 4.3 中断未命中如实定态（D7）
 
@@ -229,7 +241,8 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
   - 状态：**两项都已落地**——映射改 `expose` 由第二轮 R1 做掉，`container_name` 由发布 1 删掉（留着它 Docker 会直接拒绝 `--scale`，两副本这个形态就不成立）。上面两处行号是 2026-09-11 当时的快照，此后该文件一直在长，读现在的 scheduler 段注释为准。
 - **不在 compose 里声明 `deploy.replicas`**，实例数由部署脚本显式 `--scale scheduler=2` 决定。理由：6.3 的逐台滚动要在"停掉其中一台、补齐到 2"之间来回切换，声明式 replicas 会让 `--no-recreate` 的收敛行为变得难以推理。
 - `stop_grace_period: 400s` + `spring.quartz.wait-for-jobs-to-complete-on-shutdown=true`。**均已落地**（compose 的 scheduler 服务、`harnax-scheduler/src/main/resources/application.yml`，两处都有把算式写出来的注释）。**400 = 300 + 60 + 20 + 8 + 4**：chat 读超时 300s + `clearSession` 上限 60s + 两次调用各 10s 的 connect 预扣 20s + 定态写回与释放抢锁行 8s + Spring 关停钩子 4s（合计 392，向上取整到 400s；逐项推导在 compose 那段注释里，改任何一个数都要回到那里重算）。`clearSession`（快照上传 + 容器销毁）现在有自己独立的读超时 `min(scheduler.clear-session-timeout-seconds=60, timeout-seconds)`，不再沿用 chat 的 300s——沿用的话一次执行最坏占用是 600s，旧推导"300 + 40 + 20 = 360s"两头都不成立（clearSession 不是 40s，360s 也远小于真实的 600s），SIGKILL 会正好落在 DELETE 中间。**为什么不是刚好等于 timeout**：超时只管得到 router 调用，之后那几十秒才是把一次跑完的执行落成定态行的动作，砍掉它就把正常完成记成超时。
-  - **保护范围只到 Quartz 认得的路径**（cron 与 `/run-once`）。手动 `/trigger` 走 `SchedulerServiceImpl.triggerManually` 起的裸 daemon 线程，Quartz 不知道它在跑，因此 `waitForJobsToCompleteOnShutdown` 不等它、grace 也不覆盖它：执行中被重启就是 `status=3` 的行 + `status=0` 的锁行。S4 把 one-shot 并入 Quartz 之前，**不要在任务执行中重启 scheduler**。
+  - **保护范围 = 全部执行路径**（4.2 于发布 3 落地之后才成立）。此前手动 `/trigger` 走 `SchedulerServiceImpl.triggerManually` 起的线程，Quartz 不知道它在跑，`waitForJobsToCompleteOnShutdown` 不等它、grace 也不覆盖它：执行中被重启就是 `status=3` 的行 + `status=0` 的锁行。现在 `/trigger` 与 `/run-once` 都只往 store 投 one-shot，cron 与手动跑在同一批 worker 上，**"不要在任务执行中重启 scheduler"这条例外已经取消**——包括"对已暂停的任务点立即执行"这一情形（one-shot 不受 `taskStatus` 守卫管辖）。
+  - 保护与容量是同一条事实的两面，运维规则因此改变：一次手动执行占用 `QUARTZ_THREAD_COUNT` 个 worker 之一直到跑完，`SimpleThreadPool` **没有队列**，worker 被占满时到期的 cron 只能等；等到越过 `misfireThreshold: 60000` 就成了 misfire，而 `concurrent=0` 用的正是 `withMisfireHandlingInstructionDoNothing` —— **那一发定时任务被跳过，不是延后跑**。据此定出下限：**不要用 1~2 个 worker 跑 scheduler**。正文见 `docs/deploy-harnax-scheduler.md`。
   - 这一项原先归在 S2，实际与 S1 同期做掉了：job 一旦在 Quartz 线程内同步执行，"停机不等就等于把一次正常执行切成僵尸行"立刻成立，不必等 JDBC store。属性方式即可（见 3.1 约束 2），`SchedulerFactoryBeanCustomizer` 是多余的。
   - 本项剩下的只有 6.3 的逐台滚动脚本——**发布 1 已交付**（`docker-new/roll-scheduler.sh`，见 6.3 的状态）。
 - 时钟：compose 已统一挂载 `/etc/localtime`；集群要求各节点时钟偏差 < 1s，宿主机 NTP 记入运维 checklist（Quartz 集群对时钟敏感，NTP 步进会造成误判接管）。
@@ -269,7 +282,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 | **S1 执行语义** | 4.1 同步执行 + 双 job 类；4.3 中断命中语义（D7，跨三侧）；4.4 定态分支 + 3.5 超时统一；4.5 housekeeping | 2.5 | ✅ | **已完成**，另把 D6 的优雅停机配置（3.1 约束 2 + 6.2 的 `stop_grace_period`）提前做了——同步执行一落地，"停机不等"就立刻制造僵尸行 |
 | **S2 库 + 集群 + 对账 + 部署形态** | 6.1 建库与两个 Flyway 脚本；3.1 quartz 集群配置 + 约束 2/3；3.3 reconcile；D8 数据迁移（`agent_task` 一次性 `INSERT ... SELECT`）；6.2/6.3 compose 与逐台滚动；6.4 删 nginx 与宿主映射 | 4 | ✅（内部必须原子） | ✅ **已完成，带范围注（见修正 C）**。落地的是：QRTZ 层（`V1__quartz_tables.sql` + scheduler 自己的 Flyway 历史表 + `job-store-type=jdbc` 集群配置）、reconcile 取代全删重建与 60s 集群清扫、部署形态（compose 两副本、`roll-scheduler.sh` 逐台滚动、admin 的广播塌缩成一次转发）。**没做、随 S3**：`V2__agent_task_domain.sql`、数据源切到 `harnax_scheduler`、D8 的 `agent_task` 迁移。**IT-1/IT-2/IT-5 已写、从未执行**（交付机器无 Docker 守护进程），所以本行的"完成"不含集成测试通过 |
 | **S3 域搬迁** | 三实体 + 三 mapper + 三 XML 从 `harnax-entity` 移入 scheduler（含 `@MapperScan`、`type-aliases-package`、XML 全限定 type）；scheduler 自带 `Page`/异常副本 + pagehelper；`/api/scheduler/agent-tasks/**` 12 端点 + C5 owner 端点 + 2.3 拦截器；admin `AgentTaskController` 瘦身为鉴权+转发、删 service/DTO/广播；C1 sessionId 编 agentId；**admin 侧 24 处 mapper 引用全部清零（实测 4 个文件：`AgentTaskServiceImpl` 12、`InternalApiController` 4（含 290 与 713 两处 `selectAnyById`）、`AgentTaskLogServiceImpl` 5、`McpSessionOwnerResolver` 3）** | 3.5 | ❌ 必须单 PR（admin 编译断裂） | ⏳ 未开始 |
-| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ | ⏳ 未开始。**指标两半已被 S2 提前做掉**：`scheduler.reconcile.drift{action}` 与健康/指标的集群语义随发布 1 落地，`scheduler.jobs.scheduled` 因此**已经是集群视图**（store 不再是 RAM，F9 剩下的只是看板阈值重读）。S4 实际还欠：4.2 的 one-shot 合并（连带删 `SchedulerConfig.taskExecutor`，它至今无人使用）、依赖它的 IT-4、以及第 8 节测试补全 |
+| **S4 收口** | 4.2 one-shot 合并 + 删 `taskExecutor`；`scheduler.reconcile.drift` 指标；健康/指标改集群语义；第 8 节测试补全；文档同步 | 2 | ✅ | ✅ **发布 3 已完成，除测试那一栏**。落地的是：4.2 的 one-shot 合并（`triggerManually` 连同 `SchedulerConfig.taskExecutor()` 一起删除，两个手动端点同源，见 4.2）与随之改掉的文档——`docs/deploy-harnax-scheduler.md`、`prod_doc/agent-task-scheduler.zh-CN.md` 和 `docker-new/docker-compose.yml`、`application.yml` 的停机注释不再声称"grace 只覆盖 cron"。**指标两半早已被 S2 提前做掉**（`scheduler.reconcile.drift{action}` 与健康/指标的集群语义随发布 1 落地，`scheduler.jobs.scheduled` 因此**已经是集群视图**，F9 剩下的只是看板阈值重读）。**S4 还欠的只有一件**：依赖 one-shot 的 IT-4（`storeDurably` 缺席下的补火断言）与第 8 节其余补全——它需要 Docker，发布 3 也没跑。同批另外收掉两处会话归属：admin 能回答 `chn-` 的归属租户（F3-A 的 `chn-` 半边），`/api/router/monitor/call-logs` 按调用方租户收口 |
 
 合计约 **12.5 人日**。要点是 **S0+S1 = 3 人日即可独立上线并解决全部问题③**——原计划把这些排在 M0 与最末的 M4，等于正确性修复要等 14 人日的搬迁走完才对用户生效。
 
@@ -283,7 +296,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 **发布 1 落地的形态与原设想不同，三处都是实测出来的**：surefire 侧不能只靠 `<excludes>` 挡 `*IT`——命令行一旦出现 `-Dtest`，插件就会用表达式覆盖 `<excludes>`，所以护栏是 `@Tag("integration")` + `excludedGroups`（基类标一次，`@Tag` 是 `@Inherited`）；failsafe 挂在 `-Pintegration-test` 之后；且本模块的 `repackage` 没有 classifier，必须给 failsafe 加 `additionalClasspathElements=${project.build.outputDirectory}`，否则测试发现死在 `BOOT-INF` 遮蔽上。手工用 `StdSchedulerFactory` 建第二个集群成员时还必须显式 `org.quartz.dataSource.<name>.provider=hikaricp`——Quartz 2.5.2 对手工数据源默认走 c3p0，而 c3p0 在本仓是 `provided` 且无人声明；生产路径不受此影响（Spring 的 `LocalDataSourceJobStore` 自带 provider），所以**不要**把这行抄进 `application.yml`。
 
-**执行状态**：IT-1（`ClusterSingleFireIT`）、IT-2（`ReconcileConvergenceIT`）、IT-5（`HousekeepingGuardIT`）已经是能编译的类，**一次都没跑过**——交付机器上没有 Docker 守护进程。IT-4 要等 S4 的 one-shot 合并；IT-3 的属主校验在 admin 侧，随 S3 才有被测对象。"跑通它们"是验收机器的工作：`mvn -o -pl harnax-scheduler verify -Pintegration-test`。**在这之前任何地方都不该出现"IT 全绿"。**
+**执行状态**：IT-1（`ClusterSingleFireIT`）、IT-2（`ReconcileConvergenceIT`）、IT-5（`HousekeepingGuardIT`）已经是能编译的类，**一次都没跑过**——交付机器上没有 Docker 守护进程。IT-4 的前置条件（S4 的 one-shot 合并）已由发布 3 完成，**但它本身仍未编写**；IT-3 的属主校验在 admin 侧，随 S3 才有被测对象。"跑通它们"是验收机器的工作：`mvn -o -pl harnax-scheduler verify -Pintegration-test`。**在这之前任何地方都不该出现"IT 全绿"。**
 
 | 用例 | 断言 | 为什么值得写 |
 |---|---|---|
@@ -301,10 +314,12 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 1. **F1 scheduler 服务自鉴权**：真正装配 `harnax.auth.enabled=true` 的完整方案、端点级 `@InternalOnly`。本轮只有 2.3 的 ~20 行验签拦截器。
 2. **F2 生产匿名面收窄**：swagger、`/actuator/prometheus`。本轮只删 nginx location 与宿主端口映射。
-3. **F3 `agent-spec` 属主校验缺失**：🟡 **前缀策略已落地，但只覆盖 `task-`（`SessionAccessGuard` + `PrivilegedSessionPrefixes`，本批只做 B）**。原本的状况：`sessionId` 由调用方任意传入，router 侧唯一的归属校验 `SessionAccessGuard.requireAccessible` 只认 admin 的 `session` 表，而 `task-`/`chn-` 按设计**不在这张表里**（它们来自 `agent_task` / `channel`）→ lookup 恒为 `Unknown`、而 `Unknown` 是放行。于是任何一枚有效凭据——用户自己的登录 JWT 就够——伪造 `task-{受害者taskId}-...` 即可拿到该任务的 systemPrompt/model/tools/skills/MCP 清单，且 `resolveFromTask` 硬编码 `permissionMode = "BYPASS"`（免工具确认）。守卫只认一张表、admin 的解析认四张表，这个不对称就是洞本身。
+3. **F3 `agent-spec` 属主校验缺失**：🟡 **前缀策略已落地（`SessionAccessGuard` + `PrivilegedSessionPrefixes`，覆盖 `task-`），归属比较也在发布 3 补上了 `chn-` 这一半**（admin 现在能回答频道会话的归属租户，跨租户 `chn-` 读取即拒；`task-` 的归属仍等发布 2 的 owner 端点）。原本的状况：`sessionId` 由调用方任意传入，router 侧唯一的归属校验 `SessionAccessGuard.requireAccessible` 只认 admin 的 `session` 表，而 `task-`/`chn-` 按设计**不在这张表里**（它们来自 `agent_task` / `channel`）→ lookup 恒为 `Unknown`、而 `Unknown` 是放行。于是任何一枚有效凭据——用户自己的登录 JWT 就够——伪造 `task-{受害者taskId}-...` 即可拿到该任务的 systemPrompt/model/tools/skills/MCP 清单，且 `resolveFromTask` 硬编码 `permissionMode = "BYPASS"`（免工具确认）。守卫只认一张表、admin 的解析认四张表，这个不对称就是洞本身。
    已落地的 B：`task-` 归为"由服务端自行决定的会话"，只有 `AuthContext.userId == null` 的内部调用方（SYSTEM key、内部服务令牌）能用；带终端用户身份的调用方（登录 JWT 或代表用户的外部 API key，即 `userId != null`）在 **lookup 之前**按前缀拒绝（判定同时位于 `tenantId ?: return` 之前，无租户的终端用户 key 也拦得住）。`web-`/`mp-` 行为完全不变，仍走租户比较。stream 端点（`/chat/stream`、`/confirm`）把拒绝转成 `ErrorChatEvent`（`FORBIDDEN`）+ `EndEventChatEvent`，不再让异常落到 `GlobalExceptionHandler` 上把 JSON 错误体写成 event-stream。
-   **`chn-` 已从特权前缀集合移出**——首版（`89138c3`）把它与 `task-` 一并拦下，过宽。两个前缀的**可利用性不对等**：`task-{taskId}` 的 `{taskId}` 是自增整数，一枚有效凭据就能从 1 数到 N，读遍别人的任务配置，这是必须堵的枚举面；`chn-{uuid}`（生成处 `ChannelServiceImpl.kt:145`）是 UUID，不可枚举，能命名它的人本来就早已掌握那个具体 id。而 `chn-` 侧**确有合法的终端用户只读流量**：webui 频道管理页拿 `batchGetWorkspaceStatus(channels[].sessionId)` 查沙箱状态（`pages/channel/index.tsx:112-127`），并把同一个 sessionId 交给 `WorkspaceDrawer`（`:311-343` 的 Sandbox 列与 Workspace 按钮、`:538-542` 挂载 → `files`/`read`/`download`，`pages/session/components/WorkspaceDrawer.tsx:50,94,291`）；这些 sessionId 就是 `chn-{uuid}`，凭据是登录时下发的**用户绑定 key**（`AuthServiceImpl.kt:104-127` → `ApiKeyServiceImpl.kt:196` 写入 `userId`），即 `userId != null`，正好落在首版的拒绝里。净效果是 Sandbox 列恒为 `-`、Workspace 按钮恒 `disabled`，且失败被 `index.tsx:125-127` 的空 catch 吞掉，**静默**。而这次拒绝换来了什么？**没有任何可验证的授权**：admin 的 `/sessions/{id}/info` 只查 `session` 表，对 `chn-` 恒为 `Unknown`，这里根本不存在一个能被保护的归属查询。一条拦不住攻击者、又关掉真实功能的规则不值其代价，所以 `chn-` **恢复本分支之前的行为**（走既有租户比较分支，与本分支之前完全一致）；`chn-` 真正的归属保护归入下面的 A——那是"加检查"而不是"撤访问"，才是有信息量的修法。
-   **剩余面（A，本批不做）**：`/internal/sessions/{id}/info` 仍只查 `session` 表，应扩为按前缀解析 `agent_task` / `channel` 的归属租户，使跨租户判定对四类会话全部生效——**`chn-` 的终端用户跨租户读就挂在这一条上**：它今天的实际状态与前缀规则封堵之前的 `task-` 相同（lookup 恒 `Unknown` → 放行）。此项改变的是既有跨租户策略（今天 `chn-` 的跨租户访问被静默允许），单独一刀做会连带影响未参与本次改动的行为，需要单独设计与验证；`SessionAccessGuardTest` 已钉住"一旦 admin 能回答 `chn-`，跨租户即拒"。纵深防御的 C（`resolveFromTask` 校验 sessionId 的 agentId 段与该行 `agent_id` 一致）**前提未成立**，随 C1 一起落地，见 C1 条目。
+   **`chn-` 已从特权前缀集合移出**——首版（`89138c3`）把它与 `task-` 一并拦下，过宽。两个前缀的**可利用性不对等**：`task-{taskId}` 的 `{taskId}` 是自增整数，一枚有效凭据就能从 1 数到 N，读遍别人的任务配置，这是必须堵的枚举面；`chn-{uuid}`（生成处 `ChannelServiceImpl.kt:145`）是 UUID，不可枚举，能命名它的人本来就早已掌握那个具体 id。而 `chn-` 侧**确有合法的终端用户只读流量**：webui 频道管理页拿 `batchGetWorkspaceStatus(channels[].sessionId)` 查沙箱状态（`pages/channel/index.tsx:112-127`），并把同一个 sessionId 交给 `WorkspaceDrawer`（`:311-343` 的 Sandbox 列与 Workspace 按钮、`:538-542` 挂载 → `files`/`read`/`download`，`pages/session/components/WorkspaceDrawer.tsx:50,94,291`）；这些 sessionId 就是 `chn-{uuid}`，凭据是登录时下发的**用户绑定 key**（`AuthServiceImpl.kt:104-127` → `ApiKeyServiceImpl.kt:196` 写入 `userId`），即 `userId != null`，正好落在首版的拒绝里。净效果是 Sandbox 列恒为 `-`、Workspace 按钮恒 `disabled`，且失败被 `index.tsx:125-127` 的空 catch 吞掉，**静默**。而这次拒绝换来了什么？**当时没有任何可验证的授权**：admin 的 `/sessions/{id}/info` 只查 `session` 表，对 `chn-` 恒为 `Unknown`，这里根本不存在一个能被保护的归属查询（这一条发布 3 已改，见下面 A 的 `chn-` 半边）。一条拦不住攻击者、又关掉真实功能的规则不值其代价，所以 `chn-` **恢复本分支之前的行为**（走既有租户比较分支，与本分支之前完全一致）；`chn-` 真正的归属保护归入下面的 A——那是"加检查"而不是"撤访问"，才是有信息量的修法。
+   **A 的 `chn-` 半边：✅ 发布 3 已闭环**。`GET /internal/sessions/{id}/info` 遇到 `chn-` 不再"查 `session` 表未果即 Unknown"，而是走 `channelSessionInfo` → `ChannelMapper.selectOwnerBySessionId`：`SELECT session_id, tenant_id, agent_id FROM channel WHERE session_id = ? LIMIT 1`，**没有 `active = 1` 过滤**（`V28__add_channel_session_id_index.sql` 正是为这一条查询补的索引）。不看 `active` 是本项的重点而不是疏漏：`deleteById` 是软删除，行没了但 `tenant_id` 还留在行上，而删频道既不清 session 也不清 sandbox——按 active 过滤等于把**"删掉一个频道"变成"抹掉一次跨租户读取的归属"**。所以软删除的频道照样归属它原来的租户：这里回答的是"这是谁的"，不是"这还准不准读"（配置读取仍走带 active 过滤的 `selectBySessionId`，那边的"删了就没了"才是对的）。查无此行才回 Unknown，而 `chn-` 的 id 与频道行是同时生成的（`ChannelServiceImpl.generateSessionId`），所以"有 id 无行"只可能是 admin 从未发出过的 id。`tenant_id <= 0` 的行**照实上报**而不折叠成 null——null 在 router 那里就是"无法判定"即放行，而 0 会让每一个带租户的调用方都成为跨租户调用方；admin 同时打一条 warn，让这种频道可诊断。`agentName`/`modelId`/`modelName` 留 null（这条路径唯一消费者是 router 的调用日志补全，缺字段只少几列补充信息，不值得给每一次 cache miss 加第二次查询）。**净结果**：租户 A 的登录态命名租户 B 的 `chn-` 会话，router 现在比得出归属并抛 `SecurityException`（此前恒放行），`SessionAccessGuardTest` 钉的那条"admin 能回答即拒"从此是活规则。
+   **A 的 `task-` 半边：仍不做，且是决定不是遗漏**。`task-` 的归属属于 scheduler 域，admin 不该替它回答——发布 2（S3）搬域时由 scheduler 的 owner 端点（C5）给出，届时这一条与前一条同样收口。今天它仍由 `PrivilegedSessionPrefixes` 的前缀规则挡着：只有 `userId == null` 的内部调用方可用，带终端用户身份的调用方在 lookup 之前就被拒。纵深防御的 C（`resolveFromTask` 校验 sessionId 的 agentId 段与该行 `agent_id` 一致）**前提未成立**，随 C1 一起落地，见 C1 条目。
+   **这条收口留下的已知窗口（一行）**：router 的 `SessionInfoClient` 把 admin 的归属查询**连结果一起缓存 5 分钟**（写后过期、上限 5000 条），所以一次归属变化——包括本次发布把 `chn-` 的 Unknown 变成 Found——最多 5 分钟内仍按旧值判定（`Unreachable` 立即作废，`Unknown`/`Found` 不作废）。这是既有缓存的既有语义，不是新引入的缺陷。
 4. **F4 `agent_task_log.agent_task_id` 列**：现在靠解析 sessionId 字符串定位任务，应改为显式外键列。
 5. **F5 任务级权限模式**：`agent_task` 加 `permission_mode` 列，scheduler 建会话时带上，替代 admin 侧硬编码的 `BYPASS`（D5 的产物）。
 6. **F6 status 取值收敛**：`0/1`、`0/1/2`、`3/4/5` 三套散落字面量收敛为共享枚举。
@@ -313,6 +328,10 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 9. **F9 指标语义（🟡 已随 S2 落地；剩下的是看板重读）**：代码这一侧已经全部改完——`scheduler.jobs.scheduled` 与健康 detail 的 `scheduledJobCount` 都**当场读共享 store**，因此它们是**集群视图**（两副本取相同值，不再有"每台各报自己那一份"的含义），读不出 store 时 gauge 给 NaN 而不是一个像样的 0；`scheduler.load.attempts` 已改名 `scheduler.reconcile.rounds{outcome}`，语义是**一轮一个样本**（谁来跑都算：启动收敛、admin 的一次 `/reload` 转发、60s 清扫），不再是每次启动一到 n 个；`scheduler.reconcile.drift{action}` 每轮只由跑它的那一台发布，所以按 `instance` 求和得到的是集群总量，而读单台不等于读集群。**留给运维的动作**：既有看板与告警阈值必须按新语义重读，特别是任何把旧名读成"启动失败次数"的面板——那条读数现在会一直涨，涨速是每轮一次而不是每次重启一次。
 10. **F10 `agent_task_execution` 缺索引**：✅ **已落地（第三批次 G4，`V27__add_agent_task_execution_sweep_indexes.sql`）**，补的正是 `KEY idx_status_create_time (status, create_time)` 与 `KEY idx_create_time (create_time)`，`harnax-entity/src/test/resources/schema-test.sql` 同步。原本的状况：V1 建的这张表只有 PK、`uk_task_trigger(task_id, trigger_time)`、`idx_task_id`、`idx_trigger_time`，**`status` 与 `create_time` 都没有索引**，而 S1 的 housekeeping 把 `deleteStaleRunning`（按 `status` + 时间）与 `deleteOldExecutions`（按 `create_time`）挂成了每 5 分钟一轮，这张表又按触发次数线性增长 → 每轮两次全表扫，且扫描范围锁与 `tryAcquireLock` 的 INSERT 在 `uk_task_trigger` 上互顶。真库上的 `EXPLAIN` 命中验证**仍然没做过**。它的归属现在很明确：全仓库唯一有真 MySQL 的地方就是 scheduler 的 failsafe 套件，而 `HousekeepingGuardIT` 已经在真库上跑这两条清扫语句——`EXPLAIN` 就顺着它读一次。前提是那套 IT 第一次真的跑起来（`mvn -o -pl harnax-scheduler verify -Pintegration-test`，需要 Docker 守护进程，发布 1 只交付了代码）。在那之前，"索引被命中"是推测，不是观察结果。
 11. **F11 停止意图只有一个瞬态列承载**：用户"点了停止"这件事目前**只写在 `agent_task_log.status = 4` 上**，没有独立的标记位，于是它只活到下一次回收扫描为止。G6 补齐的是**能区分出来的那一半**：执行线程先读到 4、随后 4 被 sweep 改成 2，`finalizeStopped` 的 4 守卫失配 → 重读发现是 2 → 改走 `reclaimExpired` 写 5（`SchedulerServiceImpl.kt:524-550`）。**没补齐的那一半**是 sweep 在**那次重读之前**就把 4 改成 2：线程按 2 分支写回自己真实的 0/1，用户那一次停止就此从记录上消失，而且**无法与"根本没被停止过"区分**——`expireStale` 已经把 `error_info` 覆盖成超时文案，4 存在过的证据被销毁了。这不是"超时"那样的错误标签，但这一行仍然不对。根治需要给行加一个 stop/owner 标记（`stop_requested` 列，或 `agent_task_execution` 上记 owner），让停止意图不依赖 status 这一瞬态——属 S2/S3 的库改动，本轮不动行为，只在 `SchedulerServiceImpl.kt:510-561` 与 `AgentTaskLogMapper.xml` 的 `expireStale`/`reclaimExpired` 注释里标明各守住哪个窗口、哪个窗口未守。
+12. **F12 `GET /api/admin/channels/page` 无租户过滤（🔴 发布 3 判定超范围，未修；本清单里用户感知最强的一条）**。事实：`ChannelController.pageChannel` → `ChannelServiceImpl.page` → `channelMapper.selectChannelList(keyword, type, status)`，那条 SQL 除了 `active = 1` 与 keyword/type/status 三个可选条件**不过滤任何东西**，`tenant_id` 根本不在 WHERE 里；而本该兜这一层的 `MybatisTenantInterceptor.intercept()` **方法体整体是注释掉的**，只剩 `return invocation.proceed()`（F8 说的就是它）。于是列表可以直接包含别的租户的频道行，而 `ChannelResponse` 是 1:1 全字段下发——连 `configJson`（各平台凭证）与 `sessionId`、`callbackKey` 一起给出去。
+    **发布 3 之后它多了一个用户可见的后果**：那份混合列表的 `sessionId` 会被整批交给 `GET /api/router/agent/workspace/status`，而 router 对列表里**每一个** id 都过 `SessionAccessGuard.requireAccessible`——`chn-` 现在答得出归属，于是别租户那一个抛 `SecurityException`，**整批调用一起失败**。webui 侧是 `pages/channel/index.tsx` 的空 catch，所以现象不是报错而是**静默**：一个同租户的操作员，Sandbox 列恒为 `-`、Workspace 按钮恒 `disabled`，看起来只像功能坏了。
+    **它同时顶穿了 F3 的前提**：发布 1 选择"不按前缀拒绝 `chn-`"的理由是 `chn-{uuid}` 不可枚举、能命名它的人本就掌握那个 id。列表接口正是这个"本就掌握"的来源——不必枚举 UUID，一页 JSON 就够了。所以这条不只是数据泄露，它使 F3-A 的 `chn-` 收口在实践上少了一层。
+    **最小正确修法**（不在发布 3）：`selectChannelList` 加显式租户谓词，值由服务端从调用方身份推导（**不是**调用方可传的 query 参数——调用方选的过滤器不能同时是它所在的边界，与 `/monitor/call-logs` 同一道理），并给平台管理员留一条**显式**豁免（像 `@SkipTenantFilter` 那样标注，而不是靠"没人盖章"）；同时把列表 DTO 里的 `configJson`/`callbackKey` 摘掉（列表页用不到，详情按需下发）。webui 那个空 catch 要改成可诊断的失败，否则同类故障每次都只表现为"按钮坏了"。
 
 ## 10. 数据迁移（D8）
 
@@ -324,7 +343,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 ## 11. 验收标准
 
-1. `mvn -o -pl harnax-scheduler verify -Pintegration-test` 通过，IT-1/IT-2/IT-5 全绿。**发布 1 只交付到"这三个类写好了"**：交付机器没有 Docker 守护进程，它们一次都没执行过，所以这一条**现在是未决项，不是已完成项**——它要有 Docker 的机器（本机或验收机）跑一次才算数。IT-4 依赖 S4 的 one-shot 合并，IT-6/IT-7 属中断命中与超时竞争两批，都不在本条之内。
+1. `mvn -o -pl harnax-scheduler verify -Pintegration-test` 通过，IT-1/IT-2/IT-5 全绿。**发布 1 只交付到"这三个类写好了"**：交付机器没有 Docker 守护进程，它们一次都没执行过，所以这一条**现在是未决项，不是已完成项**——它要有 Docker 的机器（本机或验收机）跑一次才算数。IT-4 的依赖（S4 的 one-shot 合并）已由发布 3 满足、但用例仍未编写，IT-6/IT-7 属中断命中与超时竞争两批，都不在本条之内。
 2. `docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2` 后 `QRTZ_SCHEDULER_STATE` 有两个实例的 `INSTANCE_NAME`，且每行的 `LAST_CHECKIN_TIME` 每 15s 各自前进（**行数不等于副本数**，见上）；kill 其一，另一个接管它未完成的 trigger。接管窗口是**算出来的 22.5~52.5s**，不是范围猜的：死节点那行的 `LAST_CHECKIN_TIME` + `CHECKIN_INTERVAL` 15000ms + Quartz 硬编码的 7500ms = **22.5s** 之后才被 `calcFailedIfAfter` 判为失效，而对端只在自己的 ClusterManager 线程醒来时求值这个式子（睡的就是一个 checkin 周期）→ **+至多 15s**；那一轮对端自己被慢库拖过一整个周期时 `max()` 取 30s 而非 15s → **再 +15s**，最坏 52.5s。整个窗口都落在 `misfireThreshold: 60000` 之内，所以**单节点死亡不丢触发**，而一次全 service 的 `--force-recreate`（最长 400s）必然越过它——那条边由 `roll-scheduler.sh` 关住（见 6.3）。
 3. 带执行中任务重启 scheduler：该行最终为真实结果（1 或 0），**不是** 2 timeout；`stop_grace_period` 生效证据可见于容器退出耗时。
 4. 对一个正在执行的任务点"停止"：agent-service 已重启过的场景下，日志状态在秒级变为 5，不出现 timeout。

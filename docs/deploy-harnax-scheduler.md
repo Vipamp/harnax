@@ -86,9 +86,11 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 - 本模块 compose 有 `stop_grace_period: 400s`，`application.yml` 显式写了 `spring.quartz.wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}`（Boot 的默认是 `false`，必须写出来）。**400 是一串求和的上取整**：chat 读超时 300 + `clearSession` 上限 60 + 两次调用各 10s 的 connect 预扣 20 + 定态写回 8 + Spring 关停钩子 4 = 392。逐项推导写在 `docker-new/docker-compose.yml` 的 scheduler 段注释里，改 `SCHEDULER_TIMEOUT` 或 `SCHEDULER_CLEAR_SESSION_TIMEOUT` 都要回到那里重算，别让注释变成谎话。
 - 宽限和 `waitForJobsToCompleteOnShutdown` 必须成对：等任务的前提是内核没先 SIGKILL；`docker stop -t` 的默认 10s 会把一次跑到一半的执行切成 `agent_task_log` 的 `status=3` 与 `agent_task_execution` 的 `status=0`，等 housekeeping 最坏 2× 超时后才回收。
 - **`roll-scheduler.sh` 里有一份同一个数**（`SCHEDULER_STOP_GRACE`，默认 400），滚动时逐台花掉这个窗口；两处要一起改——滚动超时短于 `stop_grace_period` 等于在 mid-run 上 SIGKILL，正是这个宽限要挡的事。
-- **保护范围只到 Quartz 认得的路径**：cron 与 `/run-once` 的一次性投递。手动 `/api/scheduler/tasks/{id}/trigger` 仍起裸 daemon 线程（`SchedulerServiceImpl.triggerManually`），Quartz 不知道它在跑，于是既没有接管也没有等待：**手动执行可能在进行中时，不要重启 scheduler**。两副本下也猜不出是哪台——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。one-shot 并入 Quartz 属计划 S4。
+- **保护范围 = 本模块的全部执行路径**：cron 与手动执行现在是同一类对象。`/tasks/{id}/trigger` 与 `/tasks/{id}/run-once` 都只往共享 store 投一枚 one-shot job（组 `AgentTaskGroup_ONCE`、非 durable、`startNow()`），由 Quartz worker 就地跑完，所以 `waitForJobsToCompleteOnShutdown` 有东西可等、这 400s 对两条路径同样生效。两副本下仍然猜不出是哪台忙——admin 那一发落到 DNS 选中的任一台，所以滚动必须假设两台都可能忙，逐台给满宽限。
+- **点一下拿到 200，不等于会留下一行执行记录**。投递成功只代表那枚 one-shot 进了 store；fire 时还要过 `AbstractAgentTaskJob` 的两道判断——`concurrent=0` 且本任务已有活着的执行（重叠闸口）、`tryAcquireLock` 输给另一个节点（集群锁）——任一条命中就直接返回，而这两处**都在插 `agent_task_log` 那行之前**。于是 webui 的"执行成功 → 打开日志列表"可以合法地是空列表，这不是前端坏了。真相在 scheduler 的日志里：`skipping this fire` / `already being executed by another instance`。
+- **容量规则（运维必读）**：一次手动执行占用 `QUARTZ_THREAD_COUNT`（默认 10）个 worker 之一，直到跑完；`SimpleThreadPool` **没有队列**，worker 全忙时到期的 cron 只能干等，等到越过 `misfireThreshold: 60000` 就变成一次 misfire，而 `concurrent=0` 的任务用的正是 `withMisfireHandlingInstructionDoNothing`——**那一发定时任务被跳过，不是延后跑**。所以：**不要用 1~2 个 worker 跑 scheduler**。worker 数是"同时在跑的执行数"和"cron 不被饿死"两件事的同一个余量，手动执行混进来之后，余量必须留在 cron 这一侧。
 
-`QUARTZ_THREAD_COUNT` 默认 `10`，是**每节点**并发执行的上限（2 实例 = 全集群最多 20）；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力，而 agent-service 仍是单实例）。它与 `DB_POOL_SIZE` 之间是下界关系，见数据源一节。
+`QUARTZ_THREAD_COUNT` 默认 `10`，是**每节点**并发执行的上限（2 实例 = 全集群最多 20）；设计文档明确**不再上调**（提高会直接放大对 router / agent-service 的下游压力，而 agent-service 仍是单实例）。它与 `DB_POOL_SIZE` 之间是下界关系，见数据源一节。**它同时也是 cron 的余量**：发布 3 之后手动执行与定时执行共用这批 worker（没有独立的手动池），所以这个数只有上限、没有下调空间——上面那条"1~2 个 worker 不算可用配置"的下限就是从这里来的。
 
 ---
 
@@ -172,7 +174,8 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 | 触发后无执行 | `SCHEDULER_ROUTER_URL` 是否可达、`SCHEDULER_API_KEY` 是否拿到了（留空时要问 admin） |
 | 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin 现在**拒绝占位默认值**走业务接口，两边都得换成真值 |
 | 用户看到 40903 / 40902 但任务确实保存了 | admin 那一发转发落到了关了调度的实例上——检查同名 service 下是否还挂着 `SCHEDULER_ENABLED=false` 的副本 |
-| 发布后出现中间态执行 | 手动 `/trigger` 的那条路径不受停机宽限保护（见「优雅停机」最后一条）；cron 路径出现中间态则核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过 |
+| 发布后出现中间态执行 | 手动与 cron 现在同受停机宽限保护（见「优雅停机」），所以中间态只意味着**宽限真的被截断过**：核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过、`QUARTZ_WAIT_FOR_JOBS` 是否还是 `true`、以及是否用了 `--force-recreate` 而不是 `roll-scheduler.sh` |
+| 点了「立即执行」但日志列表是空的 | 先看 scheduler 日志有没有 `skipping this fire` / `already being executed by another instance`：那一发在 fire 时被重叠闸口或集群锁丢掉，按设计**不留日志行**（见「优雅停机」第二条）。两处都没有再看 `agent_task` 的 `active`——软删除的任务在 fire 时同样被拒，而 one-shot **不看** `task_status`，暂停中照样跑 |
 | 执行里缺 MCP 工具 | 任务创建人是否有有效授权；挂的是 OAuth 类 MCP 而未授权就会缺 |
 
 ---
