@@ -1,6 +1,7 @@
 package com.agnetix.harnax.scheduler.service.impl
 
 import com.agnetix.harnax.agent.protocol.CommandType
+import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
 import com.agnetix.harnax.scheduler.entity.AgentTask
@@ -553,6 +554,12 @@ class SchedulerServiceImpl(
      * There is no row left to close out here, so releasing the lock in the catch is the only write
      * still available; [executionGuard]'s lookup is keyed by task id + trigger time, not by log id.
      * Null-lock-row cleanup is housekeeping's job (T4/T9); this only refuses to fake a success.
+     *
+     * The session id is the one thing here that leaves this module: it is an implicit contract with
+     * admin's agent-spec resolution (see [TaskSessionId], contract C1), and this is the only place it is
+     * minted. Both of its id segments are read off the same [task] row, so no consumer has to check that
+     * they belong to each other — which is the property that replaced the cross-check admin used to do by
+     * reading `agent_task` itself, a table it stops owning in this release.
      */
     private fun insertRunningLog(
         task: AgentTask,
@@ -566,7 +573,7 @@ class SchedulerServiceImpl(
             creator = task.creator
             createTime = LocalDateTime.now()
             status = 3 // running
-            sessionId = "task-${task.id}-${UUID.randomUUID()}"
+            sessionId = TaskSessionId.of(task.id, task.agentId)
         }
         val startedAt = taskLog.startTime ?: LocalDateTime.now()
 

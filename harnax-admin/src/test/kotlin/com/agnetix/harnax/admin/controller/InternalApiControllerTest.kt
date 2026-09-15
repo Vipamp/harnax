@@ -10,7 +10,6 @@ import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.AgentSkillBinding
-import com.agnetix.harnax.entity.AgentTask
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.ApiKeyEntity
@@ -27,7 +26,6 @@ import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
@@ -83,9 +81,6 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var secretFieldEncryptor: SecretFieldEncryptor
-
-    @Mock
-    private lateinit var agentTaskMapper: AgentTaskMapper
 
     @Mock
     private lateinit var agentMapper: AgentMapper
@@ -500,14 +495,10 @@ class InternalApiControllerTest {
         @Test
         @DisplayName("getAgentSpec - task session 返回 AgentSpec")
         fun `getAgentSpec should resolve from task for task prefix`() {
-            val task = AgentTask().apply {
-                id = 42L
-                agentId = 100L
-            }
-            `when`(agentTaskMapper.selectAnyById(42L)).thenReturn(task)
+            // C1: the agent id is inside the session id, so no agent_task row is read for this.
             `when`(agentMapper.selectById(100L)).thenReturn(stubAgent())
 
-            val result = controller.getAgentSpec("task-42-uuid123")
+            val result = controller.getAgentSpec("task-42-100-6f0b1a2c3d4e5f60718293a4b5c6d7e8")
 
             assertTrue(result.isSuccess())
             assertNotNull(result.data)

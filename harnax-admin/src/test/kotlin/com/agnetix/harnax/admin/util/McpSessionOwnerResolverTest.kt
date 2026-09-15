@@ -147,6 +147,29 @@ class McpSessionOwnerResolverTest {
         assertEquals(8L, resolver.resolve("task-42-6f0b")?.userId)
     }
 
+    /**
+     * Contract C1 put the agent id in front of the random tail. This resolver stops at the first '-', so
+     * the extra segment has to be invisible here — including after release 2, when the agent id it never
+     * reads is the only thing admin used to have to query the row for.
+     */
+    @Test
+    @DisplayName("C1: a four-segment task id resolves to the same creator")
+    fun `a four-segment task session id still resolves to the task creator`() {
+        whenever(agentTaskMapper.selectAnyById(42L)).thenReturn(
+            AgentTask().apply {
+                id = 42L
+                creator = "scheduler"
+                tenantId = TENANT
+            },
+        )
+        whenever(sysUserMapper.selectByUsername("scheduler")).thenReturn(user(8L, TENANT))
+
+        val sessionId = "task-42-100-6f0b1a2c3d4e5f60718293a4b5c6d7e8"
+
+        assertEquals(8L, resolver.resolve(sessionId)?.userId)
+        verify(agentTaskMapper).selectAnyById(42L)
+    }
+
     @Test
     @DisplayName("task 前缀里解析不出 id 就停住")
     fun `a task session with an unparsable id resolves to nobody`() {

@@ -298,6 +298,8 @@ class SchedulerServiceImplTest {
 
     private fun task(concurrent: Int = 0) = AgentTask().apply {
         id = TASK_ID
+        // `agent_id` is NOT NULL, and contract C1 mints it into the session id of every execution.
+        agentId = 7L
         name = "Daily News"
         prompt = "summarize today"
         creator = "admin"

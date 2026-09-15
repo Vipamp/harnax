@@ -95,7 +95,10 @@ class PrivilegedSessionPrefixesTest {
     @ParameterizedTest(name = "\"{0}\"")
     @ValueSource(
         strings = [
-            // The real shapes.
+            // The real shape since contract C1: task id, agent id, then a random tail with no dashes in it.
+            "task-42-100-6f0b1a2c3d4e5f60718293a4b5c6d7e8",
+            // The shapes the producer wrote before C1. A prefix rule has to be blind to the segment count,
+            // so both spellings still have to land on the same side of the line.
             "task-7-6f1d0a2e",
             "task-42-1f0e2d3c-4b5a-6978-8a9b0c1d2e3f",
             "task-",

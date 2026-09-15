@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -21,7 +22,6 @@ import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
@@ -48,7 +48,6 @@ class InternalApiController(
     private val modelProviderMapper: ModelProviderMapper,
     private val aesUtil: AesUtil,
     private val secretFieldEncryptor: SecretFieldEncryptor,
-    private val agentTaskMapper: AgentTaskMapper,
     private val agentMapper: AgentMapper,
     private val channelMapper: ChannelMapper,
     private val toolBindingMapper: AgentToolBindingMapper,
@@ -293,7 +292,7 @@ class InternalApiController(
      * Unified endpoint: resolve agent spec by sessionId prefix.
      * - web-* / mp-*: session table → agent
      * - chn-*: channel table → agent
-     * - task-{taskId}-*: agent_task table → agent
+     * - task-*: both ids come out of the session id itself (`task-{taskId}-{agentId}-{uuid}`, contract C1)
      */
     @GetMapping("/agent-spec/{sessionId}")
     fun getAgentSpec(@PathVariable sessionId: String): ResultVo<AgentSpecInfoResponse> = try {
@@ -355,16 +354,29 @@ class InternalApiController(
         )
     }
 
-    /** task: agent_task table → agent. */
+    /**
+     * task: the two ids in the session id → agent (contract C1).
+     *
+     * No table read: the scheduled-task domain is moving to `harnax-scheduler`, so the agent this run
+     * belongs to is the one the scheduler wrote into the id when it created the row.
+     *
+     * [com.agnetix.harnax.common.session.TaskSessionId.parse] answers for one shape only, so a null here —
+     * the pre-C1 `task-{taskId}-{uuid}` spelling included — is refused by format, with the expected shape and
+     * the offending string both named. Nothing real takes that branch: release 2 carries no rows over, so a
+     * refusal means a producer out of step with this parser. Guessing an agent instead of refusing would
+     * hand agent-service some other agent's configuration.
+     */
     private fun resolveFromTask(sessionId: String): AgentSpecInfoResponse {
-        val parts = sessionId.split("-", limit = 3)
-        val taskId = parts[1].toLongOrNull()
-            ?: throw IllegalArgumentException("Invalid task sessionId, cannot parse taskId: $sessionId")
-        val task = agentTaskMapper.selectAnyById(taskId)
-            ?: throw IllegalArgumentException("Agent task not found: $taskId")
-        val agent = agentMapper.selectById(task.agentId)
-            ?: throw IllegalArgumentException("Agent not found: ${task.agentId}")
-        log.info("[Admin] Resolved agent spec from task: sessionId={}, taskId={}, agentId={}", sessionId, taskId, agent.id)
+        val parsed = TaskSessionId.parse(sessionId)
+            ?: throw IllegalArgumentException("Invalid task sessionId: expected ${TaskSessionId.FORMAT}, got $sessionId")
+        val agent = agentMapper.selectById(parsed.agentId)
+            ?: throw IllegalArgumentException("Agent not found: ${parsed.agentId}")
+        log.info(
+            "[Admin] Resolved agent spec from task: sessionId={}, taskId={}, agentId={}",
+            sessionId,
+            parsed.taskId,
+            agent.id,
+        )
         val model = modelMapper.selectById(agent.modelId)
         return buildAgentSpecResponse(
             agentId = agent.id,
