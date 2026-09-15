@@ -4,6 +4,7 @@ import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
 import com.agnetix.harnax.auth.InternalTokenProvider
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.entity.dto.AgentTaskOwner
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
@@ -50,6 +51,38 @@ class SchedulerClientImpl(
     override fun reloadTasks(): ResultVo<Void> = postToScheduler("/api/scheduler/reload")
 
     override fun stopTask(logId: Long): ResultVo<Void> = postToScheduler("/api/scheduler/tasks/logs/$logId/stop")
+
+    /**
+     * Contract C5, and the only read here. It reuses this client's one [RestClient] — same bearer from the
+     * shared [InternalTokenProvider], same first instance of `harnax.scheduler.url`, same 5s connect and
+     * 30s read ceilings. A shorter ceiling for this one call would mean its own request factory, its own
+     * auth interceptor and its own copy of the URL list, and the path does not buy anything with it: every
+     * non-answer lands in the same place, as one OAuth MCP tool missing for that execution.
+     *
+     * Nothing here throws. An unreachable scheduler is a [ResultVo] the resolver turns into a WARN naming
+     * the task, which is the whole difference between "an OAuth tool quietly disappeared" and a task run
+     * failed by the service that resolves its tools.
+     */
+    override fun taskOwner(id: Long): ResultVo<AgentTaskOwner?> = getFromScheduler("/api/scheduler/agent-tasks/$id/owner")
+
+    private fun getFromScheduler(path: String): ResultVo<AgentTaskOwner?> {
+        val baseUrl = urls.firstOrNull() ?: return ResultVo.error("No scheduler URL configured")
+        val url = "$baseUrl$path"
+        return try {
+            log.debug("Reading task owner from scheduler: {}", url)
+            restClient.get()
+                .uri(url)
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .body(object : ParameterizedTypeReference<ResultVo<AgentTaskOwner?>>() {})
+                ?: ResultVo.error("No response from scheduler")
+        } catch (e: Exception) {
+            // Deliberately not rethrown; see the method above. The response body of a non-2xx is not read
+            // into the message, so nothing of a task's own data lands in a log line here.
+            log.warn("Failed to read task owner from scheduler {}: {}", url, e.message)
+            ResultVo.error("Scheduler service unavailable: ${e.message}")
+        }
+    }
 
     /**
      * One call, one instance. Start/pause/reload land in the shared Quartz store and a manual trigger is

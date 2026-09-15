@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.jupiter.api.function.ThrowingSupplier
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
@@ -471,6 +472,105 @@ class SchedulerClientImplTest {
 
             // When
             val result = createService(deadUrl).stopTask(77L)
+
+            // Then
+            assertEquals(500, result.code)
+            assertTrue(result.message.startsWith("Scheduler service unavailable"), result.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("任务属主查询测试(契约 C5)")
+    inner class TaskOwnerTests {
+
+        /**
+         * The one answer this client must never turn into an exception: its caller sits on a cold path
+         * inside somebody's task execution, where an owner it cannot resolve is one OAuth tool missing
+         * and not a failed run.
+         */
+        @Test
+        @DisplayName("taskOwner - GET 属主端点、带上内部服务 token、解出三值")
+        fun `taskOwner should get the owner endpoint with an internal bearer`() {
+            // Given
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"code":200,"message":"success","data":{"creator":"bob","tenantId":5,"agentId":9},"timestamp":1704067200000}"""),
+            )
+
+            // When
+            val result = createService().taskOwner(7L)
+
+            // Then
+            assertEquals("bob", result.data?.creator)
+            assertEquals(5L, result.data?.tenantId)
+            assertEquals(9L, result.data?.agentId)
+
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertNotNull(request)
+            assertEquals("GET", request!!.method)
+            assertEquals("/api/scheduler/agent-tasks/7/owner", request.path)
+            val authorization = request.getHeader("Authorization")
+            assertTrue(authorization != null && authorization.startsWith("Bearer "), "缺少内部服务 token: $authorization")
+        }
+
+        @Test
+        @DisplayName("taskOwner - 任务不存在时是 200 且 data 为 null，不是错误")
+        fun `taskOwner should keep a missing task as a successful null data`() {
+            // Given: scheduler's not-found answer for C5, same shape as its internal lookups.
+            server.enqueue(successResponse())
+
+            // When
+            val result = createService().taskOwner(4242L)
+
+            // Then
+            assertTrue(result.isSuccess(), "code=${result.code} message=${result.message}")
+            assertNull(result.data)
+        }
+
+        @Test
+        @DisplayName("taskOwner - 业务失败码原样透传给属主解析")
+        fun `taskOwner should pass through a business error code`() {
+            // Given
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("""{"code":40903,"message":"Scheduling is disabled on this instance","data":null,"timestamp":1704067200000}"""),
+            )
+
+            // When
+            val result = createService().taskOwner(7L)
+
+            // Then
+            assertEquals(40903, result.code)
+            assertNull(result.data)
+        }
+
+        @Test
+        @DisplayName("taskOwner - HTTP非200不抛异常，返回服务不可用")
+        fun `taskOwner should fold an http failure into an error result`() {
+            // Given
+            server.enqueue(MockResponse().setResponseCode(503).setBody("Service Unavailable"))
+
+            // When
+            val result = assertDoesNotThrow(ThrowingSupplier { createService().taskOwner(7L) })
+
+            // Then
+            assertEquals(500, result.code)
+            assertTrue(result.message.startsWith("Scheduler service unavailable"), result.message)
+        }
+
+        @Test
+        @DisplayName("taskOwner - 调度器宕机时同样返回错误结果而不是抛出")
+        fun `taskOwner should fold an unreachable scheduler into an error result`() {
+            // Given
+            val deadUrl = baseUrl()
+            server.shutdown()
+
+            // When
+            val result = assertDoesNotThrow(ThrowingSupplier { createService(deadUrl).taskOwner(7L) })
 
             // Then
             assertEquals(500, result.code)

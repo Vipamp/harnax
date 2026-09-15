@@ -4,16 +4,17 @@ package com.agnetix.harnax.router.support
  * The session-id prefixes that name a conversation the **server** decides, as opposed to one the caller
  * is entitled to pick.
  *
- * Scheduler mints `task-` (`task-{taskId}-{uuid}`), and admin resolves it by parsing the prefix against
- * the `agent_task` table rather than by looking the id up — see `InternalApiController.getAgentSpec`.
+ * Scheduler mints `task-` (`task-{taskId}-{agentId}-{uuid}`, contract C1), and admin resolves it by
+ * reading the ids out of the string rather than by looking the id up in a table of its own — see
+ * `InternalApiController.getAgentSpec`.
  * That split is the hole this object closes: the router's ownership check reads admin's `session`
  * table, where a task id deliberately does not live, so a forged `task-7-…` came back Unknown and
  * Unknown passes. Any valid credential could name someone else's task and have the agent answer with
  * that task's configuration — with `BYPASS` permission mode, which `resolveFromTask` hardcodes.
  *
  * So the decision has to be made by prefix, before the lookup, because no lookup the guard makes can
- * answer it: admin resolves `task-` from `agent_task`, and its ownership endpoint does not consult that
- * table. `chn-` is the opposite case, and the section below says why.
+ * answer it: admin resolves `task-` from the session id itself, and its ownership endpoint does not
+ * consult the task row at all. `chn-` is the opposite case, and the section below says why.
  *
  * ## Why `chn-` is not on this list
  *
@@ -27,8 +28,9 @@ package com.agnetix.harnax.router.support
  * - `task-{taskId}`: the id is an auto-increment integer. One valid credential enumerates
  *   `task-1`…`task-N` and reads every tenant's task configuration. Enumerable, so a prefix rule is the
  *   only thing between a login and someone else's agent spec — the owner of a `task-` id is answered
- *   here neither by the `session` table nor by anything else, and will come from the scheduler's own
- *   owner endpoint when release 2 moves that domain out of admin.
+ *   here neither by the `session` table nor by anything else: since contract C5 the task's creator and
+ *   tenant come over HTTP from the scheduler's own owner endpoint, and the rest of release 2 is still
+ *   finishing moving that domain out of admin.
  * - `chn-{uuid}`: the id is a UUID. Naming one already requires knowing it, so the rule stopped nobody
  *   who could not already have aimed at that specific id.
  *
@@ -65,8 +67,8 @@ package com.agnetix.harnax.router.support
 object PrivilegedSessionPrefixes {
 
     /**
-     * Scheduler-owned task executions: `task-{taskId}-{uuid}`. The only privileged prefix, and the one
-     * whose `{taskId}` is an enumerating integer; see the class comment for why `chn-` is not.
+     * Scheduler-owned task executions: `task-{taskId}-{agentId}-{uuid}`. The only privileged prefix, and
+     * the one whose `{taskId}` is an enumerating integer; see the class comment for why `chn-` is not.
      */
     const val TASK = "task-"
 
