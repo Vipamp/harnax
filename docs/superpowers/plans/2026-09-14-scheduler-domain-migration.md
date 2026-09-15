@@ -425,7 +425,7 @@ git commit -m "refactor(调度): admin 的定时任务域退化为鉴权与带�
 
 ### Task 10: 文档、状态与三条新登记
 
-- [ ] **Step 1**：spec §9 追加 **F12**（启停/触发面无写侧属主门禁：`updateStatus` 无 creator 条件、`/trigger` 无任何门禁）、**F13**（`uk_name` 与软删互斥：`deleteById` 只置 `active=0` 且 `name` 上有全局唯一键，故已删任务名永久不可复用，而 `selectByName` 带 `active=1` 会判"可用"，最终 INSERT 撞键以 500 收场）、**F14**（C1 之后 admin 无法做 spec 原定的 agentId 交叉校验；热路径上 spec 装配现在**信任**字符串里的 agentId，可达集合从"有任务的 agent"扩大到"任意 agent"，仍需内部调用方身份——不粉饰，F3-A 的归属扩展才是正解）。
+- [ ] **Step 1**：spec §9 追加 **F13**（启停/触发面无写侧属主门禁：`updateStatus` 无 creator 条件、`/trigger` 无任何门禁）、**F14**（`uk_name` 与软删互斥：`deleteById` 只置 `active=0` 且 `name` 上有全局唯一键，故已删任务名永久不可复用，而 `selectByName` 带 `active=1` 会判"可用"，最终 INSERT 撞键以 500 收场）、**F14**（C1 之后 admin 无法做 spec 原定的 agentId 交叉校验；热路径上 spec 装配现在**信任**字符串里的 agentId，可达集合从"有任务的 agent"扩大到"任意 agent"，仍需内部调用方身份——不粉饰，F3-A 的归属扩展才是正解）。
 - [ ] **Step 2**：spec §7 S3 行改状态，表下补 **修正 D**（域搬迁与数据源切换同切口；C1 双向不兼容 ⇒ 两服务同时下线，这是本改造唯一不能滚动做的部分）；§5 的 C1/C4/C5 行标完成；§11 第 6 条基线 24 → 19/4 文件并补"另 7 个 admin 文件 import 这三个类型"。
 - [ ] **Step 3**：`docs/deploy-harnax-scheduler.md` 的「认证边界」（`HARNAX_AUTH_SECRET` 现在必须与 admin 同值）、「数据源」表（新库、`SCHEDULER_DB_URL`）、「与 MCP 用户身份的关系」（改走 C5 端点 + 三条运维后果）三节改到与代码一致；`docs/agent-task-design.md` 的 admin 拥有 Quartz 的段落纠正。
 - [ ] **Step 4**：Commit `docs(调度): S3 完成状态、切口顺序与 F12-F14 登记`。
