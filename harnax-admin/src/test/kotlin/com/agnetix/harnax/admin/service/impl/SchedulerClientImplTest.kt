@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.auth.InternalTokenProvider
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -14,6 +15,10 @@ import org.junit.jupiter.api.function.ThrowingSupplier
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.quality.Strictness
+import org.springframework.security.authentication.AnonymousAuthenticationToken
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
 import java.util.concurrent.TimeUnit
 
 /**
@@ -44,6 +49,10 @@ class SchedulerClientImplTest {
     @AfterEach
     fun tearDown() {
         server.shutdown()
+        // Both are thread-locals the C4 assertions set, and surefire reuses the JVM: leaving them behind
+        // would hand the next test class an authenticated user it never asked for.
+        SecurityContextHolder.clearContext()
+        TenantContext.clear()
     }
 
     private fun baseUrl(s: MockWebServer = server): String = s.url("/").toString().removeSuffix("/")
@@ -575,6 +584,103 @@ class SchedulerClientImplTest {
             // Then
             assertEquals(500, result.code)
             assertTrue(result.message.startsWith("Scheduler service unavailable"), result.message)
+        }
+    }
+
+    @Nested
+    @DisplayName("身份转发头测试(契约 C4)")
+    inner class IdentityHeaders {
+
+        /**
+         * The scheduler verifies *services*, so the person a call is about has to travel in these two headers
+         * or the CRUD surface task 6 builds has nothing to own the row to. `X-Forwarded-Tenant` is the one that
+         * must never appear: a browser can set it on a request to admin itself, so trusting it would let a
+         * caller pick which tenant a write lands in.
+         */
+        @Test
+        @DisplayName("转发写请求 - 带上 X-Forwarded-User 与 X-Tenant-Id，且从不写 X-Forwarded-Tenant")
+        fun `a forwarded write carries the end-user identity`() {
+            // Given
+            authenticate("alice")
+            TenantContext.setTenantId(5L)
+            server.enqueue(successResponse())
+
+            // When
+            createService().triggerTask(1L)
+
+            // Then
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertNotNull(request)
+            assertEquals("alice", request!!.getHeader("X-Forwarded-User"))
+            assertEquals("5", request.getHeader("X-Tenant-Id"))
+            assertNull(request.getHeader("X-Forwarded-Tenant"), "the forgeable tenant header must never be sent")
+        }
+
+        @Test
+        @DisplayName("属主查询（C5）- 同样带上两个身份头，转发头规则不看方法")
+        fun `the owner read carries the identity too`() {
+            // Given: the headers are stamped on the one RestClient every path shares, so an endpoint added
+            // later cannot forget them by accident.
+            authenticate("bob")
+            TenantContext.setTenantId(9L)
+            server.enqueue(successResponse())
+
+            // When
+            createService().taskOwner(7L)
+
+            // Then
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertEquals("GET", request!!.method)
+            assertEquals("bob", request.getHeader("X-Forwarded-User"))
+            assertEquals("9", request.getHeader("X-Tenant-Id"))
+            assertNull(request.getHeader("X-Forwarded-Tenant"))
+        }
+
+        @Test
+        @DisplayName("共享密钥的内部调用 - 转发为 SYSTEM 而不是 internal-service")
+        fun `an internal-service principal is forwarded as SYSTEM`() {
+            // Given: this is the shape of the chain the C5 read runs on — agent-service called admin with the
+            // raw internal secret, which JwtAuthenticationFilter records as that marker, not as a username.
+            authenticate("internal-service")
+            server.enqueue(successResponse())
+
+            // When
+            createService().reloadTasks()
+
+            // Then
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertEquals("SYSTEM", request!!.getHeader("X-Forwarded-User"), "same word UserContextUtil answers")
+            assertNull(request.getHeader("X-Tenant-Id"), "no tenant is in play on that chain")
+        }
+
+        @Test
+        @DisplayName("没有已认证用户 - 两个头都不发，调用照常发出")
+        fun `a call with nobody behind it sends neither identity header`() {
+            // Given: SecurityContextHolder cleared below; the anonymous principal counts as nobody.
+            SecurityContextHolder.getContext().authentication = AnonymousAuthenticationToken(
+                "anon",
+                "anonymousUser",
+                listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")),
+            )
+            server.enqueue(successResponse())
+
+            // When
+            val result = createService().pauseTask(4L)
+
+            // Then: an identity-less forward is still a forward — refusing here would break the cold paths.
+            assertEquals(200, result.code)
+            val request = server.takeRequest(3, TimeUnit.SECONDS)
+            assertNull(request!!.getHeader("X-Forwarded-User"))
+            assertNull(request.getHeader("X-Tenant-Id"))
+            assertNull(request.getHeader("X-Forwarded-Tenant"))
+        }
+
+        private fun authenticate(name: String) {
+            SecurityContextHolder.getContext().authentication = UsernamePasswordAuthenticationToken(
+                name,
+                null,
+                listOf(SimpleGrantedAuthority("ROLE_USER")),
+            )
         }
     }
 }

@@ -21,6 +21,7 @@ import org.springframework.core.env.MapPropertySource
 import org.springframework.core.type.filter.AnnotationTypeFilter
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import org.springframework.stereotype.Component
+import tools.jackson.databind.ObjectMapper
 
 /**
  * Turns the R3 claim into something executable instead of an argument: a real Spring container constructs
@@ -40,8 +41,17 @@ class SchedulerBeanGraphTest {
         val context = AnnotationConfigApplicationContext()
         try {
             // RouterClient would otherwise fetch a system key from admin during its @PostConstruct.
+            // The internal secret is the C4 verifier's key: SchedulerConfig refuses one shorter than 32
+            // characters — the same rule admin's own provider applies — and this context has no
+            // application.yml to read the documented default from.
             context.environment.propertySources.addFirst(
-                MapPropertySource("test", mapOf("scheduler.api-key" to "test-key")),
+                MapPropertySource(
+                    "test",
+                    mapOf(
+                        "scheduler.api-key" to "test-key",
+                        "harnax.auth.internal.shared-secret" to "bean-graph-shared-secret-at-least-32-chars",
+                    ),
+                ),
             )
             context.register(Collaborators::class.java)
             val production = componentClasses()
@@ -109,6 +119,10 @@ class SchedulerBeanGraphTest {
 
         @Bean
         fun meterRegistry(): MeterRegistry = SimpleMeterRegistry()
+
+        /** Outside world as well, and now on the call path: the C4 refusal writes its body through one. */
+        @Bean
+        fun objectMapper(): ObjectMapper = ObjectMapper()
     }
 
     companion object {

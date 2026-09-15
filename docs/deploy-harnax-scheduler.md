@@ -137,13 +137,19 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 | `LOG_LEVEL_ROOT` / `LOG_LEVEL` | `INFO` / `INFO` | |
 | `MYBATIS_LOG_IMPL` | `org.apache.ibatis.logging.slf4j.Slf4jImpl` | **与 admin 不同**：admin 默认打到 stdout，本服务默认走 slf4j，生产无须改 |
 | `SWAGGER_ENABLED` | `true` | `/swagger-ui.html` 与 `/v3/api-docs`，生产建议关 |
-| `HARNAX_AUTH_SECRET` | 占位串 | 出向服务间 token 的签名密钥 |
+| `HARNAX_AUTH_SECRET` | 占位串 | 服务间 token 的签名密钥，发布 2 起是**双向**的：既签本服务的出向调用，也验 admin 转发进来的 bearer，**必须与 admin 同值**且 ≥32 字符，见「认证边界」 |
 
 ---
 
 ## 认证边界（读代码得到的事实）
 
-`harnax.auth.enabled: false` —— 本服务的**入向**统一鉴权是关掉的，`HARNAX_AUTH_SECRET` 只用于出向签 token。也就是说 `8084` 上的接口不是靠服务间 token 保护的，暴露面必须靠网络：只让 admin / 内网可达，**不要**把 `28084` 之类的宿主映射加回来（compose 现在只有 `expose`），更不要放到公网。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
+`harnax.auth.enabled: false` 这条**仍然成立**，但它的含义在发布 2 变了：关掉的只是 `harnax-auth` 那套统一入向鉴权（API Key、限流、`@InternalOnly`，那是 spec §9 F1 的完整方案），本服务自己另装了一道只认服务间 token 的门禁（`support/InternalCallerInterceptor`）。从发布 2 起，`/api/scheduler/**` 的**全部**接口——**读也在内**——都要带一枚 `typ=internal` 的 `Authorization: Bearer <内部 JWT>`，否则直接 401（响应体是 `ResultVo`，`code=401`）。`/actuator/**` 不在门禁内，它不在这个前缀下，所以 compose 的健康检查照旧匿名可用。身份的另一半走转发头：`X-Forwarded-User` 与 `X-Tenant-Id` 由 admin 盖，本服务只在接受了内部 JWT 之后才读它们；`X-Forwarded-Tenant` **一律不读**，那是浏览器自己能发的头。
+
+读面也被关进去，是对 spec §2.3「全部写面」那句的一次有意偏离：那句话出自 scheduler 只有写面的时候，而发布 2 的 C5 加了 `GET /api/scheduler/agent-tasks/{id}/owner`——任何能碰到 `8084` 的人都能凭一个任务 id 读出创建人与租户。理由与写面逐字相同，所以不再留豁免。
+
+网络那一条**没有因此放松**：`8084` 依旧只有 `expose`、不发布宿主端口（compose 里就是这么写的，别把 `28084` 之类的映射加回来），nginx 也不再代理 `/api/scheduler/`。服务间 token 挡的是「进了容器网络的人」，不是「把 8084 暴露出去、签名密钥又写歪了的人」。这一条的取舍与后续计划写在 `prod_doc/agent-task-scheduler.zh-CN.md` §8.2，别在这里重新论证。
+
+**admin 与 scheduler 必须同窗口升级。** 门禁一上，旧版 admin 转发的调用一律 401（它不带内部 JWT），症状是用户点「立即执行」「暂停」「删除」时看到「Scheduler service unavailable」或 40902，而调度本身照常在跑——看着像 scheduler 连不上，其实是它把请求拒了。同时两边的 `HARNAX_AUTH_SECRET` 必须同值：compose 里 admin 与 scheduler 两段都由同一个变量插值，配一次就同源；唯一能配错的是手工/裸机部署，那里两边各写一次。`HARNAX_AUTH_SECRET` 短于 32 字符时本服务**起不来**（`SchedulerConfig` 与 admin 的 provider 都按这条硬性拒绝），这是有意的：宁可启动就报错，也不要起来后把每一发转发都拒成 401。
 
 ## 与 MCP / 用户身份的关系
 
@@ -173,6 +179,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 | 任务到点不触发 | 集群里是否**至少一台** `SCHEDULER_ENABLED=true`；`QRTZ_SCHEDULER_STATE` 有没有行、`LAST_CHECKIN_TIME` 有没有在动（空表说明没人进过集群）；cron 表达式；`agent_task` 的启用状态 |
 | 触发后无执行 | `SCHEDULER_ROUTER_URL` 是否可达、`SCHEDULER_API_KEY` 是否拿到了（留空时要问 admin） |
 | 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin 现在**拒绝占位默认值**走业务接口，两边都得换成真值 |
+| 发布后 admin 的每次调度操作都失败（「Scheduler service unavailable」/ 40902），但 cron 照常触发 | 大概率是 C4 门禁拒了那一发，不是网络不通：scheduler 日志里 `Refusing /api/scheduler/...` 的 WARN 会写清是「没有 bearer」还是「签名验不过」。前者＝admin 还没升到发布 2（两边必须同窗口发），后者＝两边 `HARNAX_AUTH_SECRET` 不同值（compose 同源，手工部署才会歪） |
 | 用户看到 40903 / 40902 但任务确实保存了 | admin 那一发转发落到了关了调度的实例上——检查同名 service 下是否还挂着 `SCHEDULER_ENABLED=false` 的副本 |
 | 发布后出现中间态执行 | 手动与 cron 现在同受停机宽限保护（见「优雅停机」），所以中间态只意味着**宽限真的被截断过**：核对 `stop_grace_period` 与 `SCHEDULER_STOP_GRACE` 是否被单独改小过、`QUARTZ_WAIT_FOR_JOBS` 是否还是 `true`、以及是否用了 `--force-recreate` 而不是 `roll-scheduler.sh` |
 | 点了「立即执行」但日志列表是空的 | 先看 scheduler 日志有没有 `skipping this fire` / `already being executed by another instance`：那一发在 fire 时被重叠闸口或集群锁丢掉，按设计**不留日志行**（见「优雅停机」第二条）。两处都没有再看 `agent_task` 的 `active`——软删除的任务在 fire 时同样被拒，而 one-shot **不看** `task_status`，暂停中照样跑 |

@@ -216,6 +216,18 @@ scheduler:
 # Auth configuration
 harnax:
   auth:
+    # Stays false, deliberately: the flag also switches on UnifiedAuthFilter (external API keys, rate
+    # limiting, @InternalOnly), which is a different and bigger design — spec §9 F1. What this service does
+    # instead is verify the one thing a caller of /api/scheduler/** has to present, in
+    # SchedulerConfig.internalTokenProvider + support/InternalCallerInterceptor.
     enabled: false
+    # The label this service puts on what it signs: the JWT subject and the X-Caller-Id of every outgoing
+    # call. Nothing on the inbound path decides anything from it. Same key admin sets to `admin`.
+    service-id: scheduler
     internal:
+      # From release 2 this key has a second job: it is no longer only what this service signs outgoing
+      # tokens with, it is what the bearer on admin's forwards is verified against (contract C4). Both services
+      # must be given the same value — compose feeds it to every service from one HARNAX_AUTH_SECRET, a
+      # hand-deployed pair is the way to get it wrong. Must be at least 32 characters (see SchedulerConfig).
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300

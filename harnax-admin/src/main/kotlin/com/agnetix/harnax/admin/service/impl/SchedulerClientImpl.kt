@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.service.impl
 
+import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
 import com.agnetix.harnax.auth.InternalTokenProvider
@@ -9,6 +10,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
 import org.springframework.http.MediaType
+import org.springframework.security.authentication.AnonymousAuthenticationToken
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
 import java.time.Duration
@@ -36,10 +39,40 @@ class SchedulerClientImpl(
         }
         RestClient.builder()
             .requestFactory(factory)
-            // The scheduler does NOT run our auth filter (harnax.auth.enabled=false there); this
-            // bearer is forward-compat only. S3 adds an internal-token interceptor that validates it.
+            // The scheduler runs with harnax.auth.enabled=false and does not install our auth filter, but
+            // since release 2 it does verify this bearer: InternalCallerInterceptor refuses /api/scheduler/**
+            // without a `typ=internal` token signed on the same HARNAX_AUTH_SECRET (contract C4). An old admin
+            // against a new scheduler is a wall of 401s — hence the same-window upgrade in the release notes.
             .requestInterceptor(AuthRestTemplateInterceptor(tokenProvider))
+            // The other half of C4, and deliberately an interceptor rather than a header per call site: every
+            // path out of here is a call about a user — task 6's forwarding CRUD surface included — and a list
+            // someone has to remember is how an identity-less forward gets shipped.
+            .requestInterceptor { request, body, execution ->
+                forwardedUser()?.let { request.headers.set(HEADER_FORWARDED_USER, it) }
+                TenantContext.getTenantId()?.let { request.headers.set(HEADER_TENANT_ID, it.toString()) }
+                // No X-Forwarded-Tenant, in either direction: that one is the header a browser can put on a
+                // request itself, so C4 names the two above and the scheduler reads no other.
+                execution.execute(request, body)
+            }
             .build()
+    }
+
+    /**
+     * The person this call is made for, in the form `X-Forwarded-User` wants — and null when there is no
+     * person behind it, which is normal here and not a reason to fail: the [taskOwner] read runs inside a
+     * task execution, on a chain that has never seen a login.
+     *
+     * `JwtAuthenticationFilter`'s principal for a shared-secret internal call (agent-service's spec lookup,
+     * a CLI in a sandbox) is the marker string rather than a username, and `UserContextUtil` answers "SYSTEM"
+     * for exactly that principal. Same answer here, so the header never spells a name that names nobody.
+     */
+    private fun forwardedUser(): String? {
+        val authentication = SecurityContextHolder.getContext().authentication ?: return null
+        if (!authentication.isAuthenticated || authentication is AnonymousAuthenticationToken) {
+            return null
+        }
+        val name = authentication.name?.takeIf { it.isNotBlank() } ?: return null
+        return if (name == INTERNAL_SERVICE_PRINCIPAL) INTERNAL_SERVICE_USERNAME else name
     }
 
     override fun triggerTask(id: Long): ResultVo<Void> = postToScheduler("/api/scheduler/tasks/$id/trigger")
@@ -113,5 +146,17 @@ class SchedulerClientImpl(
     } catch (e: Exception) {
         log.error("Failed to proxy request to scheduler {}: {}", baseUrl, e.message, e)
         ResultVo.error("Scheduler service unavailable: ${e.message}")
+    }
+
+    companion object {
+        /** Contract C4's two identity headers, read by `harnax-scheduler`'s `InternalCallerInterceptor`. */
+        private const val HEADER_FORWARDED_USER = "X-Forwarded-User"
+        private const val HEADER_TENANT_ID = "X-Tenant-Id"
+
+        /** `JwtAuthenticationFilter`'s principal for a shared-secret internal caller. */
+        private const val INTERNAL_SERVICE_PRINCIPAL = "internal-service"
+
+        /** What `UserContextUtil` calls the same caller, so both sides name it the same way. */
+        private const val INTERNAL_SERVICE_USERNAME = "SYSTEM"
     }
 }
