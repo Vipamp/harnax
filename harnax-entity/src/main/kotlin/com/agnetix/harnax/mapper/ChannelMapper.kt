@@ -32,6 +32,13 @@ interface ChannelMapper {
 
     fun selectByCallbackKey(@Param("callbackKey") callbackKey: String): Channel?
 
+    /**
+     * 按 `chn-{uuid}` 取回那条渠道记录（仅 `active = 1`）。
+     *
+     * 除了 agent-spec 解析，这里还是 admin 回答「这个 chn- 会话属于哪个租户」的那一次读：router 每次
+     * 会话级代理调用都可能问到（前面只有五分钟的缓存），所以 `session_id` 上的索引（V28）是这条语句
+     * 走等值查找而不是全表扫的前提。
+     */
     fun selectBySessionId(@Param("sessionId") sessionId: String): Channel?
 
     fun selectByAgentId(@Param("agentId") agentId: Long): List<Channel>

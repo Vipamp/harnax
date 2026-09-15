@@ -150,8 +150,28 @@ class InternalApiController(
         return ResultVo.success(response)
     }
 
+    /**
+     * Which tenant owns this session — the answer the router's ownership guard compares its caller's
+     * tenant against (see `SessionAccessGuard` on the router side).
+     *
+     * A `chn-` id does not live in the `session` table by design: it is minted at channel creation and
+     * stored on the `channel` row. Reading only `session` here therefore answered "unknown" for every
+     * channel session, and unknown is a pass — so the guard had nothing to compare against and any
+     * logged-in user in any tenant could read another tenant's channel conversation, plans and sandbox
+     * files by naming its sessionId. The `channel` lookup below is what makes that decision possible;
+     * it changes no response shape, so the router needs no change to act on the answer.
+     *
+     * `task-` is deliberately still not answered here. A caller with an end user behind it is refused
+     * that prefix by the router's own rule before this lookup is ever reached, and its owner belongs to
+     * the scheduler domain: release 2 moves task execution out of admin, and the answer will come from
+     * the scheduler's owner endpoint rather than being duplicated here.
+     */
     @GetMapping("/sessions/{sessionId}/info")
     fun getSessionInfo(@PathVariable sessionId: String): ResultVo<SessionInfoResponse?> {
+        if (sessionId.startsWith("chn-")) {
+            return channelSessionInfo(sessionId)
+        }
+
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
         if (session == null) {
             log.debug("Session not found: $sessionId")
@@ -173,6 +193,53 @@ class InternalApiController(
             tenantId = session.tenantId,
         )
         return ResultVo.success(response)
+    }
+
+    /**
+     * Ownership of a `chn-` id, read from the table that holds it.
+     *
+     * `agentName`/`modelId`/`modelName` stay null: this endpoint's only consumer of those fields is the
+     * router's call-log enrichment, which treats a missing value as "costs the enrichment columns and
+     * nothing else", and resolving the agent here would put a second query on every proxy call that
+     * misses the router's cache.
+     *
+     * A miss stays a miss. A `chn-` id with no *active* channel row answers "unknown" exactly as before,
+     * which the router still passes: that is the first-contact case (an id the caller is entitled to
+     * open a session with), and turning it into a denial would refuse a session that demonstrably
+     * belongs to nobody rather than protect one.
+     *
+     * `tenantId` is reported as the row holds it, including a non-positive value. That is the whole
+     * point of the field, so collapsing "no tenant stamped" into null would hand the caller the very
+     * free pass this lookup exists to remove — null is what the router reads as "cannot be judged",
+     * whereas the row's own value makes every tenant-bearing caller a cross-tenant one. Such a row is
+     * unreadable through the router by design until an operator fixes its tenant, and the warning below
+     * is what makes that diagnosable instead of silent.
+     */
+    private fun channelSessionInfo(sessionId: String): ResultVo<SessionInfoResponse?> {
+        val channel = channelMapper.selectBySessionId(sessionId)
+        if (channel == null) {
+            log.debug("Channel session not found: $sessionId")
+            return ResultVo.success(null)
+        }
+        if (channel.tenantId <= 0) {
+            log.warn(
+                "Channel {} (id={}) carries tenant {}, which is no tenant at all; reporting it as the " +
+                    "router's ownership check does, so every tenant-bearing caller is refused it",
+                sessionId,
+                channel.id,
+                channel.tenantId,
+            )
+        }
+        return ResultVo.success(
+            SessionInfoResponse(
+                sessionId = channel.sessionId,
+                agentId = channel.agentId,
+                agentName = null,
+                modelId = null,
+                modelName = null,
+                tenantId = channel.tenantId,
+            ),
+        )
     }
 
     @PostMapping("/api-keys/system-key")

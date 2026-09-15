@@ -19,6 +19,14 @@ import java.util.concurrent.TimeUnit
  * says there is no such session" and "admin did not answer", so one admin blip left every session it
  * touched reading as non-existent for five minutes after recovery. An [AdminClientService.SessionLookup.Unreachable]
  * is therefore invalidated straight away and the next request asks again.
+ *
+ * `Unknown` is still cached, and that carries a known cost worth stating rather than discovering: it is
+ * what [SessionAccessGuard] passes. An id admin answers from the `channel` table and from nowhere else —
+ * a `chn-` session, whose owning tenant admin learned to report in this release — that was asked about
+ * while the answer was still Unknown keeps passing the guard for up to five minutes after the rollout.
+ * The window is bounded, needs the caller to already hold that exact UUID, and closing it means either
+ * not caching misses (one HTTP call to admin per proxy request, per session) or a cache invalidation
+ * broadcast that no deployment here has; it is left open on purpose.
  */
 @Component
 class SessionInfoClient(

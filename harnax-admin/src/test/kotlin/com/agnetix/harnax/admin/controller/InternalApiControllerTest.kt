@@ -44,6 +44,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.InjectMocks
@@ -321,6 +322,99 @@ class InternalApiControllerTest {
                     InternalApiController.SystemKeyRequest(serviceName = "channel-service"),
                 )
             }
+        }
+    }
+
+    /**
+     * 会话归属查询：router 的 `SessionAccessGuard` 就是拿这里给出的租户和调用方的租户做比对，
+     * 所以「没有答案」（data 为 null）在它眼里等于放行。`chn-` 按设计不存在于 `session` 表里——
+     * 它在 `channel` 行上，创建频道时盖章——早先这里只查 `session`，于是任何登录用户凭一个
+     * `chn-{uuid}` 就能读走别租户的频道会话。下面四条钉住修法与它不能碰坏的东西。
+     */
+    @Nested
+    @DisplayName("会话归属查询接口")
+    inner class GetSessionInfoTests {
+
+        @Test
+        @DisplayName("getSessionInfo - chn 会话报出 channel 行的租户与 agent")
+        fun `getSessionInfo reports the tenant that owns a channel session`() {
+            val sessionId = "chn-11111111-2222-3333-4444-555555555555"
+            `when`(channelMapper.selectBySessionId(sessionId)).thenReturn(
+                Channel().apply {
+                    id = 12L
+                    this.sessionId = sessionId
+                    tenantId = 7L
+                    agentId = 3L
+                },
+            )
+
+            val result = controller.getSessionInfo(sessionId)
+
+            assertTrue(result.isSuccess())
+            val data = requireNotNull(result.data)
+            assertEquals(sessionId, data.sessionId)
+            assertEquals(7L, data.tenantId)
+            assertEquals(3L, data.agentId)
+            // 归属靠 channel 行，不去猜 agent 的名字与模型：这三个字段缺席只影响调用日志的富化列。
+            assertNull(data.agentName)
+            assertNull(data.modelId)
+            assertNull(data.modelName)
+            // 问错表就等于问不出答案：session 表里从来没有过 chn 行。
+            verify(sessionMapper, never()).selectBySessionIdAndStatus(anyString(), anyInt())
+        }
+
+        @Test
+        @DisplayName("getSessionInfo - 没有 active channel 行时仍回答未知")
+        fun `getSessionInfo keeps a missing channel session unknown instead of guessing an owner`() {
+            // 已软删（active=0）或根本不存在的 chn id 必须还是「查不到」。把它变成拒绝会连第一次接触
+            // 的流程一起挡掉；变成猜测则会凭一个陌生 id 判别人的租户。
+            `when`(channelMapper.selectBySessionId("chn-does-not-exist")).thenReturn(null)
+
+            val result = controller.getSessionInfo("chn-does-not-exist")
+
+            assertTrue(result.isSuccess())
+            assertNull(result.data)
+            verify(sessionMapper, never()).selectBySessionIdAndStatus(anyString(), anyInt())
+        }
+
+        @Test
+        @DisplayName("getSessionInfo - channel 行没有租户时照实回答 0，不给放行")
+        fun `getSessionInfo does not turn a tenant-less channel row into no owner`() {
+            // tenantId 为 null 是 router 读作「无法判定」的那个值，也就是自由通行证。行上写的是 0，
+            // 就报 0：任何带租户的调用方因此成了跨租户调用方，被拒。
+            `when`(channelMapper.selectBySessionId("chn-22222222-2222-3333-4444-555555555555")).thenReturn(
+                Channel().apply {
+                    id = 13L
+                    sessionId = "chn-22222222-2222-3333-4444-555555555555"
+                    tenantId = 0L
+                    agentId = 3L
+                },
+            )
+
+            val data = requireNotNull(controller.getSessionInfo("chn-22222222-2222-3333-4444-555555555555").data)
+
+            assertEquals(0L, data.tenantId)
+        }
+
+        @Test
+        @DisplayName("getSessionInfo - web 会话仍只由 session 表回答")
+        fun `getSessionInfo still resolves a web session from the session table`() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-abc123", 1)).thenReturn(
+                Session().apply {
+                    sessionId = "web-abc123"
+                    agentId = 100L
+                    name = "Test Agent"
+                    modelId = 0L
+                    tenantId = 9L
+                },
+            )
+
+            val data = requireNotNull(controller.getSessionInfo("web-abc123").data)
+
+            assertEquals(9L, data.tenantId)
+            assertEquals(100L, data.agentId)
+            assertEquals("Test Agent", data.agentName)
+            verifyNoInteractions(channelMapper)
         }
     }
 

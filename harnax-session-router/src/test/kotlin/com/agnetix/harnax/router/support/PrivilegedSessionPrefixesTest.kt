@@ -1,6 +1,7 @@
 package com.agnetix.harnax.router.support
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -27,20 +28,43 @@ import java.lang.reflect.Modifier
  *   authorisation and can only cost real traffic — which is exactly how `chn-` came to be switched off
  *   by mistake.
  * - A prefix admin resolves from a table the guard's lookup cannot see, which the router does *not*
- *   refuse, is the original asymmetry: the hole `task-` was closed for. `chn-` knowingly sits there,
- *   for the reasons in [PrivilegedSessionPrefixes], and is therefore declared as F3-A's residual in
- *   [ADMIN_RESOLVED_BUT_NOT_REFUSED] rather than left implicit — so the next server-decided prefix has
- *   to be judged against that list instead of landing in the gap unnoticed.
+ *   refuse, is the original asymmetry: the hole `task-` was closed for. `chn-` used to sit there by
+ *   choice, because admin's ownership endpoint read only the `session` table and so answered "unknown"
+ *   for every channel session — and "unknown" is a pass. F3-A moved it out: admin now answers a `chn-`
+ *   id's tenant from `channel`, so that prefix settles by the tenant comparison and needs no rule.
+ *   [ADMIN_RESOLVED_BUT_NOT_REFUSED] is empty for exactly that reason, and stays the place any future
+ *   server-decided prefix has to be judged before it lands in the gap unnoticed.
  */
 class PrivilegedSessionPrefixesTest {
 
-    /** Where admin sends a session id in `getAgentSpec`. */
+    /**
+     * Where admin sends a session id in `getAgentSpec`, and — the half that decides whether the router
+     * needs a rule for it — whether [com.agnetix.harnax.router.service.SessionAccessGuard]'s ownership
+     * lookup can be told who owns the result.
+     */
     private enum class AdminRoute {
         /** From the `session` table: a conversation the caller owns. */
         CALLER_OWNED,
 
-        /** From `agent_task` / `channel`: one the server decided, invisible to the guard's lookup. */
+        /**
+         * From a table the ownership lookup never consults: a conversation the server decided, and one
+         * no query can therefore attribute. Only a prefix rule can guard these.
+         */
         SERVER_DECIDED,
+
+        /**
+         * Server-decided in shape — the caller did not pick this id — but admin's ownership endpoint
+         * answers for it, so the tenant comparison in
+         * [com.agnetix.harnax.router.service.SessionAccessGuard] settles it and a prefix rule would only
+         * remove access. `chn-` moved here when admin started reading the `channel` table for it.
+         *
+         * Putting a prefix in this category *is* the judgement that the comparison is sufficient for it.
+         * That is not true of every answerable id: a prefix whose ids are enumerable, and where being in
+         * the same tenant does not entitle a caller to the row (a task of someone else's, say), still
+         * needs the rule — such a prefix belongs in its own category with the reason spelled out, not
+         * here.
+         */
+        SERVER_DECIDED_BUT_ATTRIBUTABLE,
 
         /** Answered `Unknown sessionId prefix`. */
         UNRESOLVED,
@@ -85,7 +109,7 @@ class PrivilegedSessionPrefixesTest {
             // Mid-string: pins both sides as anchored. A `contains` on either would diverge here.
             "web-task-7",
             "mytask-7",
-            // The declared residual, and the caller's own sessions.
+            // The server-decided prefix admin can now attribute, and the caller's own sessions.
             "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b",
             "chn-xyz",
             "web-1f0e2d3c",
@@ -113,6 +137,15 @@ class PrivilegedSessionPrefixesTest {
                     "router lets an end-user caller name it. That asymmetry is the hole this rule exists to " +
                     "close. If it is meant to stay open, record the prefix in ADMIN_RESOLVED_BUT_NOT_REFUSED " +
                     "and say why.",
+            )
+        }
+
+        if (route == AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE) {
+            assertFalse(
+                refused,
+                "$sessionId: admin answers who owns this id, so the guard's tenant comparison can already " +
+                    "decide it and a prefix rule adds no decision — it only denies the legitimate " +
+                    "same-tenant reads, which is how `chn-` was wrongly switched off once.",
             )
         }
     }
@@ -155,14 +188,31 @@ class PrivilegedSessionPrefixesTest {
     }
 
     private companion object {
-        /** Spelled independently of [PrivilegedSessionPrefixes] — see the class comment. */
+        /**
+         * Spelled independently of [PrivilegedSessionPrefixes] — see the class comment.
+         *
+         * The attributability half of each entry is a claim about admin's `/sessions/{id}/info`, and it
+         * is pinned where it lives rather than here: `InternalApiControllerTest`'s session-info cases are
+         * what prove a `chn-` id answers with the `channel` row's tenant and an unknown one still answers
+         * "no such session".
+         */
         val ADMIN_ROUTES = listOf(
             AdminPrefix("web-", AdminRoute.CALLER_OWNED),
             AdminPrefix("mp-", AdminRoute.CALLER_OWNED),
-            AdminPrefix("chn-", AdminRoute.SERVER_DECIDED),
+            AdminPrefix("chn-", AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE),
             AdminPrefix("task-", AdminRoute.SERVER_DECIDED),
         )
 
-        val ADMIN_RESOLVED_BUT_NOT_REFUSED = listOf("chn-")
+        /**
+         * The prefixes admin resolves from a table the guard's ownership lookup cannot see, and which the
+         * router therefore does not refuse. Empty since F3-A taught that lookup the `channel` table:
+         * `chn-` was the only entry, and it was open because there was no answer to check, not because
+         * the traffic was trusted.
+         *
+         * Keep it empty. A prefix that belongs here and is not refused is the asymmetry `task-` was
+         * closed for, and the list is what makes the next server-decided prefix get judged before it
+         * lands in that gap.
+         */
+        val ADMIN_RESOLVED_BUT_NOT_REFUSED = emptyList<String>()
     }
 }
