@@ -10,7 +10,7 @@
 
 ## 与 spec 的偏差（先读，实现时不要再论证）
 
-- spec §5 C1 的"F3 第三刀 C"——**在 admin 比对 sessionId 的 agentId 与 `agent_task.agent_id`**——域搬迁后 admin 读不到那张表，**不可执行**。替代物见 Task 3/4（单源生成 + 消费者严格格式校验 + C5 带 agentId 供冷路径核对），并把残留面登记为 F14（Task 10）。
+- spec §5 C1 的"F3 第三刀 C"——**在 admin 比对 sessionId 的 agentId 与 `agent_task.agent_id`**——域搬迁后 admin 读不到那张表，**不可执行**。替代物见 Task 3/4（单源生成 + 消费者严格格式校验 + C5 带 agentId 供冷路径核对），并把残留面登记为 F15（Task 10）。
 - spec §7 的 S3"必须单 PR，因为 admin 编译断裂"由本方案的包名分离消解：每个提交都能编译、能跑测试。
 - spec §10 的"迁 `agent_task`、不迁历史日志"照做，但**新库必须建 `agent_task_log`**：`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus/lastRunTime`，表不存在则列表接口 500。因此第二条用户可见后果是"列表页的最近一次运行两列也会空"（发布公告必须写，spec 只写了第一条）。
 - 验收线 `grep -rn "agentTaskMapper|agentTaskLogMapper|AgentTaskExecution" harnax-admin/src/main` 的基线实测是 **19 处**（spec 写 24 已过时），且编译边界比这条 grep 更宽：**7 个** admin 文件 import `com.agnetix.harnax.entity.AgentTask*`（含两个 DTO、两个 service 接口），必须一起改。
@@ -19,7 +19,7 @@
 
 - 注释语言：scheduler / admin / router 模块**英文**（含测试的失败消息文本）；`docs/`、`prod_doc/` 中文。
 - **对客户端零变化**：`/api/admin/agent-tasks/**` 的路径、方法、`ResultVo` 外壳、`Page` 的 7 个键（`pageNum/pageSize/total/records/pages/hasPrevious/hasNext`）、`records[*]` 的 18 个字段名全部不变；`40901/40902/40903` 语义不变。搬迁后的校验**错误文案**必须与 admin 今天的一字不差（webui 直接展示 `.message`）。
-- 属主/可见性规则逐字保留，不得在搬迁中"顺手收紧或放宽"：读用 `is_public = 1 OR creator = ?`，写用 `creator = ?`（`selectOwnedById` 是停止面的写门禁）。启停面的既有缺口登记为 F12，本发布不修。
+- 属主/可见性规则逐字保留，不得在搬迁中"顺手收紧或放宽"：读用 `is_public = 1 OR creator = ?`，写用 `creator = ?`（`selectOwnedById` 是停止面的写门禁）。启停面的既有缺口登记为 F13，本发布不修。
 - 不新增依赖版本；`pagehelper-spring-boot-starter:2.1.0`（带对 `mybatis-spring-boot-starter` 的 exclusion，照 `harnax-admin/pom.xml:52-62`）是 scheduler 唯一新增依赖。
 - 旧库 `harnax_admin` 的四张表**本发布不 DROP**（DROP 脚本另存，运维签认后才执行）。
 - 本机有全局 `mvn`（`/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`），需 `export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；改完必 `mvn -q spotless:apply`；mvn 输出重定向到文件再 `echo $?`（管道进 tail 会吞退出码）。
@@ -304,7 +304,7 @@ git commit -m "feat(调度): scheduler 写面只接受内部 JWT，身份经转�
 - `delete`：软删（`active = 0`）+ 提交后触发对账；
 - 日志分页：`selectLogList` 的 7 个参数与 `currentUsername` 门禁、`selectOwnedById` 作为停止前的写门禁；
 - `afterCommit` 语义：回滚不外发对账、非 200 抛 `40902`（scheduler 本地跑对账时，把 `schedulerClient.reloadTasks()` 换成 `reconciler.reconcile()` + `report.converged` 判断，语义等价）。
-- **启停/触发面无写侧属主门禁**（`updateStatus` 不带 creator、`/trigger` 无门禁）→ 原样搬，登记 F12（Task 10），本发布不修。
+- **启停/触发面无写侧属主门禁**（`updateStatus` 不带 creator、`/trigger` 无门禁）→ 原样搬，登记 F13（Task 10），本发布不修。
 
 - [ ] **Step 2: `agentName` 的跨域取数**
 
@@ -428,7 +428,7 @@ git commit -m "refactor(调度): admin 的定时任务域退化为鉴权与带�
 - [ ] **Step 1**：spec §9 追加 **F13**（启停/触发面无写侧属主门禁：`updateStatus` 无 creator 条件、`/trigger` 无任何门禁）、**F14**（`uk_name` 与软删互斥：`deleteById` 只置 `active=0` 且 `name` 上有全局唯一键，故已删任务名永久不可复用，而 `selectByName` 带 `active=1` 会判"可用"，最终 INSERT 撞键以 500 收场）、**F14**（C1 之后 admin 无法做 spec 原定的 agentId 交叉校验；热路径上 spec 装配现在**信任**字符串里的 agentId，可达集合从"有任务的 agent"扩大到"任意 agent"，仍需内部调用方身份——不粉饰，F3-A 的归属扩展才是正解）。
 - [ ] **Step 2**：spec §7 S3 行改状态，表下补 **修正 D**（域搬迁与数据源切换同切口；C1 双向不兼容 ⇒ 两服务同时下线，这是本改造唯一不能滚动做的部分）；§5 的 C1/C4/C5 行标完成；§11 第 6 条基线 24 → 19/4 文件并补"另 7 个 admin 文件 import 这三个类型"。
 - [ ] **Step 3**：`docs/deploy-harnax-scheduler.md` 的「认证边界」（`HARNAX_AUTH_SECRET` 现在必须与 admin 同值）、「数据源」表（新库、`SCHEDULER_DB_URL`）、「与 MCP 用户身份的关系」（改走 C5 端点 + 三条运维后果）三节改到与代码一致；`docs/agent-task-design.md` 的 admin 拥有 Quartz 的段落纠正。
-- [ ] **Step 4**：Commit `docs(调度): S3 完成状态、切口顺序与 F12-F14 登记`。
+- [ ] **Step 4**：Commit `docs(调度): S3 完成状态、切口顺序与 F13-F15 登记`。
 
 ---
 
