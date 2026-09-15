@@ -268,6 +268,23 @@ class AgentTaskJobExecutionTest {
         verify(scheduler, never()).deleteJob(any())
     }
 
+    /**
+     * The same refusal in the click's shape: the enabled guard sits in `AbstractAgentTaskJob.run` before any
+     * group discrimination, so a one-shot trigger a shared store hands to a disabled node is left for the
+     * scheduling one exactly as a cron fire would be.
+     */
+    @Test
+    fun `a one-shot handed to a node with scheduling disabled does nothing either`() {
+        setUpJob(concurrent = 1, schedulingEnabled = false, jobKey = onceJobKey)
+
+        AgentTaskJob().execute(context)
+
+        verify(agentTaskMapper, never()).selectAnyById(any())
+        verify(schedulerService, never()).executeTaskOnce(any(), any())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
+        verify(scheduler, never()).deleteJob(any())
+    }
+
     /** A pause (or a soft delete) that outlived its registration must not run on the next cron tick. */
     @Test
     fun `a task that has since been paused does not run`() {
@@ -282,9 +299,9 @@ class AgentTaskJobExecutionTest {
 
     /**
      * The other half of that boundary: `taskStatus` guards a *cron*, because a stored cron job is a lagging
-     * copy of `agent_task`. A one-shot's registration is the user's intent, made seconds ago, so a task
-     * paused between the click and the fire still runs — `/run-once` must not be stricter than `/trigger`,
-     * which has always run a paused task. The group is what tells the two apart.
+     * copy of `agent_task`. A one-shot is exempt for the opposite reason — its registration *is* the user's
+     * intent, made seconds ago, so a pause that lands between the click and the fire must not swallow the run
+     * the user just asked for. The group is what tells the two apart.
      */
     @Test
     fun `a paused task still runs when it was asked to run once`() {

@@ -13,6 +13,7 @@ import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.doReturn
@@ -78,6 +79,8 @@ class SchedulerManualTriggerTest {
         verify(quartz).scheduleJob(jobCaptor.capture(), triggerCaptor.capture())
         val detail = jobCaptor.firstValue
         assertEquals(TaskQuartzRegistrar.GROUP_ONCE, detail.key.group)
+        // durable would leave a permanent AgentTaskGroup_ONCE row: Quartz deletes a job only with its completed trigger.
+        assertFalse(detail.isDurable)
         assertEquals("7", detail.jobDataMap.getString(TaskQuartzRegistrar.KEY_TASK_ID))
         assertEquals(
             1,
