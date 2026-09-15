@@ -15,25 +15,38 @@
 ## 整体架构
 
 ```
-Admin Service (Quartz + AgentTaskJob)
+harnax-scheduler 服务（独立进程，端口 8084，Quartz + AgentTaskJob）
+  │   既定形态两个实例，共用一个 Quartz JDBC 集群 store（11 张 QRTZ_* 表是唯一调度真相）：
+  │   一次触发全集群只投递一次、只由一个节点执行，一台死了另一台接管
   │
-  ├─ 定时触发 AgentTaskJob.execute()
+  ├─ 到点 fire AbstractAgentTaskJob.execute()（cron 与「立即执行一次」的 one-shot 是同一条路径）
   │    │
-  │    ├─ 1. 创建临时 Session（复制 Agent 配置）
+  │    ├─ 0. 抢执行权：AgentTaskExecutionGuard.tryAcquireLock(taskId, triggerTime)
+  │    │       靠 agent_task_execution 的 uk_task_trigger(task_id, trigger_time) 唯一键，抢不到就放弃
   │    │
-  │    ├─ 2. 通过 RestClient 调用 Router
+  │    ├─ 1. 写入运行中的执行日志行（`agent_task_log` status=3），并定下本次的 sessionId
+  │    │       `task-{taskId}-{uuid}`——scheduler 不再显式建会话，Agent 配置由 router 侧按这个 id 解析
+  │    │
+  │    ├─ 2. 通过 RestClient 调用 Router（同一发调用里等执行结束）
   │    │       POST {routerUrl}/api/router/agent/chat
   │    │       Body: { sessionId, message }
   │    │       Header: X-Api-Key: {systemApiKey}
   │    │
-  │    ├─ 3. 等待 Agent 响应（非流式模式）
+  │    ├─ 3. 取回非流式响应，定态写回日志行与 `agent_task_execution`（成功/失败/超时，状态守卫的 UPDATE）
   │    │
-  │    ├─ 4. 记录执行日志（prompt、回复、耗时、状态）
-  │    │
-  │    └─ 5. 删除临时 Session
+  │    └─ 4. 清理会话：DELETE {routerUrl}/api/router/agent/session/{sessionId}（自带更短的读超时上限）
+  │
+  └─ 对 admin 暴露内部 HTTP 面（/reload、/tasks/{id}/start|pause|trigger|run-once、/tasks/logs/{id}/stop）
+
+harnax-admin 服务
+  │   只做「校验用户 JWT + 带身份转发」：/api/admin/agent-tasks/** 的契约与前端不变，
+  │   调度相关的调用一律转发到 http://scheduler:8084（HARNAX_SCHEDULER_URL，容器网络，不发布宿主端口）；
+  │   写完 agent_task 之后在事务提交后转发一次 /reload（共享 store 之后广播已无意义）
   │
   └─ 前端管理页面（创建/编辑/启停/查看日志）
 ```
+
+> **这份文档的时效**：上面的架构图与下面「一、数据模型」是当前形态；「二、后端模块结构」「三、核心实现」两段是本功能最初放在 admin 里时的草图，其中 `harnax-admin/.../job/AgentTaskJob.kt` 这个路径已不存在（job 类现在在 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/`，拆成 `AbstractAgentTaskJob` + `AgentTaskJob`/`AgentTaskNonConcurrentJob`），「六、配置文件变更」里的 `agent-task.*` 键同理已随进程一起搬到 scheduler。这三段保留作设计推理的备查，读的时候按历史看待；调度侧的配置项与部署约束以 `docs/deploy-harnax-scheduler.md` 为准，链路与决策以 `prod_doc/agent-task-scheduler.zh-CN.md` 与 `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md` 为准。
 
 ## 一、数据模型
 

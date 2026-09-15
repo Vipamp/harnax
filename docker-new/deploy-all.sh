@@ -91,6 +91,8 @@ echo "✅ 所有镜像构建完成"
 # 5. 停止并删除旧容器
 echo ""
 echo "🛑 步骤 5/6: 停止旧容器..."
+echo "⚠️  冷启动：整栈（含全部 scheduler 副本）一起停，直到 mysql 健康门 + JVM 起来才回到集群；这期间堆起来的过期触发"
+echo "⚠️  会被 concurrent=0 任务的 DoNothing misfire 策略直接丢弃。请挑安静时段跑；只换 scheduler 镜像走 deploy-service.sh scheduler。"
 docker-compose -f docker-new/docker-compose.yml down || true
 
 echo "✅ 旧容器已停止"

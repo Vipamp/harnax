@@ -55,6 +55,7 @@ import org.quartz.TriggerKey
 import org.springframework.scheduling.quartz.SchedulerFactoryBean
 import java.time.Duration
 import java.time.LocalDateTime
+import java.util.Date
 
 /**
  * Two halves of the same promise: the sweep has to be *registered* (the guard table had no caller that
@@ -193,8 +194,9 @@ class SchedulerHousekeepingTest {
 
     /**
      * A disabled node runs no converge loop, so it is the one node whose sweep would still be lost for good
-     * — which matters exactly when the cluster is only disabled nodes, since that is when this node's own
-     * registration is the one the store gets.
+     * — which matters most when the cluster has no enabled node, since this node's retry is then the only
+     * thing that puts the row in the store. It is a row waiting for whoever eventually runs enabled to fire
+     * it, not a sweep this node performs: with every node disabled nothing fires at all.
      */
     @Test
     fun `a disabled node retries the sweep it could not register`() {
@@ -224,6 +226,9 @@ class SchedulerHousekeepingTest {
     @Test
     fun `a sweep already in the store on another interval is moved to the configured one`() {
         givenStoreAlreadyHasTheSweeps(reconcileIntervalSeconds = RECONCILE_INTERVAL + 30)
+        // Quartz answers the new trigger's next fire time. Left unstubbed it answers null, which since SF2
+        // is the *refused* branch, and this case is about a move that landed.
+        whenever(quartz.rescheduleJob(any<TriggerKey>(), any<Trigger>())).thenReturn(Date())
 
         service.onApplicationReady()
 
@@ -234,6 +239,27 @@ class SchedulerHousekeepingTest {
             "the configured interval has to win over the one another node booted with",
         )
         verify(quartz, never()).scheduleJob(any<JobDetail>(), any<Trigger>())
+    }
+
+    /**
+     * A move the store did not take: `rescheduleJob` answers null when the trigger it was handed is no
+     * longer there — gone between the interval read and this write. Reporting that as "moved to the
+     * configured interval" would leave the cluster on the old period with a log line saying otherwise, so
+     * the node has to treat it as a refused write and try again from the loop that retries rounds.
+     */
+    @Test
+    fun `a sweep move the store refused is owed and retried`() {
+        givenStoreAlreadyHasTheSweeps(reconcileIntervalSeconds = RECONCILE_INTERVAL + 30)
+        whenever(quartz.rescheduleJob(any<TriggerKey>(), any<Trigger>())).thenAnswer { null }
+        whenever(reconciler.reconcile()).thenReturn(CONVERGED)
+        service.initialRetryDelayMs = RETRY_DELAY_MS
+
+        service.onApplicationReady()
+
+        val reconcileKey = TriggerKey(SchedulerReconcileJob.JOB_NAME, SchedulerReconcileJob.GROUP)
+        awaitUntil("the refused move is attempted again") {
+            rescheduleAttempts(reconcileKey) >= 2
+        }
     }
 
     /**
@@ -257,8 +283,13 @@ class SchedulerHousekeepingTest {
      * an inert node still registers it — but read that for what it is now: with a shared store the sweep is
      * *one row in that store*, so reclamation keeps running while at least one node in the cluster is
      * enabled and a disabled node has no private reclaim path of its own. What registering here buys is that
-     * a cluster which is nothing but disabled nodes still sweeps, and that whoever fires the job — any node
-     * claiming it, not only the one that wrote the row — finds its collaborators in place. The task
+     * the row is *in the store* for whichever node does run enabled to claim — it is emphatically **not**
+     * that a cluster of nothing but disabled nodes sweeps: `spring.quartz.auto-startup` follows the same
+     * flag, so no node of such a deployment starts its scheduler and the registered trigger is never fired.
+     * That boundary is a topology rule and it is stated in `registerHousekeepingJob`'s KDoc, in
+     * `application.yml` and in docs/deploy-harnax-scheduler.md. What registering also buys is that whoever
+     * fires the job — any node claiming it, not only the one that wrote the row — finds its collaborators in
+     * place. The task
      * *reconcile* is a scheduling write over the shared store, so it stays off: one enabled node registers
      * that sweep once, in the store, and the cluster fires it from there.
      */
@@ -397,6 +428,20 @@ class SchedulerHousekeepingTest {
             "job class $jobClass was never registered; the store got ${scheduledJobClasses().map { it.simpleName }}",
         )
     }
+
+    /** Same waiting, for the assertions that are about a *retry* rather than about a first registration. */
+    private fun awaitUntil(what: String, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + AWAIT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return
+            Thread.sleep(50L)
+        }
+        fail<Unit>("$what never happened within ${AWAIT_MS}ms")
+    }
+
+    /** How many times the sweep registration asked the store to move this trigger, refusals included. */
+    private fun rescheduleAttempts(key: TriggerKey): Int = Mockito.mockingDetails(quartz).invocations
+        .count { it.method.name == "rescheduleJob" && it.getArgument<TriggerKey>(0) == key }
 
     /** Every `scheduleJob` the mock has seen so far, as the job classes it was handed. */
     private fun scheduledJobClasses(): Set<Class<out Job>> = Mockito.mockingDetails(quartz).invocations

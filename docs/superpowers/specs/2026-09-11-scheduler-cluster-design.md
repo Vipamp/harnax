@@ -219,7 +219,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 ### 6.1 库
 
 - `docker-new/sql/init-databases.sql` 增加 `CREATE DATABASE harnax_scheduler` + 对 `harnax` 用户 `GRANT`（与既有四个库同构，两行）。**已落地**，但发布 1 用不到它：数据源要到 S3 才切过去。**注意这脚本只在 MySQL 首次初始化空数据目录时执行**——存量部署要手工补那两行（建库 + `FLUSH PRIVILEGES`）。
-- scheduler 开 Flyway：`enabled: true`、`locations: classpath:db/migration`、`table: flyway_schema_history_scheduler`（**独立 history 表名**，避免与 admin 在同一 MySQL 实例里混淆）。**已落地**；compose 侧的开关叫 `SCHEDULER_FLYWAY_ENABLED`，与 admin 的 `FLYWAY_ENABLED` 分家。
+- scheduler 开 Flyway：`locations: classpath:db/migration`、`table: flyway_schema_history_scheduler`（**独立 history 表名**，避免与 admin 在同一 MySQL 实例里混淆），`enabled` 默认为真。**已落地**；决定本服务迁移的键是 `SCHEDULER_FLYWAY_ENABLED`，compose 与手工部署同一个键（`application.yml` 写的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，admin 那个同名键只是它未设时的回退位），compose 里另有显式的 `SPRING_FLYWAY_ENABLED` 覆盖。
 - 迁移脚本：`V1__quartz_tables.sql`（官方 11 张 `QRTZ_*`，剥掉所有 DROP 语句、补齐每表 COMMENT，另含官方脚本自带的 20 条 `CREATE INDEX`）——**已落地**。`V2__agent_task_domain.sql`（三张业务表按库表规范重写，含 `session_id VARCHAR(128)`）——**未落地，随 S3**。
 - **发布 1 的实际位置（修正 C）**：数据源仍是 `harnax_admin`，所以 11 张 `QRTZ_*` 与本服务自己的历史表都落在 admin 库里。Quartz 的行是可再生数据（reconcile 按 `agent_task` 重建全部 job），所以 S3 切库时不搬 `QRTZ_*`，在新库建表后跑一轮 reconcile 即可；旧的 `harnax_admin.QRTZ_*` 观察期后由运维 DROP。
 
@@ -273,7 +273,7 @@ C1 的格式约定是 scheduler 与 admin 之间的**隐式契约**：`resolveFr
 
 合计约 **12.5 人日**。要点是 **S0+S1 = 3 人日即可独立上线并解决全部问题③**——原计划把这些排在 M0 与最末的 M4，等于正确性修复要等 14 人日的搬迁走完才对用户生效。
 
-回滚点：S0/S1/S4 各自独立可 revert；S3 回滚 = revert 整个 PR。**S2 的回滚不是"指回 `harnax_admin` 库"**——修正 C 之后数据源本来就在 `harnax_admin` 库，那一步是空操作；真正的退路只有"离开集群"：`QUARTZ_JOB_STORE=memory` + `SCHEDULER_FLYWAY_ENABLED=false`（compose 侧开关；手工部署对应 `FLYWAY_ENABLED=false`）。`QRTZ_*` 表与其中的数据**保留不删**，它们是 reconcile 可以按 `agent_task` 重生成的可再生数据。代价写在部署文档里：memory 实例**不是集群成员**，两副本里退掉哪台，哪台就只剩转发面的作用。这个退路是**逐台、临时的**：compose 的环境变量对所有副本同源，一旦整个 service 都跑成 memory，就没有任何东西在两副本之间去重一次 cron——回滚期间要把 `SCHEDULER_ENABLED=false` 的副本从同名 service 里摘掉（同一条拓扑约束），或直接缩到一台，回到 jdbc 后再恢复两副本。
+回滚点：S0/S1/S4 各自独立可 revert；S3 回滚 = revert 整个 PR。**S2 的回滚不是"指回 `harnax_admin` 库"**——修正 C 之后数据源本来就在 `harnax_admin` 库，那一步是空操作；真正的退路只有"离开集群"：`QUARTZ_JOB_STORE=memory` + `SCHEDULER_FLYWAY_ENABLED=false`（compose 侧与手工部署同一个键；`FLYWAY_ENABLED` 是它未设时的回退位）。`QRTZ_*` 表与其中的数据**保留不删**，它们是 reconcile 可以按 `agent_task` 重生成的可再生数据。代价写在部署文档里：memory 实例**不是集群成员**，两副本里退掉哪台，哪台就只剩转发面的作用。这个退路是**逐台、临时的**：compose 的环境变量对所有副本同源，一旦整个 service 都跑成 memory，两副本之间**仍有** `agent_task_execution` 的 `uk_task_trigger(task_id, trigger_time)` 在挡同一个触发时点（那是业务层 INSERT 抢锁，赢家由抢锁决定而不是由调度器决定），但没有 Quartz 的接管、没有 misfire 补偿，停机期间错过的触发永久跳过；更要紧的是每台手里的 schedule 是私有的，一次只落到其中一台的 CRUD 会让两台跑着**不同的 cron 表达式**——不同表达式就是不同 `trigger_time`，这才是会成对写 `agent_task_log` 的那条路径（集群化之前的多实例就是这个样子，见 `prod_doc/agent-task-scheduler.zh-CN.md` §2.1）——回滚期间要把 `SCHEDULER_ENABLED=false` 的副本从同名 service 里摘掉（同一条拓扑约束），或直接缩到一台，回到 jdbc 后再恢复两副本。
 
 `harnax_admin` 里的三张业务表**发布 1 没有 DROP，也没有迁**（S2 只动 QRTZ 层）；DROP 属 S3，硬约束照旧：晚于 scheduler 稳定上线、观察过至少一个完整 cron 周期、运维签认后才合入——原 M5.1 的约束仍然有效，`harnax_admin.QRTZ_*` 在 S3 之前是活的、之后同样交运维签认后 DROP。
 

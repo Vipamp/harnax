@@ -31,6 +31,14 @@
 #
 # Usage: docker-new/roll-scheduler.sh
 #
+# Needs Compose v2 (the `docker compose` v2 CLI, or a `docker-compose` shim pointing at it). Two of this
+# script's listings are v2-only: `ps --all --quiet`, which proves a stopped replica is really gone, and
+# `ps --all --status exited --status created`, which finds the replicas an aborted roll left behind — the
+# python 1.x `docker-compose` has no `--status` at all. The plain `ps --quiet` listings work on either. That
+# first one is the load-bearing case, and it runs *after* a replica has been stopped and removed: without the
+# probe below a v1 host gets through the first stop and then dies unable to prove the victim is gone, with the
+# cluster one replica down. So the flags are probed once here, while nothing is touched.
+#
 # Knobs, all optional:
 #   SCHEDULER_REPLICAS    replicas the cluster must end with (default 2). Lower bound 2 whenever a replica
 #                         is already running — the roll cannot keep a one-node cluster alive — and 1 on a
@@ -40,6 +48,8 @@
 #   SCHEDULER_HEALTH_WAIT seconds to wait for the cluster to be healthy again after each replacement
 #                         (default 300; a replica needs ~60s of healthcheck start_period plus a poll)
 #   COMPOSE_FILE          compose file, relative to the project root
+#   LOCK_BASE_DIR         directory the roll lock directory is created in (default /tmp, and deliberately
+#                         not $TMPDIR — see LOCK_BASE_DIR below; every caller must pass the same value)
 #   MYSQL_ROOT_PASSWORD   only for the closing QRTZ_SCHEDULER_STATE read-out; unset falls back to the
 #                         compose default and a wrong one costs a hint line, never a roll
 set -euo pipefail
@@ -74,11 +84,15 @@ HEALTH_POLL_SECONDS=5
 # daemon itself rather than from DOCKER_HOST or the current context, which is the whole point: however you
 # get there, the same daemon gives the same key.
 #
-# Base directory is a literal /tmp, *not* ${TMPDIR:-/tmp}: an operator shell with TMPDIR exported (macOS gives
+# Base directory defaults to /tmp, *not* ${TMPDIR:-/tmp}: an operator shell with TMPDIR exported (macOS gives
 # every GUI login a per-user $TMPDIR) and a cron or sudo deploy without it have to contend for one lock, and
 # /tmp is the one place both see, including across users. The cost is that /tmp must be writable — a failure
 # there is reported as "cannot create the lock", never as "another roll is running" (see acquire_lock).
-LOCK_BASE_DIR="/tmp"
+# It is overridable, and has to stay that way: the error message below tells the operator to point it
+# somewhere else, and a plain assignment would make that advice impossible to follow. Override it in the
+# environment of *every* caller of this script (a cron entry and the shell that clears a stale lock included),
+# because two different values are two locks and one unguarded cluster.
+LOCK_BASE_DIR="${LOCK_BASE_DIR:-/tmp}"
 # The rest of the key — compose project name plus daemon name — is assembled with the daemon preflight below,
 # where both have actually been answered for.
 LOCK_DIR=""
@@ -170,7 +184,7 @@ acquire_lock() {
       # read-only or full filesystem, or a non-directory squatting on the path. Saying "another roll is already
       # running" there sends the operator off to hunt a process that does not exist while the roll that needs
       # to happen quietly never does; and this script must not roll unguarded either.
-      die "cannot create the scheduler roll lock at ${LOCK_DIR}: ${mkdir_error:-mkdir gave no reason}. This is not another roll holding it — there is nothing at that path — so the roll cannot start guarded and refuses to start at all. ${LOCK_BASE_DIR} is hardcoded rather than taken from TMPDIR so that an operator shell, cron and sudo all contend for one lock; make it writable, or point LOCK_BASE_DIR at a directory every caller of this script can create in."
+      die "cannot create the scheduler roll lock at ${LOCK_DIR}: ${mkdir_error:-mkdir gave no reason}. This is not another roll holding it — there is nothing at that path — so the roll cannot start guarded and refuses to start at all. ${LOCK_BASE_DIR} defaults to /tmp rather than to TMPDIR so that an operator shell, cron and sudo all contend for one lock; make it writable, or export LOCK_BASE_DIR at a directory every caller of this script can create in — and export it *everywhere* this script is called from, because two values are two locks and one unguarded cluster."
     fi
     holder="$(cat "${LOCK_DIR}/owner" 2>/dev/null || true)"
     holder_pid=""
@@ -181,9 +195,9 @@ acquire_lock() {
       # Report the dead holder, do not steal from it. kill -0 cannot tell "the roll that made this directory was
       # SIGKILLed" from "that pid was recycled onto something else that is a roll", and guessing wrong in the
       # optimistic direction is the concurrency this lock exists to prevent.
-      die "the scheduler roll lock at ${LOCK_DIR} belongs to a process that is no longer running (it recorded: ${holder}). Nothing is rolling right now, but this script will not clear a lock it did not create. Check that no roll is really in flight — 'ps -p ${holder_pid}', plus any terminal, cron job or CI step that runs this script — then remove ${LOCK_DIR} by hand and run this again."
+      die "the scheduler roll lock at ${LOCK_DIR} belongs to a process that is no longer running (it recorded: ${holder}). Nothing is rolling right now, but this script will not clear a lock it did not create. Look before you touch it: 'ls -ld ${LOCK_DIR}' says whose uid made it (a cron or root roll leaves a directory your own account cannot clear, which is a reason to run the roll as that user, not a reason to reach for sudo on the delete), 'ps -p ${holder_pid}' plus the terminals, cron entries and CI steps that run this script say whether a roll is really in flight, and the recorded start time says whether that pid simply got recycled. Once you have satisfied yourself none is, move it aside rather than deleting it — 'mv ${LOCK_DIR} ${LOCK_DIR}.stale-\$(date +%s)' keeps the evidence for the next reader — and run this again."
     fi
-    die "another scheduler roll is already running (${holder:-holder unknown, from a roll that recorded nothing}). Two concurrent rolls can each stop their own replica and leave the cluster with no scheduler, so this one refuses to start. Wait for the running roll to finish; if you are certain none is (the holder above is not among the running processes, or this lock predates a SIGKILL), remove ${LOCK_DIR} by hand and run this again."
+    die "another scheduler roll is already running (${holder:-holder unknown, from a roll that recorded nothing}). Two concurrent rolls can each stop their own replica and leave the cluster with no scheduler, so this one refuses to start. Wait for the running roll to finish. If the holder above reads 'holder unknown', that is a specific shape and not a silent roll: the directory is made before the owner file is written, so a signal landing between the two leaves a lock with no pid in it, which no process will ever come back to clean up. There is nothing to match against `ps` in that case, so check the directory itself — 'ls -ld ${LOCK_DIR}' for the uid and the mtime, 'ls ${LOCK_DIR}' for whether an owner file exists at all — and confirm no roll of this project is in flight from the cron entry or CI job that would run one. Then move it aside rather than deleting it ('mv ${LOCK_DIR} ${LOCK_DIR}.stale-\$(date +%s)') and run this again; if it belongs to another uid, run the roll as that user instead of clearing it with elevated rights."
   fi
   LOCK_TOKEN="$(printf 'pid=%s user=%s nonce=%s started=%s cwd=%s project=%s daemon=%s' \
     "$$" "${USER:-unknown}" "${RANDOM}${RANDOM}$(date +%s)" \
@@ -353,6 +367,13 @@ COMPOSE_PROJECT="$(normalize_name "${compose_project_raw}")"
 LOCK_DIR="${LOCK_BASE_DIR}/harnax-roll-scheduler-${COMPOSE_PROJECT}+${DAEMON_KEY}.lock"
 compose config --services 2>/dev/null | grep -qx "${SERVICE}" \
   || die "no ${SERVICE} service in ${COMPOSE_FILE}"
+# The v2-only listings, asked for once here instead of at the moment they matter: the roll later proves a
+# stopped replica is gone with `ps --all`, and that call comes *after* a stop that may have used the whole
+# grace period. Running the exact flag set the roll depends on is the point — a 1.x CLI that takes `--all` but
+# has no `--status` fails here too — and so is the position: everything below this line may touch a container.
+if ! compose ps --all --quiet --status exited --status created "${SERVICE}" >/dev/null 2>&1; then
+  die "this docker-compose cannot list replicas with '--all --status', which is Compose v2 syntax. The roll depends on two such listings: the one that proves a stopped replica is really gone and the one that finds replicas an aborted roll left behind — the first of them runs after a replica is already down. Nothing has been touched. Point docker-compose at the v2 CLI (the 'docker compose' plugin, or a shim for it) and re-run, or take the cluster down deliberately instead of rolling it."
+fi
 
 # Everything above reads; from here the script may write. Lock first, so a second roll — another operator, a
 # cron deploy, or a `deploy-service.sh scheduler` started by hand while one is already running — is refused

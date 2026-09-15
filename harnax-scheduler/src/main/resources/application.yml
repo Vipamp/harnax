@@ -35,8 +35,13 @@ spring:
   # currently land in harnax_admin, whose own history belongs to admin's Flyway: two tools, two ledgers,
   # one database. `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
   # clean, and baselining would let a half-migrated schema pass as complete.
+  # The switch is SCHEDULER_FLYWAY_ENABLED, with admin's FLYWAY_ENABLED only as the fallback it nests to
+  # (the same shape `spring.quartz.auto-startup` uses below). compose sets SPRING_FLYWAY_ENABLED directly
+  # and so wins over this line either way; outside compose this is the difference between the documented
+  # rollback escape hatch working and a hand-run restore having to reach for admin's key to stop — or start —
+  # this node's own QRTZ_* tables.
   flyway:
-    enabled: ${FLYWAY_ENABLED:true}
+    enabled: ${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}
     locations: classpath:db/migration
     table: flyway_schema_history_scheduler
     validate-on-migrate: true

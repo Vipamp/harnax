@@ -53,9 +53,15 @@ class SchedulerQuartzConfigTest {
 
     @Test
     fun `flyway owns the quartz schema and never lets Spring run its script on a restart`() {
-        // YamlPropertiesFactoryBean does not resolve placeholders, so these assertions read the default
-        // after the colon rather than a bound value.
-        assertTrue(value("flyway.enabled")!!.endsWith(":true}"), value("flyway.enabled"))
+        // YamlPropertiesFactoryBean does not resolve placeholders, so these assertions read the literal
+        // nesting rather than a bound value — which is the point here: the outer key has to be the
+        // scheduler's own documented switch (SCHEDULER_FLYWAY_ENABLED), with admin's FLYWAY_ENABLED only as
+        // the fallback it nests to. Pin the whole string, as the auto-startup case below does; the two keys
+        // nest the same way and a `endsWith(":true}")` no longer says anything about which is which.
+        assertEquals(
+            "\${SCHEDULER_FLYWAY_ENABLED:\${FLYWAY_ENABLED:true}}",
+            value("flyway.enabled"),
+        )
         assertEquals("flyway_schema_history_scheduler", value("flyway.table"))
         assertEquals("never", value("quartz.jdbc.initialize-schema"))
     }

@@ -15,7 +15,7 @@
 | 依赖 | 要求 | 说明 |
 |---|---|---|
 | JDK | 21 | |
-| MySQL | `harnax_admin` 库 | 与 admin **共用同一个库、但各管各的表**：本服务读 `agent_task` / 写 `agent_task_log`，并且**自己建自己的 `QRTZ_*` 集群表**。表结构由两边的 Flyway 各写一份历史表（本服务 `flyway_schema_history_scheduler`、admin `flyway_schema_history`），互不干扰，所以本服务 `FLYWAY_ENABLED` 默认 `true` 且**必须保持开**——关掉就没有 `QRTZ_*`，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。发布 2 才把数据源搬进 `harnax_scheduler`（`docker-new/sql/init-databases.sql` 已预建该库并授权，发布 1 用不上它） |
+| MySQL | `harnax_admin` 库 | 与 admin **共用同一个库、但各管各的表**：本服务读 `agent_task` / 写 `agent_task_log`，并且**自己建自己的 `QRTZ_*` 集群表**。表结构由两边的 Flyway 各写一份历史表（本服务 `flyway_schema_history_scheduler`、admin `flyway_schema_history`），互不干扰，所以本服务的迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就没有 `QRTZ_*`，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。发布 2 才把数据源搬进 `harnax_scheduler`（`docker-new/sql/init-databases.sql` 已预建该库并授权，发布 1 用不上它） |
 | router | 必须可达 | 执行入口 `SCHEDULER_ROUTER_URL` |
 | admin | 必须可达 | 会话管理与系统 Key 获取 |
 | Redis / MinIO | 不需要 | |
@@ -30,7 +30,7 @@
 | 模式 | 定位 | 后果 |
 |---|---|---|
 | `jdbc` | **当前默认与目标形态**：`V1__quartz_tables.sql` 由本服务的 Flyway 建表，`isClustered=true` + `clusterCheckinInterval=15000` + `acquireTriggersWithinLock=true` | 多实例安全：一次触发全集群只有一个节点抢到；故障接管与 misfire 补偿都由引擎负责 |
-| `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。混在一组副本里就是任务重复执行、`agent_task_log` 成对记录 |
+| `memory` | **逃生门，不是运行形态**：本地无库启动、以及回滚（见下一节） | 该实例**不是集群成员**：它读不到也写不进共享 store，自己按自己的 cron 各 fire 一次。同一发 cron 被两台同时 fire 时**全集群只执行一次**：每一发（cron 与 one-shot 都是）都要过 `AbstractAgentTaskJob` 的 `AgentTaskExecutionGuard.tryAcquireLock(taskId, triggerTime)`，`uk_task_trigger(task_id, trigger_time)` 只让一台赢，`agent_task_log` 也就一行（这正是集群化前的多实例形态，见 `prod_doc/agent-task-scheduler.zh-CN.md` §2.1）。真正的代价是三样：赢家由一次 INSERT 抢出来、不是由调度器决定；这台**没有故障接管也没有 misfire 补偿**，它停机期间错过的触发永久跳过；它的 schedule 是私有的，一次只落到 jdbc 那台的 CRUD 会让两台跑着**不同的 cron 表达式**——不同表达式就是不同触发时点，也就不同 `trigger_time`，这才是真会成对写 `agent_task_log` 的那条路径 |
 
 `org.quartz.jobStore.class` 故意**不写**：Boot 注入 DataSource 后会强制覆盖成 `LocalDataSourceJobStore`，写死 `JobStoreTX` 反而连不上 Spring 管理的数据源。
 
@@ -42,14 +42,14 @@
 
 ```bash
 QUARTZ_JOB_STORE=memory             # 本实例退出集群
-SCHEDULER_FLYWAY_ENABLED=false     # compose 侧的开关；手工部署路径对应 FLYWAY_ENABLED=false
+SCHEDULER_FLYWAY_ENABLED=false     # compose 与手工部署是同一个键；未设时它退回 ${FLYWAY_ENABLED:true}
 ```
 
 `QRTZ_*` 表与其中的数据**保留不删**：行是可再生数据（reconcile 会按 `agent_task` 重建全部 job），所以回滚不需要迁数据，重新开启集群也不需要。代价写在上一节的表里——memory 节点不是集群成员，两实例里退掉哪台，哪台就只剩「接收 admin 转发的 HTTP 面」这一个作用。
 
 ## 双实例与逐台滚动
 
-副本数**不由 compose 决定**：`docker-compose.yml` 里 scheduler 既没有 `deploy.replicas`，也**故意没有 `container_name`**（固定名唯一，Docker 会直接拒绝 `--scale`）。数字只从命令行来，一共三处会写它：`roll-scheduler.sh`（`SCHEDULER_REPLICAS`，默认 2）、`deploy-all.sh` 的冷启动 `up -d --scale scheduler=$SCHEDULER_REPLICAS`、以及你自己手敲的 `up`。**任何不带 `--scale` 的 `up` 都是在要求 1 个副本，compose 会把服务缩回一台**——所以从脚本之外拉起这个服务时，`--scale` 必须带上。
+副本数**不由 compose 决定**：`docker-compose.yml` 里 scheduler 既没有 `deploy.replicas`，也**故意没有 `container_name`**（固定名唯一，Docker 会直接拒绝 `--scale`）。数字只从命令行来，一共三处会写它：`roll-scheduler.sh`（`SCHEDULER_REPLICAS`，默认 2）、`deploy-all.sh` 的冷启动 `up -d --scale scheduler=$SCHEDULER_REPLICAS`、以及你自己手敲的 `up`（`build.sh` 收尾打的那条、与 `docker-compose.yml` 头部 usage 里那条，都只是这第三处的样子——两处都已带 `--scale`，别再删掉它）。**任何不带 `--scale` 的 `up` 都是在要求 1 个副本，compose 会把服务缩回一台**——所以从脚本之外拉起这个服务时，`--scale` 必须带上。
 
 ```bash
 docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-recreate scheduler
@@ -58,6 +58,8 @@ docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-r
 发布新版本走 `docker-new/roll-scheduler.sh`（`deploy-service.sh scheduler` 的第 4 步就是它）。它先补齐到 `SCHEDULER_REPLICAS`、再逐台 `docker stop -t <grace>` + `rm` + `up --no-recreate` 换掉，全程集群里至少有一台在跑。
 
 **禁止对 scheduler 用 `--force-recreate`**：`up -d --force-recreate scheduler` 一次重建该 service 的**所有**副本，等于最长 400s（一台容器从 SIGTERM 到被 SIGKILL 的宽限）全集群无调度。这期间 `QRTZ_TRIGGERS` 里堆起来的过期触发会走 misfire 路径，而 `concurrent=0` 的任务用的正是 `withMisfireHandlingInstructionDoNothing`——**堆起来的触发被直接丢弃**，发布于是静默跳过本该跑的定时任务，和 400s 宽限「绝不丢执行」的初衷正好相反。同理，`SCHEDULER_REPLICAS=1` 的滚动会被脚本拒绝：一台都停的话，就没有第二台可接管了。
+
+**`docker-new/deploy-all.sh` 是同一条越界里更长的那一档，它照做不误**：第 5 步 `down` 停掉全部副本，第 6 步才 `up -d --scale`，中间要过 mysql 的健康门（`healthcheck` 最坏 10s×5）再起一台 JVM——全集群无调度的窗口比一次 `--force-recreate` 只长不短，堆在 `QRTZ_TRIGGERS` 里的那些发同样按 DoNothing 丢弃。它不做成滚动形态是刻意的：这是一次全新集群的冷启动（所有服务都要换镜像），逐台滚动那条路径需要「有副本在跑时换镜像」这个前提，此刻并不成立，`roll-scheduler.sh` 也不负责拉起 redis/minio/mysql。所以这里的规则是运维的而不是代码的：**只在安静时段跑 `deploy-all.sh`**；如果这次只动了 scheduler 的镜像，就走 `deploy-service.sh scheduler`（它以 `roll-scheduler.sh` 收尾，全程至少一台在跑，不丢触发）。脚本在 `down` 前会把这句话打一遍，`roll-scheduler.sh` 的那把滚动锁也**故意不覆盖** `deploy-all.sh`——一把锁拦不住一次设计上就要清空整栈的部署。
 
 集群成员的直接读数是 `QRTZ_SCHEDULER_STATE`（发布 1 里它在 `harnax_admin` 库，因为本服务的数据源此刻还指那边）：
 
@@ -107,8 +109,8 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 | `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_admin?...` | 与 admin 同库；`QRTZ_*` 就建在这里，发布 2 才搬走 |
 | `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD` |
 | `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `30` / `3` | Hikari。30 是按下界选的：≥ `QUARTZ_THREAD_COUNT`(10) 个 worker（每个在一次 fire 里占一条连接）+ 业务查询 + 集群 checkin，全走这一个池。**`QUARTZ_THREAD_COUNT` 与它要一起动**——只加 worker 不加池不会多出容量，只是把等待从调度线程挪到 30s 的 connection-timeout 上。与 admin 的 20/5 不同 |
-| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：`V1__quartz_tables.sql` 建 `QRTZ_*`，历史记在自有的 `flyway_schema_history_scheduler`，与 admin 的 `flyway_schema_history` 互不干扰。compose 侧另有独立开关 `SCHEDULER_FLYWAY_ENABLED`（默认 true，映射到 `SPRING_FLYWAY_ENABLED`），不复用 admin 的 `FLYWAY_ENABLED`，免得手工恢复时改 admin 那个值顺手把调度节点停了迁移 |
-| `SCHEDULER_FLYWAY_ENABLED` | `true` | 仅 compose：`SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"`。它是 env 覆盖，优先级高于 yml 里的 `${FLYWAY_ENABLED:true}`，所以这个键才是集群建不建表的决定者 |
+| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：`V1__quartz_tables.sql` 建 `QRTZ_*`，历史记在自有的 `flyway_schema_history_scheduler`，与 admin 的 `flyway_schema_history` 互不干扰。它是调度节点迁移的**回退位**而不是决定位——`application.yml` 读的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，所以只要 `SCHEDULER_FLYWAY_ENABLED` 设了值，改这个 admin 同名的键就不起作用（它原本就是防着「手工恢复时顺手改了 admin 那个值，把调度节点停了迁移」） |
+| `SCHEDULER_FLYWAY_ENABLED` | `true` | 本服务迁移的决定位，compose 与手工部署同一个键：`application.yml` 的 `spring.flyway.enabled` 外层就是它。compose 里另有 `SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"`，那是一条显式 env 覆盖、优先级仍高于 yml，两条路径因此不会分叉成两个开关。`=false` 是回滚的逃生门（见「回滚」一节） |
 
 ### 调度与下游
 
@@ -165,7 +167,7 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 
 | 现象 | 先看什么 |
 |---|---|
-| 任务跑了两遍 | 是否有实例以 `QUARTZ_JOB_STORE=memory` 起（memory 节点不进集群、不去重，见前两节）；或有两套不同 `instanceName` 的部署共用了同一个库 |
+| 任务跑了两遍 | 先分清是不是**同一个时点**跑了两遍。不同触发时点各跑一遍（`trigger_time` 不同，`uk_task_trigger` 挡不住）＝有实例以 `QUARTZ_JOB_STORE=memory` 起：它不进集群、按自己私有的那份 schedule 到点，而只有 jdbc 那台收到的 CRUD 让它带着旧 cron 一直在跑（见前两节）。同一个时点真跑了两遍＝有两套不同 `instanceName` 的部署共用了同一个库 |
 | 任务到点不触发 | 集群里是否**至少一台** `SCHEDULER_ENABLED=true`；`QRTZ_SCHEDULER_STATE` 有没有行、`LAST_CHECKIN_TIME` 有没有在动（空表说明没人进过集群）；cron 表达式；`agent_task` 的启用状态 |
 | 触发后无执行 | `SCHEDULER_ROUTER_URL` 是否可达、`SCHEDULER_API_KEY` 是否拿到了（留空时要问 admin） |
 | 内部 API 401 | `SCHEDULER_ADMIN_SECRET` 与 admin 的 `ADMIN_INTERNAL_API_SECRET` 是否同值；admin 现在**拒绝占位默认值**走业务接口，两边都得换成真值 |

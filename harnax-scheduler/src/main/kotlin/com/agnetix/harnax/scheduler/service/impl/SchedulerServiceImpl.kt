@@ -122,7 +122,12 @@ class SchedulerServiceImpl(
         schedulerContext["taskScheduleReconciler"] = reconciler
 
         if (!schedulerEnabled) {
-            log.info("Scheduler is disabled on this instance: no task reconcile, zombie reclaim still runs")
+            log.info(
+                "Scheduler is disabled on this instance: no task reconcile and no fire here at all " +
+                    "(spring.quartz.auto-startup follows this flag). The housekeeping sweep this node " +
+                    "registers still lands in the shared store, but it reclaims nothing until some node " +
+                    "of this cluster runs with scheduling enabled.",
+            )
         }
     }
 
@@ -288,7 +293,20 @@ class SchedulerServiceImpl(
             log.info("The {} sweep is already registered (every {}s), leaving it alone", label, intervalMs / 1000)
             return true
         }
-        scheduler.rescheduleJob(stored.key, sweepTrigger(jobKey, triggerKey, intervalMs))
+        if (scheduler.rescheduleJob(stored.key, sweepTrigger(jobKey, triggerKey, intervalMs)) == null) {
+            // Quartz answers null when the trigger it was handed is no longer in the store — it went away
+            // between the read above and this write. Nothing moved, so this must not report a move, and it
+            // returns false for the same reason a refused write does anywhere else in the method: the store
+            // did not take it, and [registerSweepsIfPending] is what tries again.
+            log.warn(
+                "The {} sweep is on a different interval ({}s -> {}s) but the stored trigger was gone before " +
+                    "it could be moved, so nothing was rescheduled; a later round registers it again",
+                label,
+                stored.repeatInterval / 1000,
+                intervalMs / 1000,
+            )
+            return false
+        }
         log.info(
             "Moved the {} sweep to the configured interval: {}s -> {}s",
             label,

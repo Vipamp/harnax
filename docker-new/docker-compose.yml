@@ -10,7 +10,10 @@
 #
 # Usage:
 #   Build images first: ./build.sh
-#   Start services:     docker-compose up -d
+#   Start services:     docker-compose up -d --scale scheduler="${SCHEDULER_REPLICAS:-2}"
+#                       (a plain `up` is not cluster-safe: it asks for ONE scheduler replica and compose
+#                        scales the service back down — see the scheduler service block below)
+#   Roll new images onto a running scheduler cluster: bash docker-new/deploy-service.sh scheduler
 #   View logs:          docker-compose logs -f
 #   Stop services:      docker-compose down
 
@@ -318,7 +321,9 @@ services:
       # flyway_schema_history_scheduler — admin's ledger in that database stays untouched. This override is
       # what decides whether QRTZ_* gets created at all: an env var beats the yml default, so leaving the
       # old `${FLYWAY_ENABLED:-false}` here would boot the node against a store that does not exist.
-      # SCHEDULER_FLYWAY_ENABLED=false is the escape hatch for a rollback.
+      # SCHEDULER_FLYWAY_ENABLED=false is the escape hatch for a rollback — and it is the same key
+      # application.yml nests (${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}), so a hand-run node honours
+      # it too; admin's FLYWAY_ENABLED is only the fallback under it.
       SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"
       # Scheduler Configuration
       # One interpolation for every replica, on purpose: `false` here takes the whole deployment out of the
