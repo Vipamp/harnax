@@ -21,6 +21,7 @@ import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.dto.ChannelSessionOwner
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
@@ -329,24 +330,32 @@ class InternalApiControllerTest {
      * 会话归属查询：router 的 `SessionAccessGuard` 就是拿这里给出的租户和调用方的租户做比对，
      * 所以「没有答案」（data 为 null）在它眼里等于放行。`chn-` 按设计不存在于 `session` 表里——
      * 它在 `channel` 行上，创建频道时盖章——早先这里只查 `session`，于是任何登录用户凭一个
-     * `chn-{uuid}` 就能读走别租户的频道会话。下面四条钉住修法与它不能碰坏的东西。
+     * `chn-{uuid}` 就能读走别租户的频道会话。
+     *
+     * 归属这一读不看 `active`：`deleteById` 是软删，行还在、租户还在、会话与沙箱都不清理，所以
+     * 「查不到行」必须只剩「这行从没存在过」一种含义。配置那一读（`selectBySessionId`）照旧过滤
+     * active，下面也钉住归属不走去它。这几条钉住修法与它不能碰坏的东西。
      */
     @Nested
     @DisplayName("会话归属查询接口")
     inner class GetSessionInfoTests {
 
+        /** 归属那一读的返回：只有它查的三列，`active` 不在其中——它本来就不看这一列。 */
+        private fun channelOwner(
+            sessionId: String,
+            tenantId: Long,
+            agentId: Long,
+        ) = ChannelSessionOwner().apply {
+            this.sessionId = sessionId
+            this.tenantId = tenantId
+            this.agentId = agentId
+        }
+
         @Test
         @DisplayName("getSessionInfo - chn 会话报出 channel 行的租户与 agent")
         fun `getSessionInfo reports the tenant that owns a channel session`() {
             val sessionId = "chn-11111111-2222-3333-4444-555555555555"
-            `when`(channelMapper.selectBySessionId(sessionId)).thenReturn(
-                Channel().apply {
-                    id = 12L
-                    this.sessionId = sessionId
-                    tenantId = 7L
-                    agentId = 3L
-                },
-            )
+            `when`(channelMapper.selectOwnerBySessionId(sessionId)).thenReturn(channelOwner(sessionId, 7L, 3L))
 
             val result = controller.getSessionInfo(sessionId)
 
@@ -364,11 +373,33 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("getSessionInfo - 没有 active channel 行时仍回答未知")
+        @DisplayName("getSessionInfo - 已软删的 channel 行照样报出租户")
+        fun `getSessionInfo reports the tenant of a soft-deleted channel row`() {
+            val sessionId = "chn-33333333-2222-3333-4444-555555555555"
+            // 生产里就是这个形状：deleteById 只把 active 置 0，tenant_id 留在行上，而删频道既不清会话
+            // 也不清沙箱。带 active 过滤的配置读查不到这一行（下面 stub 成 null 还原真实 SQL 的行为），
+            // 所以归属若走那一条读，就等于回答「这会话没有主人」——router 读作放行。那不是缓存的五分钟
+            // 窗口，而是直到 router 自己的会话绑定按 24 小时空闲过期为止，跨租户照读不误。
+            `when`(channelMapper.selectBySessionId(sessionId)).thenReturn(null)
+            `when`(channelMapper.selectOwnerBySessionId(sessionId)).thenReturn(channelOwner(sessionId, 7L, 3L))
+
+            val data = requireNotNull(controller.getSessionInfo(sessionId).data) {
+                "一个 active=0 的 channel 行仍然有主人：归属不能因为行被软删就答不出"
+            }
+
+            assertEquals(7L, data.tenantId)
+            assertEquals(sessionId, data.sessionId)
+            // 修法是新增一条不带 active 谓词的专用读，不是放宽共用的那一条：配置路径仍然看不见被删的行。
+            verify(channelMapper, never()).selectBySessionId(anyString())
+        }
+
+        @Test
+        @DisplayName("getSessionInfo - 没有任何 channel 行时仍回答未知")
         fun `getSessionInfo keeps a missing channel session unknown instead of guessing an owner`() {
-            // 已软删（active=0）或根本不存在的 chn id 必须还是「查不到」。把它变成拒绝会连第一次接触
-            // 的流程一起挡掉；变成猜测则会凭一个陌生 id 判别人的租户。
-            `when`(channelMapper.selectBySessionId("chn-does-not-exist")).thenReturn(null)
+            // 去掉 active 之后，「查不到」只剩这一种含义：chn id 是建频道时生成并随行一起插入的，没有行
+            // 就是 admin 从没发过这个 id。仍然回答 null 而不是拒绝——那是这个端点对每个前缀既有的语义，
+            // 猜一个租户则会凭陌生 id 判到别人头上。
+            `when`(channelMapper.selectOwnerBySessionId("chn-does-not-exist")).thenReturn(null)
 
             val result = controller.getSessionInfo("chn-does-not-exist")
 
@@ -382,14 +413,9 @@ class InternalApiControllerTest {
         fun `getSessionInfo does not turn a tenant-less channel row into no owner`() {
             // tenantId 为 null 是 router 读作「无法判定」的那个值，也就是自由通行证。行上写的是 0，
             // 就报 0：任何带租户的调用方因此成了跨租户调用方，被拒。
-            `when`(channelMapper.selectBySessionId("chn-22222222-2222-3333-4444-555555555555")).thenReturn(
-                Channel().apply {
-                    id = 13L
-                    sessionId = "chn-22222222-2222-3333-4444-555555555555"
-                    tenantId = 0L
-                    agentId = 3L
-                },
-            )
+            `when`(
+                channelMapper.selectOwnerBySessionId("chn-22222222-2222-3333-4444-555555555555"),
+            ).thenReturn(channelOwner("chn-22222222-2222-3333-4444-555555555555", 0L, 3L))
 
             val data = requireNotNull(controller.getSessionInfo("chn-22222222-2222-3333-4444-555555555555").data)
 

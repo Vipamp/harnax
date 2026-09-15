@@ -24,10 +24,10 @@ import org.springframework.stereotype.Component
  * - A caller with no tenant: an internal service token or a SYSTEM key. The channel service routes on
  *   behalf of users it does not own and is itself the one that authenticated them; there is nothing to
  *   compare, and inventing a denial would only push operators to disable authentication.
- * - A session admin says does not exist — no `session` row and, for a `chn-` id, no active `channel`
- *   row either. For the ids that really are nothing's — a fresh `web-` id the user opens with first —
- *   nothing is bound to it, so the proxy endpoints answer "not bound" without touching an agent, and
- *   the tenant that owns it cannot be proven either way.
+ * - A session admin says does not exist — no `session` row and, for a `chn-` id, no `channel` row at all
+ *   (admin reads that row whatever its `active` flag says). For the ids that really are nothing's — a
+ *   fresh `web-` id the user opens with first — nothing is bound to it, so the proxy endpoints answer
+ *   "not bound" without touching an agent, and the tenant that owns it cannot be proven either way.
  *
  * The second case is narrower than it used to be, and it is worth being precise about the residue.
  * `chn-` ids used to land in it permanently: admin resolved a channel session from the `channel` table
@@ -117,11 +117,12 @@ class SessionAccessGuard(
                 }
             }
 
-            // Since admin answers a `chn-` id from the `channel` table, Unknown for one of those now
-            // means "no active channel row" rather than "this kind of id is unanswerable" — a deleted
-            // channel, or an id nobody minted. Still a pass, and still cached for five minutes by
-            // [SessionInfoClient], which is the window a rollout leaves open for an id that was asked
-            // about while the answer was Unknown.
+            // Admin answers a `chn-` id from the `channel` row whatever its active flag says, so Unknown
+            // for one of those is no longer "a deleted channel" — that row still reports its tenant and
+            // the comparison above refuses a foreign caller. What is left is an id with no channel row at
+            // all, and since a `chn-` id is minted with the row that creates it, that is an id admin never
+            // issued. Still a pass, and still cached for five minutes by [SessionInfoClient], which is the
+            // window a rollout leaves open for an id that was asked about while the answer was Unknown.
             AdminClientService.SessionLookup.Unknown ->
                 log.debug("Session $sessionId is not known to admin; ownership could not be checked for caller '${context.callerId}'")
 

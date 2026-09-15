@@ -39,9 +39,13 @@ package com.agnetix.harnax.router.support
  * read is refused by that comparison today; a prefix rule on top of it would add no decision the
  * lookup does not already make, and would still take the same-tenant page offline.
  *
- * What the lookup cannot see is not what the rule protects: the guard still passes `Unknown` — an id
- * with no active `channel` row — because that is the first-contact case, and a denial there would
- * break flows that legitimately open a session admin has not heard of.
+ * What the lookup cannot see is not what the rule protects: the guard still passes `Unknown`, and for a
+ * `chn-` id that now means literally no `channel` row — admin answers for a row whatever its `active` flag
+ * says, so a deleted channel is settled by the tenant comparison above, not by this pass. There is no
+ * first-contact case either: a `chn-` id is minted when its channel is created and inserted with the row,
+ * so a miss is an id admin never issued, and nothing is bound to it for the router to proxy to. The pass
+ * stays a pass because that is the endpoint's not-found answer for every prefix, not because an owner was
+ * looked for and gave up.
  * [com.agnetix.harnax.router.service.SessionInfoClient] caches an `Unknown` for five minutes, so a
  * `chn-` id that was asked about before admin learned to answer it keeps passing for that long after a
  * rollout. That window is real and is not closed by anything on this list.

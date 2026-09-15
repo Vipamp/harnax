@@ -215,8 +215,8 @@ class SessionAccessGuardTest {
         // tenant-based rewrite from quietly narrowing the pass to tenant-less callers only.
         val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
         AuthContextHolder.set(AuthContext(callerId = "channel-service", userId = null, tenantId = 3L))
-        // Unknown for a chn- id now means "no active channel row" — a deleted channel, or one nobody
-        // minted — and that stays a pass.
+        // Unknown for a chn- id now means "no channel row at all, whatever its active flag" — an id admin
+        // never minted, since a deleted channel still answers with its tenant. That stays a pass.
         stubLookup(sessionId, AdminClientService.SessionLookup.Unknown)
 
         guard.requireAccessible(sessionId)

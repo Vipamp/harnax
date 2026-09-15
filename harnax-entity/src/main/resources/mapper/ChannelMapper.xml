@@ -64,6 +64,31 @@
         LIMIT 1
     </select>
 
+    <!-- Ownership answer: the three columns the router's cross-tenant check compares, and no more. -->
+    <resultMap id="ChannelOwnerResultMap" type="com.agnetix.harnax.entity.dto.ChannelSessionOwner">
+        <result column="session_id" property="sessionId"/>
+        <result column="tenant_id"  property="tenantId"/>
+        <result column="agent_id"   property="agentId"/>
+    </resultMap>
+
+    <!--
+        Deliberately without the `active = 1` filter the statement above carries, and selectBySessionId
+        is not relaxed instead because the configuration callers there must keep treating a deleted
+        channel as gone. `deleteById` is a soft delete: the row keeps its tenant_id after the channel is
+        deleted, and deleting a channel cleans up neither its session nor its sandbox. So an
+        active-filtered ownership read would answer "no owner" for exactly the rows that still have a
+        live session behind them, and the router passes an owner it cannot resolve — which would make
+        deleting a channel a way to erase accountability for reading it. A row has an owner whatever its
+        active flag says; no row at all is the only case that answers nothing, and `chn-` ids are minted
+        and inserted together with their channel, so that case is an id this admin never issued.
+    -->
+    <select id="selectOwnerBySessionId" resultMap="ChannelOwnerResultMap">
+        SELECT session_id, tenant_id, agent_id
+        FROM channel
+        WHERE session_id = #{sessionId}
+        LIMIT 1
+    </select>
+
     <select id="selectByAgentId" resultMap="ChannelResultMap">
         SELECT <include refid="BaseColumnList"/>
         FROM channel

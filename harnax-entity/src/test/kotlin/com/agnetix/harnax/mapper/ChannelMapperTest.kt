@@ -211,6 +211,31 @@ open class ChannelMapperTest {
         }
 
         @Test
+        @DisplayName("selectOwnerBySessionId - answers the owner of a soft-deleted channel")
+        fun `selectOwnerBySessionId should answer the owner of a soft-deleted channel`() {
+            // This read carries no `active` predicate on purpose: `deleteById` only flips the flag, so the
+            // row keeps its tenant while the session behind it stays routable. Answering "no owner" here
+            // would make deleting a channel a way to erase who owns its conversation.
+            val owner = channelMapper.selectOwnerBySessionId("sess-deleted-001")
+
+            assertNotNull(owner)
+            assertEquals("sess-deleted-001", owner.sessionId)
+            assertEquals(1L, owner.tenantId)
+            assertEquals(1L, owner.agentId)
+            // The configuration read still treats that row as gone: this is an added read, not a
+            // relaxation of the filtered one.
+            assertNull(channelMapper.selectBySessionId("sess-deleted-001"))
+        }
+
+        @Test
+        @DisplayName("selectOwnerBySessionId - null when no channel row carries the id")
+        fun `selectOwnerBySessionId should return null when no channel row carries the id`() {
+            // The one case that answers nothing. `chn-` ids are inserted together with their channel, so
+            // no row at all means an id that was never minted.
+            assertNull(channelMapper.selectOwnerBySessionId("sess-never-created"))
+        }
+
+        @Test
         @DisplayName("selectChannelList - 查询所有通道列表")
         fun `selectChannelList should return all channels`() {
             // When

@@ -196,17 +196,25 @@ class InternalApiController(
     }
 
     /**
-     * Ownership of a `chn-` id, read from the table that holds it.
+     * Ownership of a `chn-` id, read from the table that holds it — whatever that row's `active` flag
+     * says, which is why this is a dedicated read and not [com.agnetix.harnax.mapper.ChannelMapper]'s
+     * `selectBySessionId`: that one answers `null` for a deleted channel, and the callers of it want the
+     * channel's configuration, where "deleted, so gone" is the right answer. Here it would not be —
+     * `deleteById` is a soft delete, the tenant stays on the row, and deleting a channel cleans up
+     * neither its session nor its sandbox, so an active-filtered ownership answer would let anyone make
+     * a still-readable conversation unattributable by deleting the channel that owns it.
      *
      * `agentName`/`modelId`/`modelName` stay null: this endpoint's only consumer of those fields is the
      * router's call-log enrichment, which treats a missing value as "costs the enrichment columns and
      * nothing else", and resolving the agent here would put a second query on every proxy call that
      * misses the router's cache.
      *
-     * A miss stays a miss. A `chn-` id with no *active* channel row answers "unknown" exactly as before,
-     * which the router still passes: that is the first-contact case (an id the caller is entitled to
-     * open a session with), and turning it into a denial would refuse a session that demonstrably
-     * belongs to nobody rather than protect one.
+     * A miss is now the narrow thing it was never before: no `channel` row exists for the id at all.
+     * `chn-` ids are minted when the channel is created and inserted with its row
+     * (`ChannelServiceImpl.generateSessionId`), so there is no first-contact case to protect — a `chn-`
+     * id with no row is one this admin never issued. It is still answered "unknown" rather than refused,
+     * because unknown is this endpoint's existing not-found answer for every prefix, and an id admin
+     * never minted has nothing bound to it for the router to reach.
      *
      * `tenantId` is reported as the row holds it, including a non-positive value. That is the whole
      * point of the field, so collapsing "no tenant stamped" into null would hand the caller the very
@@ -216,17 +224,16 @@ class InternalApiController(
      * is what makes that diagnosable instead of silent.
      */
     private fun channelSessionInfo(sessionId: String): ResultVo<SessionInfoResponse?> {
-        val channel = channelMapper.selectBySessionId(sessionId)
+        val channel = channelMapper.selectOwnerBySessionId(sessionId)
         if (channel == null) {
-            log.debug("Channel session not found: $sessionId")
+            log.debug("No channel row for session id at all (never minted): $sessionId")
             return ResultVo.success(null)
         }
         if (channel.tenantId <= 0) {
             log.warn(
-                "Channel {} (id={}) carries tenant {}, which is no tenant at all; reporting it as the " +
+                "Channel session {} carries tenant {}, which is no tenant at all; reporting it as the " +
                     "router's ownership check does, so every tenant-bearing caller is refused it",
                 sessionId,
-                channel.id,
                 channel.tenantId,
             )
         }

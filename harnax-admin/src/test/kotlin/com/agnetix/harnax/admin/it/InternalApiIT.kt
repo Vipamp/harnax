@@ -248,8 +248,9 @@ class InternalApiIT : BaseAdminIT() {
         assertEquals(agentId, data["agentId"].asLong())
         assertEquals(detail["tenantId"].asLong(), data["tenantId"].asLong())
 
-        // A `chn-` id with no channel row is still "unknown" rather than a denial: the router passes an
-        // unknown session, which is what lets a first-contact session open at all.
+        // A `chn-` id with no channel row is still "unknown" rather than a denial. That is the endpoint's
+        // not-found answer, not a first-contact case: a `chn-` id is minted together with its channel row
+        // and a deleted one still answers with its tenant, so no row means an id this admin never issued.
         val missing = parseBody(
             exchange(
                 HttpMethod.GET,

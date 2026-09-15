@@ -63,6 +63,10 @@ class PrivilegedSessionPrefixesTest {
          * the same tenant does not entitle a caller to the row (a task of someone else's, say), still
          * needs the rule — such a prefix belongs in its own category with the reason spelled out, not
          * here.
+         *
+         * The entry fee is [ATTRIBUTABLE_OWNER_SOURCES]: a prefix lands here only with the `table.column`
+         * admin reads its owner from attached to it. This is the category the residue check does not look
+         * at, so an unpriced entry here is a decision nobody has to defend.
          */
         SERVER_DECIDED_BUT_ATTRIBUTABLE,
 
@@ -187,14 +191,71 @@ class PrivilegedSessionPrefixesTest {
         }
     }
 
+    /**
+     * The attributable tier has to cost something to enter, or it is a door out of the hole list rather
+     * than a judgement about it.
+     *
+     * The set-level check above only ever reads the `SERVER_DECIDED` side of [ADMIN_ROUTES] — both
+     * `adminResolves` and the `unjudged` filter start from that one route — so a prefix classified as
+     * [AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE] is filtered out before the residue assertion runs.
+     * Without this pin, adding such a prefix would fail nothing: [ADMIN_RESOLVED_BUT_NOT_REFUSED] keeps
+     * reading `emptyList()`, and the hole sits one category over where no assertion looks. Naming the
+     * table each attributable prefix is attributed to, and requiring that name to be a `table.column`,
+     * is what makes the claim "admin can answer who owns this" something you have to write down rather
+     * than just assert.
+     */
+    @Test
+    fun `every attributable prefix names the admin table that answers its owner`() {
+        val attributable = ADMIN_ROUTES
+            .filter { it.route == AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE }
+            .map { it.prefix }
+
+        assertEquals(
+            attributable.toSet(),
+            ATTRIBUTABLE_OWNER_SOURCES.keys,
+            "attributable prefixes and their owner-query pairing have drifted apart. A prefix enters " +
+                "SERVER_DECIDED_BUT_ATTRIBUTABLE only by saying which admin read answers its " +
+                "owner, and the pairing names no prefix that is not classified that way.",
+        )
+
+        val adminResolves = ADMIN_ROUTES.filter { it.route != AdminRoute.UNRESOLVED }.map { it.prefix }.toSet()
+        assertTrue(
+            adminResolves.containsAll(ATTRIBUTABLE_OWNER_SOURCES.keys),
+            "an owner query is recorded for a prefix admin does not resolve at all: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys - adminResolves),
+        )
+
+        val routerRefused = routerDeclaredPrefixes().toSet()
+        assertTrue(
+            ATTRIBUTABLE_OWNER_SOURCES.keys.none { it in routerRefused },
+            "a prefix the router refuses cannot also be recorded as settled by the ownership lookup: the " +
+                "rule runs before the lookup, so one of the two claims is wrong: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys.filter { it in routerRefused }),
+        )
+        assertTrue(
+            ATTRIBUTABLE_OWNER_SOURCES.keys.none { it in ADMIN_RESOLVED_BUT_NOT_REFUSED },
+            "a prefix cannot be both an open hole and attributable to a table that answers it: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys.filter { it in ADMIN_RESOLVED_BUT_NOT_REFUSED }),
+        )
+
+        ATTRIBUTABLE_OWNER_SOURCES.forEach { (prefix, source) ->
+            assertTrue(
+                OWNER_SOURCE_PATTERN.matches(source),
+                "$prefix claims its owner comes from `$source`, which is not a `table.column` — an " +
+                    "attributable prefix has to name the column the ownership read matches on.",
+            )
+        }
+    }
+
     private companion object {
         /**
          * Spelled independently of [PrivilegedSessionPrefixes] — see the class comment.
          *
-         * The attributability half of each entry is a claim about admin's `/sessions/{id}/info`, and it
-         * is pinned where it lives rather than here: `InternalApiControllerTest`'s session-info cases are
-         * what prove a `chn-` id answers with the `channel` row's tenant and an unknown one still answers
-         * "no such session".
+         * The attributability half of each entry is a claim about admin's `/sessions/{id}/info`. It is
+         * pinned where the claim lives — `InternalApiControllerTest`'s session-info cases prove a `chn-`
+         * id answers with the `channel` row's tenant, soft-deleted or not, and an id with no row still
+         * answers "no such session" — and pinned mechanically here by [ATTRIBUTABLE_OWNER_SOURCES],
+         * because the classification alone is what the residue check walks past.
          */
         val ADMIN_ROUTES = listOf(
             AdminPrefix("web-", AdminRoute.CALLER_OWNED),
@@ -202,6 +263,21 @@ class PrivilegedSessionPrefixesTest {
             AdminPrefix("chn-", AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE),
             AdminPrefix("task-", AdminRoute.SERVER_DECIDED),
         )
+
+        /**
+         * What it costs to call a prefix attributable: the `table.column` admin's `/sessions/{id}/info`
+         * matches on to name the owner of one of its ids. The keys are asserted to be exactly the
+         * [AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE] prefixes of [ADMIN_ROUTES], so this entry cannot
+         * be dropped behind the classification nor added to it without saying where the answer comes from
+         * — the test above that pins this map is what enforces it, and says what hole it closes.
+         *
+         * `channel.session_id` is the ownership read, and it reads the row whatever its `active` flag
+         * says: a soft-deleted channel still has an owner, and "no owner" is the answer the router passes.
+         */
+        val ATTRIBUTABLE_OWNER_SOURCES = mapOf("chn-" to "channel.session_id")
+
+        /** `table.column`, lower-case — the shape of [ATTRIBUTABLE_OWNER_SOURCES]'s values. */
+        val OWNER_SOURCE_PATTERN = Regex("[a-z_]+\\.[a-z_]+")
 
         /**
          * The prefixes admin resolves from a table the guard's ownership lookup cannot see, and which the

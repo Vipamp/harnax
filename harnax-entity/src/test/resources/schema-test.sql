@@ -251,8 +251,10 @@ CREATE TABLE IF NOT EXISTS `channel` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_callback_key` (`callback_key`),
     KEY `idx_agent_id` (`agent_id`),
-    -- 与 V28 同步：admin 的会话归属查询对 chn- id 走 `WHERE session_id = ? AND active = 1`，
-    -- 测试库必须和生产一样带着这个索引，否则 schema 与生产漂移。
+    -- Kept in step with the migration that adds this index in admin's schema. ChannelMapper's two
+    -- session_id reads are equality lookups on this column — the configuration one with `active = 1`,
+    -- the ownership one without it, since a deleted channel still has a tenant — and a test schema
+    -- without the index is a schema that has drifted from production.
     KEY `idx_session_id` (`session_id`),
     KEY `idx_type_enabled_status_active` (`type`, `enabled`, `status`, `active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Channel 通道配置表';
