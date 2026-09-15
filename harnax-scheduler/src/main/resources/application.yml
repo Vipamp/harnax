@@ -111,8 +111,19 @@ spring:
 
 # MyBatis configuration
 mybatis:
+  # The task domain's entities and mappers moved into this module with release 2, so the aliases now come
+  # from `com.agnetix.harnax.scheduler.entity`.
+  #
+  # `classpath*:` is kept on purpose, and while harnax-entity is still on the classpath that means this
+  # pattern loads the old `AgentTask*Mapper.xml` from its jar too — three files whose namespaces point at
+  # interfaces `@MapperScan` no longer scans. The overlap is harmless and temporary: MyBatis keys every
+  # resultMap and every statement by its namespace, so the two sets register side by side in one
+  # Configuration without either clashing with or shadowing the other (no bean conflict, no rewritten
+  # statement), and the old ones are simply never called from this service. Task 8 of
+  # docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md deletes them from harnax-entity, which
+  # is what makes this line single-sourced again; nothing before that task depends on them.
   mapper-locations: classpath*:mapper/*.xml
-  type-aliases-package: com.agnetix.harnax.entity
+  type-aliases-package: com.agnetix.harnax.scheduler.entity
   configuration:
     map-underscore-to-camel-case: true
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
