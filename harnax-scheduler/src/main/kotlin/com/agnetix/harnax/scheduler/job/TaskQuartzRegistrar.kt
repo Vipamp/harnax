@@ -1,6 +1,6 @@
 package com.agnetix.harnax.scheduler.job
 
-import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import org.quartz.CronScheduleBuilder
 import org.quartz.Job
 import org.quartz.JobBuilder

@@ -1,6 +1,6 @@
 package com.agnetix.harnax.scheduler.job
 
-import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull

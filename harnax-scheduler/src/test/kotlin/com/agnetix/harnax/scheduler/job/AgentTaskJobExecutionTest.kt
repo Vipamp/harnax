@@ -1,7 +1,7 @@
 package com.agnetix.harnax.scheduler.job
 
-import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.entity.AgentTask
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.junit.jupiter.api.Assertions.assertEquals

@@ -1,12 +1,12 @@
 package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.RegisteredJob
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
 import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals

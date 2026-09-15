@@ -1,6 +1,6 @@
 package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import java.time.LocalDateTime
 
 interface SchedulerService {

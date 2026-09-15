@@ -1,7 +1,7 @@
 package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.entity.AgentTaskExecution
-import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
+import com.agnetix.harnax.scheduler.entity.AgentTaskExecution
+import com.agnetix.harnax.scheduler.mapper.AgentTaskExecutionMapper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.DuplicateKeyException

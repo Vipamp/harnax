@@ -1,6 +1,6 @@
 package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskExecutionMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue

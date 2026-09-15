@@ -8,12 +8,12 @@ import org.springframework.scheduling.annotation.EnableAsync
 @SpringBootApplication
 @EnableAsync
 // This module's own mapper package, which holds the copies of the three task mappers release 2 moved in.
-// Two consequences of leaving `com.agnetix.harnax.mapper` (harnax-entity) un-scanned, both intended and both
-// temporary: the old interfaces stop being Spring beans, so the services here still typed against them —
-// `SchedulerServiceImpl`, `TaskScheduleReconciler`, `AgentTaskExecutionGuard`, `AbstractAgentTaskJob`,
-// `TaskQuartzRegistrar` — have to be re-pointed by task 6 of the same plan before a real boot wires again
-// (the module's unit tests never see it, they register their own mapper mocks), and the old XMLs are still
-// loaded by `classpath*:mapper/*.xml`, which is harmless and explained in application.yml.
+// Every production class here is typed against these interfaces and against `scheduler.entity`, so nothing in
+// this module binds `com.agnetix.harnax.mapper` (harnax-entity) any more — that package is simply not
+// scanned, and the only thing still shared with harnax-entity is its copies of the three XMLs, which
+// `classpath*:mapper/*.xml` loads next to this module's. Their namespaces point at interfaces nothing scans,
+// so MyBatis registers them in a Configuration no caller reaches: harmless, and explained in application.yml
+// (Task 8 of docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md deletes them).
 @MapperScan("com.agnetix.harnax.scheduler.mapper")
 class SchedulerApplication
 

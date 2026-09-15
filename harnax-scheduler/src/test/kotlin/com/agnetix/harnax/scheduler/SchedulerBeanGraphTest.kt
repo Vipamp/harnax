@@ -1,8 +1,8 @@
 package com.agnetix.harnax.scheduler
 
-import com.agnetix.harnax.mapper.AgentTaskExecutionMapper
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskExecutionMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
