@@ -61,6 +61,19 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- PageHelper: the task list endpoints page the same way admin's did -->
+        <dependency>
+            <groupId>com.github.pagehelper</groupId>
+            <artifactId>pagehelper-spring-boot-starter</artifactId>
+            <version>2.1.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.mybatis.spring.boot</groupId>
+                    <artifactId>mybatis-spring-boot-starter</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- MyBatis Spring Boot Starter -->
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
