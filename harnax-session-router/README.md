@@ -222,10 +222,12 @@ POST /api/router/instance/unregister?instanceId=agent-1   # 注销
 但**需要凭证**：`Authorization: Bearer <jwt>` 或 `X-Api-Key` 二选一，缺失时 `UnifiedAuthFilter` 直接
 401。实例列表是整个集群图，调用日志是完整请求轨迹，两者都不该匿名可读。
 
+认证只回答"能不能读"，读得到多少是两个端点各自决定的：`call-logs` 的结果集**按调用方租户收口**（谓词由服务端从凭证推导，端点从来不接受 `tenantId` 参数），带租户的凭证只看自己租户的行；全量视图——含 `tenant_id` 为 NULL 的那些行（内部服务令牌与 SYSTEM key 写的）——只在无租户的调用方那里。`instances` **刻意不做同样的收窄**：它是集群拓扑、不属于任何租户，收窄它等于关掉运维面板本身，这是决定不是遗漏。
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/router/monitor/instances` | 实例列表（含 session 数、心跳延迟） |
-| GET | `/api/router/monitor/call-logs` | 调用日志分页查询（支持 sessionId / instanceId / agentName / statusCode 等过滤） |
+| GET | `/api/router/monitor/instances` | 实例列表（含 session 数、心跳延迟）；运维视图，不按租户收窄 |
+| GET | `/api/router/monitor/call-logs` | 调用日志分页查询（支持 sessionId / instanceId / agentName / statusCode 等过滤），按调用方租户收口 |
 
 ### 监控 UI
 

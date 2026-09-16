@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema
  * with the sessionId. Admin resolves the agent configuration based on sessionId prefix:
  * - `web-*` / `mp-*`: look up session table → agent
  * - `chn-*`: look up channel table → agent
- * - `task-{taskId}-*`: look up agent_task table → agent
+ * - `task-{taskId}-{agentId}-*`: take the agent id out of the id itself (contract C1) → agent
  *
  * This centralizes all agent spec resolution in admin, keeping agent-service
  * free from direct DB queries for session/channel/task configuration.

@@ -19,9 +19,12 @@ import org.slf4j.LoggerFactory
  * [SchedulerService.hasActiveRunningExecution] answers "yes" to, and the two retention sweeps read the
  * same table.
  *
- * A Quartz job rather than a Spring `@Scheduled` method: with the in-memory job store every node sweeps
- * (all four operations are idempotent, the churn is not free), and the moment the JDBC store lands the
- * same registration becomes cluster-singleton without a line changing here.
+ * A Quartz job rather than a Spring `@Scheduled` method because the store is shared: the registration is one
+ * row in the cluster's JDBC store, so exactly one node fires it per period and four nodes do not sweep the
+ * same ranges four times. What that costs is the in-memory store's property of *every* node sweeping — the
+ * sweep is now a cluster singleton, so reclamation continues while at least one node in the cluster is
+ * enabled, and a node started with `scheduler.enabled=false` has no private reclaim path and needs none:
+ * the row its own `stopTask` leaves at 4 is reaped by whichever node fires the shared job.
  *
  * A sweep slower than its own period does not get a second one started: the retention DELETEs are
  * multi-row and would otherwise block each other's ranges, and a deadlock costs both sweeps.
@@ -34,10 +37,10 @@ class SchedulerHousekeepingJob : Job {
         val guard = schedulerContext["executionGuard"] as? AgentTaskExecutionGuard
         val service = schedulerContext["schedulerService"] as? SchedulerService
         if (guard == null || service == null) {
-            // Defensive only: `scheduler.enabled = false` no longer skips the context registration, because
-            // the sweep is what reclaims the row an inert node's own stop leaves behind, and the job cannot
-            // be on the clock before init() has filled this context. Quiet either way — a fire five minutes
-            // from now is the retry.
+            // Defensive only: `SchedulerServiceImpl.init()` fills this context on every node, gated on
+            // nothing, because a shared store can hand *this* node the fire whatever its own flag says — and
+            // the job cannot be on the clock before that registration has run. Quiet either way; a fire five
+            // minutes from now is the retry.
             log.debug("Housekeeping has no collaborators registered on this instance, skipping")
             return
         }
@@ -50,9 +53,9 @@ class SchedulerHousekeepingJob : Job {
 
     companion object {
         /**
-         * Deliberately outside `AgentTaskGroup`: a reload deletes every job in that group, and a sweep
-         * registered there would be erased on the next one and never re-registered, because registration
-         * only happens on boot.
+         * Deliberately outside `AgentTaskGroup`: that is the group the reconcile diff converges against
+         * `agent_task`, and a job registered there that the task table does not account for is exactly what
+         * it deletes. Both system sweeps live here, one literal deep.
          */
         const val GROUP = "SchedulerSystemGroup"
         const val JOB_NAME = "AgentTaskExecutionHousekeeping"

@@ -1,20 +1,21 @@
 package com.agnetix.harnax.scheduler.service.impl
 
-import com.agnetix.harnax.agent.protocol.ChatResponse
-import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.entity.AgentTaskLog
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTaskLog
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerHealthIndicator
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
+import com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.ReconcileReport
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -28,8 +29,10 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
 import org.quartz.JobDetail
@@ -80,30 +83,66 @@ class SchedulerServiceImplTest {
         // The job count lives in QuartzJobInventory now; a real one over the mocked factory keeps the
         // service delegation and the health read on the production path.
         jobInventory = QuartzJobInventory(schedulerFactory)
-        val metrics = SchedulerMetrics(SimpleMeterRegistry(), jobInventory)
-        service = SchedulerServiceImpl(
-            schedulerFactory,
-            agentTaskMapper,
-            agentTaskLogMapper,
-            routerClient,
-            executionGuard,
-            status,
-            metrics,
-            jobInventory = jobInventory,
-            executionTimeoutSeconds = 300,
-            schedulerEnabled = true,
-        )
+        // The registrar is the service's one writer into the store, and the cases below assert what
+        // reaches Quartz (one replace call, a bad cron refused before anything is written), so it is the
+        // real one over the same mocked factory. Delegation itself is the next test's job.
+        service = serviceWith(TaskQuartzRegistrar(schedulerFactory))
     }
 
+    private fun serviceWith(
+        registrar: TaskQuartzRegistrar,
+        reconciler: TaskScheduleReconciler = mock<TaskScheduleReconciler>(),
+    ) = SchedulerServiceImpl(
+        schedulerFactory,
+        agentTaskMapper,
+        agentTaskLogMapper,
+        routerClient,
+        executionGuard,
+        status,
+        SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
+        jobInventory = jobInventory,
+        registrar = registrar,
+        reconciler = reconciler,
+        executionTimeoutSeconds = 300,
+        reconcileIntervalSeconds = 60,
+        schedulerEnabled = true,
+    )
+
+    /**
+     * The store write is the registrar's alone: a second copy of the job-key/cron/misfire rules in this
+     * service is what the reconciler would then drift from.
+     */
     @Test
-    fun `a manual trigger on a task with a live execution is rejected as false, not as an exception`() {
+    fun `scheduleTask and unscheduleTask hand the store write to the registrar`() {
+        val registrar = mock<TaskQuartzRegistrar>()
+        val task = cronTask(TASK_ID, "0 0 9 * * ?")
+
+        serviceWith(registrar).apply {
+            scheduleTask(task)
+            unscheduleTask(task)
+        }
+
+        verify(registrar).register(task)
+        verify(registrar).unregister(TASK_ID)
+        verifyNoInteractions(quartz)
+    }
+
+    /**
+     * Re-aimed at the one-shot delivery, which `/trigger` and `/run-once` now share. The property that made
+     * this a separate case is the one the merged path has to keep: a refusal writes nothing anywhere, and
+     * the cluster lock is not this call's business.
+     */
+    @Test
+    fun `a manual run on a task with a live execution is rejected as false, with no lock and no store write`() {
         givenTaskWithActiveRunningLog()
 
-        val rejected = assertDoesNotThrow { service.triggerManually(TASK_ID) }
+        val rejected = assertDoesNotThrow { service.runTaskOnce(TASK_ID) }
 
         assertFalse(rejected)
-        // Rejected before the cluster lock, so no other instance can be told to run it either.
+        // No lock at delivery time at all: the job takes it when it fires, on whichever node claims the
+        // trigger. Nothing was scheduled either, so the refused click leaves no orphan behind.
         verify(executionGuard, never()).tryAcquireLock(any(), any())
+        verify(quartz, never()).scheduleJob(any<JobDetail>(), any<Trigger>())
     }
 
     @Test
@@ -118,17 +157,22 @@ class SchedulerServiceImplTest {
 
     /**
      * `concurrent = 1` is the task saying "another run may overlap this one" (entity/DDL: 0 = no
-     * overlap, 1 = allow). Refusing a manual trigger anyway turns that flag into a lie and answers the
+     * overlap, 1 = allow). Refusing a manual run anyway turns that flag into a lie and answers the
      * user with 40901 for a conflict their own task declared acceptable.
+     *
+     * The lock check is the inversion this task is about: the path that used to serve `/trigger` acquired
+     * the cluster lock here, on the node that happened to be asked, and then ran the work on a thread. A
+     * one-shot cannot do that — the fire may land on a different node, and a lock taken for a run nobody
+     * started is a leaked row housekeeping only reaps after twice the timeout.
      */
     @Test
-    fun `a manual trigger on a concurrency-tolerant task is accepted while an execution is live`() {
+    fun `a manual run on a concurrency-tolerant task is delivered while an execution is live, lockless`() {
         givenTaskWithActiveRunningLog(concurrent = 1)
 
-        assertTrue(service.triggerManually(TASK_ID), "concurrent=1 must not be blocked by a live execution")
+        assertTrue(service.runTaskOnce(TASK_ID), "concurrent=1 must not be blocked by a live execution")
 
-        // Past the log guard and into the cluster lock, which is what actually dedupes instances.
-        verify(executionGuard).tryAcquireLock(any(), any())
+        verify(quartz).scheduleJob(any<JobDetail>(), any<Trigger>())
+        verify(executionGuard, never()).tryAcquireLock(any(), any())
     }
 
     @Test
@@ -211,26 +255,25 @@ class SchedulerServiceImplTest {
     }
 
     /**
-     * Registering 1 of 2 active tasks is drift, not a success: the health signal and the /reload
-     * answer both have to keep saying so, otherwise the instance quietly stops scheduling one task
-     * while every probe reads UP.
+     * The service owns none of the converge any more — it hands the round to
+     * [com.agnetix.harnax.scheduler.service.TaskScheduleReconciler] and answers with its report. What the
+     * report *means* is pinned there and in `SchedulerStartupReconcileTest`; what is pinned here is that a
+     * round leaving drift reaches the caller as drift, since `/reload`'s answer and the health verdict both
+     * read it off this return value.
      */
     @Test
-    fun `a load that registers only part of the active tasks keeps the load error and reports false`() {
-        val badCronTaskId = 2L
-        whenever(agentTaskMapper.selectRunningTasks())
-            .thenReturn(listOf(cronTask(1L, "0 0 9 * * ?"), cronTask(badCronTaskId, "definitely not a cron")))
+    fun `reconcileTasks answers with the reconciler's report so a drifting round is not a success`() {
+        val report = ReconcileReport(added = 0, removed = 0, updated = 1, unchanged = 3, failedIds = listOf(2L))
+        val reconciler = mock<TaskScheduleReconciler>()
+        whenever(reconciler.reconcile()).thenReturn(report)
         whenever(quartz.isStarted).thenReturn(true)
+        status.recordReconcile(jobCount = 4, pendingError = "1 of 5 active tasks could not be registered: ids=[2]")
 
-        val reloaded = service.loadTasksToScheduler()
+        val answered = serviceWith(TaskQuartzRegistrar(schedulerFactory), reconciler).reconcileTasks()
 
-        assertFalse(reloaded, "a partial registration must not be reported as a completed reload")
-        val error = status.lastLoadError
-        assertNotNull(error, "a partial registration must leave lastLoadError set")
-        assertTrue(
-            error!!.contains("ids=[$badCronTaskId]"),
-            "the error has to name the task that could not be registered, got: $error",
-        )
+        verify(reconciler).reconcile()
+        assertEquals(report, answered)
+        assertFalse(answered.converged, "a partial round must not be reported as a completed reload")
         assertEquals(
             Status.DOWN,
             SchedulerHealthIndicator(status, schedulerFactory, jobInventory).health().status,
@@ -241,33 +284,22 @@ class SchedulerServiceImplTest {
     /**
      * The running-log guard expires stale rows before reading, so that read is stubbed too — otherwise
      * a test would pass on a mocked-out mapper rather than on the guard's own decision.
+     *
+     * Nothing else is stubbed, and that is the point of the delivery path: it reads the task, reads the log
+     * table at most once, hands one job and one trigger to the store and returns. No lock row is written, no
+     * log row is inserted and the router is never called — a run that gets this far executes when Quartz
+     * fires it, not here.
      */
     private fun givenTaskWithActiveRunningLog(concurrent: Int = 0) {
         whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(task(concurrent = concurrent))
         whenever(agentTaskLogMapper.expireStale(anyInt())).thenReturn(0)
         whenever(agentTaskLogMapper.selectRunningByTaskId(TASK_ID)).thenReturn(listOf(runningLog()))
-        // Not the source of the rejection on purpose: if the log guard ever stops short-circuiting,
-        // the manual-trigger case still has to fail instead of slipping through the lock path.
-        whenever(executionGuard.tryAcquireLock(any(), any())).thenReturn(true)
-        givenExecutionPathIsHarmless()
-    }
-
-    /**
-     * A trigger that gets past the guards hands the run to a background thread. Stub its whole path so
-     * the thread finishes on its own: an assertion that races a still-running mock is how suites turn
-     * flaky.
-     */
-    private fun givenExecutionPathIsHarmless() {
-        whenever(agentTaskLogMapper.insert(any())).thenAnswer {
-            it.getArgument<AgentTaskLog>(0).id = 77L
-            1
-        }
-        whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(1)
-        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "ok"))
     }
 
     private fun task(concurrent: Int = 0) = AgentTask().apply {
         id = TASK_ID
+        // `agent_id` is NOT NULL, and contract C1 mints it into the session id of every execution.
+        agentId = 7L
         name = "Daily News"
         prompt = "summarize today"
         creator = "admin"

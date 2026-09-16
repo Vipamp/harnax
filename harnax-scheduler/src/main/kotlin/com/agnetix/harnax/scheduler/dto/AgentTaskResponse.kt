@@ -1,0 +1,93 @@
+package com.agnetix.harnax.scheduler.dto
+
+import com.agnetix.harnax.scheduler.entity.AgentTask
+import io.swagger.v3.oas.annotations.media.Schema
+import java.time.LocalDateTime
+
+/**
+ * One task as the task API answers it.
+ *
+ * A copy of `harnax-admin`'s DTO of the same name, field for field: the eighteen keys below are what the
+ * webui's task table and detail form read, and release 2 moves the producer of that JSON without changing
+ * it. [lastRunStatus] / [lastRunTime] are the two that are not columns of `agent_task` — `selectTaskList`
+ * joins them off the newest execution log, and a list that lost them would show every task as never run.
+ */
+@Schema(description = "Agent task response")
+data class AgentTaskResponse(
+    @Schema(description = "ID")
+    var id: Long = 0,
+
+    @Schema(description = "Tenant ID")
+    var tenantId: Long = 1,
+
+    @Schema(description = "Task name")
+    var name: String = "",
+
+    @Schema(description = "Agent ID")
+    var agentId: Long = 0,
+
+    @Schema(description = "Agent name")
+    var agentName: String = "",
+
+    @Schema(description = "Prompt content")
+    var prompt: String = "",
+
+    @Schema(description = "Cron expression")
+    var cronExpression: String = "",
+
+    @Schema(description = "Task status (0:paused, 1:running)")
+    var taskStatus: Int = 0,
+
+    @Schema(description = "Concurrent mode (0:no, 1:yes)")
+    var concurrent: Int = 0,
+
+    @Schema(description = "Timeout seconds")
+    var timeoutSeconds: Int = 300,
+
+    @Schema(description = "Description")
+    var description: String = "",
+
+    @Schema(description = "Public status (0:no, 1:yes)")
+    var isPublic: Int = 0,
+
+    @Schema(description = "Creator")
+    var creator: String = "",
+
+    @Schema(description = "Active status (0:deleted, 1:active)")
+    var active: Int = 1,
+
+    @Schema(description = "Creation time")
+    var createTime: LocalDateTime = LocalDateTime.now(),
+
+    @Schema(description = "Update time")
+    var updateTime: LocalDateTime = LocalDateTime.now(),
+
+    @Schema(description = "Last run status (0:failed, 1:success, 2:timeout, 3:running, 4:stopping, 5:stopped), null if never run")
+    var lastRunStatus: Int? = null,
+
+    @Schema(description = "Last run start time, null if never run")
+    var lastRunTime: LocalDateTime? = null,
+) {
+    companion object {
+        fun fromEntity(entity: AgentTask): AgentTaskResponse = AgentTaskResponse(
+            id = entity.id,
+            tenantId = entity.tenantId,
+            name = entity.name,
+            agentId = entity.agentId,
+            agentName = entity.agentName,
+            prompt = entity.prompt,
+            cronExpression = entity.cronExpression,
+            taskStatus = entity.taskStatus,
+            concurrent = entity.concurrent,
+            timeoutSeconds = entity.timeoutSeconds,
+            description = entity.description,
+            isPublic = entity.isPublic,
+            creator = entity.creator,
+            active = entity.active,
+            createTime = entity.createTime,
+            updateTime = entity.updateTime,
+            lastRunStatus = entity.lastRunStatus,
+            lastRunTime = entity.lastRunTime,
+        )
+    }
+}

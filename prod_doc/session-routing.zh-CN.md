@@ -262,7 +262,7 @@ ConfirmAgentRequest(sessionId, isConfirmed, toolInfoList = [], toolResults = [],
 | 路径 | 认证 | 内容 |
 |------|------|------|
 | `GET /api/router/monitor/instances` | **需要凭证** | 集群内网地址映射，敏感 |
-| `GET /api/router/monitor/call-logs` | **需要凭证** | 全量调用记录（含 sessionId 与错误文本） |
+| `GET /api/router/monitor/call-logs` | **需要凭证** | 调用记录（含 sessionId 与错误文本），**按调用方租户收口**：带租户的凭证只看自己租户的行；只有无租户的调用方（内部服务令牌 / SYSTEM key）看全量，`tenant_id` 为 NULL 的行也只在它眼里——那些行本就是这类调用方写的 |
 | `/ui`、`/index.html`、`/static/`、`/style.css`、`/app.js`、`/favicon.ico` | 免认证 | 仅是渲染页面的静态资源 |
 
 > 免认证路径（`harnax.auth.skip-paths`）**只包含静态资源**。绝不能把 `/api/router/` 加进去——`/instance/heartbeat`、`/instance/register` 依赖 `UnifiedAuthFilter` 建立 `AuthContext`，`InternalAuthorizationInterceptor` 才有判据。
@@ -332,6 +332,8 @@ ConfirmAgentRequest(sessionId, isConfirmed, toolInfoList = [], toolResults = [],
 全部 14 个会话作用域代理端点在**查找实例之前**都要过 `SessionAccessGuard.requireAccessible(sessionId)`。汇聚点是 `boundInstance()`，因此不存在"某个端点忘了加"的旁路。
 
 比对的两侧：调用方的 `tenantId`（来自 JWT 的 `tenantId` claim，或 API Key 上挂的租户）↔ admin 告知的会话所属 `tenantId`。不一致即拒绝（`SecurityException`）。
+
+`chn-` 会话的归属自发布 3 起是**可判定**的：admin 对 `chn-` 前缀不再回"查不到"，而是从 `channel` 行取 `tenant_id`，且**不看 `active`**——软删除的频道照样归属它原来的租户（删除动作既不清 session 也不清 sandbox，能让一次读取变得无主可归的守卫不是删除）。所以"用别的租户的登录态读某个频道会话的历史与工作区"今天是拒绝，不是放行。`task-` 不走这条路：它仍由前缀规则挡在 lookup 之前，只有无终端用户的内部调用方可用（其归属查询属 scheduler 域，见定时任务文档）。
 
 这条 guard 存在的原因值得记录：Router 转发时打的是**自己的**服务令牌，agent-service 看到的是"一个对等服务"，无法据此挡跨租户；而 inbound 鉴权只回答"能不能用 Router"，从不回答"能不能读这个会话"。
 

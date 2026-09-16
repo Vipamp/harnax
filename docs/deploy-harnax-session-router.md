@@ -462,6 +462,8 @@ harnax:
 个集群的内部地址拓扑，`call-logs` 是 Router 见过的每一次调用（含 sessionId 与错误文本），匿名可读等
 于把这两样摆在公网上。现在两者都要 `Authorization: Bearer <jwt>` 或 `X-Api-Key`。
 
+凭证之外还要看调用方是谁：`call-logs` 的结果集**按调用方租户收口**（服务端从凭证推导，该端点不接受 `tenantId` 参数），带租户的 JWT / API Key 只拿到本租户的行；全量视图——包括 `tenant_id` 为 NULL 的那些行（内部服务令牌与 SYSTEM key 写的）——只在无租户的调用方那里，也就是运维面板所走的那条路。`instances` 不做这个收窄：它是拓扑，不属于任何租户。
+
 `UnifiedAuthFilter` 另外内置跳过 `/health` 与 `/actuator` 前缀，无需在 skip-paths 里声明。
 
 > **安全警告**：不要把 `/api/router/` 整体加入 skip-paths，否则 heartbeat / register 等 `@InternalOnly` 接口的 JWT 不会被解析，导致所有内部接口返回 401。

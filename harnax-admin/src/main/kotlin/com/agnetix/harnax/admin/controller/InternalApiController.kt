@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.service.McpStdioPolicy
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
+import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -21,7 +22,6 @@ import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.mapper.AgentToolBindingMapper
 import com.agnetix.harnax.mapper.AgentToolMapper
 import com.agnetix.harnax.mapper.ApiKeyMapper
@@ -48,7 +48,6 @@ class InternalApiController(
     private val modelProviderMapper: ModelProviderMapper,
     private val aesUtil: AesUtil,
     private val secretFieldEncryptor: SecretFieldEncryptor,
-    private val agentTaskMapper: AgentTaskMapper,
     private val agentMapper: AgentMapper,
     private val channelMapper: ChannelMapper,
     private val toolBindingMapper: AgentToolBindingMapper,
@@ -150,8 +149,28 @@ class InternalApiController(
         return ResultVo.success(response)
     }
 
+    /**
+     * Which tenant owns this session — the answer the router's ownership guard compares its caller's
+     * tenant against (see `SessionAccessGuard` on the router side).
+     *
+     * A `chn-` id does not live in the `session` table by design: it is minted at channel creation and
+     * stored on the `channel` row. Reading only `session` here therefore answered "unknown" for every
+     * channel session, and unknown is a pass — so the guard had nothing to compare against and any
+     * logged-in user in any tenant could read another tenant's channel conversation, plans and sandbox
+     * files by naming its sessionId. The `channel` lookup below is what makes that decision possible;
+     * it changes no response shape, so the router needs no change to act on the answer.
+     *
+     * `task-` is deliberately still not answered here. A caller with an end user behind it is refused
+     * that prefix by the router's own rule before this lookup is ever reached, and its owner belongs to
+     * the scheduler domain: release 2 moves task execution out of admin, and the answer will come from
+     * the scheduler's owner endpoint rather than being duplicated here.
+     */
     @GetMapping("/sessions/{sessionId}/info")
     fun getSessionInfo(@PathVariable sessionId: String): ResultVo<SessionInfoResponse?> {
+        if (sessionId.startsWith("chn-")) {
+            return channelSessionInfo(sessionId)
+        }
+
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
         if (session == null) {
             log.debug("Session not found: $sessionId")
@@ -173,6 +192,60 @@ class InternalApiController(
             tenantId = session.tenantId,
         )
         return ResultVo.success(response)
+    }
+
+    /**
+     * Ownership of a `chn-` id, read from the table that holds it — whatever that row's `active` flag
+     * says, which is why this is a dedicated read and not [com.agnetix.harnax.mapper.ChannelMapper]'s
+     * `selectBySessionId`: that one answers `null` for a deleted channel, and the callers of it want the
+     * channel's configuration, where "deleted, so gone" is the right answer. Here it would not be —
+     * `deleteById` is a soft delete, the tenant stays on the row, and deleting a channel cleans up
+     * neither its session nor its sandbox, so an active-filtered ownership answer would let anyone make
+     * a still-readable conversation unattributable by deleting the channel that owns it.
+     *
+     * `agentName`/`modelId`/`modelName` stay null: this endpoint's only consumer of those fields is the
+     * router's call-log enrichment, which treats a missing value as "costs the enrichment columns and
+     * nothing else", and resolving the agent here would put a second query on every proxy call that
+     * misses the router's cache.
+     *
+     * A miss is now the narrow thing it was never before: no `channel` row exists for the id at all.
+     * `chn-` ids are minted when the channel is created and inserted with its row
+     * (`ChannelServiceImpl.generateSessionId`), so there is no first-contact case to protect — a `chn-`
+     * id with no row is one this admin never issued. It is still answered "unknown" rather than refused,
+     * because unknown is this endpoint's existing not-found answer for every prefix, and an id admin
+     * never minted has nothing bound to it for the router to reach.
+     *
+     * `tenantId` is reported as the row holds it, including a non-positive value. That is the whole
+     * point of the field, so collapsing "no tenant stamped" into null would hand the caller the very
+     * free pass this lookup exists to remove — null is what the router reads as "cannot be judged",
+     * whereas the row's own value makes every tenant-bearing caller a cross-tenant one. Such a row is
+     * unreadable through the router by design until an operator fixes its tenant, and the warning below
+     * is what makes that diagnosable instead of silent.
+     */
+    private fun channelSessionInfo(sessionId: String): ResultVo<SessionInfoResponse?> {
+        val channel = channelMapper.selectOwnerBySessionId(sessionId)
+        if (channel == null) {
+            log.debug("No channel row for session id at all (never minted): $sessionId")
+            return ResultVo.success(null)
+        }
+        if (channel.tenantId <= 0) {
+            log.warn(
+                "Channel session {} carries tenant {}, which is no tenant at all; reporting it as the " +
+                    "router's ownership check does, so every tenant-bearing caller is refused it",
+                sessionId,
+                channel.tenantId,
+            )
+        }
+        return ResultVo.success(
+            SessionInfoResponse(
+                sessionId = channel.sessionId,
+                agentId = channel.agentId,
+                agentName = null,
+                modelId = null,
+                modelName = null,
+                tenantId = channel.tenantId,
+            ),
+        )
     }
 
     @PostMapping("/api-keys/system-key")
@@ -219,7 +292,7 @@ class InternalApiController(
      * Unified endpoint: resolve agent spec by sessionId prefix.
      * - web-* / mp-*: session table → agent
      * - chn-*: channel table → agent
-     * - task-{taskId}-*: agent_task table → agent
+     * - task-*: both ids come out of the session id itself (`task-{taskId}-{agentId}-{uuid}`, contract C1)
      */
     @GetMapping("/agent-spec/{sessionId}")
     fun getAgentSpec(@PathVariable sessionId: String): ResultVo<AgentSpecInfoResponse> = try {
@@ -281,16 +354,29 @@ class InternalApiController(
         )
     }
 
-    /** task: agent_task table → agent. */
+    /**
+     * task: the two ids in the session id → agent (contract C1).
+     *
+     * No table read: the scheduled-task domain is moving to `harnax-scheduler`, so the agent this run
+     * belongs to is the one the scheduler wrote into the id when it created the row.
+     *
+     * [com.agnetix.harnax.common.session.TaskSessionId.parse] answers for one shape only, so a null here —
+     * the pre-C1 `task-{taskId}-{uuid}` spelling included — is refused by format, with the expected shape and
+     * the offending string both named. Nothing real takes that branch: release 2 carries no rows over, so a
+     * refusal means a producer out of step with this parser. Guessing an agent instead of refusing would
+     * hand agent-service some other agent's configuration.
+     */
     private fun resolveFromTask(sessionId: String): AgentSpecInfoResponse {
-        val parts = sessionId.split("-", limit = 3)
-        val taskId = parts[1].toLongOrNull()
-            ?: throw IllegalArgumentException("Invalid task sessionId, cannot parse taskId: $sessionId")
-        val task = agentTaskMapper.selectAnyById(taskId)
-            ?: throw IllegalArgumentException("Agent task not found: $taskId")
-        val agent = agentMapper.selectById(task.agentId)
-            ?: throw IllegalArgumentException("Agent not found: ${task.agentId}")
-        log.info("[Admin] Resolved agent spec from task: sessionId={}, taskId={}, agentId={}", sessionId, taskId, agent.id)
+        val parsed = TaskSessionId.parse(sessionId)
+            ?: throw IllegalArgumentException("Invalid task sessionId: expected ${TaskSessionId.FORMAT}, got $sessionId")
+        val agent = agentMapper.selectById(parsed.agentId)
+            ?: throw IllegalArgumentException("Agent not found: ${parsed.agentId}")
+        log.info(
+            "[Admin] Resolved agent spec from task: sessionId={}, taskId={}, agentId={}",
+            sessionId,
+            parsed.taskId,
+            agent.id,
+        )
         val model = modelMapper.selectById(agent.modelId)
         return buildAgentSpecResponse(
             agentId = agent.id,

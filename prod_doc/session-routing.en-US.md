@@ -263,7 +263,7 @@ External API keys calling these always get 403 — `@InternalOnly` requires an i
 | Path | Auth | Content |
 |------|------|---------|
 | `GET /api/router/monitor/instances` | **Credential required** | Map of the cluster's internal addresses; sensitive |
-| `GET /api/router/monitor/call-logs` | **Credential required** | Every recorded call, with session ids and error text |
+| `GET /api/router/monitor/call-logs` | **Credential required** | Recorded calls, with session ids and error text, **scoped to the caller's tenant**: a tenant-bearing credential sees only its own rows; only a caller with no tenant (internal service token / SYSTEM key) sees the whole table — including the rows whose `tenant_id` is NULL, which is what those callers write |
 | `/ui`, `/index.html`, `/static/`, `/style.css`, `/app.js`, `/favicon.ico` | Open | Only the static files that render the page |
 
 > The open paths (`harnax.auth.skip-paths`) contain **static resources only**. Never add `/api/router/` — `/instance/heartbeat` and `/instance/register` depend on `UnifiedAuthFilter` establishing `AuthContext`, which is what `InternalAuthorizationInterceptor` judges.
@@ -333,6 +333,8 @@ The consequence: **a correctly rejected cross-tenant access shows up as a mislea
 All 14 session-scoped proxy endpoints pass `SessionAccessGuard.requireAccessible(sessionId)` **before** the Router looks for an instance. The convergence point is `boundInstance()`, so there is no "one endpoint forgot the guard" bypass.
 
 What is compared: the caller's `tenantId` (from the JWT `tenantId` claim, or the tenant attached to the API key) against the owning `tenantId` that admin reports for the session. A mismatch throws `SecurityException`.
+
+A `chn-` session became **attributable** in release 3: instead of answering "no such session" for that prefix, admin reads the owner off the `channel` row and **deliberately ignores its `active` flag** — a soft-deleted channel still belongs to the tenant stamped on the row, because deleting one cleans up neither the session nor the sandbox, and a guard that let anyone make a still-readable conversation unattributable would be a way to erase accountability. So "read another tenant's channel conversation or workspace with my own login" is a refusal today, not a pass. `task-` does not go this way: it is still refused by the prefix rule before any lookup, for callers that have an end user behind them (its owner lives in the scheduler domain and will come from that service's endpoint).
 
 Worth recording why this guard exists at all: the Router stamps **its own** service token on the outbound call, so agent-service sees a peer service and cannot block cross-tenant access on the Router's behalf; and inbound authentication only answers "may this caller use the Router", never "may this caller read *this* session".
 

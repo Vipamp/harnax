@@ -320,6 +320,26 @@ class DefaultAgentRunnerTest {
             assertTrue(response.message?.contains("not supported") == true)
         }
 
+        /**
+         * Contract C1 made a task session id one segment longer. This consumer classifies it by prefix
+         * alone, so the extra segment has to change nothing — including that the refusal still happens
+         * before anything is asked of admin.
+         */
+        @Test
+        fun `executeCommand ENABLE for a four-segment task session is still refused as a task session`() {
+            val request = CommandAgentRequest(
+                sessionId = "task-123-45-6f0b1a2c3d4e5f60718293a4b5c6d7e8",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("not supported") == true)
+            verifyNoInteractions(adminApiClient)
+        }
+
         @Test
         fun `executeCommand ENABLE fails when admin API returns false`() {
             `when`(adminApiClient.toggleCapability("session-1", "search", true)).thenReturn(false)
@@ -379,6 +399,22 @@ class DefaultAgentRunnerTest {
 
             assertFalse(response.success)
             assertTrue(response.message?.contains("not supported") == true)
+        }
+
+        /** The other `task-` branch in the runner, and the same C1 claim: a longer id is still a task session. */
+        @Test
+        fun `executeCommand PERMISSION for a four-segment task session is still refused as a task session`() {
+            val request = CommandAgentRequest(
+                sessionId = "task-123-45-6f0b1a2c3d4e5f60718293a4b5c6d7e8",
+                command = CommandType.PERMISSION,
+                args = "DEFAULT",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("not supported") == true)
+            verifyNoInteractions(adminApiClient)
         }
 
         @Test

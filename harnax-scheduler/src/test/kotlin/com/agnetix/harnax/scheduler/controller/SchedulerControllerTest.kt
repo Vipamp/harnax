@@ -1,8 +1,10 @@
 package com.agnetix.harnax.scheduler.controller
 
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.service.ReconcileReport
 import com.agnetix.harnax.scheduler.service.SchedulerService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
@@ -36,7 +38,7 @@ class SchedulerControllerTest {
     @Test
     fun `a rejected trigger because an execution is in flight answers with business code 40901`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(7L)).thenReturn(false)
+        whenever(schedulerService.runTaskOnce(7L)).thenReturn(false)
 
         val result = controller.trigger(7L)
 
@@ -58,18 +60,55 @@ class SchedulerControllerTest {
     @Test
     fun `a successful trigger still answers 200`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(8L)).thenReturn(true)
+        whenever(schedulerService.runTaskOnce(8L)).thenReturn(true)
 
         assertEquals(200, controller.trigger(8L).code)
+
+        // Both manual doors share the one-shot delivery now; the bare thread `/trigger` used to start was
+        // the one execution path no shutdown wait could see.
+        verify(schedulerService).runTaskOnce(8L)
     }
 
     @Test
     fun `an unexpected failure stays a generic error, not a conflict`() {
         val controller = controller()
-        whenever(schedulerService.triggerManually(9L)).thenThrow(RuntimeException("db down"))
+        whenever(schedulerService.runTaskOnce(9L)).thenThrow(RuntimeException("db down"))
 
         assertEquals(500, controller.trigger(9L).code)
     }
+
+    /**
+     * `/reload` used to answer from a boolean that only said "some jobs got registered". It now answers
+     * from what the round actually converged: a store left missing one active task is not a success, and
+     * the operator needs to be pointed at the detail that names the id.
+     */
+    @Test
+    fun `a reload that converged answers 200`() {
+        whenever(schedulerService.reconcileTasks()).thenReturn(reconcileReport())
+
+        assertEquals(200, controller().reload().code)
+    }
+
+    @Test
+    fun `a reload that left drift answers with an error and names no false success`() {
+        whenever(schedulerService.reconcileTasks()).thenReturn(reconcileReport(failedIds = listOf(3L)))
+
+        val result = controller().reload()
+
+        assertEquals(500, result.code)
+        assertTrue(
+            result.message.contains("/actuator/health"),
+            "the caller has to be sent where the ids are, got: ${result.message}",
+        )
+    }
+
+    private fun reconcileReport(failedIds: List<Long> = emptyList()) = ReconcileReport(
+        added = 1,
+        removed = 0,
+        updated = 0,
+        unchanged = 4,
+        failedIds = failedIds,
+    )
 
     /**
      * `scheduler.enabled=false` used to be a half switch: it skipped the startup load and the scheduler

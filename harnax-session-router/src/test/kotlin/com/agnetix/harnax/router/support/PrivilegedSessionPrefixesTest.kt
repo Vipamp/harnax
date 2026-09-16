@@ -1,6 +1,7 @@
 package com.agnetix.harnax.router.support
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -27,20 +28,47 @@ import java.lang.reflect.Modifier
  *   authorisation and can only cost real traffic — which is exactly how `chn-` came to be switched off
  *   by mistake.
  * - A prefix admin resolves from a table the guard's lookup cannot see, which the router does *not*
- *   refuse, is the original asymmetry: the hole `task-` was closed for. `chn-` knowingly sits there,
- *   for the reasons in [PrivilegedSessionPrefixes], and is therefore declared as F3-A's residual in
- *   [ADMIN_RESOLVED_BUT_NOT_REFUSED] rather than left implicit — so the next server-decided prefix has
- *   to be judged against that list instead of landing in the gap unnoticed.
+ *   refuse, is the original asymmetry: the hole `task-` was closed for. `chn-` used to sit there by
+ *   choice, because admin's ownership endpoint read only the `session` table and so answered "unknown"
+ *   for every channel session — and "unknown" is a pass. F3-A moved it out: admin now answers a `chn-`
+ *   id's tenant from `channel`, so that prefix settles by the tenant comparison and needs no rule.
+ *   [ADMIN_RESOLVED_BUT_NOT_REFUSED] is empty for exactly that reason, and stays the place any future
+ *   server-decided prefix has to be judged before it lands in the gap unnoticed.
  */
 class PrivilegedSessionPrefixesTest {
 
-    /** Where admin sends a session id in `getAgentSpec`. */
+    /**
+     * Where admin sends a session id in `getAgentSpec`, and — the half that decides whether the router
+     * needs a rule for it — whether [com.agnetix.harnax.router.service.SessionAccessGuard]'s ownership
+     * lookup can be told who owns the result.
+     */
     private enum class AdminRoute {
         /** From the `session` table: a conversation the caller owns. */
         CALLER_OWNED,
 
-        /** From `agent_task` / `channel`: one the server decided, invisible to the guard's lookup. */
+        /**
+         * From a table the ownership lookup never consults: a conversation the server decided, and one
+         * no query can therefore attribute. Only a prefix rule can guard these.
+         */
         SERVER_DECIDED,
+
+        /**
+         * Server-decided in shape — the caller did not pick this id — but admin's ownership endpoint
+         * answers for it, so the tenant comparison in
+         * [com.agnetix.harnax.router.service.SessionAccessGuard] settles it and a prefix rule would only
+         * remove access. `chn-` moved here when admin started reading the `channel` table for it.
+         *
+         * Putting a prefix in this category *is* the judgement that the comparison is sufficient for it.
+         * That is not true of every answerable id: a prefix whose ids are enumerable, and where being in
+         * the same tenant does not entitle a caller to the row (a task of someone else's, say), still
+         * needs the rule — such a prefix belongs in its own category with the reason spelled out, not
+         * here.
+         *
+         * The entry fee is [ATTRIBUTABLE_OWNER_SOURCES]: a prefix lands here only with the `table.column`
+         * admin reads its owner from attached to it. This is the category the residue check does not look
+         * at, so an unpriced entry here is a decision nobody has to defend.
+         */
+        SERVER_DECIDED_BUT_ATTRIBUTABLE,
 
         /** Answered `Unknown sessionId prefix`. */
         UNRESOLVED,
@@ -67,7 +95,10 @@ class PrivilegedSessionPrefixesTest {
     @ParameterizedTest(name = "\"{0}\"")
     @ValueSource(
         strings = [
-            // The real shapes.
+            // The real shape since contract C1: task id, agent id, then a random tail with no dashes in it.
+            "task-42-100-6f0b1a2c3d4e5f60718293a4b5c6d7e8",
+            // The shapes the producer wrote before C1. A prefix rule has to be blind to the segment count,
+            // so both spellings still have to land on the same side of the line.
             "task-7-6f1d0a2e",
             "task-42-1f0e2d3c-4b5a-6978-8a9b0c1d2e3f",
             "task-",
@@ -85,7 +116,7 @@ class PrivilegedSessionPrefixesTest {
             // Mid-string: pins both sides as anchored. A `contains` on either would diverge here.
             "web-task-7",
             "mytask-7",
-            // The declared residual, and the caller's own sessions.
+            // The server-decided prefix admin can now attribute, and the caller's own sessions.
             "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b",
             "chn-xyz",
             "web-1f0e2d3c",
@@ -113,6 +144,15 @@ class PrivilegedSessionPrefixesTest {
                     "router lets an end-user caller name it. That asymmetry is the hole this rule exists to " +
                     "close. If it is meant to stay open, record the prefix in ADMIN_RESOLVED_BUT_NOT_REFUSED " +
                     "and say why.",
+            )
+        }
+
+        if (route == AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE) {
+            assertFalse(
+                refused,
+                "$sessionId: admin answers who owns this id, so the guard's tenant comparison can already " +
+                    "decide it and a prefix rule adds no decision — it only denies the legitimate " +
+                    "same-tenant reads, which is how `chn-` was wrongly switched off once.",
             )
         }
     }
@@ -154,15 +194,104 @@ class PrivilegedSessionPrefixesTest {
         }
     }
 
+    /**
+     * The attributable tier has to cost something to enter, or it is a door out of the hole list rather
+     * than a judgement about it.
+     *
+     * The set-level check above only ever reads the `SERVER_DECIDED` side of [ADMIN_ROUTES] — both
+     * `adminResolves` and the `unjudged` filter start from that one route — so a prefix classified as
+     * [AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE] is filtered out before the residue assertion runs.
+     * Without this pin, adding such a prefix would fail nothing: [ADMIN_RESOLVED_BUT_NOT_REFUSED] keeps
+     * reading `emptyList()`, and the hole sits one category over where no assertion looks. Naming the
+     * table each attributable prefix is attributed to, and requiring that name to be a `table.column`,
+     * is what makes the claim "admin can answer who owns this" something you have to write down rather
+     * than just assert.
+     */
+    @Test
+    fun `every attributable prefix names the admin table that answers its owner`() {
+        val attributable = ADMIN_ROUTES
+            .filter { it.route == AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE }
+            .map { it.prefix }
+
+        assertEquals(
+            attributable.toSet(),
+            ATTRIBUTABLE_OWNER_SOURCES.keys,
+            "attributable prefixes and their owner-query pairing have drifted apart. A prefix enters " +
+                "SERVER_DECIDED_BUT_ATTRIBUTABLE only by saying which admin read answers its " +
+                "owner, and the pairing names no prefix that is not classified that way.",
+        )
+
+        val adminResolves = ADMIN_ROUTES.filter { it.route != AdminRoute.UNRESOLVED }.map { it.prefix }.toSet()
+        assertTrue(
+            adminResolves.containsAll(ATTRIBUTABLE_OWNER_SOURCES.keys),
+            "an owner query is recorded for a prefix admin does not resolve at all: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys - adminResolves),
+        )
+
+        val routerRefused = routerDeclaredPrefixes().toSet()
+        assertTrue(
+            ATTRIBUTABLE_OWNER_SOURCES.keys.none { it in routerRefused },
+            "a prefix the router refuses cannot also be recorded as settled by the ownership lookup: the " +
+                "rule runs before the lookup, so one of the two claims is wrong: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys.filter { it in routerRefused }),
+        )
+        assertTrue(
+            ATTRIBUTABLE_OWNER_SOURCES.keys.none { it in ADMIN_RESOLVED_BUT_NOT_REFUSED },
+            "a prefix cannot be both an open hole and attributable to a table that answers it: " +
+                (ATTRIBUTABLE_OWNER_SOURCES.keys.filter { it in ADMIN_RESOLVED_BUT_NOT_REFUSED }),
+        )
+
+        ATTRIBUTABLE_OWNER_SOURCES.forEach { (prefix, source) ->
+            assertTrue(
+                OWNER_SOURCE_PATTERN.matches(source),
+                "$prefix claims its owner comes from `$source`, which is not a `table.column` — an " +
+                    "attributable prefix has to name the column the ownership read matches on.",
+            )
+        }
+    }
+
     private companion object {
-        /** Spelled independently of [PrivilegedSessionPrefixes] — see the class comment. */
+        /**
+         * Spelled independently of [PrivilegedSessionPrefixes] — see the class comment.
+         *
+         * The attributability half of each entry is a claim about admin's `/sessions/{id}/info`. It is
+         * pinned where the claim lives — `InternalApiControllerTest`'s session-info cases prove a `chn-`
+         * id answers with the `channel` row's tenant, soft-deleted or not, and an id with no row still
+         * answers "no such session" — and pinned mechanically here by [ATTRIBUTABLE_OWNER_SOURCES],
+         * because the classification alone is what the residue check walks past.
+         */
         val ADMIN_ROUTES = listOf(
             AdminPrefix("web-", AdminRoute.CALLER_OWNED),
             AdminPrefix("mp-", AdminRoute.CALLER_OWNED),
-            AdminPrefix("chn-", AdminRoute.SERVER_DECIDED),
+            AdminPrefix("chn-", AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE),
             AdminPrefix("task-", AdminRoute.SERVER_DECIDED),
         )
 
-        val ADMIN_RESOLVED_BUT_NOT_REFUSED = listOf("chn-")
+        /**
+         * What it costs to call a prefix attributable: the `table.column` admin's `/sessions/{id}/info`
+         * matches on to name the owner of one of its ids. The keys are asserted to be exactly the
+         * [AdminRoute.SERVER_DECIDED_BUT_ATTRIBUTABLE] prefixes of [ADMIN_ROUTES], so this entry cannot
+         * be dropped behind the classification nor added to it without saying where the answer comes from
+         * — the test above that pins this map is what enforces it, and says what hole it closes.
+         *
+         * `channel.session_id` is the ownership read, and it reads the row whatever its `active` flag
+         * says: a soft-deleted channel still has an owner, and "no owner" is the answer the router passes.
+         */
+        val ATTRIBUTABLE_OWNER_SOURCES = mapOf("chn-" to "channel.session_id")
+
+        /** `table.column`, lower-case — the shape of [ATTRIBUTABLE_OWNER_SOURCES]'s values. */
+        val OWNER_SOURCE_PATTERN = Regex("[a-z_]+\\.[a-z_]+")
+
+        /**
+         * The prefixes admin resolves from a table the guard's ownership lookup cannot see, and which the
+         * router therefore does not refuse. Empty since F3-A taught that lookup the `channel` table:
+         * `chn-` was the only entry, and it was open because there was no answer to check, not because
+         * the traffic was trusted.
+         *
+         * Keep it empty. A prefix that belongs here and is not refused is the asymmetry `task-` was
+         * closed for, and the list is what makes the next server-decided prefix get judged before it
+         * lands in that gap.
+         */
+        val ADMIN_RESOLVED_BUT_NOT_REFUSED = emptyList<String>()
     }
 }

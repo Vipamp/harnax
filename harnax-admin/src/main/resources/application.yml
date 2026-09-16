@@ -137,6 +137,8 @@ harnax:
   aes:
     secret-key: ${HARNAX_AES_SECRET_KEY:change-me-32-chars-secret-key!!}
   scheduler:
+    # 单个地址：集群的一致性由共享的 Quartz store 保证，不由客户端扇出
+    # （逗号分隔的写法仍然解析、不报错，但只取第一个地址）
     url: ${HARNAX_SCHEDULER_URL:http://localhost:8084}
   mcp:
     # A stdio MCP server is a process this service starts, and the command comes from a form field.

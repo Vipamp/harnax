@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema
 /**
  * Lightweight AgentSpec DTO returned by admin internal API for task sessions.
  *
- * When agent-service encounters a `task-{taskId}-{uuid}` sessionId,
+ * When agent-service encounters a `task-{taskId}-{agentId}-{uuid}` sessionId,
  * it calls admin's internal endpoint to fetch this DTO, which contains
  * all the information needed to build an AgentSpec without a DB session record.
  */

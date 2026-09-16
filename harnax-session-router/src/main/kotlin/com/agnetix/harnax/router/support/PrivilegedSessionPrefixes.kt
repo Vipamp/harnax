@@ -4,14 +4,17 @@ package com.agnetix.harnax.router.support
  * The session-id prefixes that name a conversation the **server** decides, as opposed to one the caller
  * is entitled to pick.
  *
- * Scheduler mints `task-` (`task-{taskId}-{uuid}`), and admin resolves it by parsing the prefix against
- * the `agent_task` table rather than by looking the id up — see `InternalApiController.getAgentSpec`.
+ * Scheduler mints `task-` (`task-{taskId}-{agentId}-{uuid}`, contract C1), and admin resolves it by
+ * reading the ids out of the string rather than by looking the id up in a table of its own — see
+ * `InternalApiController.getAgentSpec`.
  * That split is the hole this object closes: the router's ownership check reads admin's `session`
  * table, where a task id deliberately does not live, so a forged `task-7-…` came back Unknown and
  * Unknown passes. Any valid credential could name someone else's task and have the agent answer with
  * that task's configuration — with `BYPASS` permission mode, which `resolveFromTask` hardcodes.
  *
- * So the decision has to be made by prefix, before the lookup, because no lookup can answer it today.
+ * So the decision has to be made by prefix, before the lookup, because no lookup the guard makes can
+ * answer it: admin resolves `task-` from the session id itself, and its ownership endpoint does not
+ * consult the task row at all. `chn-` is the opposite case, and the section below says why.
  *
  * ## Why `chn-` is not on this list
  *
@@ -24,19 +27,30 @@ package com.agnetix.harnax.router.support
  * The two prefixes differ in the one thing a refusal has to be worth — what an attacker can *reach*:
  * - `task-{taskId}`: the id is an auto-increment integer. One valid credential enumerates
  *   `task-1`…`task-N` and reads every tenant's task configuration. Enumerable, so a prefix rule is the
- *   only thing between a login and someone else's agent spec.
+ *   only thing between a login and someone else's agent spec — the owner of a `task-` id is answered
+ *   here neither by the `session` table nor by anything else: since contract C5 the task's creator and
+ *   tenant come over HTTP from the scheduler's own owner endpoint, and the rest of release 2 is still
+ *   finishing moving that domain out of admin.
  * - `chn-{uuid}`: the id is a UUID. Naming one already requires knowing it, so the rule stopped nobody
  *   who could not already have aimed at that specific id.
  *
- * And on the side of what the rule *buys*: admin's `/sessions/{id}/info` reads only the `session`
- * table, so it answers `Unknown` for a `chn-` id no matter who asks. There is no ownership query here
- * to protect — the refusal could not turn into an authorisation decision, only into a denial. A rule
- * that blocks a working feature without adding a verifiable grant is not worth its blast radius.
+ * And on the side of what the rule *buys*, which is what changed: admin's `/sessions/{id}/info` now
+ * resolves a `chn-` id from the `channel` table and reports the tenant stamped on that row, so there
+ * *is* an ownership query to protect, and the ordinary tenant comparison in
+ * [com.agnetix.harnax.router.service.SessionAccessGuard] is what enforces it. A cross-tenant `chn-`
+ * read is refused by that comparison today; a prefix rule on top of it would add no decision the
+ * lookup does not already make, and would still take the same-tenant page offline.
  *
- * So `chn-` keeps the branch it had before: the ordinary tenant comparison in
- * [com.agnetix.harnax.router.service.SessionAccessGuard], which is a no-op against `Unknown` today and
- * starts to bite the moment admin can answer for it. Teaching that lookup the `channel` table is F3-A,
- * and it is the informative fix for `chn-`, because it adds the check rather than removing the access.
+ * What the lookup cannot see is not what the rule protects: the guard still passes `Unknown`, and for a
+ * `chn-` id that now means literally no `channel` row — admin answers for a row whatever its `active` flag
+ * says, so a deleted channel is settled by the tenant comparison above, not by this pass. There is no
+ * first-contact case either: a `chn-` id is minted when its channel is created and inserted with the row,
+ * so a miss is an id admin never issued, and nothing is bound to it for the router to proxy to. The pass
+ * stays a pass because that is the endpoint's not-found answer for every prefix, not because an owner was
+ * looked for and gave up.
+ * [com.agnetix.harnax.router.service.SessionInfoClient] caches an `Unknown` for five minutes, so a
+ * `chn-` id that was asked about before admin learned to answer it keeps passing for that long after a
+ * rollout. That window is real and is not closed by anything on this list.
  *
  * `web-` and `mp-` are untouched: they are the caller's own sessions and still settle by tenant.
  *
@@ -53,8 +67,8 @@ package com.agnetix.harnax.router.support
 object PrivilegedSessionPrefixes {
 
     /**
-     * Scheduler-owned task executions: `task-{taskId}-{uuid}`. The only privileged prefix, and the one
-     * whose `{taskId}` is an enumerating integer; see the class comment for why `chn-` is not.
+     * Scheduler-owned task executions: `task-{taskId}-{agentId}-{uuid}`. The only privileged prefix, and
+     * the one whose `{taskId}` is an enumerating integer; see the class comment for why `chn-` is not.
      */
     const val TASK = "task-"
 

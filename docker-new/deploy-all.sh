@@ -91,6 +91,8 @@ echo "✅ 所有镜像构建完成"
 # 5. 停止并删除旧容器
 echo ""
 echo "🛑 步骤 5/6: 停止旧容器..."
+echo "⚠️  冷启动：整栈（含全部 scheduler 副本）一起停，直到 mysql 健康门 + JVM 起来才回到集群；这期间堆起来的过期触发"
+echo "⚠️  会被 concurrent=0 任务的 DoNothing misfire 策略直接丢弃。请挑安静时段跑；只换 scheduler 镜像走 deploy-service.sh scheduler。"
 docker-compose -f docker-new/docker-compose.yml down || true
 
 echo "✅ 旧容器已停止"
@@ -98,7 +100,12 @@ echo "✅ 旧容器已停止"
 # 6. 启动所有服务（包括 redis、minio、mysql）
 echo ""
 echo "🚀 步骤 6/6: 启动所有服务..."
-docker-compose -f docker-new/docker-compose.yml up -d
+# scheduler 已经是双实例服务，这里必须先 down 再起（全新集群，不是滚动），所以直接给 --scale，
+# 不必走 roll-scheduler.sh——那条路径是给"有副本在跑时换镜像"用的，需要逐台停；此刻全部已停，
+# 一次 up --scale 就是它的冷启动形态。compose 文件里不写 deploy.replicas（与 stop-one/replace-one
+# 冲突），副本数只在命令行决定，所以这一行漏掉 --scale 就会把 scheduler 缩回一台。
+SCHEDULER_REPLICAS="${SCHEDULER_REPLICAS:-2}"
+docker-compose -f docker-new/docker-compose.yml up -d --scale "scheduler=${SCHEDULER_REPLICAS}"
 
 echo ""
 echo "=========================================="
@@ -120,7 +127,8 @@ echo "  - Router:     http://localhost:28081"
 echo "  - Agent:      http://localhost:28082"
 echo "  - Channel:    http://localhost:28083"
 echo "  - Scheduler:  不发布宿主端口，仅容器网络 http://scheduler:8084"
-echo "                探活：docker-compose -f docker-new/docker-compose.yml exec scheduler wget -qO- http://localhost:8084/actuator/health/liveness"
+echo "                两实例且无 container_name，exec 必须指名哪一台（--index=1 / --index=2，或容器 id）："
+echo "                探活：docker-compose -f docker-new/docker-compose.yml exec --index=1 scheduler wget -qO- http://localhost:8084/actuator/health/liveness"
 echo "  - MinIO:      http://localhost:29000 (Console: http://localhost:29001)"
 echo "  - MCP Server: http://localhost:29002"
 echo "  - Redis:      localhost:26379"

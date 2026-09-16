@@ -1,9 +1,21 @@
 package com.agnetix.harnax.scheduler.service
 
-import com.agnetix.harnax.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import java.time.LocalDateTime
 
 interface SchedulerService {
+
+    /**
+     * Whether this instance is allowed to run scheduled work (`scheduler.enabled`).
+     *
+     * A job has to ask it rather than assume it: the JDBC store is shared by the whole cluster, so a fire
+     * can be claimed by a node that registered nothing. The load gate cannot express that, and the fire path
+     * is the only place left that can (`AbstractAgentTaskJob.run`). Reaching this answer on an instance with
+     * the flag off now takes an explicit `SCHEDULER_QUARTZ_AUTO_STARTUP=true` — the yaml lets
+     * `auto-startup` follow the flag, so a disabled node stays out of the cluster instead of eating fires —
+     * which makes this check the override's backstop rather than the everyday path.
+     */
+    val schedulingEnabled: Boolean
 
     /**
      * Schedule a task for recurring execution based on its cron expression.
@@ -16,10 +28,15 @@ interface SchedulerService {
     fun unscheduleTask(task: AgentTask)
 
     /**
-     * Load all running tasks from the database into the scheduler.
-     * Returns false when the load left active tasks unregistered.
+     * Converge the Quartz store with `agent_task`, by diff.
+     *
+     * This is what replaced "delete every job in the task group and re-register everything": on a shared
+     * store that was a cluster-wide unschedule on every node start, and it reset the fire history of jobs
+     * that had not changed at all. The answer is what one round did, and `converged` is the part a caller
+     * has to care about — a round that could not register some active task leaves the store diverging from
+     * the table, and the next sweep retries it.
      */
-    fun loadTasksToScheduler(): Boolean
+    fun reconcileTasks(): ReconcileReport
 
     /**
      * Start scheduling a task (adds to Quartz).
@@ -32,13 +49,24 @@ interface SchedulerService {
     fun pauseTask(id: Long): Boolean
 
     /**
-     * Trigger a one-time execution of a task via Quartz.
+     * Run a task once, now: the single manual entry point behind both `/tasks/{id}/trigger` and
+     * `/tasks/{id}/run-once`.
+     *
+     * It delivers a one-shot job into the Quartz store rather than running anything itself, so the execution
+     * is protected by exactly the same shutdown wait and container grace as a cron fire, and a node that dies
+     * before the trigger lands hands it to a peer instead of losing the user's click. It takes no cluster
+     * lock either: that is the job's decision at fire time, on whichever node claims the trigger
+     * (`AbstractAgentTaskJob`).
+     *
+     * @return false when the task forbids overlap and one of its executions is live, which the controller
+     *   reports as the 40901 conflict; the delivery never reaches the router from here.
      */
     fun runTaskOnce(id: Long): Boolean
 
     /**
-     * Execute a task once (shared logic for both Quartz and manual trigger).
-     * Creates task log, registers in runningTasks, calls router, handles result/cleanup.
+     * The execution body of one fire — cron and manual one-shot alike — called by
+     * [com.agnetix.harnax.scheduler.job.AbstractAgentTaskJob] on the Quartz worker that claimed the trigger.
+     * Creates task log, calls router, handles result/cleanup.
      * This method is synchronous and blocks until execution completes.
      */
     fun executeTaskOnce(task: AgentTask, triggerTime: LocalDateTime)
@@ -75,16 +103,6 @@ interface SchedulerService {
      * @return how many rows were dropped, 0 when the sweep failed for the same reason as above
      */
     fun cleanupOldExecutionLogs(retentionDays: Int): Int
-
-    /**
-     * Manually trigger a task execution (bypassing Quartz scheduling).
-     * Executes asynchronously and returns immediately.
-     *
-     * Bypassing Quartz also means bypassing everything Quartz protects: the graceful-shutdown wait and
-     * the container's `stop_grace_period` cover the cron path, not this thread, so a restart mid-run
-     * leaves this execution's row at 3 and its lock row at 0.
-     */
-    fun triggerManually(id: Long): Boolean
 
     /**
      * Ask for one execution to stop, by log id: the row is claimed for stopping (3 -> 4) and the router is

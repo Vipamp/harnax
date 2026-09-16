@@ -37,6 +37,7 @@ class InternalApiIT : BaseAdminIT() {
     private var agentId: Long = -1
     private var sessionRowId: Long = -1
     private var sessionUuid: String = ""
+    private var channelId: Long = -1
 
     private fun ensureSession(): String {
         if (sessionUuid.isNotEmpty()) return sessionUuid
@@ -207,8 +208,67 @@ class InternalApiIT : BaseAdminIT() {
 
     @Test
     @Order(11)
+    fun `session info answers the tenant that owns a channel session`() {
+        ensureSession()
+        val channelName = "it_internal_channel_$suffix"
+        assertOk(
+            postJson(
+                "/api/admin/channels",
+                mapOf(
+                    "name" to channelName,
+                    "type" to "http",
+                    "agentId" to agentId,
+                    "communicationMode" to "webhook",
+                    "permissionMode" to "DEFAULT",
+                    "enabled" to 1,
+                    "description" to "IT chn ownership",
+                    "status" to 1,
+                ),
+            ),
+        )
+        val record = findInPage("/api/admin/channels/page", "keyword=$channelName") {
+            it["name"]?.asText() == channelName
+        }
+        assertNotNull(record, "prerequisite channel should exist")
+        channelId = record["id"].asLong()
+
+        val detail = assertOk(getJson("/api/admin/channels/$channelId"))
+        val sessionId = detail["sessionId"].asText()
+        assertTrue(sessionId.startsWith("chn-"), "channel sessions are chn-prefixed, was $sessionId")
+
+        val data = assertOk(
+            parseBody(
+                exchange(HttpMethod.GET, "/api/admin/internal/sessions/$sessionId/info", token = internalSecret),
+            ),
+        )
+        // The router compares this tenant against the one its caller carries, so the answer has to be the
+        // channel row's own tenant. A `chn-` id used to come back with no answer at all — and no answer is
+        // the pass that let one tenant read another's channel session.
+        assertEquals(sessionId, data["sessionId"].asText())
+        assertEquals(agentId, data["agentId"].asLong())
+        assertEquals(detail["tenantId"].asLong(), data["tenantId"].asLong())
+
+        // A `chn-` id with no channel row is still "unknown" rather than a denial. That is the endpoint's
+        // not-found answer, not a first-contact case: a `chn-` id is minted together with its channel row
+        // and a deleted one still answers with its tenant, so no row means an id this admin never issued.
+        val missing = parseBody(
+            exchange(
+                HttpMethod.GET,
+                "/api/admin/internal/sessions/chn-00000000-0000-0000-0000-000000000000/info",
+                token = internalSecret,
+            ),
+        )
+        assertEquals(200, missing["code"].asInt())
+        assertTrue(missing["data"] == null || missing["data"].isNull, "an unknown chn- id must stay unknown")
+    }
+
+    @Test
+    @Order(12)
     fun `cleanup session and agent`() {
         ensureSession()
+        if (channelId > 0) {
+            assertOk(deleteJson("/api/admin/channels/$channelId"))
+        }
         assertOk(deleteJson("/api/admin/sessions/$sessionRowId"))
         assertOk(deleteJson("/api/admin/agents/$agentId"))
     }

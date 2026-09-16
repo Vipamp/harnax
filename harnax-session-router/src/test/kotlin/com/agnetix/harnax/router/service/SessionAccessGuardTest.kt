@@ -111,11 +111,12 @@ class SessionAccessGuardTest {
 
     // ==================== Privileged prefixes ====================
     //
-    // `task-` names a conversation the *server* decides: scheduler mints it, and it does not live in
-    // admin's `session` table. That makes it invisible to the ownership lookup below — which answers
-    // Unknown for it and passes — so the lookup can never be what stops an end user from naming one.
-    // Only a prefix rule decided before the lookup can. See PrivilegedSessionPrefixes for why `chn-`
-    // deliberately is not on that list.
+    // `task-` names a conversation the *server* decides: scheduler mints it, and it does not live in any
+    // table admin's ownership endpoint consults. That makes it invisible to the lookup below — which
+    // answers Unknown for it and passes — so the lookup can never be what stops an end user from naming
+    // one. Only a prefix rule decided before the lookup can. `chn-` is the counter-example: it is just
+    // as server-decided in shape, but admin answers its tenant from `channel`, so the ordinary
+    // comparison below guards it and no rule is needed. See PrivilegedSessionPrefixes.
 
     @Test
     fun `an end-user caller cannot name a task session`() {
@@ -135,32 +136,47 @@ class SessionAccessGuardTest {
     fun `an end user reading a channel session is not refused by the prefix rule`() {
         // The webui channel-admin page reads sandbox status and workspace files of `chn-{uuid}` sessions
         // using the visitor's own user-bound key, so `userId != null` is what that legitimate traffic
-        // looks like. Refusing it there took a live read path offline.
+        // looks like. Refusing it by prefix took a live read path offline — and it is still what the
+        // rule does *not* do now that admin can answer the owner, because the owner is what decides.
         //
-        // `chn-` is not on the privileged list because its id carries no more reach than the caller
-        // already had: it is a UUID, so naming one means already knowing it, unlike `task-{taskId}`
-        // whose id is an enumerating integer. And admin's `/sessions/{id}/info` never answers for a
-        // `chn-` id today, so refusing it bought no verifiable authorisation either — the real
-        // protection is F3-A, extending that lookup to the `channel` table.
+        // This is the shape of the page's own request: a channel session in the visitor's tenant. The
+        // answer comes from the `channel` row, and same tenant means same tenant.
         val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
         AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
-        // What admin answers for a chn- id while it reads only the session table.
-        stubLookup(sessionId, AdminClientService.SessionLookup.Unknown)
+        stubLookup(sessionId, AdminClientService.SessionLookup.Found(sessionOf(tenantId = 3L)))
 
         guard.requireAccessible(sessionId)
 
-        // Reaching the lookup is the point: the prefix rule no longer short-circuits this caller.
+        // Reaching the lookup is the point: the prefix rule does not short-circuit this caller, and the
+        // tenant comparison it reaches has nothing to object to.
         verify(sessionInfoClient).lookup(sessionId)
     }
 
     @Test
     fun `a channel session still settles by the tenant comparison`() {
-        // Restoring the branch is not restoring a free pass. Once admin can answer for a chn- id —
-        // which is exactly what F3-A sets out to do — an end user must still be denied another
-        // tenant's channel session, the same as for any web- id.
+        // The prefix rule staying off `chn-` is not a free pass: admin answers these ids from the
+        // `channel` table now, so an end user is denied another tenant's channel session exactly as they
+        // are denied another tenant's `web-` one. This case was written against F3-A before admin could
+        // answer it; it is the reason the lookup was taught the channel table.
         val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
         AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
         stubLookup(sessionId, AdminClientService.SessionLookup.Found(sessionOf(tenantId = 4L)))
+
+        val e = assertThrows(SecurityException::class.java) {
+            guard.requireAccessible(sessionId)
+        }
+        assertEquals("Session belongs to another tenant", e.message)
+    }
+
+    @Test
+    fun `a channel row with no tenant stamped is not a free pass either`() {
+        // `tenant_id` 0 on a channel row is not "no owner", and admin reports the row's own value
+        // instead of collapsing it to null — null is precisely what the comparison below reads as
+        // "cannot be judged" and passes. A tenant-less channel is therefore refused to every tenant
+        // caller until an operator gives it one.
+        val sessionId = "chn-11111111-2222-3333-4444-555555555555"
+        AuthContextHolder.set(AuthContext(callerId = "user-9", userId = 9L, tenantId = 3L))
+        stubLookup(sessionId, AdminClientService.SessionLookup.Found(sessionOf(tenantId = 0L)))
 
         val e = assertThrows(SecurityException::class.java) {
             guard.requireAccessible(sessionId)
@@ -199,7 +215,8 @@ class SessionAccessGuardTest {
         // tenant-based rewrite from quietly narrowing the pass to tenant-less callers only.
         val sessionId = "chn-da0b56ff-c712-4bb6-8536-3b3e88b1818b"
         AuthContextHolder.set(AuthContext(callerId = "channel-service", userId = null, tenantId = 3L))
-        // What admin answers for a chn- id, since the channel table is not the session table.
+        // Unknown for a chn- id now means "no channel row at all, whatever its active flag" — an id admin
+        // never minted, since a deleted channel still answers with its tenant. That stays a pass.
         stubLookup(sessionId, AdminClientService.SessionLookup.Unknown)
 
         guard.requireAccessible(sessionId)

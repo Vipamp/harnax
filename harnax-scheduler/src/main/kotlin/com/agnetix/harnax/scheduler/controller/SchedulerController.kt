@@ -18,16 +18,22 @@ class SchedulerController(
 
     private val log = LoggerFactory.getLogger(SchedulerController::class.java)
 
+    /**
+     * The endpoint admin and the CLI use. It delivers the same one-shot as `/run-once` — the bare thread that
+     * used to answer this call is what a restart kept cutting in half, and a Quartz job is the only shape the
+     * shutdown wait and the container's grace period can see.
+     */
     @Operation(summary = "Manually trigger a one-time task execution")
     @PostMapping("/tasks/{id}/trigger")
     fun trigger(@PathVariable id: Long): ResultVo<String> {
         requireEnabled("trigger task $id")?.let { return it }
         return try {
-            if (schedulerService.triggerManually(id)) {
+            if (schedulerService.runTaskOnce(id)) {
                 ResultVo.success("Task triggered")
             } else {
-                // 40901, not a message: both "already running" and "another instance won the lock" mean
-                // the same thing to the caller — try again later.
+                // 40901: the task forbids overlap and one of its executions is live. The cluster lock is no
+                // longer a possible answer here — the job takes it at fire time, on whichever node claims the
+                // trigger — so this is the only conflict a delivery can still hit.
                 ResultVo.error(CODE_EXECUTION_IN_PROGRESS, "Task execution is already in progress")
             }
         } catch (e: Exception) {
@@ -70,6 +76,7 @@ class SchedulerController(
         }
     }
 
+    /** The other manual door: same `runTaskOnce` as `/trigger`, kept for the clients already calling it. */
     @Operation(summary = "Trigger a one-time execution via Quartz")
     @PostMapping("/tasks/{id}/run-once")
     fun runOnce(@PathVariable id: Long): ResultVo<String> {
@@ -77,6 +84,8 @@ class SchedulerController(
         return try {
             val success = schedulerService.runTaskOnce(id)
             if (success) {
+                // Its own string, on purpose: `/trigger` above answers "Task triggered" and a client that
+                // reads either message keeps reading what it always read.
                 ResultVo.success("Task run once scheduled")
             } else {
                 // Same code as trigger: runTaskOnce returns false only for a conflict, so a plain 500
@@ -104,15 +113,15 @@ class SchedulerController(
         ResultVo.error("Failed to get scheduler status: ${e.message}")
     }
 
-    @Operation(summary = "Reload all tasks from database")
+    @Operation(summary = "Reconcile the scheduler store with the task table")
     @PostMapping("/reload")
     fun reload(): ResultVo<String> {
         requireEnabled("reload tasks")?.let { return it }
         return try {
-            if (schedulerService.loadTasksToScheduler()) {
-                ResultVo.success("Tasks reloaded")
+            if (schedulerService.reconcileTasks().converged) {
+                ResultVo.success("Tasks reconciled")
             } else {
-                ResultVo.error("Some active tasks could not be scheduled, see /actuator/health for details")
+                ResultVo.error("The Quartz store did not converge with agent_task, see /actuator/health for details")
             }
         } catch (e: Exception) {
             log.error("Failed to reload tasks", e)
@@ -147,10 +156,11 @@ class SchedulerController(
     /**
      * `scheduler.enabled=false` is meant to make this node inert, and the only thing that still makes it
      * inert is this gate: [SchedulerFactoryBean] starts regardless, and `SchedulerServiceImpl.init()`
-     * fills the Quartz scheduler context even on a disabled node (the housekeeping sweep has to be able to
-     * fire there). A write that got through would therefore register a job that fires *and runs* here —
-     * while the caller has already been answered 200. Answering on the write surface is the only place
-     * that can tell the difference, and it is where the gate belongs.
+     * fills the Quartz scheduler context even on a disabled node (the shared store can hand this node any
+     * fire, the system sweeps included, so the collaborators have to be there when it does). A write that got
+     * through would therefore register a job that fires *and runs* here — while the caller has already been
+     * answered 200. Answering on the write surface is the only place that can tell the difference, and it is
+     * where the gate belongs.
      *
      * @return null when scheduling is enabled here, otherwise the response the caller gets.
      */

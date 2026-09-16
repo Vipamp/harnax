@@ -17,6 +17,18 @@
     <name>harnax-scheduler</name>
     <description>Harnax Scheduler Service - Agent task scheduling and execution</description>
 
+    <properties>
+        <!--
+            Skipped by default, on purpose. The *IT classes in src/test/kotlin/**/it need a Docker daemon,
+            and a build box without one must skip them rather than fail red on MySQLContainer.start().
+            Declaring the property here — and not only inside the integration-test profile below — is what
+            makes the <skipITs>${skipITs}</skipITs> further down resolve to `true` for a plain `mvn verify`;
+            left undefined it resolves to the literal string, which failsafe parses as false, and the reactor
+            then dies for lack of Docker. Same shape as harnax-admin/pom.xml.
+        -->
+        <skipITs>true</skipITs>
+    </properties>
+
     <dependencies>
         <!-- Spring Boot Web -->
         <dependency>
@@ -47,6 +59,19 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!-- PageHelper: the task list endpoints page the same way admin's did -->
+        <dependency>
+            <groupId>com.github.pagehelper</groupId>
+            <artifactId>pagehelper-spring-boot-starter</artifactId>
+            <version>2.1.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.mybatis.spring.boot</groupId>
+                    <artifactId>mybatis-spring-boot-starter</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- MyBatis Spring Boot Starter -->
@@ -133,6 +158,31 @@
             <version>5.10.0</version>
             <scope>test</scope>
         </dependency>
+
+        <!-- Testcontainers: the real MySQL 8 the cluster / reconcile / guard integration tests (*IT) run on.
+             Only these two are on the call path — `MySQLContainer` comes from `mysql`, which brings `core`. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Unused today, and kept on purpose: the plan asked for the same trio the other modules declare
+             (harnax-entity/pom.xml), and `BaseSchedulerIT` starts its shared container in the companion `init`
+             instead, so there is no `@Testcontainers` annotation to run and this extension has nothing to do.
+             It becomes load-bearing the moment an IT switches to `@Testcontainers`/`@Container`. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>1.21.4</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -215,6 +265,73 @@
                     <target>21</target>
                 </configuration>
             </plugin>
+            <!--
+                Unit test phase: the *IT classes belong to failsafe below.
+
+                Two mechanisms, because the first one alone leaks. `<excludes>` keeps them out of a plain
+                `mvn test`; measured here, though, it did not keep them out of `mvn test -Dtest=...` — with a
+                -Dtest filter on the command line surefire no longer honoured the configured excludes, and the
+                three ITs ran in the unit phase and failed the reactor for lack of a Docker daemon.
+                `excludedGroups` is applied by the JUnit 5 provider whichever way the scan was configured, so
+                with the tag on BaseSchedulerIT (it is `@Inherited`) the ITs stay out either way.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*IT.class</exclude>
+                    </excludes>
+                    <excludedGroups>integration</excludedGroups>
+                </configuration>
+            </plugin>
+            <!--
+                Integration tests: Testcontainers MySQL, behind -Pintegration-test. `skipITs` is the
+                module property declared at the top of this file, true unless that profile is active.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <skipITs>${skipITs}</skipITs>
+                    <includes>
+                        <include>**/*IT.class</include>
+                    </includes>
+                    <!--
+                        The module's own classes, back on the fork's classpath by hand. `repackage` runs in
+                        the same session and *before* failsafe, and because this module's fat jar has no
+                        classifier it replaces target/harnax-scheduler-1.0.0-SNAPSHOT.jar; Maven then lists
+                        that jar — not target/classes — on the test classpath, and a Boot fat jar keeps the
+                        module's classes under BOOT-INF/classes where a plain classloader cannot see them.
+                        Failsafe died during discovery with `NoClassDefFoundError:
+                        com/agnetix/harnax/scheduler/health/SchedulerStatus`. `harnax-admin` sidesteps this
+                        by giving its fat jar an `exec` classifier, which is a deployment change and not
+                        this task's to make; this puts the output directory back for the IT fork only.
+                    -->
+                    <additionalClasspathElements>
+                        <additionalClasspathElement>${project.build.outputDirectory}</additionalClasspathElement>
+                    </additionalClasspathElements>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Run the integration tests (needs a Docker daemon): mvn -Pintegration-test verify -pl harnax-scheduler -->
+        <profile>
+            <id>integration-test</id>
+            <properties>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+    </profiles>
 </project>

@@ -69,15 +69,50 @@ class SchedulerMetricsTest {
         )
     }
 
+    /** One sample per round, tagged by its verdict — the meter used to be named for the startup load. */
     @Test
-    fun `load attempts are counted per outcome so a retrying node is visible`() {
+    fun `reconcile rounds are counted per outcome so a retrying node is visible`() {
         val metrics = SchedulerMetrics(registry, jobInventory)
 
-        metrics.recordLoadAttempt(success = true)
-        metrics.recordLoadAttempt(success = true)
-        metrics.recordLoadAttempt(success = false)
+        metrics.recordReconcileRound(success = true)
+        metrics.recordReconcileRound(success = true)
+        metrics.recordReconcileRound(success = false)
 
-        assertEquals(2.0, registry.get("scheduler.load.attempts").tag("outcome", "success").counter().count())
-        assertEquals(1.0, registry.get("scheduler.load.attempts").tag("outcome", "failure").counter().count())
+        assertEquals(2.0, registry.get("scheduler.reconcile.rounds").tag("outcome", "success").counter().count())
+        assertEquals(1.0, registry.get("scheduler.reconcile.rounds").tag("outcome", "failure").counter().count())
+    }
+
+    /**
+     * The sweep runs every 60 seconds and almost every round moves nothing. Publishing the drift counters
+     * anyway would leave three always-zero series on every dashboard to be queried and eyeballed forever,
+     * when the only interesting state of this meter is "non-zero".
+     */
+    @Test
+    fun `a round that changed nothing registers no drift meter at all`() {
+        val metrics = SchedulerMetrics(registry, jobInventory)
+
+        metrics.recordReconcileDrift("add", 0)
+        metrics.recordReconcileDrift("remove", 0)
+        metrics.recordReconcileDrift("update", 0)
+
+        assertTrue(
+            registry.find("scheduler.reconcile.drift").meters().isEmpty(),
+            "a zero count must not create a meter: got ${registry.find("scheduler.reconcile.drift").meters()}",
+        )
+    }
+
+    /** Per action, and cumulative: "how much drift has this node had to repair" is a rate, not a last value. */
+    @Test
+    fun `drift is counted per action the reconcile had to take`() {
+        val metrics = SchedulerMetrics(registry, jobInventory)
+
+        metrics.recordReconcileDrift("add", 2)
+        metrics.recordReconcileDrift("add", 1)
+        metrics.recordReconcileDrift("remove", 4)
+        metrics.recordReconcileDrift("update", 1)
+
+        assertEquals(3.0, registry.get("scheduler.reconcile.drift").tag("action", "add").counter().count())
+        assertEquals(4.0, registry.get("scheduler.reconcile.drift").tag("action", "remove").counter().count())
+        assertEquals(1.0, registry.get("scheduler.reconcile.drift").tag("action", "update").counter().count())
     }
 }

@@ -1,17 +1,20 @@
 package com.agnetix.harnax.scheduler.service.impl
 
-import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.entity.AgentTask
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
 import com.agnetix.harnax.scheduler.job.AgentTaskJob
 import com.agnetix.harnax.scheduler.job.AgentTaskNonConcurrentJob
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
+import com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -21,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.quality.Strictness
@@ -35,6 +39,10 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean
  * the wrong class and the flag is decoration — a misfire instruction alone cannot stop two runs of one
  * task overlapping. Both registration sites are covered because a task that forbids overlap while
  * scheduled can still be started twice by two clicks of "run now".
+ *
+ * The cron path is a delegation to [TaskQuartzRegistrar] now, so the registrar here is the real one over
+ * the mocked Quartz [Scheduler]: these assertions have to land on the class that actually reaches the
+ * store, not on a stub that was told what to answer.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -73,7 +81,11 @@ class SchedulerScheduleTaskTest {
             SchedulerStatus(schedulerEnabled = true),
             SchedulerMetrics(SimpleMeterRegistry(), QuartzJobInventory(schedulerFactory)),
             jobInventory = QuartzJobInventory(schedulerFactory),
+            registrar = TaskQuartzRegistrar(schedulerFactory),
+            // This file never reconciles: it asserts what the two registration paths hand the store.
+            reconciler = mock<TaskScheduleReconciler>(),
             executionTimeoutSeconds = 300,
+            reconcileIntervalSeconds = 60,
             schedulerEnabled = true,
         )
     }
@@ -110,6 +122,41 @@ class SchedulerScheduleTaskTest {
         assertEquals(AgentTaskJob::class.java, scheduledOnceJobClass())
     }
 
+    /**
+     * The one-shot job goes into the same table under the same rule: with `useProperties: true` an
+     * `AgentTask` in its data map is a hard store error, and a snapshot of the prompt anywhere else.
+     */
+    @Test
+    fun `a run-once hands the store only the task id`() {
+        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(task(concurrent = 1))
+
+        service.runTaskOnce(TASK_ID)
+
+        val data = scheduledOnceJobDetail().jobDataMap
+        assertEquals(TASK_ID.toString(), data.getString(TaskQuartzRegistrar.KEY_TASK_ID))
+        assertEquals(1, data.size, "the id is the only thing a JDBC store with useProperties may carry")
+        assertNull(data["agentTask"], "the entity must not be reachable from the one-shot path either")
+    }
+
+    /**
+     * A click is not a schedule: it goes in `GROUP_ONCE`, the group reconcile never reads (so a pending
+     * one-shot is never "extra work the table did not ask for") and the group the fire path reads back to
+     * decide that `taskStatus` does not apply to it. Both halves of the pair, because Quartz keys a job and
+     * its trigger separately.
+     */
+    @Test
+    fun `a run-once is registered outside the group reconcile edits`() {
+        whenever(agentTaskMapper.selectAnyById(TASK_ID)).thenReturn(task(concurrent = 1))
+
+        service.runTaskOnce(TASK_ID)
+
+        val detail = scheduledOnceJobDetail()
+        assertEquals(TaskQuartzRegistrar.GROUP_ONCE, detail.key.group)
+        val triggerCaptor = ArgumentCaptor.forClass(Trigger::class.java)
+        verify(quartz).scheduleJob(any<JobDetail>(), triggerCaptor.capture())
+        assertEquals(TaskQuartzRegistrar.GROUP_ONCE, triggerCaptor.value.key.group)
+    }
+
     /** `scheduleJob(jobDetail, triggers, replace)` is the atomic replace the cron path uses. */
     private fun registeredJobClass(): Class<*> {
         val captor = ArgumentCaptor.forClass(JobDetail::class.java)
@@ -117,10 +164,12 @@ class SchedulerScheduleTaskTest {
         return captor.value.jobClass
     }
 
-    private fun scheduledOnceJobClass(): Class<*> {
+    private fun scheduledOnceJobClass(): Class<*> = scheduledOnceJobDetail().jobClass
+
+    private fun scheduledOnceJobDetail(): JobDetail {
         val captor = ArgumentCaptor.forClass(JobDetail::class.java)
         verify(quartz).scheduleJob(captor.capture(), any<Trigger>())
-        return captor.value.jobClass
+        return captor.value
     }
 
     private fun task(concurrent: Int) = AgentTask().apply {

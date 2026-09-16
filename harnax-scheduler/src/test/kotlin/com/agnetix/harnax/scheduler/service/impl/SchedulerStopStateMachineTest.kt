@@ -5,19 +5,23 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandType
-import com.agnetix.harnax.entity.AgentTask
-import com.agnetix.harnax.entity.AgentTaskLog
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
-import com.agnetix.harnax.mapper.AgentTaskMapper
+import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.scheduler.client.CommandDelivery
 import com.agnetix.harnax.scheduler.client.RouterClient
+import com.agnetix.harnax.scheduler.entity.AgentTask
+import com.agnetix.harnax.scheduler.entity.AgentTaskLog
 import com.agnetix.harnax.scheduler.health.QuartzJobInventory
 import com.agnetix.harnax.scheduler.health.SchedulerStatus
+import com.agnetix.harnax.scheduler.job.TaskQuartzRegistrar
+import com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import com.agnetix.harnax.scheduler.metrics.SchedulerMetrics
 import com.agnetix.harnax.scheduler.service.AgentTaskExecutionGuard
+import com.agnetix.harnax.scheduler.service.TaskScheduleReconciler
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -28,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -194,10 +199,10 @@ class SchedulerStopStateMachineTest {
         whenever(agentTaskLogMapper.selectRunningByTaskId(1L)).thenReturn(listOf(log(31L, status = 3, sessionId = "sess-31")))
         whenever(agentTaskLogMapper.expireStale(any())).thenReturn(0)
 
-        // A sweep on a service configured for 900s must judge zombies against 900s. The trigger itself
+        // A sweep on a service configured for 900s must judge zombies against 900s. The manual run itself
         // is rejected (the row above is live and this task forbids overlap) — only the argument the
         // sweep got is under test here.
-        serviceWith(timeoutSeconds = 900).triggerManually(1L)
+        serviceWith(timeoutSeconds = 900).runTaskOnce(1L)
 
         val captor = argumentCaptor<Int>()
         verify(agentTaskLogMapper).expireStale(captor.capture())
@@ -217,6 +222,28 @@ class SchedulerStopStateMachineTest {
         assertEquals("done", written.firstValue.response)
         assertEquals("", written.firstValue.errorInfo)
         verify(agentTaskLogMapper, never()).finalizeStopped(any())
+    }
+
+    /**
+     * Contract C1 from the generating side: the session id written with the running row names both ids of
+     * *this* row. The consumer (admin's agent-spec resolution) reads the agent straight out of the string,
+     * because the table that used to tie a task to an agent is no longer admin's to read — so the one row
+     * this execution already has in hand has to be what both segments came from.
+     */
+    @Test
+    fun `the running row's session id carries the task and the agent it was minted from`() {
+        whenever(routerClient.chat(any(), any())).thenReturn(ChatResponse(sessionId = "s", content = "done"))
+        whenever(agentTaskLogMapper.finishExecution(any())).thenReturn(1)
+
+        service.executeTaskOnce(task().apply { id = 21L }, LocalDateTime.now())
+
+        val inserted = argumentCaptor<AgentTaskLog>()
+        verify(agentTaskLogMapper).insert(inserted.capture())
+        val parsed = TaskSessionId.parse(inserted.firstValue.sessionId)
+
+        assertNotNull(parsed, "the minted session id is not a C1 id: ${inserted.firstValue.sessionId}")
+        assertEquals(21L, parsed!!.taskId)
+        assertEquals(7L, parsed.agentId, "task 21's own agent_id, not a value re-queried somewhere else")
     }
 
     @Test
@@ -302,6 +329,8 @@ class SchedulerStopStateMachineTest {
 
     private fun task() = AgentTask().apply {
         id = 1L
+        // `agent_id` is NOT NULL, and contract C1 mints it into the session id of every execution.
+        agentId = 7L
         name = "Daily News"
         prompt = "summarize today"
         creator = "admin"
@@ -321,8 +350,12 @@ class SchedulerStopStateMachineTest {
             SchedulerStatus(schedulerEnabled = true),
             SchedulerMetrics(SimpleMeterRegistry(), jobInventory),
             jobInventory = jobInventory,
+            registrar = TaskQuartzRegistrar(schedulerFactory),
+            // This suite never reconciles: it walks the stop state machine.
+            reconciler = mock<TaskScheduleReconciler>(),
             schedulerEnabled = true,
             executionTimeoutSeconds = timeoutSeconds,
+            reconcileIntervalSeconds = 60,
         )
     }
 

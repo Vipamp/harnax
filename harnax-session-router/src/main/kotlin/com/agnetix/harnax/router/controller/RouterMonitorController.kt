@@ -1,5 +1,6 @@
 package com.agnetix.harnax.router.controller
 
+import com.agnetix.harnax.auth.AuthContextHolder
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.router.dto.ApiCallLogPage
 import com.agnetix.harnax.router.dto.ApiCallLogQuery
@@ -24,6 +25,13 @@ import org.springframework.web.bind.annotation.RestController
  * not a licence to be anonymous — node addresses and a full call trail are a map of everything
  * worth attacking, so the monitor is authenticated like the rest of the API and the edge is only
  * the second lock.
+ *
+ * Authentication alone does not say how much each caller is shown, so the two endpoints answer that
+ * differently. [queryCallLogs] is every call *this tenant* made, and only the full trail for a caller
+ * that has no tenant to begin with (see [com.agnetix.harnax.router.config.ApiCallLogFilter] for who
+ * writes those rows). [listInstances] is cluster topology, which belongs to no tenant: it is the
+ * operator's view, and it stops at what an instance *is* — host, port, heartbeat, how many sessions it
+ * holds — rather than whose sessions they are or what any of them said.
  */
 @RestController
 @RequestMapping("/api/router/monitor")
@@ -68,6 +76,9 @@ class RouterMonitorController(
     /**
      * Paginated call log query with optional filters.
      * Designed for the monitor UI's "call details" panel.
+     *
+     * Every parameter here narrows the result; none of them decides *whose* rows are in it. That is
+     * decided below, from the credential the auth filter already validated.
      */
     @GetMapping("/call-logs")
     fun queryCallLogs(
@@ -80,6 +91,21 @@ class RouterMonitorController(
         @RequestParam(defaultValue = "100") limit: Int,
         @RequestParam(defaultValue = "0") offset: Int,
     ): ResultVo<ApiCallLogPage> {
+        // Confine the caller to its own tenant, derived server-side. This endpoint has never accepted a
+        // `tenantId` parameter and must not start: every other argument above is a filter the caller
+        // chooses, and one it chooses cannot also be the boundary it is inside — a caller that could
+        // name a tenant would name the one it wanted to read.
+        //
+        // A caller with no tenant is an internal service token or a SYSTEM key and keeps the full view.
+        // That is the same "no tenant means internal" pass-through SessionAccessGuard runs on, and the
+        // router's own operator UI is built on it.
+        //
+        // The consequence in data terms, stated rather than hidden: rows written by those internal
+        // callers carry `tenant_id IS NULL` (see ApiCallLogFilter, which stamps the tenant the caller
+        // presented and has none to stamp), so a tenant caller never sees them. That is intended — an
+        // unattributable row must not become everyone's — and it is not a gap to close by widening the
+        // filter to `tenant_id IS NULL OR ...`.
+        val callerTenant = AuthContextHolder.get()?.tenantId
         val query = ApiCallLogQuery(
             sessionId = sessionId?.takeIf { it.isNotBlank() },
             instanceId = instanceId?.takeIf { it.isNotBlank() },
@@ -87,6 +113,7 @@ class RouterMonitorController(
             statusCode = statusCode,
             success = success,
             minDurationMs = minDurationMs,
+            tenantId = callerTenant,
             limit = limit,
             offset = offset,
         )

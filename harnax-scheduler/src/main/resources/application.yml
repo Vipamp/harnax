@@ -5,15 +5,23 @@ spring:
   application:
     name: harnax-scheduler
 
-  # Datasource configuration (connects to harnax_admin DB for reading agent_task metadata)
+  # Datasource: this service's own database. Everything it owns is in here — the QRTZ_* cluster store, the
+  # three agent_task tables, and the Flyway ledger that versions them. There is deliberately one DataSource:
+  # Quartz auto-wires the primary one, which is what keeps the Spring-managed pool and the cluster store the
+  # same thing. `harnax_admin` is where this URL pointed before release 2 and is now only a rollback target
+  # (docs/deploy-harnax-scheduler.md, 「发布 2 切口」).
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_scheduler?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       minimum-idle: ${DB_POOL_MIN_IDLE:3}
-      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Sizing: 30 ≥ threadCount(10) Quartz workers, each holding one connection for the length of a fire,
+      # + the business queries + the cluster check-in, all from this one pool. QUARTZ_THREAD_COUNT and this
+      # number move together — raising the worker count without raising the pool does not add capacity, it
+      # just moves the wait from the scheduler onto the connection timeout.
+      maximum-pool-size: ${DB_POOL_SIZE:30}
       idle-timeout: 30000
       pool-name: SchedulerHikariCP
       max-lifetime: 1800000
@@ -24,13 +32,41 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
-  # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
+  # Flyway owns this service's schema end to end: V1__quartz_tables.sql (the QRTZ_* cluster store) and
+  # V2__agent_task_domain.sql (the three task tables) both apply against harnax_scheduler, from one ledger.
+  # The dedicated history table name is no longer a collision-avoidance measure — this database has exactly
+  # one migrator — it is kept because it says whose ledger this is and because it is the same key on both
+  # sides of the cut, so a node rolled back onto harnax_admin still reads its own history there.
+  # `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
+  # clean, and baselining would let a half-migrated schema pass as complete.
+  # The switch is SCHEDULER_FLYWAY_ENABLED, with admin's FLYWAY_ENABLED only as the fallback it nests to
+  # (the same shape `spring.quartz.auto-startup` uses below). compose sets SPRING_FLYWAY_ENABLED directly
+  # and so wins over this line either way; outside compose this is the difference between the documented
+  # rollback escape hatch working and a hand-run restore having to reach for admin's key to stop — or start —
+  # this node's own QRTZ_* tables.
   flyway:
-    enabled: ${FLYWAY_ENABLED:false}
+    enabled: ${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}
+    locations: classpath:db/migration
+    table: flyway_schema_history_scheduler
+    validate-on-migrate: true
+    clean-disabled: true
 
   # Quartz Configuration
   quartz:
-    job-store-type: ${QUARTZ_JOB_STORE:memory}
+    job-store-type: ${QUARTZ_JOB_STORE:jdbc}
+    # A disabled instance must not be a cluster member at all. Boot starts the scheduler by default, so
+    # such a node checks in, acquires triggers and then refuses to run them — the fire is consumed, not
+    # handed over, and a one-shot lost that way is lost forever. Leaving the cluster is the only refusal
+    # that does not eat work; standby is still legal for registering the housekeeping job.
+    auto-startup: ${SCHEDULER_QUARTZ_AUTO_STARTUP:${scheduler.enabled:true}}
+    # `never`, and there is no setting to argue with: Boot's `always` runs the bundled Quartz script on
+    # every start, and that script begins with DROP TABLE IF EXISTS — on a cluster that deletes the
+    # schedule state every node shares each time one node restarts. V1__quartz_tables.sql creates it once.
+    # For completeness about the default: Boot's own value for this key is `embedded`, so with a MySQL
+    # datasource the script would not run even if this line were absent. Pinning `never` is therefore defence
+    # against someone setting it to `always`, not the only barrier between this cluster and that DROP.
+    jdbc:
+      initialize-schema: never
     # Boot's own key (spring-boot-quartz's QuartzProperties; its metadata says defaultValue=false, so
     # this has to be stated). Since the job runs inline on the Quartz worker thread, that thread IS the
     # execution: without waiting, a SIGTERM drops the JVM mid-run and leaves agent_task_log at status=3
@@ -38,9 +74,11 @@ spring:
     # housekeeping reaps them up to 2× scheduler.timeout-seconds later, and the user watches a timeout
     # that never actually happened. Must be paired with stop_grace_period on the scheduler container:
     # waiting for jobs is worthless if the kernel sends SIGKILL first.
-    # What it waits for, though, is only what Quartz knows about: the cron path and the /run-once
-    # one-shots. A manual /trigger runs on a bare daemon thread (SchedulerServiceImpl.triggerManually),
-    # invisible to the scheduler, so no grace period protects it — plan S4 closes that gap.
+    # Every execution path this module has is now one of those jobs: a cron fire and a manual run are the
+    # same kind of object (both `/trigger` and `/run-once` deliver a one-shot into the store), so both are
+    # waited for, and neither is the bare daemon thread a restart used to cut in half. The capacity side of
+    # that trade is the same fact: a manual run holds one of the `threadCount` workers below until it ends,
+    # which is the intended model — that count, not a private pool, is a node's concurrency gate.
     wait-for-jobs-to-complete-on-shutdown: ${QUARTZ_WAIT_FOR_JOBS:true}
     properties:
       org:
@@ -48,6 +86,28 @@ spring:
           scheduler:
             instanceName: HarnaxScheduler
             instanceId: AUTO
+          jobStore:
+            # No `class` here on purpose: Boot installs LocalDataSourceJobStore so the store uses the
+            # Spring-managed DataSource. Pinning org.quartz.impl.jdbcjobstore.JobStoreTX disconnects it.
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+            tablePrefix: QRTZ_
+            isClustered: "true"
+            # How long until a dead node's triggers move to a survivor, which is what the misfireThreshold
+            # below has to outlive. Quartz 2.5.2 (JobStoreSupport.calcFailedIfAfter) calls a state row stale
+            # at its own last check-in + max(CHECKIN_INTERVAL, the checking node's own distance since its last
+            # check-in) + 7500ms — 15000 + 7500 = 22.5s here — and a peer only evaluates that when its
+            # ClusterManager thread wakes, which sleeps one check-in interval: +15s of poll granularity, and
+            # +15s more if that peer's own check-in is a full interval late. 22.5~52.5s, never 15s.
+            # docs/deploy-harnax-scheduler.md carries the same sum for operators.
+            clusterCheckinInterval: 15000
+            misfireThreshold: 60000
+            # With clustering there is no local lock protecting trigger acquisition; without this two
+            # nodes can each claim the same fire and one of them loses after doing the work.
+            acquireTriggersWithinLock: "true"
+            # JobDataMap values must be strings — which is exactly why it carries a taskId and the job
+            # re-reads agent_task when it fires. A serialized AgentTask would also make every stored job
+            # carry a stale copy of the prompt.
+            useProperties: "true"
           threadPool:
             class: org.quartz.simpl.SimpleThreadPool
             threadCount: ${QUARTZ_THREAD_COUNT:10}
@@ -55,8 +115,15 @@ spring:
 
 # MyBatis configuration
 mybatis:
+  # The task domain's entities and mappers moved into this module with release 2, so the aliases come from
+  # `com.agnetix.harnax.scheduler.entity` and every `AgentTask*Mapper.xml` is here (mapper/ in this module).
+  #
+  # `classpath*:` scans every classpath root rather than the first match. That mattered while both this
+  # module and harnax-entity shipped a copy of these statements; release 2's Task 8 deleted the latter, so
+  # the task-domain XML now resolves from one root and the star is just the pattern this file has always
+  # used. Do not read it as a hint that a second source exists.
   mapper-locations: classpath*:mapper/*.xml
-  type-aliases-package: com.agnetix.harnax.entity
+  type-aliases-package: com.agnetix.harnax.scheduler.entity
   configuration:
     map-underscore-to-camel-case: true
     log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.slf4j.Slf4jImpl}
@@ -99,13 +166,22 @@ logging:
 # Scheduler configuration
 scheduler:
   # Enable/disable scheduler on this instance. Disabled means this node takes no scheduling work: it
-  # loads no task, and every Quartz-touching write is refused with 40903 by SchedulerController's
-  # requireEnabled — the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload,
-  # /tasks/{id}/start and /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is
-  # registered outside this gate on purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop
-  # writes no Quartz object), so a disabled node can still receive one and leave a row at status=4 that
-  # nothing but expireStale ever moves.
+  # reconciles no task, registers no reconcile sweep, and stays out of the Quartz cluster altogether
+  # (spring.quartz.auto-startup follows this key) rather than joining it just to consume fires it will
+  # refuse. Every Quartz-touching write is refused with 40903 by SchedulerController's requireEnabled —
+  # the full list is /tasks/{id}/trigger, /tasks/{id}/run-once, /reload, /tasks/{id}/start and
+  # /tasks/{id}/pause. It does NOT mean inert — the housekeeping sweep is registered outside this gate on
+  # purpose, and /tasks/logs/{id}/stop is deliberately open here (a stop writes no Quartz object), so a
+  # disabled node can still receive one and leave a row at status=4 that nothing but expireStale ever
+  # moves.
   enabled: ${SCHEDULER_ENABLED:true}
+  # Upper bound on how long a lost reload notification stays invisible: the store and agent_task are not
+  # one transaction, so a CRUD that reached no node is repaired by this sweep instead. Raising it trades
+  # a longer blind window for fewer store reads; below ~15s the reads stop being negligible.
+  # The sweep lives in the shared store, so this is one setting for the whole cluster rather than one per
+  # node: a node booting with a different value reschedules the stored trigger to its own, which makes the
+  # last node to boot the one that decides. Set it here, not per instance.
+  reconcile-interval-seconds: ${SCHEDULER_RECONCILE_INTERVAL:60}
   # Unique instance ID for execution guard (auto-generated if not set)
   instance-id: ${SCHEDULER_INSTANCE_ID:}
   # Router URL for executing agent tasks
@@ -140,6 +216,18 @@ scheduler:
 # Auth configuration
 harnax:
   auth:
+    # Stays false, deliberately: the flag also switches on UnifiedAuthFilter (external API keys, rate
+    # limiting, @InternalOnly), which is a different and bigger design — spec §9 F1. What this service does
+    # instead is verify the one thing a caller of /api/scheduler/** has to present, in
+    # SchedulerConfig.internalTokenProvider + support/InternalCallerInterceptor.
     enabled: false
+    # The label this service puts on what it signs: the JWT subject and the X-Caller-Id of every outgoing
+    # call. Nothing on the inbound path decides anything from it. Same key admin sets to `admin`.
+    service-id: scheduler
     internal:
+      # From release 2 this key has a second job: it is no longer only what this service signs outgoing
+      # tokens with, it is what the bearer on admin's forwards is verified against (contract C4). Both services
+      # must be given the same value — compose feeds it to every service from one HARNAX_AUTH_SECRET, a
+      # hand-deployed pair is the way to get it wrong. Must be at least 32 characters (see SchedulerConfig).
       shared-secret: ${HARNAX_AUTH_SECRET:change-me-in-production-min-32-chars!!}
+      token-ttl-seconds: 300

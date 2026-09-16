@@ -10,7 +10,10 @@
 #
 # Usage:
 #   Build images first: ./build.sh
-#   Start services:     docker-compose up -d
+#   Start services:     docker-compose up -d --scale scheduler="${SCHEDULER_REPLICAS:-2}"
+#                       (a plain `up` is not cluster-safe: it asks for ONE scheduler replica and compose
+#                        scales the service back down — see the scheduler service block below)
+#   Roll new images onto a running scheduler cluster: bash docker-new/deploy-service.sh scheduler
 #   View logs:          docker-compose logs -f
 #   Stop services:      docker-compose down
 
@@ -281,21 +284,59 @@ services:
       - harnax-network
 
   # Scheduler Service (agent task scheduling and execution)
+  #
+  # Two instances. Nothing in this file decides that number — `deploy.replicas` is missing on purpose, since a
+  # declarative replica count fights the stop-one/replace-one dance the rolling update has to do — so it comes
+  # from the command line, and exactly three places put it there: roll-scheduler.sh (what
+  # `deploy-service.sh scheduler` ends up running, SCHEDULER_REPLICAS default 2), deploy-all.sh's cold
+  # `up -d --scale scheduler=$SCHEDULER_REPLICAS`, and your own hand-run `up -d --scale scheduler=2`. Any `up`
+  # for this service that omits --scale asks for one replica and compose will scale the service back down to
+  # it, so add the flag whenever you bring this service up outside those scripts.
+  # The cluster itself lives in the shared QRTZ_* tables: same instanceName, instanceId=AUTO per node,
+  # and a 15s check-in. Takeover window, term by term: quartz 2.5.2 JobStoreSupport.calcFailedIfAfter calls a
+  # row stale at its own LAST_CHECKIN_TIME + max(CHECKIN_INTERVAL, the checking node's own distance since its
+  # last check-in) + 7500ms = 15000 + 7500 = 22.5s after the dead node's last heartbeat, and a survivor only
+  # evaluates that when its ClusterManager thread wakes, which sleeps one check-in interval — so +15s of poll
+  # granularity, and +15s more when that peer's own check-in is a full interval late (max() then takes 30s
+  # instead of 15s). 22.5~52.5s; 15s is not reachable. All of it stays inside misfireThreshold (60s), which is
+  # why one dead node costs no fire while a cluster-wide recreate does — see roll-scheduler.sh.
+  #
+  # This service deliberately has no `container_name`: a pinned name is unique, so Docker refuses to
+  # scale the service at all — which is also why nothing here may be reached as `docker exec
+  # harnax-scheduler …`. Go through `docker-compose -f docker-new/docker-compose.yml exec scheduler`,
+  # and once two replicas exist add `--index=1`/`--index=2` (or the container id) to say which one.
   scheduler:
     image: harnax-scheduler:latest
-    container_name: harnax-scheduler
     restart: always
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
-      # Database Configuration (harnax_admin: shared with admin, read-only for task metadata)
-      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+      # Database Configuration: harnax_scheduler, this service's own schema — the 11 QRTZ_* cluster tables
+      # plus agent_task / agent_task_log / agent_task_execution, all created by its own Flyway.
+      # Its own variable on purpose: the DB_URL that admin, agent-service and channel-service share points at
+      # harnax_admin, so reusing it here would move those three services with it. Naming harnax_admin in this
+      # line is a rollback, never a normal configuration (docs/deploy-harnax-scheduler.md, 「发布 2 切口」).
+      SPRING_DATASOURCE_URL: ${SCHEDULER_DB_URL:-jdbc:mysql://mysql:3306/harnax_scheduler?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration (disabled: admin manages migrations for harnax_admin db)
-      SPRING_FLYWAY_ENABLED: "${FLYWAY_ENABLED:-false}"
+      # Flyway Configuration. The scheduler owns its schema outright now: V1__quartz_tables.sql and
+      # V2__agent_task_domain.sql both apply against harnax_scheduler above, into the single ledger
+      # flyway_schema_history_scheduler — the dedicated name is kept so the ledger says whose it is (and so a
+      # rolled-back node still recognises its own history in harnax_admin). This override is
+      # what decides whether QRTZ_* gets created at all: an env var beats the yml default, so leaving the
+      # old `${FLYWAY_ENABLED:-false}` here would boot the node against a store that does not exist.
+      # SCHEDULER_FLYWAY_ENABLED=false is the escape hatch for a rollback — and it is the same key
+      # application.yml nests (${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}), so a hand-run node honours
+      # it too; admin's FLYWAY_ENABLED is only the fallback under it.
+      SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"
       # Scheduler Configuration
+      # One interpolation for every replica, on purpose: `false` here takes the whole deployment out of the
+      # cluster (spring.quartz.auto-startup follows it), it is not a per-node switch. A hot standby is not
+      # what the second replica is for — see roll-scheduler.sh.
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      # Leave empty. Compose hands the same value to both replicas, and agent_task_execution.instance_id is
+      # the one label that would then say "one node" where there are two; Quartz's own cluster identity
+      # never reads this knob (org.quartz.scheduler.instanceId=AUTO).
       SCHEDULER_INSTANCE_ID: ${SCHEDULER_INSTANCE_ID:-}
       SCHEDULER_ROUTER_URL: ${SCHEDULER_ROUTER_URL:-http://router:8081}
       SCHEDULER_API_KEY: ${SCHEDULER_API_KEY:-}
@@ -343,11 +384,16 @@ services:
     # job, and SIGKILL arrives 10s later anyway — leaving agent_task_log at status=3 and its
     # agent_task_execution lock row at status=0 for housekeeping to reap (up to 2× timeout).
     #
-    # THIS GRACE COVERS THE CRON PATH ONLY. A manual /api/scheduler/tasks/{id}/trigger still runs on a
-    # bare daemon thread (SchedulerServiceImpl.triggerManually) that Quartz has never heard of, so
-    # nothing waits for it on shutdown: restarting this container mid-manual-run cuts that execution into
-    # exactly the two rows above. Until one-shot runs move into Quartz (plan S4), do not restart the
-    # scheduler while a manual execution may be in flight.
+    # THIS GRACE COVERS EVERY EXECUTION PATH. A cron fire and a manual run are one kind of object now: both
+    # /api/scheduler/tasks/{id}/trigger and /run-once deliver a one-shot job that a Quartz worker executes
+    # inline, so the wait above has something to wait for whichever way the run started, and a restart
+    # mid-execution ends with a completed run instead of the two rows above. The price of the merge is the
+    # same fact seen from the other side: one manual run occupies one of the QUARTZ_THREAD_COUNT workers on
+    # the node that claims it, which is the intended concurrency gate (there is no separate manual pool).
+    #
+    # With two replicas "which node is busy" is still not knowable from the peer: admin's forward reaches
+    # whichever node Docker DNS picked, so the roll has to assume either of them is busy and gives both the
+    # full grace.
     #
     # What one execution can hold its Quartz worker for, added up term by term. Every term is a timeout
     # this repo sets, so the number is a sum and not a rounded guess:
@@ -384,6 +430,11 @@ services:
     # call is sized against a different budget instead — scheduler.command-timeout-seconds (10s), which
     # has to fit inside admin's 30s read timeout on the forward (SchedulerClientImpl). Do not "align" the
     # two numbers: they bound different threads against different consequences.
+    #
+    # A second copy of this number lives in docker-new/roll-scheduler.sh (`docker stop -t`, overridable
+    # with SCHEDULER_STOP_GRACE), which is where a deploy spends this period one replica at a time: the
+    # roll stops a replica and lets its peer cover the cluster. Move the two together — a roll timeout
+    # shorter than this period SIGKILLs an execution mid-run, which is the whole thing the period stops.
     stop_grace_period: 400s
     deploy:
       resources:

@@ -164,7 +164,7 @@ graph TB
 ### Admin → Scheduler
 
 **客户端类：** `SchedulerClientImpl`（RestClient）
-**认证方式：** 无（内网直连 `http://scheduler:8084`，不经 nginx；scheduler 不发布宿主端口）
+**认证方式：** 服务间内部 JWT（`Authorization: Bearer <typ=internal>`，由 `AuthRestTemplateInterceptor` 签发）+ 身份头 `X-Forwarded-User` / `X-Tenant-Id`（契约 C4）。scheduler 侧的 `InternalCallerInterceptor` 覆盖整条 `/api/scheduler/`，**读面同样要带凭证**，缺或错即 401。仍是内网直连 `http://scheduler:8084`：不经 nginx，也不发布宿主端口。
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
@@ -173,6 +173,7 @@ graph TB
 | POST | `/api/scheduler/tasks/{id}/pause` | 暂停定时任务 |
 | POST | `/api/scheduler/tasks/logs/{logId}/stop` | 停止一次执行（admin 先校验日志可见性再转发） |
 | POST | `/api/scheduler/reload` | 通知实例重载任务（广播到每个实例） |
+| GET | `/api/scheduler/agent-tasks/{id}/owner` | 读任务属主（creator / tenantId / agentId），契约 C5，MCP OAuth 属主解析的冷路径 |
 
 ---
 

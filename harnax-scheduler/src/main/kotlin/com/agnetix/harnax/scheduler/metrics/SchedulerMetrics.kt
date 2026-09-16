@@ -9,15 +9,16 @@ import org.springframework.stereotype.Component
 /**
  * Meters for the scheduler's own bookkeeping.
  *
- * Both meters move a handful of times per minute, so they go through [MeterRegistry.counter] and
- * [Gauge] directly instead of the pre-cached-field style the router uses on its per-request path.
+ * None of them moves at request rate — the busiest caller is the reconcile sweep, once a minute, and only
+ * `/reload` reaches them from a request — so they go through [MeterRegistry.counter] and [Gauge] directly
+ * instead of the pre-cached-field style the router uses on its per-request path.
  */
 @Component
 class SchedulerMetrics(
     private val registry: MeterRegistry,
 
     // The job count comes from [QuartzJobInventory] — a bean that only knows the Quartz store — rather
-    // than from `SchedulerService`: that service depends on *this* bean to count its load attempts, so
+    // than from `SchedulerService`: that service depends on *this* bean to count its reconcile rounds, so
     // reading the live count through it is a construction cycle. Going through the inventory keeps the
     // observation layer below the business layer and needs no lazy proxy to stay bootable.
     private val jobInventory: QuartzJobInventory,
@@ -32,13 +33,45 @@ class SchedulerMetrics(
         Gauge.builder("scheduler.jobs.scheduled", jobInventory) { inventory ->
             runCatching { inventory.scheduledTaskIds().size.toDouble() }.getOrDefault(Double.NaN)
         }
-            .description("Agent tasks registered in the Quartz store this instance reads")
+            .description("Agent tasks registered in the shared Quartz store (cluster view when job-store-type=jdbc)")
             .register(registry)
     }
 
-    fun recordLoadAttempt(success: Boolean) {
+    /**
+     * Divergence the reconcile had to repair, counted per action. A steady non-zero stream here means CRUD
+     * notifications and the store are out of step — the failure mode a broadcast-per-node design hid.
+     * Registered lazily so a round that changed nothing costs no samples.
+     *
+     * **One node publishes each round, but not always the same one.** The scheduled sweep is a cluster
+     * singleton, and admin's forward is a single call to a single instance (see `SchedulerClientImpl`), so a
+     * round's samples come from exactly one node — which is why summing this series over `instance` gives the
+     * cluster total rather than multiplying it. What that sum does not survive is reading a single instance's
+     * series as the cluster's: which replica a `/reload` lands on is decided upstream of this process, so the
+     * node that never served one is not a node that saw no drift. Alert on "any instance non-zero".
+     */
+    fun recordReconcileDrift(
+        action: String,
+        count: Int,
+    ) {
+        if (count <= 0) {
+            return
+        }
+        registry.counter("scheduler.reconcile.drift", "action", action).increment(count.toDouble())
+    }
+
+    /**
+     * One reconcile round's verdict, from whichever caller ran it: the startup converge loop, admin's
+     * `/reload` forward or the 60-second sweep.
+     *
+     * The meter used to be `scheduler.load.attempts`, which was honest when the only caller was the startup
+     * load — one to n samples per process start. The 60-second sweep made it a sample every minute as well,
+     * published by whichever node fired that round, so the name started lying about every `rate()` panel and
+     * about the "restarts that failed to schedule" reading in particular. Renamed rather than kept-and-documented:
+     * no dashboard consumes it yet, and the old name is the bug.
+     */
+    fun recordReconcileRound(success: Boolean) {
         registry.counter(
-            "scheduler.load.attempts",
+            "scheduler.reconcile.rounds",
             "outcome",
             if (success) "success" else "failure",
         ).increment()
