@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.service
 
+import com.agnetix.harnax.common.dto.AgentTaskOwner
 import com.agnetix.harnax.common.dto.ResultVo
-import com.agnetix.harnax.entity.dto.AgentTaskOwner
 import org.springframework.http.HttpMethod
 import tools.jackson.databind.JsonNode
 

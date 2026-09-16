@@ -1,7 +1,7 @@
 package com.agnetix.harnax.admin.util
 
 import com.agnetix.harnax.admin.service.SchedulerClient
-import com.agnetix.harnax.entity.dto.AgentTaskOwner
+import com.agnetix.harnax.common.dto.AgentTaskOwner
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import org.slf4j.LoggerFactory

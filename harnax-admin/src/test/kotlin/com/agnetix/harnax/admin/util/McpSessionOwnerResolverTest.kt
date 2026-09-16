@@ -4,10 +4,10 @@ import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.agnetix.harnax.admin.service.SchedulerClient
+import com.agnetix.harnax.common.dto.AgentTaskOwner
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.SysUser
-import com.agnetix.harnax.entity.dto.AgentTaskOwner
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SysUserMapper
 import org.junit.jupiter.api.Assertions.assertEquals

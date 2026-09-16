@@ -48,10 +48,11 @@ class SchedulerMapperWiringTest {
 
     // Reads this module's own copy of [resource].
     //
-    // `classpath*:mapper/*.xml` really does put two files under each of these names on the test classpath
-    // while harnax-entity still carries the originals, so "whichever one the loader hands back first" would
-    // be an accident of classpath ordering rather than a statement about this module. Anything that is not
-    // this module's own output is ruled out by name.
+    // Nothing else should be on the classpath under this name now that release 2's Task 8 retired
+    // harnax-entity's copies, but the filter stays: the whole point of this test is that it judges *this
+    // module's* file, and a copy reappearing through some other jar would otherwise be read silently —
+    // "whichever one the loader hands back first" is an accident of classpath ordering, not a statement
+    // about this module.
     private fun readResource(resource: String): String {
         val loader = SchedulerMapperWiringTest::class.java.classLoader
         val candidates = Collections.list(loader.getResources(resource))

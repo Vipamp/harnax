@@ -1,7 +1,7 @@
 package com.agnetix.harnax.scheduler.controller
 
+import com.agnetix.harnax.common.dto.AgentTaskOwner
 import com.agnetix.harnax.common.dto.ResultVo
-import com.agnetix.harnax.entity.dto.AgentTaskOwner
 import com.agnetix.harnax.scheduler.mapper.AgentTaskMapper
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag

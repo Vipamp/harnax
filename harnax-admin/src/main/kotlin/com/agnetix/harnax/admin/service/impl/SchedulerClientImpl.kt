@@ -4,8 +4,8 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.service.SchedulerClient
 import com.agnetix.harnax.auth.AuthRestTemplateInterceptor
 import com.agnetix.harnax.auth.InternalTokenProvider
+import com.agnetix.harnax.common.dto.AgentTaskOwner
 import com.agnetix.harnax.common.dto.ResultVo
-import com.agnetix.harnax.entity.dto.AgentTaskOwner
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference

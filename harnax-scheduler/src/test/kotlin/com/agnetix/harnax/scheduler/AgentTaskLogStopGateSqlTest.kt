@@ -1,6 +1,6 @@
-package com.agnetix.harnax
+package com.agnetix.harnax.scheduler
 
-import com.agnetix.harnax.mapper.AgentTaskLogMapper
+import com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper
 import org.apache.ibatis.builder.xml.XMLMapperBuilder
 import org.apache.ibatis.session.Configuration
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -11,13 +11,19 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver
 import java.io.InputStream
 
 /**
- * Stopping an execution is a write, and until now it was authorised with the *read* rule: the gate
+ * Stopping an execution is a write, and until release 1 it was authorised with the *read* rule: the gate
  * joined `agent_task` on `is_public = 1 OR creator = ?`, so any logged-in user could interrupt a run of
  * anybody's public task. The rest of this domain writes owner-only (`updateById`, `deleteById`).
  *
- * The rule lives in SQL, so the assertion has to read SQL. Docker-off machines cannot run the
- * Testcontainers mapper suite, and MyBatis can resolve a statement without a database — the mapper XML is
- * parsed and the bound SQL is inspected here, which is the same text MySQL would get.
+ * The rule lives in SQL, so the assertion has to read SQL. Docker-off machines cannot run the Testcontainers
+ * mapper suite ([com.agnetix.harnax.scheduler.it.AgentTaskMapperSemanticsIT] covers the same gate on a real
+ * MySQL), and MyBatis can resolve a statement without a database — the mapper XML is parsed here and the
+ * bound SQL is inspected, which is the same text MySQL would get.
+ *
+ * It moved here with release 2 because this module now owns the three task tables: the XML
+ * below is this module's own copy, and the namespace is the interface this module's `@MapperScan` registers.
+ * A copy of that file still living in `harnax-entity` would be caught by the [NAMESPACE] lookup — the
+ * statements would simply not resolve — rather than by classpath luck.
  */
 @DisplayName("执行日志的停止门禁 - 写可见性 SQL")
 class AgentTaskLogStopGateSqlTest {
@@ -49,9 +55,9 @@ class AgentTaskLogStopGateSqlTest {
 
         assertTrue(
             sql.contains("t.creator = ?"),
-            "写门禁必须按 creator 过滤，实际 SQL: $sql",
+            "the write gate has to filter on creator; bound SQL was: $sql",
         )
-        assertFalse(sql.contains("is_public"), "停止是写操作，public 不构成权限，实际 SQL: $sql")
+        assertFalse(sql.contains("is_public"), "stopping is a write, and public is not a permission; bound SQL was: $sql")
     }
 
     /**
@@ -75,11 +81,11 @@ class AgentTaskLogStopGateSqlTest {
             ),
         )
 
-        assertTrue(listSql.contains("is_public = 1 or t.creator = ?"), "读侧仍应公开可见，实际 SQL: $listSql")
+        assertTrue(listSql.contains("is_public = 1 or t.creator = ?"), "the read side must stay publicly visible; bound SQL was: $listSql")
         val stopSql = boundSqlOf("selectOwnedById", mapOf("id" to 1L, "currentUsername" to "alice"))
         assertTrue(
             listSql != stopSql,
-            "读写两条门禁解析成了同一段 SQL，说明其中一侧的规则被顺手改了",
+            "the read gate and the write gate resolve to one SQL text, so one of the two rules was changed on the way",
         )
     }
 
@@ -89,15 +95,34 @@ class AgentTaskLogStopGateSqlTest {
     fun `the read-shaped gate is gone from both the xml and the interface`() {
         assertFalse(
             configuration.hasStatement("$NAMESPACE.selectVisibleById", false),
-            "selectVisibleById 是按读可见性授权写的语句，不得复活",
+            "selectVisibleById authorised a write with the read visibility rule and may not come back",
         )
         assertTrue(
             AgentTaskLogMapper::class.java.methods.none { it.name == "selectVisibleById" },
-            "接口上不得再留有读形状的停止门禁",
+            "the interface must not keep a read-shaped stop gate either",
+        )
+    }
+
+    /**
+     * The other half of the same hole: `selectByTaskId` handed back every log of a task to anyone who knew
+     * the id, with no join to the owning task at all, and the log list replaced it. `selectRunningByTaskId`
+     * is a different statement and stays: it is the engine's own liveness probe on a task the caller already
+     * holds, not a user-facing read, and no request path reaches it.
+     */
+    @Test
+    @DisplayName("按 task id 无门禁的读取不再存在")
+    fun `the unguarded read by task id is gone from both the xml and the interface`() {
+        assertFalse(
+            configuration.hasStatement("$NAMESPACE.selectByTaskId", false),
+            "selectByTaskId read logs with no visibility join and was removed for that reason",
+        )
+        assertFalse(
+            AgentTaskLogMapper::class.java.methods.any { it.name == "selectByTaskId" },
+            "the interface must not offer an unguarded read by task id either",
         )
     }
 
     companion object {
-        private const val NAMESPACE = "com.agnetix.harnax.mapper.AgentTaskLogMapper"
+        private const val NAMESPACE = "com.agnetix.harnax.scheduler.mapper.AgentTaskLogMapper"
     }
 }

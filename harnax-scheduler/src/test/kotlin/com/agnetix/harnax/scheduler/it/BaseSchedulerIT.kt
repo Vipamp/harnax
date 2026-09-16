@@ -109,9 +109,11 @@ abstract class BaseSchedulerIT {
             .withDatabaseName("harnax_scheduler_it")
             .withUsername("root")
             .withPassword("it_test")
-            // Release 1 owns only the Quartz schema: agent_task and its two companions still live in
-            // harnax_admin, so this container gets them from a test resource until release 2 moves them.
-            // Flyway's own V1 runs afterwards, against the same container, and creates QRTZ_* there.
+            // Release 2 moved the three task tables into this module's own Flyway history, so V2 creates them
+            // here exactly as it does in production. The init script is left with the one table no migration
+            // owns (`it_cluster_fire`); duplicating a migration's DDL in it would win the race against
+            // Flyway — Testcontainers runs it first, and V2's `IF NOT EXISTS` then no-ops over it — leaving
+            // the ITs on a schema the release never shipped.
             .withInitScript("schema-it.sql")
 
         init {

@@ -50,8 +50,9 @@ object TaskSessionId {
     /**
      * The only place a task session id is built.
      *
-     * Both ids come from the same `AgentTask` row, read once by the caller: that is what makes the id
-     * self-validating, and it is why neither may be a value re-queried later.
+     * Both ids come from the same `agent_task` row, read once by the caller: that is what makes the id
+     * self-validating, and it is why neither may be a value re-queried later. That row is read by
+     * harnax-scheduler, which has owned this table since release 2.
      *
      * [uuid] is written without its dashes. That is not cosmetics: [parse] decides the shape by counting
      * segments, so a tail carrying a `-` would not be a C1 id at all even with both ids correctly in front
