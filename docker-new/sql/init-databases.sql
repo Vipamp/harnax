@@ -31,9 +31,9 @@ CREATE DATABASE IF NOT EXISTS `harnax_router`
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
 -- Scheduler service database (Quartz cluster store + agent task domain, Flyway managed by scheduler).
--- The Quartz tables land here in release 2: release 1 keeps them in harnax_admin, because the scheduler's
--- own JDBC URL still points at harnax_admin then, and a table can only live in the database its
--- connection names.
+-- This is the scheduler's own database: spring.datasource.url defaults here, so Flyway creates the QRTZ_*
+-- tables and the three agent_task tables in it on that service's first start. It was still harnax_admin
+-- before release 2, which is why the two databases are both granted below.
 CREATE DATABASE IF NOT EXISTS `harnax_scheduler`
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;

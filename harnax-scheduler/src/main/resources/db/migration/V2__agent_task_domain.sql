@@ -4,8 +4,7 @@
 -- Ownership of `agent_task`, `agent_task_log` and `agent_task_execution` moves out of harnax-admin with this
 -- release, so their definitions move here too. The three definitions below are harnax-admin's
 -- V1__init_schema.sql:480-536 copied column for column and in column order: the two files have to stay
--- diffable, and a row copy written by hand during the cut (`INSERT ... SELECT *`) depends on that order.
--- Four edits and nothing else:
+-- diffable while both describe the same table. Four edits and nothing else:
 --   * `agent_task_log.session_id` grows from 64 to 128 characters, because the id gained the agentId
 --     segment (contract C1);
 --   * the two indexes admin added afterwards in V27__add_agent_task_execution_sweep_indexes.sql are inlined
@@ -23,13 +22,13 @@
 --     rather than an incident. `agent_task_log` is still built, because `AgentTaskMapper.selectTaskList`
 --     LEFT JOINs it for last_run_status / last_run_time — a missing table is a 500 on the list page, not an
 --     empty column.
---   * The same-named tables in `harnax_admin` are untouched by this file. After the cut they are admin-side
---     read-only residue: nothing writes them any more, and their removal is a separate script that runs
---     only once ops signs it off.
+--   * The same-named tables in `harnax_admin` are untouched by this file, and nothing in this release moves
+--     a row into these three — so from the cut onward they hold no data any service reads. Dropping them is
+--     a step of the cut (docs/deploy-harnax-scheduler.md), not a follow-up with an observation period.
 --
--- Where this lands today: this module's Flyway applies it into whatever database `spring.datasource.url`
--- names, and until the datasource switch that is still `harnax_admin` — there each statement is an
--- `IF NOT EXISTS` no-op over admin's own copy, so applying it changes nothing about that schema.
+-- Where this lands: this module's Flyway applies it into the database `spring.datasource.url` names, which
+-- release 2 sets to `harnax_scheduler` — this service's own schema, built here from nothing rather than
+-- layered onto admin's.
 
 -- Agent Task - Scheduled agent execution
 CREATE TABLE IF NOT EXISTS `agent_task` (

@@ -3,7 +3,7 @@
 # 用法: ./deploy-service.sh <service-name>
 # 支持的服务: admin, router, agent-service, channel-service, scheduler, frontend
 # scheduler 一项走的是逐台滚动（docker-new/roll-scheduler.sh），它会读 SCHEDULER_REPLICAS（目标实例数，
-# 默认 2）与 MYSQL_ROOT_PASSWORD（只用于滚动结束后回读 harnax_admin.QRTZ_SCHEDULER_STATE 做确认）；
+# 默认 2）与 MYSQL_ROOT_PASSWORD（只用于滚动结束后回读 harnax_scheduler.QRTZ_SCHEDULER_STATE 做确认）；
 # 两者放在 docker-new/.env 里即可，本脚本会 source 它并导出给滚动脚本。
 
 set -e

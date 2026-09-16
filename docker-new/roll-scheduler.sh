@@ -481,8 +481,10 @@ for victim in "${containers[@]}"; do
 done
 
 echo "cluster rolled; QRTZ_SCHEDULER_STATE rows:"
-# harnax_admin, not harnax_scheduler: in release 1 the scheduler's datasource — and with it the QRTZ_*
-# cluster tables — still lives in admin's database.
+# harnax_scheduler, not harnax_admin: the QRTZ_* cluster tables live in the scheduler's own database from
+# release 2 on, which is where its Flyway creates them. A rolled-back node (datasource pointed back at
+# admin's database, `QUARTZ_JOB_STORE=memory`) writes no such table at all — read admin's copy there only if
+# that is the state you are in.
 #
 # Do NOT read this as "expect ${REPLICAS} rows". A Quartz node never deletes its own state row, not even on a
 # clean shutdown, and a peer only drops a dead instance's row as part of clusterRecover — after the interval
@@ -493,5 +495,5 @@ echo "cluster rolled; QRTZ_SCHEDULER_STATE rows:"
 # count, run this again a minute later; if you want proof a node joined at all, look for its own instance name
 # advancing.
 compose exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD:-root123456}" \
-  -e "SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ_SCHEDULER_STATE;" \
+  -e "SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.QRTZ_SCHEDULER_STATE;" \
   || echo "  (run that query by hand if mysql is not reachable here)"

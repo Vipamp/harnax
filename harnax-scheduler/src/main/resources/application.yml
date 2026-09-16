@@ -5,12 +5,13 @@ spring:
   application:
     name: harnax-scheduler
 
-  # Datasource configuration. Release 1 leaves this on harnax_admin: the service reads agent_task metadata
-  # there, and this is the database its own Flyway migration creates the QRTZ_* cluster tables in. There is
-  # deliberately one DataSource — Quartz auto-wires the primary one, which is what keeps the Spring-managed
-  # pool and the cluster store the same thing. Release 2 moves the URL to harnax_scheduler.
+  # Datasource: this service's own database. Everything it owns is in here — the QRTZ_* cluster store, the
+  # three agent_task tables, and the Flyway ledger that versions them. There is deliberately one DataSource:
+  # Quartz auto-wires the primary one, which is what keeps the Spring-managed pool and the cluster store the
+  # same thing. `harnax_admin` is where this URL pointed before release 2 and is now only a rollback target
+  # (docs/deploy-harnax-scheduler.md, 「发布 2 切口」).
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/harnax_scheduler?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -31,9 +32,12 @@ spring:
     time-zone: GMT+8
     default-property-inclusion: non_null
 
-  # Flyway owns the Quartz cluster schema. A dedicated history table because this service's migrations
-  # currently land in harnax_admin, whose own history belongs to admin's Flyway: two tools, two ledgers,
-  # one database. `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
+  # Flyway owns this service's schema end to end: V1__quartz_tables.sql (the QRTZ_* cluster store) and
+  # V2__agent_task_domain.sql (the three task tables) both apply against harnax_scheduler, from one ledger.
+  # The dedicated history table name is no longer a collision-avoidance measure — this database has exactly
+  # one migrator — it is kept because it says whose ledger this is and because it is the same key on both
+  # sides of the cut, so a node rolled back onto harnax_admin still reads its own history there.
+  # `baseline-on-migrate` stays off on purpose — the history table is new, so V1 applies
   # clean, and baselining would let a half-migrated schema pass as complete.
   # The switch is SCHEDULER_FLYWAY_ENABLED, with admin's FLYWAY_ENABLED only as the fallback it nests to
   # (the same shape `spring.quartz.auto-startup` uses below). compose sets SPRING_FLYWAY_ENABLED directly
@@ -111,17 +115,13 @@ spring:
 
 # MyBatis configuration
 mybatis:
-  # The task domain's entities and mappers moved into this module with release 2, so the aliases now come
-  # from `com.agnetix.harnax.scheduler.entity`.
+  # The task domain's entities and mappers moved into this module with release 2, so the aliases come from
+  # `com.agnetix.harnax.scheduler.entity` and every `AgentTask*Mapper.xml` is here (mapper/ in this module).
   #
-  # `classpath*:` is kept on purpose, and while harnax-entity is still on the classpath that means this
-  # pattern loads the old `AgentTask*Mapper.xml` from its jar too — three files whose namespaces point at
-  # interfaces `@MapperScan` no longer scans. The overlap is harmless and temporary: MyBatis keys every
-  # resultMap and every statement by its namespace, so the two sets register side by side in one
-  # Configuration without either clashing with or shadowing the other (no bean conflict, no rewritten
-  # statement), and the old ones are simply never called from this service. Task 8 of
-  # docs/superpowers/plans/2026-09-14-scheduler-domain-migration.md deletes them from harnax-entity, which
-  # is what makes this line single-sourced again; nothing before that task depends on them.
+  # `classpath*:` scans every classpath root rather than the first match. That mattered while both this
+  # module and harnax-entity shipped a copy of these statements; release 2's Task 8 deleted the latter, so
+  # the task-domain XML now resolves from one root and the star is just the pattern this file has always
+  # used. Do not read it as a hint that a second source exists.
   mapper-locations: classpath*:mapper/*.xml
   type-aliases-package: com.agnetix.harnax.scheduler.entity
   configuration:

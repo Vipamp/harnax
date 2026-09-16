@@ -311,14 +311,18 @@ services:
     environment:
       # Spring Boot Configuration
       SPRING_PROFILES_ACTIVE: prod
-      # Database Configuration (harnax_admin in release 1: agent_task metadata read, QRTZ_* cluster store
-      # written; release 2 moves this URL to harnax_scheduler and the store moves with it)
-      SPRING_DATASOURCE_URL: ${DB_URL:-jdbc:mysql://mysql:3306/harnax_admin?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+      # Database Configuration: harnax_scheduler, this service's own schema — the 11 QRTZ_* cluster tables
+      # plus agent_task / agent_task_log / agent_task_execution, all created by its own Flyway.
+      # Its own variable on purpose: the DB_URL that admin, agent-service and channel-service share points at
+      # harnax_admin, so reusing it here would move those three services with it. Naming harnax_admin in this
+      # line is a rollback, never a normal configuration (docs/deploy-harnax-scheduler.md, 「发布 2 切口」).
+      SPRING_DATASOURCE_URL: ${SCHEDULER_DB_URL:-jdbc:mysql://mysql:3306/harnax_scheduler?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-harnax}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-harnax123}
-      # Flyway Configuration. The scheduler owns the Quartz schema's migrations now, and in this release it
-      # runs them against the harnax_admin database into its own history table
-      # flyway_schema_history_scheduler — admin's ledger in that database stays untouched. This override is
+      # Flyway Configuration. The scheduler owns its schema outright now: V1__quartz_tables.sql and
+      # V2__agent_task_domain.sql both apply against harnax_scheduler above, into the single ledger
+      # flyway_schema_history_scheduler — the dedicated name is kept so the ledger says whose it is (and so a
+      # rolled-back node still recognises its own history in harnax_admin). This override is
       # what decides whether QRTZ_* gets created at all: an env var beats the yml default, so leaving the
       # old `${FLYWAY_ENABLED:-false}` here would boot the node against a store that does not exist.
       # SCHEDULER_FLYWAY_ENABLED=false is the escape hatch for a rollback — and it is the same key

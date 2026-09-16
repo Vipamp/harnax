@@ -15,7 +15,7 @@
 | 依赖 | 要求 | 说明 |
 |---|---|---|
 | JDK | 21 | |
-| MySQL | `harnax_admin` 库 | 与 admin **共用同一个库、但各管各的表**：本服务读 `agent_task` / 写 `agent_task_log`，并且**自己建自己的 `QRTZ_*` 集群表**。表结构由两边的 Flyway 各写一份历史表（本服务 `flyway_schema_history_scheduler`、admin `flyway_schema_history`），互不干扰，所以本服务的迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就没有 `QRTZ_*`，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。发布 2 才把数据源搬进 `harnax_scheduler`（`docker-new/sql/init-databases.sql` 已预建该库并授权，发布 1 用不上它） |
+| MySQL | `harnax_scheduler` 库（本服务自有） | **本服务独占这个库**：11 张 `QRTZ_*` 集群表 + `agent_task` / `agent_task_log` / `agent_task_execution` 三张业务表都在这里面，表结构全部由本服务的 Flyway 建（`V1__quartz_tables.sql` + `V2__agent_task_domain.sql`，记在自有的 `flyway_schema_history_scheduler`），没有任何别的工具往这个库写表。所以迁移开关（`SCHEDULER_FLYWAY_ENABLED`，未设时回退 `FLYWAY_ENABLED`）默认 `true` 且**必须保持开**——关掉就一张表都没有，`QUARTZ_JOB_STORE=jdbc` 的节点直接起不来。库与授权由 `docker-new/sql/init-databases.sql` 预建（存量部署要手工补那两行，那脚本只在 MySQL 首次初始化空数据目录时执行）。发布 1 之前这套表落在 `harnax_admin`，那是当时的中间态，见「发布 2 切口」 |
 | router | 必须可达 | 执行入口 `SCHEDULER_ROUTER_URL` |
 | admin | 必须可达 | 会话管理与系统 Key 获取 |
 | Redis / MinIO | 不需要 | |
@@ -38,7 +38,7 @@
 
 ### 回滚（回到内存 store）
 
-仓库里只有这里写全了退路。两个开关一起动，只动一个会把节点留在集群外却没有 store：
+「离开集群」这一条退路在仓库里只有这里写全（数据源那一步见「发布 2 切口」的回滚小节，两个开关是同一套）。两个开关一起动，只动一个会把节点留在集群外却没有 store：
 
 ```bash
 QUARTZ_JOB_STORE=memory             # 本实例退出集群
@@ -61,10 +61,10 @@ docker-compose -f docker-new/docker-compose.yml up -d --scale scheduler=2 --no-r
 
 **`docker-new/deploy-all.sh` 是同一条越界里更长的那一档，它照做不误**：第 5 步 `down` 停掉全部副本，第 6 步才 `up -d --scale`，中间要过 mysql 的健康门（`healthcheck` 最坏 10s×5）再起一台 JVM——全集群无调度的窗口比一次 `--force-recreate` 只长不短，堆在 `QRTZ_TRIGGERS` 里的那些发同样按 DoNothing 丢弃。它不做成滚动形态是刻意的：这是一次全新集群的冷启动（所有服务都要换镜像），逐台滚动那条路径需要「有副本在跑时换镜像」这个前提，此刻并不成立，`roll-scheduler.sh` 也不负责拉起 redis/minio/mysql。所以这里的规则是运维的而不是代码的：**只在安静时段跑 `deploy-all.sh`**；如果这次只动了 scheduler 的镜像，就走 `deploy-service.sh scheduler`（它以 `roll-scheduler.sh` 收尾，全程至少一台在跑，不丢触发）。脚本在 `down` 前会把这句话打一遍，`roll-scheduler.sh` 的那把滚动锁也**故意不覆盖** `deploy-all.sh`——一把锁拦不住一次设计上就要清空整栈的部署。
 
-集群成员的直接读数是 `QRTZ_SCHEDULER_STATE`（发布 1 里它在 `harnax_admin` 库，因为本服务的数据源此刻还指那边）：
+集群成员的直接读数是 `QRTZ_SCHEDULER_STATE`（在 `harnax_scheduler` 库，本服务的数据源就指那里）：
 
 ```sql
-SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ_SCHEDULER_STATE;
+SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_scheduler.QRTZ_SCHEDULER_STATE;
 ```
 
 - 每行是一个成员，`LAST_CHECKIN_TIME` 是 unix 毫秒，存活节点的这一列每 15s 前进一次。**看这一列有没有在动**，比数行数可靠。
@@ -108,10 +108,11 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_admin?...` | 与 admin 同库；`QRTZ_*` 就建在这里，发布 2 才搬走 |
-| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD` |
+| `SPRING_DATASOURCE_URL` | `jdbc:mysql://localhost:3306/harnax_scheduler?...` | 本服务自有的库：`QRTZ_*` 与三张 `agent_task*` 表都由它建、由它读写。指回 `harnax_admin` 只有一种合法用途——切口后的回滚（见「发布 2 切口」） |
+| `SCHEDULER_DB_URL` | 空（用上面的 yml 默认值） | **compose 侧的连接串只由它决定**。它故意不是 admin / agent-service / channel-service 共用的那条 `DB_URL`：那三个服务靠 `DB_URL` 打同一句 `harnax_admin`，scheduler 复用同一变量的话，改一处就带走三个不该动的服务 |
+| `SPRING_DATASOURCE_USERNAME` / `SPRING_DATASOURCE_PASSWORD` | `root` / `123456` | compose 侧走 `DB_USERNAME` / `DB_PASSWORD`（与 admin 同一个 MySQL 用户，它对两库都有权限，见 `init-databases.sql`） |
 | `DB_POOL_SIZE` / `DB_POOL_MIN_IDLE` | `30` / `3` | Hikari。30 是按下界选的：≥ `QUARTZ_THREAD_COUNT`(10) 个 worker（每个在一次 fire 里占一条连接）+ 业务查询 + 集群 checkin，全走这一个池。**`QUARTZ_THREAD_COUNT` 与它要一起动**——只加 worker 不加池不会多出容量，只是把等待从调度线程挪到 30s 的 connection-timeout 上。与 admin 的 20/5 不同 |
-| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：`V1__quartz_tables.sql` 建 `QRTZ_*`，历史记在自有的 `flyway_schema_history_scheduler`，与 admin 的 `flyway_schema_history` 互不干扰。它是调度节点迁移的**回退位**而不是决定位——`application.yml` 读的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，所以只要 `SCHEDULER_FLYWAY_ENABLED` 设了值，改这个 admin 同名的键就不起作用（它原本就是防着「手工恢复时顺手改了 admin 那个值，把调度节点停了迁移」） |
+| `FLYWAY_ENABLED` | `true` | 本服务的迁移**必须开**：关掉就一张表都没有。它建的是本库的全部两张脚本（`V1__quartz_tables.sql` 的 11 张 `QRTZ_*` + `V2__agent_task_domain.sql` 的三张业务表），历史记在自有的 `flyway_schema_history_scheduler`——这个库里只有这一个迁移工具，admin 的 `flyway_schema_history` 在 `harnax_admin`，两边不再同库。它同时是调度节点迁移的**回退位**而不是决定位——`application.yml` 读的是 `${SCHEDULER_FLYWAY_ENABLED:${FLYWAY_ENABLED:true}}`，所以只要 `SCHEDULER_FLYWAY_ENABLED` 设了值，改这个 admin 同名的键就不起作用（它原本就是防着「手工恢复时顺手改了 admin 那个值，把调度节点停了迁移」） |
 | `SCHEDULER_FLYWAY_ENABLED` | `true` | 本服务迁移的决定位，compose 与手工部署同一个键：`application.yml` 的 `spring.flyway.enabled` 外层就是它。compose 里另有 `SPRING_FLYWAY_ENABLED: "${SCHEDULER_FLYWAY_ENABLED:-true}"`，那是一条显式 env 覆盖、优先级仍高于 yml，两条路径因此不会分叉成两个开关。`=false` 是回滚的逃生门（见「回滚」一节） |
 
 ### 调度与下游
@@ -170,6 +171,38 @@ SELECT INSTANCE_NAME, LAST_CHECKIN_TIME, CHECKIN_INTERVAL FROM harnax_admin.QRTZ
 `lastReconcileAt` 只能当**本节点**的观察读：推进它的有两处——60s 的清扫（集群单例，只有 fire 它的那台会更新）和 admin 转发的 `/reload`（只落到调用方解析到的那一台）。所以某台的这个字段很旧，意思只是"最近没人叫它收敛过"，不等于集群没在收敛；要看集群得看**真的跑过一轮的那台**的 `lastReconcileError`。别对这个时间戳的年龄设告警——它告的是这份工作怎么分配到副本上的。
 
 `/actuator/channels` 之类没有；`show-details` 未开 `always`（与 channel 服务不同）。
+
+## 发布 2 切口：数据源切到 `harnax_scheduler`
+
+这一步把本服务的数据源从 `harnax_admin` 换进自有的 `harnax_scheduler`，是整个改造里唯一需要停服的动作，也是唯一不能滚动做的动作。
+
+**它不搬任何数据。** 用户确认没有历史包袱，spec 的 D8（迁任务定义、不迁历史日志）因此取消：没有迁移脚本，没有自校验查询，也没有"历史清空 / 最近运行两列变空"这类要公告的损失——没有东西可失去。新库从空开始，**切口后由用户在界面重建任务**。旧库 `harnax_admin` 里的 `agent_task` / `agent_task_log` / `agent_task_execution` 与 11 张 `QRTZ_*` 在切口后没有任何活着的读者，**当场 DROP 即可，不需要观察期**（本仓库不随发布合入 DROP 脚本，那条 SQL 由运维执行）。
+
+**为什么 admin 与 scheduler 必须一起下线**——两条理由都与数据无关，所以"先把库换过去、代码以后再合"这种分两批的做法在这里不成立：
+
+1. **C4**：scheduler 现在拒收未签名的 HTTP，`/api/scheduler/**` 全部接口（读也在内）都要带一枚 `typ=internal` 的 bearer。旧版 admin 不发这一枚，它的每一次转发都是 401。两边的 `HARNAX_AUTH_SECRET` 还必须同值：compose 里两个服务由同一个变量插值，配一次就同源；手工/裸机部署两边各写一次，是唯一能写歪的地方。
+2. **C1**：sessionId 现在是四段 `task-{taskId}-{agentId}-{uuid}`，旧 admin 读不懂这个形态（它的解析器只认三段），反过来旧 scheduler 发的三段 id 新 admin 会直接拒。所以**任何新旧混跑的组合都不成立**，一新一旧凑一对就是坏的一侧在坏的一侧看不见地丢执行。
+
+### 顺序
+
+1. 停 scheduler 的**全部副本** + admin。窗口内堆积的 cron 走 misfire 路径，`concurrent=0` 用的是 `withMisfireHandlingInstructionDoNothing`——**那一发被跳过，不是延后补跑**，公告要这么写。
+2. 起**一个** scheduler 副本，数据源指向 `harnax_scheduler`。库与授权由 `docker-new/sql/init-databases.sql` 预建（存量部署要手工补建库 + `GRANT` + `FLUSH PRIVILEGES`，那个脚本只在 MySQL 首次初始化空数据目录时跑），Flyway 在这个空库里应用 `V1__quartz_tables.sql` + `V2__agent_task_domain.sql`。
+3. 核对建出来的表：三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 的两行。**`agent_task_log` 哪怕注定是空的也必须在**——`AgentTaskMapper.xml` 的 `selectTaskList` 自联这张表取 `lastRunStatus` / `lastRunTime`，缺表是列表页 500，不是"某一列空着"。
+4. 让对账跑一轮（等 60s 的集群清扫，或建一个任务由 admin 转发触发 `/reload`），核对结果是 **0 个被调度的任务**：`/actuator/health` 的 `scheduledJobCount`（读 store，匿名可用），或 `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`——后者从 C4 起要带内部 JWT，别按匿名端点 curl 它。非 0 说明这台连的还是旧库。
+5. 起 admin（发布 2 版本），三客户端主链路各跑一遍：webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页。
+6. 起第二副本（`--scale scheduler=2`，或 `roll-scheduler.sh`），回读 `harnax_scheduler.QRTZ_SCHEDULER_STATE`：要看到的是**两个 `INSTANCE_NAME` 各自的 `LAST_CHECKIN_TIME` 每 15s 前进**，不是"两行"（见「双实例与逐台滚动」）。
+7. 用户在界面重建任务。
+8. DROP `harnax_admin` 里的三张 `agent_task*` 与 11 张 `QRTZ_*`。
+
+### 回滚
+
+```bash
+SPRING_DATASOURCE_URL=…/harnax_admin…      # compose 侧改的是 SCHEDULER_DB_URL
+QUARTZ_JOB_STORE=memory                    # 不去接旧库里那批发布 1 留下的 QRTZ_*
+SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_admin
+```
+
+三个都要：`QUARTZ_JOB_STORE=memory` 让这台节点不进集群、不往一张已经没有活着的对端承诺同源更新的旧 store 里写调度真相（离集群的完整代价见「Quartz 存储模式」）；`SCHEDULER_FLYWAY_ENABLED=false` 是因为 V2 对旧库虽是 `IF NOT EXISTS` 的空转，却会把 V2 记进旧库的 `flyway_schema_history_scheduler`，让一个回滚状态看起来像应用过发布 2 的 schema。**并且要说清**：只把 URL 指回去**不等于回到发布 1 的行为**——C4 的门禁与 C1 的四段 id 都在代码里，旧 admin 与新 scheduler 仍然互相读不懂，要退就得连镜像一起退、两个服务同时退。回滚的残留是明确的：切口之后新建/改过的任务只存在于 `harnax_scheduler`，不会跟着回到旧库，也没有合并路径。
 
 ## 常见问题
 
