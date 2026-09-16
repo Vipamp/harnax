@@ -23,7 +23,7 @@
 - **对客户端零变化**：`/api/admin/agent-tasks/**` 的路径、方法、`ResultVo` 外壳、`Page` 的 7 个键（`pageNum/pageSize/total/records/pages/hasPrevious/hasNext`）、`records[*]` 的 18 个字段名全部不变；`40901/40902/40903` 语义不变。搬迁后的校验**错误文案**必须与 admin 今天的一字不差（webui 直接展示 `.message`）。
 - 属主/可见性规则逐字保留，不得在搬迁中"顺手收紧或放宽"：读用 `is_public = 1 OR creator = ?`，写用 `creator = ?`（`selectOwnedById` 是停止面的写门禁）。启停面的既有缺口登记为 F13，本发布不修。
 - 不新增依赖版本；`pagehelper-spring-boot-starter:2.1.0`（带对 `mybatis-spring-boot-starter` 的 exclusion，照 `harnax-admin/pom.xml:52-62`）是 scheduler 唯一新增依赖。
-- 旧库 `harnax_admin` 的四张表**本发布不 DROP**（DROP 脚本另存，运维签认后才执行）。
+- 旧库 `harnax_admin` 的三张业务表与 11 张 `QRTZ_*`：**本发布不迁一行，因此也不留观察期**——切口后没有任何活着的读者，DROP 是切口的一步（`docs/deploy-harnax-scheduler.md`「发布 2 切口」第 8 步）。仓库**不合入**迁移脚本也不合入 DROP 脚本：前者被用户的"无历史数据"决定取消，后者由运维就地执行，不由代码替运维定时间。
 - 本机有全局 `mvn`（`/Users/heqingsong/software/apache-maven-3.9.12/bin/mvn`），需 `export JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home`；改完必 `mvn -q spotless:apply`；mvn 输出重定向到文件再 `echo $?`（管道进 tail 会吞退出码）。
 - **本机无 Docker**：Testcontainers IT 只写不跑，且必须继续被 surefire 排除；提交信息里不得出现"IT 全绿"。
 - 单模块编译若报兄弟模块符号缺失：`mvn -o install -pl harnax-common,harnax-auth,harnax-entity,harnax-protocol -DskipTests` 本地装一次，不为此改 pom。
@@ -405,41 +405,46 @@ git commit -m "refactor(调度): admin 的定时任务域退化为鉴权与带�
 
 ---
 
-### Task 9: 数据源切换、一次性迁移与切口顺序
+### Task 9: 数据源切换与切口顺序
 
 **Files:**
-- Modify: `harnax-scheduler/src/main/resources/application.yml`（datasource 默认库）、`docker-new/docker-compose.yml`
-- Create: `docker-new/sql/release-2-agent-task-migration.sql`、`docker-new/sql/release-2-drop-legacy-tables.sql`
-- Modify: `docs/deploy-harnax-scheduler.md`（新增「发布 2 切口」章）、`prod_doc/agent-task-scheduler.zh-CN.md`（发布公告）
+- Modify: `harnax-scheduler/src/main/resources/application.yml`（datasource 默认库 + 三处注释）、`docker-new/docker-compose.yml`（scheduler 段的 `SCHEDULER_DB_URL` 与 Flyway 注释）、`docker-new/.env.example`、`docker-new/sql/init-databases.sql`、`docker-new/roll-scheduler.sh` 与 `deploy-service.sh`（回读改指新库）
+- ~~Create: `docker-new/sql/release-2-agent-task-migration.sql`、`docker-new/sql/release-2-drop-legacy-tables.sql`~~ — **两个脚本都不写**（理由见 Step 2）
+- Modify: `docs/deploy-harnax-scheduler.md`（新增「发布 2 切口」章）
 
-- [ ] **Step 1**：datasource 默认改 `harnax_scheduler`；compose 侧用**独立的** `SCHEDULER_DB_URL`（不能复用四个服务共享的 `DB_URL`，否则一改变动带错三个服务）。
-- [ ] **Step 2**：迁移脚本 = 幂等守卫（目标表已有行则跳过并打印原因）+ `INSERT INTO harnax_scheduler.agent_task SELECT * FROM harnax_admin.agent_task`（**连 `active=0` 一起搬**：可见性读 `active`，丢了软删行会让 `uk_name` 仍然占用却查不到占用者）+ 末尾一条自校验 SELECT（`copied_rows / live_rows_old / total_rows_old / max_id_new`）。不是 Flyway 迁移：跑两遍不无害，而数据副本不该进 schema 台账。
-- [ ] **Step 3：切口顺序（文档一等公民，逐步可照敲）**
-  1. 发布公告 + 冻结写入；**admin 与 scheduler 必须同时下线**（C1 双向不兼容：旧 scheduler 的三段 id 新 admin 会拒，新 scheduler 的四段 id 旧 admin 会解析错）。
-  2. 排空在途：`SELECT COUNT(*) FROM harnax_admin.agent_task_log WHERE status IN (3,4)` 必须为 0。**理由必须写进文档**：跨切口活着的执行永远无法定态——它的日志行在旧库，切口后 scheduler 只在 `harnax_scheduler` 找它，`finishExecution`/`markStopping`/`expireStale` 全部 0 行，那一行停在 3 且再没有回收扫描看得见。
-  3. 停两副本 + admin（窗口内堆积的 cron 按 misfire 处理，`concurrent=0` 是 `DoNothing` → **被跳过而不是延后跑**，公告要这么写）。
-  4. 起新 scheduler（Flyway 建 V1+V2）→ 5. 跑迁移并核对四个数字 → 6. 触发一次对账，核 `scheduledTaskCount` == 新库里 `task_status=1 AND active=1` 的行数 → 7. 起新 admin + 三客户端主链路各一遍 → 8. 起第二副本，核 `QRTZ_SCHEDULER_STATE` 两个 `INSTANCE_NAME` 的 `LAST_CHECKIN_TIME` 在 15s 前进（**别数行数**，发布 1 已记：优雅停机的节点不删自己那行）。
-- [ ] **Step 4：回滚**：`SCHEDULER_DB_URL` 指回 `harnax_admin` + `SCHEDULER_FLYWAY_ENABLED=false`（旧库 V2 未应用，开着会去改旧库列宽）+ 起旧版 admin。**分界线要写死**：切口后任何人改过任务定义，回滚就不再干净，得手工把 `harnax_scheduler.agent_task` 的新行搬回去；窗口内新产生的执行日志分属两库，无合并路径（D8 的代价）。
-- [ ] **Step 5：发布公告四条**（历史空 + 最近运行列空、错过的 cron 被跳过、sessionId 形态变更影响外部存储方、admin HTTP 契约不变客户端无需升级）。
-- [ ] **Step 6**：校验 + Commit `feat(部署): 调度数据源切 harnax_scheduler，含一次性迁移脚本与切口顺序`。
+- [x] **Step 1**：datasource 默认改 `harnax_scheduler`；compose 侧用**独立的** `SCHEDULER_DB_URL`（不能复用 admin / agent-service / channel-service 共享的 `DB_URL`，否则一改变动带错三个服务）。同时把 `application.yml` 与 compose 里"发布 1 还留在 harnax_admin / 发布 2 才搬"的注释改成现在时，并把 Flyway 那段"本服务的迁移目前落在 harnax_admin"改掉——切完之后 `harnax_scheduler` 从头到尾归这一个 Flyway（V1 + V2 一张历史表）。
+- [x] ~~**Step 2**：迁移脚本 = 幂等守卫 + `INSERT ... SELECT` + 末尾自校验 SELECT。~~ **整步取消**：用户确认无历史数据，D8 的迁移随之作废，所以没有 `INSERT ... SELECT`、没有幂等守卫、没有自校验查询、没有"历史变空 / 最近运行列变空"的公告（没有历史可失去），旧库三张表切口后**直接 DROP，不留观察期**。任务由用户在界面重建。**唯一保留的 schema 事实**：`agent_task_log` 仍必须在新库建出来——`AgentTaskMapper.xml` 的 `selectTaskList` 自联它取 `lastRunStatus`/`lastRunTime`，**缺表是列表页 500，不是某一列空着**。
+- [x] **Step 3：切口顺序**（正文 `docs/deploy-harnax-scheduler.md` 的「发布 2 切口」，逐步可照敲）。**不能分两批的两条理由，都与数据无关**：① C4 之后 scheduler 拒收未签名的 HTTP，旧 admin 的转发一律 401，且两边 `HARNAX_AUTH_SECRET` 必须同值（compose 一个变量喂两个服务，手工部署是唯一能配歪的地方）；② C1 的四段 sessionId 旧 admin 读不懂、三段 id 新 admin 直接拒，**任何新旧混跑的组合都不成立**。落到操作上就是"停 admin + 全部 scheduler 副本 → 起一个新副本（Flyway 建表）→ 核表与一轮对账（被调度任务数应为 0）→ 起 admin + 三客户端各一遍 → 起第二副本核 `QRTZ_SCHEDULER_STATE` 两个 `INSTANCE_NAME` 的 `LAST_CHECKIN_TIME`（别数行数）→ 用户重建任务 → DROP 旧表"。窗口内堆积的 cron 走 `DoNothing`，**被跳过而不是延后跑**。
+- [x] **Step 4：回滚**：`SCHEDULER_DB_URL` 指回 `harnax_admin` + `QUARTZ_JOB_STORE=memory` + `SCHEDULER_FLYWAY_ENABLED=false`（开着它会拿 V2 去碰旧库那张历史表），并明确接受**切口后新建/改过的任务只留在新库、不跟着回来**（没有合并路径）。另需写清：只把 URL 指回去**不等于回到发布 1 的行为**，C4/C1 都在代码里，要退就得连镜像一起退。
+- [x] **Step 5：发布公告四条**（任务需重建、错过的 cron 被跳过、sessionId 形态变更影响外部存储方、admin HTTP 契约不变客户端无需升级）。原第五条"历史日志清空"**随迁移一起取消**。
+- [x] **Step 6**：校验（`grep -rn "harnax_admin" harnax-scheduler/src/main/resources docker-new/docker-compose.yml docker-new/.env.example` 的每一处命中都必须是在谈**旧库**或回滚，不得有现在时描述 scheduler 数据位置）+ Commit `feat(部署): 调度数据源切至 harnax_scheduler`。
 
 ---
 
 ### Task 10: 文档、状态与三条新登记
 
-- [ ] **Step 1**：spec §9 追加 **F13**（启停/触发面无写侧属主门禁：`updateStatus` 无 creator 条件、`/trigger` 无任何门禁）、**F14**（`uk_name` 与软删互斥：`deleteById` 只置 `active=0` 且 `name` 上有全局唯一键，故已删任务名永久不可复用，而 `selectByName` 带 `active=1` 会判"可用"，最终 INSERT 撞键以 500 收场）、**F14**（C1 之后 admin 无法做 spec 原定的 agentId 交叉校验；热路径上 spec 装配现在**信任**字符串里的 agentId，可达集合从"有任务的 agent"扩大到"任意 agent"，仍需内部调用方身份——不粉饰，F3-A 的归属扩展才是正解）。
-- [ ] **Step 2**：spec §7 S3 行改状态，表下补 **修正 D**（域搬迁与数据源切换同切口；C1 双向不兼容 ⇒ 两服务同时下线，这是本改造唯一不能滚动做的部分）；§5 的 C1/C4/C5 行标完成；§11 第 6 条基线 24 → 19/4 文件并补"另 7 个 admin 文件 import 这三个类型"。
-- [ ] **Step 3**：`docs/deploy-harnax-scheduler.md` 的「认证边界」（`HARNAX_AUTH_SECRET` 现在必须与 admin 同值）、「数据源」表（新库、`SCHEDULER_DB_URL`）、「与 MCP 用户身份的关系」（改走 C5 端点 + 三条运维后果）三节改到与代码一致；`docs/agent-task-design.md` 的 admin 拥有 Quartz 的段落纠正。
-- [ ] **Step 4**：Commit `docs(调度): S3 完成状态、切口顺序与 F13-F15 登记`。
+- [x] **Step 1**：spec §9 追加三条（**本 brief 原文把第三条也写成了"F14"，落地时按 F15 编号**），每条都先对着**当前代码**核过再写、并带 `file:line`：
+    - **F13** 启停/触发面无写侧属主门禁：`AgentTaskMapper.xml:106-107` 的 `updateStatus` 无 `creator` 条件（同文件 `:64`/`:67-69` 都有），`harnax-scheduler/.../controller/AgentTaskController.kt:177`/`:181`/`:185` 三条端点直接 `relay`——对比 `:148-156`（`toggle` 先 `requireVisibleTask`）与 `:199-201`（`stop` 先 `requireOwnedLog`）；admin 侧 `:149`/`:153`/`:157` 同样原样转发。
+    - **F14** `uk_name` 与软删互斥：`V2__agent_task_domain.sql:53`（全局唯一、不含 `active`）+ `AgentTaskMapper.xml:67-69`（`deleteById` 只置 `active=0`）+ `:98-99`（`selectByName` 带 `active=1`）⇒ `AgentTaskCrudServiceImpl.kt:74-76`/`:123-125` 的预检查答"可用"，最终 INSERT 撞键，`AgentTaskController.kt:99-101` 包成 code 500（`harnax-common/.../dto/ResultVo.kt:49`）。
+    - **F15** C1 之后 admin 无法交叉校验 agentId：`InternalApiController.kt:369-373` **信任**字符串里的 agentId，可达集合从"有任务的 agent"扩大到"任意 agent"（仍需内部调用方身份 + F3-B 的前缀规则），不粉饰，F3-A 的归属扩展才是正解。
+- [x] **Step 2**：spec §7 S3 行标完成 + 范围注（D8 的迁移被用户决定取消），表下补 **修正 D**（域搬迁与数据源切换同切口；C1/C4 双向不兼容 ⇒ 两服务同时下线，这是本改造唯一不能滚动做的部分）；§5 的 C1/C4/C5 行改成落地形态（C5 实际多回一个 `agentId`、C4 覆盖读面是那次有意偏离）；§11 第 6 条基线 24 → **19 处 / 4 文件**并补"另 7 个 admin 文件 import 这三个类型"，同时写明**现在两条 grep 都实测零命中**。顺带对齐 §1 的 D8 行、§6.1 的库归属、§8 的 IT 执行状态与 §10 整节（改为"迁移取消"）。
+- [x] **Step 3**：`docs/deploy-harnax-scheduler.md`（环境依赖表、「数据源」表含 `SCHEDULER_DB_URL`、集群回读 SQL 改指新库、「认证边界」、新增「发布 2 切口」）、「与 MCP 用户身份的关系」一节改到 C5 之后的事实；`docs/deploy-harnax-admin.md`（定时任务域已是转发器：路径与业务码不变、四张表零 SQL、现在发身份头；`HARNAX_AUTH_SECRET` 变双向）；`docs/agent-task-design.md`（架构节不再把 Quartz/`AgentTaskJob`/`agent_task` 写侧画在 admin，「一、数据模型」标为已被 `V2__agent_task_domain.sql` 取代）；`prod_doc/agent-task-scheduler.zh-CN.md`（§1 结论、§2.1、§3.1 职责边界、§4.1、§6.1/6.3、§8.1/8.2 暴露面、§9 回读、§10.4、§11 M1-M5、§12、§13 三条新增、§14 切口与发布公告）。
+- [x] **Step 4**：Commit `docs(调度): 发布 2 完成状态、切口说明与 F13-F15 登记`。
+
+**一处与 Task 4 报告的偏离（备查）**：`AgentTaskOwner` 最终住在 **`com.agnetix.harnax.common.dto`**（`harnax-common/src/main/kotlin/com/agnetix/harnax/common/dto/AgentTaskOwner.kt`），不是 Task 4 报告当时写的 `harnax-entity/.../entity/dto`——Task 8 清空 `harnax-entity` 时把它与 `TaskSessionId`（`harnax-common/.../session/`）一起挪进了 common。包名末段恰好同名（`.dto`），所以这条特别容易读漏。
+
+**基线的逐文件拆分订正（同一轮核对出来的）**：Step 2 把总数量成 19/4 个文件之后，spec §7 S3 行、spec §11.6 与 `prod_doc` §11 的括号里仍留着 `12 / 5 / 4 / 3` 这份拆分——**这四个数相加正好是 24**，等于把要订正的旧基线又抄了一遍。按发布 2 动代码之前的树（`97323d1`）用 `git grep -o` 重数是 **`AgentTaskServiceImpl` 13、`AgentTaskLogServiceImpl` 2、`InternalApiController` 2（`:51` 声明 + `:363` 一次 `selectAnyById`）、`McpSessionOwnerResolver` 2（`:26` + `:63`）＝19**，三处已同步；那句"含 290 与 713 两处 `selectAnyById`"也随之删掉（基线上只有 `:363` 一处）。
+
+**超出 brief 文件清单的一处改动**：`docs/superpowers/plans/2026-09-14-scheduler-jdbc-cluster.md`（发布 1 的计划）文档步第 6 条还写着"观察一个完整 cron 周期后 `harnax_admin.QRTZ_*` 才能 DROP"，第 2 条的集群回读还指着 `harnax_admin`——这一版什么都不迁，观察期与那个库名一起作废。没有改写它的历史正文，只在原句后加了一条【发布 2 已作废】注并指向「发布 2 切口」。
 
 ---
 
 ## 发布 2 的验收标准
 
-1. `mvn -o clean test -Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**,!com.agnetix.harnax.channel.service.it.**' -Dsurefire.failIfNoSpecifiedTests=false > verify-r2.log 2>&1; echo EXIT=$?` → **0**（交付机自验）。
-2. `grep -rn "agentTaskMapper\|agentTaskLogMapper\|AgentTaskExecution" harnax-admin/src/main` → **零命中**（spec §11.6）；`grep -rn "AgentTask\|agent_task" harnax-entity/src` → **零命中**。
-3. 有 Docker 的机器：`mvn -o -pl harnax-scheduler verify -Pintegration-test` → 发布 1 的 IT-1/IT-2/IT-5 + 本发布新增 IT-3、`AgentTaskMapperSemanticsIT` 全绿。**本机从未执行，任何记录里不得出现"IT 全绿"。**
-4. 切口后数据校验：`SELECT (SELECT COUNT(*) FROM harnax_scheduler.agent_task) = (SELECT COUNT(*) FROM harnax_admin.agent_task) AS copied_ok, (SELECT COUNT(*) FROM harnax_scheduler.agent_task WHERE task_status=1 AND active=1) AS scheduled_expected;` → `copied_ok=1` 且 `scheduled_expected` == `GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`；`harnax_scheduler.agent_task_log` 行数为 0（**预期，不是事故**）。
+1. `mvn -o clean test -Dtest='!com.agnetix.harnax.mapper.**,!com.agnetix.harnax.admin.it.**,!com.agnetix.harnax.channel.service.it.**' -Dsurefire.failIfNoSpecifiedTests=false > verify-r2.log 2>&1; echo EXIT=$?` → **0**（交付机自验）。**Task 10 收尾时又跑了一次全量 reactor：BUILD SUCCESS，26 个模块，`harnax-admin` 1811 例、`harnax-scheduler` 262 例。**
+2. `grep -rn "agentTaskMapper\|agentTaskLogMapper\|AgentTaskExecution" harnax-admin/src/main` → **零命中**（spec §11.6）；`grep -rn "AgentTask\|agent_task" harnax-entity/src` → **零命中**。**两条都已在 Task 10 这次实测为零**（不是推断）。
+3. 有 Docker 的机器：`mvn -o -pl harnax-scheduler verify -Pintegration-test` → 发布 1 的 IT-1/IT-2/IT-5 + 本发布新增的 **IT-3（`AgentTaskOwnerScopeIT`）与 `AgentTaskMapperSemanticsIT`** 全绿。**本机从未执行，任何记录里不得出现"IT 全绿"。**（IT-4 仍未编写，属发布 3 的欠账。）
+4. ~~切口后数据校验 `copied_ok`~~ → **随迁移取消而作废**（没有任何行搬过去，等式两边一个是新库一个是旧库，比对没有意义）。切口后真正要核的是 schema 与收敛，按 `docs/deploy-harnax-scheduler.md`「发布 2 切口」第 3-4 步：`harnax_scheduler` 里有三张 `agent_task*` + 11 张 `QRTZ_*` + `flyway_schema_history_scheduler` 的两行；`GET /api/scheduler/tasks/status` 的 `scheduledTaskCount`（或 `/actuator/health` 的 `scheduledJobCount`）为 **0**——空库的正确答案就是 0，非 0 说明连的还是旧库；**`agent_task_log` 这张表必须存在**，哪怕 0 行：`selectTaskList` 自联它，缺表是列表页 500 而不是某一列空着。
 5. 未签名的 `/api/scheduler/**` 一律 401；带 admin 一枚真实内部 JWT 的同一调用 200。
 6. 三客户端契约：抓一次 `/api/admin/agent-tasks/page` 响应，`data` 仍是 7 键、`records[*]` 仍是 18 键且 `lastRunStatus` **键存在**（值可为 null）；webui 列表/创建/编辑/启停/删除/立即执行/日志轮询、CLI `task list|get|create|trigger|stop`、小程序任务页各跑一遍。
 7. **C5 回归单列**（spec §11.7）：绑定 OAuth MCP 的 agent 被定时任务调用时仍解析出正确 `sys_user.id` 与 `tenantId`；再故意停掉 scheduler 跑一次，确认任务本身仍完成、只有该 OAuth 工具不可用、admin 日志是 WARN 而非静默 debug。

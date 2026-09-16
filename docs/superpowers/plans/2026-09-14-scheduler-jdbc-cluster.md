@@ -1804,6 +1804,7 @@ git commit -m "test(调度): 集成测试脚手架与集群单触发/对账收�
 4. **禁止**再用 `deploy-service.sh` 的 `--force-recreate` 路径（已改为 `roll-scheduler.sh`）；
 5. 宿主机 NTP 时钟偏差必须 < 1s；
 6. 观察一个完整 cron 周期后，`harnax_admin.QRTZ_*` 才能在 S3 之后 DROP（S3 之前它们是活的）。
+   **【发布 2 已作废这一条与第 2 条里的库名】** 数据源、`QRTZ_*` 与集群回读自发布 2 起都在 `harnax_scheduler`，而这一版一行都不迁（用户确认无历史数据），所以 `harnax_admin` 那批表在切口后**直接 DROP、不留观察期**。逐步正文：`docs/deploy-harnax-scheduler.md`「发布 2 切口」。
 
 - [ ] **Step 3: Commit**
 

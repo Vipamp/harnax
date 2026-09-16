@@ -511,6 +511,8 @@ DEALLOCATE PREPARE stmt;
 
 `PrivilegedSessionPrefixesTest.kt` 的 `ADMIN_RESOLVED_BUT_NOT_REFUSED = listOf("chn-")`（`:166`）改为 `emptyList()`，并把 `PrivilegedSessionPrefixes.kt` 里"admin's `/sessions/{id}/info` reads only the `session` table, so it answers Unknown"那两段（`:31-39`）改为事实：`chn-` 的归属现在由 admin 从 `channel` 表回答，因此跨租户的 `chn-` 读会被既有租户比较拒绝；`task-` 仍是"前缀规则 + 归属待发布 2 补"。
 
+> **发布 2 已落地，这条"待"只兑现了一半（记录在此，别让它继续读起来像待办）**：C5 的 owner 端点确实存在了（`harnax-scheduler/.../controller/AgentTaskOwnerController.kt:48-58`，答 `creator` / `tenantId` / `agentId`），所以"这个 task 归属谁"有了数据来源——但它现在只有 admin 的 MCP 属主解析这条**冷路径**在调，router 侧对 `task-` 的判定**仍然只是前缀规则**，热路径上没有那次归属查询。另一半更要紧：C1 之后 admin 读不到 `agent_task`，spec §5 C1 原定的"比对 sessionId 的 agentId 与该行 `agent_id`"从此**不可执行**，可达集合从"有任务的 agent"扩大到"任意 agent"（仍需内部调用方身份）。这一整块残留登记在 **spec §9 F15**，归 F3-A 的归属扩展收口，不属于本计划。
+
 ```bash
 $MVN -o -pl harnax-session-router test > f3b.log 2>&1; echo EXIT=$?; grep -E "Tests run:.*(Fail|Err)|BUILD" f3b.log | tail -3
 ```

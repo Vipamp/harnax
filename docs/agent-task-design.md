@@ -15,7 +15,7 @@
 ## 整体架构
 
 ```
-harnax-scheduler 服务（独立进程，端口 8084，Quartz + AgentTaskJob）
+harnax-scheduler 服务（独立进程，端口 8084，Quartz + 定时任务域本身：实体 / mapper / CRUD / 日志都在 `com.agnetix.harnax.scheduler.*`，库是它自有的 `harnax_scheduler`）
   │   既定形态两个实例，共用一个 Quartz JDBC 集群 store（11 张 QRTZ_* 表是唯一调度真相）：
   │   一次触发全集群只投递一次、只由一个节点执行，一台死了另一台接管
   │
@@ -25,7 +25,8 @@ harnax-scheduler 服务（独立进程，端口 8084，Quartz + AgentTaskJob）
   │    │       靠 agent_task_execution 的 uk_task_trigger(task_id, trigger_time) 唯一键，抢不到就放弃
   │    │
   │    ├─ 1. 写入运行中的执行日志行（`agent_task_log` status=3），并定下本次的 sessionId
-  │    │       `task-{taskId}-{uuid}`——scheduler 不再显式建会话，Agent 配置由 router 侧按这个 id 解析
+  │    │       `task-{taskId}-{agentId}-{uuid}`（契约 C1）——scheduler 不再显式建会话，Agent 配置由 router 侧按这个 id 解析；
+  │    │       这个形态的生成与解析只有一个出处：`com.agnetix.harnax.common.session.TaskSessionId`
   │    │
   │    ├─ 2. 通过 RestClient 调用 Router（同一发调用里等执行结束）
   │    │       POST {routerUrl}/api/router/agent/chat
@@ -36,17 +37,22 @@ harnax-scheduler 服务（独立进程，端口 8084，Quartz + AgentTaskJob）
   │    │
   │    └─ 4. 清理会话：DELETE {routerUrl}/api/router/agent/session/{sessionId}（自带更短的读超时上限）
   │
-  └─ 对 admin 暴露内部 HTTP 面（/reload、/tasks/{id}/start|pause|trigger|run-once、/tasks/logs/{id}/stop）
+  └─ 对 admin 暴露内部 HTTP 面（/reload、/tasks/{id}/start|pause|trigger|run-once、/tasks/logs/{id}/stop，
+      以及发布 2 起的 /api/scheduler/agent-tasks/** 11 条 CRUD 与日志端点 + `/agent-tasks/{id}/owner`（C5））
+      ——`/api/scheduler/**` 全部要带一枚 internal JWT（C4），读面也在内，缺凭证一律 401
 
 harnax-admin 服务
   │   只做「校验用户 JWT + 带身份转发」：/api/admin/agent-tasks/** 的契约与前端不变，
-  │   调度相关的调用一律转发到 http://scheduler:8084（HARNAX_SCHEDULER_URL，容器网络，不发布宿主端口）；
-  │   写完 agent_task 之后在事务提交后转发一次 /reload（共享 store 之后广播已无意义）
+  │   11 条调用（CRUD、启停、触发、停止、日志）一律转发到 http://scheduler:8084（HARNAX_SCHEDULER_URL，
+  │   容器网络，不发布宿主端口），每一发带 internal JWT + X-Forwarded-User + X-Tenant-Id（C4）；
+  │   本服务对 agent_task / agent_task_log / agent_task_execution / QRTZ_* 零 SQL——
+  │   「写完 agent_task 之后在事务提交后转发一次 /reload」这件事现在也在 scheduler 内部做（广播早已随共享 store 删除）；
+  │   只有 /agents 仍是 admin 自己的域（agent 表在它手上）
   │
   └─ 前端管理页面（创建/编辑/启停/查看日志）
 ```
 
-> **这份文档的时效**：上面的架构图与下面「一、数据模型」是当前形态；「二、后端模块结构」「三、核心实现」两段是本功能最初放在 admin 里时的草图，其中 `harnax-admin/.../job/AgentTaskJob.kt` 这个路径已不存在（job 类现在在 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/`，拆成 `AbstractAgentTaskJob` + `AgentTaskJob`/`AgentTaskNonConcurrentJob`），「六、配置文件变更」里的 `agent-task.*` 键同理已随进程一起搬到 scheduler。这三段保留作设计推理的备查，读的时候按历史看待；调度侧的配置项与部署约束以 `docs/deploy-harnax-scheduler.md` 为准，链路与决策以 `prod_doc/agent-task-scheduler.zh-CN.md` 与 `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md` 为准。
+> **这份文档的时效**：上面的架构图是当前形态。**「一、数据模型」不再是真相源**——那两段 DDL 是最初的设计草图，现在活着的定义在 `harnax-scheduler/src/main/resources/db/migration/V2__agent_task_domain.sql`（库是 scheduler 自有的 `harnax_scheduler`）：`agent_task_log.session_id` 因契约 C1 已从 `VARCHAR(64)` 变 `VARCHAR(128)`，`agent_task_execution` 则已把发布 1 补的两条清扫索引（`(status, create_time)` 与 `(create_time)`）内联进建表。「二、后端模块结构」「三、核心实现」两段是本功能最初放在 admin 里时的草图，其中 `harnax-admin/.../job/AgentTaskJob.kt` 这个路径已不存在（job 类现在在 `harnax-scheduler/src/main/kotlin/com/agnetix/harnax/scheduler/job/`，拆成 `AbstractAgentTaskJob` + `AgentTaskJob`/`AgentTaskNonConcurrentJob`），「六、配置文件变更」里的 `agent-task.*` 键同理已随进程一起搬到 scheduler。这四段保留作设计推理的备查，读的时候按历史看待；「四、API 设计」那张表**仍是有效的对客户端契约**（发布 2 搬迁后路径与方法一字未改，只是背后从"admin 查库"变成"admin 转发"；表已按 `harnax-admin/.../controller/AgentTaskController.kt` 补齐为真实的 12 条）；「五、前端设计」是**最初那版布局草图，已不是现状**——页面实际形态看 `harnax-webui/src/pages/agent-task/index.tsx`（一张任务表 + 独立的 `components/TaskLogModal` 日志弹窗，不是这里写的"左列表 / 右日志"）。调度侧的配置项与部署约束以 `docs/deploy-harnax-scheduler.md` 为准，链路与决策以 `prod_doc/agent-task-scheduler.zh-CN.md` 与 `docs/superpowers/specs/2026-09-11-scheduler-cluster-design.md` 为准。
 
 ## 一、数据模型
 
@@ -233,11 +239,15 @@ fun createForAgent(agentId: Long, creator: String): Session {
 | `POST` | `/api/admin/agent-tasks` | 创建 |
 | `PUT` | `/api/admin/agent-tasks/{id}` | 更新 |
 | `DELETE` | `/api/admin/agent-tasks/{id}` | 删除 |
+| `POST` | `/api/admin/agent-tasks/toggle/{id}?status=` | 启用/停用（webui 任务页改状态走的就是这一条；上面的 `{id}/start` 与 `{id}/pause` 有服务层封装但那个页面不调它们，两者都在契约里） |
 | `POST` | `/api/admin/agent-tasks/{id}/start` | 启动 |
 | `POST` | `/api/admin/agent-tasks/{id}/pause` | 暂停 |
-| `POST` | `/api/admin/agent-tasks/{id}/run` | 立即执行一次 |
+| `POST` | `/api/admin/agent-tasks/{id}/trigger` | 立即执行一次（**admin 侧从来没有 `/run` 这个路径**，最早那版草图写错了） |
+| `POST` | `/api/admin/agent-tasks/logs/{logId}/stop` | 停止一次运行中的执行 |
 | `GET` | `/api/admin/agent-tasks/{id}/logs` | 执行日志 |
 | `GET` | `/api/admin/agent-tasks/agents` | 可选 Agent 列表 |
+
+共 12 条。发布 2 之后，除 `/agents` 之外全部是本服务转发到 scheduler 的同一个路径（`docs/deploy-harnax-admin.md` 的「定时任务域在本服务里已经只剩转发」），本文件不再重复转发细节。
 
 ## 五、前端设计
 
