@@ -2,7 +2,8 @@ import { useIntl, useModel } from '@umijs/max';
 import { Steps, Form, Input, Button, message, Select, Switch, Alert } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
-import { getMcpServerList, getSkillRepositoryList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
+import { getMcpServerList, getSkillListByRepository, getModelList } from '@/services/ant-design-pro/agent';
+import { getSkillSourceOptions } from '@/services/ant-design-pro/skillSource';
 import { getAvailableTools } from '@/services/ant-design-pro/tool';
 import { getEnvVariableList } from '@/services/ant-design-pro/envVariable';
 import { getCliPage } from '@/services/ant-design-pro/cli';
@@ -12,7 +13,7 @@ import { FormModal } from '@/components/FormModal';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import ToolConfigPanel, { ToolConfigState, EnvVarOption } from './ToolConfigPanel';
 import McpConfigPanel, { McpConfigState } from './McpConfigPanel';
-import { findMissingRequiredEnvParam } from './envBinding';
+import { findConfigIssue, describeConfigIssue } from './configValidation';
 import SkillConfigPanel, { SkillConfigState } from './SkillConfigPanel';
 import CliConfigPanel from './CliConfigPanel';
 
@@ -89,7 +90,7 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
 
   const loadRepositories = async () => {
     try {
-      const res = await getSkillRepositoryList({ pageNum: 1, pageSize: 100, status: 1 });
+      const res = await getSkillSourceOptions({ status: 1 });
       // 内置 CLI 仓库的技能只能通过 CLI 关联，不允许 agent 直接绑定
       setRepositories((res.data?.records || []).filter((repo: any) => repo.name !== BUILTIN_CLI_SKILL_REPO));
     } catch (error) { console.error('加载技能仓库列表失败', error); }
@@ -127,41 +128,12 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
   };
 
 
-  const validateConfigStep = (): boolean => {
-    if (currentStep === 1) {
-      for (const c of toolConfigs) {
-        if (!c.toolId && (!c.envBindings || c.envBindings.length === 0)) continue;
-        if (!c.toolId) {
-          message.error(intl.formatMessage({ id: 'pages.agent.tool.notSelected', defaultMessage: 'Please select a tool or remove the empty row' }));
-          return false;
-        }
-        const missing = findMissingRequiredEnvParam(c.envEntries, c.envBindings, false);
-        if (missing) {
-          message.error(intl.formatMessage({ id: 'pages.agent.tool.envRequired', defaultMessage: 'Required env param is empty: ' }) + missing);
-          return false;
-        }
-      }
-    } else if (currentStep === 2) {
-      for (const c of mcpConfigs) {
-        if (!c.mcpId && (!c.envBindings || c.envBindings.length === 0)) continue;
-        if (!c.mcpId) {
-          message.error(intl.formatMessage({ id: 'pages.agent.mcp.notSelected', defaultMessage: 'Please select an MCP service or remove the empty row' }));
-          return false;
-        }
-        const missing = findMissingRequiredEnvParam(c.envEntries, c.envBindings, true);
-        if (missing) {
-          message.error(intl.formatMessage({ id: 'pages.agent.mcp.envRequired', defaultMessage: 'Required env param is empty: ' }) + missing);
-          return false;
-        }
-      }
-    } else if (currentStep === 3) {
-      for (const c of skillConfigs) {
-        if (!c.repositoryId && !c.skillId) continue;
-        if (!c.skillId) {
-          message.error(intl.formatMessage({ id: 'pages.agent.skill.notSelected', defaultMessage: 'Please select a skill or remove the empty row' }));
-          return false;
-        }
-      }
+  // 三类的规则抽在 configValidation.ts，与 UpdateForm 共用同一份
+  const validateConfigStep = (step: number | 'all' = currentStep): boolean => {
+    const issue = findConfigIssue(step, { toolConfigs, mcpConfigs, skillConfigs });
+    if (issue) {
+      message.error(describeConfigIssue(issue, intl.formatMessage));
+      return false;
     }
     return true;
   };
@@ -172,6 +144,8 @@ const CreateForm: React.FC<CreateFormProps> = ({ visible, onCancel, onSubmit }) 
         await form.validateFields(['name', 'description', 'systemPrompt', 'modelId']);
       } else if (currentStep === 4) {
         if (submitting) return;
+        // 三类配置一起提交，只挡住「下一步」时校验过的那一步等于把另两类的报错留给后端
+        if (!validateConfigStep('all')) return;
         const { name, description, systemPrompt, modelId } = await form.validateFields([
           'name', 'description', 'systemPrompt', 'modelId',
         ]);

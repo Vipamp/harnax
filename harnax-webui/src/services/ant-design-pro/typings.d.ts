@@ -221,6 +221,13 @@ declare namespace API {
     creator?: string;
     createTime?: string;
     updateTime?: string;
+    /** 上次同步结论，从未同步过为空。对应后端 SkillSyncRecorder 的四种状态 */
+    lastSyncStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'EMPTY';
+    lastSyncTime?: string;
+    /** 上次同步报告原文：saved / installed / updated / failed / flagged / stale / error */
+    lastSyncDetail?: SkillSyncDetail;
+    /** 仓库下仍处于启用态的技能数，删源要求它为 0。/skill-sources/active 不带这个数 */
+    enabledSkillCount?: number;
   };
 
   type SkillRepositoryCreateRequest = {
@@ -260,15 +267,6 @@ declare namespace API {
     branch?: string;
   };
 
-  type SkillSourceUpdateRequest = {
-    name?: string;
-    sourceConfig?: Record<string, any>;
-    version?: string;
-    description?: string;
-    url?: string;
-    branch?: string;
-  };
-
   type SkillSourceItem = {
     id: number;
     name: string;
@@ -283,6 +281,10 @@ declare namespace API {
     creator?: string;
     createTime?: string;
     updateTime?: string;
+    lastSyncStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'EMPTY';
+    lastSyncTime?: string;
+    lastSyncDetail?: SkillSyncDetail;
+    enabledSkillCount?: number;
   };
 
   // 技能相关类型
@@ -296,6 +298,8 @@ declare namespace API {
     skillmd?: string;
     resources?: string;
     status: number;
+    /** 绑定该技能的 agent 数。被绑定的技能既不能停用也不能删除（后端同一条规则） */
+    boundAgentCount?: number;
     createTime?: string;
     updateTime?: string;
   };
@@ -324,6 +328,8 @@ declare namespace API {
     sessionDescription?: string;
     sessionId?: string;
     agentId?: number;
+    /** 非空表示这是一个团队会话，产物面板据此出现 */
+    teamId?: number;
     name?: string;
     description?: string;
     systemPrompt?: string;
@@ -369,7 +375,6 @@ declare namespace API {
     toolDisplayName?: string;
     toolDisplayNameZh?: string;
     toolDescription?: string;
-    toolType?: string;
     needConfirm?: boolean;
     envBindings?: EnvBinding[];
   };
@@ -395,6 +400,70 @@ declare namespace API {
     title: string;
     sessionDescription?: string;
     agentId: number;
+    /** 团队会话：主管由团队决定，agentId 仍要带上主管 agent 以通过后端校验 */
+    teamId?: number;
+  };
+
+  // 团队相关类型（对应 admin 的 TeamResponse / TeamCreateRequest）
+  type TeamMemberItem = {
+    agentId: number;
+    agentName?: string;
+    agentDescription?: string;
+    delegationDescription?: string;
+    agentStatus?: number;
+    /** 引用已失效（agent 被删或停用）时为 false */
+    agentAvailable?: boolean;
+  };
+
+  type TeamItem = {
+    id: number;
+    name: string;
+    description?: string;
+    leadAgentId?: number;
+    leadAgentName?: string;
+    leadAgentDescription?: string;
+    instructions?: string;
+    memberList?: TeamMemberItem[];
+    status?: number;
+    isPublic?: number;
+    tenantId?: number;
+    creator?: string;
+    createTime?: string;
+    updateTime?: string;
+  };
+
+  type TeamMemberRequest = {
+    agentId: number;
+    delegationDescription?: string;
+  };
+
+  type TeamCreateRequest = {
+    name: string;
+    description?: string;
+    leadAgentId: number;
+    instructions?: string;
+    members: TeamMemberRequest[];
+    status?: number;
+    isPublic?: number;
+  };
+
+  type TeamUpdateRequest = {
+    name?: string;
+    description?: string;
+    leadAgentId?: number;
+    instructions?: string;
+    /** 非空即整体替换现有成员 */
+    members?: TeamMemberRequest[];
+    isPublic?: number;
+  };
+
+  type TeamArtifactItem = {
+    fileId: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+    memberAgentId: number;
+    createTime: string;
   };
 
   // Channel 相关类型

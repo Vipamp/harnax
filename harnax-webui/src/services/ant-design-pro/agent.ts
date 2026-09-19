@@ -116,28 +116,6 @@ export async function getMcpServerList(
 }
 
 /**
- * 获取技能仓库列表(用于下拉选择)
- */
-export async function getSkillRepositoryList(
-  params?: {
-    pageNum?: number;
-    pageSize?: number;
-    status?: number;
-  },
-  options?: { [key: string]: any },
-) {
-  return request(`/api/admin/skill-sources/page`, {
-    method: 'GET',
-    params: {
-      pageNum: 1,
-      pageSize: 100,
-      ...params,
-    },
-    ...(options || {}),
-  });
-}
-
-/**
  * 根据仓库 ID 获取技能列表
  */
 export async function getSkillListByRepository(

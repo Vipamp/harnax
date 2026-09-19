@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { PageContainer } from '@ant-design/pro-components';
-import { Button, Card, List, Typography, Empty, Spin, message } from 'antd';
-import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { Button, Card, List, Typography, Empty, Spin, message, Tag } from 'antd';
+import { PlusOutlined, BulbOutlined, CloudServerOutlined, ArrowLeftOutlined, TeamOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { getSessionPage, deleteSession } from '@/services/ant-design-pro/session';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
 import SettingsModal from './components/SettingsModal';
 import DetailModal from './components/DetailModal';
 import ChatWindow from './components/ChatWindow';
 import WorkspaceDrawer from './components/WorkspaceDrawer';
+import TeamArtifactsDrawer from './components/TeamArtifactsDrawer';
 import DeleteButton from '@/components/DeleteButton';
 import DetailButton from '@/components/DetailButton';
 import { useIsMobile } from '@/utils/responsive';
@@ -27,6 +28,7 @@ const SessionPage: React.FC = () => {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [detailSession, setDetailSession] = useState<API.SessionItem | null>(null);
   const [workspaceDrawerVisible, setWorkspaceDrawerVisible] = useState(false);
+  const [artifactsDrawerVisible, setArtifactsDrawerVisible] = useState(false);
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
 
@@ -197,12 +199,19 @@ const SessionPage: React.FC = () => {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                      <Text 
-                        ellipsis 
-                        style={{ flex: 1, fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
-                      >
-                        {session.title}
-                      </Text>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                        {session.teamId && (
+                          <Tag color="blue" style={{ margin: 0, flexShrink: 0 }} icon={<TeamOutlined />}>
+                            {intl.formatMessage({ id: 'pages.session.teamTag', defaultMessage: 'Team' })}
+                          </Tag>
+                        )}
+                        <Text
+                          ellipsis
+                          style={{ fontWeight: selectedSession?.id === session.id ? 600 : 400, fontSize: isMobile ? 15 : 14 }}
+                        >
+                          {session.title}
+                        </Text>
+                      </div>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <DetailButton onClick={() => handleViewDetail(session)} />
                         <DeleteButton onConfirm={() => handleDeleteSession(session.id)} />
@@ -284,6 +293,16 @@ const SessionPage: React.FC = () => {
                 >
                   {isMobile ? '' : 'Workspace'}
                 </Button>
+                {selectedSession.teamId && (
+                  <Button
+                    type="text"
+                    icon={<FolderOpenOutlined />}
+                    size="small"
+                    onClick={() => setArtifactsDrawerVisible(true)}
+                  >
+                    {isMobile ? '' : intl.formatMessage({ id: 'pages.session.artifacts.entry', defaultMessage: 'Artifacts' })}
+                  </Button>
+                )}
               </div>
               
               {/* 聊天窗口 */}
@@ -335,6 +354,13 @@ const SessionPage: React.FC = () => {
         visible={workspaceDrawerVisible}
         sessionId={selectedSession?.sessionId}
         onClose={() => setWorkspaceDrawerVisible(false)}
+      />
+
+      {/* 团队成员产物 */}
+      <TeamArtifactsDrawer
+        visible={artifactsDrawerVisible}
+        sessionId={selectedSession?.sessionId}
+        onClose={() => setArtifactsDrawerVisible(false)}
       />
     </PageContainer>
   );

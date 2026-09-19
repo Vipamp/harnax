@@ -39,7 +39,6 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
 }) => {
   const intl = useIntl();
 
-  // Group tools by type for OptGroup display
   const toolOptionsFor = (index: number) => {
     // 同一个工具选两次没有意义：后端 `distinctBy { it.toolId }` 只保留第一条，
     // 第二行填的环境变量覆盖值会静默丢掉。只挡别的行，本行自己已选的要留着，否则标题会渲染成裸 id。
@@ -48,22 +47,8 @@ const ToolConfigPanel: React.FC<ToolConfigPanelProps> = ({
     );
     const label = (tool: any) =>
       (locale?.startsWith('zh') ? (tool.displayNameZh?.trim() || tool.displayName || tool.name) : (tool.displayName || tool.name));
-    const groups: { label: string; options: { label: string; value: number }[] }[] = [];
-    const builtinTools = selectable.filter((t: any) => t.type === 'BUILTIN');
-    const customTools = selectable.filter((t: any) => t.type !== 'BUILTIN');
-    if (builtinTools.length > 0) {
-      groups.push({
-        label: intl.formatMessage({ id: 'pages.agent.tool.groupBuiltin', defaultMessage: 'Built-in Tools' }),
-        options: builtinTools.map((tool: any) => ({ label: label(tool), value: tool.id })),
-      });
-    }
-    if (customTools.length > 0) {
-      groups.push({
-        label: intl.formatMessage({ id: 'pages.agent.tool.groupCustom', defaultMessage: 'Custom Tools' }),
-        options: customTools.map((tool: any) => ({ label: label(tool), value: tool.id })),
-      });
-    }
-    return groups;
+    // 工具现在只剩内置一种来源，不再按类型分组
+    return selectable.map((tool: any) => ({ label: label(tool), value: tool.id }));
   };
 
   const handleToolConfigChange = (index: number, field: string, value: any) => {

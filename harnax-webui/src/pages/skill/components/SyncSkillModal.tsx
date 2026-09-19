@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Table, Tag, Button, message, Checkbox } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { batchSaveSkills } from '@/services/ant-design-pro/skill';
+import { installSkillSource } from '@/services/ant-design-pro/skillSource';
 import { describeSkillInstall, showSkillInstallFeedback } from '@/utils/skillInstall';
 import { useIntl } from '@umijs/max';
 import { SyncOutlined } from '@ant-design/icons';
@@ -75,14 +75,12 @@ const SyncSkillModal: React.FC<SyncSkillModalProps> = ({
       const skillNames = selectedSkillsList.map((skill) => skill.name!);
       // 返回的是安装结果而不是勾选数量：源里已删除、内容为空、写库异常都会让
       // 部分技能没能落库，拿勾选数报「已保存 N 个」就是谎报
-      const response = await batchSaveSkills(repositoryId, skillNames);
+      const response = await installSkillSource(repositoryId, skillNames);
       const feedback = describeSkillInstall(response.data, intl.formatMessage);
       showSkillInstallFeedback(feedback);
-      // 全部失败时库里没有任何变化。关掉弹窗会让 6 秒后消失的失败明细无处可查，
-      // 用户也没法改选重试，所以只在有东西落库时才收起
-      if (feedback.level !== 'error') {
-        onSuccess();
-      }
+      // 一律收起并刷新：这次结论（含全挂）已经写进仓库行，行上的徽标和「明细」比一条
+      // 6 秒就消失的 toast 更适合承载它。留在原地不刷新，反而会拿上一次的结论展示这次的结果
+      onSuccess();
     } catch {
       // 请求失败时全局 errorHandler 已经弹出后端的具体原因，这里再弹一次会重复提示
     } finally {

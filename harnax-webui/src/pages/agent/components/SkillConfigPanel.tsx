@@ -60,6 +60,11 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
 
   const addSkillConfig = () => setSkillConfigs([...skillConfigs, {}]);
 
+  // 别的行已经选过的技能不再列出：一次请求里同一条技能加两遍没有意义，
+  // 后端 distinct 之后也只留一条绑定。本行自己已选的要留着，否则 labelInValue 会渲染成裸 id。
+  const skillOptionsFor = (index: number) =>
+    skills.filter((skill) => !skillConfigs.some((other, otherIndex) => otherIndex !== index && other.skillId === skill.id));
+
   const removeSkillConfig = (index: number) => {
     if (skillConfigs.length === 1) return;
     setSkillConfigs(skillConfigs.filter((_, i) => i !== index));
@@ -131,7 +136,7 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
                   </div>
                 );
               }}
-              options={skills.map(skill => ({ label: skill.name, value: skill.id, ...skill }))}
+              options={skillOptionsFor(index).map(skill => ({ label: skill.name, value: skill.id, ...skill }))}
             />
           </div>
         </Space>

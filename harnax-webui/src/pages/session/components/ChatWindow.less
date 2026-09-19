@@ -237,6 +237,11 @@
   box-shadow: 0 2px 8px rgba(var(--vip-primary-rgb), 0.25);
 }
 
+.avatarMember {
+  background: linear-gradient(135deg, var(--vip-info), var(--vip-primary-hover));
+  box-shadow: 0 2px 8px rgba(var(--vip-primary-rgb), 0.18);
+}
+
 /* 气泡 */
 .messageBubble {
   max-width: 78%;
@@ -267,6 +272,137 @@
   padding: 12px 16px;
   border-radius: 18px 18px 18px 4px;
   box-shadow: var(--glass-shadow);
+}
+
+/* 团队成员气泡：与主管同形，用左侧色带标明这是被委派的运行 */
+.bubbleMember {
+  border-left: 3px solid var(--vip-info);
+  border-radius: 4px 18px 18px 4px;
+}
+
+/* 成员气泡头即折叠开关：一行摘要说清是谁在跑、跑到哪、跑了多久 */
+.memberHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.memberName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vip-info);
+  flex-shrink: 0;
+}
+
+.memberTag {
+  margin: 0;
+  font-size: 11px;
+  line-height: 18px;
+  flex-shrink: 0;
+}
+
+.memberStatus {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+}
+
+.memberStatusRunning {
+  color: var(--vip-info);
+  background: rgba(var(--vip-primary-rgb), 0.12);
+}
+
+.memberStatusAwaiting {
+  color: var(--vip-warning);
+  background: rgba(var(--vip-warning-rgb), 0.14);
+}
+
+.memberStatusDone {
+  color: var(--vip-success);
+  background: rgba(var(--vip-success-rgb), 0.14);
+}
+
+.memberStatusFailed {
+  color: var(--vip-error);
+  background: rgba(var(--vip-error-rgb), 0.14);
+}
+
+.memberSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.memberTask {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--vip-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.memberMeta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--vip-text-tertiary);
+}
+
+.memberFoldIcon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--vip-text-tertiary);
+}
+
+/* 卡内的成员运行：折叠归工具卡管，这里只留一条摘要和正文的归属线 */
+.nestedMember {
+  margin-top: 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--vip-info);
+
+  &:first-child {
+    margin-top: 0;
+  }
+
+  .mergedToolCard {
+    margin: 6px 0;
+  }
+}
+
+.nestedMemberHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+/* 主管气泡：团队会话里也标明说话的是谁，与成员气泡同一层级 */
+.leadHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.leadName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vip-primary);
 }
 
 .timestamp {
@@ -1636,7 +1772,7 @@
     }
     
     // 展开时添加底部边框
-    .mergedToolCard:has(> .mergedToolArgs, > .mergedToolResult) & {
+    .mergedToolCard:has(> .mergedToolArgs, > .mergedToolNested, > .mergedToolResult) & {
       border-bottom-color: var(--vip-border);
     }
   }
@@ -1669,6 +1805,17 @@
     opacity: 0.9;
   }
   
+  /* 委派卡上的成员名：折叠时也要看得出这张卡给了谁 */
+  .mergedToolHint {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    color: var(--vip-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
   .mergedToolArrow {
     display: flex;
     align-items: center;
@@ -1684,7 +1831,8 @@
   }
   
   .mergedToolArgs,
-  .mergedToolResult {
+  .mergedToolResult,
+  .mergedToolNested {
     padding: 12px 16px;
     background: var(--vip-bg-elevated);
     animation: slideDown 0.3s ease;

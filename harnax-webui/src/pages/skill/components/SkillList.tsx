@@ -81,19 +81,40 @@ const SkillList: React.FC<SkillListProps> = ({ repositoryId, filters, onRefresh,
       title: intl.formatMessage({ id: 'pages.skill.list.status', defaultMessage: 'Status' }),
       key: 'status',
       width: 120,
-      render: (_, record) =>
-        readOnly ? (
-          record.status === 1 ? (
+      render: (_, record) => {
+        if (readOnly) {
+          return record.status === 1 ? (
             <Tag color="green">{intl.formatMessage({ id: 'pages.common.enabled', defaultMessage: 'Enabled' })}</Tag>
           ) : (
             <Tag>{intl.formatMessage({ id: 'pages.common.disabled', defaultMessage: 'Disabled' })}</Tag>
-          )
-        ) : (
-          <StatusSwitch
-            status={record.status}
-            onChange={(newStatus) => handleToggle(record.id, newStatus)}
-          />
-        ),
+          );
+        }
+        // 停用一个还被 agent 绑着的技能等于把那段上下文从 agent 身上撕下来，
+        // 后端两个状态写入口都拒绝，这里事前就把它挡住。反向（重新启用）不设限。
+        const bound = record.boundAgentCount ?? 0;
+        if (bound > 0 && record.status === 1) {
+          return (
+            <Tooltip
+              title={intl.formatMessage(
+                {
+                  id: 'pages.skill.list.boundBlocked',
+                  defaultMessage: 'Bound to {count} agent(s). Unbind them before disabling this skill',
+                },
+                { count: bound },
+              )}
+            >
+              <span style={{ display: 'inline-block' }}>
+                <StatusSwitch
+                  status={record.status}
+                  onChange={(newStatus) => handleToggle(record.id, newStatus)}
+                  disabled
+                />
+              </span>
+            </Tooltip>
+          );
+        }
+        return <StatusSwitch status={record.status} onChange={(newStatus) => handleToggle(record.id, newStatus)} />;
+      },
     },
   ];
 

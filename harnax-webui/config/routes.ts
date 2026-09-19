@@ -40,6 +40,12 @@ export default [
         component: './agent',
       },
       {
+        name: 'team',
+        icon: 'team',
+        path: '/agent/team',
+        component: './team',
+      },
+      {
         name: 'session',
         path: '/agent/session',
         component: './session',

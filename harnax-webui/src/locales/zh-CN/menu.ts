@@ -62,6 +62,7 @@ export default {
   // 智能体
   'menu.agent': '智能体',
   'menu.agent.management': '智能体管理',
+  'menu.agent.team': '多智能体团队',
   'menu.agent.session': '会话',
   'menu.agent.task': '定时任务',
   

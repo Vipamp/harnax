@@ -115,6 +115,14 @@ const SkillManagement: React.FC = () => {
     loadRepositories();
   };
 
+  /**
+   * 装完技能后刷新：右侧技能列表要重拉，左侧仓库行上的「上次同步」结论和启用技能数也变了。
+   */
+  const handleContentRefresh = () => {
+    setSkillListKey((prev) => prev + 1);
+    loadRepositories();
+  };
+
   // 同步仓库：先拉远端技能清单，再由弹窗勾选落库
   const handleSyncRepository = async (repository: API.SkillRepositoryItem) => {
     setSyncingRepository(repository);
@@ -148,8 +156,7 @@ const SkillManagement: React.FC = () => {
     setSyncModalVisible(false);
     setRemoteSkills([]);
     setSyncingRepository(null);
-    // 刷新技能列表
-    setSkillListKey((prev) => prev + 1);
+    handleContentRefresh();
   };
 
   // 关闭同步弹窗
@@ -202,7 +209,7 @@ const SkillManagement: React.FC = () => {
                   onToggle={handleRepositoryToggle}
                   onDelete={handleRepositoryChange}
                   onSync={handleSyncRepository}
-                  onInstalled={() => setSkillListKey((prev) => prev + 1)}
+                  onInstalled={handleContentRefresh}
                 />
               )}
             </Spin>

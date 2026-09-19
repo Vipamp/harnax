@@ -4,7 +4,7 @@ import { useIntl } from '@umijs/max';
 import { CodeOutlined } from '@ant-design/icons';
 import { FormModal } from '@/components/FormModal';
 import { getSkillPage } from '@/services/ant-design-pro/skill';
-import { getSkillRepositoryList } from '@/services/ant-design-pro/agent';
+import { getSkillSourceOptions } from '@/services/ant-design-pro/skillSource';
 import { BUILTIN_CLI_SKILL_REPO } from '@/constants/builtinRepository';
 import ToolEnvEntriesEditor from '@/pages/tool/components/ToolEnvEntriesEditor';
 
@@ -45,7 +45,7 @@ const CliForm: React.FC<CliFormProps> = ({ visible, values, onCancel, onSubmit }
 
   const loadSkills = async () => {
     try {
-      const repoRes = await getSkillRepositoryList({ pageNum: 1, pageSize: 100 });
+      const repoRes = await getSkillSourceOptions();
       const builtinRepo = (repoRes.data?.records || []).find((r: any) => r.name === BUILTIN_CLI_SKILL_REPO);
       if (!builtinRepo) {
         setSkills([]);

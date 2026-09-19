@@ -361,6 +361,27 @@ message?: string;
     creator?: string;
     createTime?: string;
     updateTime?: string;
+    /** 上次同步结论，从未同步过为空。对应后端 SkillSyncRecorder 的四种状态 */
+    lastSyncStatus?: 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'EMPTY';
+    lastSyncTime?: string;
+    /** 上次同步报告原文：saved / installed / updated / failed / flagged / stale / error */
+    lastSyncDetail?: SkillSyncDetail;
+    /** 仓库下仍处于启用态的技能数，删源要求它为 0。/skill-sources/active 不带这个数 */
+    enabledSkillCount?: number;
+  };
+
+  /**
+   * @zh-CN 上次同步报告（对应后端 last_sync_detail 列）
+   */
+  export type SkillSyncDetail = {
+    saved?: number;
+    installed?: string[];
+    updated?: string[];
+    failed?: { name: string; reason: string }[];
+    flagged?: { name: string; reasons?: string[] }[];
+    stale?: string[];
+    /** 整源失败原因与「源里没有技能」的原因共用一个字段 */
+    error?: string;
   };
 
   /**
@@ -431,6 +452,8 @@ message?: string;
     skillmd?: string;
     resources?: string;
     status: number;
+    /** 绑定该技能的 agent 数。被绑定的技能既不能停用也不能删除（后端同一条规则） */
+    boundAgentCount?: number;
     isPublic?: number;
     creator?: string;
     createTime?: string;
@@ -492,8 +515,15 @@ message?: string;
   export type SkillInstallResult = {
     installed?: string[];
     updated?: string[];
-    failed?: { name: string; reason?: string }[];
+    /** 后端保证原因恒有值，界面直接渲染即可 */
+    failed?: { name: string; reason: string }[];
     flagged?: { name: string; reasons?: string[] }[];
+    /** 整源没跑通（拉取失败等），此时一条技能都没存 */
+    sourceError?: string;
+    /** 源本身读到了，但里面没有可安装的技能 */
+    emptyReason?: string;
+    /** 库里还留着、源里已经消失的技能。只报告，不会自动删除 */
+    stale?: string[];
     savedCount?: number;
     failedCount?: number;
     complete?: boolean;
@@ -542,7 +572,6 @@ message?: string;
     toolDisplayName?: string;
     toolDisplayNameZh?: string;
     toolDescription?: string;
-    toolType?: string;
     needConfirm?: boolean;
     envBindings?: EnvBinding[];
   };

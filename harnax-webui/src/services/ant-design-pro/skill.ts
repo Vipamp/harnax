@@ -80,20 +80,3 @@ export async function deleteSkill(skillId: number, options?: { [key: string]: an
     ...(options || {}),
   });
 }
-
-/** 批量保存技能(同步用)POST /api/skills/batch */
-export async function batchSaveSkills(
-  repositoryId: number,
-  data: string[],
-  options?: { [key: string]: any },
-) {
-  return request('/api/admin/skills/batch', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    params: { repositoryId },
-    data: data,
-    ...(options || {}),
-  });
-}

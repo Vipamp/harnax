@@ -4,6 +4,7 @@ import { Modal, Checkbox, Tag, Typography, Empty, Spin, message } from 'antd';
 import { SyncOutlined } from '@ant-design/icons';
 import { getAgentRelatedSessions, refreshAgentSessions } from '@/services/ant-design-pro/agent';
 import { getCliRelatedSessions } from '@/services/ant-design-pro/cli';
+import { getTeamRelatedSessions } from '@/services/ant-design-pro/team';
 
 const { Text } = Typography;
 
@@ -17,11 +18,11 @@ interface RelatedSession {
 
 interface AgentRefreshModalProps {
   visible: boolean;
-  /** 触发来源：保存 agent 后（默认），或修改 CLI 后 */
-  source?: 'agent' | 'cli';
-  /** source=agent 时为 agentId，source=cli 时为 cliId */
+  /** 触发来源：保存 agent 后（默认）、修改 CLI 后，或修改团队后 */
+  source?: 'agent' | 'cli' | 'team';
+  /** source=agent 时为 agentId，source=cli 时为 cliId，source=team 时为 teamId */
   agentId?: number;
-  /** 展示用名称（agent 名或 CLI 名） */
+  /** 展示用名称（agent 名、CLI 名或团队名） */
   agentName?: string;
   onClose: () => void;
 }
@@ -45,7 +46,12 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, source =
       setLoading(true);
       setSessions([]);
       setChecked([]);
-      const fetch = source === 'cli' ? getCliRelatedSessions(agentId) : getAgentRelatedSessions(agentId);
+      const fetch =
+        source === 'cli'
+          ? getCliRelatedSessions(agentId)
+          : source === 'team'
+            ? getTeamRelatedSessions(agentId)
+            : getAgentRelatedSessions(agentId);
       fetch
         .then((res) => {
           if (res.code === 200 && res.data) {
@@ -130,14 +136,23 @@ const AgentRefreshModal: React.FC<AgentRefreshModalProps> = ({ visible, source =
               },
               { name: agentName || '' },
             )
-          : intl.formatMessage(
-              {
-                id: 'pages.agent.refresh.hint',
-                defaultMessage:
-                  'Agent "{name}" was saved. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
-              },
-              { name: agentName || '' },
-            )}
+          : source === 'team'
+            ? intl.formatMessage(
+                {
+                  id: 'pages.team.refresh.hint',
+                  defaultMessage:
+                    'Team "{name}" was saved. Select the sessions to pick up the new lead and members immediately; unselected sessions do so within ~30 minutes.',
+                },
+                { name: agentName || '' },
+              )
+            : intl.formatMessage(
+                {
+                  id: 'pages.agent.refresh.hint',
+                  defaultMessage:
+                    'Agent "{name}" was saved. Select the sessions to apply the new configuration immediately; unselected sessions pick it up within ~30 minutes.',
+                },
+                { name: agentName || '' },
+              )}
       </Text>
       <div style={{ marginTop: 16, maxHeight: 320, overflowY: 'auto' }}>
         {loading ? (

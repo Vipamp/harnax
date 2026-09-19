@@ -21,6 +21,8 @@ export interface DeleteButtonProps {
   text?: string;
   /** 阻止事件冒泡 */
   stopPropagation?: boolean;
+  /** 不可删除时置灰，tooltip 说明原因（此时不再弹确认框） */
+  disabled?: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ const DeleteButton: React.FC<DeleteButtonProps> = ({
   showText = false,
   text,
   stopPropagation = true,
+  disabled = false,
 }) => {
   const intl = useIntl();
 
@@ -72,6 +75,31 @@ const DeleteButton: React.FC<DeleteButtonProps> = ({
     defaultMessage: '删除',
   });
 
+  const button = (
+    <Button
+      type="link"
+      size={size}
+      danger
+      disabled={disabled}
+      icon={<DeleteOutlined />}
+      onClick={(e) => {
+        if (stopPropagation) e.stopPropagation();
+      }}
+      style={{ padding: '4px' }}
+    >
+      {showText && buttonText}
+    </Button>
+  );
+
+  if (disabled) {
+    // 禁用态的 antd 按钮不响应 hover，不包一层的话「为什么不能删」永远显示不出来
+    return (
+      <Tooltip title={tooltipText}>
+        <span style={{ display: 'inline-block' }}>{button}</span>
+      </Tooltip>
+    );
+  }
+
   return (
     <Popconfirm
       title={confirmText}
@@ -81,20 +109,7 @@ const DeleteButton: React.FC<DeleteButtonProps> = ({
         }
       }}
     >
-      <Tooltip title={tooltipText}>
-        <Button
-          type="link"
-          size={size}
-          danger
-          icon={<DeleteOutlined />}
-          onClick={(e) => {
-            if (stopPropagation) e.stopPropagation();
-          }}
-          style={{ padding: '4px' }}
-        >
-          {showText && buttonText}
-        </Button>
-      </Tooltip>
+      <Tooltip title={tooltipText}>{button}</Tooltip>
     </Popconfirm>
   );
 };

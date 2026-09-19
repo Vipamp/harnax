@@ -82,6 +82,29 @@ export function describeSkillInstall(
     };
   }
 
+  // 整源失败与「源里没有技能」都不产 failed：前者一条技能都没读到，后者一条也没产出。
+  // 原因单独放在 sourceError / emptyReason 里，不接住就会把拉取失败说成「源里没有技能」，
+  // 那是两个不同的问题和两个不同的改法
+  if (install.sourceError) {
+    return {
+      level: 'error',
+      text: formatMessage(
+        { id: 'pages.skill.install.sourceError', defaultMessage: 'The source could not be read: {reason}' },
+        { reason: install.sourceError },
+      ),
+    };
+  }
+
+  if (install.emptyReason) {
+    return {
+      level: 'warning',
+      text: formatMessage(
+        { id: 'pages.skill.install.empty', defaultMessage: 'The source holds no installable skill: {reason}' },
+        { reason: install.emptyReason },
+      ),
+    };
+  }
+
   // 一个都没失败也一个都没存：源里就没有可装的技能（目录结构不对、SKILL.md 缺失等）。
   // 这里必须给警告而不是绿色的「已保存 0 个」，否则又会变成「提示成功、列表是空」。
   if (saved === 0) {

@@ -2,6 +2,7 @@ import { Form, Input, Button, message, Select, Switch } from 'antd';
 import React, { useState, useEffect } from 'react';
 // @ts-ignore
 import { getAgentPage } from '@/services/ant-design-pro/agent';
+import { getTeamPage } from '@/services/ant-design-pro/team';
 import { createSession, checkSessionTitle } from '@/services/ant-design-pro/session';
 // @ts-ignore
 import { useModel, useIntl } from '@umijs/max';
@@ -23,6 +24,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
   const { initialState } = useModel('@@initialState');
   const currentUser = initialState?.currentUser;
   const [agents, setAgents] = useState<API.AgentItem[]>([]);
+  const [teams, setTeams] = useState<API.TeamItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [titleChecking, setTitleChecking] = useState(false);
@@ -55,6 +57,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
   useEffect(() => {
     if (visible) {
       loadAgents();
+      loadTeams();
       form.resetFields();
       setIsPublic(false);
     }
@@ -73,13 +76,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
     }
   };
 
+  /** 团队会话由主管智能体编排成员，所以这里只是一个执行者选项的来源 */
+  const loadTeams = async () => {
+    try {
+      const res = await getTeamPage({ current: 1, size: 100, status: 1 });
+      setTeams(res.data?.records || []);
+    } catch (error) {
+      console.error('加载团队列表失败', error);
+    }
+  };
+
   const handleCreateSubmit = async () => {
     try {
-      const formValues = await form.validateFields(['title', 'agentId', 'sessionDescription']);
+      const formValues = await form.validateFields(['title', 'executor', 'sessionDescription']);
+      const [kind, rawId] = String(formValues.executor).split(':');
+      const id = Number(rawId);
+      const team = kind === 'team' ? teams.find((item) => item.id === id) : undefined;
       const createData: API.SessionCreateRequest = {
         title: formValues.title,
         sessionDescription: formValues.sessionDescription,
-        agentId: formValues.agentId,
+        // agentId 仍是必填：团队会话带上主管智能体，运行时以 admin 解析出的团队为准
+        agentId: team ? team.leadAgentId ?? 0 : id,
+        teamId: team?.id,
       };
       setLoading(true);
       const res = await createSession(createData);
@@ -158,19 +176,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
         </Form.Item>
 
         <Form.Item
-          label={intl.formatMessage({ id: 'pages.session.selectAgent', defaultMessage: 'Select Agent' })}
-          name="agentId"
+          label={intl.formatMessage({ id: 'pages.session.selectExecutor', defaultMessage: 'Agent / Team' })}
+          name="executor"
           rules={[{ required: true, message: intl.formatMessage({ id: 'pages.session.agentRequired', defaultMessage: "Please select agent" }) }]}
+          extra={intl.formatMessage({
+            id: 'pages.session.selectExecutorHint',
+            defaultMessage: 'A team conversation is led by the team lead agent, which delegates to its members',
+          })}
         >
           <Select
             placeholder={intl.formatMessage({ id: 'pages.session.selectAgentPlaceholder', defaultMessage: 'Please select agent' })}
             loading={loading}
             showSearch
             optionFilterProp="label"
-            options={agents.map(agent => ({
-              label: `${agent.name}${agent.description ? ` - ${agent.description}` : ''}`,
-              value: agent.id,
-            }))}
+            options={[
+              {
+                label: intl.formatMessage({ id: 'pages.session.executorGroupAgents', defaultMessage: 'Agents' }),
+                options: agents.map((agent) => ({
+                  label: `${agent.name}${agent.description ? ` - ${agent.description}` : ''}`,
+                  value: `agent:${agent.id}`,
+                })),
+              },
+              ...(teams.length > 0
+                ? [
+                    {
+                      label: intl.formatMessage({ id: 'pages.session.executorGroupTeams', defaultMessage: 'Teams' }),
+                      options: teams.map((team) => ({
+                        label: `${team.name}${team.leadAgentName ? ` - ${team.leadAgentName}` : ''}`,
+                        value: `team:${team.id}`,
+                      })),
+                    },
+                  ]
+                : []),
+            ]}
           />
         </Form.Item>
 

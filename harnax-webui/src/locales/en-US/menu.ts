@@ -62,6 +62,7 @@ export default {
   // Agent
   'menu.agent': 'Agent',
   'menu.agent.management': 'Agent Management',
+  'menu.agent.team': 'Agent Teams',
   'menu.agent.session': 'Session',
   'menu.agent.task': 'Scheduled Tasks',
   

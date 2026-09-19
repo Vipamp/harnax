@@ -265,16 +265,11 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                      <Tag color={tool.toolType === 'BUILTIN' ? 'blue' : tool.toolType === 'HTTP' ? 'purple' : 'cyan'}>
+                      <Tag color="blue">
                         {intl.locale?.startsWith('zh')
                           ? (tool.toolDisplayNameZh || tool.toolDisplayName || tool.toolName)
                           : (tool.toolDisplayName || tool.toolName)}
                       </Tag>
-                      {tool.toolType && (
-                        <Text type="secondary" style={{ fontSize: 12, marginLeft: 4 }}>
-                          {tool.toolType}
-                        </Text>
-                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {tool.needConfirm && (

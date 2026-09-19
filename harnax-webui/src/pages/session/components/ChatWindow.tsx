@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useIntl } from '@umijs/max';
 import { Input, Button, message, Modal, Table, Tag, Space, Upload, Popconfirm, Collapse, Spin, Dropdown } from 'antd';
 import {
@@ -34,6 +34,18 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { getSessionMessages, getSessionConfig } from '@/services/ant-design-pro/chat';
 import { getWorkspaceStatus } from '@/services/ant-design-pro/workspace';
+import {
+  TEAM_DELEGATE_TOOL,
+  claimDelegateCard,
+  delegatedTasksOf,
+  firstTaskLine,
+  formatRunDuration,
+  isRunOpen,
+  parseDelegateCall,
+  type MemberRunInfo,
+  type MemberRunStatus,
+  type TeamEventSource,
+} from './teamRun';
 import styles from './ChatWindow.less';
 
 const { TextArea } = Input;
@@ -52,6 +64,8 @@ interface MessageSegment {
   toolName?: string;
   toolId?: string;
   confirmStatus?: 'pending' | 'confirmed' | 'rejected';
+  /** 这次调用不会再有结果了：运行收口时它仍未收到工具结果 */
+  interrupted?: boolean;
   pendingCallTools?: PendingCallTool[];
   planData?: any; // 计划数据
   toolResult?: string; // 工具返回结果（合并显示时使用）
@@ -64,6 +78,29 @@ interface ChatMessage {
   segments: MessageSegment[];
   timestamp: number;
   imageUrls?: string[];
+  /** Set on a team member run; the lead's messages leave it undefined. */
+  teamSource?: TeamEventSource;
+  teamRun?: MemberRunInfo;
+  /**
+   * The lead's `team_delegate` card this run was delegated from, matched on both the live stream and
+   * the replay. The run renders inside that card; without one it stays a bubble of its own.
+   */
+  parentToolId?: string;
+}
+
+/**
+ * Streaming state of one member run. Members share the lead's SSE channel, so each `childRunId`
+ * needs its own segment list — writing into the lead's would be wiped by the lead's next flush.
+ */
+interface MemberRunState {
+  source: TeamEventSource;
+  segments: MessageSegment[];
+  toolIndex: Map<string, number>;
+  status: MemberRunStatus;
+  startedAt: number;
+  endedAt?: number;
+  task?: string;
+  parentToolId?: string;
 }
 
 interface ChatWindowProps {
@@ -255,11 +292,19 @@ const MergedToolCard: React.FC<{
   arguments: string;
   result?: string;
   confirmStatus?: 'pending' | 'confirmed' | 'rejected';
+  interrupted?: boolean;
+  /** Rendered in the card body: the member run this delegation is running. */
+  nested?: React.ReactNode;
+  /** Names the member this delegation card handed work to — the arguments only carry an id. */
+  hint?: string;
+  /** Keeps the card open while what it holds is still working; a click overrides it for good. */
+  busy?: boolean;
   onToggleResult?: () => void;
-}> = ({ toolName, arguments: args, result, confirmStatus, onToggleResult }) => {
+}> = ({ toolName, arguments: args, result, confirmStatus, interrupted, nested, hint, busy, onToggleResult }) => {
   const intl = useIntl();
-  const [expanded, setExpanded] = useState(false); // 默认折叠
+  const [manual, setManual] = useState<boolean | null>(null); // 默认折叠
   const hasResult = result !== undefined;
+  const expanded = manual ?? !!busy;
   
   // 根据确认状态显示不同的文本和颜色
   const statusConfig = {
@@ -268,12 +313,14 @@ const MergedToolCard: React.FC<{
     rejected: { text: intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }), color: 'var(--vip-error)', icon: <CloseOutlined /> },
     calling: { text: intl.formatMessage({ id: 'pages.session.toolStatus.calling', defaultMessage: 'Calling' }), color: 'var(--vip-primary)', icon: <ClockCircleOutlined spin /> },
     completed: { text: intl.formatMessage({ id: 'pages.session.toolStatus.completed', defaultMessage: 'Completed' }), color: 'var(--vip-success)', icon: <CheckCircleOutlined /> },
+    interrupted: { text: intl.formatMessage({ id: 'pages.session.toolStatus.interrupted', defaultMessage: 'Interrupted' }), color: 'var(--vip-warning)', icon: <ExclamationCircleOutlined /> },
   };
   
   let status = 'calling';
   if (confirmStatus === 'pending') status = 'pending';
   else if (confirmStatus === 'rejected') status = 'rejected';
   else if (confirmStatus === 'confirmed' && !hasResult) status = 'confirmed';
+  else if (interrupted && !hasResult) status = 'interrupted';
   else if (hasResult) status = 'completed';
   
   const currentStatus = statusConfig[status as keyof typeof statusConfig];
@@ -283,7 +330,7 @@ const MergedToolCard: React.FC<{
       {/* 工具调用头部 - 始终显示 */}
       <div 
         className={styles.mergedToolHeader}
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setManual(!expanded)}
         style={{ cursor: 'pointer' }}
       >
         <div className={styles.mergedToolTitle}>
@@ -293,6 +340,7 @@ const MergedToolCard: React.FC<{
             {currentStatus.icon}
             <span style={{ marginLeft: 4 }}>{currentStatus.text}</span>
           </span>
+          {hint && <span className={styles.mergedToolHint}>{hint}</span>}
         </div>
         <div className={styles.mergedToolArrow}>
           {expanded ? <UpOutlined /> : <DownOutlined />}
@@ -310,6 +358,16 @@ const MergedToolCard: React.FC<{
             </div>
           )}
           
+          {/* 委派出去的成员运行：跑在参数之后、结果之前 */}
+          {nested && (
+            <div className={styles.mergedToolNested}>
+              <div className={styles.mergedToolSectionLabel}>
+                {intl.formatMessage({ id: 'pages.session.memberRunsSection', defaultMessage: 'Member run' })}
+              </div>
+              {nested}
+            </div>
+          )}
+
           {/* 工具返回结果 */}
           {hasResult && (
             <div className={styles.mergedToolResult}>
@@ -358,9 +416,10 @@ const ToolCallCard: React.FC<{
 const ToolConfirmChatCard: React.FC<{
   pendingCallTools: PendingCallTool[];
   status: 'pending' | 'confirmed' | 'rejected';
-}> = ({ pendingCallTools, status }) => {
+  onAnswer?: (approved: boolean) => void;
+}> = ({ pendingCallTools, status, onAnswer }) => {
   const intl = useIntl();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!onAnswer);
   
   const statusText = status === 'confirmed' ? intl.formatMessage({ id: 'pages.session.confirmStatus.confirmed', defaultMessage: 'Confirmed' }) : status === 'rejected' ? intl.formatMessage({ id: 'pages.session.confirmStatus.rejected', defaultMessage: 'Rejected' }) : intl.formatMessage({ id: 'pages.session.confirmStatus.pending', defaultMessage: 'Pending' });
   const statusColor = status === 'confirmed' ? 'green' : status === 'rejected' ? 'red' : 'orange';
@@ -389,6 +448,16 @@ const ToolConfirmChatCard: React.FC<{
               </pre>
             </div>
           ))}
+          {onAnswer && status === 'pending' && (
+            <Space style={{ marginTop: 4 }}>
+              <Button danger size="small" onClick={() => onAnswer(false)}>
+                {intl.formatMessage({ id: 'pages.common.reject', defaultMessage: 'Reject' })}
+              </Button>
+              <Button type="primary" size="small" onClick={() => onAnswer(true)}>
+                {intl.formatMessage({ id: 'pages.session.allowExecution', defaultMessage: 'Allow Execution' })}
+              </Button>
+            </Space>
+          )}
         </div>
       )}
     </div>
@@ -533,6 +602,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   const planRefreshTimerRef = useRef<NodeJS.Timeout | null>(null); // 当前计划刷新定时器（2秒）
   const plansListTimerRef = useRef<NodeJS.Timeout | null>(null); // 历史计划刷新定时器（5秒）
   const planExitedRef = useRef<boolean>(false); // plan_exit 已触发标记，防止 finally 块重新加载
+  // 成员确认由流内的 doSend 处理，渲染层通过它回传决定（不阻塞主管的流）
+  const answerMemberConfirmRef = useRef<((childRunId: string, approved: boolean) => void) | null>(null);
+  /** 成员气泡的折叠覆盖：未记录时按「运行中展开、已结束折叠」自动决定 */
+  const [runExpandedOverride, setRunExpandedOverride] = useState<Record<string, boolean>>({});
+  /** 团队会话里主管气泡顶上的名字，取自会话绑定的智能体名 */
+  const [leadLabel, setLeadLabel] = useState<string | undefined>(undefined);
 
   const NEAR_BOTTOM_THRESHOLD = 120; // 距离底部多少像素内视为"接近底部"
 
@@ -611,6 +686,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
       setPlans([]);
       setShowPlanPanel(false);
       setCurrentPlan(null);
+      setRunExpandedOverride({});
+      setLeadLabel(undefined);
       currentPlanMessageIdRef.current = null; // 重置计划消息ID
       previousHasPlanRef.current = false; // 重置计划状态
       // 重置三个开关
@@ -623,6 +700,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     // 切换会话时重置计划卡片ID
     currentPlanMessageIdRef.current = null;
     previousHasPlanRef.current = false;
+    setRunExpandedOverride({});
+    setLeadLabel(undefined);
 
     const loadSessionData = async () => {
       try {
@@ -652,27 +731,48 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           }
           setModelSupportInternet(config.modelSupportInternet !== 0);
           setModelSupportVision(config.modelSupportVision !== 0);
+          setLeadLabel(config.teamId ? config.name || undefined : undefined);
         }
         
         // 加载历史消息
         if (messagesResponse.code === 200 && messagesResponse.data) {
           const logs: any[] = messagesResponse.data;
           const historyMessages: ChatMessage[] = [];
-          
+          // 成员任务只出现在主管的 team_delegate 调用里；按日志顺序扫，气泡取该成员最近一次委派的原文
+          const lastTaskByMember = new Map<number, string>();
+
           // 遍历所有日志，将同一个 AI 回复的所有 segment 合并到一个消息中
           let currentAssistantMsg: ChatMessage | null = null;
+          /** 气泡键 -> 成员气泡：一次委派一个气泡，与实时流的键一致 */
+          const memberBubbles = new Map<string, ChatMessage>();
+          /** 当前这段连续的同源成员日志属于哪个气泡：子会话会被多次委派复用，标识本身不区分委派 */
+          let memberBubbleKey: string | null = null;
+          /** 回放的历史不带 toolId，而成员运行要按 toolId 挂到主管的委派卡上，所以就地补一个 */
+          let replaySegSeq = 0;
+          /** 已被成员运行占用的委派卡：同一成员被委派两次时，靠它把两次分发到两张卡 */
+          const claimedDelegates = new Set<string>();
           let lastProcessedIndex = -1; // 记录最后处理的消息索引
-          
+
           for (let i = 0; i < logs.length; i++) {
             // 如果当前索引已经被处理过，跳过
             if (i <= lastProcessedIndex) continue;
-            
+
             const log = logs[i];
             const msgId = `${log.role.toLowerCase()}-${log.timestamp || Date.now()}-${i}`;
-            
+            const runId: string | undefined = log.source?.childRunId;
+            if (runId) {
+              const previous = i > 0 ? logs[i - 1] : null;
+              const continuesRun = previous?.source?.childRunId === runId;
+              memberBubbleKey = continuesRun ? memberBubbleKey : `${runId}#${i}`;
+            } else {
+              memberBubbleKey = null;
+            }
+
             if (log.role === 'USER') {
               // 用户消息：结束当前的 assistant 消息（如果有）
               currentAssistantMsg = null;
+              memberBubbles.clear();
+              memberBubbleKey = null;
               historyMessages.push({
                 id: msgId,
                 role: 'user' as const,
@@ -681,19 +781,56 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               });
               lastProcessedIndex = i;
             } else if (log.role === 'ASSISTANT') {
-              // 助手消息：创建或继续当前的 assistant 消息
-              if (!currentAssistantMsg) {
-                // 创建新的 assistant 消息
-                currentAssistantMsg = {
-                  id: msgId,
-                  role: 'assistant' as const,
-                  segments: [],
-                  timestamp: log.timestamp || Date.now(),
-                };
-                historyMessages.push(currentAssistantMsg);
+              // 主管这一轮派给谁的活，要先记下来——它自己的日志落库在前，成员日志排在之后
+              if (!runId) {
+                for (const call of delegatedTasksOf(log)) {
+                  lastTaskByMember.set(call.memberAgentId, call.task);
+                }
               }
-              
-              const segments = currentAssistantMsg.segments;
+              // 归属：带 childRunId 的是某一次委派里成员的输出，其余都是主管自己的
+              let target = runId && memberBubbleKey ? memberBubbles.get(memberBubbleKey) : currentAssistantMsg ?? undefined;
+              if (!target) {
+                const stamp = log.timestamp || Date.now();
+                if (runId && memberBubbleKey) {
+                  const source = log.source as TeamEventSource;
+                  target = {
+                    id: `member-${memberBubbleKey}`,
+                    role: 'assistant' as const,
+                    segments: [],
+                    timestamp: stamp,
+                    teamSource: source,
+                    teamRun: {
+                      status: 'done' as const,
+                      startedAt: stamp,
+                      endedAt: stamp,
+                      toolCount: 0,
+                      task: lastTaskByMember.get(source.memberAgentId),
+                    },
+                    // 挂到主管这一次委派的工具卡里；找不到对应的卡就仍然独立成气泡
+                    parentToolId: claimDelegateCard(
+                      currentAssistantMsg?.segments || [],
+                      source.memberAgentId,
+                      claimedDelegates,
+                    ),
+                  };
+                  memberBubbles.set(memberBubbleKey, target);
+                  // 与实时流同样的位置：主管这一轮要等成员跑完才收尾，所以气泡在它之上
+                  const leadIdx = currentAssistantMsg ? historyMessages.indexOf(currentAssistantMsg) : -1;
+                  if (leadIdx >= 0) historyMessages.splice(leadIdx, 0, target);
+                  else historyMessages.push(target);
+                } else {
+                  currentAssistantMsg = {
+                    id: msgId,
+                    role: 'assistant' as const,
+                    segments: [],
+                    timestamp: stamp,
+                  };
+                  target = currentAssistantMsg;
+                  historyMessages.push(target);
+                }
+              }
+
+              const segments = target.segments;
               
               // 添加思考过程（需要合并连续的思考）
               if (log.thinking) {
@@ -710,42 +847,48 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               
               // 添加工具调用日志
               if (log.toolUseLog && log.toolUseLog.length > 0) {
+                // 一轮可以有多个工具调用，结果按调用顺序紧跟在这条日志之后。先按来源收齐，
+                // 只配第一条的话其余调用会永远停在「调用中」。
+                const results: Array<{ log: any; used: boolean }> = [];
+                for (let j = i + 1; j < logs.length; j++) {
+                  const follow = logs[j];
+                  if (follow.role !== 'TOOL') break;
+                  if ((follow.source?.childRunId ?? '') !== (runId ?? '')) break;
+                  results.push({ log: follow, used: false });
+                }
                 // 遍历每个工具调用
                 for (const tool of log.toolUseLog) {
                   const toolName = tool.name;
-                  
+
                   // 如果没有工具名称，跳过
                   if (!toolName) {
                     continue;
                   }
-                  
+
                   // 过滤掉计划相关的工具
                   if (isPlanRelatedTool(toolName)) {
                     continue;
                   }
-                  
+
                   // 创建工具调用 segment
                   const toolSeg: MessageSegment = {
                     type: 'tool_call',
                     content: JSON.stringify(tool.input || {}, null, 2),
                     toolName: toolName,
+                    toolId: `${msgId}-t${replaySegSeq++}`,
                   };
-                  
-                  // 检查下一条消息是否是对应的工具结果
-                  // 工具结果通常紧跟在助手消息之后
-                  if (i + 1 < logs.length && logs[i + 1].role === 'TOOL') {
-                    const toolResultLog = logs[i + 1];
-                    // 匹配工具名称（如果有的话）
-                    if (!toolResultLog.name || toolResultLog.name === tool.name) {
-                      // 过滤掉计划相关的工具结果
-                      if (!isPlanRelatedTool(toolName)) {
-                        // 将工具结果合并到工具调用中
-                        toolSeg.toolResult = toolResultLog.result || '';
-                      }
-                      lastProcessedIndex = i + 1; // 标记下一条已处理
-                    }
+
+                  const matched = results.find(
+                    (r) => !r.used && (!r.log.name || r.log.name === toolName),
+                  );
+                  if (matched) {
+                    matched.used = true;
+                    toolSeg.toolResult = matched.log.result || '';
+                  } else {
+                    // 这条调用没等到任何结果日志：那一轮是被打断的，不能一直显示在调用中
+                    toolSeg.interrupted = true;
                   }
-                  
+
                   segments.push(toolSeg);
                 }
               }
@@ -754,7 +897,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               if (log.text) {
                 segments.push({ type: 'text', content: log.text });
               }
-              
+
+              // 回放没有实时生命周期事件，气泡摘要的时间与工具数从它自己的日志算
+              if (runId && target.teamRun) {
+                target.teamRun.toolCount = segments.filter((seg) => seg.type === 'tool_call').length;
+                target.teamRun.endedAt = Math.max(target.teamRun.endedAt || 0, log.timestamp || 0);
+              }
+
               lastProcessedIndex = i;
             } else if (log.role === 'TOOL') {
               // 过滤掉计划相关的工具结果
@@ -950,6 +1099,252 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     const abortController = new AbortController();
     abortRef.current = abortController;
 
+    /* ─── 团队成员运行：与主管共用一条 SSE 流，按 childRunId 各自成气泡 ─── */
+    const memberRuns = new Map<string, MemberRunState>();
+    /** 主管的 team_delegate：toolId -> 被委派的成员，其结果事件就是该成员运行的结束信号 */
+    const delegateTargets = new Map<string, number>();
+    /** 成员 id -> 委派任务，来自主管的 team_delegate 参数，成员自己的事件里不带 */
+    const taskByMember = new Map<number, string>();
+    /** 成员 id -> 还没被任何运行认领的委派卡。委派是阻塞的，同一成员先发出的调用先跑 */
+    const openDelegateCards = new Map<number, string[]>();
+
+    const runInfo = (run: MemberRunState): MemberRunInfo => ({
+      status: run.status,
+      startedAt: run.startedAt,
+      endedAt: run.endedAt,
+      toolCount: run.segments.filter((seg) => seg.type === 'tool_call').length,
+      task: run.task,
+    });
+
+    const paintMemberRun = (runId: string, run: MemberRunState) => {
+      const id = `member-${runId}`;
+      const info = runInfo(run);
+      const idx = currentMsgs.findIndex((m) => m.id === id);
+      currentMsgs = [...currentMsgs];
+      if (idx >= 0) {
+        currentMsgs[idx] = { ...currentMsgs[idx], segments: [...run.segments], teamRun: info };
+      } else {
+        const memberMessage: ChatMessage = {
+          id,
+          role: 'assistant',
+          segments: [...run.segments],
+          timestamp: run.startedAt,
+          teamSource: run.source,
+          teamRun: info,
+          parentToolId: run.parentToolId,
+        };
+        // 插在主管气泡之前：主管这一轮要等成员跑完才收尾，时间线上它排在成员后面
+        const leadIdx = currentMsgs.findIndex((m) => m.id === currentAssistantMessageId);
+        if (leadIdx >= 0) currentMsgs.splice(leadIdx, 0, memberMessage);
+        else currentMsgs.push(memberMessage);
+      }
+      setMessages(currentMsgs);
+    };
+
+    /** 运行收口后，仍未收到结果的工具卡片不会再有结果：停在「已中断」而不是一直转圈。 */
+    const markOpenToolCards = (segments: MessageSegment[]): MessageSegment[] =>
+      segments.map((seg) =>
+        seg.type === 'tool_call' && seg.toolResult === undefined && seg.confirmStatus === undefined
+          ? { ...seg, interrupted: true }
+          : seg,
+      );
+
+    /** 关掉某成员当前仍在进行的运行。成员的下线事件在服务端被过滤，只能由主管的委派结果判定。 */
+    const closeMemberRun = (memberAgentId: number, succeeded: boolean) => {
+      for (const [runId, run] of memberRuns) {
+        if (run.source.memberAgentId === memberAgentId && isRunOpen(run.status)) {
+          run.status = succeeded ? 'done' : 'failed';
+          run.segments = markOpenToolCards(run.segments);
+          run.endedAt = Date.now();
+          paintMemberRun(runId, run);
+        }
+      }
+    };
+
+    /** 主管委派出去时记下成员与任务：成员自己的事件不带任务，气泡摘要要靠它。 */
+    const noteDelegateCall = (toolId: string, args: unknown) => {
+      const call = parseDelegateCall(args);
+      if (!call) return;
+      delegateTargets.set(toolId, call.memberAgentId);
+      if (call.task) taskByMember.set(call.memberAgentId, call.task);
+      const queue = openDelegateCards.get(call.memberAgentId);
+      if (queue) queue.push(toolId);
+      else openDelegateCards.set(call.memberAgentId, [toolId]);
+    };
+
+    /** team_delegate 返回即成员跑完，这是成员运行唯一的下线信号。 */
+    const completeDelegateResult = (toolId: string, succeeded: boolean) => {
+      const memberAgentId = delegateTargets.get(toolId);
+      if (memberAgentId === undefined) return;
+      delegateTargets.delete(toolId);
+      // 卡已返回却没有运行认领它（被拒绝、或委派本身失败）：留着只会抢走下一次委派的位置
+      const queue = openDelegateCards.get(memberAgentId);
+      if (queue) {
+        const claimed = queue.indexOf(toolId);
+        if (claimed >= 0) queue.splice(claimed, 1);
+      }
+      closeMemberRun(memberAgentId, succeeded);
+    };
+
+    /** 委派是阻塞的：主管一轮结束或出错时，不可能还有成员在跑。 */
+    const closeAllMemberRuns = (succeeded: boolean) => {
+      for (const run of memberRuns.values()) {
+        if (isRunOpen(run.status)) closeMemberRun(run.source.memberAgentId, succeeded);
+      }
+    };
+
+    const appendMemberDelta = (run: MemberRunState, type: 'text' | 'thinking', delta: string) => {
+      const last = run.segments[run.segments.length - 1];
+      if (last && last.type === type) {
+        run.segments[run.segments.length - 1] = { ...last, content: `${last.content || ''}${delta}` };
+      } else {
+        run.segments.push({ type, content: delta });
+      }
+    };
+
+    const findMemberToolSegment = (run: MemberRunState, toolId: string, toolName: string): number => {
+      const indexed = toolId ? run.toolIndex.get(toolId) : undefined;
+      if (indexed !== undefined) return indexed;
+      for (let i = run.segments.length - 1; i >= 0; i--) {
+        const seg = run.segments[i];
+        if (seg.type === 'tool_call' && seg.toolName === toolName && seg.toolResult === undefined) {
+          if (toolId) run.toolIndex.set(toolId, i);
+          return i;
+        }
+      }
+      return -1;
+    };
+
+    const handleMemberEvent = (data: any, source: TeamEventSource) => {
+      let run = memberRuns.get(source.childRunId);
+      if (!run) {
+        run = {
+          source,
+          segments: [],
+          toolIndex: new Map(),
+          status: 'running',
+          startedAt: Date.now(),
+          task: taskByMember.get(source.memberAgentId),
+          parentToolId: openDelegateCards.get(source.memberAgentId)?.shift(),
+        };
+        memberRuns.set(source.childRunId, run);
+      }
+
+      if (data.eventType === 'TextEvent' || data.eventType === 'ThinkingEvent') {
+        if (data.isLast !== true && data.message) {
+          appendMemberDelta(run, data.eventType === 'TextEvent' ? 'text' : 'thinking', data.message);
+        }
+      } else if (data.eventType === 'CallToolEvent') {
+        const idx = findMemberToolSegment(run, data.toolId || '', data.toolName || '');
+        const content = JSON.stringify(data.arguments || {}, null, 2);
+        if (idx >= 0) {
+          run.segments[idx] = { ...run.segments[idx], content, toolName: data.toolName, toolId: data.toolId };
+        } else {
+          run.segments.push({ type: 'tool_call', content, toolName: data.toolName, toolId: data.toolId });
+          run.toolIndex.set(data.toolId, run.segments.length - 1);
+        }
+      } else if (data.eventType === 'ToolResultEvent') {
+        const idx = findMemberToolSegment(run, data.toolId || '', data.toolName || '');
+        if (idx >= 0) {
+          run.segments[idx] = {
+            ...run.segments[idx],
+            toolResult: data.message || '',
+            ...(data.success === false ? { confirmStatus: 'rejected' as const } : {}),
+          };
+        }
+      } else if (data.eventType === 'ToolConfirmEvent') {
+        const pendingTools: PendingCallTool[] = data.pendingCallTools || [];
+        for (const tool of pendingTools) {
+          const idx = findMemberToolSegment(run, tool.toolId, tool.toolName);
+          if (idx >= 0) {
+            run.segments[idx] = { ...run.segments[idx], confirmStatus: 'pending' as const };
+          } else {
+            run.segments.push({
+              type: 'tool_call',
+              content: JSON.stringify(tool.arguments || {}, null, 2),
+              toolName: tool.toolName,
+              toolId: tool.toolId,
+              confirmStatus: 'pending' as const,
+            });
+            run.toolIndex.set(tool.toolId, run.segments.length - 1);
+          }
+        }
+        // 主管的确认可以弹窗并暂停读流；成员必须内联回答，否则整个团队会话都会被卡住
+        run.segments.push({ type: 'tool_confirm', content: 'pending', pendingCallTools: pendingTools });
+        run.status = 'awaiting_confirm';
+      } else if (data.eventType === 'ErrorEvent') {
+        const errText = `${intl.formatMessage({ id: 'pages.session.errorOccurred', defaultMessage: 'An error occurred' })}: ${data.message || data.code || 'Unknown error'}`;
+        run.segments.push({ type: 'text', content: errText });
+        run.segments = markOpenToolCards(run.segments);
+        run.status = 'failed';
+        run.endedAt = Date.now();
+        message.error(errText, 8);
+      } else if (data.eventType === 'EndEvent') {
+        // 成员的 End 已在服务端过滤；真收到时只做收尾，不能解除主管的 loading
+        run.segments = run.segments.filter(
+          (seg) => !((seg.type === 'text' || seg.type === 'thinking') && !seg.content),
+        );
+      }
+      paintMemberRun(source.childRunId, run);
+    };
+
+    /** 回答成员确认：接口只回一条 End，续跑的输出仍从根流回来，所以这里不等待任何内容。 */
+    const answerMemberConfirm = async (childRunId: string, approved: boolean) => {
+      const run = memberRuns.get(childRunId);
+      if (!run) return;
+      const status = (approved ? 'confirmed' : 'rejected') as 'confirmed' | 'rejected';
+      const confirmIdx = run.segments.map((s) => s.type).lastIndexOf('tool_confirm');
+      if (confirmIdx < 0 || run.segments[confirmIdx].content !== 'pending') return;
+
+      const pendingTools = run.segments[confirmIdx].pendingCallTools || [];
+      run.segments = run.segments.map((seg, idx) => {
+        if (idx === confirmIdx) return { ...seg, content: status };
+        if (seg.type === 'tool_call' && seg.confirmStatus === 'pending') {
+          return { ...seg, confirmStatus: status };
+        }
+        return seg;
+      });
+      run.status = 'running';
+      paintMemberRun(childRunId, run);
+
+      try {
+        const confirmResponse = await fetch('/api/router/agent/confirm', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+            ...getRouterHeaders(),
+          },
+          body: JSON.stringify({
+            type: 'CONFIRM',
+            sessionId,
+            isConfirmed: approved,
+            childRunId,
+            toolInfoList: pendingTools.map((tool) => ({ toolId: tool.toolId, toolName: tool.toolName })),
+          }),
+          signal: abortController.signal,
+        });
+        if (!confirmResponse.ok) throw new Error(`HTTP ${confirmResponse.status}`);
+        const confirmText = await confirmResponse.text();
+        for (const line of confirmText.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const event = JSON.parse(line.substring(5).trim());
+            if (event.eventType === 'ErrorEvent') {
+              message.warning(event.message || intl.formatMessage({ id: 'pages.session.memberConfirmStale', defaultMessage: 'This confirmation is no longer waiting' }));
+            }
+          } catch {
+            /* 忽略无法解析的行 */
+          }
+        }
+      } catch (error: any) {
+        if (error?.name === 'AbortError') return;
+        console.error('Failed to answer member confirmation:', error);
+        message.error(intl.formatMessage({ id: 'pages.session.confirmSubmitFailed', defaultMessage: 'Failed to submit the confirmation, please retry' }));
+      }
+    };
+    answerMemberConfirmRef.current = answerMemberConfirm;
+
     try {
       console.log('[ChatWindow] 发送消息, sessionId:', sessionId);
       const chatBody = {
@@ -997,6 +1392,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             
             // 添加调试日志，查看接收到的所有事件
             console.log('[SSE Event] eventType:', data.eventType, 'data:', data);
+
+            // 成员事件独立成气泡：写进主管的 currentSegs 会被下一次 flushUI 覆盖
+            if (data.source?.childRunId) {
+              handleMemberEvent(data, data.source as TeamEventSource);
+              continue;
+            }
 
             if (data.eventType === 'TextEvent') {
               // 如果当前不是 text 事件，检查是否需要追加到上一个 text segment
@@ -1112,7 +1513,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               accThinking = '';
               activeTextIdx = -1;
               activeThinkIdx = -1;
-              
+
+              if (toolName === TEAM_DELEGATE_TOOL) noteDelegateCall(toolId, data.arguments);
+
               // Dedup: find by toolId or toolName fallback
               const existIdx = findToolSegmentIdx(toolId, toolName);
               if (existIdx >= 0) {
@@ -1192,7 +1595,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               accThinking = '';
               activeTextIdx = -1;
               activeThinkIdx = -1;
-              
+
+              if (toolName === TEAM_DELEGATE_TOOL) completeDelegateResult(toolId, data.success !== false);
+
               // 根据 toolId 找到对应的工具调用 segment 并更新
               const segIdx = findToolSegmentIdx(toolId, toolName);
               if (segIdx >= 0) {
@@ -1221,12 +1626,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
               message.error(errText, 8);
               setLoading(false);
               streamTerminated = true;
+              closeAllMemberRuns(false);
               changed = true;
 
             } else if (data.eventType === 'EndEvent') {
               // 收到结束事件，表示 AI 输出已完成
               console.log('[EndEvent] AI output completed');
               streamTerminated = true;
+              closeAllMemberRuns(true);
               currentEventType = null;
               accText = '';
               accThinking = '';
@@ -1361,7 +1768,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                   if (!confirmJsonStr) continue;
                   try {
                     const confirmData = JSON.parse(confirmJsonStr);
-                    
+
+                    if (confirmData.source?.childRunId) {
+                      handleMemberEvent(confirmData, confirmData.source as TeamEventSource);
+                      continue;
+                    }
+
                     if (confirmData.eventType === 'TextEvent') {
                       if (confirmData.isLast === true) {
                         accText = '';
@@ -1450,7 +1862,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       accThinking = '';
                       activeTextIdx = -1;
                       activeThinkIdx = -1;
-                      
+
+                      if (confirmToolName === TEAM_DELEGATE_TOOL) {
+                        noteDelegateCall(confirmToolId, confirmData.arguments);
+                      }
+
                       // Dedup: if toolId already in toolCallMap, or find by toolName fallback
                       const existIdx = findToolSegmentIdx(confirmToolId, confirmToolName);
                       if (existIdx >= 0) {
@@ -1525,7 +1941,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       accThinking = '';
                       activeTextIdx = -1;
                       activeThinkIdx = -1;
-                      
+
+                      if (toolName === TEAM_DELEGATE_TOOL) {
+                        completeDelegateResult(toolId, confirmData.success !== false);
+                      }
+
                       const segIdx = findToolSegmentIdx(toolId, toolName);
                       if (segIdx >= 0) {
                         currentSegs = currentSegs.map((seg, idx) => 
@@ -1550,11 +1970,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       message.error(errText, 8);
                       setLoading(false);
                       confirmTerminated = true;
+                      closeAllMemberRuns(false);
                       confirmChanged = true;
                     } else if (confirmData.eventType === 'EndEvent') {
                       // 收到结束事件，表示 AI 输出已完成
                       console.log('[Confirm EndEvent] AI output completed');
                       confirmTerminated = true;
+                      closeAllMemberRuns(true);
                       currentEventType = null;
                       accText = '';
                       accThinking = '';
@@ -1670,7 +2092,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                           if (!nestedJsonStr) continue;
                           try {
                             const nestedData = JSON.parse(nestedJsonStr);
-                            
+
+                            if (nestedData.source?.childRunId) {
+                              handleMemberEvent(nestedData, nestedData.source as TeamEventSource);
+                              continue;
+                            }
+
                             if (nestedData.eventType === 'TextEvent') {
                               if (nestedData.isLast === true) {
                                 accText = '';
@@ -1760,7 +2187,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               accThinking = '';
                               activeTextIdx = -1;
                               activeThinkIdx = -1;
-                              
+
+                              if (nestedToolName === TEAM_DELEGATE_TOOL) {
+                                noteDelegateCall(nestedToolId, nestedData.arguments);
+                              }
+
                               // Dedup: find by toolId or toolName fallback
                               const nestedExistIdx = findToolSegmentIdx(nestedToolId, nestedToolName);
                               if (nestedExistIdx >= 0) {
@@ -1835,7 +2266,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               accThinking = '';
                               activeTextIdx = -1;
                               activeThinkIdx = -1;
-                              
+
+                              if (toolName === TEAM_DELEGATE_TOOL) {
+                                completeDelegateResult(toolId, nestedData.success !== false);
+                              }
+
                               const nestedSegIdx = findToolSegmentIdx(toolId, toolName);
                               if (nestedSegIdx >= 0) {
                                 currentSegs = currentSegs.map((seg, idx) => 
@@ -1860,11 +2295,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                               message.error(errText, 8);
                               setLoading(false);
                               nestedTerminated = true;
+                              closeAllMemberRuns(false);
                               confirmChanged = true;
                             } else if (nestedData.eventType === 'EndEvent') {
                               // 收到结束事件，表示 AI 输出已完成
                               console.log('[Nested EndEvent] AI output completed');
                               nestedTerminated = true;
+                              closeAllMemberRuns(true);
                               currentEventType = null;
                               accText = '';
                               accThinking = '';
@@ -1882,12 +2319,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                         if (confirmChanged) {
                           flushUI();
                         }
+                      }
 
-                        // 断连检测：嵌套 confirm 流读完但从未收到 EndEvent/ErrorEvent
-                        if (!nestedTerminated) {
-                          message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
-                          setLoading(false);
-                        }
+                      // 断连检测：嵌套 confirm 流读完但从未收到 EndEvent/ErrorEvent
+                      if (!nestedTerminated) {
+                        message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
+                        setLoading(false);
                       }
                     }
                   } catch (err) {
@@ -1898,12 +2335,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 if (confirmChanged) {
                   flushUI();
                 }
+              }
 
-                // 断连检测：confirm 流读完但从未收到 EndEvent/ErrorEvent
-                if (!confirmTerminated) {
-                  message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
-                  setLoading(false);
-                }
+              // 断连检测：confirm 流读完但从未收到 EndEvent/ErrorEvent
+              if (!confirmTerminated) {
+                message.error(intl.formatMessage({ id: 'pages.session.connectionInterrupted', defaultMessage: 'Connection was interrupted, please retry' }), 8);
+                setLoading(false);
               }
             }
           } catch (err) {
@@ -1935,6 +2372,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
     } finally {
       setLoading(false);
       abortRef.current = null;
+      // 流已关闭：成员确认处理器持有的是上一份消息快照，再回答会覆盖新消息
+      answerMemberConfirmRef.current = null;
+      // 断流、中断同样终结未收口的成员运行，否则气泡会一直显示进行中
+      closeAllMemberRuns(false);
+      // 主管这一轮同理：流已关闭，没等到结果的调用不会再有结果了
+      if (currentSegs.some((seg) => seg.type === 'tool_call' && seg.toolResult === undefined && seg.confirmStatus === undefined)) {
+        currentSegs = markOpenToolCards(currentSegs);
+        flushUI();
+      }
       
       // 如果启用了计划功能且卡片处于展开状态，立即刷新一次
       // 但如果 plan_exit 已触发，跳过刷新避免重新加载已完成的计划
@@ -2259,15 +2705,52 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
   };
 
   /* ─── 渲染段落 ─── */
-  const renderSegment = (seg: MessageSegment, idx: number) => {
+  /**
+   * 成员运行按委派卡归组：一张 team_delegate 卡下面挂着它派出去的运行。
+   *
+   * 只有卡真的出现在主管消息里才收进来。对不上卡的那次（历史里主管那一轮没留下调用记录）就让成员
+   * 继续独立成气泡——少一层兜底就会把整段成员输出从界面上弄丢。
+   */
+  const nestedRunsByTool = useMemo(() => {
+    const cards = new Set<string>();
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || msg.teamSource) continue;
+      for (const seg of msg.segments) {
+        if (seg.type === 'tool_call' && seg.toolName === TEAM_DELEGATE_TOOL && seg.toolId) {
+          cards.add(seg.toolId);
+        }
+      }
+    }
+    const grouped = new Map<string, ChatMessage[]>();
+    for (const msg of messages) {
+      const parentId = msg.teamSource ? msg.parentToolId : undefined;
+      if (!parentId || !cards.has(parentId)) continue;
+      const list = grouped.get(parentId);
+      if (list) list.push(msg);
+      else grouped.set(parentId, [msg]);
+    }
+    return grouped;
+  }, [messages]);
+
+  /** 成员气泡里的确认就地回答：主管那种弹窗会卡住整条团队流。 */
+  const memberConfirmAnswer = (msg?: ChatMessage) => {
+    const runId = msg?.teamSource?.childRunId;
+    const answer = answerMemberConfirmRef.current;
+    if (!runId || !answer) return undefined;
+    return (approved: boolean) => answer(runId, approved);
+  };
+
+  const renderSegment = (seg: MessageSegment, idx: number, msg?: ChatMessage) => {
     switch (seg.type) {
       case 'thinking':
         // 如果隐藏思考过程，不渲染
         if (!showThinking) return null;
         return <ThinkingBlock key={idx} content={seg.content} />;
-      case 'tool_call':
+      case 'tool_call': {
         // 如果工具名称为空，不渲染
         if (!seg.toolName) return null;
+        const nestedRuns =
+          seg.toolName === TEAM_DELEGATE_TOOL && seg.toolId ? nestedRunsByTool.get(seg.toolId) : undefined;
         return (
           <MergedToolCard
             key={idx}
@@ -2275,8 +2758,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             arguments={seg.content}
             result={seg.toolResult}
             confirmStatus={seg.confirmStatus}
+            interrupted={seg.interrupted}
+            nested={nestedRuns ? renderNestedRuns(nestedRuns) : undefined}
+            hint={nestedRuns ? delegateHint(nestedRuns) : undefined}
+            busy={nestedRuns?.some((run) => !!run.teamRun && isRunOpen(run.teamRun.status))}
           />
         );
+      }
       case 'tool_result':
         // 不显示独立的工具返回卡片（已合并到工具调用卡片中）
         return null;
@@ -2287,6 +2775,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             key={idx}
             pendingCallTools={seg.pendingCallTools || []}
             status={status}
+            onAnswer={memberConfirmAnswer(msg)}
           />
         );
       case 'plan_card':
@@ -2367,6 +2856,85 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
 
   const isEmpty = (msg: ChatMessage) =>
     msg.segments.length === 0 || msg.segments.every((s) => !s.content);
+
+  // 成员气泡默认「跑的时候展开、跑完折叠」，用户点过之后以用户为准
+  const isRunExpanded = (msg: ChatMessage) =>
+    runExpandedOverride[msg.id] ?? (msg.teamRun ? isRunOpen(msg.teamRun.status) : true);
+
+  const toggleRunExpanded = (msg: ChatMessage) =>
+    setRunExpandedOverride((prev) => ({ ...prev, [msg.id]: !isRunExpanded(msg) }));
+
+  const runStatusText = (status: MemberRunStatus) => {
+    const messages: Record<MemberRunStatus, [string, string]> = {
+      running: ['pages.session.memberRunRunning', 'Working'],
+      awaiting_confirm: ['pages.session.memberRunAwaitingConfirm', 'Waiting for confirmation'],
+      done: ['pages.session.memberRunDone', 'Done'],
+      failed: ['pages.session.memberRunFailed', 'Failed'],
+    };
+    const [id, defaultMessage] = messages[status];
+    return intl.formatMessage({ id, defaultMessage });
+  };
+
+  const runStatusClass = (status: MemberRunStatus) => {
+    const classes: Record<MemberRunStatus, string> = {
+      running: styles.memberStatusRunning,
+      awaiting_confirm: styles.memberStatusAwaiting,
+      done: styles.memberStatusDone,
+      failed: styles.memberStatusFailed,
+    };
+    return classes[status];
+  };
+
+  /** 折叠状态也要能看出这张委派卡给了谁：卡里存的参数只有 member id。 */
+  const delegateHint = (runs: ChatMessage[]): string | undefined => {
+    const names = runs.map((run) => run.teamSource?.memberAgentName).filter(Boolean) as string[];
+    if (!names.length) return undefined;
+    return names.length > 1 ? `→ ${names[0]} +${names.length - 1}` : `→ ${names[0]}`;
+  };
+
+  /**
+   * 卡内的成员运行：折叠归工具卡管，这里只画「谁在跑、跑到哪」和正文。
+   *
+   * 正文仍然走 renderSegment，成员自己的工具卡、以及就地回答的确认（`memberConfirmAnswer` 认的是这条
+   * 成员消息的 childRunId）都跟着一起搬进来了。
+   */
+  const renderNestedRuns = (runs: ChatMessage[]) =>
+    runs.map((run) => {
+      const info = run.teamRun;
+      const source = run.teamSource;
+      if (!info || !source) return null;
+      const duration = info.endedAt ? formatRunDuration(info.endedAt - info.startedAt) : '';
+      return (
+        <div key={run.id} className={styles.nestedMember}>
+          <div className={styles.nestedMemberHeader}>
+            <span className={styles.memberName}>{source.memberAgentName}</span>
+            <Tag className={styles.memberTag}>{source.teamName}</Tag>
+            <span className={`${styles.memberStatus} ${runStatusClass(info.status)}`}>
+              {runStatusText(info.status)}
+            </span>
+            <span className={styles.memberSummary}>
+              {info.toolCount > 0 && (
+                <span className={styles.memberMeta}>
+                  {intl.formatMessage(
+                    {
+                      id: 'pages.session.memberRunTools',
+                      defaultMessage: '{count, plural, one {# tool} other {# tools}}',
+                    },
+                    { count: info.toolCount },
+                  )}
+                </span>
+              )}
+              {duration && (
+                <span className={styles.memberMeta}>
+                  <ClockCircleOutlined /> {duration}
+                </span>
+              )}
+            </span>
+          </div>
+          {run.segments.map((seg, idx) => renderSegment(seg, idx, run))}
+        </div>
+      );
+    });
 
   /* ─── 渲染计划状态标签 ─── */
   const renderPlanState = (state: string) => {
@@ -2765,6 +3333,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
           messages.map((msg) => {
             // Skip empty assistant messages after stream ended (EndEvent received)
             if (msg.role === 'assistant' && isEmpty(msg) && !loading) return null;
+            // 已经收进主管那张委派卡的运行不再独立成气泡；对不上卡的仍然照旧单独显示
+            if (msg.parentToolId && nestedRunsByTool.has(msg.parentToolId)) return null;
+            const run = msg.teamRun;
+            const expanded = !run || isRunExpanded(msg);
+            const taskLine = firstTaskLine(run?.task);
+            const duration = run?.endedAt ? formatRunDuration(run.endedAt - run.startedAt) : '';
             return (
             <div
               key={msg.id}
@@ -2772,7 +3346,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
             >
               <div
                 className={`${styles.avatar} ${
-                  msg.role === 'user' ? styles.avatarUser : styles.avatarAssistant
+                  msg.role === 'user'
+                    ? styles.avatarUser
+                    : msg.teamSource
+                      ? styles.avatarMember
+                      : styles.avatarAssistant
                 }`}
               >
                 {msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
@@ -2782,8 +3360,51 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                 <div
                   className={`${styles.bubbleInner} ${
                     msg.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant
-                  }`}
+                  } ${msg.teamSource ? styles.bubbleMember : ''}`}
                 >
+                  {msg.teamSource && run && (
+                    <div className={styles.memberHeader} onClick={() => toggleRunExpanded(msg)}>
+                      <span className={styles.memberName}>{msg.teamSource.memberAgentName}</span>
+                      <Tag className={styles.memberTag}>{msg.teamSource.teamName}</Tag>
+                      <span className={`${styles.memberStatus} ${runStatusClass(run.status)}`}>
+                        {runStatusText(run.status)}
+                      </span>
+                      <span className={styles.memberSummary}>
+                        {taskLine && (
+                          <span className={styles.memberTask} title={run.task}>
+                            {taskLine}
+                          </span>
+                        )}
+                        {run.toolCount > 0 && (
+                          <span className={styles.memberMeta}>
+                            {intl.formatMessage(
+                              {
+                                id: 'pages.session.memberRunTools',
+                                defaultMessage: '{count, plural, one {# tool} other {# tools}}',
+                              },
+                              { count: run.toolCount },
+                            )}
+                          </span>
+                        )}
+                        {duration && (
+                          <span className={styles.memberMeta}>
+                            <ClockCircleOutlined /> {duration}
+                          </span>
+                        )}
+                      </span>
+                      <span className={styles.memberFoldIcon}>
+                        {expanded ? <DownOutlined /> : <RightOutlined />}
+                      </span>
+                    </div>
+                  )}
+                  {!msg.teamSource && msg.role === 'assistant' && leadLabel && (
+                    <div className={styles.leadHeader}>
+                      <span className={styles.leadName}>{leadLabel}</span>
+                      <Tag className={styles.memberTag}>
+                        {intl.formatMessage({ id: 'pages.session.leadTag', defaultMessage: 'Leader' })}
+                      </Tag>
+                    </div>
+                  )}
                   {msg.role === 'user' ? (
                     <div>
                       {msg.imageUrls && msg.imageUrls.length > 0 && (
@@ -2795,11 +3416,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ sessionId }) => {
                       )}
                       <span>{msg.segments[0]?.content}</span>
                     </div>
-                  ) : isEmpty(msg) ? (
+                  ) : !expanded ? null : isEmpty(msg) ? (
                     loading && msg.id === messages[messages.length - 1]?.id ? <LoadingDots /> : null
                   ) : (
                     <>
-                      {msg.segments.map((seg, idx) => renderSegment(seg, idx))}
+                      {msg.segments.map((seg, idx) => renderSegment(seg, idx, msg))}
                       {/* 如果是最后一条消息且正在 loading，显示加载动画 */}
                       {loading && msg.id === messages[messages.length - 1]?.id && (
                         <div className={styles.inlineLoading}>
