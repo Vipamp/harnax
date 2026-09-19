@@ -21,7 +21,8 @@ package com.agnetix.harnax.tools.sdk
 data class ToolEnvContext(
     /**
      * Flat env variable map: envKey -> envValue.
-     * Merged from all tool envBindings configured for this agent.
+     * Merged from the env bindings of every tool and MCP server bound to this agent, and handed to all
+     * of them whole — a key is answered by its name, not by which binding declared it.
      */
     val bindings: Map<String, String> = emptyMap(),
 ) {

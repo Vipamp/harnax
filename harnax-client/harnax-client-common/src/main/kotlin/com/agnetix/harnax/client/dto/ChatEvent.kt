@@ -22,6 +22,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
     JsonSubTypes.Type(value = ToolResultEvent::class, name = "ToolResultEvent"),
     JsonSubTypes.Type(value = EndEvent::class, name = "EndEvent"),
     JsonSubTypes.Type(value = ErrorEvent::class, name = "ErrorEvent"),
+    JsonSubTypes.Type(value = KeepAliveEvent::class, name = "KeepAliveEvent"),
 )
 interface ChatEvent {
     val eventType: String
@@ -113,4 +114,16 @@ data class ErrorEvent(
     override val tokenUsage: TokenUsage? = null,
 ) : ChatEvent {
     override val eventType: String = "ErrorEvent"
+}
+
+/**
+ * Keep-alive event emitted while a run waits for a human confirmation.
+ *
+ * Carries no content and must not be rendered or treated as end-of-output; it exists only so the
+ * caller's stream is not judged idle while the agent is legitimately waiting.
+ */
+data class KeepAliveEvent(
+    override val tokenUsage: TokenUsage? = null,
+) : ChatEvent {
+    override val eventType: String = "KeepAliveEvent"
 }

@@ -13,8 +13,6 @@ import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.containers.MySQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
-import java.time.LocalDateTime
-import java.time.temporal.ChronoUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -22,6 +20,9 @@ import kotlin.test.assertTrue
 
 /**
  * AgentToolMapper Integration Tests
+ *
+ * The table is written only by the startup sync, so the write-side cases here go through
+ * upsertBuiltinTool / deleteBuiltinByIds instead of a CRUD surface.
  *
  * @author agnetix
  * @since 2026-04-25
@@ -52,9 +53,25 @@ open class AgentToolMapperTest {
     @Autowired
     private lateinit var agentToolMapper: AgentToolMapper
 
+    /** A row as the code sync would write it; bean/method pick the uk_tenant_bean_method slot. */
+    private fun syncedTool(beanName: String, methodName: String, name: String = methodName): AgentTool = AgentTool().apply {
+        tenantId = 1L
+        this.name = name
+        displayName = "Synced $name"
+        description = "synced by test"
+        this.beanName = beanName
+        this.methodName = methodName
+        readOnly = 0
+        needConfirm = 0
+        isRequired = 0
+        timeoutSeconds = 30
+        status = 1
+        active = 1
+    }
+
     @Nested
-    @DisplayName("Basic CRUD Tests")
-    inner class BasicCrudTests {
+    @DisplayName("Single Row Queries")
+    inner class SingleRowQueries {
 
         @Test
         @DisplayName("selectById - Query AgentTool by ID")
@@ -65,9 +82,7 @@ open class AgentToolMapperTest {
             // Then
             assertNotNull(agentTool)
             assertEquals(1L, agentTool.id)
-            // 种子数据 id=1 的 name 是 getDate，bean_name 才是 time-tool-box
             assertEquals("getDate", agentTool.name)
-            assertEquals("BUILTIN", agentTool.type)
             assertEquals("time-tool-box", agentTool.beanName)
             assertEquals(0, agentTool.needConfirm)
             assertEquals(1, agentTool.status)
@@ -77,192 +92,31 @@ open class AgentToolMapperTest {
         @Test
         @DisplayName("selectById - Return null when AgentTool not exists")
         fun `selectById should return null when agent tool not exists`() {
-            // When
-            val agentTool = agentToolMapper.selectById(999L)
-
-            // Then
-            assertNull(agentTool)
+            assertNull(agentToolMapper.selectById(999L))
         }
 
         @Test
         @DisplayName("selectById - Do not return deleted AgentTool")
         fun `selectById should not return deleted agent tool`() {
-            // When
             // 种子数据 id=6 是 deleted-tool（active=0）；id=5 是 disabled-tool，只是 status=0，仍然可查
-            val agentTool = agentToolMapper.selectById(6L)
-
-            // Then
-            assertNull(agentTool)
+            assertNull(agentToolMapper.selectById(6L))
+            assertNotNull(agentToolMapper.selectById(5L))
         }
 
         @Test
-        @DisplayName("insert - Insert new AgentTool")
-        fun `insert should create new agent tool`() {
-            // Given
-            val now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
-            val newAgentTool = AgentTool().apply {
-                name = "new-custom-tool"
-                type = "CUSTOM"
-                beanName = "new-custom-tool-box"
-                needConfirm = 1
-                status = 1
-                creator = "admin"
-                active = 1
-                createTime = now
-                updateTime = now
-            }
+        @DisplayName("selectByIds - Batch load keeps only active rows")
+        fun `selectByIds should skip deleted rows`() {
+            val tools = agentToolMapper.selectByIds(listOf(1L, 2L, 6L))
 
-            // When
-            val result = agentToolMapper.insert(newAgentTool)
-
-            // Then
-            assertEquals(1, result)
-            assertTrue(newAgentTool.id > 0)
-
-            val insertedAgentTool = agentToolMapper.selectById(newAgentTool.id)
-            assertNotNull(insertedAgentTool)
-            assertEquals("new-custom-tool", insertedAgentTool.name)
-        }
-
-        @Test
-        @DisplayName("updateById - Update AgentTool info")
-        fun `updateById should update agent tool info`() {
-            // Given
-            val agentToolId = 1L
-            val agentTool = agentToolMapper.selectById(agentToolId)
-            assertNotNull(agentTool)
-
-            // When
-            agentTool.name = "updated-tool"
-            agentTool.beanName = "updated-tool-box"
-            agentTool.updateTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
-            val result = agentToolMapper.updateById(agentTool)
-
-            // Then
-            assertEquals(1, result)
-            val updatedAgentTool = agentToolMapper.selectById(agentToolId)
-            assertNotNull(updatedAgentTool)
-            assertEquals("updated-tool", updatedAgentTool.name)
-        }
-
-        @Test
-        @DisplayName("deleteById - Logically delete AgentTool")
-        fun `deleteById should logically delete agent tool`() {
-            // Given
-            val agentToolId = 2L
-            val agentToolBefore = agentToolMapper.selectById(agentToolId)
-            assertNotNull(agentToolBefore)
-
-            // When
-            val result = agentToolMapper.deleteById(agentToolId)
-
-            // Then
-            assertEquals(1, result)
-            val deletedAgentTool = agentToolMapper.selectById(agentToolId)
-            assertNull(deletedAgentTool)
-        }
-    }
-
-    @Nested
-    @DisplayName("Status Management Tests")
-    inner class StatusManagementTests {
-
-        @Test
-        @DisplayName("updateStatus - Disable AgentTool")
-        fun `updateStatus should disable agent tool`() {
-            // Given
-            val agentToolId = 1L
-            val newStatus = 0
-
-            // When
-            val result = agentToolMapper.updateStatus(agentToolId, newStatus)
-            val updatedAgentTool = agentToolMapper.selectById(agentToolId)
-
-            // Then
-            assertEquals(1, result)
-            assertNotNull(updatedAgentTool)
-            assertEquals(newStatus, updatedAgentTool.status)
-        }
-
-        @Test
-        @DisplayName("updateStatus - Enable AgentTool")
-        fun `updateStatus should enable agent tool`() {
-            // Given
-            val agentToolId = 4L
-            val newStatus = 1
-
-            // When
-            val result = agentToolMapper.updateStatus(agentToolId, newStatus)
-            val updatedAgentTool = agentToolMapper.selectById(agentToolId)
-
-            // Then
-            assertEquals(1, result)
-            assertNotNull(updatedAgentTool)
-            assertEquals(newStatus, updatedAgentTool.status)
-        }
-    }
-
-    @Nested
-    @DisplayName("Custom Query Tests")
-    inner class CustomQueryTests {
-
-        @Test
-        @DisplayName("selectAgentToolList - Query all active AgentTools")
-        fun `selectAgentToolList should return all active agent tools`() {
-            // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, null, null, "admin")
-
-            // Then
-            assertTrue(agentTools.isNotEmpty())
-            assertTrue(agentTools.size >= 4)
-        }
-
-        @Test
-        @DisplayName("selectAgentToolList - Filter by keyword")
-        fun `selectAgentToolList should filter by keyword`() {
-            // When
-            val agentTools = agentToolMapper.selectAgentToolList("tool", null, null, "admin")
-
-            // Then
-            assertTrue(agentTools.isNotEmpty())
-            agentTools.forEach {
-                assertTrue(it.name.contains("tool"))
-            }
-        }
-
-        @Test
-        @DisplayName("selectAgentToolList - Filter by status")
-        fun `selectAgentToolList should filter by status`() {
-            // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, 1, null, "admin")
-
-            // Then
-            assertTrue(agentTools.isNotEmpty())
-            agentTools.forEach {
-                assertEquals(1, it.status)
-            }
-        }
-
-        @Test
-        @DisplayName("selectAgentToolList - Filter by type")
-        fun `selectAgentToolList should filter by type`() {
-            // When
-            val agentTools = agentToolMapper.selectAgentToolList(null, null, "BUILTIN", "admin")
-
-            // Then
-            assertTrue(agentTools.isNotEmpty())
-            agentTools.forEach {
-                assertEquals("BUILTIN", it.type)
-            }
+            assertEquals(2, tools.size)
+            assertTrue(tools.none { it.id == 6L })
         }
 
         @Test
         @DisplayName("selectByName - Query AgentTool by name")
         fun `selectByName should return agent tool by name`() {
-            // When
             val agentTool = agentToolMapper.selectByName("weather-tool")
 
-            // Then
             assertNotNull(agentTool)
             assertEquals("weather-tool", agentTool.name)
         }
@@ -270,25 +124,140 @@ open class AgentToolMapperTest {
         @Test
         @DisplayName("selectByName - Return null when name not exists")
         fun `selectByName should return null when name not exists`() {
-            // When
-            val agentTool = agentToolMapper.selectByName("nonexistent-tool")
-
-            // Then
-            assertNull(agentTool)
+            assertNull(agentToolMapper.selectByName("nonexistent-tool"))
         }
 
         @Test
-        @DisplayName("selectAllEnabled - Return only enabled and active AgentTools")
-        fun `selectAllEnabled should return only enabled and active agent tools`() {
-            // When
-            val agentTools = agentToolMapper.selectAllEnabled()
+        @DisplayName("selectByBeanName - One record per @Tool method")
+        fun `selectByBeanName should return every method of the toolbox`() {
+            val tools = agentToolMapper.selectByBeanName("time-tool-box")
 
-            // Then
+            assertEquals(2, tools.size)
+            assertTrue(tools.all { it.beanName == "time-tool-box" })
+        }
+    }
+
+    @Nested
+    @DisplayName("List Queries")
+    inner class ListQueries {
+
+        @Test
+        @DisplayName("selectAgentToolList - Query all active AgentTools")
+        fun `selectAgentToolList should return all active agent tools`() {
+            val agentTools = agentToolMapper.selectAgentToolList(null, null)
+
             assertTrue(agentTools.isNotEmpty())
-            agentTools.forEach {
+            // id=6 is soft-deleted, so the seed leaves four queryable rows
+            assertEquals(4, agentTools.size)
+            assertTrue(agentTools.none { it.id == 6L })
+        }
+
+        @Test
+        @DisplayName("selectAgentToolList - Filter by keyword")
+        fun `selectAgentToolList should filter by keyword`() {
+            val agentTools = agentToolMapper.selectAgentToolList("tool", null)
+
+            assertTrue(agentTools.isNotEmpty())
+            assertTrue(agentTools.all { it.name.contains("tool") })
+        }
+
+        @Test
+        @DisplayName("selectAgentToolList - Filter by status")
+        fun `selectAgentToolList should filter by status`() {
+            val agentTools = agentToolMapper.selectAgentToolList(null, 1)
+
+            assertTrue(agentTools.isNotEmpty())
+            agentTools.forEach { assertEquals(1, it.status) }
+        }
+
+        @Test
+        @DisplayName("selectAvailableTools - Enabled and non-mandatory only")
+        fun `selectAvailableTools should exclude disabled and mandatory tools`() {
+            val tools = agentToolMapper.selectAvailableTools()
+
+            assertTrue(tools.isNotEmpty())
+            tools.forEach {
                 assertEquals(1, it.status)
-                assertEquals(1, it.active)
+                assertEquals(0, it.isRequired)
             }
+            assertTrue(tools.none { it.id == 5L })
+        }
+
+        @Test
+        @DisplayName("selectBuiltinToolList - Every active row regardless of status")
+        fun `selectBuiltinToolList should return every active tool`() {
+            val tools = agentToolMapper.selectBuiltinToolList()
+
+            assertEquals(4, tools.size)
+            assertTrue(tools.any { it.id == 5L })
+        }
+
+        @Test
+        @DisplayName("selectRequiredTools - Only enabled mandatory tools")
+        fun `selectRequiredTools should return mandatory tools only`() {
+            assertTrue(agentToolMapper.selectRequiredTools().isEmpty())
+
+            val mandatory = syncedTool("mandatory-tool-box", "doMandatory", name = "mandatory_tool").apply {
+                isRequired = 1
+            }
+            agentToolMapper.upsertBuiltinTool(mandatory)
+
+            val tools = agentToolMapper.selectRequiredTools()
+            assertEquals(1, tools.size)
+            assertEquals("mandatory_tool", tools[0].name)
+        }
+    }
+
+    @Nested
+    @DisplayName("Sync Write Path")
+    inner class SyncWritePath {
+
+        @Test
+        @DisplayName("upsertBuiltinTool - Insert then refresh in place on the same key")
+        fun `upsertBuiltinTool should insert and then update the same row`() {
+            val tool = syncedTool("sync-tool-box", "syncMethod")
+            assertEquals(1, agentToolMapper.upsertBuiltinTool(tool))
+
+            val inserted = agentToolMapper.selectByName("syncMethod")
+            assertNotNull(inserted)
+            assertTrue(inserted.id > 0)
+
+            // Second pass on the same (tenant, bean, method): the row is refreshed, not duplicated
+            inserted.description = "changed by the next startup"
+            assertEquals(2, agentToolMapper.upsertBuiltinTool(inserted))
+
+            val refreshed = agentToolMapper.selectByName("syncMethod")
+            assertEquals(inserted.id, refreshed?.id)
+            assertEquals("changed by the next startup", refreshed?.description)
+            assertEquals(1, agentToolMapper.selectByBeanName("sync-tool-box").size)
+        }
+
+        @Test
+        @DisplayName("upsertBuiltinTool - Creator is the sync, never the caller")
+        fun `upsertBuiltinTool should stamp the system creator`() {
+            agentToolMapper.upsertBuiltinTool(syncedTool("creator-tool-box", "syncMethod").apply { creator = "someone" })
+
+            assertEquals("SYSTEM", agentToolMapper.selectByName("syncMethod")?.creator)
+        }
+
+        @Test
+        @DisplayName("selectAllBuiltin - Includes soft-deleted rows so the sync can prune residue")
+        fun `selectAllBuiltin should include inactive rows`() {
+            val all = agentToolMapper.selectAllBuiltin()
+
+            assertTrue(all.any { it.id == 6L })
+        }
+
+        @Test
+        @DisplayName("deleteBuiltinByIds - Hard delete")
+        fun `deleteBuiltinByIds should remove rows`() {
+            agentToolMapper.upsertBuiltinTool(syncedTool("gone-tool-box", "syncMethod"))
+            val id = requireNotNull(agentToolMapper.selectByName("syncMethod")?.id)
+
+            assertEquals(1, agentToolMapper.deleteBuiltinByIds(listOf(id)))
+
+            assertNull(agentToolMapper.selectByName("syncMethod"))
+            assertNull(agentToolMapper.selectById(id))
         }
     }
 }

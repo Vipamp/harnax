@@ -16,7 +16,7 @@
 harnax/
 ├── harnax-agent/                          # Agent 运行时（父 POM）
 │   ├── harnax-agent-utils/                # MCP / Model 适配器工具
-│   ├── harnax-tools-sdk/                  # [新建] 工具 SDK - 抽象基类 + 注册中心 + HTTP 代理
+│   ├── harnax-tools-sdk/                  # [新建] 工具 SDK - 抽象基类 + 注册中心
 │   ├── harnax-harness-core/               # Agent 运行时核心（沙箱、会话、模型调用）
 │   └── harnax-agent-service/              # Agent 推理服务（Spring Boot 应用）
 ├── harnax-tools-external/                 # [新建] 顶层模块 - 外部工具扩展
@@ -58,7 +58,6 @@ graph TB
 | `SessionMetaContext` | `sdk` | 会话级上下文（agentId + sessionId） |
 | `UserIdentifier` | `sdk` | 用户标识（userId） |
 | `ToolSpec` | `sdk` | 工具规格数据类（toolId、toolName、needConfirm） |
-| `HttpProxyToolBox` | `sdk` | HTTP 代理工具，实现 `AgentTool` 接口，将工具调用转发到 HTTP 端点 |
 | `ToolRegistry` | `sdk.registry` | Spring 容器级工具注册中心，自动发现所有 `ToolBox` Bean |
 | `ToolCallLogAdaptor` | `sdk.adaptor` | 工具调用日志适配器接口 |
 | `ToolCallInfo` | `sdk.adaptor` | 工具调用日志数据类 |
@@ -68,7 +67,7 @@ graph TB
 
 - `harnax-common` — 错误码和异常类
 - `harnax-entity` — AgentTool 实体
-- `agentscope` — `@Tool`、`AgentTool`、`ToolCallParam`
+- `agentscope` — `@Tool` 注解
 - `spring-boot-autoconfigure` + `spring-context` — Spring 集成
 
 ## 5. harnax-tools-external 模块说明
@@ -76,13 +75,11 @@ graph TB
 **Maven 坐标**：`com.agnetix:harnax-tools-external`（POM 聚合模块）
 **路径**：`harnax-tools-external/`
 
-外部工具扩展的顶层容器，按工具类型划分子模块：
+工具扩展的顶层容器，目前只有一个子模块：
 
 | 子模块 | 说明 |
 |---|---|
 | `harnax-tools-buildin` | 内置工具（TimeToolBox 等开箱即用的工具） |
-| `harnax-tools-http`（未来） | HTTP 工具扩展 |
-| `harnax-tools-custom`（未来） | 自定义工具扩展 |
 
 ## 6. harnax-tools-buildin 模块说明
 
@@ -166,11 +163,10 @@ HarnessAgentLauncher 使用 toolRegistry.getToolBox(beanName)
 
 ### 7.3 Admin 中的工具配置
 
-在 admin 的工具箱页面配置工具时：
+工具记录全部由 admin 启动时按 `@Tool`/`@ToolMeta` 注解同步写库，页面上只读展示：
 
-- **类型**：选择 `BUILTIN`（内置）或 `HTTP`（HTTP 代理）
-- **Bean Name**：对于 BUILTIN 类型，填写 Spring Bean 名称（如 `time-tool-box`）
-- **需确认**：勾选后，Agent 执行该工具前会暂停等待用户确认
+- **Bean Name**：`ToolBox` 的 Spring Bean 名称（如 `time-tool-box`），来自注解同步，不需要手工填写
+- **需确认**：在智能体的工具绑定上勾选后，Agent 执行该工具前会暂停等待用户确认
 
 ## 8. 迁移记录
 
@@ -180,11 +176,12 @@ HarnessAgentLauncher 使用 toolRegistry.getToolBox(beanName)
 |---|---|---|
 | `provider/tool/ToolBox.kt` | `harnax-tools-sdk/.../sdk/ToolBox.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
 | `provider/tool/ToolRegistry.kt` | `harnax-tools-sdk/.../sdk/registry/ToolRegistry.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk.registry` |
-| `provider/tool/HttpProxyToolBox.kt` | `harnax-tools-sdk/.../sdk/HttpProxyToolBox.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
 | `provider/tool/ToolSpec.kt` | `harnax-tools-sdk/.../sdk/ToolSpec.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
 | `provider/tool/ToolCallContext.kt` | `harnax-tools-sdk/.../sdk/ToolCallContext.kt` | `com.agnetix.harnax.agent.provider.tool` → `com.agnetix.harnax.tools.sdk` |
 | `adaptor/ToolCallLogAdaptor.kt` | `harnax-tools-sdk/.../sdk/adaptor/ToolCallLogAdaptor.kt` | `com.agnetix.harnax.agent.adaptor` → `com.agnetix.harnax.tools.sdk.adaptor` |
 | `adaptor/ToolConfigAdaptor.kt` | `harnax-tools-sdk/.../sdk/adaptor/ToolConfigAdaptor.kt` | `com.agnetix.harnax.agent.adaptor` → `com.agnetix.harnax.tools.sdk.adaptor` |
+
+> 本表记录的是当次迁移的落点，不代表这些文件今天仍在。`provider/tool/HttpProxyToolBox.kt` 随之迁入 SDK 后，已随自定义工具与 HTTP 工具整体下线一并删除，见 `harnax-admin/TOOL_INTEGRATION_DESIGN.md`。
 
 ### 从 harnax-harness-core 迁移至 harnax-tools-buildin
 

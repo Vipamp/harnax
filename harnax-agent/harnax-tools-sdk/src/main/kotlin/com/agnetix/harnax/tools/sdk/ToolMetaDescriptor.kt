@@ -41,8 +41,6 @@ data class ToolMethodDescriptor(
     val envParamDescriptors: List<ToolEnvParamDescriptor>,
     /** Execution timeout in seconds from @ToolMeta.timeoutSeconds (0 = use system default) */
     val timeoutSeconds: Int,
-    /** Whether this tool is publicly available from @ToolMeta.isPublic */
-    val isPublic: Boolean,
     /** Whether this tool is mandatory (always included, hidden from UI selection) from @ToolMeta.isRequired */
     val isRequired: Boolean,
 )

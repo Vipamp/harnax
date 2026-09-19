@@ -29,4 +29,23 @@ data class SkillLoadResult(
 data class SkillLoadFailure(
     val name: String,
     val reason: String,
-)
+) {
+    companion object {
+        /**
+         * Pseudo-name for a failure that belongs to the source as a whole rather than to one skill
+         * directory: a clone that never finished has no skill to blame it on. `SkillInstaller`
+         * turns it into the response's `sourceError` so the per-skill list stays a list of skills.
+         */
+        const val WHOLE_SOURCE = "<source>"
+
+        /**
+         * Pseudo-name for "the source opened, was read to the end, and holds no skill". Distinct from
+         * [WHOLE_SOURCE] because the two need different fixes: a broken address versus a repository
+         * or archive shaped differently than the loader expects.
+         */
+        const val EMPTY_SOURCE = "<empty>"
+
+        /** Whether [name] is one of these two pseudo-names rather than a skill directory. */
+        fun isSourceLevel(name: String): Boolean = name == WHOLE_SOURCE || name == EMPTY_SOURCE
+    }
+}

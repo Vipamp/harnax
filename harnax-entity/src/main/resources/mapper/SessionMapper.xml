@@ -10,6 +10,7 @@
         <result column="session_description" property="sessionDescription"/>
         <result column="session_id" property="sessionId"/>
         <result column="agent_id" property="agentId"/>
+        <result column="team_id" property="teamId"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
         <result column="system_prompt" property="systemPrompt"/>
@@ -57,13 +58,13 @@
     <!-- insert -->
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO session (
-            session_id, title, session_description, agent_id,
+            session_id, title, session_description, agent_id, team_id,
             name, description, system_prompt, model_id,
             enable_think, enable_search, enable_plan, permission_mode,
             owner,
             tenant_id, status, is_public, creator, active, create_time, update_time
         ) VALUES (
-            #{sessionId}, #{title}, #{sessionDescription}, #{agentId},
+            #{sessionId}, #{title}, #{sessionDescription}, #{agentId}, #{teamId},
             #{name}, #{description}, #{systemPrompt}, #{modelId},
             #{enableThink}, #{enableSearch}, #{enablePlan}, #{permissionMode},
             #{owner},
@@ -112,6 +113,13 @@
         WHERE agent_id = #{agentId} AND active = 1
         ORDER BY create_time DESC
         LIMIT 10
+    </select>
+
+    <!-- selectByTeamId: every team-mode session of one team, used to push a config refresh -->
+    <select id="selectByTeamId" resultMap="SessionResultMap">
+        SELECT * FROM session
+        WHERE team_id = #{teamId} AND active = 1
+        ORDER BY create_time DESC
     </select>
 
 </mapper>

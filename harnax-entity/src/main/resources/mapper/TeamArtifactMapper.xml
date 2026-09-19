@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.TeamArtifactMapper">
+
+    <resultMap id="TeamArtifactResultMap" type="com.agnetix.harnax.entity.TeamArtifact">
+        <id column="id" property="id"/>
+        <result column="file_id" property="fileId"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="session_id" property="sessionId"/>
+        <result column="team_id" property="teamId"/>
+        <result column="member_agent_id" property="memberAgentId"/>
+        <result column="child_session_id" property="childSessionId"/>
+        <result column="file_name" property="fileName"/>
+        <result column="mime_type" property="mimeType"/>
+        <result column="size_bytes" property="sizeBytes"/>
+        <result column="object_key" property="objectKey"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO team_artifact (
+        file_id, tenant_id, session_id, team_id, member_agent_id, child_session_id,
+        file_name, mime_type, size_bytes, object_key, create_time
+        ) VALUES (
+        #{fileId}, #{tenantId}, #{sessionId}, #{teamId}, #{memberAgentId}, #{childSessionId},
+        #{fileName}, #{mimeType}, #{sizeBytes}, #{objectKey}, #{createTime}
+        )
+    </insert>
+
+    <select id="selectByFileId" resultMap="TeamArtifactResultMap">
+        SELECT * FROM team_artifact WHERE file_id = #{fileId} LIMIT 1
+    </select>
+
+    <select id="selectBySessionId" resultMap="TeamArtifactResultMap">
+        SELECT * FROM team_artifact WHERE session_id = #{sessionId} ORDER BY id
+    </select>
+
+</mapper>

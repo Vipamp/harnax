@@ -129,6 +129,9 @@ data class CommandAgentRequest(
  * @property isConfirmed Whether the user confirmed all tool executions (bulk mode)
  * @property toolInfoList List of tools pending confirmation (legacy)
  * @property toolResults Per-tool confirmation decisions (preferred over bulk mode)
+ * @property childRunId Set when the answer belongs to a team member run rather than to this session's own
+ *   agent. Carries [EventSource.childRunId] back: several member runs of one root session can be waiting
+ *   on a confirmation, and only this id says which one to resume.
  */
 data class ConfirmAgentRequest(
     override val sessionId: String,
@@ -136,6 +139,7 @@ data class ConfirmAgentRequest(
     val toolInfoList: List<ToolInfo> = emptyList(),
     val toolResults: List<ToolConfirmResult> = emptyList(),
     override val userId: Long? = null,
+    val childRunId: String? = null,
 ) : AgentRequest() {
     override val type: RequestType = RequestType.CONFIRM
 }

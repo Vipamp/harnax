@@ -25,6 +25,13 @@ spring:
     enabled: true
     # V1__quartz_tables.sql from this module's own resources, into the container, before Quartz is created.
     table: flyway_schema_history_scheduler
+    # Testcontainers runs schema-it.sql before the application boots, so the schema is never empty by the time
+    # Flyway looks at it — and Flyway refuses to migrate a non-empty schema without a history table. The one
+    # table that script creates (`it_cluster_fire`) is ClusterSingleFireIT's evidence row and stays.
+    # baseline-version has to be 0, not its 1 default: baselining at 1 marks V1 as already applied and leaves
+    # the QRTZ_* tables uncreated.
+    baseline-on-migrate: true
+    baseline-version: 0
   quartz:
     job-store-type: jdbc
     jdbc:

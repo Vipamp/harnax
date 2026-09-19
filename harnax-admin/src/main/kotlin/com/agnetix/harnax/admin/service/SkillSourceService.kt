@@ -33,8 +33,15 @@ interface SkillSourceService {
 
     fun uploadAndInstall(zipPath: String, originalFilename: String, name: String): SkillSourceInstallResponse
 
-    /** Re-runs the install for an existing source, picking up whatever the remote now serves. */
-    fun installSkills(id: Long): SkillInstallResponse
+    /**
+     * Re-runs the install for an existing source, picking up whatever the remote now serves.
+     *
+     * @param names the selection the caller showed its user; null stores everything the source holds
+     */
+    fun installSkills(
+        id: Long,
+        names: List<String>? = null,
+    ): SkillInstallResponse
 
     fun convertToResponse(entity: SkillRepository): SkillSourceResponse
 }

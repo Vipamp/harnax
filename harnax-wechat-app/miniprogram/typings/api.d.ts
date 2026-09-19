@@ -110,7 +110,6 @@ declare namespace API {
     toolDisplayName?: string;
     toolDisplayNameZh?: string;
     toolDescription?: string;
-    toolType?: string;
     needConfirm?: boolean;
     envBindings?: EnvBinding[];
   };

@@ -208,6 +208,22 @@ SCHEDULER_FLYWAY_ENABLED=false             # 否则它会拿 V2 去碰 harnax_ad
 
 > **这条退路有截止日期**：上面三步只在**第 8 步还没执行**时成立。一旦 `harnax_admin` 的三张 `agent_task*` 与 11 张 `QRTZ_*` 被 DROP，指回旧库就连表都没有——要退就得先把表建回来（运维手工建表是干净的一条；把 `SCHEDULER_FLYWAY_ENABLED` 临时开成 true 让 V1+V2 在旧 URL 上重放也行，但前提是旧库那张 `flyway_schema_history_scheduler` 台账还在——被一起删过就得先把它对齐，否则 validate 会先拦下来），然后再关回去。所以第 8 步之前先确认新库跑顺，这一步做完之后回滚的成本就不再是"改三个变量"。
 
+## 全新部署一次（2026-09-16 实测）
+
+`bash docker-new/deploy-all.sh` 一把梭（Maven 全模块 → webui `npm run build` → 产物入 `docker-new/dist` → 沙箱镜像 → 6 个服务镜像 `--no-cache` → `down` → `up -d --scale scheduler=${SCHEDULER_REPLICAS:-2}`）。**开跑前有两件事不做就一定失败**：
+
+1. **`docker-new/.env` 里那两个占位密钥必须换掉真值**。`ADMIN_INTERNAL_API_SECRET` 与 `HARNAX_AUTH_SECRET` 一旦还是仓库里公开的 `change-me-in-production-min-32-chars!!`，router 在 `CACHE_TYPE=redis` 下会被 `harnax-session-router/.../config/PlaceholderSecretCheck.kt` 在 `@PostConstruct` 里直接 `error(...)`——**容器起不来，不是降级起来**。顺手给 `HARNAX_AES_SECRET_KEY` 一个**恰好 32 字节**的值（`AesUtil` 只告警不拦，但空库时是唯一次没有代价的设定时机：晚设会让已加密的模型 key / MCP header 读不出来）。
+2. **"清空数据库"在这套部署里等价于移走 bind mount**。MySQL 的数据在 `${MYSQL_DATA_DIR:-./data/mysql}`，`sql/init-databases.sql` 只在**目录为空**时由 `docker-entrypoint-initdb.d` 执行一次；删库名、`TRUNCATE`、或只重启容器都不会让 `harnax_scheduler` 重新出现（它连库都不建，建表是 scheduler 自己的 Flyway）。做法：`docker compose -f docker-new/docker-compose.yml down` 之后把 `docker-new/data/mysql` 改名（比 `rm -rf` 可回退），再起来，五个库（`harnax_admin` / `harnax` / `agentscope` / `harnax_router` / `harnax_scheduler`）与授权会由脚本重建。Redis 只有派生状态，跟着 `docker volume rm docker-new_redis-data` 一起清掉最省事（`down` 不动卷）。
+
+实测结论（`kotlin-dev` @ `d60eab3`）：
+
+- 11 个容器全 `healthy`；`harnax_scheduler` 恰好 15 张表 = 11 张 `QRTZ_*` + `agent_task` / `agent_task_log` / `agent_task_execution` + `flyway_schema_history_scheduler`，V1、V2 均 `success=1`；`harnax_admin` 的 Flyway 到 V28。
+- `QRTZ_SCHEDULER_STATE` 两行、各按 15s 前进；`docker kill docker-new-scheduler-2` 之后存活副本 **21s** 打出 `ClusterManager: detected 1 failed or restarted instances` → `Freed 1 acquired trigger(s)`，`up -d --scale scheduler=2` 后重新两行。**接管窗口不是纸面推的了**（推算过程见 spec §11 第 2 条）。
+- 观测面无漂移：`scheduler.jobs.scheduled`=0（空库），`scheduler.reconcile.rounds{outcome=success}` 每分钟一次、没有 `failure` 标签，`scheduler.reconcile.drift` 从未被采样。
+- 界面链路通：`https://localhost/` 200（80 端口 301 跳 443），`/api/admin/auth/cli-login` 拿到 JWT，`GET /api/admin/agent-tasks/page` 与 `GET /api/admin/agent-tasks/{id}/logs` 经 admin 转发到 scheduler 均 200 且 `Page` 形状完好。webui 调用的 11 条 agent-task 路径与 admin `AgentTaskController` 暴露的一一对得上，搬迁没漏路由。
+- **仍未覆盖**：spec §11 的第 3/4/5/7 条（带执行中任务重启、执行中点"停止"、界面建任务/立即执行、OAuth MCP 的 C5 回归）。它们的前置是库里有一个 agent，而建 agent 要真实的模型 API Key——这一步只能由使用方给。
+- 两条新登记的记账：`harnax_admin` 里会被历史迁移重放出三张 0 行的孤儿 `agent_task*` 表（spec §9 F16）；两副本冷启动时系统 sweep 撞一次重复键、20ms 后自愈，代价是一条带 SQL 字样的 WARN（spec §9 F17）。
+
 ## 常见问题
 
 | 现象 | 先看什么 |

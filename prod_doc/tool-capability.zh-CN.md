@@ -30,14 +30,11 @@ harnax-agent-service（运行时装配、适配器实现）
 
 ## 2. 工具分类
 
-### 2.1 两大类：内置工具与自定义工具
+### 2.1 只有一类：内置工具
 
-| 类别 | `agent_tool.type` | 可见范围 | 落地状态 |
-|------|-------------------|----------|----------|
-| **内置工具** | `BUILTIN` | 全平台所有用户可用（随代码发布，启动时自动同步入库） | 已上线 |
-| **自定义工具** | `CUSTOM` / `HTTP` | 仅创建者本人可用（靠 `creator` + `is_public` 过滤） | **暂未开放**：装配、加密、DTO 等链路代码全部保留，Admin 前端不展示，仅通过直接写库或调用 Service 才能产生记录 |
+工具全部是内置工具：随代码发布，由 admin 启动时按 `@Tool` / `@ToolMeta` 注解同步入库，面向全平台所有用户。不存在用户自建的工具，也没有 `type` 与「是否公开（`is_public`）」这两层概念——`agent_tool` 表里的每一行都由 `BuiltinToolAutoRegistrar` 写入，任何接口和页面都不能新增、修改、启停或删除工具。
 
-> 两类工具在运行时走同一条装配路径（`HarnessAgentLauncher.createAgentBase()`），差异只在 `type` 分支：`BUILTIN`/`CUSTOM` 按 `beanName` 反射创建 ToolBox，`HTTP` 实例化 `HttpProxyToolBox`。
+> 所有工具在运行时走同一条装配路径（`HarnessAgentLauncher.createAgentBase()`）：按 `beanName` 反射创建 ToolBox，再按方法粒度授权。
 
 ### 2.2 内置工具再分：必须工具与非必须工具
 
@@ -45,11 +42,10 @@ harnax-agent-service（运行时装配、适配器实现）
 |------|--------------------------|----------|------------|
 | **必须工具** | `1` | 无人可选，也不需要选 | Admin 下发 AgentSpec 时自动追加（见 6.1），**不落 `agent_tool_binding`** |
 | **非必须内置工具** | `0` | 用户在智能体配置向导中勾选 | `agent_tool_binding` 绑定记录 |
-| 自定义工具 | `0` | 同上（暂不开放） | 同上 |
 
 对应的前端口径：
 
-- **工具管理页面**（`/api/admin/tools/builtin`）：内置工具全量展示，必须与非必须都可见，用「必须 / 可选」标签区分；自定义工具不展示。
+- **工具管理页面**（`/api/admin/tools/builtin`）：工具全量展示，必须与非必须都可见，用「必须 / 可选」标签区分。
 - **智能体配置向导**（`/api/admin/tools/available`）：只列出可勾选的工具，即 `is_required = 0` 的启用工具，必须工具不出现在候选列表中。
 - 必须工具同样不受理绑定：`agent_tool.is_required` 由 `@ToolMeta(isRequired)` 同步而来，UI 不提供开关。
 
@@ -63,7 +59,7 @@ harnax-agent-service（运行时装配、适配器实现）
 
 路径：`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolBox.kt`
 
-- 所有内置/自定义工具必须继承 `ToolBox` 并实现 `name()`（工具组逻辑名）。
+- 所有工具都必须继承 `ToolBox` 并实现 `name()`（工具组逻辑名）。
 - 运行时通过 `init(toolCallLogAdaptor, sessionMetaContext, userIdentifier)` 注入会话上下文，**每个会话创建独立实例**，避免单例共享导致的上下文串扰。
 - 提供 `execute { ... }` / `execute(vararg args) { ... }` 模板方法：工具方法体包裹其中后，自动完成调用计时、成功/失败日志上报（通过 `ToolCallLogAdaptor`），异常原样抛出。
 - 通过 `userIdentifier()` 可获取当前调用用户标识。
@@ -93,8 +89,7 @@ harnax-agent-service（运行时装配、适配器实现）
 | `displayNameZh` | `""` | Admin UI 中文展示名（i18n zh-CN 语言环境使用），留空时前端回退英文名 |
 | `envParamDefs` | `[]` | 环境参数定义数组（`ToolEnvParamDef`），启动时同步到 `agent_tool_env_param` 表，作为 Admin UI 绑定工具时环境参数表单的渲染依据；每项含 `key`（参数名）、`description`（UI 说明）、`required`（是否必填）、`secret`（是否密钥，UI 脱敏）、`defaultValue`（默认值，仅限非密钥——同步路径把注解值原样入库、不过加密器，给 `secret = true` 的参数配默认值等于往表里写明文密钥），详见 3.4 节 |
 | `timeoutSeconds` | `0` | 执行超时秒数；`0` 表示使用系统默认值（同步入库时写为 30 秒） |
-| `isPublic` | `true` | 是否公开可用（面向所有用户可见） |
-| `needConfirm` | `false` | **执行前是否需要用户确认**。为 `true` 时运行时生成 ASK 权限规则，每次调用都会暂停并等待用户确认；不检查入参内容，与调用参数无关；在 `BYPASS` 权限模式下会被跳过。内置工具的该字段由代码注解决定，页面上改不了；不改代码想给某个智能体加严，只能针对绑定项设置 `agent_tool_binding.needConfirm`——运行时取两者之或，绑定层只能追加确认、不能取消工具自带的确认（`agent_tool.needConfirm` 本身只有自定义 / HTTP 工具可在 UI 修改），详见 6.4 节 |
+| `needConfirm` | `false` | **执行前是否需要用户确认**。为 `true` 时运行时生成 ASK 权限规则，每次调用都会暂停并等待用户确认；不检查入参内容，与调用参数无关；在 `BYPASS` 权限模式下会被跳过。该字段由代码注解决定，页面上改不了；不改代码想给某个智能体加严，只能针对绑定项设置 `agent_tool_binding.needConfirm`——运行时取两者之或，绑定层只能追加确认、不能取消工具自带的确认（`agent_tool.needConfirm` 没有任何写入口），详见 6.4 节 |
 | `dangerousInput` | `false` | **是否对字符串入参做危险模式扫描**（危险命令如 `rm -rf`、敏感路径如 `.env`/`.ssh`）。仅当入参命中危险模式时才触发确认，命中后的确认不可被 `BYPASS` 跳过（bypass-immune）；正常入参直接放行；与 `needConfirm` 同时标注时输入扫描会被自动跳过（确认规则先生效），详见 6.3 / 6.4 节 |
 | `isRequired` | `false` | **是否为必须工具**：`true` 时随所有 Agent 生效——Admin 下发 AgentSpec 时自动追加该工具，无需绑定记录、也无需用户勾选；不出现在智能体配置向导的候选列表中，但仍展示在工具管理页面（标「必须」）；取值只由代码注解决定，UI 不提供开关，详见 2.2 / 6.1 节 |
 
@@ -126,23 +121,14 @@ Spring `@Component`，`@PostConstruct` 时：
 - `createToolBoxInstance(beanName)`：通过无参构造创建**会话级新实例**（失败时回退到单例模板）；
 - `getAllToolMeta()`：供 Admin 启动同步使用。
 
-### 3.6 HttpProxyToolBox（HTTP 代理工具）
-
-路径：`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/HttpProxyToolBox.kt`
-
-直接实现 agentscope 的 `AgentTool` 接口（不继承 `ToolBox`），按数据库配置实例化：
-
-- 构造参数：`toolName`、`toolDescription`、`httpUrl`、`httpMethod`（默认 POST）、`httpHeaders`（加密存储，运行时经 `McpConfigDecryptor` 解密）、`inputSchemaJson`（LLM 参数 Schema）、`timeoutSeconds`；
-- 调用时把模型入参序列化为 JSON body 发送，2xx 返回响应体，非 2xx 或异常返回错误文本（不会抛出中断会话）。
-
-### 3.7 适配器接口（SPI）
+### 3.6 适配器接口（SPI）
 
 | 接口 | 职责 | 实现方 |
 |------|------|--------|
 | `ToolCallLogAdaptor` | 上报工具调用日志（`ToolCallInfo`：agentId、sessionId、toolName、args、result、success、耗时） | `ToolCallLogAdaptorImpl`（agent-service，落库 `tool_call_log`） |
 | `ToolConfigAdaptor` | 按 `toolId` 查询工具配置（`AgentTool` 实体） | `ToolConfigAdaptorImpl`（agent-service，优先读 admin 预解析上下文，回退查库） |
 
-### 3.8 其他数据类
+### 3.7 其他数据类
 
 - `ToolSpec`：Agent 配置中的工具引用（`toolId`、`toolName`、`needConfirm` 覆盖）。
 - `SessionMetaContext` / `UserIdentifier`：会话与用户上下文，实现 `ToolCallContext` 标记接口。
@@ -169,7 +155,7 @@ Spring `@Component`，`@PostConstruct` 时：
 - 环境参数：`SMTP_HOST`（必填）、`SMTP_PORT`（可选，默认 587）、`SMTP_USER`（必填）、`SMTP_PASSWORD`（必填，密钥）、`SMTP_FROM`（必填）。
 - 端口策略：465 走隐式 SSL，25 不加密，其余（含 587）强制 STARTTLS。
 
-> 三个方法的 `isPublic` 都取注解默认值 `true`，因此同步后 `agent_tool.is_public = 1`，对所有用户可见。当前代码库里**没有 `isRequired = true` 的内置工具**——「必须工具」这条分支（下发时自动追加、不落绑定表、启动矛盾告警）已实现并有用例覆盖，但线上暂时没有工具使用它。
+> 当前代码库里**没有 `isRequired = true` 的内置工具**——「必须工具」这条分支（下发时自动追加、不落绑定表、启动矛盾告警）已实现并有用例覆盖，但线上暂时没有工具使用它。
 
 ## 5. 内置工具注册机制（唯一的生命周期入口）
 
@@ -178,17 +164,17 @@ Spring `@Component`，`@PostConstruct` 时：
 - 扫描：`harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt`（`@PostConstruct`）
 - 入库：`harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt`（`ApplicationReadyEvent`）
 
-**约定**：内置工具（`type = 'BUILTIN'`）的新增、更新、删除**只有这一条路径**。代码里的 `@Tool` / `@ToolMeta` 是它唯一的事实来源，页面和接口都不提供对内置工具的写操作。
+**约定**：工具的注册、更新与删除**只有这一条路径**。代码里的 `@Tool` / `@ToolMeta` 是唯一的事实来源，`agent_tool` 表的每一行都由本机制写入，页面和接口都不存在任何写入口。
 
 ### 5.1 扫描
 
-`ToolRegistry` 启动时取 `getBeansOfType(ToolBox::class.java)`，逐 bean、逐方法读取 `@Tool` + `@ToolMeta`，产出 `ToolMetaDescriptor`（`beanName` 下挂每个方法的 `toolName`、`methodName`、`displayName` / `displayNameZh`、`description`、`readOnly`、`needConfirm`、`isRequired`、`isPublic`、`timeoutSeconds`、`envParamDescriptors`）。没有 `@Tool` 方法的 bean 不产出元数据，也就不会入库。
+`ToolRegistry` 启动时取 `getBeansOfType(ToolBox::class.java)`，逐 bean、逐方法读取 `@Tool` + `@ToolMeta`，产出 `ToolMetaDescriptor`（`beanName` 下挂每个方法的 `toolName`、`methodName`、`displayName` / `displayNameZh`、`description`、`readOnly`、`needConfirm`、`isRequired`、`timeoutSeconds`、`envParamDescriptors`）。没有 `@Tool` 方法的 bean 不产出元数据，也就不会入库。
 
 ### 5.2 同步（每次 admin 启动做一次全量收敛）
 
-1. **新增**：代码里有、库里没有的方法 → 插入一条 `agent_tool`（`type='BUILTIN'`、`status=1`、`active=1`、`creator='SYSTEM'`、`tenant_id=1`）。
-2. **更新**：代码里改了工具名、描述、展示名、`needConfirm`、`isRequired`、超时、环境参数定义等 → 逐字段覆盖写回数据库，`name` 也在覆盖之列。**`status` 同样收敛为 1**，内置工具不存在「人工停用」这种状态。
-3. **删除**：以 `beanName + methodName + toolName` 为身份键。库里 `type='BUILTIN'` 的记录（含 `active=0` 的历史行）只要不在这次代码声明的方法全集里，就**硬删除**，并级联清理它的 `agent_tool_env_param` 定义行和 `agent_tool_binding` 绑定行。覆盖两类残留：ToolBox 类被删 / 某个 `@Tool` 方法的 Java 方法名被改或被删。
+1. **新增**：代码里有、库里没有的方法 → 插入一条 `agent_tool`（`status=1`、`active=1`、`creator='SYSTEM'`、`tenant_id=1`）。
+2. **更新**：代码里改了工具名、描述、展示名、`needConfirm`、`isRequired`、超时、环境参数定义等 → 逐字段覆盖写回数据库，`name` 也在覆盖之列。**`status` 同样收敛为 1**，工具不存在「人工停用」这种状态。
+3. **删除**：以 `beanName + methodName + toolName` 为身份键。库里的记录（含 `active=0` 的历史行）只要不在这次代码声明的方法全集里，就**硬删除**，并级联清理它的 `agent_tool_env_param` 定义行和 `agent_tool_binding` 绑定行。覆盖两类残留：ToolBox 类被删 / 某个 `@Tool` 方法的 Java 方法名被改或被删。
 4. **环境参数定义同步**：`@ToolMeta.envParamDefs` → `agent_tool_env_param`，采用「就地更新 + 新增插入 + 过期删除」策略，保留记录 ID。
 5. **删除的三道保险**（删除是这个同步唯一不能出错的动作）：
    - `ToolRegistry` 一个 `@Tool` 方法都没扫到时（例如工具模块没被扫进容器），整个同步直接跳过，不删任何东西；
@@ -204,17 +190,14 @@ Spring `@Component`，`@PostConstruct` 时：
 
 > 因此「必须 / 非必须」的划分、工具是否存在、字段取值都只能改代码重新发布，运营侧不可调整。
 
-### 5.3 外部写入口：全部关闭
+### 5.3 外部写入口：接口本身不存在
 
-| 入口 | 对内置工具 |
-|------|-----------|
-| 前端（webui 工具管理页、小程序工具列表） | 只读展示，无新增 / 编辑 / 删除 / 停用；`services/ant-design-pro/tool.ts` 里的 update / toggle / delete 请求封装已删除 |
-| `AgentToolService.createAgentTool` | 服务层拒绝 `type = 'BUILTIN'`；Controller 本来也没有创建接口 |
-| `/update/{id}`、`/toggle/{id}`、`DELETE /{id}` | 服务层查到目标是 `BUILTIN` 即抛 `BizException`，消息为「Builtin tools are owned by the code sync (BuiltinToolAutoRegistrar): ... is not allowed」；Controller 统一包成 `ResultVo.error`，前端收到非 200 |
-
-`/update/{id}` 会**两头都查**：库里这行是 `BUILTIN` 拒绝，请求把 `type` 改成 `BUILTIN` 也拒绝——后者拦的是「把一条自定义工具改成内置、从此交给代码同步」这条路。
-
-这三条写接口只为 `CUSTOM` / `HTTP`（自定义工具）保留。
+| 入口 | 现状 |
+|------|------|
+| `AgentToolController` | 只有 GET：`/page`、`/{id}`、`/available`、`/builtin`、`/{id}/required-env-params`。`PUT /update/{id}`、`PUT /toggle/{id}`、`DELETE /{id}` 已整体删除，配套的 `AgentToolCreateRequest` / `AgentToolUpdateRequest` 一并删除 |
+| `AgentToolService` | 只声明查询与 `convertToResponse`，没有 create / update / toggle / delete 方法 |
+| 前端（webui 工具管理页、小程序工具列表） | 只读展示，无新增 / 编辑 / 删除 / 停用；`services/ant-design-pro/tool.ts` 只保留 `getAvailableTools` / `getBuiltinTools` |
+| `harnax-cli` | 只有 `tool list / get / available / builtin / env-params` 五个查询命令，没有 `update / delete / toggle` |
 
 ### 5.4 幂等性与排障锚点
 
@@ -235,7 +218,7 @@ Spring `@Component`，`@PostConstruct` 时：
 | `Removed N builtin tool record(s) no longer declared by the code: [...]` | 实际删除发生，括号里是 `beanName::methodName(id=…)` 清单 |
 | `No @Tool annotated methods found, skipping sync` | 一个方法都没扫到，整个同步跳过 |
 
-- **单元用例**：收敛规则的行为覆盖在 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrarTest.kt`（8 例）与 `AgentToolServiceImplTest`（写入口拒绝 5 例），编号见 `docs/unit-test-cases.md` §5.1 / §5.2。
+- **单元用例**：收敛规则的行为覆盖在 `harnax-admin/src/test/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrarTest.kt`（8 例），编号见 `docs/unit-test-cases.md` §5.2；工具服务只剩查询方法，原先那组「写入口拒绝 BUILTIN」的守卫用例已随写接口一起删除，`docs/unit-test-cases.md` §5.1 现在登记的是查询与响应装配用例。
 
 ## 6. Agent 运行时工具装配
 
@@ -257,11 +240,9 @@ HarnessAgentLauncher.createAgentBase()
         ├─ 遍历 agentSpec.toolSpecs
         │    ├─ ToolConfigAdaptor.getToolConfig(toolId) 取配置
         │    ├─ status=0（禁用）→ 跳过，不记入授权清单
-        │    ├─ BUILTIN/CUSTOM → ToolRegistry.createToolBoxInstance(beanName)
+        │    ├─ ToolRegistry.createToolBoxInstance(beanName)
         │    │      → init(日志适配器, SessionMetaContext, UserIdentifier)
         │    │      → agentBuilder.addTool(toolBox)（注册该 ToolBox 的全部 @Tool 方法）
-        │    ├─ HTTP → new HttpProxyToolBox(...)（解密 headers）
-        │    │      → agentBuilder.registerAgentTool(...)
         │    ├─ 配置或 ToolBox 取不到 → 告警跳过（无开关，不阻断会话构建）
         │    └─ needConfirm（实体值或绑定值，取或）→ 收集进 needConfirmedTools
         │
@@ -285,7 +266,7 @@ HarnessAgentLauncher.createAgentBase()
 要点：
 
 - **必须工具在下发阶段注入**：`is_required = 1` 的内置工具由 `InternalApiController` 追加进 `toolDetails`（与绑定工具按 id 去重），Agent 配置里勾不到、也关不掉；要去掉它只能改代码——取消 `isRequired` 或删除该 `@Tool` 方法，重新发布后由同步机制收敛（见 5.2）。
-- **`status` 随下发透传**：`ToolDetailDto.status` → `ToolConfigAdaptorImpl` 还原实体 → 运行时 `status == 0` 跳过。这条链路缺任一环都会让「停用工具」静默失效。注意内置工具的 `status` 由同步强制为 1，该分支实际只对自定义 / HTTP 工具生效。
+- **`status` 随下发透传**：`ToolDetailDto.status` → `ToolConfigAdaptorImpl` 还原实体 → 运行时 `status == 0` 跳过。这条链路缺任一环会让「停用工具」静默失效。工具的 `status` 由启动同步强制收敛为 1，也不存在可把它改成 0 的写入口，所以这条跳过判断目前只剩防御作用。
 - **必须工具没有绑定行**，因此没有 `agent_tool_binding.envBindings` 快照可取：它拿不到按 Agent 配置的环境参数。需要环境参数的工具不要标 `isRequired`，否则运行期 `require()` 必然报「参数未配置」；Admin 启动同步时会对这种组合打告警。
 - **按 beanName 去重、按方法粒度授权**：一个 ToolBox 内的多个 `@Tool` 方法对应多条 `agent_tool` 记录，`addTool` 只执行一次；由于 `addTool` 会把该 ToolBox 的全部方法都注册进来，装配结束后要用 `ToolRegistry.getToolMeta(beanName)` 的方法全集减去本次授权的方法集，把差额 `removeTool` 掉——否则勾选同箱的一个工具就等于放出整箱工具。
 - **配置来源**：`ToolConfigAdaptorImpl` 优先读取 admin 预解析好的 `toolDetails`（随 AgentSpec 下发），未命中时回退直查数据库。
@@ -328,7 +309,7 @@ fun sendEmail(...)
 
 - 不看入参内容，只要调用就会生成 ASK 权限规则，向用户发起确认；
 - 在 `BYPASS` 模式下可被跳过（普通 ASK）；
-- 不改代码也能调整：内置工具的 `agent_tool.needConfirm` 在页面上改不了（见 5.3），只能给某个智能体的绑定设置 `agent_tool_binding.needConfirm` 追加确认（运行时取两者之或，取消不掉工具自带的确认）；自定义 / HTTP 工具的 `agent_tool.needConfirm` 仍可通过工具管理接口修改。
+- 不改代码也能调整的方向只有一个：`agent_tool.needConfirm` 没有任何写入口（见 5.3），要加严只能给某个智能体的绑定设置 `agent_tool_binding.needConfirm` 追加确认（运行时取两者之或，取消不掉工具自带的确认）。
 
 **方式 2：`dangerousInput = true` —— 危险入参扫描（bypass-immune）**
 
@@ -363,18 +344,15 @@ fun executeCommand(
 |------|------|
 | `name` / `displayName` / `displayNameZh` | 工具标识名与中英文展示名 |
 | `description` | 工具描述（发送给 LLM） |
-| `type` | `BUILTIN` / `CUSTOM` / `HTTP` |
-| `beanName` / `methodName` | BUILTIN/CUSTOM 类型定位 ToolBox Bean 与方法 |
-| `httpUrl` / `httpMethod` / `httpHeaders` | HTTP 类型的请求配置（headers 加密存储） |
-| `inputSchema` / `outputSchema` | HTTP 类型的 JSON Schema |
-| `envParams` / `requiredEnvParamKeys` | 环境参数配置与必填 key 列表（JSON） |
+| `beanName` / `methodName` | 定位 ToolBox Bean 与方法，与 `tenant_id`、`active` 一起构成身份键 |
+| `requiredEnvParamKeys` | 必填环境参数 key 列表（JSON）；参数定义本身在 `agent_tool_env_param`（见 7.3） |
 | `readOnly` / `needConfirm` / `isRequired` | 只读、需确认、必须工具标记（0/1） |
 | `timeoutSeconds` | 超时（默认 30 秒） |
-| `status` / `isPublic` / `active` | 启用状态、公开状态、逻辑删除 |
+| `status` / `active` | 启用状态与逻辑删除标记；`status` 由启动同步强制为 1（见 5.2） |
 
 > 约束与删除语义：
 > - 唯一键 `uk_tenant_bean_method (tenant_id, bean_name, method_name, active)`（V4 起）。`name` **不在唯一键里**，所以同步能在同一条记录上原地改 `name`（见 5.2）；代价是代码里两个方法标了同名 `@Tool(name)` 时数据库不会拦。
-> - `deleteById` 是软删（置 `active = 0`），只对自定义 / HTTP 工具生效；内置行的移除走 `deleteBuiltinByIds` 硬删，SQL 里带 `type = 'BUILTIN'` 守卫，碰不到用户自建记录，且只由注册机制调用。
+> - 表上唯一的删除语句是注册机制调用的 `deleteBuiltinByIds`（硬删）——这张表的每一行都由代码同步拥有，没有归属概念，也不需要区分「谁的记录」。随写入口一起删除的还有软删 `deleteById`（置 `active = 0`），因此 `active = 0` 只可能来自历史数据。
 
 ### 7.2 agent_tool_binding（Agent-工具绑定表）
 
@@ -406,19 +384,16 @@ fun executeCommand(
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
-| `/page` | GET | 分页查询（支持 keyword / status / type 过滤） |
+| `/page` | GET | 分页查询，参数只有 `pageNum` / `pageSize` / `keyword` / `status` |
 | `/{id}` | GET | 工具详情 |
-| `/update/{id}` | PUT | 更新工具（**仅 `CUSTOM` / `HTTP`**，目标是内置工具时拒绝） |
-| `/toggle/{id}` | PUT | 启用 / 禁用 status 0/1（**仅 `CUSTOM` / `HTTP`**，内置工具恒为启用） |
-| `/{id}` | DELETE | 逻辑删除（**仅 `CUSTOM` / `HTTP`**，内置工具的删除由注册机制负责） |
-| `/available` | GET | 智能体配置向导候选列表：`status=1 AND active=1 AND is_required = 0`，即可勾选的非必须工具（可按 type 过滤） |
-| `/builtin` | GET | 工具管理页列表：全部内置工具，**含必须与非必须**（`type='BUILTIN' AND active=1`） |
+| `/available` | GET | 智能体配置向导候选列表：`status=1 AND active=1 AND is_required = 0`，即可勾选的非必须工具，无过滤参数 |
+| `/builtin` | GET | 工具管理页列表：全部工具，**含必须与非必须**（`active=1`） |
 | `/{id}/required-env-params` | GET | 查询工具必填环境参数 key |
 
 > 备注：
-> - 内置工具没有任何写入口（见 5.3）：写接口在 service 层按 `type` 拦截，前端工具页面只做展示。
-> - `AgentToolService.createAgentTool` 已实现（支持创建 HTTP 等自定义工具，含密钥字段加密），但 Controller 未暴露 POST 创建接口，且服务层拒绝 `type = 'BUILTIN'`；自定义工具（`CUSTOM` / `HTTP`）整体暂未开放，前端工具管理页只展示内置工具，相关代码保留。
-> - `/page` 走 `is_public = 1 OR creator = 当前用户` 的可见性过滤，`/builtin` 与 `/available` 不做该过滤（内置工具面向全平台）。
+> - 这是纯粹的只读 API：`PUT /update/{id}`、`PUT /toggle/{id}`、`DELETE /{id}` 已删除，也没有 POST 创建接口（见 5.3）。
+> - `AgentToolResponse` 不再返回 `type` / `httpUrl` / `httpMethod` / `httpHeaders` / `inputSchema` / `outputSchema`，环境参数以 `envParams`（取自 `agent_tool_env_param`）与 `requiredEnvParamKeys` 两项给出。
+> - 工具是全平台共享的一批记录，`/page` 不做创建者或公开性过滤。
 
 前端管理页面：`harnax-webui/src/pages/tool/`（只读列表）。
 
@@ -559,13 +534,13 @@ class WeatherToolBox : ToolBox() {
 | 现象 | 原因与处理 |
 |------|-----------|
 | 工具在模型侧「不存在」，参数传不进来 | 参数未加 `@ToolParam`，重新检查注解 |
-| 工具管理页面看不到新工具 | admin 未重启（未同步），或该 ToolBox 没有扫到 `@Tool` 方法（`ToolRegistry` 里没有它的元数据），或该记录 `type` 不是 `BUILTIN`（自定义工具暂不在前端展示） |
-| 智能体配置向导里选不到 | 该工具 `is_required = 1`（必须工具不进候选列表，下发时自动带上），或它是自定义 / HTTP 工具且 `status = 0` |
+| 工具管理页面看不到新工具 | admin 未重启（未同步），或该 ToolBox 没有扫到 `@Tool` 方法（`ToolRegistry` 里没有它的元数据） |
+| 智能体配置向导里选不到 | 该工具 `is_required = 1`（必须工具不进候选列表，下发时自动带上） |
 | 运行时日志出现 `Tool ... not found, skipping` | `agent_tool` 记录缺失（admin 未重启同步）、`beanName` 为空，或 agent-service 未重启导致 `ToolRegistry` 中没有该 ToolBox；该工具会被跳过，不会兜底注册 |
 | 环境参数取不到值 | 引用型条目在快照里不存值，只存 `envVarId`：变量还在就一定按最新值解析，所以取不到通常是 envKey 与代码声明不一致，或者 `agent_tool_binding.envBindings` 里根本没有这个 key（保存时的必填与引用校验现在会先挡一道）。剩下一种静默情况是改动之前存下的历史行：里面可能带着一串掩码当值，变量又已被删除，才会兜出星号 |
 | 表单里看着填好了，工具拿到一串星号 | 那是掩码不是值。两处来源：`secret = true` 的参数曾把默认值掩码预填进绑定框，以及引用型快照曾把 `displayValue`（敏感项即 `******`）当值存下——本轮都改了（敏感项一律留空、引用不落值）。判定口径是「含 `****` 的不算已填」，历史脏行需要重新填一次 |
 | 必须工具运行期报「环境参数未配置」 | `isRequired = true` 的工具没有绑定行，拿不到任何 envBindings 快照。必须工具不要声明必填环境参数；确实需要外部配置，改为在非必须工具上声明，或让代码用 `ToolEnvContext.get(key)` 自行兜默认值，避免 `require` |
-| 想停用 / 改名 / 删除某个内置工具 | 没有这种入口：内置工具由代码同步独占管理（见 5.3），写接口对 `BUILTIN` 直接拒绝，页面也没有开关。要去掉或改名就改注解重新发布；手工改库里的记录会在下次 admin 重启时被收敛回代码状态 |
+| 想停用 / 改名 / 删除某个工具 | 没有这种入口：工具由代码同步独占管理（见 5.3），写接口本身不存在，页面也没有开关。要去掉或改名就改注解重新发布；手工改库里的记录会在下次 admin 重启时被收敛回代码状态 |
 | 改了 Java 方法名或 bean 名后智能体说「找不到工具」 | 身份键是 `beanName + methodName + toolName`，改这两个之一等于删旧建新，`id` 变了，挂在旧 id 上的 `agent_tool_binding` 已随级联清理删除——去智能体配置里重新勾选该工具并补环境参数。只改 `@Tool(name = ...)` 不会有这个问题，记录会原地更新 |
 | 代码里删掉的工具在表里还在 | 删除被保险拦住了：某组同步失败、或待删条数不少于代码声明条数。查 admin 启动日志里的 `Skipping prune` ERROR，确认代码无误后重新发布 |
 | 多会话上下文串扰 | 不要缓存单例状态；运行时已按会话创建 ToolBox 新实例，方法内避免依赖可变成员变量 |
@@ -579,7 +554,6 @@ class WeatherToolBox : ToolBox() {
 | 元数据注解 | 同目录 `ToolMeta.kt`、`ToolEnvParamDef.kt`、`ToolMetaDescriptor.kt` |
 | 环境上下文 | 同目录 `ToolEnvContext.kt`、`ToolCallContext.kt` |
 | 注册中心 | 同目录 `registry/ToolRegistry.kt` |
-| HTTP 代理工具 | 同目录 `HttpProxyToolBox.kt` |
 | 适配器接口 | 同目录 `adaptor/ToolCallLogAdaptor.kt`、`adaptor/ToolConfigAdaptor.kt` |
 | 内置工具 | `harnax-tools-external/harnax-tools-buildin/src/main/kotlin/com/agnetix/harnax/tools/buildin/TimeToolBox.kt`、`EmailToolBox.kt` |
 | 运行时装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |

@@ -108,13 +108,12 @@ harnax model-provider stats <id>
 
 ### 工具管理
 
+工具全部为内置工具，由 admin 启动时按注解自动同步，不支持增删改与启停。
+
 ```bash
-harnax tool list [--keyword X] [--type BUILTIN|CUSTOM|HTTP] [--status N]
+harnax tool list [--keyword X] [--status N]
 harnax tool get <id>
-harnax tool update <id> [--name X]
-harnax tool delete <id>
-harnax tool toggle <id>
-harnax tool available [--type X]
+harnax tool available
 harnax tool builtin
 harnax tool env-params <id>
 ```

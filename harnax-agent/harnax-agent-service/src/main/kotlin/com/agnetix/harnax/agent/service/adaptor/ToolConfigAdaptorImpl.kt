@@ -58,15 +58,8 @@ class ToolConfigAdaptorImpl(
         entity.displayName = dto.displayName
         entity.displayNameZh = dto.displayNameZh
         entity.description = dto.description
-        entity.type = dto.type
         entity.beanName = dto.beanName
         entity.methodName = dto.methodName
-        entity.httpUrl = dto.httpUrl
-        entity.httpMethod = dto.httpMethod
-        entity.httpHeaders = dto.httpHeaders
-        entity.envParams = dto.envParams
-        entity.inputSchema = dto.inputSchema
-        entity.outputSchema = dto.outputSchema
         entity.readOnly = dto.readOnly
         entity.needConfirm = dto.needConfirm
         entity.requiredEnvParamKeys = dto.requiredEnvParamKeys

@@ -26,6 +26,14 @@
         SELECT * FROM agent WHERE id = #{id} AND active = 1 LIMIT 1
     </select>
 
+    <!-- selectByIds -->
+    <select id="selectByIds" resultMap="AgentResultMap">
+        SELECT * FROM agent WHERE active = 1 AND id IN
+        <foreach collection="ids" item="agentId" open="(" separator="," close=")">
+            #{agentId}
+        </foreach>
+    </select>
+
     <!-- deleteById -->
     <update id="deleteById">
         UPDATE agent SET active = 0 WHERE id = #{id}

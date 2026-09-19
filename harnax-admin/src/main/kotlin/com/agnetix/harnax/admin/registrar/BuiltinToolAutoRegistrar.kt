@@ -14,9 +14,8 @@ import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 
 /**
- * The single lifecycle entry point for builtin tools: insert, update and delete all happen here,
- * driven by the `@Tool` / `@ToolMeta` annotations on the classpath. No page or API may write a
- * `type = 'BUILTIN'` row (enforced in `AgentToolServiceImpl`).
+ * The single lifecycle entry point for tool assets: insert, update and delete all happen here,
+ * driven by the `@Tool` / `@ToolMeta` annotations on the classpath. No page or API writes this table.
  *
  * Each @Tool method maps to one agent_tool record, enabling independent needConfirm, envParamDefs
  * and per-method granting at runtime.
@@ -88,7 +87,6 @@ class BuiltinToolAutoRegistrar(
                         displayName = method.displayName.ifBlank { method.toolName }
                         displayNameZh = method.displayNameZh.ifBlank { null }
                         description = method.description
-                        type = TOOL_TYPE_BUILTIN
                         this.beanName = beanName
                         methodName = method.methodName
                         readOnly = if (method.readOnly) 1 else 0
@@ -96,7 +94,6 @@ class BuiltinToolAutoRegistrar(
                         isRequired = if (method.isRequired) 1 else 0
                         requiredEnvParamKeys = requiredKeysJson
                         timeoutSeconds = if (method.timeoutSeconds > 0) method.timeoutSeconds else DEFAULT_TIMEOUT
-                        isPublic = if (method.isPublic) 1 else 0
                         creator = SYSTEM_CREATOR
                         status = 1
                         active = 1
@@ -267,7 +264,6 @@ class BuiltinToolAutoRegistrar(
 
     companion object {
         private const val DEFAULT_TENANT_ID = 1L
-        private const val TOOL_TYPE_BUILTIN = "BUILTIN"
         private const val SYSTEM_CREATOR = "SYSTEM"
         private const val DEFAULT_TIMEOUT = 30
     }

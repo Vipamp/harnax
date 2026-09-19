@@ -49,7 +49,6 @@ class ToolConfigAdaptorImplTest {
             id = 1L
             name = "time-tool-box"
             displayName = "时间工具"
-            type = "BUILTIN"
             beanName = "time-tool-box"
             needConfirm = 0
             status = 1
@@ -81,10 +80,8 @@ class ToolConfigAdaptorImplTest {
             val dto = ToolDetailDto(
                 id = 1L, name = "ctx-tool", displayName = "Context Tool",
                 displayNameZh = null, description = "From context",
-                type = "BUILTIN", beanName = "ctx-tool-bean",
-                methodName = "run", httpUrl = null, httpMethod = "POST",
-                httpHeaders = null, envParams = null, inputSchema = null,
-                outputSchema = null, readOnly = 0, needConfirm = 0,
+                beanName = "ctx-tool-bean", methodName = "run",
+                readOnly = 0, needConfirm = 0,
                 requiredEnvParamKeys = null, timeoutSeconds = 30,
                 bindingNeedConfirm = false,
             )
@@ -95,6 +92,7 @@ class ToolConfigAdaptorImplTest {
             assertNotNull(result)
             assertEquals("ctx-tool", result?.name)
             assertEquals("Context Tool", result?.displayName)
+            assertEquals("ctx-tool-bean", result?.beanName)
             verify(agentToolMapper, never()).selectById(1L)
         }
 

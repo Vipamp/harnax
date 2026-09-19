@@ -192,20 +192,27 @@
 | AGT-23 | 启停不绕过租户守卫 | 同上 id | RuntimeException `Agent not found`,`updateStatus` never()(写入口必须走 `getAgent`) |
 | AGT-24 | 删除不绕过租户守卫 | 同上 id | RuntimeException `Agent not found`,`deleteById` 与绑定级联都 never() |
 
-### 5.1 AgentToolServiceImpl(内置工具写入口守卫)
+### 5.1 AgentToolServiceImpl(只读查询)
 
-> 内置工具只有「代码注册」这一个生命周期入口(见 prod_doc 工具文档 §5),因此四个写方法都必须拒绝 `type = 'BUILTIN'`。
+> 工具只剩内置一类,生命周期只有「代码注册」一个入口(见 prod_doc 工具文档 §5),`createAgentTool` / `updateAgentTool` / `deleteAgentTool` / `updateStatus` 连同 `AgentToolCreateRequest` / `AgentToolUpdateRequest` 与对应写接口已在自定义工具下线时整体删除,原先八条「写入口拒绝 BUILTIN」的用例随之取消。本节只覆盖剩下的四个读方法与响应装配。
 
 | 编号 | 用例 | 输入 | 期望 |
 |------|------|------|------|
-| TLS-01 | 创建拒绝内置类型 | request.type=BUILTIN | BizException,message 含 `Builtin tools are owned by the code sync`;不调用 insert |
-| TLS-02 | 更新拒绝内置行 | selectById 返回 type=BUILTIN | BizException,message 含 `Updating builtin tool`;不调用 updateById |
-| TLS-03 | 更新拒绝改成内置类型 | 库中 CUSTOM,请求 type=BUILTIN | BizException,message 含 `to builtin type`;不调用 updateById |
-| TLS-04 | 启停拒绝内置工具 | selectById 返回 type=BUILTIN | BizException;不调用 updateStatus(内置工具 status 由注册收敛强制为 1) |
-| TLS-05 | 删除先查后判 | selectById=null | RuntimeException `Agent tool not found`;不调用 deleteById |
-| TLS-06 | 删除拒绝内置工具 | selectById 返回 type=BUILTIN | BizException;deleteById 与 env param 级联都不执行 |
-| TLS-07 | 无行受影响时返回 false | selectById 有值,deleteById 返回 0 | 返回 false |
-| TLS-08 | 创建接口默认类型 | 不传 type | 默认 `CUSTOM`(原默认 BUILTIN 与「不可外部创建内置工具」矛盾) |
+| TLS-01 | 分页查询 | `page(null, null, 1, 10)` | 走 `selectAgentToolList(null, null)`,返回 PageInfo |
+| TLS-02 | 分页按关键字 | keyword=`time` | 关键字透传给 `selectAgentToolList` |
+| TLS-03 | 分页按状态 | status=0 | 状态透传给 `selectAgentToolList` |
+| TLS-04 | 详情命中 | selectById 返回行 | 返回 `AgentToolResponse`,name 一致 |
+| TLS-05 | 详情未命中 | selectById=null | 返回 null,不抛异常 |
+| TLS-06 | 响应装配环境参数条目 | `agent_tool_env_param` 有 2 条定义 | `envParams` 两条,`required` / `secret` 按定义给出;非敏感项回显明文,敏感项回显掩码(`my-****alue`) |
+| TLS-07 | 无环境参数定义 | selectByToolId 返回空 | `envParams` 空 |
+| TLS-08 | 敏感项短值全掩码 | 解密后长度 ≤7 | 返回 `******` |
+| TLS-09 | 解密失败绝不泄漏 | decrypt 抛异常 | 返回 `******`,异常不外泄 |
+| TLS-10 | requiredEnvParamKeys 解析 | 实体为 `["API_KEY"]` | 响应为 `["API_KEY"]` |
+| TLS-11 | available 走非必须查询 | — | 调 `selectAvailableTools()`(SQL 侧 `is_required = 0`) |
+| TLS-12 | builtin 返回代码全量 | selectBuiltinToolList 有行 | 必须与非都必须都返回 |
+| TLS-13 | required-env-params 解析 | `["API_KEY","SECRET"]` | 返回 2 个 key |
+| TLS-14 | required-env-params 空值与坏 JSON | null / `not-json` | 都返回空列表 |
+| TLS-15 | required-env-params 工具不存在 | selectById=null | RuntimeException |
 
 ### 5.2 BuiltinToolAutoRegistrar(启动全量收敛)
 
@@ -220,7 +227,7 @@
 | REG-05 | 安全阀:扫不到工具 | getAllToolMeta 返回空 | 直接 return:不 upsert、不 selectAllBuiltin、不删任何行 |
 | REG-06 | 单组失败不触发删除 | broken-box 的 upsert 抛异常,库里另有一条 orphan | failCount>0 时整轮 prune 跳过,orphan 与 broken-box 的行都保留 |
 | REG-07 | 熔断:待删数不少于声明数 | 代码只声明 1 个工具,库里留着 2 条孤儿 | stale.size(2) >= liveKeys.size(1) → 跳过删除并打 ERROR,live 记录仍正常 upsert |
-| REG-08 | status/active 归代码所有 | 代码里存在的方法 | 交给 upsert 的实体 status=1、active=1、type=BUILTIN、creator=SYSTEM |
+| REG-08 | status/active 归代码所有 | 代码里存在的方法 | 交给 upsert 的实体 status=1、active=1、creator=SYSTEM |
 
 ### 5.3 McpServerServiceImpl(MCP 写入口缺省、更新语义、删除级联与租户过滤)
 

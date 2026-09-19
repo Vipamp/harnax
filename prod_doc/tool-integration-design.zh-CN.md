@@ -15,22 +15,20 @@
 | 工具可动态扩展，不必改硬编码工具集 | `ToolRegistry` 扫描容器内 `ToolBox`，`BuiltinToolAutoRegistrar` 启动时收敛入库 |
 | Agent 按配置选工具，而不是共享全部工具 | `agent_tool_binding` 绑定表 + 下发 `toolDetails` + 运行时按绑定装配 |
 | 与 MCP / Skill 管理形态对齐 | 同样是「实体表 + Admin 管理 + 绑定表 + Spec 下发 + 运行时适配器」五段式 |
-| 内置工具不被运营侧改坏 | 生命周期由代码同步独占，页面与 API 一律拒写 `type='BUILTIN'` |
+| 工具不被运营侧改坏 | 生命周期由代码同步独占，工具侧不存在任何写接口 |
 | 工具级差异化策略（确认、环境参数、必填） | 粒度下沉到 `@Tool` 方法：一个方法一条 `agent_tool` 记录 |
 
 不在这套体系里的：MCP 工具（独立表 `mcp_server`，见 mcp-management）、技能（`skill`，不进入 `agent_tool`）、CLI 插件（`cli` + `cli_skill_binding`）。
 
 ## 2. 分类模型
 
-### 2.1 按实现方式分（`agent_tool.type`）
+### 2.1 只有一种实现方式：代码注解 + ToolBox
 
-| 类型 | 事实来源 | 运行时载体 | 生命周期归谁 |
-|------|----------|------------|--------------|
-| `BUILTIN` | 代码注解 `@Tool` + `@ToolMeta` | `ToolRegistry.createToolBoxInstance(beanName)` 反射创建会话级实例 | **代码同步独占**（注册机制，无外部写入口） |
-| `CUSTOM` | 数据库记录 + 用户代码里的 ToolBox Bean | 同上 | Admin 写接口（暂未开放） |
-| `HTTP` | 纯数据库记录（URL / method / headers / inputSchema） | `HttpProxyToolBox` | Admin 写接口（暂未开放） |
+| 事实来源 | 运行时载体 | 生命周期归谁 |
+|----------|------------|--------------|
+| 代码注解 `@Tool` + `@ToolMeta` | `ToolRegistry.createToolBoxInstance(beanName)` 反射创建会话级实例 | **代码同步独占**（注册机制，无外部写入口） |
 
-`BUILTIN` 与 `CUSTOM` 运行时走同一条分支（都按 `beanName` 取 ToolBox），差别只在谁被允许写这条记录。
+`agent_tool` 表不再有 `type` 列，也不再有「是否公开」的 `is_public` 列：表里的每一行都对应代码里的一个 `@Tool` 方法，自建工具与 HTTP 代理工具这两类形态已整体下线。
 
 ### 2.2 按是否可关分（`agent_tool.is_required`）
 
@@ -39,7 +37,7 @@
 | 必须工具（`is_required=1`） | 无人可选，下发时自动追加 | 无 | 取不到（见 6.4） |
 | 非必须内置工具 | 用户在智能体配置向导勾选 | `agent_tool_binding` | 按 Agent 配置 |
 
-这两个维度是**正交**的：`is_required` 只对 `BUILTIN` 有意义，由 `@ToolMeta(isRequired)` 同步，UI 无开关。
+`is_required` 由 `@ToolMeta(isRequired)` 同步而来，UI 无开关，运营侧无法调整。
 
 ## 3. 数据模型
 
@@ -62,7 +60,7 @@ tool_call_log                (工具调用日志)
 
 | 模块 | 职责 | 关键类 |
 |------|------|--------|
-| `harnax-tools-sdk` | 工具抽象、注解、注册表、HTTP 代理、适配器接口（SPI） | `ToolBox`、`@ToolMeta`、`ToolRegistry`、`HttpProxyToolBox`、`ToolConfigAdaptor` |
+| `harnax-tools-sdk` | 工具抽象、注解、注册表、适配器接口（SPI） | `ToolBox`、`@ToolMeta`、`ToolRegistry`、`ToolConfigAdaptor` |
 | `harnax-tools-buildin` | 内置工具实现（时间、邮件） | `TimeToolBox`、`EmailToolBox` |
 | `harnax-entity` | `agent_tool` / `agent_tool_binding` / `agent_tool_env_param` / `tool_call_log` 实体与 Mapper | `AgentTool`、`AgentToolMapper` |
 | `harnax-admin` | 启动同步、管理 API、AgentSpec 下发 | `BuiltinToolAutoRegistrar`、`AgentToolController`、`InternalApiController` |
@@ -84,7 +82,7 @@ InternalApiController.buildAgentSpecResponse
 AgentSpecResolver → AgentSpec.toolSpecs + ToolEnvContext
    ▼
 HarnessAgentLauncher.createAgentBase()
-   BUILTIN/CUSTOM → ToolBox 实例；HTTP → HttpProxyToolBox
+   按 `beanName` 反射创建 ToolBox 实例
    → addTool → 按方法粒度剔除未授权方法 → 权限规则（ALLOW / ASK）→ 危险输入包装
 ```
 
@@ -100,9 +98,9 @@ HarnessAgentLauncher.createAgentBase()
 
 ### 6.2 内置工具生命周期由代码同步独占
 
-- **决策**：`type='BUILTIN'` 记录的新增 / 更新 / 删除只有 `BuiltinToolAutoRegistrar` 一个入口，其余写路径全部封死（服务层按 `type` 拒绝、Controller 无创建接口、前端只读且请求封装已删除）。
-- **原因**：数据库记录与代码注解不一致时，运行期一定以代码为准（`beanName` / `methodName` 要能反射到真实方法）。允许运营侧改内置工具，只会造出一批「库里存在、代码里跑不到」或者「字段与代码相反」的记录。
-- **代价**：改注解 + 重新发布 + 重启 admin 才能调整内置工具；运营侧没有应急开关。「必须 / 非必须」同理。
+- **决策**：`agent_tool` 记录的增 / 改 / 删只有 `BuiltinToolAutoRegistrar` 一个入口。工具侧不存在写路径：`PUT /update/{id}`、`PUT /toggle/{id}`、`DELETE /{id}` 与 `AgentToolCreateRequest` / `AgentToolUpdateRequest` 一并删除，Controller 与 Service 只剩查询，前端与 CLI 同样只读。
+- **原因**：数据库记录与代码注解不一致时，运行期一定以代码为准（`beanName` / `methodName` 要能反射到真实方法）。允许运营侧改工具，只会造出一批「库里存在、代码里跑不到」或者「字段与代码相反」的记录。
+- **代价**：改注解 + 重新发布 + 重启 admin 才能调整工具；运营侧没有应急开关。「必须 / 非必须」同理。
 
 ### 6.3 身份键与改名语义
 
@@ -151,9 +149,9 @@ HarnessAgentLauncher.createAgentBase()
 | 绑定表 | `agent_tool_binding` | `agent_mcp_binding` | `agent_skill_binding` |
 | Spec 传递 | `ToolDetailDto` → `ToolSpec` | `McpDetailDto` → `McpSpec` | `SkillDetailDto` → `SkillSpec` |
 | 运行时适配器 | `ToolConfigAdaptor` | `McpConfigAdaptor` | `SkillAdaptor` |
-| 元数据来源 | 代码注解同步（内置）/ DB（自定义） | DB | 远端仓库同步落库 |
-| 运营可写 | 内置否、自定义是（未开放） | 是 | 是 |
-| 密钥处理 | headers / env 值加密 | headers / env 值加密（下发前解密） | 无 |
+| 元数据来源 | 代码注解同步 | DB | 远端仓库同步落库 |
+| 运营可写 | 否（无任何写接口） | 是 | 是 |
+| 密钥处理 | env 值加密 | headers / env 值加密（下发前解密） | 无 |
 | 缺失时行为 | 告警跳过（无开关） | 告警跳过（无开关，V20 起与 Tool 一致） | 缓存兜底 |
 | 停用时行为 | 下发带 `status`，运行侧跳过 | 同 Tool（`status=0` 跳过） | Admin 下发时过滤，不进 spec |
 
@@ -161,12 +159,10 @@ HarnessAgentLauncher.createAgentBase()
 
 | 边界 | 说明 |
 |------|------|
-| 内置工具只写 `tenant_id = 1` | 同步固定用租户 1；`MybatisTenantInterceptor` 的租户过滤逻辑当前未启用，因此内置工具是全平台共享资源，不是按租户各存一份 |
-| 自定义工具链路保留但不可达 | 装配、加密、DTO 全在；无创建接口，前端不展示，只有直接写库才会产生记录 |
-| HTTP 工具无 UI 入口 | `HttpProxyToolBox` 与字段齐备，但工具管理页不提供创建 |
+| 工具只写 `tenant_id = 1` | 同步固定用租户 1；`MybatisTenantInterceptor` 的租户过滤逻辑当前未启用，因此工具是全平台共享资源，不是按租户各存一份 |
 | 删除残留需人工确认 | 熔断保护命中时（待删条数 ≥ 代码声明条数，或某个工具组同步失败）跳过删除并打 ERROR，需要人工核对代码后重新发布 |
 | `name` 不参与唯一键 | `uk_tenant_bean_method` 不含 `name`，因此代码里两个方法标了同名 `@Tool(name)` 不会被数据库拦下；同步按 `name` 检索记录挂环境参数，这种重名会让参数定义落到错误的行上 |
-| 租户过滤能力不齐 | `mcp_server` 列表查询已按 `tenant_id` 过滤（`mcp-management` 第 7 节第三轮），`agent` 还没有：`AgentMapper.xml` 既不映射也不插入 `agent.tenant_id`，而 `AgentServiceImpl` 会写 `agent.tenantId`、`MpSessionService` 会读它——写了不存、读了不真 |
+| 租户过滤已补齐，工具不在其内 | `mcp_server` 与 `agent` 的列表查询现在都按 `tenant_id` 过滤（`mcp-management` 第 7 节第三轮与第五轮，`AgentMapper.xml` 已映射并插入 `agent.tenant_id`）；工具不参与这套口径——每一行都由同步固定写成 `tenant_id = 1`（见第一行） |
 
 ## 9. 演进时间线
 
@@ -179,10 +175,11 @@ HarnessAgentLauncher.createAgentBase()
 | V5 | 加 `is_required` | 必须有「所有 Agent 都该带上」的工具 |
 | V7 | 建 `agent_tool_binding` 等规范化绑定表 | 取代 JSON 列，支持绑定级参数与确认 |
 | — | 注册机制接管内置工具的增 / 改 / 删 | 消灭「库与代码不一致」（6.2） |
-| — | API 与前端关闭内置工具写入口 | 单一事实来源（6.2） |
+| — | API 与前端先按 `type` 拒写内置工具，随后写接口整体删除 | 单一事实来源（6.2） |
 | V17 | 删 `agent_tool_binding.enable_skip` | 该开关无语义（6.6） |
 | V18 | `agent_tool_binding (agent_id, tool_id)` 唯一键 | 让「绑定行是该 Agent-工具对的唯一事实」成立 |
 | V19-V22 | MCP 侧对齐工具口径：绑定唯一键、删 `enable_skip`、删 `agent` / `session` 上的能力残留列、`tenant_id` 过滤与 `is_public` 缺省 | 同一套判据在 MCP 上逐条复现（详见 `mcp-management` 第 7 节） |
+| V29 | 删 `agent_tool` 的 `type` / `is_public` / `http_url` / `http_method` / `http_headers` / `input_schema` / `output_schema` / `env_params` 列 | 自定义（`CUSTOM`）与 HTTP 工具下线，工具只剩代码注册的内置一类，`@ToolMeta` 同时去掉 `isPublic` |
 | — | 装配去掉 `TOOL_SET` 兜底 | 方法粒度授权闭环（6.5） |
 | — | `upsert` 覆盖 `name` + 删除双保险 | 改名不再丢绑定、误删有刹车（6.3） |
 
@@ -193,7 +190,7 @@ HarnessAgentLauncher.createAgentBase()
 | 注解与描述符 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`、`ToolMetaDescriptor.kt` |
 | 扫描注册 | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` |
 | 启动收敛 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt` |
-| 写入口守卫 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentToolServiceImpl.kt`（`requireManageableTool`） |
+| 只读查询服务 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentToolServiceImpl.kt`（只有查询与 `convertToResponse`，无写方法） |
 | SQL 与唯一键行为 | `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml`（`upsertBuiltinTool` / `deleteBuiltinByIds`） |
 | 配置下发 | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt`（`buildAgentSpecResponse`） |
 | 运行时装配 | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |

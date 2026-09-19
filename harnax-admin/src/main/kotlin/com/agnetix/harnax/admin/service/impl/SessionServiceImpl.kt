@@ -13,6 +13,8 @@ import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -34,6 +36,8 @@ class SessionServiceImpl(
     private val sessionMapper: SessionMapper,
     private val mcpBindingMapper: AgentMcpBindingMapper,
     private val skillBindingMapper: AgentSkillBindingMapper,
+    private val teamMapper: TeamMapper,
+    private val teamMemberMapper: TeamMemberMapper,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
@@ -76,6 +80,7 @@ class SessionServiceImpl(
         response.sessionDescription = session.sessionDescription
         response.sessionId = session.sessionId
         response.agentId = session.agentId
+        response.teamId = session.teamId
         response.name = session.name
         response.description = session.description
         response.systemPrompt = session.systemPrompt
@@ -145,15 +150,34 @@ class SessionServiceImpl(
             throw BizException("Session name already exists, please use another name")
         }
 
+        val tenantId = currentTenantId()
+        val team = request.teamId?.let { teamId ->
+            val loaded = teamMapper.selectById(teamId) ?: throw BizException("Team not found: $teamId")
+            if (loaded.tenantId != tenantId) {
+                throw BizException("Team belongs to another tenant")
+            }
+            if (loaded.status != 1) {
+                throw BizException("Team '${loaded.name}' is disabled")
+            }
+            if (teamMemberMapper.selectByTeamId(teamId).isEmpty()) {
+                throw BizException("Team '${loaded.name}' has no members")
+            }
+            loaded
+        }
+
         // Get agent information by agent ID
-        val agent = agentService.getAgent(request.agentId)
+        val agentId = team?.leadAgentId ?: request.agentId
+        val agent = agentService.getAgent(agentId)
             ?: throw BizException("Agent not found")
 
         val session = Session()
         session.title = request.title
         session.sessionDescription = request.sessionDescription
         session.sessionId = "web-${UUID.randomUUID()}"
-        session.agentId = request.agentId
+        session.agentId = agentId
+        // The copy of the lead on `agent_id` is what listings show; `team_id` is what makes this a
+        // team conversation, and only ever set here — updateById never writes it.
+        session.teamId = team?.id
 
         // Copy information from agent
         session.name = agent.name
@@ -172,7 +196,7 @@ class SessionServiceImpl(
         session.creator = currentUsername
 
         // 归属跟随当前租户，否则行会落到 DDL 缺省租户，与它绑定的 agent 不同租户
-        session.tenantId = currentTenantId()
+        session.tenantId = tenantId
 
         // Default not public
         session.isPublic = 0
@@ -188,6 +212,11 @@ class SessionServiceImpl(
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
         val session = ownedSession(id)
             ?: throw BizException("Session not found")
+        // On a team session agent_id mirrors the team's lead, which the runtime re-reads from the team
+        // row. Editing it here would only make the listing disagree with what actually runs.
+        if (session.teamId != null && request.agentId != session.agentId) {
+            throw BizException("A team session follows its team lead; change the team instead")
+        }
         session.title = request.title
         session.description = request.sessionDescription
         request.agentId.let { session.agentId = it }

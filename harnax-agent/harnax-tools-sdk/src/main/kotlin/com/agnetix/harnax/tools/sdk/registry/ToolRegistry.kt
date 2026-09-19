@@ -118,7 +118,6 @@ class ToolRegistry {
                     needConfirm = needConfirm,
                     envParamDescriptors = envParamDescriptors,
                     timeoutSeconds = toolMeta?.timeoutSeconds ?: 0,
-                    isPublic = toolMeta?.isPublic ?: true,
                     isRequired = toolMeta?.isRequired ?: false,
                 ),
             )

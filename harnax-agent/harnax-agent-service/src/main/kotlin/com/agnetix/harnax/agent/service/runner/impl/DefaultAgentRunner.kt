@@ -20,11 +20,15 @@ import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.service.runner.AgentRunner
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
+import com.agnetix.harnax.agent.service.runner.TeamHistoryReplay
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.AgentStatePlanData
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.harness.team.ConfirmationOutcome
+import com.agnetix.harnax.harness.team.TeamArtifactGateway
+import com.agnetix.harnax.harness.team.TeamOrchestrator
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import com.github.benmanes.caffeine.cache.Caffeine
 import io.agentscope.core.event.ConfirmResult
@@ -34,6 +38,7 @@ import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.Task
 import org.reactivestreams.Subscription
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
@@ -50,6 +55,10 @@ class DefaultAgentRunner(
     private val agentSpecResolver: AgentSpecResolver,
     private val specContextHolder: AgentSpecContextHolder,
     private val adminApiClient: AdminApiClient,
+    /** The gateway bean only exists with MinIO enabled; a team can still delegate, it just cannot pass files. */
+    private val teamArtifactGateways: ObjectProvider<TeamArtifactGateway>,
+    /** Merges member child sessions into the root session's chat history, so team bubbles survive a reload. */
+    private val teamHistoryReplay: TeamHistoryReplay,
     @Value($$"${agent.cache.max-size:500}")
     private val cacheMaxSize: Long,
 ) : AgentRunner {
@@ -159,7 +168,7 @@ class DefaultAgentRunner(
         try {
             val userIdentifier = UserIdentifier(request.userId)
             val agent = getOrCreateAgent(sessionId, userIdentifier)
-            return agent.callStream(message, imageUrls)
+            val leadEvents = agent.callStream(message, imageUrls)
                 .doOnSubscribe { subscription ->
                     activeStreams[sessionId] = subscription
                     log.debug("Stream started for session=$sessionId")
@@ -169,6 +178,7 @@ class DefaultAgentRunner(
                     drainPendingRelease(sessionId)
                     log.debug("Stream ended for session=$sessionId")
                 }
+            return withMemberEvents(sessionId, agent.teamOrchestrator, leadEvents)
         } catch (e: Exception) {
             log.error("Error creating agent or streaming for session=$sessionId: ${e.message}", e)
             val errorEvent = if (e is HarnaxException) {
@@ -180,6 +190,38 @@ class DefaultAgentRunner(
                 )
             }
             return Flux.just(errorEvent, EndEventChatEvent())
+        }
+    }
+
+    /**
+     * Interleaves a team's member events into its lead's stream, so the user watches one conversation
+     * instead of opening a second channel per member (design D7).
+     *
+     * The member sink is opened at subscribe time but strictly before the lead's stream is subscribed, so a
+     * delegation can never publish into a sink that does not exist yet. When a previous root call still
+     * holds the sink — a member of it is waiting for a confirmation — this request is refused rather than
+     * silently taking those events away from the run that produced them.
+     */
+    private fun withMemberEvents(
+        sessionId: String,
+        orchestrator: TeamOrchestrator?,
+        leadEvents: Flux<ChatEvent>,
+    ): Flux<ChatEvent> {
+        if (orchestrator == null) return leadEvents
+        return Flux.defer {
+            val memberEvents = orchestrator.openEventStream()
+                ?: run {
+                    log.warn("Refusing a new team run for session=$sessionId: the previous one still owns the event stream")
+                    return@defer Flux.just(
+                        ErrorChatEvent(
+                            code = HarnaxErrorCode.RESOURCE_LOCKED.code,
+                            message = "The previous team run is still waiting for a member on this session. " +
+                                "Answer its confirmation or stop it first.",
+                        ),
+                        EndEventChatEvent(),
+                    )
+                }
+            Flux.merge(leadEvents.doFinally { orchestrator.closeEventStream() }, memberEvents)
         }
     }
 
@@ -210,9 +252,13 @@ class DefaultAgentRunner(
             CommandType.STOP_SANDBOX -> {
                 val sandboxManager = launcher.keepAliveSandboxManager
                 if (sandboxManager != null) {
-                    interrupt(sessionId)
+                    // Members run in sandboxes of their own; stopping this session's alone would leave them.
+                    stopExecution(sessionId, destroyMemberSandboxes = true)
                     agentCache.invalidate(sessionId)
                     sandboxManager.destroy(sessionId)
+                    // The orchestrator above only knows the members this instance built, so ask the state
+                    // store which child sessions this root owns too.
+                    launcher.memberSessionIds(sessionId).forEach { sandboxManager.destroy(it) }
                     log.info("Sandbox stopped for session=$sessionId")
                     CommandResponse.success(sessionId, message = "Sandbox stopped")
                 } else {
@@ -250,10 +296,23 @@ class DefaultAgentRunner(
         }
     }
 
-    override fun interrupt(sessionId: String): Boolean {
+    override fun interrupt(sessionId: String): Boolean = stopExecution(sessionId, destroyMemberSandboxes = false)
+
+    /**
+     * Stops what this instance is running for one session.
+     *
+     * A team is stopped from the top first: a delegation blocks a tool thread *of the lead*, so interrupting
+     * the lead alone would leave the member running, and a member parked on a confirmation would stay parked
+     * with nobody left to answer it. [TeamOrchestrator.stop] releases those waits without approving them.
+     */
+    private fun stopExecution(
+        sessionId: String,
+        destroyMemberSandboxes: Boolean,
+    ): Boolean {
         // 1. Interrupt the agent execution via HarnessAgent.interrupt() (works for both streaming and blocking calls)
-        val agent = agentCache.getIfPresent(sessionId)?.agent
-        agent?.interrupt()
+        val cached = agentCache.getIfPresent(sessionId)
+        cached?.agent?.teamOrchestrator?.stop(destroySandboxes = destroyMemberSandboxes)
+        cached?.agent?.interrupt()
 
         // 2. Also cancel active stream subscription (belt-and-suspenders for the streaming case)
         val subscription = activeStreams.remove(sessionId)
@@ -276,12 +335,15 @@ class DefaultAgentRunner(
         return live
     }
 
-    override fun loadHistory(sessionId: String): List<MessageLog> = launcher.loadSessionMessages(sessionId)
-        .flatMap { MessageLogConverter.convert(it) }
+    override fun loadHistory(sessionId: String): List<MessageLog> = teamHistoryReplay.merge(
+        sessionId,
+        launcher.loadSessionMessages(sessionId).flatMap { MessageLogConverter.convert(it) },
+    )
 
     override fun confirm(request: ConfirmAgentRequest): Flux<ChatEvent> {
         val sessionId = request.sessionId
         log.info("Confirm request for session=$sessionId, confirmed=${request.isConfirmed}, toolResults=${request.toolResults.size}")
+        request.childRunId?.let { return confirmMemberRun(sessionId, it, request) }
         val agent = cachedAgent(sessionId, request.userId)
             ?: run {
                 log.warn("Agent not cached for this user, rebuilding for confirm: session=$sessionId")
@@ -300,6 +362,7 @@ class DefaultAgentRunner(
                 EndEventChatEvent(),
             )
         }
+
         val confirmResults = if (request.toolResults.isNotEmpty()) {
             // Per-tool decision mode
             request.toolResults.map { tr ->
@@ -319,7 +382,6 @@ class DefaultAgentRunner(
             .build()
 
         val stream = agent.callStream(msg = msg)
-        return stream
             .doOnSubscribe { subscription ->
                 activeStreams[sessionId] = subscription
                 log.debug("Confirm stream started for session=$sessionId")
@@ -329,13 +391,67 @@ class DefaultAgentRunner(
                 drainPendingRelease(sessionId)
                 log.debug("Confirm stream ended for session=$sessionId")
             }
+        // A resumed lead runs on a fresh stream, so it owns the member sink for this run: the delegate the
+        // user just approved can park a member on its own confirmation, and without this merge those events
+        // would be published into a sink nobody reads.
+        return withMemberEvents(sessionId, agent.teamOrchestrator, stream)
+    }
+
+    /**
+     * Answers one team member's confirmation.
+     *
+     * Different from the session's own confirm by necessity: the member run is parked inside a tool call of
+     * the lead, whose stream is still open, so this only records the decision. The resumed output continues
+     * on that original stream — which is why a successful answer carries no content of its own.
+     *
+     * The whole run is answered at once: [TeamOrchestrator] resumes a member with one decision per pending
+     * tool of that run, so a mixed per-tool answer denies the run rather than executing tools the user left
+     * unchecked.
+     */
+    private fun confirmMemberRun(
+        sessionId: String,
+        childRunId: String,
+        request: ConfirmAgentRequest,
+    ): Flux<ChatEvent> {
+        val orchestrator = cachedAgent(sessionId, request.userId)?.teamOrchestrator
+        if (orchestrator == null) {
+            log.warn("Member confirmation for run=$childRunId but no cached team agent for session=$sessionId")
+            return Flux.just(
+                ErrorChatEvent(
+                    code = HarnaxErrorCode.RESOURCE_NOT_FOUND.code,
+                    message = "This team run is no longer active. Ask the team again if the result is still needed.",
+                ),
+                EndEventChatEvent(),
+            )
+        }
+        val approved = if (request.toolResults.isEmpty()) request.isConfirmed else request.toolResults.all { it.confirmed }
+        val outcome = orchestrator.answerConfirmation(childRunId, approved)
+        val refusal = when (outcome) {
+            ConfirmationOutcome.APPROVED, ConfirmationOutcome.DENIED -> null
+            ConfirmationOutcome.NO_PENDING -> "This confirmation is no longer waiting."
+            ConfirmationOutcome.ALREADY_ANSWERED -> "This confirmation has already been answered."
+            ConfirmationOutcome.NOT_IN_THIS_TEAM -> "This confirmation belongs to another session or an earlier run."
+            ConfirmationOutcome.STOPPED -> "This team run was stopped, so the tool did not execute."
+        }
+        if (refusal == null) return Flux.just(EndEventChatEvent())
+        log.warn("Member confirmation for run=$childRunId (session=$sessionId) refused: $outcome")
+        return Flux.just(
+            ErrorChatEvent(code = HarnaxErrorCode.OPERATION_NOT_ALLOWED.code, message = refusal),
+            EndEventChatEvent(),
+        )
     }
 
     override fun clearSession(sessionId: String) {
         interrupt(sessionId)
+        // Members keep their own conversations on child sessions, and pick them up on the next delegation.
+        // Clearing only the root would leave them remembering what the user just erased. The state store is
+        // the source, not the agent cache: a cached orchestrator exists only on the instance that last served
+        // the run, and only while its 30-minute TTL holds.
+        val memberSessions = launcher.memberSessionIds(sessionId)
         agentCache.invalidate(sessionId)
         launcher.clearSession(sessionId)
-        log.info("Cleared session and agent cache for sessionId=$sessionId")
+        memberSessions.forEach { launcher.clearSession(it) }
+        log.info("Cleared session and agent cache for sessionId={} (member sessions={})", sessionId, memberSessions.size)
     }
 
     override fun loadPlans(sessionId: String): List<PlanNote> = launcher.loadSessionHistoryPlan(sessionId)
@@ -683,6 +799,10 @@ class DefaultAgentRunner(
     ): CachedAgent {
         log.info("Resolving agent spec for sessionId=$sessionId")
         val (agentSpec, chatSpec) = agentSpecResolver.resolve(sessionId)
+        // Admin stamps the session's team id on the agent spec it returns, so this is also the signal
+        // that the session runs as a team. Building the lead from `agentSpec` alone would silently turn
+        // such a session into an ordinary chat that never delegates.
+        if (specContextHolder.get()?.teamId != null) return buildTeamAgent(sessionId, userIdentifier)
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sessionId,
@@ -691,6 +811,56 @@ class DefaultAgentRunner(
             userIdentifier = userIdentifier,
         )
         log.info("Agent for session=$sessionId created and cached successfully")
+        return CachedAgent(agent, userIdentifier.userId)
+    }
+
+    /**
+     * Builds a team session: one orchestrator, owned by the lead's wrapper, plus one agent per member that
+     * is actually delegated to (design D5).
+     *
+     * Each build installs *its own* admin spec in the ThreadLocal context first, because the model, MCP,
+     * tool and skill adaptors read that context while an agent is being assembled — and members are
+     * assembled later than the lead, on the delegating thread, from this one cached instance.
+     */
+    private fun buildTeamAgent(
+        sessionId: String,
+        userIdentifier: UserIdentifier,
+    ): CachedAgent {
+        val teamSpec = agentSpecResolver.resolveTeam(sessionId)
+        val sandboxManager = launcher.keepAliveSandboxManager
+        val orchestrator = TeamOrchestrator(
+            spec = teamSpec,
+            config = launcher.harnessConfig.team,
+            memberFactory = { member, childSessionId, owned ->
+                specContextHolder.set(member.specInfo)
+                try {
+                    launcher.createTeamMember(owned, member, childSessionId, sessionId, userIdentifier)
+                } finally {
+                    specContextHolder.clear()
+                }
+            },
+            artifactGateway = teamArtifactGateways.ifAvailable,
+            sandboxProvider = { childSessionId -> sandboxManager?.getSandbox(childSessionId) },
+            sandboxDestroyer = { childSessionId -> sandboxManager?.destroy(childSessionId) },
+            sandboxWorkspaceRoot = launcher.harnessConfig.sandbox.workspaceRoot,
+        )
+        specContextHolder.set(teamSpec.leadSpecInfo)
+        val agent = try {
+            launcher.createTeamLead(
+                orchestrator = orchestrator,
+                agentSpec = teamSpec.leadAgentSpec,
+                sessionId = sessionId,
+                chatSpec = teamSpec.leadChatSpec,
+                userIdentifier = userIdentifier,
+            )
+        } finally {
+            specContextHolder.clear()
+        }
+        log.info(
+            "Team agent for session=$sessionId created and cached successfully: teamId={}, members={}",
+            teamSpec.teamId,
+            teamSpec.members.map { it.memberAgentId },
+        )
         return CachedAgent(agent, userIdentifier.userId)
     }
 

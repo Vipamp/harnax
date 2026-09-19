@@ -497,9 +497,12 @@ class KeepAliveSandboxManager(
     }
 
     /**
-     * Removes sandboxes that have been idle for longer than maxIdleTimeMs.
+     * Removes sandboxes idle for longer than maxIdleTimeMs and returns how many were reaped.
+     *
+     * Public because [getOrCreate] is not a scheduler: with no new session arriving, nothing else ever
+     * called in here, and every container this process knew about stayed up forever.
      */
-    private fun cleanupIdle() {
+    fun cleanupIdle(): Int {
         val now = System.currentTimeMillis()
         val idleSessions = sandboxes.entries
             .filter { now - it.value.lastAccessTime > maxIdleTimeMs }
@@ -509,6 +512,7 @@ class KeepAliveSandboxManager(
             log.info("[keepAlive] Cleaning up {} idle sandbox(es)", idleSessions.size)
             idleSessions.forEach { destroy(it) }
         }
+        return idleSessions.size
     }
 
     /**

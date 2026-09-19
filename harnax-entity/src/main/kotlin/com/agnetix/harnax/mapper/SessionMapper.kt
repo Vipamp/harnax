@@ -42,4 +42,12 @@ interface SessionMapper {
     fun selectBySessionIdAndStatus(@Param("sessionId") sessionId: String, @Param("status") status: Int): Session?
 
     fun selectByAgentId(@Param("agentId") agentId: Long): List<Session>
+
+    /**
+     * Active sessions running in team mode for this team.
+     *
+     * Deliberately unbounded: the caller pushes a refresh to every row it returns, so a cap would drop
+     * conversations from the prompt while still reporting success.
+     */
+    fun selectByTeamId(@Param("teamId") teamId: Long): List<Session>
 }

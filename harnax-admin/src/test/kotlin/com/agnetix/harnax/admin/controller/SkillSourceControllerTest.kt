@@ -240,7 +240,7 @@ class SkillSourceControllerTest {
 
         @Test
         fun `install should return the per-skill outcome`() {
-            `when`(skillSourceService.installSkills(1L)).thenReturn(
+            `when`(skillSourceService.installSkills(1L, null)).thenReturn(
                 SkillInstallResponse(installed = listOf("skill-a"), updated = listOf("skill-b")),
             )
 
@@ -252,8 +252,40 @@ class SkillSourceControllerTest {
         }
 
         @Test
+        fun `install without a body should ask for the whole source`() {
+            `when`(skillSourceService.installSkills(1L, null)).thenReturn(
+                SkillInstallResponse(installed = listOf("skill-a")),
+            )
+
+            mockMvc.perform(post("/api/admin/skill-sources/1/install"))
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.savedCount").value(1))
+        }
+
+        /**
+         * The selection dialog has always been a selection; the endpoint behind it stored whatever
+         * the source held. The names have to reach the service or the dialog is decorative.
+         */
+        @Test
+        fun `install should pass the selected names to the service`() {
+            `when`(skillSourceService.installSkills(1L, listOf("skill-a"))).thenReturn(
+                SkillInstallResponse(installed = listOf("skill-a")),
+            )
+
+            mockMvc.perform(
+                post("/api/admin/skill-sources/1/install")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""{"names":["skill-a"]}"""),
+            )
+                .andExpect(status().isOk)
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.installed[0]").value("skill-a"))
+        }
+
+        @Test
         fun `install should report disabled skills flagged by the content scan`() {
-            `when`(skillSourceService.installSkills(1L)).thenReturn(
+            `when`(skillSourceService.installSkills(1L, null)).thenReturn(
                 SkillInstallResponse(
                     installed = listOf("wiper"),
                     flagged = listOf(SkillInstallResponse.FlaggedSkill("wiper", listOf("SKILL.md: recursively deletes a root-level path"))),
@@ -267,7 +299,7 @@ class SkillSourceControllerTest {
 
         @Test
         fun `install should return error on failure`() {
-            `when`(skillSourceService.installSkills(1L)).thenThrow(BizException("Git clone failed"))
+            `when`(skillSourceService.installSkills(1L, null)).thenThrow(BizException("Git clone failed"))
 
             mockMvc.perform(post("/api/admin/skill-sources/1/install"))
                 .andExpect(status().isOk)

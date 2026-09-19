@@ -184,6 +184,68 @@ open class SkillRepositoryMapperTest {
     }
 
     @Nested
+    @DisplayName("同步结果测试")
+    inner class SyncResultTests {
+
+        /**
+         * `update_time` is both the list's sort key and the record of the last edit. The column
+         * carries ON UPDATE CURRENT_TIMESTAMP, so a sync statement that does not name it would bump
+         * it and float a freshly re-installed source to the top of the list as though it had just
+         * been edited.
+         */
+        @Test
+        @DisplayName("updateSyncResult - 写入结果但不动 update_time")
+        fun `updateSyncResult should store the result without bumping update_time`() {
+            // DATETIME holds whole seconds, so both stamps are truncated before being compared back
+            val editedAt = LocalDateTime.now().minusDays(1).truncatedTo(ChronoUnit.SECONDS)
+            val repository = SkillRepository().apply {
+                tenantId = 1L
+                name = "sync-result-repo"
+                url = "https://github.com/test/sync-result"
+                branch = "main"
+                sourceType = "GIT"
+                sourceConfig = """{"url":"https://github.com/test/sync-result","branch":"main"}"""
+                version = "1.0.0"
+                description = "sync result test"
+                status = 1
+                isPublic = 0
+                creator = "admin"
+                active = 1
+                createTime = editedAt
+                updateTime = editedAt
+            }
+            skillRepositoryMapper.insert(repository)
+            val syncTime = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS)
+
+            val result = skillRepositoryMapper.updateSyncResult(
+                repository.id,
+                "PARTIAL",
+                """{"saved":1,"failed":[{"name":"broken","reason":"SKILL.md is empty"}]}""",
+                syncTime,
+            )
+
+            assertEquals(1, result)
+            val stored = skillRepositoryMapper.selectById(repository.id)
+            assertNotNull(stored)
+            assertEquals("PARTIAL", stored.lastSyncStatus)
+            assertEquals(syncTime, stored.lastSyncTime)
+            assertTrue(stored.lastSyncDetail!!.contains("broken"))
+            assertEquals(editedAt, stored.updateTime)
+        }
+
+        @Test
+        @DisplayName("selectById - 从未同步过的仓库三列都是 NULL")
+        fun `a source that has never synced reads back with no result`() {
+            val stored = skillRepositoryMapper.selectById(1L)
+
+            assertNotNull(stored)
+            assertNull(stored.lastSyncTime)
+            assertNull(stored.lastSyncStatus)
+            assertNull(stored.lastSyncDetail)
+        }
+    }
+
+    @Nested
     @DisplayName("自定义查询测试")
     inner class CustomQueryTests {
 

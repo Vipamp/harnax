@@ -105,4 +105,22 @@
         ORDER BY update_time DESC
     </select>
 
+    <resultMap id="SkillRepositoryEnabledCountResultMap" type="com.agnetix.harnax.entity.dto.SkillRepositoryEnabledCount">
+        <result column="repository_id" property="repositoryId"/>
+        <result column="enabled_count" property="enabledCount"/>
+    </resultMap>
+
+    <!-- selectEnabledCountsByRepositoryIds -->
+    <select id="selectEnabledCountsByRepositoryIds" resultMap="SkillRepositoryEnabledCountResultMap">
+        <!-- `active = 1` is the skill existing at all, `status = 1` the skill being switched on: a
+             deleted skill blocks nothing, a disabled one is what the delete guard asks about -->
+        SELECT repository_id, COUNT(*) AS enabled_count
+        FROM skill
+        WHERE active = 1 AND status = 1 AND repository_id IN
+        <foreach collection="repositoryIds" item="repositoryId" open="(" separator="," close=")">
+            #{repositoryId}
+        </foreach>
+        GROUP BY repository_id
+    </select>
+
 </mapper>

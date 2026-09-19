@@ -15,7 +15,6 @@ interface ToolOption {
   id: number;
   name: string;
   label: string;
-  type?: string;
   envParams: API.ToolEnvParamEntry[];
 }
 
@@ -160,7 +159,6 @@ Page({
         id: t.id,
         name: t.name,
         label: t.displayNameZh || t.displayName || t.name,
-        type: t.type,
         envParams: (t.envParams || []) as API.ToolEnvParamEntry[],
       }));
       const mcpOptions = (mcpRes.records || []) as API.McpItem[];

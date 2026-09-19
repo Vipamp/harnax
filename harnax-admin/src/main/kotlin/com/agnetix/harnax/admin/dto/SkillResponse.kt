@@ -30,6 +30,8 @@ data class SkillResponse(
     val resources: String? = null,
     @Schema(description = "Status (0:disabled, 1:enabled)", example = "1")
     val status: Int? = null,
+    @Schema(description = "How many agents bind this skill. A bound skill can be neither disabled nor deleted from here")
+    val boundAgentCount: Int = 0,
     @Schema(description = "Whether public (0:no, 1:yes)", example = "1")
     val isPublic: Int? = null,
     @Schema(description = "Creator", example = "admin")
@@ -47,6 +49,7 @@ data class SkillResponse(
         fun fromEntity(
             skill: Skill?,
             repository: SkillRepository? = null,
+            boundAgentCount: Int = 0,
         ): SkillResponse {
             if (skill == null) {
                 return SkillResponse()
@@ -62,6 +65,7 @@ data class SkillResponse(
                 skillmd = skill.skillmd,
                 resources = skill.resources,
                 status = skill.status,
+                boundAgentCount = boundAgentCount,
                 isPublic = skill.isPublic,
                 creator = skill.creator,
                 createTime = skill.createTime,

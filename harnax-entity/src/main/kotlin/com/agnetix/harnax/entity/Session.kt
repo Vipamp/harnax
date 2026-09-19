@@ -28,6 +28,9 @@ class Session : Serializable {
     @Schema(description = "Associated agent ID")
     var agentId: Long = 0
 
+    @Schema(description = "Team ID when this session runs in team mode, null for an ordinary agent session")
+    var teamId: Long? = null
+
     @Schema(description = "Agent name")
     var name: String = ""
 

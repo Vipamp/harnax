@@ -474,6 +474,11 @@ services:
       SANDBOX_ENABLED: "true"
       SANDBOX_IMAGE: harnax-sandbox:py-node
       SANDBOX_KEEP_ALIVE: "true"
+      # Idle keep-alive containers are released after this budget, swept on this interval.
+      # max-idle must stay above the longest single turn: the clock refreshes when a turn
+      # attaches the sandbox, not while it runs.
+      SANDBOX_KEEP_ALIVE_MAX_IDLE_MS: ${SANDBOX_KEEP_ALIVE_MAX_IDLE_MS:-1800000}
+      SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS: ${SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS:-300000}
       # Docker network for sandbox containers (default: bridge).
       # Set to a custom network name if sandbox needs to reach other services by DNS name.
       SANDBOX_NETWORK: ${SANDBOX_NETWORK:-docker-new_harnax-network}

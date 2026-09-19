@@ -147,8 +147,9 @@ class WeatherToolBox : ToolBox() {
 | `displayNameZh`  | String            | `""`     | 中文显示名称                             |
 | `envParamDefs`   | ToolEnvParamDef[] | `[]`     | 环境参数定义（含 description、required 等）|
 | `timeoutSeconds` | Int               | `0`      | 执行超时时间（秒），0=使用系统默认        |
-| `isPublic`       | Boolean           | `true`   | 是否对所有用户公开                        |
 | `needConfirm`    | Boolean           | `false`  | 是否需要用户确认                          |
+| `dangerousInput` | Boolean           | `false`  | 是否扫描入参中的危险命令/路径（不可绕过） |
+| `isRequired`     | Boolean           | `false`  | 是否为必须工具（自动装载、不在页面勾选）   |
 
 ### `@Tool`（方法级注解，来自 agentscope）
 

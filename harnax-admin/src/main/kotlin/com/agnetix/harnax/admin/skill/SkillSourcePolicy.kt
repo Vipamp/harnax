@@ -78,4 +78,28 @@ object SkillSourcePolicy {
             )
         }
     }
+
+    /**
+     * Ceiling on a caller-supplied skill selection. Both selective-install endpoints take an
+     * unbounded JSON list and report every name the source does not hold, so one request could
+     * otherwise write tens of thousands of failure entries into the stored sync report — a column
+     * every repository list read parses and ships to the browser.
+     */
+    const val MAX_SKILLS_PER_REQUEST = 1000
+
+    /**
+     * Normalises a name selection: padded entries are matched against the source by the trimmed name
+     * the installer stores, blanks are dropped rather than reported (a failure line naming an empty
+     * string tells the caller nothing), and a name listed twice is one skill.
+     *
+     * `null` survives as `null` because the two answers differ: no selection means the whole source,
+     * an empty one means the caller named nothing to store.
+     */
+    fun normalizeSelection(names: List<String>?): List<String>? {
+        if (names == null) return null
+        if (names.size > MAX_SKILLS_PER_REQUEST) {
+            throw BizException("Too many skills selected, at most $MAX_SKILLS_PER_REQUEST per request")
+        }
+        return names.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
 }

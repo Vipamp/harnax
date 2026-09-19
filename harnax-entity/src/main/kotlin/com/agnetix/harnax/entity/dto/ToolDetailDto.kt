@@ -23,32 +23,11 @@ data class ToolDetailDto(
     @Schema(description = "Tool description (sent to LLM)")
     val description: String = "",
 
-    @Schema(description = "Tool type: BUILTIN / CUSTOM / HTTP")
-    val type: String = "BUILTIN",
-
-    @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Spring Bean name")
     val beanName: String? = null,
 
-    @Schema(description = "Java method name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Java method name")
     val methodName: String? = null,
-
-    @Schema(description = "HTTP request URL (for HTTP type)")
-    val httpUrl: String? = null,
-
-    @Schema(description = "HTTP method (for HTTP type)")
-    val httpMethod: String = "POST",
-
-    @Schema(description = "HTTP headers JSON (for HTTP type)")
-    val httpHeaders: String? = null,
-
-    @Schema(description = "Environment parameters configuration JSON")
-    val envParams: String? = null,
-
-    @Schema(description = "Input parameter JSON Schema (for HTTP type)")
-    val inputSchema: String? = null,
-
-    @Schema(description = "Output result JSON Schema (for HTTP type)")
-    val outputSchema: String? = null,
 
     @Schema(description = "Is read-only tool (0: No, 1: Yes)")
     val readOnly: Int = 0,
@@ -62,7 +41,7 @@ data class ToolDetailDto(
     @Schema(description = "Timeout in seconds")
     val timeoutSeconds: Int = 30,
 
-    @Schema(description = "Tool status (0: disabled by admin, 1: enabled)")
+    @Schema(description = "Tool status (0: disabled, 1: enabled). The sync is the only writer and always writes 1.")
     val status: Int = 1,
 
     // ── Binding-level fields (from agent_tool_binding) ──

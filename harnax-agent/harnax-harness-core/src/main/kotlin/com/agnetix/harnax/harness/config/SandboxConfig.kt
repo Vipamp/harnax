@@ -19,6 +19,10 @@ import io.agentscope.harness.agent.IsolationScope
  * @param pluginImage Docker image containing CLI plugins (used when cliPluginsEnabled=true)
  * @param pluginAdminUrl admin service URL accessible from within the container (for CLI auth)
  * @param pluginInternalSecret service-level internal secret (for CLI auth)
+ * @param keepAliveMaxIdleTimeMs how long a keep-alive sandbox survives without being used, after which
+ *   the idle reaper removes its container. The clock refreshes when a turn attaches the sandbox, not
+ *   while it runs, so this must stay above the longest single turn (the member-turn timeout and the
+ *   chat link timeout both sit well under the default).
  */
 data class SandboxConfig(
     val enabled: Boolean = false,
@@ -31,4 +35,5 @@ data class SandboxConfig(
     val pluginImage: String = "harnax-sandbox:latest",
     val pluginAdminUrl: String = "",
     val pluginInternalSecret: String = "",
+    val keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L,
 )

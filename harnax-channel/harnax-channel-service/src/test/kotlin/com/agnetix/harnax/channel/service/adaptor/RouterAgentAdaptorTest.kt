@@ -239,6 +239,8 @@ class RouterAgentAdaptorTest {
                 StreamTextChatEvent("Start", false, null),
                 CallToolChatEvent("tool-1", "search", mapOf("q" to "test"), null),
                 ToolResultChatEvent("tool-1", "search", "result", true, null),
+                // A team member parked on a confirmation beats like this; the channel must not reply to it.
+                KeepAliveChatEvent(),
                 StreamTextChatEvent("End", true, null),
                 EndEventChatEvent(),
             )

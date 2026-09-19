@@ -244,7 +244,7 @@ fun chat(@RequestBody request: ChatRequest): Flux<ChatEvent>
    - `ToolBox`: 工具集合管理
    - `McpClientWrapper`: MCP 工具封装
    - `ShellCommandTool`: Shell 命令工具
-   - 自定义工具扩展
+   - 代码注册的内置工具（`@Tool` + `@ToolMeta`）
 
 5. **模型适配**
    - `ChatModelConfigAdaptor`: 模型配置适配器

@@ -1,6 +1,7 @@
 # Harnax 工具（Tools）集成设计方案
 
-> 本文为早期设计方案，仅作历史归档，其中的字段与流程已被实现取代：工具绑定的 `enable_skip` 已由 `V17__drop_tool_binding_enable_skip.sql` 删除，内置工具的新增 / 更新 / 删除统一由 admin 启动时的代码注册收敛。当前设计见 `prod_doc/tool-integration-design.zh-CN.md`（英文 `prod_doc/tool-integration-design.en-US.md`），使用口径见 `prod_doc/tool-capability.zh-CN.md`（英文 `prod_doc/tool-capability.en-US.md`）。
+> 本文为早期设计方案，仅作历史归档，其中的字段与流程已被实现取代：工具绑定的 `enable_skip` 已由 `V17__drop_tool_binding_enable_skip.sql` 删除，内置工具的新增 / 更新 / 删除统一由 admin 启动时的代码注册收敛。
+> 自定义工具（CUSTOM）与 HTTP 工具两类已整体下线，工具只剩内置一类：`agent_tool` 不再有 `type`、`is_public`、`http_url`、`http_method`、`http_headers`、`input_schema`、`output_schema` 这些列，admin 也不对外提供任何工具写接口。当前设计见 `prod_doc/tool-integration-design.zh-CN.md`（英文 `prod_doc/tool-integration-design.en-US.md`），使用口径见 `prod_doc/tool-capability.zh-CN.md`（英文 `prod_doc/tool-capability.en-US.md`）。
 
 ## 一、背景与现状分析
 
@@ -35,11 +36,10 @@ harnax 目前已实现：
 | 类型 | 说明 | 实现位置 | 示例 |
 |------|------|----------|------|
 | **内置工具（BUILTIN）** | 框架自带，代码实现 | `ToolBox` 子类，Spring Bean | `TimeToolBox`、未来可加的 `WeatherToolBox` 等 |
-| **自定义工具（CUSTOM）** | 用户自行开发的 ToolBox | 用户代码，实现 `ToolBox` 并注册为 Spring Bean | 业务特有的查询、计算工具 |
-| **HTTP 工具（HTTP）** | 通过 HTTP API 调用外部服务 | DB 定义 schema + 运行时动态代理 | 调用第三方 API、内部微服务 |
 | **MCP 工具（MCP）** | 通过 MCP 协议连接 | 已有，保持不变 | 各类 MCP Server |
 
-> MCP 工具已有完整管理体系（`McpServer` 实体 + Admin CRUD），本方案不重复，只关注前三类。
+> MCP 工具已有完整管理体系（`McpServer` 实体 + Admin CRUD），本方案不重复，只关注内置工具一类。
+> 工具只有一类：全部为代码实现的内置工具，由 admin 启动时按 `@Tool` / `@ToolMeta` 注解自动同步写库。
 
 ---
 
@@ -54,22 +54,13 @@ CREATE TABLE agent_tool (
     name            VARCHAR(100) NOT NULL COMMENT '工具标识名（snake_case，唯一）',
     display_name    VARCHAR(200) COMMENT '显示名称',
     description     TEXT COMMENT '工具描述（发送给 LLM）',
-    type            VARCHAR(20) NOT NULL COMMENT '类型: BUILTIN / CUSTOM / HTTP',
-    bean_name       VARCHAR(200) COMMENT 'Spring Bean 名称（BUILTIN/CUSTOM 类型使用）',
-
-    -- HTTP 类型专用字段 --
-    http_url        VARCHAR(500) COMMENT 'HTTP 请求地址',
-    http_method     VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP 方法',
-    http_headers    TEXT COMMENT 'HTTP 请求头 JSON: [{"key":"x","value":"y","secret":true}]',
-    input_schema    TEXT COMMENT '输入参数 JSON Schema',
-    output_schema   TEXT COMMENT '输出结果 JSON Schema',
+    bean_name       VARCHAR(200) COMMENT 'Spring Bean 名称',
 
     -- 通用字段 --
     read_only       TINYINT DEFAULT 0 COMMENT '是否只读工具（0:否, 1:是）',
     need_confirm    TINYINT DEFAULT 0 COMMENT '是否需要人工确认执行（0:不需要, 1:需要）',
     timeout_seconds INT DEFAULT 30 COMMENT '超时时间（秒）',
     status          INT DEFAULT 1 COMMENT '状态（0:禁用, 1:启用）',
-    is_public       INT DEFAULT 1 COMMENT '是否公开（0:否, 1:是）',
     creator         VARCHAR(100) COMMENT '创建者',
     active          INT DEFAULT 1 COMMENT '活跃状态（0:删除, 1:活跃）',
     create_time     DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -145,7 +136,6 @@ AFTER skill_list;
 ```
 com.agnetix.harnax.agent.provider.tool/
 ├── ToolRegistry.kt          # 工具注册表，管理所有 ToolBox 实例
-├── HttpProxyToolBox.kt      # HTTP 动态代理工具（DB schema → ToolBox）
 └── ToolSpec.kt              # 工具规格定义（从 AgentSpec 传入）
 ```
 
@@ -176,31 +166,6 @@ class ToolRegistry(
 @Component("time-tool-box")
 class TimeToolBox : ToolBox() {
     // ...
-}
-```
-
-**`HttpProxyToolBox` 设计（HTTP 类型动态工具）：**
-
-```kotlin
-class HttpProxyToolBox(
-    private val toolName: String,
-    private val toolDescription: String,
-    private val httpUrl: String,
-    private val httpMethod: String,
-    private val httpHeaders: Map<String, String>,
-    private val inputSchema: String,
-    private val timeoutSeconds: Int,
-) : AgentTool {
-
-    override fun getName(): String = toolName
-    override fun getDescription(): String = toolDescription
-    override fun getParameters(): JsonSchema = JsonSchema.fromJson(inputSchema)
-
-    override fun callAsync(param: ToolCallParam): Mono<ToolResultBlock> {
-        // 1. 构建 HTTP 请求
-        // 2. 发起请求并处理响应
-        // 3. 返回 ToolResultBlock
-    }
 }
 ```
 
@@ -320,36 +285,12 @@ interface ToolConfigAdaptor {
 class ToolConfigAdaptorImpl(
     private val agentToolMapper: AgentToolMapper,
     private val toolRegistry: ToolRegistry,
-    private val mcpConfigDecryptor: McpConfigDecryptor?,
 ) : ToolConfigAdaptor {
 
     override fun resolveTool(toolId: Long): Any? {
         val agentTool = agentToolMapper.selectById(toolId) ?: return null
-        return when (agentTool.type.uppercase()) {
-            "BUILTIN", "CUSTOM" -> {
-                // 从注册表中获取 ToolBox 实例
-                toolRegistry.getToolBox(agentTool.beanName ?: return null)
-            }
-            "HTTP" -> {
-                // 动态创建 HTTP 代理工具
-                HttpProxyToolBox(
-                    toolName = agentTool.name,
-                    toolDescription = agentTool.description,
-                    httpUrl = agentTool.httpUrl ?: return null,
-                    httpMethod = agentTool.httpMethod ?: "POST",
-                    httpHeaders = decryptHeaders(agentTool.httpHeaders),
-                    inputSchema = agentTool.inputSchema ?: "{}",
-                    timeoutSeconds = agentTool.timeoutSeconds,
-                )
-            }
-            else -> null
-        }
-    }
-
-    private fun decryptHeaders(headersJson: String?): Map<String, String> {
-        if (headersJson.isNullOrEmpty()) return emptyMap()
-        // 解析并解密 headers
-        return mcpConfigDecryptor?.decryptToMap(headersJson) ?: emptyMap()
+        // 从注册表中获取 ToolBox 实例
+        return toolRegistry.getToolBox(agentTool.beanName ?: return null)
     }
 }
 ```
@@ -359,28 +300,26 @@ class ToolConfigAdaptorImpl(
 **新增文件：**
 
 ```
-controller/AgentToolController.kt       # 工具 CRUD API
-service/AgentToolService.kt             # 工具业务逻辑
+controller/AgentToolController.kt       # 工具只读查询 API
+service/AgentToolService.kt             # 工具查询逻辑
 dto/
-├── AgentToolCreateRequest.kt           # 创建请求
-├── AgentToolUpdateRequest.kt           # 更新请求
-├── AgentToolResponse.kt                # 响应 DTO
-└── AgentToolTestRequest.kt             # HTTP 工具测试请求
+└── AgentToolResponse.kt                # 响应 DTO
 mapper/AgentToolMapper.kt               # Admin 专用 Mapper（如有额外查询）
 ```
+
+工具元数据（名称、描述、`beanName`、`@ToolMeta` 属性）全部由 admin 启动期的 `BuiltinToolAutoRegistrar` 从代码同步写库，
+因此**不存在**新增 / 更新 / 删除 / 启停接口，也**不存在** HTTP 工具的测试接口与对应的 `AgentToolCreateRequest`、
+`AgentToolUpdateRequest`、`AgentToolTestRequest` DTO。
 
 **API 端点设计：**
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/admin/tools/page` | 分页查询工具列表 |
+| GET | `/api/admin/tools/page` | 分页查询工具列表（`pageNum,pageSize,keyword,status`） |
 | GET | `/api/admin/tools/{id}` | 获取工具详情 |
-| POST | `/api/admin/tools` | 创建工具 |
-| PUT | `/api/admin/tools/update/{id}` | 更新工具 |
-| PUT | `/api/admin/tools/toggle/{id}` | 启用/禁用工具 |
-| DELETE | `/api/admin/tools/{id}` | 删除工具 |
-| GET | `/api/admin/tools/built-in` | 获取系统内置工具列表（从 ToolRegistry 读取） |
-| POST | `/api/admin/tools/test` | 测试 HTTP 工具连通性 |
+| GET | `/api/admin/tools/available` | 获取可用工具列表（供 Agent 配置页调用） |
+| GET | `/api/admin/tools/builtin` | 获取系统内置工具列表（从 ToolRegistry 读取） |
+| GET | `/api/admin/tools/{id}/required-env-params` | 获取工具必填环境参数 key |
 
 **Agent 配置接口修改：**
 
@@ -409,10 +348,9 @@ data class AgentCreateRequest(
 
 ```
 Admin UI
-  ├── 工具管理页面（CRUD 工具定义）
-  │     ├── 查看内置工具列表（自动发现）
-  │     ├── 创建自定义工具（指定 bean name）
-  │     └── 创建 HTTP 工具（填写 URL、Schema、Headers）
+  ├── 工具管理页面（只读查询）
+  │     ├── 分页查看工具列表（名称、状态、只读标记）
+  │     └── 记录由 admin 启动时从代码同步，页面不支持新增 / 修改 / 删除 / 启停
   │
   └── Agent 配置页面
         └── 工具选择区域
@@ -431,9 +369,8 @@ Admin UI
 GET /api/admin/tools/available
 ```
 
-返回所有启用的工具（BUILTIN + CUSTOM + HTTP），包含：
-- 工具基本信息（id, name, displayName, description, type）
-- 工具的参数 schema（用于展示）
+返回所有启用的内置工具，包含：
+- 工具基本信息（id, name, displayName, description）
 - 工具的 `needConfirm` 标记（用于前端展示开关）
 
 **保存 Agent 的工具配置：**
@@ -481,8 +418,7 @@ agent-service 收到请求
   │
   ├── 3. HarnessAgentLauncher.createAgentBase()
   │       └── 遍历 toolSpecs:
-  │             ├── BUILTIN/CUSTOM → ToolRegistry.getToolBox(beanName) → 获取 ToolBox 实例
-  │             ├── HTTP → 创建 HttpProxyToolBox 实例
+  │             ├── ToolRegistry.getToolBox(beanName) → 获取 ToolBox 实例
   │             └── 如果 toolSpec.needConfirm == true → 加入 needConfirmedTools 集合
   │
   └── 4. HarnessAgentBuilder.addTool(tool)
@@ -493,13 +429,13 @@ agent-service 收到请求
 
 ## 六、动态扩展工具的方式
 
-### 6.1 代码级扩展（BUILTIN / CUSTOM）
+### 6.1 代码级扩展（唯一方式）
 
 开发者只需：
 
-1. 创建 `ToolBox` 子类，使用 `@Tool` 注解标注方法
+1. 创建 `ToolBox` 子类，使用 `@Tool` 注解标注方法，用 `@ToolMeta` 声明元数据
 2. 添加 `@Component("bean-name")` 注解
-3. 在 Admin 工具管理中创建一条 BUILTIN/CUSTOM 记录，`bean_name` 对应 Spring Bean 名称
+3. 无需在 Admin 手工建记录：admin 启动时 `BuiltinToolAutoRegistrar` 会扫描注册表并写入 / 更新 `agent_tool`
 4. Agent 配置中即可选择该工具
 
 ```kotlin
@@ -519,27 +455,11 @@ class WeatherToolBox : ToolBox() {
 }
 ```
 
-### 6.2 配置级扩展（HTTP 工具，零代码）
+### 6.2 自动发现机制
 
-在 Admin 界面直接创建，无需写代码：
-
-1. 填写工具名称、描述
-2. 选择 HTTP 方法，填写 URL
-3. 定义输入参数 JSON Schema
-4. 配置 HTTP Headers（支持加密）
-5. 设置是否需要人工确认
-6. 测试连通性
-7. Agent 配置中选择
-
-### 6.3 自动发现机制
-
-Admin 启动时或收到请求时，通过 Internal API 从 agent-service 获取已注册的 ToolBox Bean 列表：
-
-```
-GET /api/admin/internal/tool-registry/built-in
-```
-
-返回所有 agent-service 中已注册的 `ToolBox` Bean 名称和元信息，Admin 可自动同步为 BUILTIN 工具记录。
+实现形式：admin 启动时（`ApplicationReadyEvent`）扫描本进程 `ToolRegistry` 中带 `@Tool` 注解的 `ToolBox` Bean，
+与 `agent_tool` 表对账后新增 / 更新记录，并把注解上的元数据写进对应字段。
+早期设想的是通过 Internal API 从 agent-service 拉取已注册的 `ToolBox` Bean 名称和元信息，再由 Admin 同步为工具记录。
 
 ---
 
@@ -553,7 +473,6 @@ GET /api/admin/internal/tool-registry/built-in
 | | 修改 | `entity/Agent.kt` | 新增 `toolList` 字段 |
 | | 修改 | `entity/dto/AgentSpecInfoResponse.kt` | 新增 `toolList` 字段 |
 | **harnax-harness-core** | 新增 | `provider/tool/ToolRegistry.kt` | 工具注册表 |
-| | 新增 | `provider/tool/HttpProxyToolBox.kt` | HTTP 动态代理工具 |
 | | 新增 | `provider/tool/ToolSpec.kt` | 工具规格 |
 | | 新增 | `adaptor/ToolConfigAdaptor.kt` | 工具配置适配器接口 |
 | | 修改 | `AgentSpec.kt` | 新增 `toolSpecs` 字段 |
@@ -561,9 +480,10 @@ GET /api/admin/internal/tool-registry/built-in
 | **harnax-agent-service** | 新增 | `adaptor/ToolConfigAdaptorImpl.kt` | 工具配置适配器实现 |
 | | 修改 | `runner/AgentSpecResolver.kt` | 解析 toolList |
 | | 修改 | `ProviderConsts.kt` | TimeToolBox 加 `@Component` |
-| **harnax-admin** | 新增 | `controller/AgentToolController.kt` | 工具 CRUD API |
-| | 新增 | `service/AgentToolService.kt` | 工具业务逻辑 |
-| | 新增 | `dto/AgentTool*.kt` | 请求/响应 DTO |
+| **harnax-admin** | 新增 | `controller/AgentToolController.kt` | 工具只读查询 API |
+| | 新增 | `service/AgentToolService.kt` | 工具查询逻辑 |
+| | 新增 | `dto/AgentToolResponse.kt` | 响应 DTO |
+| | 新增 | 启动期代码同步 | `BuiltinToolAutoRegistrar` 扫描注解写库 |
 | | 修改 | `controller/AgentController.kt` | Agent 创建/更新支持 toolList |
 | | 修改 | `controller/InternalApiController.kt` | 返回 toolList |
 | | 新增 | DB migration | `agent_tool` 建表 + `agent` 表加 `tool_list` |
@@ -576,9 +496,9 @@ GET /api/admin/internal/tool-registry/built-in
 |------|-------------------|--------------|-------------|
 | 实体 | `McpServer` | `Skill` | `AgentTool` |
 | Agent 关联 | `agent.mcpList` JSON | `agent.skillList` 逗号分隔 | `agent.toolList` JSON |
-| Admin CRUD | `McpServerController` | `SkillController` | `AgentToolController` |
+| Admin CRUD | `McpServerController` | `SkillController` | `AgentToolController`（只读查询） |
 | 运行时解析 | `McpConfigAdaptor` | `SkillAdaptor` | `ToolConfigAdaptor` |
-| 连通性测试 | 有 | 无 | 有（HTTP 工具） |
+| 连通性测试 | 有 | 无 | 无 |
 | Spec 传递 | `McpSpec` | `SkillSpec` | `ToolSpec` |
 
 新增的 Tool 体系完全对齐现有的 MCP 和 Skill 管理模式，保持架构一致性。
@@ -593,13 +513,12 @@ GET /api/admin/internal/tool-registry/built-in
    - 实现 `AgentTool` 实体和 Mapper
 
 2. **Phase 2：Admin 管理功能**
-   - 实现工具 CRUD API
-   - 实现工具测试功能（HTTP 工具）
+   - 实现工具只读查询 API
+   - 实现启动期代码同步（`BuiltinToolAutoRegistrar`）
    - 修改 Agent 创建/更新接口支持 toolList
 
 3. **Phase 3：运行时集成**
    - 实现 `ToolRegistry` 工具注册表
-   - 实现 `HttpProxyToolBox` HTTP 代理工具
    - 实现 `ToolConfigAdaptor` 工具配置适配器
    - 修改 `HarnessAgentLauncher` 动态装配逻辑
 
@@ -614,7 +533,7 @@ GET /api/admin/internal/tool-registry/built-in
 
 本方案通过引入 `AgentTool` 实体和 `toolList` 配置，实现了：
 
-1. **动态扩展**：支持代码级（BUILTIN/CUSTOM）和配置级（HTTP）两种扩展方式
+1. **代码即来源**：工具只有内置一类，扩展方式是写 `ToolBox` 子类，admin 启动时自动同步入库
 2. **动态选择**：Agent 配置时可从可用工具列表中选择，并设置确认策略
 3. **架构一致**：与现有 MCP Server、Skill 管理模式完全对齐
 4. **向后兼容**：保留默认工具集，未配置 toolList 的 Agent 行为不变

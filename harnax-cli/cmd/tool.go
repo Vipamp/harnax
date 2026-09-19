@@ -16,7 +16,6 @@ const toolBasePath = "/api/admin/tools"
 type Tool struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
-	Type       string `json:"type"`
 	Status     int    `json:"status"`
 	ReadOnly   int    `json:"readOnly"`
 	CreateTime string `json:"createTime"`
@@ -24,7 +23,7 @@ type Tool struct {
 
 var toolCmd = &cobra.Command{
 	Use:   "tool",
-	Short: "Manage tools",
+	Short: "Query tools (builtin only, read-only)",
 }
 
 var toolListCmd = &cobra.Command{
@@ -39,9 +38,6 @@ var toolListCmd = &cobra.Command{
 		params := map[string]string{}
 		if v, _ := cmd.Flags().GetString("keyword"); v != "" {
 			params["keyword"] = v
-		}
-		if v, _ := cmd.Flags().GetString("type"); v != "" {
-			params["type"] = v
 		}
 		if cmd.Flags().Changed("status") {
 			v, _ := cmd.Flags().GetInt("status")
@@ -75,13 +71,12 @@ var toolListCmd = &cobra.Command{
 			exitError("Failed to decode list: " + err.Error())
 		}
 
-		headers := []string{"ID", "Name", "Type", "Status", "Read Only"}
+		headers := []string{"ID", "Name", "Status", "Read Only"}
 		rows := make([][]string, len(tools))
 		for i, t := range tools {
 			rows[i] = []string{
 				strconv.FormatInt(t.ID, 10),
 				t.Name,
-				t.Type,
 				output.StatusText(t.Status),
 				output.BoolText(t.ReadOnly == 1),
 			}
@@ -122,84 +117,10 @@ var toolGetCmd = &cobra.Command{
 		output.PrintKeyValue([][]string{
 			{"ID", strconv.FormatInt(tool.ID, 10)},
 			{"Name", tool.Name},
-			{"Type", tool.Type},
 			{"Status", output.StatusText(tool.Status)},
 			{"Read Only", output.BoolText(tool.ReadOnly == 1)},
 			{"Created", tool.CreateTime},
 		})
-	},
-}
-
-var toolUpdateCmd = &cobra.Command{
-	Use:   "update <id>",
-	Short: "Update a tool",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		c, err := newAdminClient()
-		if err != nil {
-			exitError(err.Error())
-		}
-
-		body := map[string]any{}
-		if v, _ := cmd.Flags().GetString("name"); cmd.Flags().Changed("name") {
-			body["name"] = v
-		}
-		if v, _ := cmd.Flags().GetString("type"); cmd.Flags().Changed("type") {
-			body["type"] = v
-		}
-		if cmd.Flags().Changed("read-only") {
-			v, _ := cmd.Flags().GetBool("read-only")
-			body["readOnly"] = v
-		}
-
-		if len(body) == 0 {
-			exitError("No fields to update")
-		}
-
-		_, err = c.Update(context.Background(), toolBasePath+"/update", args[0], body)
-		if err != nil {
-			exitAPIError(err)
-		}
-
-		output.PrintSuccess("Tool updated successfully")
-	},
-}
-
-var toolDeleteCmd = &cobra.Command{
-	Use:   "delete <id>",
-	Short: "Delete a tool",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		c, err := newAdminClient()
-		if err != nil {
-			exitError(err.Error())
-		}
-
-		_, err = c.Delete(context.Background(), toolBasePath, args[0])
-		if err != nil {
-			exitAPIError(err)
-		}
-
-		output.PrintSuccess("Tool deleted successfully")
-	},
-}
-
-var toolToggleCmd = &cobra.Command{
-	Use:   "toggle <id>",
-	Short: "Toggle tool status",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		c, err := newAdminClient()
-		if err != nil {
-			exitError(err.Error())
-		}
-
-		_, err = c.Toggle(context.Background(), toolBasePath, args[0], nil)
-		if err != nil {
-			exitAPIError(err)
-		}
-
-		output.PrintSuccess("Tool status toggled successfully")
 	},
 }
 
@@ -212,12 +133,7 @@ var toolAvailableCmd = &cobra.Command{
 			exitError(err.Error())
 		}
 
-		params := map[string]string{}
-		if v, _ := cmd.Flags().GetString("type"); v != "" {
-			params["type"] = v
-		}
-
-		result, err := c.List(context.Background(), toolBasePath+"/available", params)
+		result, err := c.List(context.Background(), toolBasePath+"/available", nil)
 		if err != nil {
 			exitAPIError(err)
 		}
@@ -235,13 +151,12 @@ var toolAvailableCmd = &cobra.Command{
 			exitError("Failed to decode response: " + err.Error())
 		}
 
-		headers := []string{"ID", "Name", "Type", "Status", "Read Only"}
+		headers := []string{"ID", "Name", "Status", "Read Only"}
 		rows := make([][]string, len(tools))
 		for i, t := range tools {
 			rows[i] = []string{
 				strconv.FormatInt(t.ID, 10),
 				t.Name,
-				t.Type,
 				output.StatusText(t.Status),
 				output.BoolText(t.ReadOnly == 1),
 			}
@@ -277,13 +192,12 @@ var toolBuiltinCmd = &cobra.Command{
 			exitError("Failed to decode response: " + err.Error())
 		}
 
-		headers := []string{"ID", "Name", "Type", "Status", "Read Only"}
+		headers := []string{"ID", "Name", "Status", "Read Only"}
 		rows := make([][]string, len(tools))
 		for i, t := range tools {
 			rows[i] = []string{
 				strconv.FormatInt(t.ID, 10),
 				t.Name,
-				t.Type,
 				output.StatusText(t.Status),
 				output.BoolText(t.ReadOnly == 1),
 			}
@@ -337,22 +251,12 @@ var toolEnvParamsCmd = &cobra.Command{
 
 func init() {
 	toolListCmd.Flags().String("keyword", "", "Filter by keyword")
-	toolListCmd.Flags().String("type", "", "Filter by type")
 	toolListCmd.Flags().Int("status", -1, "Filter by status")
 	toolListCmd.Flags().Int("page", 1, "Page number")
 	toolListCmd.Flags().Int("size", 10, "Page size")
 
-	toolUpdateCmd.Flags().String("name", "", "Tool name")
-	toolUpdateCmd.Flags().String("type", "", "Tool type")
-	toolUpdateCmd.Flags().Bool("read-only", false, "Read only")
-
-	toolAvailableCmd.Flags().String("type", "", "Filter by type")
-
 	toolCmd.AddCommand(toolListCmd)
 	toolCmd.AddCommand(toolGetCmd)
-	toolCmd.AddCommand(toolUpdateCmd)
-	toolCmd.AddCommand(toolDeleteCmd)
-	toolCmd.AddCommand(toolToggleCmd)
 	toolCmd.AddCommand(toolAvailableCmd)
 	toolCmd.AddCommand(toolBuiltinCmd)
 	toolCmd.AddCommand(toolEnvParamsCmd)

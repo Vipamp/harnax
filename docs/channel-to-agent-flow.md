@@ -639,7 +639,7 @@ class ToolCallExample {
     // 2. ToolBox 执行工具
     val toolBox = ToolBox(
         tools = listOf(
-            WeatherTool(),  // 自定义工具
+            WeatherTool(),  // 代码注册的内置工具
             ShellCommandTool(),  // Shell 命令
         ),
         mcpClients = listOf(

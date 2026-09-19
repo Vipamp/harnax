@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-MCP (Model Context Protocol) servers are one of the external tool sources for agents, alongside built-in tools (`BUILTIN`) and HTTP proxy tools (`HTTP`). MCP entity management **shares the same layering** as the tool system but not its lifecycle: built-in tools converge against code at startup via `BuiltinToolAutoRegistrar`, whereas every MCP server is maintained by hand through the pages and the APIs — CRUD is its complete lifecycle. The layers:
+MCP (Model Context Protocol) servers are one of the external tool sources for agents, alongside built-in tools. MCP entity management **shares the same layering** as the tool system but not its lifecycle: built-in tools converge against code at startup via `BuiltinToolAutoRegistrar`, whereas every MCP server is maintained by hand through the pages and the APIs — CRUD is its complete lifecycle. The layers:
 
 - **harnax-entity**: `McpServer` / `AgentMcpBinding` entities and mappers;
 - **harnax-admin**: MCP server CRUD, encrypted secret storage, masked echo, connectivity tests, binding management, and config delivery;
@@ -241,7 +241,7 @@ The filter won over "state the single-tenant premise", because CLI and skills al
 
 **5. `is_public` column default aligned (former TODO-5)**
 
-`V22` sets the `mcp_server.is_public` column default to 1, matching the entity, the create request, and `agent_tool`.
+`V22` sets the `mcp_server.is_public` column default to 1, matching the entity, the create request, and `agent_tool`. (On the tool side `V29` later dropped `is_public`, so tools no longer have a public/private layer at all — see section 9 of `tool-integration-design`.)
 
 The same batch also reworded the "leftover binding rows" comment in `McpServerServiceImpl` and rewrote the stale `AgentServiceImplTest` / `SessionServiceImplTest` cases that had taken the JSON list columns as input (they now build from the binding tables instead).
 

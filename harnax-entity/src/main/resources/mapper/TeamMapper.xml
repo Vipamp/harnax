@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agnetix.harnax.mapper.TeamMapper">
+
+    <resultMap id="TeamResultMap" type="com.agnetix.harnax.entity.Team">
+        <id column="id" property="id"/>
+        <result column="tenant_id" property="tenantId"/>
+        <result column="name" property="name"/>
+        <result column="description" property="description"/>
+        <result column="lead_agent_id" property="leadAgentId"/>
+        <result column="instructions" property="instructions"/>
+        <result column="status" property="status"/>
+        <result column="is_public" property="isPublic"/>
+        <result column="creator" property="creator"/>
+        <result column="active" property="active"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectById" resultMap="TeamResultMap">
+        SELECT * FROM team WHERE id = #{id} AND active = 1 LIMIT 1
+    </select>
+
+    <select id="selectByName" resultMap="TeamResultMap">
+        SELECT * FROM team WHERE name = #{name} AND tenant_id = #{tenantId} AND active = 1 LIMIT 1
+    </select>
+
+    <select id="selectTeamList" resultMap="TeamResultMap">
+        SELECT * FROM team
+        WHERE active = 1
+        AND (is_public = 1 OR creator = #{currentUsername})
+        <if test="tenantId != null">
+            AND tenant_id = #{tenantId}
+        </if>
+        <if test='name != null and name != ""'>
+            AND name LIKE CONCAT('%', #{name}, '%')
+        </if>
+        <if test='status != null'>
+            AND status = #{status}
+        </if>
+        ORDER BY update_time DESC
+    </select>
+
+    <select id="selectByLeadAgentId" resultMap="TeamResultMap">
+        SELECT * FROM team WHERE lead_agent_id = #{agentId} AND active = 1 ORDER BY id
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO team (
+        tenant_id, name, description, lead_agent_id, instructions,
+        status, is_public, creator, active, create_time, update_time
+        ) VALUES (
+        #{tenantId}, #{name}, #{description}, #{leadAgentId}, #{instructions},
+        #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
+        )
+    </insert>
+
+    <update id="updateById">
+        UPDATE team SET
+        name = #{name},
+        description = #{description},
+        lead_agent_id = #{leadAgentId},
+        instructions = #{instructions},
+        status = #{status},
+        is_public = #{isPublic},
+        update_time = NOW()
+        WHERE id = #{id} AND active = 1
+    </update>
+
+    <update id="deleteById">
+        UPDATE team SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <update id="updateStatus">
+        UPDATE team SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+</mapper>

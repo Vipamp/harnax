@@ -210,6 +210,7 @@ data: {"eventType":"EndEvent"}
 | `ToolConfirmEvent` | 需要用户确认的危险工具调用 | `pendingCallTools` |
 | `ErrorEvent` | 错误信息 | `code`, `message` |
 | `EndEvent` | 流结束标记 | 无 |
+| `KeepAliveEvent` | 心跳：本次运行仍在等待（如团队成员等待人工确认），不是结束也不是内容 | 无，**直接忽略** |
 
 **Python 流式消费示例：**
 

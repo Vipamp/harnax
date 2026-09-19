@@ -162,17 +162,31 @@ class NpmSkillLoader : SkillLoader {
 
         // A successful install that exposes nothing is the hardest case to diagnose: the caller only
         // sees "the source yielded no skills", so name the directories that were passed over. The
-        // unreadable ones are reported to the operator through `failures` and counted here for the log
-        if (skills.isEmpty()) {
-            log.warn(
-                "npm package under {} installed successfully but exposes no usable SKILL.md; unreadable: {}, skipped directories: {}",
-                pkgDir,
-                failures.size,
-                if (skipped.isEmpty()) "(none)" else skipped.joinToString(", "),
-            )
+        // sentence goes back to the caller too — a source stored with an unexplained empty report
+        // looks like a platform bug to whoever opens it next. When the folders already explained
+        // themselves it would contradict them
+        if (skills.isEmpty() && failures.isEmpty()) {
+            val empty = describeEmpty(skipped)
+            log.warn("npm package under {} installed successfully: {}", pkgDir, empty.reason)
+            failures.add(empty)
         }
 
         return SkillLoadResult(skills, failures)
+    }
+
+    /**
+     * Explains why an installed package holds no installable skill.
+     *
+     * A package is usually somebody's library that was pointed at by mistake, and the names npm did
+     * put in place are what tells that case apart from a skill pack whose folders are one level too
+     * deep.
+     */
+    internal fun describeEmpty(skipped: List<String>): SkillLoadFailure {
+        val where = if (skipped.isEmpty()) "the package root holds no skill folder" else "directories passed over: ${skipped.joinToString(", ")}"
+        return SkillLoadFailure(
+            SkillLoadFailure.EMPTY_SOURCE,
+            "No SKILL.md found in the npm package ($where). Every skill needs its own folder with a SKILL.md",
+        )
     }
 
     /**

@@ -31,7 +31,13 @@ import com.agnetix.harnax.harness.sandbox.CliImageBuilder
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.plugin.HarnaxCliPluginInitializer
 import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
-import com.agnetix.harnax.tools.sdk.HttpProxyToolBox
+import com.agnetix.harnax.harness.team.TeamLeadToolBox
+import com.agnetix.harnax.harness.team.TeamMemberSpec
+import com.agnetix.harnax.harness.team.TeamMemberToolBox
+import com.agnetix.harnax.harness.team.TeamOrchestrator
+import com.agnetix.harnax.harness.team.TeamRole
+import com.agnetix.harnax.harness.team.TeamSessions
+import com.agnetix.harnax.harness.team.leadOrchestrationPrompt
 import com.agnetix.harnax.tools.sdk.SessionMetaContext
 import com.agnetix.harnax.tools.sdk.ToolMeta
 import com.agnetix.harnax.tools.sdk.UserIdentifier
@@ -44,7 +50,6 @@ import io.agentscope.core.permission.PermissionContextState
 import io.agentscope.core.permission.PermissionRule
 import io.agentscope.core.state.AgentState
 import io.agentscope.core.state.AgentStateStore
-import io.agentscope.core.tool.AgentTool
 import io.agentscope.core.tool.mcp.McpClientWrapper
 import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.IsolationScope
@@ -138,27 +143,73 @@ class HarnessAgentLauncher(
         userIdentifier,
     )
 
+    /**
+     * Creates the lead of a team: the session's own agent, assembled so that delegating is the only thing
+     * it can do (design section 5).
+     *
+     * The caller holds the [orchestrator], because building a member needs the per-thread spec context
+     * this service maintains for its adaptors — see `DefaultAgentRunner.buildTeamAgent`.
+     */
+    fun createTeamLead(
+        orchestrator: TeamOrchestrator,
+        agentSpec: AgentSpec,
+        sessionId: String,
+        chatSpec: ChatSpec,
+        userIdentifier: UserIdentifier,
+    ): HarnessAgentWrapper = createAgentBase(
+        agentSpec = agentSpec,
+        sessionId = sessionId,
+        chatSpec = chatSpec,
+        userIdentifier = userIdentifier,
+        teamRole = TeamRole.Lead(orchestrator),
+    )
+
+    /**
+     * Creates one member as an agent in its own right: its own model, tools, MCP, skills, sandbox and
+     * child session, plus the artifact tools that let it hand work back (design D5).
+     */
+    fun createTeamMember(
+        orchestrator: TeamOrchestrator,
+        member: TeamMemberSpec,
+        childSessionId: String,
+        rootSessionId: String,
+        userIdentifier: UserIdentifier,
+    ): HarnessAgentWrapper = createAgentBase(
+        agentSpec = member.agentSpec,
+        sessionId = childSessionId,
+        chatSpec = member.chatSpec,
+        userIdentifier = userIdentifier,
+        // An OAuth MCP grant belongs to whoever opened the root session, and admin resolves it from that
+        // session id. A child session is an internal key admin has never heard of.
+        authSessionId = rootSessionId,
+        teamRole = TeamRole.Member(orchestrator, member),
+    )
+
     private fun createAgentBase(
         agentSpec: AgentSpec,
         sessionId: String,
         stateless: Boolean = false,
         chatSpec: ChatSpec = ChatSpec.builder().build(),
         userIdentifier: UserIdentifier,
+        authSessionId: String = sessionId,
+        teamRole: TeamRole? = null,
     ): HarnessAgentWrapper {
+        val isLead = teamRole is TeamRole.Lead
         val needConfirmedTools = mutableSetOf<String>()
         val dangerousInputTools = mutableSetOf<String>()
 
-        // When internet search is enabled, append a capability hint so the model knows
-        // it can answer real-time questions directly without spawning subagents or
-        // executing shell commands to fetch web pages.
-        val effectivePrompt = if (chatSpec.enableSearch) {
-            agentSpec.systemPrompt + "\n\n" +
-                "[能力提示] 你已具备联网搜索能力，可以直接回答实时信息相关问题（如新闻、价格、天气等），" +
-                "无需通过工具抓取网页或派遣子智能体。请优先利用自身联网知识直接作答。\n\n" +
-                OUTPUT_FILE_INSTRUCTION
-        } else {
-            agentSpec.systemPrompt + "\n\n" + OUTPUT_FILE_INSTRUCTION
-        }
+        val effectivePrompt = agentSpec.systemPrompt +
+            (if (chatSpec.enableSearch) "\n\n$SEARCH_CAPABILITY_HINT" else "") +
+            "\n\n" +
+            when (teamRole) {
+                // A lead has no workspace and nothing to execute: what it has to know is who is on the
+                // team and that the work belongs to someone else.
+                is TeamRole.Lead -> leadOrchestrationPrompt(teamRole.orchestrator.spec)
+                // Auto-detected output files are the ordinary path's contract with the WebUI. A member's
+                // files reach the team only as artifacts, so it gets that rule instead (design 8.2).
+                is TeamRole.Member -> TEAM_MEMBER_FILE_INSTRUCTION
+                null -> OUTPUT_FILE_INSTRUCTION
+            }
 
         val agentBuilder = HarnessAgentBuilder()
             .name(agentSpec.name)
@@ -182,7 +233,9 @@ class HarnessAgentLauncher(
         // only unbinds the state saver and clears the state cache, it does not touch the toolkit's MCP
         // clients, and a stdio client is an OS process. See `mcpClients` on HarnessAgentWrapper.
         val mcpClients = mutableListOf<McpClientWrapper>()
-        agentSpec.mcpServices.forEach { mcpSpec ->
+        // A lead has no business tools to reach: MCP is a member concern (design section 5).
+        val mcpServices = if (isLead) emptyList() else agentSpec.mcpServices
+        mcpServices.forEach { mcpSpec ->
             val mcpConfig = mcpConfigAdaptor.getConfig(mcpSpec.mcpId)
             if (mcpConfig == null) {
                 log.warn("Mcp config with id `${mcpSpec.mcpId}` not found.")
@@ -211,13 +264,13 @@ class HarnessAgentLauncher(
             // no user behind it (a channel conversation, a service key) has no grant to spend, and an
             // OAuth server is left out of the toolkit rather than connected unauthenticated.
             val tokenSource = if (mcpConfig.authType == McpAuthTypes.OAUTH2) {
-                mcpTokenSourceFactory?.forUser(sessionId, userIdentifier.userId) ?: run {
+                mcpTokenSourceFactory?.forUser(authSessionId, userIdentifier.userId) ?: run {
                     log.warn(
                         "MCP server '{}' (id={}) authorizes per user (${McpAuthTypes.OAUTH2}) but session {} " +
                             "has no user identity to authorize as, skipping",
                         mcpConfig.name,
                         mcpConfig.id,
-                        sessionId,
+                        authSessionId,
                     )
                     return@forEach
                 }
@@ -263,20 +316,24 @@ class HarnessAgentLauncher(
 
         // Say it once in aggregate as well. Every skip above has its own line, but the symptom someone
         // reports is "the agent has no MCP tools", and that is only visible here.
-        if (mcpClients.size < agentSpec.mcpServices.size) {
+        if (mcpClients.size < mcpServices.size) {
             log.warn(
                 "Agent '{}' for session {} was built with {} of {} bound MCP servers",
                 agentSpec.name,
                 sessionId,
                 mcpClients.size,
-                agentSpec.mcpServices.size,
+                mcpServices.size,
             )
         }
 
         // ----- Tools -----
-        agentSpec.enableMetaTool?.let { agentBuilder.enableMetaTool(it) }
+        // A lead is assembled with the team tools only (design section 5). The meta tool is off for it as
+        // well: that one lets an agent acquire tools at runtime, which would hand back what assembly withheld.
+        if (!isLead) {
+            agentSpec.enableMetaTool?.let { agentBuilder.enableMetaTool(it) }
+        }
 
-        if (agentSpec.toolSpecs.isNotEmpty() && toolConfigAdaptor != null) {
+        if (!isLead && agentSpec.toolSpecs.isNotEmpty() && toolConfigAdaptor != null) {
             // Dynamic tool assembly from agentSpec.toolSpecs
             // Deduplicate ToolBox additions by beanName (multiple agent_tool records may share the same beanName)
             val addedToolBoxBeans = mutableSetOf<String>()
@@ -297,53 +354,26 @@ class HarnessAgentLauncher(
                         return@forEach
                     }
 
-                    val resolvedTool: Any? = when (toolConfig.type.uppercase()) {
-                        "BUILTIN", "CUSTOM" -> {
-                            val beanName = toolConfig.beanName ?: ""
-                            if (beanName.isNotEmpty() && beanName !in addedToolBoxBeans) {
-                                val toolBox = toolRegistry?.createToolBoxInstance(beanName)
-                                if (toolBox != null) {
-                                    toolBox.init(
-                                        toolCallLogAdaptor,
-                                        SessionMetaContext(agentSpec.id, sessionId),
-                                        userIdentifier,
-                                    )
-                                    agentBuilder.addTool(toolBox)
-                                    addedToolBoxBeans.add(beanName)
-                                }
-                                toolBox
-                            } else {
-                                // Already added this ToolBox, just return it for needConfirm handling
-                                // Note: for needConfirm we only need the name, so singleton is fine here
-                                toolRegistry?.getToolBox(beanName)
-                            }
-                        }
-                        "HTTP" -> {
-                            HttpProxyToolBox(
-                                toolName = toolConfig.name,
-                                toolDescription = toolConfig.description,
-                                httpUrl = toolConfig.httpUrl ?: "",
-                                httpMethod = toolConfig.httpMethod ?: "POST",
-                                httpHeaders = mcpConfigDecryptor?.let { d ->
-                                    try {
-                                        d.decryptToMap(toolConfig.httpHeaders)
-                                    } catch (e: Exception) {
-                                        log.warn("Failed to decrypt HTTP headers for tool '{}': {}", toolConfig.name, e.message)
-                                        emptyMap()
-                                    }
-                                } ?: emptyMap(),
-                                inputSchemaJson = toolConfig.inputSchema ?: "{}",
-                                timeoutSeconds = toolConfig.timeoutSeconds,
+                    val beanName = toolConfig.beanName ?: ""
+                    val resolvedTool: Any? = if (beanName.isNotEmpty() && beanName !in addedToolBoxBeans) {
+                        val toolBox = toolRegistry?.createToolBoxInstance(beanName)
+                        if (toolBox != null) {
+                            toolBox.init(
+                                toolCallLogAdaptor,
+                                SessionMetaContext(agentSpec.id, sessionId),
+                                userIdentifier,
                             )
+                            agentBuilder.addTool(toolBox)
+                            addedToolBoxBeans.add(beanName)
                         }
-                        else -> null
+                        toolBox
+                    } else {
+                        // Already added this ToolBox, just return it for needConfirm handling
+                        // Note: for needConfirm we only need the name, so singleton is fine here
+                        toolRegistry?.getToolBox(beanName)
                     }
 
                     if (resolvedTool != null) {
-                        if (resolvedTool is AgentTool) {
-                            agentBuilder.registerAgentTool(resolvedTool)
-                        }
-
                         // Per-method needConfirm from DB record, or from toolSpec override
                         val shouldConfirm = toolConfig.needConfirm == 1 || toolSpec.needConfirm
                         if (shouldConfirm) {
@@ -352,7 +382,6 @@ class HarnessAgentLauncher(
                         }
 
                         // Scan ToolBox methods for @ToolMeta(dangerousInput=true) — deduplicated by class
-                        val beanName = toolConfig.beanName ?: ""
                         if (beanName.isNotEmpty()) {
                             allowedToolNamesByBean.getOrPut(beanName) { mutableSetOf() }.add(toolConfig.name)
                             val toolBoxClass = toolRegistry?.getToolBox(beanName)?.let { it::class.java }
@@ -382,7 +411,7 @@ class HarnessAgentLauncher(
                         agentBuilder.removeTool(name)
                     }
             }
-        } else if (agentSpec.toolSpecs.isNotEmpty()) {
+        } else if (!isLead && agentSpec.toolSpecs.isNotEmpty()) {
             log.warn("ToolConfigAdaptor is not configured, {} tool spec(s) ignored.", agentSpec.toolSpecs.size)
         }
 
@@ -400,7 +429,8 @@ class HarnessAgentLauncher(
         }
 
         // ----- Skills -----
-        agentSpec.skills.forEach {
+        val skills = if (isLead) emptyList() else agentSpec.skills
+        skills.forEach {
             val skill = skillAdaptor.getSkill(it.skillId)
             if (skill != null) {
                 agentBuilder.addSkill(skill)
@@ -410,6 +440,27 @@ class HarnessAgentLauncher(
             } else {
                 log.warn("Skill with id `${it.skillId}` not found.")
             }
+        }
+
+        // ----- Team tools -----
+        // Registered after the tool sweep, so nothing on the ordinary path removes them: that sweep only
+        // walks ToolBoxes known to the registry, and these are built here.
+        val teamToolNames: Set<String> = when (teamRole) {
+            is TeamRole.Lead -> {
+                val toolBox = TeamLeadToolBox(teamRole.orchestrator)
+                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.id, sessionId), userIdentifier)
+                agentBuilder.addTool(toolBox)
+                TeamLeadToolBox.TOOL_NAMES
+            }
+
+            is TeamRole.Member -> {
+                val toolBox = TeamMemberToolBox(teamRole.orchestrator, teamRole.member.memberAgentId)
+                toolBox.init(toolCallLogAdaptor, SessionMetaContext(agentSpec.id, sessionId), userIdentifier)
+                agentBuilder.addTool(toolBox)
+                TeamMemberToolBox.TOOL_NAMES
+            }
+
+            null -> emptySet()
         }
 
         // ----- Middleware (replaces Hooks in 2.0.0) -----
@@ -438,7 +489,7 @@ class HarnessAgentLauncher(
         val cliEnv: Map<String, String> = agentSpec.cliSpecs
             .flatMap { it.envBindings.entries }
             .associate { it.key to it.value }
-        val resolvedSandboxImage: String = if (agentSpec.cliSpecs.isNotEmpty() && cliImageBuilder != null) {
+        val resolvedSandboxImage: String = if (!isLead && agentSpec.cliSpecs.isNotEmpty() && cliImageBuilder != null) {
             val image = cliImageBuilder.resolveImage(agentSpec.cliSpecs)
             log.info(
                 "Resolved CLI sandbox image '{}' for agent '{}' (CLIs: {})",
@@ -452,7 +503,7 @@ class HarnessAgentLauncher(
         }
 
         // ----- Docker Sandbox + Snapshot (snapshotSpec pre-created in initLauncher) -----
-        if (harnessConfig.sandbox.enabled && snapshotSpec != null) {
+        if (!isLead && harnessConfig.sandbox.enabled && snapshotSpec != null) {
             // DockerFilesystemSpec moved to io.agentscope.harness.agent.sandbox.impl.docker in 2.0.0
             // .sandboxStateStore() is removed — sandbox state is now managed via DistributedStore
             val dockerSpec = DockerFilesystemSpec()
@@ -486,7 +537,7 @@ class HarnessAgentLauncher(
             }
             distributedStoreBuilder.sandboxSnapshotSpec(snapshotSpec)
             agentBuilder.distributedStore(distributedStoreBuilder.build())
-        } else if (minioConfig != null) {
+        } else if (!isLead && minioConfig != null) {
             // ----- MinIO distributed filesystem (non-sandbox mode) -----
             val minioStore = MinioBaseStore(
                 minioConfig.createMinioClient(),
@@ -508,6 +559,13 @@ class HarnessAgentLauncher(
         if (!harnessConfig.enableSessionPersistence) {
             agentBuilder.disableSessionPersistence()
         }
+        if (isLead) {
+            // A lead has nothing to read, run or reimplement: it has no workspace of its own, and the
+            // framework's own subagents would be a second, unmanaged delegation path.
+            agentBuilder.disableFilesystemTools()
+            agentBuilder.disableShellTool()
+            agentBuilder.disableSubagents()
+        }
 
         // ----- Permission Context (ASK rules for dangerous tools + ALLOW rules for framework tools) -----
         // Framework tools (plan mode, todo, subagent) must always be allowed — without explicit ALLOW
@@ -517,7 +575,7 @@ class HarnessAgentLauncher(
             "todo_write",
             "agent_spawn", "agent_send", "agent_list",
             "task_output", "task_list",
-        )
+        ) + teamToolNames
         val permCtxBuilder = PermissionContextState.builder()
         frameworkAllowTools.forEach { toolName ->
             permCtxBuilder.addAllowRule(
@@ -592,8 +650,9 @@ class HarnessAgentLauncher(
             pluginInitializers = if (harnessConfig.sandbox.cliPluginsEnabled) listOf<SandboxPluginInitializer>(HarnaxCliPluginInitializer()) else emptyList(),
             pluginAdminUrl = harnessConfig.sandbox.pluginAdminUrl,
             pluginInternalSecret = harnessConfig.sandbox.pluginInternalSecret,
-            outputFileDetector = outputFileDetector,
-            outputFileStore = outputFileStore,
+            outputFileDetector = if (teamRole is TeamRole.Member) null else outputFileDetector,
+            outputFileStore = if (teamRole is TeamRole.Member) null else outputFileStore,
+            teamOrchestrator = (teamRole as? TeamRole.Lead)?.orchestrator,
         )
     }
 
@@ -631,6 +690,27 @@ class HarnessAgentLauncher(
         return stateStore.getList("", sessionId, "memory_messages", Msg::class.java)
     }
 
+    /**
+     * The child sessions of one root session that hold team member conversations.
+     *
+     * A member runs on `team-<root>-m<memberAgentId>` (TeamOrchestrator), and its full conversation is
+     * persisted there under the same anonymous bucket as the lead's. Chat history has to replay them,
+     * otherwise member bubbles vanish on reload and only the lead's `team_delegate` result survives.
+     * Returns empty for an ordinary session, which is why the caller can afford to always ask.
+     */
+    fun memberSessionIds(rootSessionId: String): List<String> {
+        val prefix = TeamSessions.prefix(rootSessionId)
+        return runCatching { stateStore.listSessionIds("").filter { it.startsWith(prefix) } }
+            .onFailure { log.warn("Failed to list member sessions for {}: {}", rootSessionId, it.message) }
+            .getOrDefault(emptyList())
+    }
+
+    /** The child session one member of this root session runs on. */
+    fun memberSessionId(
+        rootSessionId: String,
+        memberAgentId: Long,
+    ): String = TeamSessions.childSessionId(rootSessionId, memberAgentId)
+
     fun loadSessionHistoryPlan(sessionId: String): List<PlanNote> = planNoteAdaptor.getPlanNotes(sessionId)
 
     /**
@@ -648,11 +728,29 @@ class HarnessAgentLauncher(
 
     companion object {
         /**
-         * Prompt instruction: instruct the agent to save generated output files to /workspace/output/.
+         * Appended when the model has internet search, so it answers real-time questions itself rather
+         * than scraping pages for them.
+         */
+        private const val SEARCH_CAPABILITY_HINT =
+            "[能力提示] 你已具备联网搜索能力，可以直接回答实时信息相关问题（如新闻、价格、天气等），" +
+                "无需通过工具抓取网页或派遣子智能体。请优先利用自身联网知识直接作答。"
+
+        /**
+         * Output-file rule for an ordinary agent: the detector behind this contract is what makes the
+         * files downloadable in the WebUI.
          */
         private const val OUTPUT_FILE_INSTRUCTION =
             "[文件输出规范] 当你生成结果文件（如报告、图表、数据文件等）时，必须将最终交付文件保存到 /workspace/output/ 目录下。" +
                 "系统会自动检测该目录中的新文件并提供给用户下载。中间过程文件请勿放在此目录。"
+
+        /**
+         * Replaces [OUTPUT_FILE_INSTRUCTION] for a team member, whose workspace nothing scans: a file
+         * that is not published as an artifact never leaves that member's sandbox (design 8.2).
+         */
+        private const val TEAM_MEMBER_FILE_INSTRUCTION =
+            "[产物交接] 你的工作区不对用户开放。需要交付的文件（报告、图表、数据等）先写入工作区，" +
+                "再调用 team_artifact_publish 登记为团队产物，并在回复中给出返回的 fileId 和文件路径。" +
+                "接收方给出的 fileId 要先用 team_artifact_fetch 取到工作区才能读取。不要把文件内容整段粘贴进回复。"
 
         /**
          * Scans a ToolBox class for methods annotated with `@ToolMeta(dangerousInput=true)`.
@@ -722,6 +820,7 @@ class HarnessAgentLauncher(
                 KeepAliveSandboxManager(
                     image = effectiveImage,
                     workspaceRoot = harnessConfig.sandbox.workspaceRoot,
+                    maxIdleTimeMs = harnessConfig.sandbox.keepAliveMaxIdleTimeMs,
                     snapshotSpec = snapshotSpec,
                     network = harnessConfig.sandbox.network,
                 )

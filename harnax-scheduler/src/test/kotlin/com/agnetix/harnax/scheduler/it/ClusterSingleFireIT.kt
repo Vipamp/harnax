@@ -9,6 +9,7 @@ import org.quartz.JobBuilder
 import org.quartz.JobExecutionContext
 import org.quartz.Scheduler
 import org.quartz.TriggerBuilder
+import org.quartz.impl.SchedulerRepository
 import org.quartz.impl.StdSchedulerFactory
 import org.quartz.utils.PoolingConnectionProvider
 import java.sql.Connection
@@ -52,8 +53,18 @@ class ClusterSingleFireIT : BaseSchedulerIT() {
             // the flag), so a scheduler built and then dropped holds two non-daemon threads: the forked JVM
             // would outlive the test instead of reporting it.
             val first = scheduler(NODE_ONE).also { schedulers += it }
-            val second = scheduler(NODE_TWO).also { schedulers += it }
             first.start()
+            // Unbind the running node from Quartz's name-keyed repository before building the second.
+            // `StdSchedulerFactory.getScheduler()` returns the *live* scheduler registered under that name
+            // (quartz-2.5.2-sources `StdSchedulerFactory.java:1553-1572`) and `SchedulerRepository.bind()`
+            // throws for a second entry with the same name (`SchedulerRepository.java:75-83`) — while joining a
+            // cluster is exactly starting a scheduler under the name the others already use. Measured without
+            // this line: the second call handed back node one's own object, its `start()` logged twice, and
+            // `QRTZ_SCHEDULER_STATE` held one row — the test then measured one node and failed its own premise.
+            // A running scheduler never consults the repository again; only the factory lookup above and
+            // `shutdown()`'s remove (`QuartzScheduler.java:724`) do, and that removal is by name.
+            SchedulerRepository.getInstance().remove(CLUSTER_NAME)
+            val second = scheduler(NODE_TWO).also { schedulers += it }
             second.start()
             first.scheduleJob(
                 JobBuilder.newJob(CountingJob::class.java).withIdentity(JOB_IDENTITY, IT_GROUP).build(),

@@ -104,7 +104,9 @@
 | `SANDBOX_IMAGE` | `harnax-sandbox:py-node` | 基础沙箱镜像，**必须预先构建** |
 | `SANDBOX_WORKSPACE_ROOT` | `/workspace` | 容器内工作目录 |
 | `SANDBOX_ISOLATION_SCOPE` | `SESSION` | 隔离粒度：`SESSION`（每会话一容器，推荐）/ `AGENT` / `USER` / `GLOBAL`。**填错不报错**——无法识别的值静默退回 `SESSION` |
-| `SANDBOX_KEEP_ALIVE` | `true` | 会话空闲后保活容器，下次对话免冷启动。上限是硬编码的：**最多 100 个保活容器、空闲 30 分钟回收**。实例重启后已存在的容器会被**重新接管**，所以崩溃遗留的容器不会自己消失——清理要在宿主上执行 `docker rm -f $(docker ps -aq --filter name=agentscope-sandbox-)` |
+| `SANDBOX_KEEP_ALIVE` | `true` | 会话空闲后保活容器，下次对话免冷启动。空闲容器由后台定时扫描回收（见下两个变量），不需要「下一次新会话」才顺带触发；重启后被重新接管的容器空闲时钟从接管时刻起算，所以崩溃遗留的容器会在一个空闲预算内自行回收。紧急清理仍可在宿主执行 `docker rm -f $(docker ps -aq --filter name=agentscope-sandbox-)`。单实例上限 `maxSize=100` 是硬编码的 |
+| `SANDBOX_KEEP_ALIVE_MAX_IDLE_MS` | `1800000`（30 分钟） | 保活容器空闲多久后回收。**必须大于最长单轮对话**：时钟只在一轮开始挂载沙箱时刷新，轮中不刷新 |
+| `SANDBOX_KEEP_ALIVE_SWEEP_INTERVAL_MS` | `300000`（5 分钟） | 回收扫描周期，首次扫描同样延迟一个周期。仅 `SANDBOX_ENABLED=true` 时该定时任务才装配 |
 | `SANDBOX_NETWORK` | 空（`bridge`） | 需要容器按域名访问其他服务时填自定义网络名，例如 `docker-new_harnax-network` |
 | `SANDBOX_CLI_PLUGINS_ENABLED` | `false`（compose 里置 `true`） | 不只是「注入 harnax-cli」：开启后**换用 `SANDBOX_PLUGIN_IMAGE`**，并在会话装配期按 admin 下发的安装脚本对本机 Docker **执行一次 `docker build`**（产出 `harnax-sandbox:cli-<hash>` 这类镜像，会持续累积占宿主磁盘）。`SANDBOX_PLUGIN_ADMIN_URL` 或 `SANDBOX_PLUGIN_INTERNAL_SECRET` 为空时插件初始化整段跳过，只留一条 WARN |
 | `SANDBOX_PLUGIN_IMAGE` | `harnax-sandbox:py-node` | 带插件的镜像 |

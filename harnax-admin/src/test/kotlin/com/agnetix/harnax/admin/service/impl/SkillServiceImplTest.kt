@@ -7,6 +7,7 @@ import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.SkillSyncRecorder
 import com.agnetix.harnax.admin.skill.loader.SkillLoadFailure
 import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
 import com.agnetix.harnax.admin.skill.loader.SkillLoader
@@ -14,9 +15,11 @@ import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import io.agentscope.core.skill.AgentSkill
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -37,6 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.junit.jupiter.MockitoSettings
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.quality.Strictness
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
@@ -75,6 +79,10 @@ class SkillServiceImplTest {
 
     @Mock
     private lateinit var skillLoader: SkillLoader
+
+    /** The installer and the recorder write the repository row; one mock keeps both observable. */
+    @Mock
+    private lateinit var syncRepositoryMapper: SkillRepositoryMapper
 
     private lateinit var testSkill: Skill
     private lateinit var normalRepo: SkillRepository
@@ -137,6 +145,14 @@ class SkillServiceImplTest {
         RequestContextHolder.resetRequestAttributes()
     }
 
+    private fun agentBindingCount(
+        skillId: Long,
+        agents: Int,
+    ): SkillAgentBindingCount = SkillAgentBindingCount().apply {
+        this.skillId = skillId
+        agentCount = agents
+    }
+
     private fun createService(): SkillServiceImpl = SkillServiceImpl(
         jwtUtil = jwtUtil,
         skillMapper = skillMapper,
@@ -148,10 +164,11 @@ class SkillServiceImplTest {
         // describe what actually gets written
         skillInstaller = SkillInstaller(
             skillMapper = skillMapper,
-            skillRepositoryMapper = org.mockito.kotlin.mock(),
+            skillRepositoryMapper = syncRepositoryMapper,
             agentSkillBindingMapper = agentSkillBindingMapper,
             cliSkillBindingMapper = cliSkillBindingMapper,
         ),
+        skillSyncRecorder = SkillSyncRecorder(syncRepositoryMapper),
         localTmpDir = "/tmp/harnax-skill-test",
     )
 
@@ -529,6 +546,28 @@ class SkillServiceImplTest {
     @DisplayName("Update Skill Tests")
     inner class UpdateSkillTests {
 
+        /**
+         * `PUT /skills/update/{id}` also routes `status`, so a guard on the toggle endpoint alone
+         * left the back door wide open — the CLI's `--status 0` goes through here.
+         */
+        @Test
+        @DisplayName("updateSkill - Refuse to disable a bound skill through status")
+        fun `updateSkill should refuse to disable a bound skill`() {
+            val request = SkillUpdateRequest(status = 0)
+
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L)))
+                .thenReturn(listOf(agentBindingCount(1L, 1)))
+
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, request)
+            }
+            assertTrue(exception.message!!.contains("is bound to 1 agent, so it cannot be disabled"), exception.message)
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+            verify(skillMapper, never()).updateById(any())
+        }
+
         @Test
         @DisplayName("updateSkill - Update partial fields successfully")
         fun `updateSkill should update partial fields successfully`() {
@@ -812,6 +851,37 @@ class SkillServiceImplTest {
     @DisplayName("Toggle Skill Status Tests")
     inner class ToggleSkillStatusTests {
 
+        /**
+         * A skill an agent binds is in that agent's context on the next run. Switching it off from
+         * the skill page silently rewrites what the agent does, so the agent list has to be where
+         * the change starts.
+         */
+        @Test
+        @DisplayName("toggleSkillStatus - Refuse to disable a skill an agent binds")
+        fun `toggleSkillStatus should refuse to disable a skill an agent binds`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L)))
+                .thenReturn(listOf(agentBindingCount(1L, 2)))
+
+            val exception = assertThrows<BizException> {
+                createService().toggleSkillStatus(1L, 0)
+            }
+            assertTrue(exception.message!!.contains("is bound to 2 agents, so it cannot be disabled"), exception.message)
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
+        @DisplayName("toggleSkillStatus - Keep enabling a bound skill")
+        fun `toggleSkillStatus should keep enabling a bound skill`() {
+            val disabled = testSkill.apply { status = 0 }
+            `when`(skillMapper.selectById(1L)).thenReturn(disabled)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.updateStatus(1L, 1)).thenReturn(1)
+
+            assertTrue(createService().toggleSkillStatus(1L, 1))
+        }
+
         @Test
         @DisplayName("toggleSkillStatus - Disable skill successfully")
         fun `toggleSkillStatus should disable skill successfully`() {
@@ -896,6 +966,26 @@ class SkillServiceImplTest {
     @Nested
     @DisplayName("Delete Skill Tests")
     inner class DeleteSkillTests {
+
+        /**
+         * Deleting is the harsher version of disabling, so it cannot have the looser precondition:
+         * the cascade below used to tear the agent's binding out from under it and answer 200.
+         */
+        @Test
+        @DisplayName("deleteSkill - Refuse to delete a skill an agent binds")
+        fun `deleteSkill should refuse to delete a skill an agent binds`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L)))
+                .thenReturn(listOf(agentBindingCount(1L, 2)))
+
+            val exception = assertThrows<BizException> {
+                createService().deleteSkill(1L)
+            }
+            assertTrue(exception.message!!.contains("is bound to 2 agents, so it cannot be deleted"), exception.message)
+            verify(agentSkillBindingMapper, never()).deleteBySkillIds(any())
+            verify(skillMapper, never()).deleteById(anyLong())
+        }
 
         @Test
         @DisplayName("deleteSkill - Delete skill and bindings successfully")
@@ -1212,6 +1302,31 @@ class SkillServiceImplTest {
             assertEquals(0, captor.firstValue.status)
         }
 
+        /**
+         * The legacy endpoint is still a sync. Reporting the outcome only from `skill-sources`
+         * meant a source that had been syncing through here every day kept answering "never
+         * synced" on the list page.
+         */
+        @Test
+        @DisplayName("batchSaveSkills - Record the sync result on the source")
+        fun `batchSaveSkills should record the sync result on the source`() {
+            val wanted = AgentSkill.builder()
+                .name("wanted")
+                .skillContent("# Wanted")
+                .description("Wanted skill")
+                .build()
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillLoaderRegistry.getLoader("GIT")).thenReturn(skillLoader)
+            `when`(skillLoader.loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(wanted)))
+            `when`(skillMapper.selectByNameAndRepo("wanted", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            createService().batchSaveSkillsDetailed(5L, listOf("wanted"))
+
+            verify(syncRepositoryMapper).updateSyncResult(eq(5L), eq("SUCCESS"), any(), any())
+            assertEquals("SUCCESS", normalRepo.lastSyncStatus)
+        }
+
         @Test
         @DisplayName("batchSaveSkills - Throw BizException when the repository is a ZIP source")
         fun `batchSaveSkills should refuse a ZIP source`() {
@@ -1399,6 +1514,29 @@ class SkillServiceImplTest {
             assertEquals("qoder-skills", result[1].repositoryName)
             // Distinct repository queried only once
             verify(skillRepositoryService).getSkillRepository(5L)
+        }
+
+        /**
+         * The switch has to say *why* it is dead before the operator clicks it, which means the
+         * count travels with the list. Grouped so a page costs one extra read, not one per row.
+         */
+        @Test
+        @DisplayName("convertToResponses - Answer the agent count from one query")
+        fun `convertToResponses should answer the agent count of each skill`() {
+            val skill2 = Skill().apply {
+                id = 2L
+                name = "doc-writer"
+                repositoryId = 5L
+            }
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(listOf(1L, 2L)))
+                .thenReturn(listOf(agentBindingCount(1L, 3)))
+
+            val result = createService().convertToResponses(listOf(testSkill, skill2))
+
+            assertEquals(3, result[0].boundAgentCount)
+            assertEquals(0, result[1].boundAgentCount)
+            verify(agentSkillBindingMapper).selectAgentBindingCounts(listOf(1L, 2L))
         }
 
         @Test

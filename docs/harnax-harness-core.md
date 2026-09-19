@@ -109,7 +109,7 @@ HarnessAgentLauncher.createAgentBase()
   ├── HarnessAgentBuilder()          // 创建 builder
   ├── .model(chatModel)             // 注入 LLM
   ├── .addMcp(mcpClient)            // 注入 MCP 工具
-  ├── .addTool(toolBox)             // 注入自定义工具
+  ├── .addTool(toolBox)             // 注入内置工具
   ├── .addSkill(agentSkill)         // 注入技能
   ├── .addHook(hook)                // 注入钩子
   ├── .workspace(localPath)         // 设置本地工作目录

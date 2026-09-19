@@ -77,6 +77,7 @@ harness:
     workspaceRoot: /workspace       # 容器内工作目录
     isolationScope: SESSION         # 隔离级别: SESSION / AGENT / GLOBAL（无效值会静默回退为 SESSION）
     keepAlive: false                # 代码默认值。容器保活（请求结束后不销毁容器）
+    keepAliveMaxIdleTimeMs: 1800000 # 保活容器空闲多久后被回收（30 分钟）。回收扫描周期由 harness.sandbox.keep-alive-sweep-interval-ms 控制，只被 agent-service 的定时任务读取
 
   # === MinIO 分布式存储 ===
   minio:
@@ -531,14 +532,17 @@ name=agentscope-sandbox-
 name=agentscope-sandbox-
 ```
 
-### 沙箱容器硬编码限制
+### 沙箱容器容量与空闲回收
 
-`KeepAliveSandboxManager` 有以下不可配置的硬编码限制：
+`KeepAliveSandboxManager` 的容量与空闲参数：
 
 | 参数 | 值 | 说明 |
 |------|------|------|
-| `maxSize` | 100 | 单个 JVM 实例最多保活 100 个沙箱容器。超出时自动驱逐最久未使用的容器 |
-| `maxIdleTimeMs` | 30 分钟 | 空闲超过 30 分钟的容器自动销毁 |
+| `maxSize` | 100（硬编码） | 单个 JVM 实例最多保活 100 个沙箱容器。超出时自动驱逐最久未使用的容器 |
+| `maxIdleTimeMs` | `harness.sandbox.keep-alive-max-idle-time-ms`，默认 30 分钟 | 空闲超过该预算的容器自动销毁。**必须大于最长单轮**：时钟只在新一轮挂载沙箱时刷新，轮中不刷新 |
+| 回收扫描周期 | `harness.sandbox.keep-alive-sweep-interval-ms`，默认 5 分钟 | agent-service 的 `SandboxIdleReaper` 定时调用 `cleanupIdle()`（`fixedDelay`，首次同样延迟一个周期）；仅在 `harness.sandbox.enabled=true` 时装配 |
+
+> 重启后 `scanAndRestore` 重新接管的容器，空闲时钟从**接管时刻**起算，因此崩溃遗留的容器会在一个空闲预算内被自动回收；下面的手动清理只作为紧急手段。
 
 > **运维提示**：如果并发 session 数超过 100，旧的沙箱容器会被驱逐，下次请求时需要从 MinIO 恢复 snapshot，会增加延迟。
 

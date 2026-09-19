@@ -39,7 +39,7 @@
             <artifactId>harnax-agent-utils</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- Tools SDK: ToolBox, ToolRegistry, HttpProxyToolBox -->
+        <!-- Tools SDK: ToolBox, ToolRegistry -->
         <dependency>
             <groupId>com.agnetix</groupId>
             <artifactId>harnax-tools-sdk</artifactId>

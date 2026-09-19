@@ -18,6 +18,8 @@ data class SessionResponse(
     var sessionId: String? = null,
     @Schema(description = "Associated agent ID", example = "1")
     var agentId: Long? = null,
+    @Schema(description = "Team ID when this session runs in team mode")
+    var teamId: Long? = null,
     @Schema(description = "Agent name", example = "assistant")
     var name: String? = null,
     @Schema(description = "Agent description")

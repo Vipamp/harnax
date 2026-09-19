@@ -121,6 +121,23 @@ class SkillLoaderTest {
         }
 
         @Test
+        fun `loadSkills should honour the skills subdirectory convention`(
+            @TempDir tmpDir: Path,
+        ) {
+            // GitHub「下载 ZIP」的归档永远是 <repo>-<ref>/ 包一层，技能又按约定放在 skills/<name>/ 下，
+            // 于是真实归档要下钻两层才见到 SKILL.md。GIT 源认这个 skills/ 约定，ZIP 源此前不认，
+            // 同一个仓库换个来源就变成「没有可安装技能」
+            val zipFile = createGithubArchiveStyleZip(tmpDir)
+            val config = mapOf<String, Any>("zipPath" to zipFile.toString())
+            val skills = zipLoader.loadSkills(config, tmpDir).skills
+
+            assertEquals(1, skills.size)
+            assertEquals("ppt-master", skills[0].name)
+            assertEquals("生成演示文稿大纲与逐页讲稿。", skills[0].description)
+            assertTrue(skills[0].resources.containsKey("template.md"))
+        }
+
+        @Test
         fun `loadSkills should handle zip with resources`(
             @TempDir tmpDir: Path,
         ) {
@@ -153,9 +170,9 @@ class SkillLoaderTest {
             val result = zipLoader.loadSkills(config, tmpDir)
 
             assertTrue(result.skills.isEmpty())
-            // 目录里根本没有 SKILL.md 时不算失败：压缩包里放几个非技能目录是常态，
-            // 把它们全报成 failed 会淹掉真正读不出来的那几个
-            assertTrue(result.failures.isEmpty())
+            // 目录里根本没有 SKILL.md 时不算某个目录的失败：压缩包里放几个非技能目录是常态，
+            // 把它们全报成 failed 会淹掉真正读不出来的那几个。整个源空着只报一条源级原因
+            assertEquals(listOf("<empty>"), result.failures.map { it.name })
         }
 
         @Test
@@ -306,6 +323,49 @@ class SkillLoaderTest {
                 zipLoader.loadSkills(config, tmpDir)
             }
         }
+
+        @Test
+        fun `loadSkills should say where it looked when the archive holds no skill file`(
+            @TempDir tmpDir: Path,
+        ) {
+            // 装得开、解得开、但里面一个 SKILL.md 都没有。只答「没有技能」等于什么也没说：
+            // 操作员需要知道-loader 翻过哪些目录，才能明白要再包一层子目录
+            val zipPath = tmpDir.resolve("skill-less.zip")
+            java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("docs/"))
+                zos.closeEntry()
+                zos.putNextEntry(java.util.zip.ZipEntry("docs/readme.md"))
+                zos.write("# Not a skill".toByteArray())
+                zos.closeEntry()
+            }
+
+            val result = zipLoader.loadSkills(mapOf<String, Any>("zipPath" to zipPath.toString()), tmpDir)
+
+            assertTrue(result.skills.isEmpty())
+            val failure = result.failures.single()
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("No SKILL.md"))
+            assertTrue(failure.reason.contains("docs"))
+        }
+
+        @Test
+        fun `loadSkills should report an archive that holds nothing to look at`(
+            @TempDir tmpDir: Path,
+        ) {
+            val zipPath = tmpDir.resolve("only-a-file.zip")
+            java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
+                zos.putNextEntry(java.util.zip.ZipEntry("README.md"))
+                zos.write("# Nothing here".toByteArray())
+                zos.closeEntry()
+            }
+
+            val result = zipLoader.loadSkills(mapOf<String, Any>("zipPath" to zipPath.toString()), tmpDir)
+
+            assertTrue(result.skills.isEmpty())
+            val failure = result.failures.single()
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("archive root"))
+        }
     }
 
     // ==================== NpmSkillLoader ====================
@@ -394,6 +454,25 @@ class SkillLoaderTest {
             assertThrows<IllegalArgumentException> {
                 npmLoader.validateConfig(mapOf("packageName" to "foo bar"))
             }
+        }
+
+        @Test
+        fun `describeEmpty should say which package directories were passed over`() {
+            // 装成功却读不出技能是最难自查的一种 200：包目录里的东西是 npm 自己铺的，
+            // 只有把「翻过哪些目录」说出来，用户才知道要往包里加什么
+            val failure = npmLoader.describeEmpty(listOf("lib", "assets"))
+
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("No SKILL.md"))
+            assertTrue(failure.reason.contains("lib, assets"))
+        }
+
+        @Test
+        fun `describeEmpty should report a package that holds no skill folder`() {
+            val failure = npmLoader.describeEmpty(emptyList())
+
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("package root"))
         }
     }
 
@@ -500,6 +579,35 @@ class SkillLoaderTest {
                 gitLoader.validateConfig(mapOf("url" to "  $url  "))
             }
         }
+
+        @Test
+        fun `describeEmptyClone should blame the root when only a root level skill file exists`(
+            @TempDir cloneDir: Path,
+        ) {
+            // 单技能仓库习惯把 SKILL.md 放在根目录，而框架只认「每个技能一个子目录」。
+            // 空结果必须说清是哪一种，否则用户只看到「源里没有技能」，无从下手
+            Files.writeString(cloneDir.resolve("SKILL.md"), "---\nname: solo\n---\n# Solo\n")
+            Files.createDirectory(cloneDir.resolve("assets"))
+
+            val failure = gitLoader.describeEmptyClone(cloneDir)
+
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("repository root"))
+            assertTrue(failure.reason.contains("subdirectory"))
+        }
+
+        @Test
+        fun `describeEmptyClone should report a clone holding no skill file at all`(
+            @TempDir cloneDir: Path,
+        ) {
+            Files.createDirectory(cloneDir.resolve("src"))
+            Files.writeString(cloneDir.resolve("README.md"), "# Not a skill repo\n")
+
+            val failure = gitLoader.describeEmptyClone(cloneDir)
+
+            assertEquals("<empty>", failure.name)
+            assertTrue(failure.reason.contains("No SKILL.md"))
+        }
     }
 
     // ==================== Helper: Create test ZIP files ====================
@@ -528,6 +636,48 @@ class SkillLoaderTest {
             zos.closeEntry()
             zos.putNextEntry(java.util.zip.ZipEntry("skill-b/SKILL.md"))
             zos.write("# Skill B\n\nSkill B description.".toByteArray())
+            zos.closeEntry()
+        }
+        return zipPath
+    }
+
+    /**
+     * GitHub「下载 ZIP」的真实归档形态：顶层一个 `<repo>-<ref>/` 包裹目录，
+     * 技能按 agentscope 约定放在 `skills/<name>/` 下，另有若干非技能目录。
+     */
+    private fun createGithubArchiveStyleZip(tmpDir: Path): Path {
+        val zipPath = tmpDir.resolve("ppt-master-main.zip")
+        java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath)).use { zos ->
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/"))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/README.md"))
+            zos.write("# ppt-master\n\nNot a skill on its own.".toByteArray())
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/docs/"))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/docs/notes.md"))
+            zos.write("Some documentation.".toByteArray())
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/skills/"))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/skills/ppt-master/"))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/skills/ppt-master/SKILL.md"))
+            zos.write(
+                """
+                ---
+                name: ppt-master
+                description: 生成演示文稿大纲与逐页讲稿。
+                ---
+
+                # PPT Master
+                """.trimIndent().toByteArray(),
+            )
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/skills/ppt-master/resources/"))
+            zos.closeEntry()
+            zos.putNextEntry(java.util.zip.ZipEntry("ppt-master-main/skills/ppt-master/resources/template.md"))
+            zos.write("# 模板".toByteArray())
             zos.closeEntry()
         }
         return zipPath

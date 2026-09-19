@@ -21,6 +21,8 @@ import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.McpServer
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -33,6 +35,8 @@ import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -68,6 +72,8 @@ class AgentServiceImpl(
     private val agentToolMapper: AgentToolMapper,
     private val agentToolEnvParamMapper: AgentToolEnvParamMapper,
     private val secretFieldEncryptor: SecretFieldEncryptor,
+    private val teamMapper: TeamMapper,
+    private val teamMemberMapper: TeamMemberMapper,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -175,6 +181,25 @@ class AgentServiceImpl(
         if (agent != null && agent.tenantId != currentTenantId()) {
             throw RuntimeException("Agent not found")
         }
+        // A team left pointing at a deleted agent refuses every later run, so the reference has to be
+        // released here rather than discovered by whoever starts the conversation next.
+        fun liveTeams(teams: List<Team>) = teams.filter { it.tenantId == currentTenantId() }
+        val led = liveTeams(teamMapper.selectByLeadAgentId(id))
+        if (led.isNotEmpty()) {
+            throw BizException(
+                "This agent leads team(s): ${led.joinToString(", ") { it.name }}. " +
+                    "Pick another lead before deleting it.",
+            )
+        }
+        val memberOf = liveTeams(
+            teamMemberMapper.selectByMemberAgentId(id).mapNotNull { teamMapper.selectById(it.teamId) },
+        )
+        if (memberOf.isNotEmpty()) {
+            throw BizException(
+                "This agent is a member of team(s): ${memberOf.joinToString(", ") { it.name }}. " +
+                    "Remove it from these teams before deleting it.",
+            )
+        }
         // Clean up bindings before deleting agent
         toolBindingMapper.deleteByAgentId(id)
         mcpBindingMapper.deleteByAgentId(id)
@@ -183,7 +208,10 @@ class AgentServiceImpl(
         return agentMapper.deleteById(id) > 0
     }
 
-    override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, "", currentTenantId())
+    // `selectAgentList` always applies `(is_public = 1 OR creator = #{currentUsername})`, so passing
+    // anything but the caller's name silently narrows the list to public agents — which is how a
+    // private agent showed up on the agent page but never in the scheduled-task dropdown
+    override fun getActiveAgents(): List<Agent> = agentMapper.selectAgentList(null, 1, UserContextUtil.getCurrentUsername(jwtUtil), currentTenantId())
 
     /**
      * Convert Agent entity to response DTO.
@@ -239,7 +267,6 @@ class AgentServiceImpl(
                         toolDisplayName = fullTool.displayName,
                         toolDisplayNameZh = fullTool.displayNameZh,
                         toolDescription = fullTool.description,
-                        toolType = fullTool.type,
                         needConfirm = binding.needConfirm == 1,
                         envBindings = parseEnvBindingsJson(binding.envBindings),
                     ),
@@ -337,7 +364,7 @@ class AgentServiceImpl(
             assertEnvVarRefsBindable(config.envBindings, "tool '${tool.name}'")
             assertRequiredEnvParamsFilled(
                 "tool '${tool.name}'",
-                // The tool's own default never reaches a builtin/HTTP tool at runtime (only the binding
+                // The tool's own default never reaches a builtin tool at runtime (only the binding
                 // values are delivered into ToolEnvContext), so it cannot stand in for a required param.
                 loadToolEnvParams(toolId),
                 config.envBindings,
@@ -399,17 +426,15 @@ class AgentServiceImpl(
      *
      * Same reasoning as [resolveBindableMcpServers]: a binding whose tool row is gone is not an error
      * at write time, but delivery drops it with only a log line, so the operator loses a tool without
-     * a signal. A cross-tenant id would additionally hand over another tenant's tool configuration.
+     * a signal. Unlike MCP servers, tools carry no tenant scope: every row is written by the startup
+     * sync for the default tenant and offered to all tenants, so the check is existence only.
      */
     private fun resolveBindableTools(toolIds: List<Long>): List<AgentTool> {
         if (toolIds.isEmpty()) return emptyList()
-        val tenantId = currentTenantId()
-        val resolvable = agentToolMapper.selectByIds(toolIds).filter { it.tenantId == tenantId }
+        val resolvable = agentToolMapper.selectByIds(toolIds)
         val missing = toolIds - resolvable.map { it.id }.toSet()
         if (missing.isNotEmpty()) {
-            throw BizException(
-                "Tool is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
-            )
+            throw BizException("Tool is missing or deleted: ${missing.joinToString(",")}")
         }
         return resolvable
     }
@@ -451,14 +476,15 @@ class AgentServiceImpl(
         skillBindingMapper.deleteByAgentId(agentId)
         if (skillList.isNullOrBlank()) return
 
-        val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }
+        // Two ids in one request would otherwise write two binding rows for the same skill, which
+        // the (agent_id, skill_id) unique key refuses
+        val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }.distinct()
         if (skillIds.isEmpty()) return
-
-        val boundSkills = skillMapper.selectByIds(skillIds)
 
         // Resolved without a tenant filter: the builtin repository is a single platform-wide row,
         // so a tenant-scoped lookup missed it and silently dropped the constraint below
         val builtinRepo = skillRepositoryService.getBuiltinRepository()
+        val boundSkills = resolveBindableSkills(skillIds, builtinRepo?.id)
         if (builtinRepo == null) {
             // No builtin repository means no builtin skills exist, so there is nothing to reject
             log.warn("Builtin repository '{}' not found, skipping agent skill constraint", BuiltinRepository.CLI_SKILLS)
@@ -482,10 +508,10 @@ class AgentServiceImpl(
         }
 
         val now = LocalDateTime.now()
-        val bindings = skillIds.map { skillId ->
+        val bindings = boundSkills.map { skill ->
             AgentSkillBinding().apply {
                 this.agentId = agentId
-                this.skillId = skillId
+                this.skillId = skill.id
                 this.createTime = now
                 this.updateTime = now
             }
@@ -493,6 +519,37 @@ class AgentServiceImpl(
         if (bindings.isNotEmpty()) {
             skillBindingMapper.batchInsert(bindings)
         }
+    }
+
+    /**
+     * Skill rows the agent may be bound to, out of [skillIds].
+     *
+     * The same rule [resolveBindableTools] and [resolveBindableMcpServers] enforce: a binding that
+     * resolves to nothing is not an error at write time, but delivery drops it with a log line, so
+     * the operator loses a skill without a signal. `selectByIds` already excludes `active = 0`, the
+     * tenant comparison mirrors `SkillServiceImpl.requireReadable` (builtin repository included),
+     * and a disabled skill is one the operator took out of circulation — binding it from here would
+     * bypass the disable guard, which only runs while the skill still has no agents.
+     */
+    private fun resolveBindableSkills(
+        skillIds: List<Long>,
+        builtinRepositoryId: Long?,
+    ): List<Skill> {
+        val tenantId = currentTenantId()
+        val resolvable = skillMapper.selectByIds(skillIds).filter {
+            it.tenantId == tenantId || it.repositoryId == builtinRepositoryId
+        }
+        val missing = skillIds - resolvable.map { it.id }.toSet()
+        if (missing.isNotEmpty()) {
+            throw BizException(
+                "Skill is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
+            )
+        }
+        val disabled = resolvable.filter { it.status != 1 }
+        if (disabled.isNotEmpty()) {
+            throw BizException("Skill is disabled, enable it before binding: ${disabled.joinToString(",") { it.name }}")
+        }
+        return resolvable
     }
 
     /**

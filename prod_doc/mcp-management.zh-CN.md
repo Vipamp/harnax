@@ -8,7 +8,7 @@
 
 ## 1. 概述
 
-MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与内置工具（`BUILTIN`）、HTTP 代理工具（`HTTP`）并列。MCP 实体管理与工具体系**只共享同一套分层**，不共享生命周期：内置工具由 `BuiltinToolAutoRegistrar` 在启动时按代码收敛，MCP 服务则全部由页面与 API 手工维护，增删改查就是它的完整生命周期。分层如下：
+MCP（Model Context Protocol）服务是 Agent 的外部工具来源之一，与内置工具并列。MCP 实体管理与工具体系**只共享同一套分层**，不共享生命周期：内置工具由 `BuiltinToolAutoRegistrar` 在启动时按代码收敛，MCP 服务则全部由页面与 API 手工维护，增删改查就是它的完整生命周期。分层如下：
 
 - **harnax-entity**：`McpServer` / `AgentMcpBinding` 实体与 Mapper；
 - **harnax-admin**：MCP 服务的 CRUD、密钥加密存储、掩码回显、连通性测试、绑定管理与配置下发；
@@ -241,7 +241,7 @@ McpClientBuilder 构建客户端（buildSync / buildAsync）→ agentBuilder.add
 
 **5. `is_public` 列缺省对齐（原 TODO-5）**
 
-`V22` 将 `mcp_server.is_public` 的列缺省改为 1，与实体、创建请求、`agent_tool` 一致。
+`V22` 将 `mcp_server.is_public` 的列缺省改为 1，与实体、创建请求、`agent_tool` 一致。（`agent_tool` 那一侧后来由 `V29` 删掉了 `is_public`，工具不再有「是否公开」这一层，见 `tool-integration-design` 第 9 节。）
 
 同一批里顺手清掉的还有 `McpServerServiceImpl` 中「绑定行残留」注释的措辞、`AgentServiceImplTest` 与 `SessionServiceImplTest` 里以 JSON 列为输入的旧用例（改为按绑定表构造）。
 

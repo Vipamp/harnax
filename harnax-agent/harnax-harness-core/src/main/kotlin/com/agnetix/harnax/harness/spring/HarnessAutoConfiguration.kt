@@ -13,10 +13,14 @@ import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.config.MinioConfig
 import com.agnetix.harnax.harness.config.SandboxConfig
+import com.agnetix.harnax.harness.config.TeamConfig
 import com.agnetix.harnax.harness.mcp.PlaintextMcpConfigDecryptor
 import com.agnetix.harnax.harness.output.MinioOutputFileStore
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
+import com.agnetix.harnax.harness.team.MinioTeamArtifactGateway
+import com.agnetix.harnax.harness.team.TeamArtifactGateway
+import com.agnetix.harnax.mapper.TeamArtifactMapper
 import com.agnetix.harnax.tools.sdk.adaptor.ToolCallLogAdaptor
 import com.agnetix.harnax.tools.sdk.adaptor.ToolConfigAdaptor
 import com.agnetix.harnax.tools.sdk.registry.ToolRegistry
@@ -57,6 +61,9 @@ class SandboxProperties {
     var pluginImage: String = "harnax-sandbox:latest"
     var pluginAdminUrl: String = ""
     var pluginInternalSecret: String = ""
+
+    /** Idle budget of one keep-alive sandbox; see `SandboxConfig.keepAliveMaxIdleTimeMs`. */
+    var keepAliveMaxIdleTimeMs: Long = 30 * 60 * 1000L
 }
 
 @ConfigurationProperties(prefix = "harness")
@@ -71,6 +78,19 @@ class HarnessProperties {
      * Bound from `harness.mcp-stdio-enabled`, and set from `HARNAX_MCP_STDIO_ENABLED`.
      */
     var mcpStdioEnabled: Boolean = false
+}
+
+/**
+ * Budgets of one team run, bound from `harness.team.*`. Defaults mirror `TeamConfig`; the runtime
+ * enforces them, so raising one is an operator decision rather than a lead-agent argument (design
+ * section 9.3).
+ */
+@ConfigurationProperties(prefix = "harness.team")
+class TeamProperties {
+    var maxDelegations: Int = 20
+    var memberTurnTimeoutSeconds: Long = 900
+    var confirmTimeoutSeconds: Long = 600
+    var maxArtifactBytes: Long = 20L * 1024 * 1024
 }
 
 @ConfigurationProperties(prefix = "harness.output-detection")
@@ -92,7 +112,7 @@ class OutputDetectionProperties {
 // ===== Auto-Configuration =====
 
 @AutoConfiguration
-@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class, OutputDetectionProperties::class)
+@EnableConfigurationProperties(MinioProperties::class, SandboxProperties::class, HarnessProperties::class, TeamProperties::class, OutputDetectionProperties::class)
 class HarnessAutoConfiguration {
 
     /**
@@ -156,12 +176,32 @@ class HarnessAutoConfiguration {
     )
 
     /**
+     * [TeamArtifactGateway] bean — how one team member's file reaches the next one's sandbox.
+     *
+     * Reuses the output bucket under a prefix the legacy download route cannot name; ownership lives in
+     * the `team_artifact` rows the mapper reads, which is what makes a `fileId` a reference rather than a
+     * credential (design section 8.4).
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "harness.minio", name = ["enabled"], havingValue = "true")
+    fun teamArtifactGateway(
+        minioClient: MinioClient,
+        minioConfig: MinioConfig,
+        teamArtifactMapper: TeamArtifactMapper,
+    ): TeamArtifactGateway = MinioTeamArtifactGateway(
+        minioClient = minioClient,
+        bucketName = minioConfig.outputBucket,
+        artifactMapper = teamArtifactMapper,
+    )
+
+    /**
      * [HarnessConfig] bean — always available.
      */
     @Bean
     fun harnessConfig(
         harnessProps: HarnessProperties,
         sandboxProps: SandboxProperties,
+        teamProps: TeamProperties,
     ): HarnessConfig = HarnessConfig(
         sandbox = SandboxConfig(
             enabled = sandboxProps.enabled,
@@ -175,11 +215,18 @@ class HarnessAutoConfiguration {
             pluginImage = sandboxProps.pluginImage,
             pluginAdminUrl = sandboxProps.pluginAdminUrl,
             pluginInternalSecret = sandboxProps.pluginInternalSecret,
+            keepAliveMaxIdleTimeMs = sandboxProps.keepAliveMaxIdleTimeMs,
         ),
         enableWorkspaceContext = harnessProps.enableWorkspaceContext,
         enableMemoryHooks = harnessProps.enableMemoryHooks,
         enableSessionPersistence = harnessProps.enableSessionPersistence,
         mcpStdioEnabled = harnessProps.mcpStdioEnabled,
+        team = TeamConfig(
+            maxDelegations = teamProps.maxDelegations,
+            memberTurnTimeoutSeconds = teamProps.memberTurnTimeoutSeconds,
+            confirmTimeoutSeconds = teamProps.confirmTimeoutSeconds,
+            maxArtifactBytes = teamProps.maxArtifactBytes,
+        ),
     )
 
     /**

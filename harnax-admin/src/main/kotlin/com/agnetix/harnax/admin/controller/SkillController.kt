@@ -5,7 +5,6 @@ import com.agnetix.harnax.admin.dto.SkillCreateRequest
 import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
-import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.common.dto.ResultVo
@@ -27,7 +26,6 @@ import org.springframework.web.bind.annotation.*
 @Tag(name = "Skill Management", description = "Skill related APIs")
 class SkillController(
     private val skillService: SkillService,
-    private val skillRepositoryService: SkillRepositoryService,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillController::class.java)
@@ -67,8 +65,8 @@ class SkillController(
         @Parameter(description = "Skill ID") @PathVariable(name = "id") id: Long,
     ): ResultVo<SkillResponse?> = try {
         val skill = skillService.getSkill(id)
-        // Get repository information; missing skill returns data=null like other modules
-        ResultVo.success(skill?.let { SkillResponse.fromEntity(it, skillRepositoryService.getSkillRepository(it.repositoryId)) })
+        // Convert through the service: the binding count the response carries comes from its query
+        ResultVo.success(skill?.let { skillService.convertToResponse(it) })
     } catch (e: Exception) {
         log.error("Failed to get skill details", e)
         ResultVo.error(ApiErrors.message(e, "Failed to get skill details"))
@@ -121,8 +119,16 @@ class SkillController(
         ResultVo.error(ApiErrors.message(e, "Failed to delete skill"))
     }
 
+    @Deprecated(
+        "Use POST /api/admin/skill-sources/{id}/install, which takes the same selection in its body " +
+            "and records the outcome on the source. Kept for the CLI.",
+    )
     @PostMapping("/batch")
-    @Operation(summary = "Batch save skills", description = "Selectively sync skills into a repository; duplicates are overwritten and every skill is reported")
+    @Operation(
+        summary = "Batch save skills (deprecated)",
+        deprecated = true,
+        description = "Deprecated: use POST /api/admin/skill-sources/{id}/install with {names}. Kept because the CLI still calls it",
+    )
     fun batchSaveSkills(
         @Parameter(description = "Repository ID") @RequestParam(name = "repositoryId") repositoryId: Long,
         @Parameter(description = "Skill list") @RequestBody skills: List<String>,

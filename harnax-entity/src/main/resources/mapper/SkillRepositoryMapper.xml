@@ -17,6 +17,9 @@
         <result column="is_public" property="isPublic"/>
         <result column="creator" property="creator"/>
         <result column="active" property="active"/>
+        <result column="last_sync_time" property="lastSyncTime"/>
+        <result column="last_sync_status" property="lastSyncStatus"/>
+        <result column="last_sync_detail" property="lastSyncDetail"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
     </resultMap>
@@ -59,6 +62,19 @@
     <!-- updateStatus -->
     <update id="updateStatus">
         UPDATE skill_repository SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
+    </update>
+
+    <!-- updateSyncResult -->
+    <update id="updateSyncResult">
+        <!-- `update_time = update_time` is load-bearing: the column has ON UPDATE CURRENT_TIMESTAMP,
+             so leaving it out would make every sync bump it and re-sort the list, which orders by
+             how recently the source was edited. A sync is not an edit. -->
+        UPDATE skill_repository
+        SET last_sync_time = #{syncTime},
+        last_sync_status = #{status},
+        last_sync_detail = #{detail},
+        update_time = update_time
+        WHERE id = #{id} AND active = 1
     </update>
 
     <!-- insert -->

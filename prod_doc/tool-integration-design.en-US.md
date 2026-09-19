@@ -15,22 +15,20 @@
 | Tools extend without touching a hardcoded set | `ToolRegistry` scans `ToolBox` beans; `BuiltinToolAutoRegistrar` converges them into the DB at startup |
 | Each agent picks its tools instead of sharing all of them | `agent_tool_binding` + `toolDetails` delivery + per-binding runtime assembly |
 | Same shape as MCP / Skill management | The same five stages: entity table, Admin management, binding table, spec delivery, runtime adaptor |
-| Builtin tools cannot be broken by operators | Lifecycle owned by the code sync; pages and APIs reject any write to `type='BUILTIN'` |
+| Tools cannot be broken by operators | Lifecycle owned by the code sync; there is no tool write endpoint at all |
 | Per-tool policy (confirmation, env params, mandatory) | Granularity pushed down to the `@Tool` method: one method = one `agent_tool` row |
 
 Out of scope: MCP tools (own table `mcp_server`, see mcp-management), skills (`skill`, never in `agent_tool`), CLI plugins (`cli` + `cli_skill_binding`).
 
 ## 2. Classification model
 
-### 2.1 By implementation (`agent_tool.type`)
+### 2.1 One implementation only: code annotations + ToolBox
 
-| Type | Source of truth | Runtime carrier | Who owns the lifecycle |
-|------|-----------------|-----------------|------------------------|
-| `BUILTIN` | Code annotations `@Tool` + `@ToolMeta` | `ToolRegistry.createToolBoxInstance(beanName)`, a per-session instance | **The code sync exclusively** (no external write path) |
-| `CUSTOM` | DB row + a ToolBox bean in user code | Same as above | Admin write endpoints (not enabled yet) |
-| `HTTP` | Pure DB row (URL / method / headers / inputSchema) | `HttpProxyToolBox` | Admin write endpoints (not enabled yet) |
+| Source of truth | Runtime carrier | Who owns the lifecycle |
+|-----------------|-----------------|------------------------|
+| Code annotations `@Tool` + `@ToolMeta` | `ToolRegistry.createToolBoxInstance(beanName)`, a per-session instance | **The code sync exclusively** (no external write path) |
 
-`BUILTIN` and `CUSTOM` take the same runtime branch (both resolve a ToolBox by `beanName`); they differ only in who may write the row.
+`agent_tool` has no `type` column and no `is_public` column: every row corresponds to one `@Tool` method in the code, and the custom-tool and HTTP-proxy tool shapes have been retired entirely.
 
 ### 2.2 By whether it can be turned off (`agent_tool.is_required`)
 
@@ -39,7 +37,7 @@ Out of scope: MCP tools (own table `mcp_server`, see mcp-management), skills (`s
 | Required tool (`is_required=1`) | Nobody — appended at delivery | None | Unreachable (see 6.4) |
 | Optional builtin tool | User ticks it in the agent wizard | `agent_tool_binding` | Per agent configuration |
 
-The two dimensions are **orthogonal**: `is_required` only means anything for `BUILTIN`, is synced from `@ToolMeta(isRequired)`, and has no UI switch.
+`is_required` is synced from `@ToolMeta(isRequired)`, has no UI switch, and cannot be adjusted by operators.
 
 ## 3. Data model
 
@@ -62,7 +60,7 @@ Field-by-field semantics live in [tool-capability.en-US.md](./tool-capability.en
 
 | Module | Responsibility | Key classes |
 |--------|----------------|-------------|
-| `harnax-tools-sdk` | Tool abstraction, annotations, registry, HTTP proxy, SPI interfaces | `ToolBox`, `@ToolMeta`, `ToolRegistry`, `HttpProxyToolBox`, `ToolConfigAdaptor` |
+| `harnax-tools-sdk` | Tool abstraction, annotations, registry, SPI interfaces | `ToolBox`, `@ToolMeta`, `ToolRegistry`, `ToolConfigAdaptor` |
 | `harnax-tools-buildin` | Builtin tool implementations (time, email) | `TimeToolBox`, `EmailToolBox` |
 | `harnax-entity` | `agent_tool` / `agent_tool_binding` / `agent_tool_env_param` / `tool_call_log` entities and mappers | `AgentTool`, `AgentToolMapper` |
 | `harnax-admin` | Startup sync, management API, agent spec delivery | `BuiltinToolAutoRegistrar`, `AgentToolController`, `InternalApiController` |
@@ -84,7 +82,7 @@ InternalApiController.buildAgentSpecResponse
 AgentSpecResolver → AgentSpec.toolSpecs + ToolEnvContext
    ▼
 HarnessAgentLauncher.createAgentBase()
-   BUILTIN/CUSTOM → ToolBox instance; HTTP → HttpProxyToolBox
+   ToolBox instance resolved reflectively by `beanName`
    → addTool → strip ungranted methods → permission rules (ALLOW / ASK) → dangerous-input wrapping
 ```
 
@@ -100,9 +98,9 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 
 ### 6.2 Builtin tool lifecycle belongs to the code sync
 
-- **Decision**: `BuiltinToolAutoRegistrar` is the only path that inserts / updates / deletes `type='BUILTIN'` rows. Every other write path is closed: the service layer rejects by `type`, the Controller exposes no create endpoint, the frontend is read-only and its write request wrappers were deleted.
-- **Why**: when the DB row and the code annotation disagree, runtime always follows the code (`beanName` / `methodName` must resolve to a real method). Letting operators edit builtin tools only produces rows that either cannot run or carry fields contradicting the code.
-- **Cost**: any change to a builtin tool — including the required / optional split — means editing annotations, releasing, and restarting admin. There is no operator-side switch.
+- **Decision**: `BuiltinToolAutoRegistrar` is the only path that inserts / updates / deletes `agent_tool` rows. There is no write path left to close: `PUT /update/{id}`, `PUT /toggle/{id}` and `DELETE /{id}` were deleted together with `AgentToolCreateRequest` / `AgentToolUpdateRequest`, leaving queries only in the Controller and service, and both the frontend and the CLI are read-only.
+- **Why**: when the DB row and the code annotation disagree, runtime always follows the code (`beanName` / `methodName` must resolve to a real method). Letting operators edit tools only produces rows that either cannot run or carry fields contradicting the code.
+- **Cost**: any change to a tool — including the required / optional split — means editing annotations, releasing, and restarting admin. There is no operator-side switch.
 
 ### 6.3 Identity key and rename semantics
 
@@ -151,9 +149,9 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | Binding table | `agent_tool_binding` | `agent_mcp_binding` | `agent_skill_binding` |
 | Spec carrier | `ToolDetailDto` → `ToolSpec` | `McpDetailDto` → `McpSpec` | `SkillDetailDto` → `SkillSpec` |
 | Runtime adaptor | `ToolConfigAdaptor` | `McpConfigAdaptor` | `SkillAdaptor` |
-| Metadata source | Code annotations (builtin) / DB (custom) | DB | Remote repository sync |
-| Writable by operators | No for builtin, yes for custom (not enabled) | Yes | Yes |
-| Secret handling | Encrypted headers / env values | Encrypted headers / env values (decrypted before delivery) | None |
+| Metadata source | Code annotation sync | DB | Remote repository sync |
+| Writable by operators | No (no write endpoint at all) | Yes | Yes |
+| Secret handling | Encrypted env values | Encrypted headers / env values (decrypted before delivery) | None |
 | Behaviour when missing | Warn and skip (no switch) | Warn and skip (no switch since V20, same as Tool) | Cached fallback |
 | Behaviour when disabled | `status` delivered, skipped at runtime | Same as Tool (`status=0` skipped) | Filtered at Admin delivery, never reaches the spec |
 
@@ -161,12 +159,10 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 
 | Boundary | Detail |
 |----------|--------|
-| Builtin tools are written with `tenant_id = 1` only | The sync always uses tenant 1, and `MybatisTenantInterceptor`'s filtering is currently disabled, so builtin tools are a platform-wide shared resource rather than one copy per tenant |
-| Custom tool chain exists but is unreachable | Assembly, encryption and DTOs are all in place; there is no create endpoint and the frontend hides them, so rows only appear if someone writes the DB directly |
-| HTTP tools have no UI entry point | `HttpProxyToolBox` and its columns are complete, but the tool page offers no creation form |
+| Tools are written with `tenant_id = 1` only | The sync always uses tenant 1, and `MybatisTenantInterceptor`'s filtering is currently disabled, so tools are a platform-wide shared resource rather than one copy per tenant |
 | Pruning residue needs a human | When the circuit breaker trips (stale rows ≥ declared rows) or a tool group failed to sync, the delete is skipped with an ERROR log; review the code and re-release |
 | `name` is not part of the unique key | `uk_tenant_bean_method` excludes `name`, so two methods declaring the same `@Tool(name)` are not caught by the database; the sync looks rows up by `name` to attach env params, so a duplicate can land those definitions on the wrong row |
-| Tenant filtering is uneven across capabilities | `mcp_server` list queries now filter by `tenant_id` (section 7, round three of `mcp-management`); `agent` does not: `AgentMapper.xml` neither maps nor inserts `agent.tenant_id`, yet `AgentServiceImpl` writes `agent.tenantId` and `MpSessionService` reads it — the value is set, dropped on the floor, then trusted |
+| Tenant filtering is closed; tools sit outside it | `mcp_server` and `agent` list queries now both filter by `tenant_id` (sections 7, rounds three and five of `mcp-management`; `AgentMapper.xml` maps and inserts `agent.tenant_id` today). Tools take no part in that convention — the sync writes every row with `tenant_id = 1` (see the first row) |
 
 ## 9. Evolution timeline
 
@@ -179,10 +175,11 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | V5 | Add `is_required` | Some tools must be present on every agent |
 | V7 | Create `agent_tool_binding` and friends | Replace JSON columns; per-binding params and confirmation |
 | — | The registration mechanism takes over builtin insert / update / delete | Eliminate DB-vs-code drift (6.2) |
-| — | API and frontend write paths for builtins closed | Single source of truth (6.2) |
+| — | Builtin write paths first rejected by `type`, then deleted outright | Single source of truth (6.2) |
 | V17 | Drop `agent_tool_binding.enable_skip` | The switch had no semantics (6.6) |
 | V18 | Unique key `(agent_id, tool_id)` on `agent_tool_binding` | Make "the binding row is the one fact for this agent-tool pair" actually true |
 | V19-V22 | MCP side aligned onto tool semantics: binding unique key, `enable_skip` dropped, stale capability columns on `agent` / `session` dropped, `tenant_id` filtering and the `is_public` default | The same defects reproduced one by one on MCP (see section 7 of `mcp-management`) |
+| V29 | Drop `agent_tool.type` / `is_public` / `http_url` / `http_method` / `http_headers` / `input_schema` / `output_schema` / `env_params` | Custom (`CUSTOM`) and HTTP tools retired; only code-registered tools remain, and `@ToolMeta` loses `isPublic` |
 | — | Assembly loses the `TOOL_SET` fallback | Close the loop on method-granular granting (6.5) |
 | — | Upsert refreshes `name` + two brakes on prune | Renames stop losing bindings; mass deletes are gated (6.3) |
 
@@ -193,7 +190,7 @@ Two hard rules at assembly time: **there is no fallback registration at all** (e
 | Annotations and descriptors | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/ToolMeta.kt`, `ToolMetaDescriptor.kt` |
 | Scan and registry | `harnax-agent/harnax-tools-sdk/src/main/kotlin/com/agnetix/harnax/tools/sdk/registry/ToolRegistry.kt` |
 | Startup convergence | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/registrar/BuiltinToolAutoRegistrar.kt` |
-| Write-path guard | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentToolServiceImpl.kt` (`requireManageableTool`) |
+| Read-only query service | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentToolServiceImpl.kt` (queries and `convertToResponse` only, no write method) |
 | SQL and unique-key behaviour | `harnax-entity/src/main/resources/mapper/AgentToolMapper.xml` (`upsertBuiltinTool` / `deleteBuiltinByIds`) |
 | Spec delivery | `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt` (`buildAgentSpecResponse`) |
 | Runtime assembly | `harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt` |

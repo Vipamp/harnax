@@ -70,10 +70,13 @@ class SkillSourceController(
         ResultVo.error("Failed to create skill source: ${ApiErrors.message(e, UNKNOWN)}")
     }
 
-    @Operation(summary = "Re-install skills from the source")
+    @Operation(summary = "Re-install skills from the source", description = "Without a body the whole source is stored; with `names` only those skills are")
     @PostMapping("/{id}/install")
-    fun install(@PathVariable id: Long): ResultVo<SkillInstallResponse> = try {
-        ResultVo.success(skillSourceService.installSkills(id))
+    fun install(
+        @PathVariable id: Long,
+        @RequestBody(required = false) request: SkillSourceInstallRequest?,
+    ): ResultVo<SkillInstallResponse> = try {
+        ResultVo.success(skillSourceService.installSkills(id, request?.names))
     } catch (e: Exception) {
         log.error("Failed to install skills from source {}", id, e)
         ResultVo.error("Failed to install skills: ${ApiErrors.message(e, UNKNOWN)}")

@@ -312,6 +312,18 @@
                     <additionalClasspathElements>
                         <additionalClasspathElement>${project.build.outputDirectory}</additionalClasspathElement>
                     </additionalClasspathElements>
+                    <!--
+                        The fork's clock has to be the container's clock. Testcontainers' MySQL runs UTC, while
+                        `expireStale` and `reclaimExpired` compare a DATETIME written from Java
+                        (`LocalDateTime.now()`, which Connector/J sends literally, without conversion) against the
+                        server's `NOW()`. On a +08:00 machine every seeded "old" row therefore landed eight hours
+                        in the future and the sweeps reclaimed nothing: measured as
+                        `at least two stale rows should be reclaimed, got 0`. Pinning the fork to UTC makes the
+                        two clocks the same clock without depending on the developer's zone — the deployment that
+                        actually runs pins both sides to Asia/Shanghai instead (compose `TZ` plus
+                        `serverTimezone` in the JDBC URL).
+                    -->
+                    <argLine>-Duser.timezone=UTC</argLine>
                 </configuration>
                 <executions>
                     <execution>

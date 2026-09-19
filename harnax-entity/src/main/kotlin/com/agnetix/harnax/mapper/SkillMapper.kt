@@ -1,6 +1,7 @@
 package com.agnetix.harnax.mapper
 
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.dto.SkillRepositoryEnabledCount
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
 
@@ -63,4 +64,13 @@ interface SkillMapper {
     fun selectByRepositoryId(@Param("repositoryId") repositoryId: Long): List<Skill>
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
+    /**
+     * How many skills are still enabled under each of [repositoryIds]. A source with none is absent
+     * from the answer.
+     *
+     * The source list asks this for every row on the page in order to say which delete button is dead
+     * and why, so it is grouped rather than counted per source.
+     */
+    fun selectEnabledCountsByRepositoryIds(@Param("repositoryIds") repositoryIds: List<Long>): List<SkillRepositoryEnabledCount>
 }

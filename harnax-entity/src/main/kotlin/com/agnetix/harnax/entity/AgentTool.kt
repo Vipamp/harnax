@@ -4,6 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema
 import java.io.Serializable
 import java.time.LocalDateTime
 
+/**
+ * One @Tool method of a builtin ToolBox. Every row is written by the startup-time
+ * BuiltinToolAutoRegistrar, so no column here carries a tool type or an owner-scoped visibility flag.
+ */
 @Schema(description = "Agent Tool entity")
 class AgentTool : Serializable {
 
@@ -29,32 +33,11 @@ class AgentTool : Serializable {
     @Schema(description = "Tool description (sent to LLM)")
     var description: String = ""
 
-    @Schema(description = "Tool type: CUSTOM / HTTP; BUILTIN is code-owned and only written by the builtin tool sync")
-    var type: String = "CUSTOM"
-
-    @Schema(description = "Spring Bean name (for BUILTIN/CUSTOM type)")
+    @Schema(description = "Spring Bean name")
     var beanName: String? = null
 
-    @Schema(description = "Java method name (for BUILTIN/CUSTOM type, one record per @Tool method)")
+    @Schema(description = "Java method name (one record per @Tool method)")
     var methodName: String? = null
-
-    @Schema(description = "HTTP request URL (for HTTP type)")
-    var httpUrl: String? = null
-
-    @Schema(description = "HTTP method (for HTTP type)")
-    var httpMethod: String = "POST"
-
-    @Schema(description = "HTTP headers JSON (for HTTP type)")
-    var httpHeaders: String? = null
-
-    @Schema(description = "Environment parameters configuration JSON")
-    var envParams: String? = null
-
-    @Schema(description = "Input parameter JSON Schema (for HTTP type)")
-    var inputSchema: String? = null
-
-    @Schema(description = "Output result JSON Schema (for HTTP type)")
-    var outputSchema: String? = null
 
     @Schema(description = "Is read-only tool (0: No, 1: Yes)")
     var readOnly: Int = 0
@@ -73,9 +56,6 @@ class AgentTool : Serializable {
 
     @Schema(description = "Status (0:disabled, 1:enabled)")
     var status: Int = 1
-
-    @Schema(description = "Public status (0:no, 1:yes)")
-    var isPublic: Int = 1
 
     @Schema(description = "Creator")
     var creator: String = ""

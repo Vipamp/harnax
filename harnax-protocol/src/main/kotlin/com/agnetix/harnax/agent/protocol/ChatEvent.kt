@@ -28,11 +28,36 @@ import io.agentscope.core.model.ChatUsage
     JsonSubTypes.Type(value = ToolResultChatEvent::class, name = "ToolResultEvent"),
     JsonSubTypes.Type(value = EndEventChatEvent::class, name = "EndEvent"),
     JsonSubTypes.Type(value = ErrorChatEvent::class, name = "ErrorEvent"),
+    JsonSubTypes.Type(value = KeepAliveChatEvent::class, name = "KeepAliveEvent"),
 )
-interface ChatEvent {
+sealed interface ChatEvent {
     val eventType: EventType
     val tokenUsage: TokenUsage?
+
+    /**
+     * Which team member run produced this event, or null when an ordinary single agent produced it.
+     *
+     * Members of a team share one root session and one SSE channel, so their events reach the user
+     * mixed with the lead's. Neither `agentId` nor a display name can tell two runs of the same
+     * member apart, and the user has to answer a confirmation aimed at one specific run.
+     */
+    val source: EventSource?
 }
+
+/**
+ * Provenance of an event that came from a team member run rather than from the session's own agent.
+ *
+ * [childRunId] is the key the confirmation round trip goes back on: the user's answer has to reach the
+ * member run that asked, not the lead's tool list (design section 9.2).
+ */
+data class EventSource(
+    val teamId: Long,
+    val teamName: String,
+    val memberAgentId: Long,
+    val memberAgentName: String,
+    val childRunId: String,
+    val childSessionId: String,
+)
 
 data class TokenUsage(
     val inputTokens: Int,
@@ -59,6 +84,7 @@ data class StreamThinkingChatEvent(
     val message: String,
     val isLast: Boolean,
     override val tokenUsage: TokenUsage?,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ThinkingEvent
 }
@@ -67,6 +93,7 @@ data class StreamTextChatEvent(
     val message: String,
     val isLast: Boolean,
     override val tokenUsage: TokenUsage?,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.TextEvent
 }
@@ -74,6 +101,7 @@ data class StreamTextChatEvent(
 data class ToolConfirmChatEvent(
     val pendingCallTools: List<PendingCallTool>,
     override val tokenUsage: TokenUsage?,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ToolConfirmEvent
 }
@@ -90,6 +118,7 @@ data class CallToolChatEvent(
     val toolName: String,
     val arguments: Map<String, Any>,
     override val tokenUsage: TokenUsage?,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.CallToolEvent
 }
@@ -100,6 +129,7 @@ data class ToolResultChatEvent(
     val message: String,
     val success: Boolean = true,
     override val tokenUsage: TokenUsage?,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ToolResultEvent
 }
@@ -115,6 +145,7 @@ data class ToolResultChatEvent(
 data class EndEventChatEvent(
     override val tokenUsage: TokenUsage? = null,
     val attachments: List<FileAttachment> = emptyList(),
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.EndEvent
 }
@@ -128,6 +159,7 @@ data class ErrorChatEvent(
     val code: String,
     val message: String,
     override val tokenUsage: TokenUsage? = null,
+    override val source: EventSource? = null,
 ) : ChatEvent {
     override val eventType: EventType = EventType.ErrorEvent
 
@@ -143,6 +175,38 @@ data class ErrorChatEvent(
     }
 }
 
+/**
+ * Keeps a live-but-silent stream open while a run waits for something outside the model.
+ *
+ * A member parked on a confirmation produces no event at all, and every hop of the streaming chain
+ * kills a silent stream: session-router after 120s, channel-service after 180s. Both cut a run that
+ * was still perfectly able to continue the moment a human answered. Consumers must not render this
+ * and must not treat it as end-of-output — it carries no content and no token usage.
+ */
+data class KeepAliveChatEvent(
+    override val source: EventSource? = null,
+) : ChatEvent {
+    override val eventType: EventType = EventType.KeepAliveEvent
+    override val tokenUsage: TokenUsage? = null
+}
+
+/**
+ * Re-stamps this event as coming from [source].
+ *
+ * Member runs emit plain events; the team runtime owns the copy that says who made them, so the
+ * labelling happens once at the merge point instead of in every event converter.
+ */
+fun ChatEvent.withSource(source: EventSource): ChatEvent = when (this) {
+    is StreamThinkingChatEvent -> copy(source = source)
+    is StreamTextChatEvent -> copy(source = source)
+    is ToolConfirmChatEvent -> copy(source = source)
+    is CallToolChatEvent -> copy(source = source)
+    is ToolResultChatEvent -> copy(source = source)
+    is EndEventChatEvent -> copy(source = source)
+    is ErrorChatEvent -> copy(source = source)
+    is KeepAliveChatEvent -> copy(source = source)
+}
+
 enum class EventType {
     ThinkingEvent,
     CallToolEvent,
@@ -151,4 +215,5 @@ enum class EventType {
     ToolConfirmEvent,
     EndEvent,
     ErrorEvent,
+    KeepAliveEvent,
 }

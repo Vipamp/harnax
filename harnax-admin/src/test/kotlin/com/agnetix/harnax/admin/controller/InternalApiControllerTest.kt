@@ -1,5 +1,6 @@
 package com.agnetix.harnax.admin.controller
 
+import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.service.McpOAuthUserService
@@ -20,6 +21,7 @@ import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.dto.ChannelSessionOwner
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
@@ -38,6 +40,8 @@ import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -133,6 +137,12 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var mcpStdioPolicy: McpStdioPolicy
+
+    @Mock
+    private lateinit var teamMapper: TeamMapper
+
+    @Mock
+    private lateinit var teamMemberMapper: TeamMemberMapper
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -528,7 +538,7 @@ class InternalApiControllerTest {
 
     /**
      * 敏感配置的下发口径：agent-service 不持有 AES 密钥，所以 `mcp_server.headers`、
-     * `mcp_server.envParams`、`agent_tool.http_headers` 必须在下发前就解密成扁平明文对象。
+     * `mcp_server.envParams` 必须在下发前就解密成扁平明文对象。
      * 早先这些字段是加密态原文直接给出，运行时解密器为 null，最终 headers 被静默置空。
      */
     @Nested
@@ -703,39 +713,6 @@ class InternalApiControllerTest {
             // 连解密都不该发生：别租户的凭据不进下发内容
             verifyNoInteractions(secretFieldEncryptor)
         }
-
-        @Test
-        @DisplayName("getAgentSpec - 工具 httpHeaders 同样解密下发")
-        fun `getAgentSpec should deliver tool httpHeaders decrypted`() {
-            stubWebSession()
-            val storedHeaders = """[{"key":"X-Api-Key","value":"ENC_B64","secret":true}]"""
-            `when`(toolBindingMapper.selectByAgentId(100L)).thenReturn(
-                listOf(
-                    AgentToolBinding().apply {
-                        agentId = 100L
-                        toolId = 9L
-                    },
-                ),
-            )
-            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(
-                listOf(
-                    AgentTool().apply {
-                        id = 9L
-                        name = "http-call"
-                        type = "HTTP"
-                        httpUrl = "https://example.com/api"
-                        httpHeaders = storedHeaders
-                    },
-                ),
-            )
-            `when`(secretFieldEncryptor.decryptToMap(storedHeaders))
-                .thenReturn(mapOf("X-Api-Key" to "plain-key"))
-
-            val result = controller.getAgentSpec("web-secret")
-
-            assertTrue(result.isSuccess())
-            assertEquals("""{"X-Api-Key":"plain-key"}""", result.data?.toolDetails?.firstOrNull()?.httpHeaders)
-        }
     }
 
     @Nested
@@ -779,7 +756,11 @@ class InternalApiControllerTest {
         }
 
         /** 让 agent 100 额外绑定一个 CLI，并把该 CLI 关联的技能 ID stub 好 */
-        private fun stubCliWithSkills(cliId: Long, cliSkillIds: List<Long>) {
+        private fun stubCliWithSkills(
+            cliId: Long,
+            cliSkillIds: List<Long>,
+            status: Int = 1,
+        ) {
             `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
                 listOf(
                     AgentCliBinding().apply {
@@ -793,7 +774,7 @@ class InternalApiControllerTest {
                     Cli().apply {
                         id = cliId
                         name = "cli-$cliId"
-                        status = 1
+                        this.status = status
                     },
                 ),
             )
@@ -852,35 +833,194 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("CLI 关联的停用技能不下发")
-        fun `getAgentSpec should drop a disabled skill merged in from a CLI`() {
-            // 直接绑定那一路已有闸门，但技能还可以经 CLI 关联合并进 skillDetails；合并处不设同一
-            // 道闸门，就会出现「全局注入路径丢掉它、CLI 路径照样加载它」的矛盾
+        @DisplayName("CLI 只透传绑定的技能 ID，不并入 skillDetails")
+        fun `getAgentSpec should carry CLI skill ids without merging them into skillDetails`() {
+            // 内置 CLI 技能在 agent 配置页既不展示也不可勾选，「选没选中这个 CLI」就是唯一开关。
+            // 开关由 agent-service 判定（它才知道本次注入了哪些内置技能），admin 只负责把 ID 带下去
             stubAgentWithSkills(skill(31L, "own-skill", 1))
-            stubCliWithSkills(7L, listOf(31L, 32L))
-            `when`(skillMapper.selectByIds(listOf(32L))).thenReturn(listOf(skill(32L, "cli-flagged", 0)))
+            stubCliWithSkills(7L, listOf(32L))
+            // 合并逻辑已删、这行桩生产路径不再触发，但刻意留着：谁把合并加回来，32 就会出现在
+            // skillDetails 里把用例弄红——没有它，回归会伪装成通过
+            `when`(skillMapper.selectByIds(listOf(32L))).thenReturn(listOf(skill(32L, "cli-skill", 1)))
 
             val data = controller.getAgentSpec("web-skill").data
 
             assertNotNull(data)
             assertEquals(listOf(31L), data?.skillDetails?.map { it.id })
             assertEquals("31", data?.skillList)
+            assertEquals(listOf(32L), data?.cliDetails?.single()?.skillIds)
         }
 
         @Test
-        @DisplayName("CLI 关联的技能与已绑定技能同名时，保留 agent 自己绑定的那一个")
-        fun `getAgentSpec should keep the bound skill when a CLI skill shares its name`() {
-            // 技能名只在仓库内唯一，而 harness 按 name 归并技能，两个同名技能都下发会让注册表
-            // 与内存仓库对「谁生效」的判断不一致
-            stubAgentWithSkills(skill(41L, "shared-name", 1))
-            stubCliWithSkills(8L, listOf(42L))
-            `when`(skillMapper.selectByIds(listOf(42L))).thenReturn(listOf(skill(42L, "shared-name", 1)))
+        @DisplayName("停用的 CLI 不下发，其技能绑定也随之消失")
+        fun `getAgentSpec should drop a disabled CLI and its skill ids`() {
+            // 唯一开关就在这一行闸门上：CLI 一旦停用，它关联的内置技能既装不进沙箱，
+            // 也不该再被 agent-service 按 skillIds 捞进 prompt
+            stubAgentWithSkills(skill(35L, "own-skill", 1))
+            stubCliWithSkills(9L, listOf(36L), status = 0)
+            // 同上一条用例：桩不再被生产路径触发，留着是为了让「合并被加回来」这种回归仍然显形
+            `when`(skillMapper.selectByIds(listOf(36L))).thenReturn(listOf(skill(36L, "cli-skill", 1)))
 
             val data = controller.getAgentSpec("web-skill").data
 
             assertNotNull(data)
-            assertEquals(listOf(41L), data?.skillDetails?.map { it.id })
-            assertEquals("41", data?.skillList)
+            assertTrue(data?.cliDetails?.isEmpty() ?: false)
+            assertEquals(listOf(35L), data?.skillDetails?.map { it.id })
+        }
+    }
+
+    /**
+     * `cli.env_params` 是 CLI 登记页采集的环境参数声明（含默认值，secret 条目在库里是密文），
+     * 而 `agent_cli_binding.env_bindings` 是某个 agent 对其中若干参数的显式赋值。沙箱只能从
+     * `cliDetails[].envBindings` 拿到值，所以下发时必须把两者合成一份，否则「装了 CLI 但拿不到
+     * 它的凭证」——install 脚本照跑、check 照过，命令一敲就报未登录。
+     */
+    @Nested
+    @DisplayName("CLI 环境参数下发")
+    inner class CliEnvDeliveryTests {
+
+        /**
+         * @param bindingEnv agent 侧显式绑定的 JSON，null 表示当前 agent 表单什么都没采集
+         * @param declaredEnv CLI 自身的声明 JSON
+         */
+        private fun stubCliEnv(
+            bindingEnv: String?,
+            declaredEnv: String?,
+        ) {
+            val session = Session().apply {
+                sessionId = "web-cli-env"
+                agentId = 100L
+                enableThink = 0
+                enableSearch = 0
+                enablePlan = 0
+            }
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-cli-env", 1)).thenReturn(session)
+            `when`(agentMapper.selectById(100L)).thenReturn(
+                Agent().apply {
+                    id = 100L
+                    name = "CLI Env Agent"
+                    systemPrompt = "x"
+                    modelId = 5L
+                },
+            )
+            `when`(cliBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentCliBinding().apply {
+                        agentId = 100L
+                        cliId = 7L
+                        envBindings = bindingEnv
+                    },
+                ),
+            )
+            `when`(cliMapper.selectByIds(listOf(7L))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = 7L
+                        name = "gh"
+                        envParams = declaredEnv
+                    },
+                ),
+            )
+            `when`(cliSkillBindingMapper.selectByCliIds(listOf(7L))).thenReturn(emptyList())
+        }
+
+        private fun deliveredEnv(): Map<String, String> {
+            val delivered = controller.getAgentSpec("web-cli-env").data?.cliDetails?.single()?.envBindings.orEmpty()
+            return delivered.associate { it.getValue("envKey") to it.getValue("envValue") }
+        }
+
+        @Test
+        @DisplayName("agent 未采集任何值时，下发 CLI 声明的默认值")
+        fun `getAgentSpec should fall back to the CLI declared defaults`() {
+            val declared = """
+                [{"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true},
+                 {"envParamName":"GH_HOST","defaultValue":"github.com","secret":false}]
+            """.trimIndent()
+            stubCliEnv(null, declared)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to "ghp_plain", "GH_HOST" to "github.com"))
+
+            assertEquals(
+                mapOf("GH_TOKEN" to "ghp_plain", "GH_HOST" to "github.com"),
+                deliveredEnv(),
+            )
+        }
+
+        @Test
+        @DisplayName("agent 侧显式值优先，未被覆盖的声明照常补上")
+        fun `getAgentSpec should let the per-agent value win key by key`() {
+            // 合并只能按 key 做：整份互斥的话，表单一旦开始采集其中一个参数，其余参数的默认值就全丢了
+            val binding = """[{"envKey":"GH_HOST","customValue":"ghes.internal"}]"""
+            val declared = """
+                [{"envParamName":"GH_HOST","defaultValue":"github.com","secret":false},
+                 {"envParamName":"GH_TOKEN","defaultValue":"ENC_B64","secret":true}]
+            """.trimIndent()
+            stubCliEnv(binding, declared)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_HOST" to "github.com", "GH_TOKEN" to "ghp_plain"))
+
+            assertEquals(
+                mapOf("GH_HOST" to "ghes.internal", "GH_TOKEN" to "ghp_plain"),
+                deliveredEnv(),
+            )
+        }
+
+        @Test
+        @DisplayName("声明了参数但没有默认值时，不下发空值")
+        fun `getAgentSpec should skip a declaration that carries no value`() {
+            // 沙箱里 `GH_TOKEN=` 与「没有这个变量」并不等价：前者会让 gh cli 认为已配置再去读一个空 token
+            val declared = """[{"envParamName":"GH_TOKEN","defaultValue":null,"secret":true}]"""
+            stubCliEnv(null, declared)
+            `when`(secretFieldEncryptor.decryptToolEnvParamsToMap(declared))
+                .thenReturn(mapOf("GH_TOKEN" to ""))
+
+            assertEquals(mapOf<String, String>(), deliveredEnv())
+        }
+    }
+
+    /**
+     * `/builtin-skills` 现在是 CLI 关联技能内容的唯一来源（agent-service 每次 resolve 现取），
+     * 内置技能的 `status` 闸门也就只剩这一处：运维直接改库降级一个内置技能，全靠这里拦住。
+     */
+    @Nested
+    @DisplayName("内置技能下发")
+    inner class BuiltinSkillsDeliveryTests {
+
+        private fun builtinSkill(id: Long, name: String, status: Int) = Skill().apply {
+            this.id = id
+            this.name = name
+            this.status = status
+            repositoryId = 3L
+            skillmd = "# $name"
+        }
+
+        @Test
+        @DisplayName("被停用的内置技能不下发")
+        fun `getBuiltinSkills should deliver only enabled skills`() {
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(
+                SkillRepository().apply {
+                    id = 3L
+                    name = BuiltinRepository.CLI_SKILLS
+                },
+            )
+            `when`(skillMapper.selectByRepositoryId(3L)).thenReturn(
+                listOf(builtinSkill(41L, "harnax-cli", 1), builtinSkill(42L, "flagged-cli", 0)),
+            )
+
+            val data = controller.getBuiltinSkills().data
+
+            assertEquals(listOf(41L), data?.map { it.id })
+        }
+
+        @Test
+        @DisplayName("内置仓库不存在时返回空列表，不报错")
+        fun `getBuiltinSkills should return an empty list when the repository is missing`() {
+            `when`(skillRepositoryMapper.selectBuiltinRepository(BuiltinRepository.CLI_SKILLS)).thenReturn(null)
+
+            val result = controller.getBuiltinSkills()
+
+            assertTrue(result.isSuccess())
+            assertTrue(result.data?.isEmpty() ?: false)
         }
     }
 
@@ -901,7 +1041,6 @@ class InternalApiControllerTest {
         ): AgentTool = AgentTool().apply {
             this.id = id
             this.name = name
-            type = "BUILTIN"
             beanName = "demo-tool-box"
             this.status = status
             this.isRequired = isRequired

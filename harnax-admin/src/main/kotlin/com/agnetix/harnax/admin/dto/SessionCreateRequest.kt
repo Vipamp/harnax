@@ -21,4 +21,10 @@ data class SessionCreateRequest(
     @Schema(description = "Associated agent ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotNull(message = "Agent ID cannot be empty")
     val agentId: Long = 0,
+
+    @Schema(
+        description = "Team ID for a team conversation; the lead agent is then taken from the team, not from agentId",
+        example = "1",
+    )
+    val teamId: Long? = null,
 )

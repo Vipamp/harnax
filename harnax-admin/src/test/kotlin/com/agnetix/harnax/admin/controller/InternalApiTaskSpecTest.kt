@@ -22,6 +22,8 @@ import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -114,6 +116,12 @@ class InternalApiTaskSpecTest {
 
     @Mock
     private lateinit var mcpStdioPolicy: McpStdioPolicy
+
+    @Mock
+    private lateinit var teamMapper: TeamMapper
+
+    @Mock
+    private lateinit var teamMemberMapper: TeamMemberMapper
 
     @InjectMocks
     private lateinit var controller: InternalApiController

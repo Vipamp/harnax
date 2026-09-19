@@ -6,7 +6,6 @@ import com.agnetix.harnax.admin.dto.SkillInstallResponse
 import com.agnetix.harnax.admin.dto.SkillResponse
 import com.agnetix.harnax.admin.dto.SkillUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
-import com.agnetix.harnax.admin.service.SkillRepositoryService
 import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
@@ -36,9 +35,6 @@ class SkillControllerTest {
 
     @Mock
     private lateinit var skillService: SkillService
-
-    @Mock
-    private lateinit var skillRepositoryService: SkillRepositoryService
 
     @InjectMocks
     private lateinit var controller: SkillController
@@ -145,13 +141,27 @@ class SkillControllerTest {
         @DisplayName("getSkill - 返回技能详情")
         fun `getSkill should return skill details`() {
             `when`(skillService.getSkill(1L)).thenReturn(testSkill)
-            `when`(skillRepositoryService.getSkillRepository(10L)).thenReturn(testRepository)
+            `when`(skillService.convertToResponse(testSkill)).thenReturn(testResponse)
 
             val result = controller.getSkill(1L)
 
             assertTrue(result.isSuccess())
             assertEquals("test-skill", result.data?.name)
             assertEquals("qoder-skills", result.data?.repositoryName)
+        }
+
+        @Test
+        @DisplayName("getSkill - 详情要带 agent 绑定数")
+        fun `getSkill should answer the bound agent count`() {
+            `when`(skillService.getSkill(1L)).thenReturn(testSkill)
+            `when`(skillService.convertToResponse(testSkill)).thenReturn(
+                SkillResponse.fromEntity(testSkill, testRepository, boundAgentCount = 2),
+            )
+
+            val result = controller.getSkill(1L)
+
+            // 停用/删除按钮的可用性就看这个数，详情页答 0 等于告诉调用方「随便删」
+            assertEquals(2, result.data?.boundAgentCount)
         }
 
         @Test

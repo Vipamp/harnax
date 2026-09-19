@@ -223,7 +223,6 @@ class BuiltinToolAutoRegistrarTest {
         verify(agentToolMapper).upsertBuiltinTool(captor.capture())
         assertEquals(1, captor.firstValue.status)
         assertEquals(1, captor.firstValue.active)
-        assertEquals("BUILTIN", captor.firstValue.type)
         assertEquals("SYSTEM", captor.firstValue.creator)
     }
 
@@ -247,7 +246,6 @@ class BuiltinToolAutoRegistrarTest {
         needConfirm = false,
         envParamDescriptors = emptyList(),
         timeoutSeconds = 0,
-        isPublic = true,
         isRequired = false,
     )
 
@@ -265,7 +263,6 @@ class BuiltinToolAutoRegistrarTest {
     ): AgentTool = AgentTool().apply {
         this.id = id
         name = toolName
-        type = "BUILTIN"
         this.beanName = beanName
         this.methodName = methodName
         status = 1

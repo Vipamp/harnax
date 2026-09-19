@@ -86,17 +86,34 @@ class SkillInstaller(
         // sync only the requested names are echoed — these failures are keyed on the directory name,
         // which need not match the name the preview showed, so listing all of them would blame
         // skills nobody asked for.
+        //
+        // The two source-level pseudo-names are not skills and leave the list for their own fields:
+        // counting them made "the archive holds no skill" read as "1 of 1 skills failed to store".
         val unreadable = mutableSetOf<String>()
-        val reportedLoadFailures = if (only == null) loadFailures else loadFailures.filter { it.name.trim() in only }
+        // The selection narrows which *skills* this run stores, not whether the run reached the
+        // source: filtering the source-level names out answered an unreachable remote with an empty
+        // report and no reason
+        val reportedLoadFailures = loadFailures.filter {
+            val name = it.name.trim()
+            only == null || name in only || SkillLoadFailure.isSourceLevel(name)
+        }
+        var sourceError: String? = null
+        var emptyReason: String? = null
         reportedLoadFailures.forEach { loadFailure ->
             val name = loadFailure.name.trim()
-            unreadable.add(name)
-            failed.add(
-                SkillInstallResponse.FailedSkill(
-                    if (name.length > MAX_SKILL_NAME_LENGTH) name.take(MAX_SKILL_NAME_LENGTH) + "..." else name,
-                    loadFailure.reason,
-                ),
-            )
+            when (name) {
+                SkillLoadFailure.WHOLE_SOURCE -> sourceError = loadFailure.reason
+                SkillLoadFailure.EMPTY_SOURCE -> emptyReason = loadFailure.reason
+                else -> {
+                    unreadable.add(name)
+                    failed.add(
+                        SkillInstallResponse.FailedSkill(
+                            if (name.length > MAX_SKILL_NAME_LENGTH) name.take(MAX_SKILL_NAME_LENGTH) + "..." else name,
+                            loadFailure.reason,
+                        ),
+                    )
+                }
+            }
         }
 
         val candidates = if (only == null) {
@@ -117,8 +134,9 @@ class SkillInstaller(
             only.distinct().mapNotNull { name ->
                 byName[name] ?: run {
                     // Already reported above with the real reason; adding it here as well put the
-                    // same directory in the list twice
-                    if (name !in unreadable) {
+                    // same directory in the list twice. A run that never read the source has no
+                    // evidence about any name, so only `sourceError` speaks for it
+                    if (name !in unreadable && sourceError == null) {
                         failed.add(SkillInstallResponse.FailedSkill(name, "Not present in the source anymore"))
                     }
                     null
@@ -180,7 +198,9 @@ class SkillInstaller(
                     existing.version = repository.version
                     existing.isPublic = repository.isPublic
                     skillMapper.updateById(existing)
-                    // updateById deliberately excludes status, so it needs its own statement
+                    // updateById deliberately excludes status, so it needs its own statement.
+                    // This is the one write that disables a bound skill on purpose (D7): flagged
+                    // content stays out of circulation even when it would strand a binding
                     if (existing.status != targetStatus) {
                         skillMapper.updateStatus(existing.id, targetStatus)
                     }
@@ -228,20 +248,72 @@ class SkillInstaller(
             }
         }
 
+        // Read after the writes: `updated` is a row found by name, `installed` a row just inserted,
+        // and inside this transaction both are visible to the query below. A source that never
+        // answered is not a source that dropped everything, so `sourceError` shuts the comparison off.
+        val stale = if (only == null && sourceError == null) {
+            staleNames(repository, agentSkills, failed, (installed + updated).toSet())
+        } else {
+            emptyList()
+        }
+
         return SkillInstallResponse(
             installed = installed,
             updated = updated,
             failed = failed,
             flagged = flagged,
+            sourceError = sourceError,
+            emptyReason = emptyReason,
+            stale = stale,
         )
     }
 
-    /** Removes a repository together with its skills and every binding that points at them. */
+    /**
+     * Skills this repository holds that the source no longer does.
+     *
+     * Nothing is deleted here — a skill the source dropped may still be bound to agents, and the
+     * bindings would go with it. Reporting it is the whole of the job.
+     */
+    private fun staleNames(
+        repository: SkillRepository,
+        agentSkills: List<AgentSkill>,
+        failed: List<SkillInstallResponse.FailedSkill>,
+        stored: Set<String>,
+    ): List<String> {
+        // A name the source does hold but this run could not store is already in `failed` with its
+        // reason; calling it stale as well would report one problem as two, one of them wrong
+        val stillThere = agentSkills.map { it.name?.trim().orEmpty() }.toSet() + failed.map { it.name }
+        return skillMapper.selectByRepositoryId(repository.id)
+            .map { it.name }
+            .filter { it !in stored && it !in stillThere }
+            .sorted()
+    }
+
+    /**
+     * Removes a repository together with its skills and every binding that points at them.
+     *
+     * Requires every skill under it to be disabled first, and none of them to still be bound. The
+     * per-skill guards stop at the skill, and this cascade reaches past them into the same agent
+     * bindings, so a source that still holds an enabled skill is a source an agent is still using.
+     * Disabled covers that except for the one write D7 allows past the guard — a content-scan hit
+     * force-disables a bound skill — so the bindings are counted on their own rather than inferred
+     * from the status.
+     */
     @Transactional(rollbackFor = [Exception::class])
     fun deleteWithSkills(repository: SkillRepository) {
         val skills = skillMapper.selectByRepositoryId(repository.id)
+        val enabled = skills.count { it.status == 1 }
+        if (enabled > 0) {
+            val noun = if (enabled == 1) "1 skill is" else "$enabled skills are"
+            throw BizException("$noun still enabled, so this source cannot be deleted")
+        }
         val skillIds = skills.map { it.id }
         if (skillIds.isNotEmpty()) {
+            val bound = agentSkillBindingMapper.selectAgentBindingCounts(skillIds).size
+            if (bound > 0) {
+                val noun = if (bound == 1) "1 skill is" else "$bound skills are"
+                throw BizException("$noun still bound to an agent, so this source cannot be deleted")
+            }
             agentSkillBindingMapper.deleteBySkillIds(skillIds)
             cliSkillBindingMapper.deleteBySkillIds(skillIds)
         }

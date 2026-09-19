@@ -68,10 +68,14 @@ class GitSkillLoader : SkillLoader {
         val task = Callable { GitSkillRepository(url, branch, skillDir).allSkills }
         val future = executor.submit(task)
         return try {
-            // Per-directory parsing happens inside agentscope's `GitSkillRepository`, so unlike the
-            // NPM and ZIP loaders this one cannot attribute a single broken `SKILL.md`: whatever
-            // `allSkills` hands back is everything there is to report
-            SkillLoadResult(future.get(CLONE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            // Which directory holds a broken `SKILL.md` stays inside agentscope's
+            // `GitSkillRepository`, so this loader cannot report a per-directory failure. What it
+            // *can* say is why a clean clone yielded nothing, and the clone is still on disk here.
+            val skills = future.get(CLONE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            SkillLoadResult(
+                skills,
+                if (skills.isEmpty()) listOf(describeEmptyClone(skillDir)) else emptyList(),
+            )
         } catch (e: TimeoutException) {
             future.cancel(true)
             throw RuntimeException("Git clone timed out after ${CLONE_TIMEOUT_SECONDS}s: ${redact(url)}")
@@ -81,6 +85,29 @@ class GitSkillLoader : SkillLoader {
             log.error("Git skill load failed for {}: {}", redact(url), reason)
             throw RuntimeException("Git skill load failed: $reason", cause)
         }
+    }
+
+    /**
+     * Explains why a successful clone produced no skill.
+     *
+     * `GitSkillRepository` only looks inside skill subdirectories (`skills/` when the repository has
+     * one, the repository root otherwise), so the single-skill repositories that keep their
+     * `SKILL.md` at the root load as empty. Answering that case with "the source contains no
+     * installable skill" leaves the operator with nothing to change: the repository does have a
+     * skill file, it is just where the loader never looks.
+     */
+    internal fun describeEmptyClone(cloneDir: Path): SkillLoadFailure {
+        if (Files.isRegularFile(cloneDir.resolve("SKILL.md"))) {
+            return SkillLoadFailure(
+                SkillLoadFailure.EMPTY_SOURCE,
+                "SKILL.md is at the repository root, but every skill needs its own subdirectory " +
+                    "(skills/<name>/SKILL.md, or <name>/SKILL.md)",
+            )
+        }
+        return SkillLoadFailure(
+            SkillLoadFailure.EMPTY_SOURCE,
+            "No SKILL.md found in any skill subdirectory of the cloned repository",
+        )
     }
 
     override fun validateConfig(config: Map<String, Any>) {

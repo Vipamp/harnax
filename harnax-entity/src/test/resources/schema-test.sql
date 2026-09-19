@@ -144,6 +144,9 @@ CREATE TABLE IF NOT EXISTS `skill_repository` (
     `is_public` TINYINT(1) DEFAULT 0 COMMENT '是否公开（0:否，1:是）',
     `creator` VARCHAR(100) DEFAULT NULL COMMENT '创建人',
     `active` TINYINT(1) DEFAULT 1 COMMENT '是否可用（0:被删除，1:可用）',
+    `last_sync_time` DATETIME DEFAULT NULL COMMENT '上次同步完成时间（从未同步为 NULL）',
+    `last_sync_status` VARCHAR(16) DEFAULT NULL COMMENT '上次同步结果（SUCCESS/PARTIAL/FAILED/EMPTY）',
+    `last_sync_detail` MEDIUMTEXT DEFAULT NULL COMMENT '上次同步结果 JSON',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     -- V15 uniqueness guards: a soft-deleted row keeps its name because the generated column turns
@@ -275,6 +278,7 @@ CREATE TABLE IF NOT EXISTS `session` (
     `session_description` TEXT DEFAULT NULL COMMENT '会话描述',
     `session_id` VARCHAR(100) NOT NULL COMMENT '会话唯一标识',
     `agent_id` BIGINT DEFAULT NULL COMMENT '智能体 ID',
+    `team_id` BIGINT DEFAULT NULL COMMENT 'Team ID when this session runs in team mode, NULL for an ordinary agent session',
     `name` VARCHAR(100) DEFAULT NULL COMMENT '会话名称',
     `description` TEXT DEFAULT NULL COMMENT '会话说明',
     `system_prompt` TEXT DEFAULT NULL COMMENT 'System prompt (Markdown format)',
@@ -292,7 +296,8 @@ CREATE TABLE IF NOT EXISTS `session` (
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_creator` (`creator`),
-    KEY `idx_tenant_id` (`tenant_id`)
+    KEY `idx_tenant_id` (`tenant_id`),
+    KEY `idx_team_id` (`team_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会话表';
 
 INSERT INTO `session` (`tenant_id`, `session_id`, `agent_id`, `title`, `session_description`, `name`, `model_id`, `permission_mode`, `owner`, `status`, `is_public`, `creator`, `active`) VALUES
@@ -472,22 +477,14 @@ CREATE TABLE IF NOT EXISTS `agent_tool` (
     `display_name`             VARCHAR(200) DEFAULT NULL COMMENT 'Display name (English)',
     `display_name_zh`          VARCHAR(200) DEFAULT NULL COMMENT 'Display name (Chinese, for i18n zh-CN locale)',
     `description`              TEXT COMMENT 'Tool description',
-    `type`                     VARCHAR(20) NOT NULL COMMENT 'Tool type: BUILTIN/CUSTOM/HTTP',
     `bean_name`                VARCHAR(200) DEFAULT NULL COMMENT 'Spring Bean name',
     `method_name`              VARCHAR(100) DEFAULT NULL COMMENT 'Java method name (one record per @Tool method)',
-    `http_url`                 VARCHAR(500) DEFAULT NULL COMMENT 'HTTP URL',
-    `http_method`              VARCHAR(10) DEFAULT 'POST' COMMENT 'HTTP method',
-    `http_headers`             TEXT COMMENT 'HTTP headers JSON',
-    `env_params`               TEXT COMMENT 'Environment parameters configuration JSON',
     `required_env_param_keys`  VARCHAR(1000) DEFAULT NULL COMMENT 'Required environment parameter keys, JSON array',
-    `input_schema`             TEXT COMMENT 'Input JSON Schema',
-    `output_schema`            TEXT COMMENT 'Output JSON Schema',
     `read_only`                TINYINT(1) DEFAULT 0 COMMENT 'Is read-only',
     `need_confirm`             TINYINT(1) DEFAULT 0 COMMENT 'Requires human confirmation',
     `is_required`              TINYINT NOT NULL DEFAULT 0 COMMENT 'Is mandatory tool (0: optional, 1: required)',
     `timeout_seconds`          INT DEFAULT 30 COMMENT 'Timeout in seconds',
     `status`                   TINYINT(1) DEFAULT 1 COMMENT 'Status (0:disabled, 1:enabled)',
-    `is_public`                TINYINT(1) DEFAULT 1 COMMENT 'Public visibility',
     `creator`                  VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
     `active`                   TINYINT(1) DEFAULT 1 COMMENT 'Active status',
     `create_time`              DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -513,13 +510,12 @@ CREATE TABLE IF NOT EXISTS `agent_tool_env_param` (
     UNIQUE KEY `uk_tool_env_param_name` (`tool_id`, `env_param_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent Tool environment parameter definitions';
 
-INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `type`, `bean_name`, `method_name`, `need_confirm`, `status`, `is_public`, `creator`, `active`) VALUES
-(1, 1, 'getDate', '获取日期', '获取当前日期', 'BUILTIN', 'time-tool-box', 'getDate', 0, 1, 1, 'admin', 1),
-(2, 1, 'getDatetime', '获取时间', '获取当前时间', 'BUILTIN', 'time-tool-box', 'getDatetime', 0, 1, 1, 'admin', 1),
-(3, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'CUSTOM', 'weather-tool-box', NULL, 1, 1, 1, 'admin', 1),
-(4, 1, 'http-api-tool', 'HTTP API工具', '调用外部HTTP接口', 'HTTP', NULL, NULL, 1, 1, 1, 'testuser1', 1),
-(5, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'BUILTIN', 'disabled-tool-box', 'doSomething', 0, 0, 1, 'admin', 1),
-(6, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'BUILTIN', 'deleted-tool-box', 'doSomething', 0, 1, 1, 'admin', 0);
+INSERT INTO `agent_tool` (`id`, `tenant_id`, `name`, `display_name`, `description`, `bean_name`, `method_name`, `need_confirm`, `status`, `creator`, `active`) VALUES
+(1, 1, 'getDate', '获取日期', '获取当前日期', 'time-tool-box', 'getDate', 0, 1, 'SYSTEM', 1),
+(2, 1, 'getDatetime', '获取时间', '获取当前时间', 'time-tool-box', 'getDatetime', 0, 1, 'SYSTEM', 1),
+(3, 1, 'weather-tool', '天气查询', '查询城市天气信息', 'weather-tool-box', 'getWeather', 1, 1, 'SYSTEM', 1),
+(5, 1, 'disabled-tool', '已禁用工具', '测试禁用状态', 'disabled-tool-box', 'doSomething', 0, 0, 'SYSTEM', 1),
+(6, 1, 'deleted-tool', '已删除工具', '测试删除状态', 'deleted-tool-box', 'doSomething', 0, 1, 'SYSTEM', 0);
 
 -- ============================================
 -- 22. MCP OAuth Client - 租户 x 授权服务器的客户端注册（V26）
@@ -590,3 +586,76 @@ CREATE TABLE IF NOT EXISTS `mcp_call_log` (
     KEY `idx_mcp_call_log_tenant_mcp_time` (`tenant_id`, `mcp_id`, `create_time`),
     KEY `idx_mcp_call_log_session` (`session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='MCP 授权与调用审计表';
+
+-- ============================================
+-- 25. Agent-Skill binding (V7; UNIQUE(agent_id, skill_id) arrives in V33, kept out of this schema on
+--     purpose so the duplicate-row reads the guards must tolerate stay testable)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `agent_skill_binding` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `agent_id` BIGINT(20) NOT NULL COMMENT 'agent.id',
+    `skill_id` BIGINT(20) NOT NULL COMMENT 'skill.id',
+    `env_bindings` TEXT DEFAULT NULL COMMENT 'JSON array of env binding snapshots',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_agent_skill_binding_agent_id` (`agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-技能绑定表';
+
+-- ============================================
+-- 26. Team (V32)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `team` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Team ID',
+    `tenant_id` BIGINT NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
+    `name` VARCHAR(100) NOT NULL COMMENT 'Team name',
+    `description` TEXT DEFAULT NULL COMMENT 'Team description',
+    `lead_agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
+    `instructions` TEXT DEFAULT NULL COMMENT 'Team instructions appended to the lead role prompt',
+    `status` TINYINT(1) DEFAULT 1 COMMENT 'Status (0: Disabled, 1: Enabled)',
+    `is_public` TINYINT(1) DEFAULT 0 COMMENT 'Public visibility (0: Private, 1: Public)',
+    `creator` VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
+    `active` TINYINT(1) DEFAULT 1 COMMENT 'Active status (0: Deleted, 1: Active)',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_team_tenant_id` (`tenant_id`),
+    KEY `idx_team_lead_agent_id` (`lead_agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多智能体团队表';
+
+-- ============================================
+-- 27. Team member binding (V32)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `team_member` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Member binding ID',
+    `team_id` BIGINT NOT NULL COMMENT 'FK to team.id',
+    `member_agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
+    `delegation_description` VARCHAR(500) NOT NULL DEFAULT '' COMMENT 'What this member is responsible for in this team',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_team_member` (`team_id`, `member_agent_id`),
+    KEY `idx_team_member_agent_id` (`member_agent_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队成员绑定表';
+
+-- ============================================
+-- 28. Team artifact handoff metadata (V32)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `team_artifact` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Artifact ID',
+    `file_id` VARCHAR(64) NOT NULL COMMENT 'Opaque artifact reference (UUID)',
+    `tenant_id` BIGINT NOT NULL DEFAULT 1 COMMENT 'Owning tenant',
+    `session_id` VARCHAR(100) NOT NULL COMMENT 'Root team session this artifact belongs to',
+    `team_id` BIGINT NOT NULL COMMENT 'FK to team.id',
+    `member_agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id — the member that produced it',
+    `child_session_id` VARCHAR(100) NOT NULL COMMENT 'Member child session that produced it',
+    `file_name` VARCHAR(255) NOT NULL COMMENT 'Original file name',
+    `mime_type` VARCHAR(100) NOT NULL DEFAULT 'application/octet-stream' COMMENT 'MIME type',
+    `size_bytes` BIGINT NOT NULL DEFAULT 0 COMMENT 'Size in bytes',
+    `object_key` VARCHAR(500) NOT NULL COMMENT 'Internal MinIO object key',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_file_id` (`file_id`),
+    KEY `idx_team_artifact_session_id` (`session_id`),
+    KEY `idx_team_artifact_tenant_id` (`tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队产物交接元数据表';

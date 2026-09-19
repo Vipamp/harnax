@@ -3,6 +3,7 @@ package com.agnetix.harnax.agent.service.runner.impl
 import com.agnetix.harnax.agent.AgentSpec
 import com.agnetix.harnax.agent.ChatSpecBuilder
 import com.agnetix.harnax.agent.protocol.ChatAgentRequest
+import com.agnetix.harnax.agent.protocol.ChatEvent
 import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.CommandAgentRequest
 import com.agnetix.harnax.agent.protocol.CommandType
@@ -10,14 +11,23 @@ import com.agnetix.harnax.agent.protocol.ConfirmAgentRequest
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.StreamTextChatEvent
+import com.agnetix.harnax.agent.protocol.ToolConfirmResult
 import com.agnetix.harnax.agent.protocol.ToolInfo
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.agent.service.runner.AgentSpecResolver
+import com.agnetix.harnax.agent.service.runner.TeamHistoryReplay
+import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
+import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.harness.HarnessAgentLauncher
 import com.agnetix.harnax.harness.HarnessAgentWrapper
+import com.agnetix.harnax.harness.config.HarnessConfig
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
+import com.agnetix.harnax.harness.team.ConfirmationOutcome
+import com.agnetix.harnax.harness.team.TeamArtifactGateway
+import com.agnetix.harnax.harness.team.TeamOrchestrator
+import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.UserIdentifier
 import io.agentscope.core.message.ToolUseBlock
 import org.junit.jupiter.api.Assertions.*
@@ -28,6 +38,7 @@ import org.mockito.Mockito.*
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.reactivestreams.Subscription
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.test.util.ReflectionTestUtils
 import reactor.core.publisher.Flux
 import reactor.test.StepVerifier
@@ -40,9 +51,11 @@ class DefaultAgentRunnerTest {
     private lateinit var agentSpecResolver: AgentSpecResolver
     private lateinit var specContextHolder: AgentSpecContextHolder
     private lateinit var adminApiClient: AdminApiClient
+    private lateinit var teamArtifactGateways: ObjectProvider<TeamArtifactGateway>
     private lateinit var runner: DefaultAgentRunner
     private lateinit var agentWrapper: HarnessAgentWrapper
 
+    @Suppress("UNCHECKED_CAST")
     @BeforeEach
     fun setUp() {
         launcher = mock(HarnessAgentLauncher::class.java)
@@ -50,12 +63,18 @@ class DefaultAgentRunnerTest {
         specContextHolder = mock(AgentSpecContextHolder::class.java)
         agentWrapper = mock(HarnessAgentWrapper::class.java)
         adminApiClient = mock(AdminApiClient::class.java)
+        // getIfAvailable() stays null: the same shape as a deployment without MinIO.
+        teamArtifactGateways = mock(ObjectProvider::class.java) as ObjectProvider<TeamArtifactGateway>
 
         runner = DefaultAgentRunner(
             launcher = launcher,
             agentSpecResolver = agentSpecResolver,
             specContextHolder = specContextHolder,
             adminApiClient = adminApiClient,
+            teamArtifactGateways = teamArtifactGateways,
+            // Real object over the same mocks: no member child session is stubbed, so history stays
+            // lead-only in these tests, which is the ordinary-session shape.
+            teamHistoryReplay = TeamHistoryReplay(launcher, adminApiClient),
             cacheMaxSize = 100L,
         )
     }
@@ -208,6 +227,22 @@ class DefaultAgentRunnerTest {
             assertTrue(response.success)
             assertEquals("Sandbox stopped", response.message)
             verify(sandboxManager).destroy("session-1")
+        }
+
+        @Test
+        fun `executeCommand STOP_SANDBOX also destroys member child sandboxes`() {
+            val sandboxManager = mock(KeepAliveSandboxManager::class.java)
+            `when`(launcher.keepAliveSandboxManager).thenReturn(sandboxManager)
+            // A member runs in a container of its own, and the cached orchestrator only knows the members
+            // this instance built, so the stop command has to reach the rest through the state store.
+            `when`(launcher.memberSessionIds("session-1")).thenReturn(listOf("team-session-1-m2"))
+
+            val response = runner.executeCommand(
+                CommandAgentRequest(sessionId = "session-1", command = CommandType.STOP_SANDBOX),
+            )
+
+            assertTrue(response.success)
+            verify(sandboxManager).destroy("team-session-1-m2")
         }
 
         @Test
@@ -696,6 +731,18 @@ class DefaultAgentRunnerTest {
         fun `clearSession also interrupts active stream`() {
             assertDoesNotThrow { runner.clearSession("session-1") }
         }
+
+        @Test
+        fun `clearSession clears every member child session even with nothing cached`() {
+            // The state store is the source: this instance may have restarted, or another node served the
+            // run, and a member that kept its conversation would otherwise remember what was just erased.
+            `when`(launcher.memberSessionIds("session-1")).thenReturn(listOf("team-session-1-m2", "team-session-1-m3"))
+
+            runner.clearSession("session-1")
+
+            verify(launcher).clearSession("team-session-1-m2")
+            verify(launcher).clearSession("team-session-1-m3")
+        }
     }
 
     // ==================== loadHistory ====================
@@ -889,6 +936,180 @@ class DefaultAgentRunnerTest {
             StepVerifier.create(result)
                 .expectNextCount(1)
                 .verifyComplete()
+        }
+    }
+
+    // ==================== team ====================
+
+    @Nested
+    inner class Team {
+        private val orchestrator = mock(TeamOrchestrator::class.java)
+
+        /**
+         * Puts a team session in front of the runner: admin stamps `teamId` on the agent spec of a team
+         * session, and the lead wrapper carries the orchestrator that build produced.
+         */
+        private fun stubTeamSession(sessionId: String) {
+            val specInfo = AgentSpecInfoResponse(
+                agentId = 1L,
+                agentName = "Lead",
+                description = "the lead",
+                systemPrompt = "coordinate",
+                modelId = 100L,
+                teamId = 7L,
+            )
+            stubAgentSpec()
+            `when`(specContextHolder.get()).thenReturn(specInfo)
+            `when`(
+                agentSpecResolver.resolveTeam(sessionId),
+            ).thenReturn(
+                TeamRuntimeSpec(
+                    teamId = 7L,
+                    tenantId = 1L,
+                    teamName = "Research",
+                    instructions = "",
+                    rootSessionId = sessionId,
+                    leadAgentSpec = AgentSpec.builder().id(1L).name("Lead").chatModelId(100L).build(),
+                    leadChatSpec = ChatSpecBuilder().build(),
+                    leadSpecInfo = specInfo,
+                    members = emptyList(),
+                ),
+            )
+            `when`(launcher.harnessConfig).thenReturn(HarnessConfig())
+            `when`(launcher.createTeamLead(any(), any(), any(), any(), any())).thenReturn(agentWrapper)
+            `when`(agentWrapper.teamOrchestrator).thenReturn(orchestrator)
+            `when`(agentWrapper.call(any<String>(), any())).thenReturn(
+                ChatResponse(sessionId = sessionId, content = "done"),
+            )
+        }
+
+        /** Warms the agent cache the way a first message would, so later calls see a live team agent. */
+        private fun cachedTeamAgent(sessionId: String) {
+            stubTeamSession(sessionId)
+            runner.process(ChatAgentRequest(sessionId = sessionId, message = "go"))
+        }
+
+        @Test
+        fun `a session with a team is built as a lead, not as the single agent its agentId names`() {
+            stubTeamSession("web-team")
+
+            runner.process(ChatAgentRequest(sessionId = "web-team", message = "go"))
+
+            verify(launcher).createTeamLead(any(), any(), any(), any(), any())
+            verify(launcher, never()).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+        }
+
+        @Test
+        fun `a member confirmation answers that run and adds no stream of its own`() {
+            cachedTeamAgent("web-team")
+            `when`(orchestrator.answerConfirmation("run-1", true)).thenReturn(ConfirmationOutcome.APPROVED)
+
+            val result = runner.confirm(
+                ConfirmAgentRequest(sessionId = "web-team", isConfirmed = true, childRunId = "run-1"),
+            )
+
+            // The lead's stream is still open and carries the resumed output, so this response only ends.
+            StepVerifier.create(result).expectNextMatches { it is EndEventChatEvent }.verifyComplete()
+            verify(orchestrator).answerConfirmation("run-1", true)
+            verify(agentWrapper, never()).getPendingToolCalls()
+            verify(launcher, times(1)).createTeamLead(any(), any(), any(), any(), any())
+        }
+
+        @Test
+        fun `a mixed per-tool answer denies the member run instead of executing the unchecked tools`() {
+            cachedTeamAgent("web-team")
+            `when`(orchestrator.answerConfirmation("run-1", false)).thenReturn(ConfirmationOutcome.DENIED)
+
+            runner.confirm(
+                ConfirmAgentRequest(
+                    sessionId = "web-team",
+                    isConfirmed = true,
+                    childRunId = "run-1",
+                    toolResults = listOf(
+                        ToolConfirmResult(toolId = "t-1", toolName = "read_file", confirmed = true),
+                        ToolConfirmResult(toolId = "t-2", toolName = "delete_file", confirmed = false),
+                    ),
+                ),
+            )
+
+            verify(orchestrator).answerConfirmation("run-1", false)
+        }
+
+        @Test
+        fun `a member confirmation with no live team agent is refused without building one`() {
+            val result = runner.confirm(
+                ConfirmAgentRequest(sessionId = "web-gone", isConfirmed = true, childRunId = "run-1"),
+            )
+
+            StepVerifier.create(result)
+                .expectNextMatches { it is ErrorChatEvent && it.code == HarnaxErrorCode.RESOURCE_NOT_FOUND.code }
+                .expectNextMatches { it is EndEventChatEvent }
+                .verifyComplete()
+            verify(agentSpecResolver, never()).resolveTeam(any())
+        }
+
+        @Test
+        fun `stopping a team session stops the members before the lead`() {
+            cachedTeamAgent("web-team")
+
+            runner.interrupt("web-team")
+
+            val order = inOrder(orchestrator, agentWrapper)
+            order.verify(orchestrator).stop(false)
+            order.verify(agentWrapper).interrupt()
+        }
+
+        @Test
+        fun `member events reach the user on the lead's stream`() {
+            cachedTeamAgent("web-team")
+            val memberEvent = StreamTextChatEvent("member working", false, null)
+            `when`(orchestrator.openEventStream()).thenReturn(Flux.just(memberEvent))
+            `when`(agentWrapper.callStream(any<String>(), any())).thenReturn(
+                Flux.just(StreamTextChatEvent("lead thinking", false, null), EndEventChatEvent()),
+            )
+
+            val events = runner.streamProcess(ChatAgentRequest(sessionId = "web-team", message = "go"))
+                .collectList().block()!!
+
+            assertTrue(events.contains(memberEvent), "member events must be merged into the root stream")
+            verify(orchestrator).closeEventStream()
+        }
+
+        @Test
+        fun `a lead resumed by confirmation keeps carrying member events`() {
+            cachedTeamAgent("web-team")
+            stubPendingToolCalls()
+            val memberEvent = StreamTextChatEvent("member awaiting a decision", false, null)
+            `when`(orchestrator.openEventStream()).thenReturn(Flux.just(memberEvent))
+            `when`(agentWrapper.callStream(msg = any())).thenReturn(
+                Flux.just(EndEventChatEvent()),
+            )
+
+            val events = runner.confirm(ConfirmAgentRequest(sessionId = "web-team", isConfirmed = true))
+                .collectList().block()!!
+
+            // The delegate this confirmation approves parks a member on a confirmation of its own, and this
+            // resumed stream is the only reader that can deliver that card and its heartbeats.
+            assertTrue(events.contains(memberEvent), "the resumed lead must carry the member events it delegated to")
+            verify(orchestrator).closeEventStream()
+        }
+
+        @Test
+        fun `a new team run is refused while the previous one still owns the event stream`() {
+            cachedTeamAgent("web-team")
+            `when`(orchestrator.openEventStream()).thenReturn(null)
+            var leadSubscribed = false
+            `when`(agentWrapper.callStream(any<String>(), any())).thenReturn(
+                Flux.just<ChatEvent>(EndEventChatEvent()).doOnSubscribe { leadSubscribed = true },
+            )
+
+            val result = runner.streamProcess(ChatAgentRequest(sessionId = "web-team", message = "go"))
+
+            StepVerifier.create(result)
+                .expectNextMatches { it is ErrorChatEvent && it.code == HarnaxErrorCode.RESOURCE_LOCKED.code }
+                .expectNextMatches { it is EndEventChatEvent }
+                .verifyComplete()
+            assertFalse(leadSubscribed, "a refused run must not start the lead")
         }
     }
 

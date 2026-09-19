@@ -9,6 +9,9 @@ import com.agnetix.harnax.agent.SkillSpec
 import com.agnetix.harnax.agent.service.client.AdminApiClient
 import com.agnetix.harnax.agent.service.client.AgentSpecContextHolder
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
+import com.agnetix.harnax.entity.dto.SkillDetailDto
+import com.agnetix.harnax.harness.team.TeamMemberSpec
+import com.agnetix.harnax.harness.team.TeamRuntimeSpec
 import com.agnetix.harnax.tools.sdk.ToolEnvContext
 import com.agnetix.harnax.tools.sdk.ToolSpec
 import org.slf4j.LoggerFactory
@@ -32,13 +35,16 @@ import tools.jackson.databind.ObjectMapper
  *
  * Since v2: skill names are resolved from the admin response's skillDetails,
  * no longer queries SkillMapper directly.
+ *
+ * [resolveTeam] is the team counterpart: it turns admin's team spec into the lead's specs plus one
+ * [TeamMemberSpec] per member. It does not touch the ThreadLocal context, because a member is assembled
+ * later than the lead and each build needs its own spec in place — see `DefaultAgentRunner.buildTeamAgent`.
  */
 @Component
 class AgentSpecResolver(
     private val adminApiClient: AdminApiClient,
     private val specContextHolder: AgentSpecContextHolder,
     private val objectMapper: ObjectMapper,
-    private val builtinSkillRegistry: BuiltinSkillRegistry,
 ) {
 
     private val log = LoggerFactory.getLogger(AgentSpecResolver::class.java)
@@ -50,29 +56,7 @@ class AgentSpecResolver(
      */
     fun resolve(sessionId: String): Pair<AgentSpec, ChatSpec> {
         val specInfo = adminApiClient.getAgentSpec(sessionId)
-
-        // Inject built-in skills: loaded first (before spec-defined skills), dedup by id and by name.
-        val builtinSkills = builtinSkillRegistry.getSkills()
-        val specSkillIds = specInfo.skillDetails.map { it.id }.toSet()
-        // Skill names are only unique per repository, so a tenant's own repository can hold a skill
-        // named like a built-in one. The harness keys skills by name (`AgentSkill.getSkillId()` is
-        // `name + "_" + source`), so delivering both would let the registry and the in-memory
-        // repository disagree on which copy is live; the operator's explicit binding wins.
-        val specSkillNames = specInfo.skillDetails.map { it.name }.toSet()
-        val (injectedSkills, shadowedSkills) = builtinSkills.filter { it.id !in specSkillIds }
-            .partition { it.name !in specSkillNames }
-        val mergedSkillDetails = injectedSkills + specInfo.skillDetails
-        val effectiveSpecInfo = specInfo.copy(skillDetails = mergedSkillDetails)
-        if (shadowedSkills.isNotEmpty()) {
-            log.info(
-                "Built-in skills not injected, a spec-defined skill already uses the name: sessionId={}, skills={}",
-                sessionId,
-                shadowedSkills.map { it.name },
-            )
-        }
-        if (injectedSkills.isNotEmpty()) {
-            log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", injectedSkills.size, sessionId, injectedSkills.map { it.name })
-        }
+        val effectiveSpecInfo = withBuiltinSkills(specInfo, sessionId) { adminApiClient.getBuiltinSkills() }
 
         // Store full spec in context so adaptors can read during agent creation
         specContextHolder.set(effectiveSpecInfo)
@@ -83,8 +67,117 @@ class AgentSpecResolver(
             specInfo.agentId,
             specInfo.agentName,
         )
+        return buildSpecs(effectiveSpecInfo, sessionId)
+    }
 
-        val agentSpec = buildAgentSpec(effectiveSpecInfo, sessionId)
+    /**
+     * Resolve the team of one team session: the lead's spec plus every member's, all built the same way
+     * an ordinary agent's is (design D5).
+     *
+     * The ThreadLocal spec context is deliberately left alone here. Adaptors read it while an agent is
+     * being assembled, and these specs are assembled at different times — the lead now, each member on the
+     * first delegation to it. Whoever builds an agent owns the context around that build.
+     */
+    fun resolveTeam(sessionId: String): TeamRuntimeSpec {
+        val teamSpec = adminApiClient.getTeamSpec(sessionId)
+        // One repository fetch for the whole roster: every agent's CLI bindings filter this same list.
+        val builtinSkills by lazy { adminApiClient.getBuiltinSkills() }
+
+        val leadSpecInfo = withBuiltinSkills(teamSpec.lead, sessionId) { builtinSkills }
+        val (leadAgentSpec, leadChatSpec) = buildSpecs(leadSpecInfo, sessionId)
+        // Plan mode writes its plan into the agent's workspace, and a lead has none.
+        val leadSpec = ChatSpec.builder()
+            .enableThinking(leadChatSpec.enableThinking)
+            .enableSearch(leadChatSpec.enableSearch)
+            .permissionMode(leadChatSpec.permissionMode)
+            .build()
+
+        val members = teamSpec.members.map { member ->
+            val specInfo = withBuiltinSkills(member.spec, sessionId) { builtinSkills }
+            val (agentSpec, chatSpec) = buildSpecs(specInfo, sessionId)
+            TeamMemberSpec(
+                memberAgentId = member.memberAgentId,
+                agentName = member.agentName,
+                description = member.spec.description,
+                delegationDescription = member.delegationDescription,
+                agentSpec = agentSpec,
+                chatSpec = chatSpec,
+                specInfo = specInfo,
+            )
+        }
+
+        log.info(
+            "Resolved team spec from admin: sessionId={}, teamId={}, lead={}, members={}",
+            sessionId,
+            teamSpec.teamId,
+            teamSpec.lead.agentName,
+            members.map { "${it.agentName}(${it.memberAgentId})" },
+        )
+        return TeamRuntimeSpec(
+            teamId = teamSpec.teamId,
+            tenantId = teamSpec.tenantId,
+            teamName = teamSpec.teamName,
+            instructions = teamSpec.instructions,
+            rootSessionId = sessionId,
+            leadAgentSpec = leadAgentSpec,
+            leadChatSpec = leadSpec,
+            leadSpecInfo = leadSpecInfo,
+            members = members,
+        )
+    }
+
+    /**
+     * Adds the built-in skills the agent's selected CLIs need.
+     *
+     * Built-in skills reach an agent only through the CLIs it selected: they are neither listed nor
+     * selectable on the agent page, so a selected CLI is the one switch that turns them on. Their content
+     * is fetched per resolve rather than cached at startup, because both the operator's kill switch
+     * (turning a built-in skill off directly in the database) and a migration rewriting a SKILL.md have to
+     * take effect without restarting agent-service. `/builtin-skills` already filters disabled skills and
+     * admin already drops a disabled CLI from `cliDetails`, so both gates are applied before this filter.
+     */
+    private fun withBuiltinSkills(
+        specInfo: AgentSpecInfoResponse,
+        sessionId: String,
+        builtinSkills: () -> List<SkillDetailDto>,
+    ): AgentSpecInfoResponse {
+        val cliSkillIds = specInfo.cliDetails.flatMap { it.skillIds }.toSet()
+        if (cliSkillIds.isEmpty()) return specInfo
+        val matched = builtinSkills().filter { it.id in cliSkillIds }
+        // A CLI can still point at a skill admin no longer delivers. Nothing else on this path
+        // reports it, and the symptom is an agent that quietly forgot how to use its own CLI.
+        val unresolvedSkillIds = cliSkillIds - matched.map { it.id }.toSet()
+        if (unresolvedSkillIds.isNotEmpty()) {
+            log.warn(
+                "CLI-bound skills not delivered by admin (deleted, disabled, or outside the builtin repository): sessionId={}, skillIds={}",
+                sessionId,
+                unresolvedSkillIds,
+            )
+        }
+        // Inject the selected built-in skills: loaded first (before spec-defined skills), dedup by id and by name.
+        val specSkillIds = specInfo.skillDetails.map { it.id }.toSet()
+        // Skill names are only unique per repository, so a tenant's own repository can hold a skill
+        // named like a built-in one. The harness keys skills by name (`AgentSkill.getSkillId()` is
+        // `name + "_" + source`), so delivering both would let the registry and the in-memory
+        // repository disagree on which copy is live; the operator's explicit binding wins.
+        val specSkillNames = specInfo.skillDetails.map { it.name }.toSet()
+        val (injectedSkills, shadowedSkills) = matched.filter { it.id !in specSkillIds }
+            .partition { it.name !in specSkillNames }
+        if (shadowedSkills.isNotEmpty()) {
+            log.info(
+                "Built-in skills not injected, a spec-defined skill already uses the name: sessionId={}, skills={}",
+                sessionId,
+                shadowedSkills.map { it.name },
+            )
+        }
+        if (injectedSkills.isEmpty()) return specInfo
+        log.info("Injected {} built-in skills into spec: sessionId={}, skills={}", injectedSkills.size, sessionId, injectedSkills.map { it.name })
+        return specInfo.copy(skillDetails = injectedSkills + specInfo.skillDetails)
+    }
+
+    /** Turns one resolved admin spec into the agent and chat spec the launcher consumes. */
+    private fun buildSpecs(specInfo: AgentSpecInfoResponse, sessionId: String): Pair<AgentSpec, ChatSpec> {
+        val agentSpec = buildAgentSpec(specInfo, sessionId)
 
         // Mask session-level enable flags with model capabilities.
         // If the model doesn't support a feature, force it off regardless of session config.
@@ -138,7 +231,8 @@ class AgentSpecResolver(
         }
 
         // ── Skill details (full config from admin, no SkillMapper needed) ──
-        // Note: admin already merges CLI-associated skills into skillDetails (dedup by id)
+        // Note: CLI-associated skills were already injected in `resolve`, filtered by the CLIs this
+        // agent selected; admin only carries their ids on `cliDetails`.
         for (skill in specInfo.skillDetails) {
             builder.addSkill(SkillSpec(skillId = skill.id, skillName = skill.name))
         }

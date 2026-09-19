@@ -34,4 +34,24 @@
         </foreach>
     </delete>
 
+    <resultMap id="SkillAgentBindingCountResultMap" type="com.agnetix.harnax.entity.dto.SkillAgentBindingCount">
+        <result column="skill_id" property="skillId"/>
+        <result column="agent_count" property="agentCount"/>
+    </resultMap>
+
+    <!-- selectAgentBindingCounts -->
+    <select id="selectAgentBindingCounts" resultMap="SkillAgentBindingCountResultMap">
+        <!-- DISTINCT stays after V33 put UNIQUE(agent_id, skill_id) on the table: a duplicate row
+             would read as two agents, and the guard that refuses to disable the skill would then name
+             a count nobody can see in the agent list. The entity test schema deliberately keeps the
+             pre-V33 shape so that read is exercised -->
+        SELECT skill_id, COUNT(DISTINCT agent_id) AS agent_count
+        FROM agent_skill_binding
+        WHERE skill_id IN
+        <foreach collection="skillIds" item="skillId" open="(" separator="," close=")">
+            #{skillId}
+        </foreach>
+        GROUP BY skill_id
+    </select>
+
 </mapper>

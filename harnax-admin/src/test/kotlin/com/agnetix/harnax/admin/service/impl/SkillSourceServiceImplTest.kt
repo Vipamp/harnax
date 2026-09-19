@@ -5,6 +5,7 @@ import com.agnetix.harnax.admin.dto.SkillSourceCreateRequest
 import com.agnetix.harnax.admin.dto.SkillSourceUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.skill.SkillInstaller
+import com.agnetix.harnax.admin.skill.SkillSyncRecorder
 import com.agnetix.harnax.admin.skill.loader.GitSkillLoader
 import com.agnetix.harnax.admin.skill.loader.NpmSkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoadFailure
@@ -14,6 +15,9 @@ import com.agnetix.harnax.admin.skill.loader.ZipSkillLoader
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.dto.SkillAgentBindingCount
+import com.agnetix.harnax.entity.dto.SkillRepositoryEnabledCount
+import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import io.agentscope.core.skill.AgentSkill
@@ -64,6 +68,12 @@ class SkillSourceServiceImplTest {
 
     private lateinit var testRepository: SkillRepository
     private lateinit var testSkill: Skill
+
+    /**
+     * The installer's binding collaborator, held so the delete guard can be asked about bindings.
+     * Unstubbed reads answer "no bindings", which is the state every other test assumes.
+     */
+    private val agentSkillBindingMapper: AgentSkillBindingMapper = org.mockito.kotlin.mock()
 
     @BeforeEach
     fun setUp() {
@@ -132,6 +142,14 @@ class SkillSourceServiceImplTest {
         RequestContextHolder.resetRequestAttributes()
     }
 
+    private fun enabledSkillCount(
+        repositoryId: Long,
+        enabled: Int,
+    ): SkillRepositoryEnabledCount = SkillRepositoryEnabledCount().apply {
+        this.repositoryId = repositoryId
+        enabledCount = enabled
+    }
+
     /**
      * Builds the service with a real [SkillInstaller] over the same mocked mappers, so the tests
      * keep observing the actual writes instead of asserting on a stubbed collaborator.
@@ -144,9 +162,11 @@ class SkillSourceServiceImplTest {
         skillInstaller = SkillInstaller(
             skillMapper = skillMapper,
             skillRepositoryMapper = skillRepositoryMapper,
-            agentSkillBindingMapper = org.mockito.kotlin.mock(),
+            agentSkillBindingMapper = this@SkillSourceServiceImplTest.agentSkillBindingMapper,
             cliSkillBindingMapper = org.mockito.kotlin.mock(),
         ),
+        // Real recorder over the same mocked mapper, so the stored result is what the assertions see
+        skillSyncRecorder = SkillSyncRecorder(skillRepositoryMapper),
         localTmpDir = tmpDir,
     )
 
@@ -194,6 +214,43 @@ class SkillSourceServiceImplTest {
             }
             assertTrue(exception.message!!.contains("already exists"))
             verify(skillRepositoryMapper, never()).insert(any())
+        }
+
+        /**
+         * A GIT/NPM source that cannot be reached is still a source the operator has to repair or
+         * delete. Answering 500 and storing nothing sent them back to square one on every retry,
+         * because the only way to fix a bad URL was to recreate the whole source.
+         */
+        @Test
+        fun `createSkillSource should keep the source when the remote cannot be reached`() {
+            val brokenLoader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenThrow(RuntimeException("git clone timed out after 180s"))
+            }
+            skillSourceService = newService(SkillLoaderRegistry(listOf(brokenLoader)))
+
+            `when`(skillRepositoryMapper.selectByName(eq("unreachable-repo"), any())).thenReturn(null)
+            `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
+
+            val result = skillSourceService.createSkillSource(
+                SkillSourceCreateRequest(
+                    name = "unreachable-repo",
+                    sourceType = "GIT",
+                    sourceConfig = mapOf("url" to "https://gitee.com/example/skills"),
+                ),
+            )
+
+            assertEquals("unreachable-repo", result.source.name)
+            verify(skillRepositoryMapper).insert(any())
+            assertEquals(0, result.install.savedCount)
+            assertEquals("git clone timed out after 180s", result.install.sourceError)
+
+            // 保留这一行只有列表能说出「它为什么是空的」才有意义
+            val statusCaptor = argumentCaptor<String>()
+            val detailCaptor = argumentCaptor<String>()
+            verify(skillRepositoryMapper).updateSyncResult(any(), statusCaptor.capture(), detailCaptor.capture(), any())
+            assertEquals("FAILED", statusCaptor.firstValue)
+            assertTrue(detailCaptor.firstValue.contains("git clone timed out after 180s"))
         }
 
         @Test
@@ -617,9 +674,56 @@ class SkillSourceServiceImplTest {
             assertTrue(exception.message!!.contains("not found"))
         }
 
+        /**
+         * Deleting a source cascades through its skills and their agent bindings, so the guard that
+         * keeps a bound skill alive has to end at the source too: an enabled skill is one an agent is
+         * still using.
+         */
+        @Test
+        fun `deleteSkillSource should refuse a source holding an enabled skill`() {
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(testSkill))
+
+            val exception = assertThrows<BizException> {
+                skillSourceService.deleteSkillSource(1L)
+            }
+            assertTrue(exception.message!!.contains("1 skill is still enabled"), exception.message)
+            verify(skillMapper, never()).deleteById(any<Long>())
+            verify(skillRepositoryMapper, never()).deleteById(1L)
+        }
+
+        /**
+         * D7 lets a content-scan hit force-disable a skill an agent binds, so "everything disabled"
+         * no longer implies "nothing bound". The cascade below deletes bindings, hence this second
+         * refusal — without it the guard the whole rule exists for is reopened by that one write.
+         */
+        @Test
+        fun `deleteSkillSource should refuse a source whose disabled skill is still bound`() {
+            val skills = listOf(testSkill.apply { status = 0 })
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(skills)
+            `when`(agentSkillBindingMapper.selectAgentBindingCounts(skills.map { it.id })).thenReturn(
+                listOf(
+                    SkillAgentBindingCount().apply {
+                        skillId = 1L
+                        agentCount = 2
+                    },
+                ),
+            )
+
+            val exception = assertThrows<BizException> {
+                skillSourceService.deleteSkillSource(1L)
+            }
+            assertTrue(exception.message!!.contains("still bound to an agent"), exception.message)
+            verify(agentSkillBindingMapper, never()).deleteBySkillIds(any())
+            verify(skillMapper, never()).deleteById(any<Long>())
+            verify(skillRepositoryMapper, never()).deleteById(1L)
+        }
+
         @Test
         fun `deleteSkillSource should delete skills and repository`() {
-            val skills = listOf(testSkill)
+            // Every skill disabled is the precondition the guard asks for, not "no skills at all"
+            val skills = listOf(testSkill.apply { status = 0 })
             `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
             `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(skills)
             `when`(skillMapper.deleteById(any<Long>())).thenReturn(1)
@@ -688,6 +792,121 @@ class SkillSourceServiceImplTest {
     @DisplayName("Install Skills Tests")
     inner class InstallSkillsTests {
 
+        /**
+         * The picker on the front end has always been a selection, but the endpoint behind it stored
+         * whatever the source held. Asking for one skill and getting three written is the part that
+         * made the legacy `/skills/batch` contract impossible to reason about.
+         */
+        @Test
+        fun `installSkills should store only the selected names`() {
+            val selected = AgentSkill.builder().name("picked").skillContent("# Picked").description("d").build()
+            val other = AgentSkill.builder().name("unpicked").skillContent("# Other").description("d").build()
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(selected, other)))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            val result = service.installSkills(1L, listOf("picked"))
+
+            assertEquals(listOf("picked"), result.installed)
+            val inserted = argumentCaptor<Skill>()
+            verify(skillMapper).insert(inserted.capture())
+            assertEquals("picked", inserted.firstValue.name)
+        }
+
+        /**
+         * A full re-install that leaves a stored skill behind is the one case where the source and
+         * the database disagree in a way nobody chose. Reporting it is the whole point; deleting it
+         * would tear the agent bindings off with it.
+         */
+        @Test
+        fun `installSkills should report a skill the source no longer holds`() {
+            val fresh = AgentSkill.builder().name("fresh").skillContent("# Fresh").description("d").build()
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(fresh)))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(testSkill))
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            val result = service.installSkills(1L)
+
+            assertEquals(listOf("test-skill"), result.stale)
+            verify(skillMapper, never()).deleteById(anyLong())
+        }
+
+        /**
+         * A selective install never touched the skills it did not ask for, so none of them can be
+         * evidence of the source having dropped them.
+         */
+        @Test
+        fun `installSkills should not call an unselected skill stale`() {
+            val picked = AgentSkill.builder().name("picked").skillContent("# Picked").description("d").build()
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenReturn(SkillLoadResult(listOf(picked)))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(testSkill))
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            val result = service.installSkills(1L, listOf("picked"))
+
+            assertTrue(result.stale.isEmpty())
+        }
+
+        /**
+         * A remote that never answered says nothing about what it holds. Treating an unreadable
+         * source as an empty one would report every stored skill as retired on one network hiccup,
+         * and the operator would disable skills the source still serves.
+         */
+        @Test
+        fun `installSkills should not call stored skills stale when the source could not be reached`() {
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenThrow(RuntimeException("git clone timed out after 180s"))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+            `when`(skillMapper.selectByRepositoryId(1L)).thenReturn(listOf(testSkill))
+
+            val result = service.installSkills(1L)
+
+            assertEquals("git clone timed out after 180s", result.sourceError)
+            assertTrue(result.stale.isEmpty())
+        }
+
+        /**
+         * The selection is a filter over the skills the run reached, not over whether the run
+         * reached the source at all. Dropping the source-level failure under a selection left the
+         * caller a bare empty report for what was actually an unreachable remote.
+         */
+        @Test
+        fun `installSkills should report an unreachable remote under a selective install`() {
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenThrow(RuntimeException("git clone timed out after 180s"))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+
+            val result = service.installSkills(1L, listOf("picked"))
+
+            assertEquals("git clone timed out after 180s", result.sourceError)
+            assertTrue(result.failed.isEmpty())
+        }
+
         @Test
         fun `installSkills should re-load the source and report the outcome`() {
             val agentSkill = AgentSkill.builder()
@@ -744,6 +963,85 @@ class SkillSourceServiceImplTest {
             assertTrue(result.failed[0].reason.contains("could not be parsed"))
             // 有技能没落库，整体就不算完成
             assertFalse(result.complete)
+        }
+
+        /**
+         * The repair path for a misconfigured source is `update the URL, install again`. An
+         * unreachable remote must not turn that into a 500: the source row already exists and the
+         * operator is entitled to know why the refresh produced nothing.
+         */
+        @Test
+        fun `installSkills should report an unreachable remote instead of throwing`() {
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenThrow(RuntimeException("git clone timed out after 180s"))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+
+            val result = service.installSkills(1L)
+
+            assertEquals(0, result.savedCount)
+            assertEquals("git clone timed out after 180s", result.sourceError)
+            assertTrue(result.failed.isEmpty())
+        }
+
+        /**
+         * The validation rejections share the response channel with real failures, and the row is
+         * already written by the time the loader runs on this path. Recording one as a sync outcome
+         * would tell the next reader that this address yields no skills, when it was never tried.
+         */
+        @Test
+        fun `installSkills should not record a rejected config as a sync result`() {
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenThrow(BizException("Unsupported Git URL"))
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+
+            assertThrows<BizException> { service.installSkills(1L) }
+
+            verify(skillRepositoryMapper, never()).updateSyncResult(any(), any(), any(), any())
+        }
+
+        /**
+         * A source that reads cleanly but holds nothing now answers EMPTY with the loader's sentence
+         * for why, so the list can say more than "no skills".
+         */
+        @Test
+        fun `installSkills should record an empty source with the reason the loader gave`() {
+            val loader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
+                `when`(sourceType).thenReturn("GIT")
+                `when`(loadSkills(any(), any())).thenReturn(
+                    SkillLoadResult(
+                        emptyList(),
+                        listOf(
+                            SkillLoadFailure(
+                                "<empty>",
+                                "SKILL.md is at the repository root, but every skill needs its own subdirectory",
+                            ),
+                        ),
+                    ),
+                )
+            }
+            val service = newService(SkillLoaderRegistry(listOf(loader)))
+
+            `when`(skillRepositoryMapper.selectById(1L)).thenReturn(testRepository)
+
+            val result = service.installSkills(1L)
+
+            assertEquals(0, result.savedCount)
+            assertEquals(0, result.failedCount)
+            assertTrue(result.emptyReason!!.contains("repository root"))
+
+            val statusCaptor = argumentCaptor<String>()
+            val detailCaptor = argumentCaptor<String>()
+            verify(skillRepositoryMapper).updateSyncResult(any(), statusCaptor.capture(), detailCaptor.capture(), any())
+            assertEquals("EMPTY", statusCaptor.firstValue)
+            assertTrue(detailCaptor.firstValue.contains("repository root"))
         }
 
         @Test
@@ -890,6 +1188,41 @@ class SkillSourceServiceImplTest {
             assertNotNull(result)
             assertNotNull(result.sourceConfig)
         }
+
+        @Test
+        fun `convertToResponse should carry the last sync result`() {
+            testRepository.lastSyncStatus = "PARTIAL"
+            testRepository.lastSyncTime = LocalDateTime.of(2026, 9, 18, 10, 30)
+            testRepository.lastSyncDetail = """{"saved":3,"failed":[{"name":"broken","reason":"SKILL.md is empty"}]}"""
+
+            val result = skillSourceService.convertToResponse(testRepository)
+
+            assertEquals("PARTIAL", result.lastSyncStatus)
+            assertEquals("2026-09-18T10:30", result.lastSyncTime)
+            @Suppress("UNCHECKED_CAST")
+            val failed = result.lastSyncDetail?.get("failed") as List<Map<String, Any?>>
+            assertEquals("broken", failed.single()["name"])
+        }
+
+        @Test
+        fun `convertToResponse should answer a source that has never synced with no result`() {
+            val result = skillSourceService.convertToResponse(testRepository)
+
+            assertNull(result.lastSyncStatus)
+            assertNull(result.lastSyncTime)
+            assertNull(result.lastSyncDetail)
+        }
+
+        @Test
+        fun `convertToResponse should not fail the list on an unreadable sync detail`() {
+            testRepository.lastSyncStatus = "PARTIAL"
+            testRepository.lastSyncDetail = "truncated mid value"
+
+            val result = skillSourceService.convertToResponse(testRepository)
+
+            assertEquals("PARTIAL", result.lastSyncStatus)
+            assertNull(result.lastSyncDetail)
+        }
     }
 
     @Nested
@@ -938,32 +1271,6 @@ class SkillSourceServiceImplTest {
                 service.createSkillSource(request)
             }
             assertTrue(exception.message!!.contains("Invalid URL format"))
-        }
-
-        @Test
-        fun `createSkillSource should propagate exception when loader throws during loadSkills`() {
-            val failingLoader = org.mockito.Mockito.mock(GitSkillLoader::class.java).apply {
-                `when`(sourceType).thenReturn("GIT")
-                `when`(loadSkills(any(), any())).thenThrow(RuntimeException("Network timeout"))
-            }
-            val registry = SkillLoaderRegistry(listOf(failingLoader))
-
-            val service = newService(registry)
-
-            val request = SkillSourceCreateRequest(
-                name = "timeout-repo",
-                sourceType = "GIT",
-                sourceConfig = mapOf("url" to "https://github.com/test/skills"),
-            )
-
-            `when`(skillRepositoryMapper.selectByName(eq("timeout-repo"), any())).thenReturn(null)
-            `when`(skillRepositoryMapper.insert(any())).thenReturn(1)
-
-            assertThrows<RuntimeException> {
-                service.createSkillSource(request)
-            }
-            // Loading runs before anything is written, so a dead source leaves no half-created row
-            verify(skillRepositoryMapper, never()).insert(any())
         }
 
         @Test
@@ -1148,6 +1455,34 @@ class SkillSourceServiceImplTest {
 
             // 空字符串不该变成 source_type = '' 这种永远查不到行的条件
             verify(skillRepositoryMapper).selectRepositoryList(null, null, "admin", 1L, "builtin-cli-skills", null)
+        }
+
+        /**
+         * A source is only deletable once every skill under it is disabled, so the list has to say
+         * how far from that a row still is before the click. Grouped, because a page that counted per
+         * row would ask the skill table once per source.
+         */
+        @Test
+        fun `page should answer how many skills still block each source`() {
+            TenantContext.setTenantId(1L)
+            val second = SkillRepository().apply {
+                id = 2L
+                tenantId = 1L
+                name = "second-repo"
+                sourceType = "GIT"
+                status = 1
+                active = 1
+            }
+            `when`(skillRepositoryMapper.selectRepositoryList(null, null, "admin", 1L, "builtin-cli-skills", null))
+                .thenReturn(listOf(testRepository, second))
+            `when`(skillMapper.selectEnabledCountsByRepositoryIds(listOf(1L, 2L)))
+                .thenReturn(listOf(enabledSkillCount(1L, 3)))
+
+            val result = skillSourceService.page(null, null, null, 1, 10)
+
+            assertEquals(3, result.records[0].enabledSkillCount)
+            assertEquals(0, result.records[1].enabledSkillCount)
+            verify(skillMapper).selectEnabledCountsByRepositoryIds(listOf(1L, 2L))
         }
 
         @Test

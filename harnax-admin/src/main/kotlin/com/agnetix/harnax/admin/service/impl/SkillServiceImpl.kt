@@ -13,6 +13,7 @@ import com.agnetix.harnax.admin.service.SkillService
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
+import com.agnetix.harnax.admin.skill.SkillSyncRecorder
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
@@ -41,6 +42,7 @@ class SkillServiceImpl(
     private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
+    private val skillSyncRecorder: SkillSyncRecorder,
     @Value($$"${local.tmp-dir}") private val localTmpDir: String,
 ) : SkillService {
 
@@ -169,6 +171,7 @@ class SkillServiceImpl(
         request.status?.let { newStatus ->
             SkillSourcePolicy.requireStatus(newStatus)
             if (newStatus != skill.status) {
+                if (newStatus == 0) requireUnbound(skill, "disabled")
                 skillMapper.updateStatus(id, newStatus)
                 skill.status = newStatus
             }
@@ -188,6 +191,7 @@ class SkillServiceImpl(
             ?: throw BizException("Skill not found")
         requireReadable(skill)
         requireWritableRepo(skill.repositoryId)
+        if (status == 0 && skill.status == 1) requireUnbound(skill, "disabled")
 
         return skillMapper.updateStatus(id, status) > 0
     }
@@ -200,12 +204,33 @@ class SkillServiceImpl(
             ?: throw BizException("Skill not found")
         requireReadable(skill)
         requireWritableRepo(skill.repositoryId)
+        // A delete cascades through the bindings, so without this the row an agent points at would
+        // simply disappear — the harsher operation cannot have the looser precondition
+        requireUnbound(skill, "deleted")
 
         // Remove agent/cli references so no dangling bindings survive the delete
         agentSkillBindingMapper.deleteBySkillIds(listOf(id))
         cliSkillBindingMapper.deleteBySkillIds(listOf(id))
 
         return skillMapper.deleteById(id) > 0
+    }
+
+    /**
+     * Refuses to take a skill out of circulation while an agent binds it.
+     *
+     * A binding means the skill is part of what that agent does on its next run. Switching it off or
+     * deleting it from the skill page rewrites that agent without anyone looking at the agent, so
+     * the change has to start where it is visible: on the agent's own configuration.
+     */
+    private fun requireUnbound(
+        skill: Skill,
+        action: String,
+    ) {
+        val bound = boundAgentCounts(listOf(skill.id))[skill.id] ?: 0
+        if (bound > 0) {
+            val agents = if (bound == 1) "1 agent" else "$bound agents"
+            throw BizException("Skill '${skill.name}' is bound to $agents, so it cannot be $action")
+        }
     }
 
     /**
@@ -252,22 +277,18 @@ class SkillServiceImpl(
      */
     override fun batchSaveSkillsDetailed(repositoryId: Long, skills: List<String>): SkillInstallResponse {
         log.info("Batch saving skills, repositoryId: {}, count: {}", repositoryId, skills.size)
-        // The endpoint takes an unbounded JSON list. Names the source does not contain are each
-        // reported back, so without a ceiling one request can make the response carry tens of
-        // thousands of failure entries
-        if (skills.size > MAX_BATCH_SKILLS) {
-            throw BizException("Too many skills selected, at most $MAX_BATCH_SKILLS per request")
-        }
+        // Ceiling plus trim plus blank-drop, shared with the `skill-sources` install so the two entry
+        // points cannot drift apart. Asked before the repository read: an oversized list should not
+        // cost a lookup, and names the source does not hold are each reported back — without the
+        // ceiling one request makes the response carry tens of thousands of failure entries
+        val selected = SkillSourcePolicy.normalizeSelection(skills).orEmpty()
         val skillRepository = requireWritableRepo(repositoryId)
         // Answering before the loader is picked: a ZIP source keeps no archive, so the only honest
         // reply is "upload it again", not the config error the ZIP loader would raise
         SkillSourcePolicy.requireRefreshable(skillRepository)
 
-        // Matched against the source by name, and `SkillInstaller` stores the trimmed one: a padded
-        // entry from the CLI or an older frontend would otherwise come back as "not present in the
-        // source anymore" while sitting right there in the source. Blank entries are dropped rather
-        // than reported, a failure line naming an empty string tells the caller nothing
-        val selected = skills.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        // An empty or all-blank selection is honoured as "store nothing" rather than as "no selection
+        // given", which would install the whole source
         if (selected.isEmpty()) {
             return SkillInstallResponse()
         }
@@ -291,24 +312,35 @@ class SkillServiceImpl(
         // `loaded.failures` covers the directories whose SKILL.md could not be parsed; without them
         // a selection of five skills that yields three stored rows answers as a plain success
         val install = skillInstaller.persist(skillRepository, loaded.skills, only = selected, loadFailures = loaded.failures)
+        skillSyncRecorder.record(skillRepository, install)
         log.info("Batch saving skills completed for repository {}: {}", repositoryId, install.summary)
         return install
     }
 
     override fun convertToResponse(skill: Skill): SkillResponse {
         val repository = skillRepositoryService.getSkillRepository(skill.repositoryId)
-        return SkillResponse.fromEntity(skill, repository)
+        return SkillResponse.fromEntity(skill, repository, boundAgentCounts(listOf(skill.id))[skill.id] ?: 0)
     }
 
     override fun convertToResponses(skills: List<Skill>): List<SkillResponse> {
         // Cache repository lookups so a page of skills triggers one query per distinct repository
         val repositories = skills.map { it.repositoryId }.distinct()
             .associateWith { skillRepositoryService.getSkillRepository(it) }
-        return skills.map { SkillResponse.fromEntity(it, repositories[it.repositoryId]) }
+        val boundAgents = boundAgentCounts(skills.map { it.id })
+        return skills.map {
+            SkillResponse.fromEntity(it, repositories[it.repositoryId], boundAgents[it.id] ?: 0)
+        }
     }
 
-    private companion object {
-        /** Same ceiling the paginated endpoints apply to `pageSize`. */
-        const val MAX_BATCH_SKILLS = 1000
+    /**
+     * Agents per skill from one grouped read.
+     *
+     * The list page renders the count next to every switch, and the switch is dead precisely because
+     * of it — so the answer has to arrive with the rows. Asked per row, a page of twenty skills costs
+     * twenty reads.
+     */
+    private fun boundAgentCounts(skillIds: List<Long>): Map<Long, Int> {
+        if (skillIds.isEmpty()) return emptyMap()
+        return agentSkillBindingMapper.selectAgentBindingCounts(skillIds).associate { it.skillId to it.agentCount }
     }
 }

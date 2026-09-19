@@ -9,6 +9,7 @@ import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.session.TaskSessionId
+import com.agnetix.harnax.entity.Agent
 import com.agnetix.harnax.entity.AgentMcpBinding
 import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
@@ -17,6 +18,8 @@ import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.McpDetailDto
 import com.agnetix.harnax.entity.dto.ModelConfigDto
 import com.agnetix.harnax.entity.dto.SkillDetailDto
+import com.agnetix.harnax.entity.dto.TeamMemberSpecDto
+import com.agnetix.harnax.entity.dto.TeamSpecInfoResponse
 import com.agnetix.harnax.entity.dto.ToolDetailDto
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
@@ -34,6 +37,8 @@ import com.agnetix.harnax.mapper.ModelProviderMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 import tools.jackson.core.type.TypeReference
@@ -63,6 +68,8 @@ class InternalApiController(
     private val cliSkillBindingMapper: CliSkillBindingMapper,
     private val mcpOAuthUserService: McpOAuthUserService,
     private val mcpStdioPolicy: McpStdioPolicy,
+    private val teamMapper: TeamMapper,
+    private val teamMemberMapper: TeamMemberMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -104,7 +111,11 @@ class InternalApiController(
 
     /**
      * List all active skills from the built-in skill repository.
-     * Used by agent-service to preload built-in skills at startup.
+     * Called by agent-service per agent-spec resolution, which keeps only the ones the agent's
+     * selected CLIs bind.
+     *
+     * The `status` filter here is the only gate a built-in skill passes on its way to a CLI binding,
+     * so turning one off directly in the database takes effect on the next resolution.
      *
      * The lookup is tenant-agnostic and ordered by id: this endpoint runs without a tenant
      * context, and the builtin repository is a single platform-wide row shared by every tenant.
@@ -308,6 +319,22 @@ class InternalApiController(
         ResultVo.error("Failed to get agent spec: ${e.message}")
     }
 
+    /**
+     * Team runtime configuration for one team session.
+     *
+     * The lead is resolved from `team.lead_agent_id` rather than `session.agent_id`: the session column
+     * is only a copy taken at creation time, so a team that changed lead mid-life would otherwise run
+     * with the previous lead. Child session ids are never accepted here — they carry no row of their
+     * own, and resolving one by prefix would hand agent-service an unrelated agent's configuration.
+     */
+    @GetMapping("/team-spec/{sessionId}")
+    fun getTeamSpec(@PathVariable sessionId: String): ResultVo<TeamSpecInfoResponse> = try {
+        ResultVo.success(resolveTeamSpec(sessionId))
+    } catch (e: Exception) {
+        log.error("Failed to get team spec: sessionId={}", sessionId, e)
+        ResultVo.error("Failed to get team spec: ${e.message}")
+    }
+
     /** web/mp: session table → agent. */
     private fun resolveFromSession(sessionId: String): AgentSpecInfoResponse {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
@@ -316,6 +343,8 @@ class InternalApiController(
             ?: throw IllegalArgumentException("Agent not found: ${session.agentId}")
         log.info("[Admin] Resolved agent spec from session: sessionId={}, agentId={}", sessionId, agent.id)
         val model = modelMapper.selectById(agent.modelId)
+        // Only a web/mp session can open a team, so `teamId` is set on this path alone: a channel or a
+        // scheduled task resolves to one agent and must not start a team behind the operator's back.
         return buildAgentSpecResponse(
             agentId = agent.id,
             agentName = agent.name,
@@ -328,7 +357,7 @@ class InternalApiController(
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
-        )
+        ).copy(teamId = session.teamId)
     }
 
     /** chn: channel table → agent. */
@@ -387,6 +416,105 @@ class InternalApiController(
             model = model,
             agentTenantId = agent.tenantId,
             permissionMode = "BYPASS",
+        )
+    }
+
+    // ========================================
+    // Team spec
+    // ========================================
+
+    private fun resolveTeamSpec(sessionId: String): TeamSpecInfoResponse {
+        val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
+            ?: throw IllegalArgumentException("Session not found: $sessionId")
+        val teamId = session.teamId
+            ?: throw IllegalArgumentException("Session is not a team session: $sessionId")
+        val team = teamMapper.selectById(teamId)
+            ?: throw IllegalArgumentException("Team not found: $teamId")
+        if (team.status != 1) {
+            throw IllegalArgumentException("Team '${team.name}' is disabled")
+        }
+        if (team.tenantId != session.tenantId) {
+            throw IllegalArgumentException("Team $teamId and session $sessionId belong to different tenants")
+        }
+
+        val lead = agentOrThrow(team.leadAgentId, "Lead")
+        val leadSpec = specForAgent(
+            agent = lead,
+            enableThink = session.enableThink,
+            enableSearch = session.enableSearch,
+            enablePlan = session.enablePlan,
+            permissionMode = session.permissionMode,
+        )
+
+        val bindings = teamMemberMapper.selectByTeamId(teamId)
+        if (bindings.isEmpty()) {
+            throw IllegalArgumentException("Team '${team.name}' has no members")
+        }
+        val members = bindings.map { binding ->
+            val agent = agentOrThrow(binding.memberAgentId, "Member")
+            TeamMemberSpecDto(
+                memberAgentId = agent.id,
+                agentName = agent.name,
+                delegationDescription = binding.delegationDescription,
+                // A member keeps its own model and capabilities; only the confirmation policy follows
+                // the root session, because that is the switch the user actually set for this chat.
+                spec = specForAgent(
+                    agent = agent,
+                    permissionMode = session.permissionMode,
+                ),
+            )
+        }
+
+        log.info(
+            "[Admin] Resolved team spec: sessionId={}, teamId={}, leadAgentId={}, members={}",
+            sessionId,
+            teamId,
+            lead.id,
+            members.map { it.memberAgentId },
+        )
+        return TeamSpecInfoResponse(
+            teamId = teamId,
+            tenantId = team.tenantId,
+            teamName = team.name,
+            instructions = team.instructions,
+            lead = leadSpec,
+            members = members,
+        )
+    }
+
+    /**
+     * A member that no longer resolves is a refusal, not a shorter list: silently dropping it would
+     * leave the lead delegating to a roster the operator never configured (design section 3.3).
+     */
+    private fun agentOrThrow(agentId: Long, role: String): Agent {
+        val agent = agentMapper.selectById(agentId)
+            ?: throw IllegalArgumentException("$role agent not found: $agentId")
+        if (agent.status != 1) {
+            throw IllegalArgumentException("$role agent '${agent.name}' ($agentId) is disabled")
+        }
+        return agent
+    }
+
+    private fun specForAgent(
+        agent: Agent,
+        enableThink: Int? = null,
+        enableSearch: Int = 0,
+        enablePlan: Int = 0,
+        permissionMode: String = "DEFAULT",
+    ): AgentSpecInfoResponse {
+        val model = modelMapper.selectById(agent.modelId)
+        return buildAgentSpecResponse(
+            agentId = agent.id,
+            agentName = agent.name,
+            description = agent.description,
+            systemPrompt = agent.systemPrompt,
+            modelId = agent.modelId,
+            model = model,
+            agentTenantId = agent.tenantId,
+            enableThink = enableThink ?: if ((model?.thinkingMode ?: 0) >= 1) 1 else 0,
+            enableSearch = enableSearch,
+            enablePlan = enablePlan,
+            permissionMode = permissionMode,
         )
     }
 
@@ -456,16 +584,8 @@ class InternalApiController(
                     displayName = tool.displayName,
                     displayNameZh = tool.displayNameZh,
                     description = tool.description,
-                    type = tool.type,
                     beanName = tool.beanName,
                     methodName = tool.methodName,
-                    httpUrl = tool.httpUrl,
-                    httpMethod = tool.httpMethod,
-                    // Delivered decrypted: agent-service holds no AES key. See plainConfigJson().
-                    httpHeaders = plainConfigJson(tool.httpHeaders),
-                    envParams = tool.envParams,
-                    inputSchema = tool.inputSchema,
-                    outputSchema = tool.outputSchema,
                     readOnly = tool.readOnly,
                     needConfirm = tool.needConfirm,
                     requiredEnvParamKeys = tool.requiredEnvParamKeys,
@@ -568,12 +688,12 @@ class InternalApiController(
                     version = skill.version,
                 )
             }
-        }.toMutableList()
+        }
         // Derived from what was actually resolved. Built from the bindings instead, it listed the ID
         // of every skill dropped just above, so the two halves of one answer disagreed
         val skillListStr = skillDetails.joinToString(",") { it.id.toString() }
 
-        // ── CLI bindings (full detail DTOs + merge CLI skills into skillDetails) ──
+        // ── CLI bindings (full detail DTOs; skillIds resolve at the runtime) ──
         val cliBindings = cliBindingMapper.selectByAgentId(agentId)
         val cliDetails = if (cliBindings.isEmpty()) {
             emptyList()
@@ -598,55 +718,10 @@ class InternalApiController(
                         version = cli.version,
                         installScript = cli.installScript,
                         checkCommand = cli.checkCommand,
-                        envBindings = resolveEnvBindingsJson(binding.envBindings),
+                        envBindings = mergeCliEnvBindings(binding.envBindings, cli.envParams),
                         skillIds = skillIdsByCli[cli.id].orEmpty(),
                     )
                 }
-            }
-        }
-
-        // Merge CLI-associated skills into skillDetails (dedup by skillId and by name)
-        val boundSkillIds = skillDetails.map { it.id }.toHashSet()
-        // Skill names are only unique per repository, and the harness keys skills by name
-        // (`AgentSkill.getSkillId()` is `name + "_" + source`, `source` always being "custom" here), so
-        // two entries sharing a name make the registry replace one with the other while the in-memory
-        // repository still resolves the first. The agent's own binding wins over a CLI's copy.
-        val boundSkillNames = skillDetails.map { it.name }.toMutableSet()
-        val cliSkillIdsToAdd = cliDetails.flatMap { it.skillIds }.distinct().filter { it !in boundSkillIds }
-        if (cliSkillIdsToAdd.isNotEmpty()) {
-            val skillsById = skillMapper.selectByIds(cliSkillIdsToAdd).associateBy { it.id }
-            for (skillId in cliSkillIdsToAdd) {
-                val skill = skillsById[skillId]
-                if (skill == null) {
-                    log.warn("CLI-associated skill not found: skillId={}", skillId)
-                    continue
-                }
-                if (skill.status == 0) {
-                    // The same gate the direct bindings above and `/builtin-skills` apply. Without it a
-                    // CLI binding smuggled a disabled skill — one an operator switched off, or one a
-                    // re-import stored disabled because SkillContentScanner flagged it — into skillDetails,
-                    // so the global injection path dropped it while the CLI path still loaded it
-                    log.info("CLI-associated skill '{}' (id={}) is disabled, skipping", skill.name, skill.id)
-                    continue
-                }
-                if (!boundSkillNames.add(skill.name)) {
-                    log.info(
-                        "CLI-associated skill '{}' (id={}) shares its name with an already bound skill, skipping",
-                        skill.name,
-                        skill.id,
-                    )
-                    continue
-                }
-                skillDetails.add(
-                    SkillDetailDto(
-                        id = skill.id,
-                        name = skill.name,
-                        description = skill.description,
-                        skillmd = skill.skillmd,
-                        resources = skill.resources,
-                        version = skill.version,
-                    ),
-                )
             }
         }
 
@@ -744,6 +819,35 @@ class InternalApiController(
             log.warn("Failed to resolve env bindings JSON: {}", e.message)
             emptyList()
         }
+    }
+
+    /**
+     * Env values one CLI binding delivers: the per-agent values from `agent_cli_binding`, topped up
+     * with the defaults the CLI itself declares in `cli.env_params`.
+     *
+     * Without the top-up an installed CLI reaches the sandbox with no credentials at all — the
+     * install script runs, `check_command` passes, and every invocation then fails on "not logged
+     * in", which is a silent failure no gate reports. The `ToolEnvParamEntry` entries marked
+     * `secret` are stored encrypted and only this service holds the AES key, so decryption happens
+     * here on the way out, the same way [plainToolEnvJson] does it.
+     *
+     * Merged key by key rather than "one set or the other": an agent that overrides a single
+     * parameter must not lose the defaults of the CLI's remaining ones. A declaration with no value
+     * is dropped instead of delivered empty — an absent variable and `GH_TOKEN=` are different
+     * states to a CLI that decides whether it is configured by looking for the name.
+     */
+    private fun mergeCliEnvBindings(
+        storedJson: String?,
+        declaredEnvJson: String?,
+    ): List<Map<String, String>> {
+        val perAgent = resolveEnvBindingsJson(storedJson)
+        if (declaredEnvJson.isNullOrBlank()) return perAgent
+        val overridden = perAgent.mapNotNull { it["envKey"] }.toSet()
+        val defaults = secretFieldEncryptor
+            .decryptToolEnvParamsToMap(declaredEnvJson)
+            .filter { (key, value) -> key.isNotBlank() && key !in overridden && value.isNotBlank() }
+            .map { (key, value) -> mapOf("envKey" to key, "envValue" to value) }
+        return perAgent + defaults
     }
 
     /**

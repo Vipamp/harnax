@@ -5,6 +5,7 @@ import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.entity.dto.SkillDetailDto
+import com.agnetix.harnax.entity.dto.TeamSpecInfoResponse
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.ParameterizedTypeReference
@@ -79,6 +80,41 @@ class AdminApiClient(
             sessionId,
             response.data!!.agentId,
             response.data!!.agentName,
+        )
+        return response.data!!
+    }
+
+    /**
+     * Fetch the team configuration of one team session: the lead's spec plus every member's full spec.
+     *
+     * Only the root session id is accepted. Throwing on an error is deliberate — a team session that
+     * cannot resolve its roster must not fall back to an ordinary single-agent chat, because the user
+     * would see a conversation that quietly stopped delegating.
+     */
+    fun getTeamSpec(sessionId: String): TeamSpecInfoResponse {
+        val url = "$adminUrl/api/admin/internal/team-spec/$sessionId"
+        log.info("[Agent→Admin] GET {} - fetching team spec", url)
+
+        val responseType = object : ParameterizedTypeReference<ResultVo<TeamSpecInfoResponse>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.GET, null, responseType).body
+        } catch (e: Exception) {
+            log.error("[Agent←Admin] Failed to get team spec for sessionId={}: {}", sessionId, e.message, e)
+            throw RuntimeException("Failed to get team spec from admin: ${e.message}", e)
+        }
+
+        if (response == null || response.code != 200 || response.data == null) {
+            val errorMsg = response?.message ?: "No response from admin"
+            log.error("[Agent←Admin] Error getting team spec for sessionId={}: {}", sessionId, errorMsg)
+            throw RuntimeException("Admin returned error: $errorMsg")
+        }
+
+        log.info(
+            "[Agent←Admin] Got team spec: sessionId={}, teamId={}, leadAgentId={}, members={}",
+            sessionId,
+            response.data!!.teamId,
+            response.data!!.lead.agentId,
+            response.data!!.members.map { it.memberAgentId },
         )
         return response.data!!
     }

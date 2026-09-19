@@ -121,7 +121,14 @@ class ZipSkillLoader : SkillLoader {
 
         val searchRoot = if (rootDirs.size == 1) rootDirs.first() else extractDir
 
-        searchRoot.listDirectoryEntries().sorted().forEach { entry ->
+        // Same convention `GitSkillRepository` applies: a `skills/` folder is where the skills live.
+        // Without it a GitHub archive (`<repo>-<ref>/skills/<name>/SKILL.md`) installs from GIT and
+        // answers "no installable skill" from ZIP, because the pass below only ever looks at the
+        // direct children of the wrapper directory and `skills` has no `SKILL.md` of its own.
+        val skillsDir = searchRoot.resolve("skills")
+        val skillRoot = if (skillsDir.isDirectory()) skillsDir else searchRoot
+
+        skillRoot.listDirectoryEntries().sorted().forEach { entry ->
             if (entry.isDirectory()) {
                 val skill = buildSkill(entry, entry.resolve("SKILL.md"), entry.name, failures)
                 if (skill != null) {
@@ -140,18 +147,39 @@ class ZipSkillLoader : SkillLoader {
 
         // An archive that unpacks cleanly but holds no SKILL.md is the hardest case to diagnose: the
         // caller only sees "the source yielded no skills", so name what was passed over and where.
-        // The unreadable ones reach the operator through `failures` and are counted here for the log
-        if (skills.isEmpty()) {
-            log.warn(
-                "ZIP extracted to {} exposes no usable SKILL.md (searched {}); unreadable: {}, skipped directories: {}",
-                extractDir,
-                searchRoot,
-                failures.size,
-                if (skipped.isEmpty()) "(none)" else skipped.joinToString(", "),
-            )
+        // That sentence goes back to the caller as well, not only to the log — a source stored with
+        // an unexplained empty report looks like a platform bug to whoever opens it next. When the
+        // folders already explained themselves it would contradict them: a `SKILL.md` that failed to
+        // parse was found, it just is not usable.
+        if (skills.isEmpty() && failures.isEmpty()) {
+            val empty = describeEmpty(skillRoot, extractDir, skipped)
+            log.warn("ZIP extracted to {}: {}", extractDir, empty.reason)
+            failures.add(empty)
         }
 
         return SkillLoadResult(skills, failures)
+    }
+
+    /**
+     * Explains why an archive that unpacked cleanly holds no installable skill.
+     *
+     * The layout is the usual culprit: a `SKILL.md` sitting next to the README instead of in a folder
+     * of its own, or a repository archive whose wrapper directory was meant to be entered deeper.
+     * Naming the folder actually searched is what lets the operator fix the archive rather than
+     * re-upload the same one.
+     */
+    internal fun describeEmpty(
+        skillRoot: Path,
+        extractDir: Path,
+        skipped: List<String>,
+    ): SkillLoadFailure {
+        val where = if (skillRoot == extractDir) "the archive root" else "the '${skillRoot.name}' folder"
+        val passedOver = if (skipped.isEmpty()) "" else "; directories passed over: ${skipped.joinToString(", ")}"
+        return SkillLoadFailure(
+            SkillLoadFailure.EMPTY_SOURCE,
+            "No SKILL.md found in $where$passedOver. Every skill needs its own folder with a SKILL.md " +
+                "(skills/<name>/SKILL.md or <name>/SKILL.md)",
+        )
     }
 
     /**

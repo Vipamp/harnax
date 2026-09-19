@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-A Skill is a capability package following the `SKILL.md` convention: one Markdown instruction file plus optional attached resources (scripts, templates). It is the fourth capability source of an agent, alongside built-in tools (`BUILTIN`), HTTP proxy tools (`HTTP`) and MCP servers.
+A Skill is a capability package following the `SKILL.md` convention: one Markdown instruction file plus optional attached resources (scripts, templates). It is one of the three capability sources of an agent, alongside built-in tools and MCP servers.
 
 Key design: **skill content is persisted directly into the database** — `skill.skillmd` stores the full SKILL.md, `skill.resources` stores a JSON `Map<relativePath, fileContent>`. The runtime never reads repository files, so skills keep working even if the remote source becomes unreachable after sync.
 
@@ -76,12 +76,12 @@ Created via the management API, fully editable; every write path goes through `r
 Constant: `harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/constant/BuiltinRepository.kt`
 
 - Seeded by Flyway `V12__seed_builtin_cli_skills.sql` (containing the `harnax-cli` skill), with its SKILL.md updated by `V14` and its source semantics corrected by `V15` (`source_type` changed from `ZIP` to `BUILTIN`, `source_config` / `url` changed from NULL to empty strings);
-- Located deterministically: `SkillRepositoryMapper.selectBuiltinRepository(name)` queries by `name` + `active = 1` with `ORDER BY id ASC LIMIT 1` and **does not depend on the caller's tenant**. The `source_type` filter is deliberately absent: `V15`'s `uk_skill_repository_builtin_guard` already guarantees at most one row carries that name, and layering a type filter on top would make a database where `V15` has not run return nothing, silently dropping the skills that are meant to reach every session. Built-in skills are injected into every session; the earlier tenant-scoped `selectByName` both returned an undefined row when duplicates existed and made non-tenant-1 callers miss the repository entirely, which silently skipped the binding constraint check;
+- Located deterministically: `SkillRepositoryMapper.selectBuiltinRepository(name)` queries by `name` + `active = 1` with `ORDER BY id ASC LIMIT 1` and **does not depend on the caller's tenant**. The `source_type` filter is deliberately absent: `V15`'s `uk_skill_repository_builtin_guard` already guarantees at most one row carries that name, and layering a type filter on top would make a database where `V15` has not run return nothing, silently dropping the built-in skills that are meant to be injected. Built-in skills are located through this repository, which every tenant shares; the earlier tenant-scoped `selectByName` both returned an undefined row when duplicates existed and made non-tenant-1 callers miss the repository entirely, which silently skipped the binding constraint check;
 - **Read-only through the management API**: writes are blocked by `requireNotBuiltinRepo` / `requireWritable`, and the name is rejected by the reserved-name check at all three entry points (create, upload, rename);
 - Three dedicated flow rules:
   1. CLI bindings may only reference skills from this repository (`CliServiceImpl.saveSkillBindings` validation);
   2. Agents may **not** bind skills from this repository directly (`AgentServiceImpl.saveSkillBindings` throws, hinting "auto-loaded via CLI");
-  3. All `status=1` skills of this repository are delivered via `/api/admin/internal/builtin-skills`, cached by agent-service at startup and **injected into every session** (see section 7).
+  3. All `status=1` skills of this repository are served by `GET /api/admin/internal/builtin-skills`, which agent-service calls **on every agent-spec resolution**; only the skills bound to the CLIs the session selected are injected (see section 7) — an agent that selected no CLI receives no built-in skill and issues no request at all. Fetching rather than caching keeps the operator's kill switch (turning a built-in skill off directly in the database) and a migration-rewritten SKILL.md effective without restarting agent-service.
 
 ### 3.3 Source loaders (three types)
 
@@ -136,22 +136,24 @@ Deleting a repository: the new `deleteSkillSource` and the legacy `deleteSkillRe
 
 ## 6. Config Delivery (Admin → agent-service)
 
-Three skill-related payloads in `InternalApiController.buildAgentSpecResponse` (`GET /api/admin/internal/agent-spec/{sessionId}`):
+Four skill-related payloads in `InternalApiController.buildAgentSpecResponse` (`GET /api/admin/internal/agent-spec/{sessionId}`):
 
 1. `skillList`: comma-separated bound IDs (legacy field, kept for compatibility);
 2. `skillDetails`: full `SkillDetailDto` list assembled by querying the `skill` table per ID;
-3. **CLI skill merge**: read the agent's CLI bindings → `cliSkillBindingMapper.selectByCliIds` for each CLI's skill IDs → dedupe and append into `skillDetails`; **disabled CLIs are skipped entirely**, so their skills are not delivered either; the merge now honours both the skill `status` and its name (see R5-1 and R5-3);
+3. **CLI skill association**: read the agent's CLI bindings → `cliSkillBindingMapper.selectByCliIds` for each CLI's skill IDs → forwarded **verbatim** on `cliDetails[].skillIds`; **disabled CLIs are skipped entirely**, so their skills are not delivered either. Admin does not resolve those IDs — "which CLI is selected decides which built-in skills load" is agent-service's call (see section 7);
 4. A separate endpoint `GET /api/admin/internal/builtin-skills` returns all `status=1` skills of the built-in repository (empty list when the repository does not exist); the repository is located deterministically via `selectBuiltinRepository` without a tenant context.
+
+`cliDetails[].envBindings` is not skill-related but ships in the same payload, so its rule is noted here rather than left to be rediscovered: `mergeCliEnvBindings` merges two sources key by key — `agent_cli_binding.env_bindings` (an agent's explicit value for a parameter, which wins) and the defaults declared in `cli.env_params`. Entries marked `secret` are decrypted inside this service and delivered in plain text (agent-service holds no AES key), and a declared parameter carrying no value is dropped instead of delivered empty. See R8-1 in `prod_doc/skill-management.zh-CN.md` §9.4 — that document is authoritative and carries rounds six to eight, which this translation has not yet caught up with.
 
 ## 7. Runtime Assembly (agent-service → HarnessAgent → agentscope)
 
 ```
-BuiltinSkillRegistry
-    ├─ On ApplicationReadyEvent, fetches /builtin-skills and caches it (@Volatile List)
-    └─ Admin unreachable → empty cache, lazy retry inside getSkills()
-        ▼
 AgentSpecResolver.resolve(sessionId)
-    ├─ Built-in injection: builtinSkills first, deduped against specInfo.skillDetails by skillId
+    ├─ Built-in injection: the union of cliDetails[].skillIds is the filter set; an empty set skips
+    │     the whole branch (no request to admin at all). Otherwise GET /builtin-skills is called per
+    │     resolution and filtered by those ids; ids admin did not deliver log a warn
+    │     (dangling binding, disabled, or outside the built-in repository).
+    │     Survivors go first, deduped against specInfo.skillDetails by skillId
     │     a built-in skill whose name is already used by a spec-defined skill stands down (two copies
     │     under one name make the two harness layers disagree — see R5-3)
     │     → effectiveSpecInfo (copy(skillDetails = merged))
@@ -182,15 +184,14 @@ agentscope consumer (inside HarnessAgent)
 
 **How skills take effect**: not by stuffing full SKILL.md into the context, but "catalog into the prompt + on-demand full-text loading tool + resource files materialized in the workspace". Context cost scales roughly linearly with the number of skills and is nearly independent of their size.
 
-## 8. Three Paths for a Skill to Reach an Agent
+## 8. Two Paths for a Skill to Reach an Agent
 
-| Path | Binding table | Source restriction | Merge point |
-|------|---------------|--------------------|-------------|
+| Path | Binding table | Source restriction | Injection point |
+|------|---------------|--------------------|-----------------|
 | Direct agent binding | `agent_skill_binding` | Built-in repository skills forbidden | Admin delivers `skillDetails` |
-| CLI association | `cli_skill_binding` | Built-in repository skills only | Merged into `skillDetails` by Admin (disabled CLIs skipped) |
-| Global built-in injection | none (full cache) | All enabled skills of the built-in repository | `AgentSpecResolver` injects into every session |
+| CLI association | `cli_skill_binding` | Built-in repository skills only | `AgentSpecResolver`, filtered by `cliDetails[].skillIds` against the skills `/builtin-skills` delivers for this resolution |
 
-All three converge into `skillDetails` → `SkillSpec` → `AgentSkill`, deduplicated by skillId / name. The two dedup sites must agree: both the admin merge and the resolver injection keep the copy the operator bound explicitly (see R5-3), otherwise a built-in skill would overwrite the agent's own skill of the same name.
+Both converge into `skillDetails` → `SkillSpec` → `AgentSkill`. Each gate guards one half: a disabled CLI is dropped wholesale by admin (its `skillIds` disappear with it), a disabled skill is filtered by `/builtin-skills`, so both paths share one `status` semantics (raised by R5-1, now consolidated in agent-service). Name ownership is still settled by two consistent rules: at injection time the copy the operator bound explicitly wins (see R5-3), and at binding time a duplicate name is rejected outright.
 
 ## 9. Issues and Fix Record
 
@@ -417,6 +418,32 @@ A build pitfall worth recording: `mvn -o -pl harnax-admin test` **without `-am`*
 - **The single `harnax-agent-service` failure belongs to the tool scope**: `resolve should build tool specs from toolDetails` asserts `assertEquals(1, agentSpec.toolSpecs[0].needConfirm)` while `ToolSpec.needConfirm` is a `Boolean = false` (`harnax-tools-sdk/.../ToolSpec.kt`), so the assertion can never pass. `git diff` confirms this round only changed the built-in skill injection in `AgentSpecResolver.kt` and never touched the tool mapping, and `ToolSpec.kt` is not in the change list — a pre-existing test error outside the Skill and agent-loading scope, recorded rather than fixed. **Resolved (2026-09, MCP round five)**: cleaned up together with the other pre-existing failures; `harnax-agent-service` now runs 131 unit tests green.
 - **`V15` aborts the migration on a database already polluted across tenants**: step 3a dedupes names partitioned by `(tenant_id, name)` and keeps the oldest row per tenant, so if tenant 1 and tenant 2 each have a `builtin-cli-skills` row, both survive; the following `uk_skill_repository_builtin_guard` then fails to build because two rows have `builtin_guard = 1`, and the migration stops at V15. The reserved-name check from P0-4 only guards writes made after it, not duplicates already stored. `V15` cannot be edited in place on a database where it already ran: `spring.flyway.validate-on-migrate: true` is in effect, so a checksum mismatch blocks startup — and `spring.flyway.repair-on-migrate: true` in `application.yml` is a **dead setting**: decompiling shows Spring Boot 4.0.1's `FlywayProperties` has no `repairOnMigrate` field (only `validateOnMigrate` and `validateMigrationNaming`), and `@ConfigurationProperties` ignores unknown fields by default, so it neither fails nor repairs anything. **No migration script was changed in this round**; fixing such a database needs a new migration after the current head that renames the surplus builtin rows before adding the index (`V16` is already taken by `drop_skill_storage_path_and_binding_indexes`, and `V25` / `V26` are reserved for the OAuth data model).
 
+#### End-to-end acceptance on docker-new (2026-09-18)
+
+Everything above this section stops at unit and Testcontainers level, which cannot prove that a CLI is *actually installed* at runtime or that a skill *actually reaches* the prompt. This run brought the whole `docker-new` stack up against a real MySQL 8, with images built from the **then-uncommitted working tree** (the admin and agent-service steps of `build.sh`) and `SANDBOX_ENABLED=true`, and walked the full chain "select a CLI → the skill is in the prompt / do not select it → it is not" using throwaway probe CLIs. The probes never touch a real tool: the install script only writes a stub to `/usr/local/bin/cli-e2e-probe`, and `check_command` asserts it runs. The Chinese document (§9.6 of `skill-management.zh-CN.md`) holds the same record with the exact log strings; this is the summary.
+
+| # | Assertion | How it was pinned | Result |
+|---|-----------|-------------------|--------|
+| 1 | Admin forwards CLI skill IDs only, never merging them into `skillDetails` | `GET /api/admin/internal/agent-spec/{sessionId}`: `cliDetails[].skillIds=[1]` while `skillDetails` has no id 1 | Pass — the R7-1 contract matches the code |
+| 2 | A CLI may only bind built-in repository skills | `POST /api/admin/clis` with a tenant-repository skill ID | Pass — rejected by the `saveSkillBindings` builtin check |
+| 3 | A session whose agent selected a CLI gets the built-in skill in its prompt | New session asks a question, the model answers `harnax-cli`; agent-service logs `Injected 1 built-in skills into spec` | Pass |
+| 4 | A session without any CLI does not even make the request | Another new session: zero `builtin-skills` requests on admin, no `Injected` line | Pass — the empty-set short circuit holds |
+| 5 | The operator's DB-level kill switch works without a restart | `UPDATE skill SET status=0 WHERE id=1`, then a new session: the skill is gone and `CLI-bound skills not delivered by admin (deleted, disabled, or outside the builtin repository)` is logged | Pass — the warn R7-1 added is exactly the observable handle |
+| 6 | `check_command` is a hard gate and a failed image is not left behind | Install script deliberately written without a shebang: the chat fails with `6005 CLI 'cli-e2e-probe' check command failed in image harnax-sandbox:cli-0b9c54e5a74a`, and the tag is then absent from `docker images` | Pass — failed image removed |
+| 7 | The probe binary really lands in the sandbox | `docker exec agentscope-sandbox-<sessionId> cli-e2e-probe` prints `cli-e2e-probe-ok`; the custom tag comes from the `Resolved CLI sandbox image` log | Pass |
+| 8 | CLI environment parameters reach the sandbox | Three concordant observations: delivered `envBindings=[]`, `Resolved 5 env binding(s)` listing only the tool's SMTP variables, and no declared key present in the container env | **Fail → fixed as R8-1 → re-verified** (below) |
+
+Item 8 was confirmed live rather than inferred, then fixed per R8-1 and re-verified on a rebuilt admin image. A CLI declaring three parameters — one secret, one plain, one with an empty default — was bound to the agent:
+
+- Delivery: `cliDetails[].envBindings` = `[{CLI_E2E_SECRET=s3cr3t-plain}, {CLI_E2E_PLAIN=plain-value}]`. The stored `cli.env_params` holds AES-GCM ciphertext for the secret entry, and agent-service receives plain text, which pins the decryption at admin's exit;
+- Runtime: after one chat on a fresh session, `docker exec agentscope-sandbox-<sessionId> sh -c 'echo $CLI_E2E_SECRET'` returns `s3cr3t-plain`, `CLI_E2E_PLAIN` likewise, while `CLI_E2E_EMPTY` is **not set at all** — the outcome "a valueless declaration is not delivered" was meant to produce. The probe binary remains executable in the same container.
+
+**One retracted hypothesis**: mid-run, an admin-issued `accessToken` sent to the router returned 401 `SignatureException` (`JWT_SECRET` and `HARNAX_AUTH_SECRET` differ in the local `.env`), and it was briefly logged as a deployment defect. Reading `getRouterHeaders` in `harnax-webui/src/pages/session/components/ChatWindow.tsx` withdrew that: the real frontend uses the `routerApiKey` from the login response via the `X-Api-Key` header, and admin's `jwt.secret` never participates in router-side verification, so two different values are by design. Manual testing either sends `X-Api-Key` or self-signs an HS512 token with `HARNAX_AUTH_SECRET` carrying `userId`. **Do not report this 401 as a bug.**
+
+**Not covered**: the streaming `chat/stream` path end to end, multi-tenant isolation (tenant 1 only), the real `harnax-cli` plugin path with `SANDBOX_CLI_PLUGINS_ENABLED` on (the probes exercised the custom-image path), and ZIP / Git skill import.
+
+The environment was restored afterwards: the probe CLIs and their binding rows, the probe session and its records in `agentscope.agent_state` / `plan_note` / `token_stats` / `tool_call_log` / `api_call_log`, the sandbox container and the `harnax-sandbox:cli-*` image were all deleted, and `skill` id=1 is back to `status=1`. Note that the stack is currently running images built from the **uncommitted working tree**.
+
 ## 10. Key File Index
 
 | Step | File |
@@ -432,7 +459,7 @@ A build pitfall worth recording: `mvn -o -pl harnax-admin test` **without `-am`*
 | Built-in skill seeds | `harnax-admin/src/main/resources/db/migration/V12__seed_builtin_cli_skills.sql`, `V14__*.sql` |
 | Integrity migration | `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql` (built-in semantics fix + `is_public` inheritance + duplicate renaming + three unique indexes), `V9__skill_content_in_mysql.sql` (`MEDIUMTEXT`) |
 | Binding save / delivery | `harnax-admin/.../service/impl/AgentServiceImpl.kt`, `CliServiceImpl.kt`, `controller/InternalApiController.kt` |
-| Built-in skill cache | `harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/BuiltinSkillRegistry.kt`, `client/AdminApiClient.kt` |
+| Built-in skill fetch | `harnax-agent/harnax-agent-service/.../client/AdminApiClient.kt` (`getBuiltinSkills()`, fetched on every `resolve`; the startup cache `BuiltinSkillRegistry` was deleted with round seven) |
 | Spec resolution | `harnax-agent/harnax-agent-service/.../runner/AgentSpecResolver.kt`, `harnax-harness-core/.../agent/AgentSpec.kt` (`SkillSpec`) |
 | Skill adaptor | `harnax-agent/harnax-agent-service/.../adaptor/SkillAdaptorImpl.kt`, `harnax-harness-core/.../agent/adaptor/SkillAdaptor.kt` |
 | Runtime assembly | `harnax-harness-core/.../HarnessAgentLauncher.kt`, `HarnessAgentBuilder.kt` (`InMemorySkillRepository`) |

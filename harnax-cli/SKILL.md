@@ -224,13 +224,15 @@ harnax model-provider stats <id>
 
 ## 工具管理
 
+工具全部为内置工具，由 admin 启动时按 `@Tool`/`@ToolMeta` 注解自动同步写库，CLI 与页面均不支持新增、修改、删除或启停工具。
+
 ### 查询工具列表
 
 ```bash
-harnax tool list [--keyword <keyword>] [--type BUILTIN|CUSTOM|HTTP] [--status <0|1>] [--page <n>] [--size <n>]
+harnax tool list [--keyword <keyword>] [--status <0|1>] [--page <n>] [--size <n>]
 ```
 
-输出表格：ID、Name、Type、Status、Read Only
+输出表格：ID、Name、Status、Read Only
 
 ### 查看详情
 
@@ -238,21 +240,13 @@ harnax tool list [--keyword <keyword>] [--type BUILTIN|CUSTOM|HTTP] [--status <0
 harnax tool get <id>
 ```
 
-### 更新/删除/切换
-
-```bash
-harnax tool update <id> [--name <name>]
-harnax tool delete <id>
-harnax tool toggle <id>
-```
-
 ### 查看可用工具
 
 ```bash
-harnax tool available [--type BUILTIN|CUSTOM|HTTP]
+harnax tool available
 ```
 
-列出所有已启用的工具，可按类型过滤。
+列出所有已启用的工具。
 
 ### 查看内置工具
 

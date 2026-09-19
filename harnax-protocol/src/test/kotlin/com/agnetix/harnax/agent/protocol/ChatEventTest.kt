@@ -245,6 +245,34 @@ class ChatEventTest {
         }
     }
 
+    // ==================== KeepAliveChatEvent ====================
+
+    @Nested
+    inner class KeepAliveChatEventTests {
+        @Test
+        fun `eventType is KeepAliveEvent and it carries no usage`() {
+            val event = KeepAliveChatEvent()
+
+            assertEquals(EventType.KeepAliveEvent, event.eventType)
+            assertNull(event.tokenUsage)
+        }
+
+        @Test
+        fun `batch aggregation ignores a keep-alive`() {
+            val response = ChatResponse.fromEvents(
+                "s1",
+                listOf(
+                    StreamTextChatEvent("answer", isLast = true, tokenUsage = null),
+                    KeepAliveChatEvent(),
+                    KeepAliveChatEvent(),
+                ),
+            )
+
+            assertEquals("answer", response.content)
+            assertNull(response.tokenUsage)
+        }
+    }
+
     // ==================== EventType enum ====================
 
     @Nested
@@ -252,7 +280,7 @@ class ChatEventTest {
         @Test
         fun `all event types are defined`() {
             val types = EventType.entries
-            assertEquals(7, types.size)
+            assertEquals(8, types.size)
             assertTrue(types.contains(EventType.ThinkingEvent))
             assertTrue(types.contains(EventType.CallToolEvent))
             assertTrue(types.contains(EventType.ToolResultEvent))
@@ -260,6 +288,7 @@ class ChatEventTest {
             assertTrue(types.contains(EventType.ToolConfirmEvent))
             assertTrue(types.contains(EventType.EndEvent))
             assertTrue(types.contains(EventType.ErrorEvent))
+            assertTrue(types.contains(EventType.KeepAliveEvent))
         }
     }
 

@@ -21,6 +21,8 @@ import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -84,6 +86,12 @@ class SessionServiceImplTest {
 
     @Mock
     private lateinit var skillBindingMapper: AgentSkillBindingMapper
+
+    @Mock
+    private lateinit var teamMapper: TeamMapper
+
+    @Mock
+    private lateinit var teamMemberMapper: TeamMemberMapper
 
     private lateinit var testSession: Session
     private lateinit var testAgent: Agent
@@ -150,6 +158,8 @@ class SessionServiceImplTest {
         sessionMapper = sessionMapper,
         mcpBindingMapper = mcpBindingMapper,
         skillBindingMapper = skillBindingMapper,
+        teamMapper = teamMapper,
+        teamMemberMapper = teamMemberMapper,
     )
 
     private fun mcpBinding(

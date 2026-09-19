@@ -8,8 +8,12 @@ import com.agnetix.harnax.admin.service.SkillSourceService
 import com.agnetix.harnax.admin.skill.SkillInstaller
 import com.agnetix.harnax.admin.skill.SkillSourceConfigs
 import com.agnetix.harnax.admin.skill.SkillSourcePolicy
+import com.agnetix.harnax.admin.skill.SkillSyncRecorder
+import com.agnetix.harnax.admin.skill.loader.SkillLoadFailure
+import com.agnetix.harnax.admin.skill.loader.SkillLoadResult
 import com.agnetix.harnax.admin.skill.loader.SkillLoader
 import com.agnetix.harnax.admin.skill.loader.SkillLoaderRegistry
+import com.agnetix.harnax.admin.util.ApiErrors
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.UserContextUtil
 import com.agnetix.harnax.entity.SkillRepository
@@ -31,6 +35,7 @@ class SkillSourceServiceImpl(
     private val skillMapper: SkillMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
+    private val skillSyncRecorder: SkillSyncRecorder,
     @Value("\${local.tmp-dir}") private val localTmpDir: String?,
 ) : SkillSourceService {
 
@@ -61,7 +66,9 @@ class SkillSourceServiceImpl(
                 sourceType?.trim()?.takeIf { it.isNotEmpty() },
             ),
         )
-        return entityPage.mapRecords { convertToResponse(it) }
+        val repositories = entityPage.records
+        val enabledCounts = enabledSkillCounts(repositories.map { it.id })
+        return entityPage.mapRecords { SkillSourceResponse.fromEntity(it, enabledCounts[it.id] ?: 0) }
     }
 
     override fun getSkillSource(id: Long): SkillRepository? = skillRepositoryMapper.selectById(id)?.also { requireReadable(it) }
@@ -106,7 +113,7 @@ class SkillSourceServiceImpl(
         val loader = skillLoaderRegistry.getLoader(request.sourceType)
         loader.validateConfig(config)
 
-        val loaded = loadFromSource(loader, config)
+        val loaded = loadForRepair(loader, config)
 
         val repository = SkillRepository().apply {
             this.tenantId = tenantId
@@ -129,6 +136,7 @@ class SkillSourceServiceImpl(
         val install = skillInstaller.createWithSkills(repository, loaded.skills, loaded.failures) {
             skillRepositoryMapper.selectByName(name, tenantId) != null
         }
+        skillSyncRecorder.record(repository, install)
 
         log.info("Skill source created, id: {}, install: {}", repository.id, install.summary)
         return SkillSourceInstallResponse(convertToResponse(repository), install)
@@ -351,13 +359,17 @@ class SkillSourceServiceImpl(
         val install = skillInstaller.createWithSkills(repository, loaded.skills, loaded.failures) {
             skillRepositoryMapper.selectByName(sourceName, tenantId) != null
         }
+        skillSyncRecorder.record(repository, install)
 
         log.info("ZIP skill source created, id: {}, install: {}", repository.id, install.summary)
         return SkillSourceInstallResponse(convertToResponse(repository), install)
     }
 
-    override fun installSkills(id: Long): SkillInstallResponse {
-        log.info("Re-installing skills from source, id: {}", id)
+    override fun installSkills(
+        id: Long,
+        names: List<String>?,
+    ): SkillInstallResponse {
+        log.info("Re-installing skills from source {}, selection: {}", id, names ?: "whole source")
 
         val repository = skillRepositoryMapper.selectById(id)
             ?: throw BizException("Skill source not found")
@@ -368,14 +380,32 @@ class SkillSourceServiceImpl(
         val loader = skillLoaderRegistry.getLoader(repository.sourceType)
         loader.validateConfig(config)
 
-        val loaded = loadFromSource(loader, config)
-        val install = skillInstaller.persist(repository, loaded.skills, loadFailures = loaded.failures)
+        // Normalised before the fetch: a selection too large to ever be stored must not first cost a
+        // clone. An empty one stays empty rather than becoming "no selection given" — a caller that
+        // named nothing asked to store nothing, and reading that as a full install would write skills
+        // nobody picked. Only an absent body means the whole source.
+        val selection = SkillSourcePolicy.normalizeSelection(names)
+
+        val loaded = loadForRepair(loader, config)
+        val install = skillInstaller.persist(repository, loaded.skills, only = selection, loadFailures = loaded.failures)
+        skillSyncRecorder.record(repository, install)
 
         log.info("Re-install finished for source {}, result: {}", id, install.summary)
         return install
     }
 
-    override fun convertToResponse(entity: SkillRepository): SkillSourceResponse = SkillSourceResponse.fromEntity(entity)
+    override fun convertToResponse(entity: SkillRepository): SkillSourceResponse = SkillSourceResponse.fromEntity(entity, enabledSkillCounts(listOf(entity.id))[entity.id] ?: 0)
+
+    /**
+     * Skills still enabled per source, from one grouped read.
+     *
+     * Deleting a source cascades through its skills, so the guard refuses while any of them is still
+     * switched on; the list answers with how many so the button can say that before the click.
+     */
+    private fun enabledSkillCounts(repositoryIds: List<Long>): Map<Long, Int> {
+        if (repositoryIds.isEmpty()) return emptyMap()
+        return skillMapper.selectEnabledCountsByRepositoryIds(repositoryIds).associate { it.repositoryId to it.enabledCount }
+    }
 
     /**
      * Runs the source loader outside any transaction and always cleans the scratch directory.
@@ -384,6 +414,34 @@ class SkillSourceServiceImpl(
      * failures on is what keeps a broken `SKILL.md` from disappearing without a trace.
      */
     private fun loadFromSource(loader: SkillLoader, config: Map<String, Any>) = withTempDir { loader.loadSkills(config, it) }
+
+    /**
+     * Runs a fetch that the caller can afford to survive.
+     *
+     * A clone that times out is a broken setting on a source the operator just configured, not a
+     * reason to discard the configuration. Degrading it to one source-level failure is what makes
+     * `update → install` the repair path; throwing here instead meant every typo in a URL required
+     * recreating the source from scratch, because nothing had been stored.
+     *
+     * Only the two fetchable source types go through here. A ZIP upload is read straight from the
+     * archive the caller handed over, so a failed upload leaves a source with nothing left to
+     * re-try against and [loadFromSource] keeps propagating.
+     */
+    private fun loadForRepair(loader: SkillLoader, config: Map<String, Any>): SkillLoadResult = try {
+        loadFromSource(loader, config)
+    } catch (e: BizException) {
+        // A validation rejection is a 4xx about the request the caller just sent, not a sync that
+        // went wrong. Storing it as a source outcome would say "this address yields no skills" about
+        // an address that was never tried
+        throw e
+    } catch (e: Exception) {
+        val reason = ApiErrors.message(e, e.javaClass.simpleName)
+        log.warn("Source {} could not be read ({}): {}", loader.sourceType, e.javaClass.simpleName, reason)
+        SkillLoadResult(
+            skills = emptyList(),
+            failures = listOf(SkillLoadFailure(SkillLoadFailure.WHOLE_SOURCE, reason)),
+        )
+    }
 
     private fun <T> withTempDir(block: (Path) -> T): T {
         val tmpDir = getTmpDir()

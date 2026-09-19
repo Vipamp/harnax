@@ -3,6 +3,7 @@ package com.agnetix.harnax.mapper
 import com.agnetix.harnax.entity.SkillRepository
 import org.apache.ibatis.annotations.Mapper
 import org.apache.ibatis.annotations.Param
+import java.time.LocalDateTime
 
 /**
  * SkillRepository Mapper interface
@@ -71,4 +72,17 @@ interface SkillRepositoryMapper {
     fun selectBuiltinRepository(@Param("name") name: String): SkillRepository?
 
     fun updateStatus(@Param("id") id: Long, @Param("status") status: Int): Int
+
+    /**
+     * Stores the outcome of one sync.
+     *
+     * A dedicated statement, like [updateStatus]: the user-facing `updateById` writes the row the
+     * caller submitted, and a sync result is not something a caller submits.
+     */
+    fun updateSyncResult(
+        @Param("id") id: Long,
+        @Param("status") status: String,
+        @Param("detail") detail: String,
+        @Param("syncTime") syncTime: LocalDateTime,
+    ): Int
 }

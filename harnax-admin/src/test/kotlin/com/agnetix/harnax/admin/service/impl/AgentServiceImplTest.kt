@@ -34,6 +34,8 @@ import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.TeamMapper
+import com.agnetix.harnax.mapper.TeamMemberMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -128,6 +130,12 @@ class AgentServiceImplTest {
     private lateinit var agentToolEnvParamMapper: AgentToolEnvParamMapper
 
     @Mock
+    private lateinit var teamMapper: TeamMapper
+
+    @Mock
+    private lateinit var teamMemberMapper: TeamMemberMapper
+
+    @Mock
     private lateinit var secretFieldEncryptor: SecretFieldEncryptor
 
     @Captor
@@ -187,6 +195,20 @@ class AgentServiceImplTest {
                     this.id = id
                     tenantId = 1L
                     name = "tool-$id"
+                }
+            }
+        }
+
+        // Skill ids get the same treatment (see resolveBindableSkills): enabled rows of the caller's
+        // own tenant, which is the tenant these tests run as.
+        `when`(skillMapper.selectByIds(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).map { id ->
+                Skill().apply {
+                    this.id = id
+                    tenantId = 1L
+                    name = "skill-$id"
+                    repositoryId = 3L
+                    status = 1
                 }
             }
         }
@@ -259,6 +281,26 @@ class AgentServiceImplTest {
             } finally {
                 TenantContext.clear()
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("Active Agents Query Tests")
+    inner class ActiveAgentsTests {
+
+        @Test
+        @DisplayName("getActiveAgents - 按调用者身份过滤，而不是按空用户名")
+        fun `getActiveAgents should scope the query by the caller username`() {
+            // `selectAgentList` 恒定带 `(is_public = 1 OR creator = #{currentUsername})`。
+            // 传空串等于只放行公开智能体：私有智能体在智能体页面上明明列得出来，
+            // 定时任务表单的下拉却一个都不显示——下拉走的就是这个方法
+            val agents = listOf(testAgent)
+            `when`(agentMapper.selectAgentList(null, 1, "admin", 1L)).thenReturn(agents)
+
+            val result = agentService.getActiveAgents()
+
+            assertEquals(1, result.size)
+            verify(agentMapper).selectAgentList(null, 1, "admin", 1L)
         }
     }
 
@@ -440,11 +482,18 @@ class AgentServiceImplTest {
     @DisplayName("Skill 绑定约束")
     inner class SkillBindingConstraintTests {
 
-        private fun skill(id: Long, name: String, repositoryId: Long) = Skill().apply {
+        private fun skill(
+            id: Long,
+            name: String,
+            repositoryId: Long,
+            status: Int = 1,
+            tenantId: Long = 1L,
+        ) = Skill().apply {
             this.id = id
             this.name = name
             this.repositoryId = repositoryId
-            status = 1
+            this.status = status
+            this.tenantId = tenantId
         }
 
         private fun stubAgent() {
@@ -524,17 +573,62 @@ class AgentServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateAgent - 绑定的技能已被软删时不拦，仅写入传进来的 id")
-        fun `updateAgent should tolerate ids the skill table no longer returns`() {
-            // selectByIds 只返回 active = 1 的行，传了一个已删 id 时校验看到的行比请求少，
-            // 不应因此报错；真正的绑定仍按原 id 写入，与改动前的行为一致
+        @DisplayName("updateAgent - 绑定的技能已被删时拒绝")
+        fun `updateAgent should reject an id the skill table no longer returns`() {
+            // selectByIds 只返回 active = 1 的行。过去少一行就少写一条绑定，调用方拿到 200 却少了
+            // 一个技能；工具和 MCP 早就按 id 点名拒绝了，技能没有理由更松
             stubAgent()
             `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
             `when`(skillMapper.selectByIds(listOf(1L, 2L))).thenReturn(listOf(skill(1L, "alive", 3L)))
 
-            assertTrue(updateWithSkills("1,2"))
+            val ex = assertThrows<BizException> { updateWithSkills("1,2") }
 
-            verify(skillBindingMapper).batchInsert(any())
+            assertTrue(ex.message!!.contains("2"))
+            verify(skillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 不能绑其他租户的技能")
+        fun `updateAgent should reject a skill outside the caller tenant`() {
+            // 绑定会把对方的 SKILL.md 和资源整个下发进这个 agent 的运行时
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(listOf(1L))).thenReturn(listOf(skill(1L, "theirs", 3L, tenantId = 2L)))
+
+            val ex = assertThrows<BizException> { updateWithSkills("1") }
+
+            assertTrue(ex.message!!.contains("1"))
+            verify(skillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 不能绑停用中的技能")
+        fun `updateAgent should reject a disabled skill`() {
+            // 停用的前提是没被绑（见 SkillServiceImpl 的停用守卫），从这条路绑回去会绕开它
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(listOf(1L))).thenReturn(listOf(skill(1L, "off", 3L, status = 0)))
+
+            val ex = assertThrows<BizException> { updateWithSkills("1") }
+
+            assertTrue(ex.message!!.contains("off"))
+            verify(skillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - 同一请求里重复的技能 id 只写一条绑定")
+        fun `updateAgent should collapse a repeated skill id into one binding`() {
+            // agent_skill_binding 即将按 (agent_id, skill_id) 建唯一索引，写入端先去重才不会让一次
+            // 保存整条失败；picker 的去重只是同一件事的界面版本
+            stubAgent()
+            `when`(skillRepositoryService.getBuiltinRepository()).thenReturn(null)
+            `when`(skillMapper.selectByIds(any())).thenReturn(listOf(skill(1L, "only", 3L)))
+
+            assertTrue(updateWithSkills("1, 1"))
+
+            val captor = argumentCaptor<List<AgentSkillBinding>>()
+            verify(skillBindingMapper).batchInsert(captor.capture())
+            assertEquals(1, captor.firstValue.size)
         }
     }
 
@@ -1162,21 +1256,22 @@ class AgentServiceImplTest {
         }
 
         @Test
-        @DisplayName("updateAgent - Reject a tool of another tenant")
-        fun `updateAgent should reject tool of another tenant`() {
-            val foreign = AgentTool().apply {
+        @DisplayName("updateAgent - Bind a tool row owned by the sync, whatever tenant it carries")
+        fun `updateAgent should bind tool row of another tenant`() {
+            val synced = AgentTool().apply {
                 id = 9L
-                tenantId = 2L
-                name = "Other Tenant Tool"
+                tenantId = 1L
+                name = "getDate"
             }
             val request = AgentUpdateRequest(toolList = listOf(ToolConfig(id = 9L)))
             stubAgentForUpdate()
-            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(listOf(foreign))
+            `when`(agentToolMapper.selectByIds(listOf(9L))).thenReturn(listOf(synced))
 
-            // When & Then
-            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
-            assertTrue(exception.message!!.contains("9"))
-            verify(toolBindingMapper, never()).batchInsert(any())
+            // When
+            agentService.updateAgent(1L, request)
+
+            // Then
+            verify(toolBindingMapper).batchInsert(any())
         }
 
         @Test

@@ -1,5 +1,6 @@
 package com.agnetix.harnax.agent.chat
 
+import com.agnetix.harnax.agent.protocol.EventSource
 import io.agentscope.core.message.Msg
 import io.agentscope.core.message.MsgRole
 import io.agentscope.core.message.ToolResultBlock
@@ -36,15 +37,22 @@ object MessageLogConverter {
         }
     }
 
-    fun convert(msg: Msg): List<MessageLog> {
+    fun convert(msg: Msg, source: EventSource? = null): List<MessageLog> {
         val timestamp = parseTimestamp(msg)
         val role = msg.role
         return when (role) {
-            MsgRole.SYSTEM -> listOf(SystemMessageLog(message = msg.textContent, timestamp = timestamp))
-            MsgRole.USER -> listOf(UserMessageLog(message = msg.textContent, timestamp = timestamp))
+            MsgRole.SYSTEM -> listOf(SystemMessageLog(message = msg.textContent, timestamp = timestamp, source = source))
+            MsgRole.USER -> listOf(UserMessageLog(message = msg.textContent, timestamp = timestamp, source = source))
             MsgRole.TOOL -> {
                 msg.getContentBlocks(ToolResultBlock::class.java)
-                    .map { ToolResultMessageLog(it.name, MsgExtractHelper.extractToolOutput(it), timestamp = timestamp) }
+                    .map {
+                        ToolResultMessageLog(
+                            it.name,
+                            MsgExtractHelper.extractToolOutput(it),
+                            timestamp = timestamp,
+                            source = source,
+                        )
+                    }
                     .toList()
             }
 
@@ -55,7 +63,7 @@ object MessageLogConverter {
                 val toolUseLogs = toolResultBLocks.map {
                     ToolUseLog(it.name, input = it.input as Map<String, Any>)
                 }.toList()
-                listOf(AssistantMessageLog(thinking, text, toolUseLogs, timestamp = timestamp))
+                listOf(AssistantMessageLog(thinking, text, toolUseLogs, timestamp = timestamp, source = source))
             }
         }
     }

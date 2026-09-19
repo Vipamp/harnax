@@ -9,12 +9,15 @@ import com.agnetix.harnax.agent.protocol.ChatResponse
 import com.agnetix.harnax.agent.protocol.EndEventChatEvent
 import com.agnetix.harnax.agent.protocol.ErrorChatEvent
 import com.agnetix.harnax.agent.protocol.FileAttachment
+import com.agnetix.harnax.agent.protocol.PendingCallTool
+import com.agnetix.harnax.agent.protocol.ToolConfirmChatEvent
 import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.error.HarnaxException
 import com.agnetix.harnax.harness.output.OutputFileDetector
 import com.agnetix.harnax.harness.output.OutputFileStore
 import com.agnetix.harnax.harness.sandbox.KeepAliveSandboxManager
 import com.agnetix.harnax.harness.sandbox.plugin.SandboxPluginInitializer
+import com.agnetix.harnax.harness.team.TeamOrchestrator
 import io.agentscope.core.agent.RuntimeContext
 import io.agentscope.core.event.AgentEventType
 import io.agentscope.core.event.RequireUserConfirmEvent
@@ -95,6 +98,11 @@ class HarnessAgentWrapper(
     val pluginInternalSecret: String = "",
     val outputFileDetector: OutputFileDetector? = null,
     val outputFileStore: OutputFileStore? = null,
+    /**
+     * Set only on a team *lead*: the runtime holding its members' runs. A member wrapper is an ordinary
+     * agent and leaves this null, which is what makes [release] safe to hand the whole team over to.
+     */
+    val teamOrchestrator: TeamOrchestrator? = null,
 ) {
 
     private val log = LoggerFactory.getLogger(HarnessAgentWrapper::class.java)
@@ -658,6 +666,8 @@ class HarnessAgentWrapper(
         // Idempotent: a shutdown sweep and the cache's own removal listener can both reach for this
         // agent, and a double close would otherwise report the second one as a fresh failure.
         if (!released.compareAndSet(false, true)) return
+        // Members exist only inside the orchestrator, so nothing else will ever close them.
+        teamOrchestrator?.releaseAll()
         mcpClients.forEach { client ->
             try {
                 client.close()
@@ -751,6 +761,31 @@ class HarnessAgentWrapper(
                     .subscribeOn(Schedulers.boundedElastic()),
             )
             .onErrorResume { e ->
+                // The pause also reaches a stream: a run parked on a confirmation whose response was cut
+                // (idle timeout, closed tab, process exit) comes back as this error, and the ASKING tool
+                // calls live only in the persisted state. Recover them the way the batch path does and
+                // replay the card, otherwise the user has nothing left to answer — every later message
+                // errors the same way and /confirm reports no pending tool.
+                val pausePrompt = buildConfirmPromptIfPaused(e)
+                if (pausePrompt != null && pendingToolCalls.isNotEmpty()) {
+                    log.info(
+                        "[harness] Replaying confirmation for session={}: {} tool call(s) still ASKING in persisted state",
+                        sessionId,
+                        pendingToolCalls.size,
+                    )
+                    val pendingTools = pendingToolCalls.map { toolUse ->
+                        PendingCallTool(
+                            toolId = toolUse.id,
+                            toolName = toolUse.name,
+                            arguments = ChatEventConverter.convertInput(toolUse.input),
+                            isDangerous = toolUse.name in dangerousTools,
+                        )
+                    }
+                    return@onErrorResume Flux.just(
+                        ToolConfirmChatEvent(pendingCallTools = pendingTools, tokenUsage = null),
+                        EndEventChatEvent(),
+                    )
+                }
                 log.error("[harness] stream error for session={}: {}", sessionId, e.message, e)
                 val errorEvent = if (e is HarnaxException) {
                     ErrorChatEvent.from(e)

@@ -9,22 +9,14 @@
         <result column="display_name" property="displayName"/>
         <result column="display_name_zh" property="displayNameZh"/>
         <result column="description" property="description"/>
-        <result column="type" property="type"/>
         <result column="bean_name" property="beanName"/>
         <result column="method_name" property="methodName"/>
-        <result column="http_url" property="httpUrl"/>
-        <result column="http_method" property="httpMethod"/>
-        <result column="http_headers" property="httpHeaders"/>
-        <result column="env_params" property="envParams"/>
-        <result column="input_schema" property="inputSchema"/>
-        <result column="output_schema" property="outputSchema"/>
         <result column="read_only" property="readOnly"/>
         <result column="need_confirm" property="needConfirm"/>
         <result column="is_required" property="isRequired"/>
         <result column="required_env_param_keys" property="requiredEnvParamKeys"/>
         <result column="timeout_seconds" property="timeoutSeconds"/>
         <result column="status" property="status"/>
-        <result column="is_public" property="isPublic"/>
         <result column="creator" property="creator"/>
         <result column="active" property="active"/>
         <result column="create_time" property="createTime"/>
@@ -43,61 +35,13 @@
         </foreach>
     </select>
 
-    <update id="deleteById">
-        UPDATE agent_tool SET active = 0, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
     <select id="selectByName" resultMap="AgentToolResultMap">
         SELECT * FROM agent_tool WHERE name = #{name} AND active = 1 LIMIT 1
     </select>
 
-    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO agent_tool (
-            tenant_id, name, display_name, display_name_zh, description, type, bean_name, method_name,
-            http_url, http_method, http_headers, input_schema, output_schema,
-            read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
-            status, is_public, creator, active, create_time, update_time
-        ) VALUES (
-            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{type}, #{beanName}, #{methodName},
-            #{httpUrl}, #{httpMethod}, #{httpHeaders}, #{inputSchema}, #{outputSchema},
-            #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
-            #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
-        )
-    </insert>
-
-    <update id="updateById">
-        UPDATE agent_tool SET
-            name = #{name},
-            display_name = #{displayName},
-            display_name_zh = #{displayNameZh},
-            description = #{description},
-            type = #{type},
-            bean_name = #{beanName},
-            method_name = #{methodName},
-            http_url = #{httpUrl},
-            http_method = #{httpMethod},
-            http_headers = #{httpHeaders},
-            input_schema = #{inputSchema},
-            output_schema = #{outputSchema},
-            read_only = #{readOnly},
-            need_confirm = #{needConfirm},
-            is_required = #{isRequired},
-            required_env_param_keys = #{requiredEnvParamKeys},
-            timeout_seconds = #{timeoutSeconds},
-            is_public = #{isPublic},
-            active = #{active},
-            update_time = #{updateTime}
-        WHERE id = #{id}
-    </update>
-
-    <update id="updateStatus">
-        UPDATE agent_tool SET status = #{status}, update_time = NOW() WHERE id = #{id} AND active = 1
-    </update>
-
     <select id="selectAgentToolList" resultMap="AgentToolResultMap">
         SELECT * FROM agent_tool
         WHERE active = 1
-        AND (is_public = 1 OR creator = #{currentUsername})
         <if test='keyword != null and keyword != ""'>
             AND (name LIKE CONCAT('%', #{keyword}, '%')
             OR display_name LIKE CONCAT('%', #{keyword}, '%')
@@ -106,55 +50,44 @@
         <if test='status != null'>
             AND status = #{status}
         </if>
-        <if test='type != null and type != ""'>
-            AND type = #{type}
-        </if>
         ORDER BY status DESC, update_time DESC
     </select>
 
-    <select id="selectAllEnabled" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool WHERE status = 1 AND active = 1 ORDER BY name
-    </select>
-
-    <!-- Tool management page: builtin tools are code-owned and always enabled, so no status filter -->
-    <select id="selectBuiltinToolList" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool WHERE type = 'BUILTIN' AND active = 1 ORDER BY name
-    </select>
-
     <!-- Agent config wizard: required tools are auto-injected, so only optional ones are selectable -->
-    <select id="selectAvailableToolsByType" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool WHERE status = 1 AND active = 1 AND is_required = 0
-        <if test='type != null and type != ""'>
-            AND type = #{type}
-        </if>
-        ORDER BY name
+    <select id="selectAvailableTools" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE status = 1 AND active = 1 AND is_required = 0 ORDER BY name
     </select>
 
-    <!-- Required builtin tools: appended to every agent spec at delivery time, no binding row -->
+    <!-- Every tool is code-owned and always enabled, so this needs no status filter -->
+    <select id="selectBuiltinToolList" resultMap="AgentToolResultMap">
+        SELECT * FROM agent_tool WHERE active = 1 ORDER BY name
+    </select>
+
+    <!-- Required tools: appended to every agent spec at delivery time, no binding row -->
     <select id="selectRequiredTools" resultMap="AgentToolResultMap">
         SELECT * FROM agent_tool
-        WHERE type = 'BUILTIN' AND is_required = 1 AND status = 1 AND active = 1
+        WHERE is_required = 1 AND status = 1 AND active = 1
         ORDER BY id
     </select>
 
-    <!-- Select builtin tools by bean name (returns multiple records, one per @Tool method) -->
+    <!-- Select tools by bean name (returns multiple records, one per @Tool method) -->
     <select id="selectByBeanName" resultMap="AgentToolResultMap">
         SELECT * FROM agent_tool
-        WHERE bean_name = #{beanName} AND type = 'BUILTIN' AND active = 1
+        WHERE bean_name = #{beanName} AND active = 1
     </select>
 
-    <!-- Upsert a single builtin tool method record (one per @Tool method).
+    <!-- Upsert a single tool method record (one per @Tool method).
          The duplicate key is uk_tenant_bean_method, so `name` is the column a @Tool(name = ...)
          rename changes: refreshing it in place keeps the id and the agent bindings hanging off it. -->
     <insert id="upsertBuiltinTool">
         INSERT INTO agent_tool (
-            tenant_id, name, display_name, display_name_zh, description, type, bean_name, method_name,
-            env_params, read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
-            status, is_public, creator, active, create_time, update_time
+            tenant_id, name, display_name, display_name_zh, description, bean_name, method_name,
+            read_only, need_confirm, is_required, required_env_param_keys, timeout_seconds,
+            status, creator, active, create_time, update_time
         ) VALUES (
-            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, 'BUILTIN', #{beanName}, #{methodName},
-            NULL, #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
-            1, #{isPublic}, 'SYSTEM', 1, NOW(), NOW()
+            #{tenantId}, #{name}, #{displayName}, #{displayNameZh}, #{description}, #{beanName}, #{methodName},
+            #{readOnly}, #{needConfirm}, #{isRequired}, #{requiredEnvParamKeys}, #{timeoutSeconds},
+            1, 'SYSTEM', 1, NOW(), NOW()
         )
         ON DUPLICATE KEY UPDATE
             name = VALUES(name),
@@ -166,19 +99,18 @@
             is_required = VALUES(is_required),
             required_env_param_keys = VALUES(required_env_param_keys),
             timeout_seconds = VALUES(timeout_seconds),
-            is_public = VALUES(is_public),
             status = VALUES(status),
             update_time = NOW()
     </insert>
 
-    <!-- Every builtin row, soft-deleted included: the sync diffs these against the code and prunes residue -->
+    <!-- Every row, soft-deleted included: the sync diffs these against the code and prunes residue -->
     <select id="selectAllBuiltin" resultMap="AgentToolResultMap">
-        SELECT * FROM agent_tool WHERE type = 'BUILTIN'
+        SELECT * FROM agent_tool
     </select>
 
-    <!-- Hard delete for the sync only; the type guard keeps user-created tools out of reach -->
+    <!-- Hard delete for the sync only; it owns every row of this table -->
     <delete id="deleteBuiltinByIds">
-        DELETE FROM agent_tool WHERE type = 'BUILTIN' AND id IN
+        DELETE FROM agent_tool WHERE id IN
         <foreach collection="ids" item="toolId" open="(" separator="," close=")">
             #{toolId}
         </foreach>

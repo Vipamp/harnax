@@ -49,6 +49,15 @@ class SkillRepository : Serializable {
     @Schema(description = "Active status (0:deleted, 1:active)")
     var active: Int = 1
 
+    @Schema(description = "When the last sync finished; null until the source has been read once")
+    var lastSyncTime: LocalDateTime? = null
+
+    @Schema(description = "Last sync outcome: SUCCESS | PARTIAL | FAILED | EMPTY")
+    var lastSyncStatus: String? = null
+
+    @Schema(description = "Last sync report as JSON (saved/installed/updated/failed/flagged/error)")
+    var lastSyncDetail: String? = null
+
     @Schema(description = "Creation time")
     var createTime: LocalDateTime = LocalDateTime.now()
 

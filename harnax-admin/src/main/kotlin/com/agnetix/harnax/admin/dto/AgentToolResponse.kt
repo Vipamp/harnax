@@ -20,32 +20,14 @@ data class AgentToolResponse(
     @Schema(description = "Tool description")
     val description: String? = null,
 
-    @Schema(description = "Tool type: BUILTIN / CUSTOM / HTTP", example = "BUILTIN")
-    val type: String? = null,
-
     @Schema(description = "Spring Bean name")
     val beanName: String? = null,
 
     @Schema(description = "Java method name")
     val methodName: String? = null,
 
-    @Schema(description = "HTTP request URL")
-    val httpUrl: String? = null,
-
-    @Schema(description = "HTTP method")
-    val httpMethod: String? = null,
-
-    @Schema(description = "HTTP headers configuration (masked for secret values)")
-    val httpHeaders: List<McpConfigEntry>? = null,
-
     @Schema(description = "Environment parameters configuration")
     val envParams: List<ToolEnvParamEntry>? = null,
-
-    @Schema(description = "Input parameter JSON Schema")
-    val inputSchema: String? = null,
-
-    @Schema(description = "Output result JSON Schema")
-    val outputSchema: String? = null,
 
     @Schema(description = "Is read-only (0: No, 1: Yes)")
     val readOnly: Int? = null,

@@ -137,9 +137,6 @@ data class AgentResponse(
         @Schema(description = "Tool description")
         var toolDescription: String? = null,
 
-        @Schema(description = "Tool type", example = "BUILTIN")
-        var toolType: String? = null,
-
         @Schema(description = "Requires human confirmation")
         var needConfirm: Boolean? = null,
 

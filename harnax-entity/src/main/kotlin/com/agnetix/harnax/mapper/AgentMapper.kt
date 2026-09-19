@@ -16,6 +16,9 @@ interface AgentMapper {
      */
     fun selectById(@Param("id") id: Long): Agent?
 
+    /** Batch read used by the team pages to name a lead and its members in one query. */
+    fun selectByIds(@Param("ids") ids: List<Long>): List<Agent>
+
     /**
      * Insert
      */

@@ -21,6 +21,15 @@ data class SkillInstallResponse(
 
     @Schema(description = "Names stored disabled because the content scan flagged them")
     val flagged: List<FlaggedSkill> = emptyList(),
+
+    @Schema(description = "Reason of a source-level failure, i.e. the fetch itself did not survive")
+    val sourceError: String? = null,
+
+    @Schema(description = "Reason the source held no installable skill, when the source itself opened fine")
+    val emptyReason: String? = null,
+
+    @Schema(description = "Names stored from this source that the source no longer holds. Reported, never deleted: removing them would take the agent bindings with them")
+    val stale: List<String> = emptyList(),
 ) {
     @Schema(description = "Number of skills stored (installed + updated)")
     val savedCount: Int = installed.size + updated.size
@@ -28,8 +37,8 @@ data class SkillInstallResponse(
     @Schema(description = "Number of skills that could not be stored")
     val failedCount: Int = failed.size
 
-    @Schema(description = "Whether every skill from the source was stored")
-    val complete: Boolean = failed.isEmpty()
+    @Schema(description = "Whether the sync got everything it could reach into the database")
+    val complete: Boolean = failed.isEmpty() && sourceError == null
 
     @Schema(description = "Human readable summary")
     val summary: String = buildString {
@@ -38,6 +47,7 @@ data class SkillInstallResponse(
         if (updated.isNotEmpty()) append(" (${updated.size} updated)")
         if (flagged.isNotEmpty()) append(", ${flagged.size} disabled pending review")
         if (failed.isNotEmpty()) append(", ${failed.size} failed")
+        if (stale.isNotEmpty()) append(", ${stale.size} no longer in the source")
     }
 
     @Schema(description = "A skill that could not be persisted")
