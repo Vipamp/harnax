@@ -6,6 +6,7 @@ import com.agnetix.harnax.admin.dto.EnvVariableResponse
 import com.agnetix.harnax.admin.dto.EnvVariableUpdateRequest
 import com.agnetix.harnax.admin.dto.Page
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.security.SecurityUtils
 import com.agnetix.harnax.admin.service.EnvVariableService
 import com.agnetix.harnax.admin.util.AesUtil
 import com.agnetix.harnax.admin.util.JwtUtil
@@ -37,7 +38,33 @@ class EnvVariableServiceImpl(
         return Page.fromPageInfo(envVariableMapper.selectEnvVariableList(keyword, currentUsername))
     }
 
-    override fun getEnvVariable(id: Long): EnvVariable? = envVariableMapper.selectById(id)
+    /**
+     * Single-row access to `env_variable`.
+     *
+     * `GET /env-variables/{id}` answers with this row and a non-sensitive value goes out verbatim, so
+     * an unscoped by-id read makes the list filter cosmetic: any logged-in user could enumerate ids
+     * and read another tenant's variables. A row outside the current tenant answers as a missing one,
+     * which is also how [com.agnetix.harnax.admin.service.impl.McpServerServiceImpl] treats one.
+     */
+    override fun getEnvVariable(id: Long): EnvVariable? = envVariableMapper.selectById(id)?.takeIf { it.tenantId == currentTenantId() }
+
+    /**
+     * The tenant this request acts within.
+     *
+     * Copy of `McpServerServiceImpl.currentTenantId`, for the same reason: `TenantInterceptor` only
+     * populates the ThreadLocal when an `X-Tenant-ID` header arrives with it, so a header-less
+     * request would otherwise create rows inside tenant 1 — a workspace the caller may not belong to
+     * — and default the update/delete/toggle permission checks there too.
+     */
+    private fun currentTenantId(): Long = TenantContext.getTenantId() ?: tenantFromToken() ?: tenantFromUserRecord() ?: DEFAULT_TENANT_ID
+
+    private fun tenantFromToken(): Long? = UserContextUtil.getToken()?.let { token ->
+        runCatching { jwtUtil.getTenantIdFromToken(token) }.getOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun tenantFromUserRecord(): Long? = runCatching {
+        SecurityUtils.getCurrentUser()?.tenantId?.takeIf { it > 0 }
+    }.getOrNull()
 
     @Transactional(rollbackFor = [Exception::class])
     override fun createEnvVariable(request: EnvVariableCreateRequest): Boolean = try {
@@ -47,7 +74,7 @@ class EnvVariableServiceImpl(
         envVariable.description = request.description
         envVariable.sensitive = request.sensitive ?: 0
         envVariable.enabled = request.enabled ?: 1
-        envVariable.tenantId = TenantContext.getTenantId() ?: 1
+        envVariable.tenantId = currentTenantId()
         envVariable.creator = UserContextUtil.getCurrentUsername(jwtUtil) ?: ""
         envVariable.createTime = LocalDateTime.now()
         envVariable.updateTime = LocalDateTime.now()
@@ -71,7 +98,7 @@ class EnvVariableServiceImpl(
 
         // IDOR check
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = TenantContext.getTenantId() ?: 1
+        val currentTenantId = currentTenantId()
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to modify this env variable")
         }
@@ -90,6 +117,12 @@ class EnvVariableServiceImpl(
             }
         }
         request.description?.let { envVariable.description = it }
+        if (request.envValue == null && targetSensitive != envVariable.sensitive) {
+            // `sensitive` describes how this column is encoded, so flipping it alone leaves the other
+            // reading in place: 1 to 0 ships the AES ciphertext as the tool's env value, and 0 to 1
+            // stores plaintext that later fails to decrypt, which delivery reports as "no value".
+            envVariable.envValue = reEncode(envVariable.envValue, toSensitive = targetSensitive)
+        }
         request.sensitive?.let { envVariable.sensitive = it }
 
         envVariable.updateTime = LocalDateTime.now()
@@ -104,7 +137,7 @@ class EnvVariableServiceImpl(
         val envVariable = getEnvVariable(id)
             ?: throw RuntimeException("Env variable not found")
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = TenantContext.getTenantId() ?: 1
+        val currentTenantId = currentTenantId()
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to delete this env variable")
         }
@@ -134,7 +167,7 @@ class EnvVariableServiceImpl(
         val envVariable = getEnvVariable(id)
             ?: throw RuntimeException("Env variable not found")
         val currentUsername = UserContextUtil.getCurrentUsername(jwtUtil)
-        val currentTenantId = TenantContext.getTenantId() ?: 1
+        val currentTenantId = currentTenantId()
         if (envVariable.creator != currentUsername || envVariable.tenantId != currentTenantId) {
             throw RuntimeException("No permission to modify this env variable")
         }
@@ -198,6 +231,10 @@ class EnvVariableServiceImpl(
 
     override fun getDecryptedValue(id: Long): String? {
         val env = envVariableMapper.selectById(id) ?: return null
+        // The one delivery resolves through, so this is where disabling a variable has to take effect:
+        // the agent-config dropdown already hides such a row, which makes an ignored toggle a switch
+        // that looks working while a rotated or compromised value stays live in every bound agent.
+        if (env.enabled != 1) return null
         return if (env.sensitive == 1 && !env.envValue.isNullOrBlank()) {
             try {
                 aesUtil.decrypt(env.envValue)
@@ -210,8 +247,23 @@ class EnvVariableServiceImpl(
         }
     }
 
+    /**
+     * Convert a stored value to the encoding [toSensitive] describes.
+     *
+     * Text this key cannot open is returned untouched: it is not ciphertext of ours, and overwriting
+     * it would destroy the only copy of whatever the operator actually stored.
+     */
+    private fun reEncode(stored: String, toSensitive: Int): String = when {
+        stored.isBlank() -> stored
+        toSensitive == 1 -> aesUtil.encrypt(stored)
+        else -> runCatching { aesUtil.decrypt(stored) }.getOrDefault(stored)
+    }
+
     private companion object {
         /** Enough to point at the offenders; the count in the message is the full one. */
         const val MAX_REFERRING_AGENTS = 5
+
+        /** Last resort only — see [currentTenantId]. */
+        const val DEFAULT_TENANT_ID = 1L
     }
 }

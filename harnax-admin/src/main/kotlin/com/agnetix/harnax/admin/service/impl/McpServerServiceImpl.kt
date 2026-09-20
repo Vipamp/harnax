@@ -333,9 +333,10 @@ class McpServerServiceImpl(
     }
 
     /**
-     * stdio runs a process on the agent side, which is what [McpStdioPolicy] exists to gate. Checked
-     * on the way in only: blocking edits of existing rows would leave them undeletable-by-maintenance
-     * and un-disable-able, which is worse than the state being guarded against.
+     * stdio runs a process, which is what [McpStdioPolicy] exists to gate. Storage stays open —
+     * blocking edits of existing rows would leave them undeletable-by-maintenance and un-disable-able,
+     * which is worse than the state being guarded against — so what is gated instead is every path
+     * that would actually start one: creation, the switch into stdio, and the probe in [listTools].
      */
     private fun requireStdioAllowed(type: String?) {
         if (!mcpStdioPolicy.enabled && mcpStdioPolicy.isStdio(type)) {
@@ -428,6 +429,11 @@ class McpServerServiceImpl(
 
     override fun listTools(mcpId: Long): List<McpSchema.Tool> {
         val mcpServer = getMcpServer(mcpId) ?: throw BizException("MCP server not found")
+        // This is the one admin path that *runs* a stored configuration: a stdio row's `command` is
+        // spawned here, in this container, and `connectivityTest` comes through it too. Holding such
+        // rows back from delivery keeps the runtime from spawning them but not this, so the gate has
+        // to be applied here as well or the switch means "not delivered" rather than "never runs".
+        requireStdioAllowed(mcpServer.type)
         if (mcpServer.authType == McpAuthTypes.OAUTH2) {
             // Answering this check needs someone's token, and an admin-side probe has no user to
             // spend: the grant belongs to whoever owns the session, not to whoever clicks "test".

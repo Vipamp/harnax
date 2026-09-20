@@ -634,16 +634,19 @@ class InternalApiControllerTest {
         }
 
         @Test
-        @DisplayName("getAgentSpec - MCP status 随配置下发")
-        fun `getAgentSpec should deliver MCP status`() {
-            // Given - agent-service cannot see the table, so a disabled server must arrive disabled
+        @DisplayName("getAgentSpec - 停用的 MCP 不下发，其凭证也不解密")
+        fun `getAgentSpec should not deliver a disabled MCP server`() {
+            // Given - 闸门原先只由 agent-service 执行，管理端仍把停用行解密后的凭证送上网络
             stubWebSession()
-            stubMcp(null, null, status = 0)
+            val storedHeaders = """[{"key":"Authorization","value":"ENC_B64","secret":true}]"""
+            stubMcp(storedHeaders, null, status = 0)
 
             val result = controller.getAgentSpec("web-secret")
 
             assertTrue(result.isSuccess())
-            assertEquals(0, result.data?.mcpDetails?.firstOrNull()?.status)
+            assertEquals(0, result.data?.mcpDetails?.size)
+            // 扣在管理端才谈得上少解密：行都不发，就没有必要把它还原成明文
+            verifyNoInteractions(secretFieldEncryptor)
         }
 
         @Test
@@ -1190,6 +1193,45 @@ class InternalApiControllerTest {
 
             assertEquals(listOf(8L), data?.mcpDetails?.map { it.id })
             // 与技能那两半同理：兼容用的 mcpList 若从绑定关系直接拼，就会把扣下的进程列进去让运行侧去起
+            assertEquals("""[{"id":8,"env_bindings":[]}]""", data?.mcpList)
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 停用的 MCP 两半都不出现")
+        fun `getAgentSpec should hold a disabled MCP server back from both halves`() {
+            stubWebSessionWithMcps(
+                McpServer().apply {
+                    id = 7L
+                    name = "paused-server"
+                    type = "streamablehttp"
+                    status = 0
+                },
+                McpServer().apply {
+                    id = 8L
+                    name = "running-server"
+                    type = "streamablehttp"
+                    status = 1
+                },
+            )
+            // 停用行带着一条 env 绑定：mcpList 是 ToolEnvContext 的来源，漏下去的值会被所有工具按名读到
+            `when`(mcpBindingMapper.selectByAgentId(100L)).thenReturn(
+                listOf(
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 7L
+                        envBindings = """[{"envKey":"WEATHER_KEY","customValue":"from-paused-server"}]"""
+                    },
+                    AgentMcpBinding().apply {
+                        agentId = 100L
+                        mcpId = 8L
+                    },
+                ),
+            )
+
+            val data = controller.getAgentSpec("web-mcp-auth").data
+
+            assertEquals(listOf(8L), data?.mcpDetails?.map { it.id })
+            // 整条绑定一起扣下，而不只是它的配置：见 InternalApiController 里 heldDisabled 的注释
             assertEquals("""[{"id":8,"env_bindings":[]}]""", data?.mcpList)
         }
 

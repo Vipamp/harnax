@@ -446,6 +446,8 @@ class AgentServiceImpl(
      * runtime: delivery resolves it with `?: continue`, so the agent simply stops seeing that tool
      * and nothing tells the operator. `selectByIds` already excludes `active = 0`, and the tenant
      * comparison mirrors `McpServerService.getMcpServer`, which is what the resolver goes through.
+     * A disabled row is refused for the same reason skills refuse one: delivery holds it back too,
+     * so binding it would only park a tool the agent can never reach.
      * Rows are returned rather than ids because the caller needs `env_params` to check required params.
      */
     private fun resolveBindableMcpServers(mcpIds: List<Long>): List<McpServer> {
@@ -457,6 +459,10 @@ class AgentServiceImpl(
             throw BizException(
                 "MCP server is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
             )
+        }
+        val disabled = resolvable.filter { it.status != 1 }
+        if (disabled.isNotEmpty()) {
+            throw BizException("MCP server is disabled, enable it before binding: ${disabled.joinToString(",") { it.name }}")
         }
         return resolvable
     }
@@ -562,8 +568,8 @@ class AgentServiceImpl(
         val cliIds = cliList.mapNotNull { it.id }.distinct()
         if (cliIds.isEmpty()) return
 
-        val existingIds = cliMapper.selectByIds(cliIds).map { it.id }.toSet()
-        val missing = cliIds - existingIds
+        val clisById = cliMapper.selectByIds(cliIds).associateBy { it.id }
+        val missing = cliIds - clisById.keys
         if (missing.isNotEmpty()) {
             throw BizException("CLI not found: $missing")
         }
@@ -571,6 +577,10 @@ class AgentServiceImpl(
         val now = LocalDateTime.now()
         val bindings = cliList.mapNotNull { config ->
             val cliId = config.id ?: return@mapNotNull null
+            val cli = clisById[cliId] ?: return@mapNotNull null
+            // Same check tools and MCP servers run: this column is delivered into the sandbox env too
+            // (`mergeCliEnvBindings`), so an unverified reference here resolves another tenant's secret
+            assertEnvVarRefsBindable(config.envBindings, "CLI '${cli.name}'")
             AgentCliBinding().apply {
                 this.agentId = agentId
                 this.cliId = cliId
@@ -628,10 +638,19 @@ class AgentServiceImpl(
         val ids = bindings?.mapNotNull { it.envVarId }?.distinct().orEmpty()
         if (ids.isEmpty()) return
         val tenantId = currentTenantId()
-        val unresolved = ids.filter { envVariableService.getEnvVariable(it)?.tenantId != tenantId }
+        val rows = ids.associateWith { envVariableService.getEnvVariable(it) }
+        val unresolved = ids.filter { rows[it]?.tenantId != tenantId }
         if (unresolved.isNotEmpty()) {
             throw BizException(
                 "$target references an env variable that is missing, deleted, or outside your tenant: ${unresolved.joinToString(",")}",
+            )
+        }
+        // Disabled ones resolve to nothing at delivery now (`getDecryptedValue` answers null), so a
+        // save that binds one would look filled in the form and arrive empty at runtime.
+        val disabled = rows.values.filterNotNull().filter { it.enabled != 1 }.map { it.envKey }
+        if (disabled.isNotEmpty()) {
+            throw BizException(
+                "$target references a disabled env variable, enable it before binding: ${disabled.joinToString(",")}",
             )
         }
     }

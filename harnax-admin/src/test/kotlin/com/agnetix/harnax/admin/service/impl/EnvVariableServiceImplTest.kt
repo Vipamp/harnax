@@ -179,6 +179,28 @@ class EnvVariableServiceImplTest {
             assertNull(result)
             verify(envVariableMapper).selectById(999L)
         }
+
+        @Test
+        @DisplayName("getEnvVariable - Return null for another tenant's row")
+        fun `getEnvVariable should return null for another tenant row`() {
+            // Given - 详情接口把非敏感值原样带回，只按列表过滤挡不住按 id 枚举
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(2L)).thenReturn(
+                EnvVariable().apply {
+                    id = 2L
+                    tenantId = 2L
+                    envKey = "OTHER_TENANT_KEY"
+                    envValue = "their-plain-value"
+                    creator = "someone-else"
+                },
+            )
+
+            // When
+            val result = createService().getEnvVariable(2L)
+
+            // Then - 跨租户与查不到给同一个答复，不暴露「这个 id 存在」
+            assertNull(result)
+        }
     }
 
     @Nested
@@ -419,6 +441,46 @@ class EnvVariableServiceImplTest {
             val captor = argumentCaptor<EnvVariable>()
             verify(envVariableMapper).updateById(captor.capture())
             assertEquals("sk-plain-value", captor.firstValue.envValue)
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - 取消敏感标记时把密文还原成明文")
+        fun `updateEnvVariable should decrypt when sensitive flips to zero`() {
+            // Given - 只翻标志：这一列仍是密文，下发时会被当明文交给工具
+            TenantContext.setTenantId(1L)
+            testEnvVariable.sensitive = 1
+            testEnvVariable.envValue = "encrypted-stored-value"
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(aesUtil.decrypt("encrypted-stored-value")).thenReturn("the-real-value")
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            // When
+            createService().updateEnvVariable(1L, EnvVariableUpdateRequest(sensitive = 0))
+
+            // Then
+            val captor = argumentCaptor<EnvVariable>()
+            verify(envVariableMapper).updateById(captor.capture())
+            assertEquals("the-real-value", captor.firstValue.envValue)
+            assertEquals(0, captor.firstValue.sensitive)
+        }
+
+        @Test
+        @DisplayName("updateEnvVariable - 加上敏感标记时把明文编成密文")
+        fun `updateEnvVariable should encrypt when sensitive flips to one`() {
+            // Given - 反向同理：不重编的话，下一次按密文解理会失败，绑定静默拿不到值
+            TenantContext.setTenantId(1L)
+            `when`(envVariableMapper.selectById(1L)).thenReturn(testEnvVariable)
+            `when`(aesUtil.encrypt("sk-plain-value")).thenReturn("encrypted-plain-value")
+            `when`(envVariableMapper.updateById(any())).thenReturn(1)
+
+            // When
+            createService().updateEnvVariable(1L, EnvVariableUpdateRequest(sensitive = 1))
+
+            // Then
+            val captor = argumentCaptor<EnvVariable>()
+            verify(envVariableMapper).updateById(captor.capture())
+            assertEquals("encrypted-plain-value", captor.firstValue.envValue)
+            assertEquals(1, captor.firstValue.sensitive)
         }
 
         @Test
@@ -894,6 +956,24 @@ class EnvVariableServiceImplTest {
 
             // Then
             assertNull(result)
+        }
+
+        @Test
+        @DisplayName("getDecryptedValue - 停用行不下发值")
+        fun `getDecryptedValue should return null for a disabled variable`() {
+            // Given - 这是下发解析值的那一个方法；开关不作用到这里就只是个摆设
+            val paused = EnvVariable().apply {
+                id = 2L
+                envKey = "SECRET"
+                envValue = "plain-payload"
+                sensitive = 0
+                enabled = 0
+            }
+
+            `when`(envVariableMapper.selectById(2L)).thenReturn(paused)
+
+            // When & Then
+            assertNull(createService().getDecryptedValue(2L))
         }
     }
 }

@@ -1141,6 +1141,28 @@ class McpServerServiceImplTest {
         }
 
         @Test
+        @DisplayName("listTools - 开关关着时不探测 stdio 行")
+        fun `listTools should refuse to probe a stdio server while the switch is off`() {
+            val stored = McpServer().apply {
+                id = 1L
+                tenantId = 1L
+                name = "Legacy Stdio MCP"
+                type = "stdio"
+                command = "python app.py"
+                status = 1
+                active = 1
+                creator = "admin"
+            }
+            `when`(mcpServerMapper.selectById(1L)).thenReturn(stored)
+
+            // 下发侧扣住这种行只保证运行侧不起它；连通性测试在 admin 容器里直接 exec 存的 command，
+            // 少了这道闸门，开关的含义就退化成「不下发」而不是「不运行」。
+            val exception = assertThrows<BizException> { mcpServerService.listTools(1L) }
+
+            assertTrue(exception.message!!.contains("stdio MCP servers are disabled"))
+        }
+
+        @Test
         @DisplayName("listTools - OAuth 服务由连通性测试明确拒绝")
         fun `listTools should refuse an OAuth server instead of probing it unauthenticated`() {
             val stored = McpServer().apply {

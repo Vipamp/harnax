@@ -40,6 +40,6 @@ data class McpDetailDto(
     @Schema(description = "Environment parameters JSON string")
     val envParams: String? = null,
 
-    @Schema(description = "Enable status (0:disabled, 1:enabled). Disabled servers are skipped when assembling the agent")
+    @Schema(description = "Enable status (0:disabled, 1:enabled). Admin withholds disabled servers from delivery; the runtime refuses one as well")
     val status: Int = 1,
 )

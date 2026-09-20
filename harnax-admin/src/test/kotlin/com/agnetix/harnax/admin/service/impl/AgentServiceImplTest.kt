@@ -16,6 +16,7 @@ import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.AgentToolEnvParam
+import com.agnetix.harnax.entity.Cli
 import com.agnetix.harnax.entity.EnvVariable
 import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Model
@@ -815,6 +816,30 @@ class AgentServiceImplTest {
         }
 
         @Test
+        @DisplayName("updateAgent - Reject a disabled MCP server")
+        fun `updateAgent should reject a disabled mcp server`() {
+            // Given - 下发侧现在也扣住 status = 0 的行，绑上只会留一个永远取不到的工具
+            val paused = McpServer().apply {
+                id = 9L
+                tenantId = 1L
+                name = "Paused MCP"
+                type = "streamablehttp"
+                status = 0
+            }
+            val request = AgentUpdateRequest(
+                mcpList = listOf(AgentCreateRequest.McpConfig(id = 9L)),
+            )
+
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(mcpServerMapper.selectByIds(listOf(9L))).thenReturn(listOf(paused))
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("Paused MCP"))
+            verify(mcpBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
         @DisplayName("updateAgent - Clear skill list with empty string")
         fun `updateAgent should clear skill list with empty string`() {
             // Given
@@ -1289,6 +1314,58 @@ class AgentServiceImplTest {
             // When & Then
             val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
             assertTrue(exception.message!!.contains("7"), "message should carry the id: ${exception.message}")
+            verify(toolBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a CLI env var reference outside the tenant")
+        fun `updateAgent should reject cli env var reference outside the tenant`() {
+            // Given - CLI 的 env 绑定和工具、MCP 一样按 id 现取后注入沙箱，此前只有这条路径没校验
+            val request = AgentUpdateRequest(
+                cliList = listOf(
+                    AgentCreateRequest.CliConfig(id = 3L, envBindings = listOf(EnvBinding(envKey = "API_KEY", envVarId = 7L))),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(cliMapper.selectByIds(listOf(3L))).thenReturn(
+                listOf(
+                    Cli().apply {
+                        id = 3L
+                        tenantId = 1L
+                        name = "kubectl"
+                    },
+                ),
+            )
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(null)
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("kubectl"), "message should name the CLI: ${exception.message}")
+            verify(cliBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        @DisplayName("updateAgent - Reject a reference to a disabled env var")
+        fun `updateAgent should reject env var reference that is disabled`() {
+            // Given - 下发侧现在对停用行返回 null，绑定它等于表单显示已填、运行时拿不到值
+            val paused = EnvVariable().apply {
+                id = 7L
+                tenantId = 1L
+                envKey = "OPENAI_KEY"
+                sensitive = 1
+                enabled = 0
+            }
+            val request = AgentUpdateRequest(
+                toolList = listOf(
+                    ToolConfig(id = 5L, envBindings = listOf(EnvBinding(envKey = "API_KEY", envVarId = 7L))),
+                ),
+            )
+            stubAgentForUpdate()
+            `when`(envVariableService.getEnvVariable(7L)).thenReturn(paused)
+
+            // When & Then
+            val exception = assertThrows<BizException> { agentService.updateAgent(1L, request) }
+            assertTrue(exception.message!!.contains("OPENAI_KEY"), "message should name the variable: ${exception.message}")
             verify(toolBindingMapper, never()).batchInsert(any())
         }
 

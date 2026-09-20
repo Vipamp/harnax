@@ -615,13 +615,19 @@ class InternalApiController(
         // they stay editable, and nothing spawns them. Held back here rather than at the agent so the
         // rule lives where the row does; harness-core refuses one too, in case an older admin sends it.
         val heldStdio = if (mcpStdioPolicy.enabled) emptyMap() else resolvedMcp.filterValues { mcpStdioPolicy.isStdio(it.type) }
-        val mcpById = resolvedMcp - heldStdio.keys
+        // The same gate `skill.status == 0` and `cli.status == 0` apply below, and the mirror of the
+        // one the runtime already enforces (`HarnessAgentLauncher`). Without it a disabled server is
+        // still on the wire: its decrypted headers travel for nothing, and because `mcpList` feeds
+        // `ToolEnvContext` its resolved env values reach every tool of the agent, where a same-named
+        // key silently overrides what an enabled tool binds.
+        val heldDisabled = resolvedMcp.filterValues { it.status == 0 }
+        val mcpById = resolvedMcp - heldStdio.keys - heldDisabled.keys
         val missingMcpIds = mcpIdsToDeliver - mcpById.keys
         if (missingMcpIds.isNotEmpty()) {
             log.warn(
                 "MCP servers not resolved (deleted, or outside agent tenant {}), skipped from spec: mcpIds={}",
                 agentTenantId,
-                missingMcpIds - heldStdio.keys,
+                missingMcpIds - heldStdio.keys - heldDisabled.keys,
             )
         }
         if (heldStdio.isNotEmpty()) {
@@ -629,6 +635,9 @@ class InternalApiController(
                 "MCP server(s) {} are stdio and stdio is disabled on this deployment, so they were skipped from the spec",
                 heldStdio.values.map { "${it.id}(${it.name})" },
             )
+        }
+        if (heldDisabled.isNotEmpty()) {
+            log.info("MCP server(s) {} are disabled, skipping", heldDisabled.values.map { "${it.name} (id=${it.id})" })
         }
         // Derived from what was actually resolved, like skillList above: a binding whose server row is
         // gone would otherwise still contribute its env bindings to the other half of the answer

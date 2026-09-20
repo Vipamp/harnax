@@ -9,8 +9,9 @@ import org.springframework.stereotype.Component
  * A stdio entry is not a connection, it is a process: agent-service starts it, and that container
  * runs as root with the host Docker socket mounted (`docker-new/docker-compose.yml`), so being able
  * to save such a row is being able to run commands there. Until the execution side is isolated,
- * stdio is off: creation and the switch into it are refused, and rows that already exist are not
- * delivered, so the runtime never spawns them.
+ * stdio is off: creation and the switch into it are refused, rows that already exist are not
+ * delivered, and admin's own "list tools" / connectivity probe refuses them too — that probe spawns
+ * the stored command in the admin container, so without it the switch would only mean "not delivered".
  *
  * `HARNAX_MCP_STDIO_ENABLED=true` turns it back on for deployments that have isolated the runtime.
  * The agent side carries the same switch (`harness.mcp-stdio-enabled`) as a second line of defence;
