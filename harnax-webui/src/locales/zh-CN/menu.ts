@@ -56,7 +56,6 @@ export default {
   'menu.context.skill': '技能管理',
   'menu.context.cli': 'CLI 工具',
   'menu.context.tool': '工具管理',
-  'menu.context.cliPlugin': 'CLI 插件',
   'menu.context.channel': 'Channel 管理',
   
   // 智能体

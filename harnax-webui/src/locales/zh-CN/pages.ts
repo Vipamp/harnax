@@ -703,21 +703,6 @@ export default {
   'pages.agent.tool.envVarValue': '值',
   'pages.agent.tool.customInput': '自定义',
   'pages.agent.tool.inputValue': '输入值',
-
-  // CLI 插件管理
-  'pages.cliPlugin.title': 'CLI 插件管理',
-  'pages.cliPlugin.systemPlugins': '系统集成',
-  'pages.cliPlugin.customPlugins': '自定义插件',
-  'pages.cliPlugin.comingSoon': '即将推出',
-  'pages.cliPlugin.searchPlaceholder': '搜索插件名称或描述',
-  'pages.cliPlugin.noPlugins': '暂无插件',
-  'pages.cliPlugin.name': '名称',
-  'pages.cliPlugin.description': '描述',
-  'pages.cliPlugin.version': '版本',
-  'pages.cliPlugin.healthCheck': '健康检查',
-  'pages.cliPlugin.status': '状态',
-  'pages.cliPlugin.enabled': '启用',
-  'pages.cliPlugin.disabled': '禁用',
   
   'pages.layouts.userLayout.title':
     'Ant Design 是西湖区最具影响力的 Web 设计规范',
@@ -1176,6 +1161,13 @@ export default {
   'pages.cli.create': '新建 CLI 工具',
   'pages.cli.edit': '编辑 CLI 工具',
   'pages.cli.form.subtitle': 'CLI 工具会安装进智能体沙箱镜像，关联技能在运行时自动加载',
+  // CLI 页 - 内置 CLI 分区
+  'pages.cli.systemTab': '系统集成',
+  'pages.cli.customTab': '自定义',
+  'pages.cli.healthCheck': '健康检查',
+  'pages.cli.builtinHint':
+    '内置 CLI 随平台镜像装进每个沙箱，智能体无需单独绑定；这里展示的是平台登记状态，只读。',
+  'pages.cli.noBuiltin': '暂无内置 CLI',
   'pages.cli.name': '名称',
   'pages.cli.nameRequired': '请输入 CLI 名称',
   'pages.cli.nameMax': '名称不能超过 128 个字符',

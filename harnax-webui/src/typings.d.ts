@@ -621,6 +621,26 @@ message?: string;
   };
 
   /**
+   * @zh-CN 内置 CLI（平台插件登记）对象
+   */
+  export type CliPluginItem = {
+    id: number;
+    name: string;
+    displayName?: string;
+    displayNameZh?: string;
+    description?: string;
+    version?: string;
+    type?: string;
+    binaryPath?: string;
+    initScript?: string;
+    skillDocPath?: string;
+    healthCheck?: string;
+    status?: number;
+    creator?: string;
+    createTime?: string;
+  };
+
+  /**
    * @zh-CN CLI 工具对象
    */
   export type CliItem = {

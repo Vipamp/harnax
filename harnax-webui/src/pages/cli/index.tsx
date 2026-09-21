@@ -6,6 +6,7 @@ import {
   Modal,
   Space,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -19,6 +20,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   SyncOutlined,
+  BuildOutlined,
 } from '@ant-design/icons';
 import SearchFilterBar, { SearchInput, ActionButton } from '@/components/SearchFilterBar';
 import {
@@ -30,6 +32,7 @@ import {
 } from '@/services/ant-design-pro/cli';
 import StatusSwitch from '@/components/StatusSwitch';
 import CliForm from './components/CliForm';
+import BuiltinCliTable from './components/BuiltinCliTable';
 import AgentRefreshModal from '@/pages/agent/components/AgentRefreshModal';
 
 const { Text } = Typography;
@@ -46,6 +49,7 @@ const CliManagement: React.FC = () => {
   const [pageNum, setPageNum] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(10);
   const [keyword, setKeyword] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<string>('builtin');
 
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const filtersRef = useRef({ keyword: '' });
@@ -313,19 +317,8 @@ const CliManagement: React.FC = () => {
     },
   ];
 
-  return (
-    <PageContainer
-      header={{
-        title: (
-          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
-            <CodeOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
-            {intl.formatMessage({ id: 'pages.cli.title', defaultMessage: 'CLI Tools' })}
-          </span>
-        ),
-      }}
-    >
-      {contextHolder}
-
+  const customPane = (
+    <Space direction="vertical" size={16} style={{ display: 'flex' }}>
       <SearchFilterBar
         onSearch={() => {}}
         onReset={handleReset}
@@ -380,6 +373,48 @@ const CliManagement: React.FC = () => {
             />
           ),
         }}
+      />
+    </Space>
+  );
+
+  return (
+    <PageContainer
+      header={{
+        title: (
+          <span style={{ fontSize: '20px', fontWeight: 600, color: 'var(--vip-text-primary)' }}>
+            <CodeOutlined style={{ marginRight: 10, color: 'var(--vip-primary)' }} />
+            {intl.formatMessage({ id: 'pages.cli.title', defaultMessage: 'CLI Tools' })}
+          </span>
+        ),
+      }}
+    >
+      {contextHolder}
+
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'builtin',
+            label: (
+              <span>
+                <BuildOutlined style={{ marginRight: 6 }} />
+                {intl.formatMessage({ id: 'pages.cli.systemTab', defaultMessage: 'System Integrated' })}
+              </span>
+            ),
+            children: <BuiltinCliTable />,
+          },
+          {
+            key: 'custom',
+            label: (
+              <span>
+                <CodeOutlined style={{ marginRight: 6 }} />
+                {intl.formatMessage({ id: 'pages.cli.customTab', defaultMessage: 'Custom' })}
+              </span>
+            ),
+            children: customPane,
+          },
+        ]}
       />
 
       <CliForm

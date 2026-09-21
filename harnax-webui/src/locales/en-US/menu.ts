@@ -56,7 +56,6 @@ export default {
   'menu.context.skill': 'Skill Management',
   'menu.context.cli': 'CLI Tools',
   'menu.context.tool': 'Tool Management',
-  'menu.context.cliPlugin': 'CLI Plugins',
   'menu.context.channel': 'Channel Management',
   
   // Agent
