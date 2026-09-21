@@ -532,7 +532,7 @@ const Login: React.FC = () => {
         {/* 顶部 Logo 区域 */}
         <div className={styles.logoArea}>
           <div className={styles.logoIcon}>🦆</div>
-          <h1 className={styles.logoTitle}>OpenDuck</h1>
+          <h1 className={styles.logoTitle}>Harnax</h1>
           <p className={styles.logoSubtitle}>Open Source AI Agent · 开源智能体平台</p>
         </div>
 
@@ -580,7 +580,7 @@ const Login: React.FC = () => {
             让 AI 自由协作，构建轻量化智能体生态
           </h2>
           <p className={styles.description}>
-            OpenDuck 是一款开源可定制 AI 智能体，支持自主决策、多任务执行、插件扩展
+            Harnax 是一款开源可定制 AI 智能体，支持自主决策、多任务执行、插件扩展
           </p>
           <div className={styles.openSourceBadge}>
             <span>🔓</span>
@@ -603,7 +603,7 @@ const Login: React.FC = () => {
         }}>
           {/* 登录头部 */}
           <div className={styles.loginHeader}>
-            <h1 className={styles.loginTitle}>欢迎登录 OpenDuck</h1>
+            <h1 className={styles.loginTitle}>欢迎登录 Harnax</h1>
             <p className={styles.loginSubtitle}>登录你的智能体控制台，开始 AI 创作</p>
           </div>
 
