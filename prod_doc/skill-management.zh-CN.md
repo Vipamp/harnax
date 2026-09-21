@@ -372,7 +372,7 @@ agentscope 消费端（HarnessAgent 内部）
 这三项来自同一次 CLI 功能梳理，本轮**未动代码**，记在这里以免随对话失效：
 
 - **`agent_cli_plugin_binding` 是死表**：Kotlin 里只有实体与 mapper 自身（`AgentCliPluginBinding.kt`、`AgentCliPluginBindingMapper.xml`），没有任何服务或接口读取它；
-- **`cli_plugin` 页面的启停不驱动运行时**：真正的开关是环境变量——`HarnessAgentLauncher` 只看 `harness.sandbox.cliPluginsEnabled`（即 `SANDBOX_CLI_PLUGINS_ENABLED`）决定是否挂 `HarnaxCliPluginInitializer`，admin 侧 `CliPluginServiceImpl` 与 `CliPluginAutoRegistrar` 管的是登记数据。也就是说页面上关掉一个插件，沙箱里它照装；
+- **`cli_plugin.status` 无运行侧读者**：真正的开关是环境变量——`HarnessAgentLauncher` 只看 `harness.sandbox.cliPluginsEnabled`（即 `SANDBOX_CLI_PLUGINS_ENABLED`，agent-service 默认 false、docker-new 显式置 true）决定是否挂 `HarnaxCliPluginInitializer`，admin 侧 `CliPluginServiceImpl` 与 `CliPluginAutoRegistrar` 管的是登记数据。也就是说把登记行 status 改成 0，沙箱里它照装。2026-09-21 起 CLI 页把内置 CLI 收成「系统集成」只读 Tab，原 `cli-plugin` 独立页连同它的启停开关一起删掉（`PUT /api/admin/cli-plugins/toggle/{id}` 仓库内已无人调用），这条缺口的表现从「页面误导」降级为「status 字段无读者」；要做成真开关，得由 admin 出一份按插件粒度的下发口径、harness 侧逐个门控；
 - **`AgentServiceImpl.saveCliBindings` 可写入重复行**：校验用 `distinct()` 后的 ID 集合，写库却遍历原始 `cliList`，所以前端重复提交同一个 CLI 会插进两条 `agent_cli_binding`。下发侧 `selectByAgentId` 不去重，`cliDetails` 于是出现重复条目（技能 ID 并集不受影响，镜像指纹会因脚本重复拼入而变化）。
 
 #### TODO-10（高，已复现）：技能附带的文件永远进不了沙箱
