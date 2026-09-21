@@ -621,6 +621,40 @@ class DefaultAgentRunnerTest {
         }
 
         @Test
+        fun `executeCommand ENABLE search fails on a team session when the lead model lacks internet`() {
+            // 团队主管没有 agent 行：能力校验只能读 /team-spec 的 lead，读 /agent-spec 会被 admin 拒掉
+            val lead = com.agnetix.harnax.entity.dto.AgentSpecInfoResponse(
+                agentId = 0L,
+                agentName = "Research",
+                description = "",
+                systemPrompt = "coordinate",
+                modelId = 100L,
+                modelSupportInternet = 0,
+            )
+            `when`(agentSpecResolver.isTeamSession("session-1")).thenReturn(true)
+            `when`(adminApiClient.getTeamSpec("session-1")).thenReturn(
+                com.agnetix.harnax.entity.dto.TeamSpecInfoResponse(
+                    teamId = 7L,
+                    tenantId = 1L,
+                    teamName = "Research",
+                    lead = lead,
+                ),
+            )
+
+            val request = CommandAgentRequest(
+                sessionId = "session-1",
+                command = CommandType.ENABLE,
+                args = "search",
+            )
+
+            val response = runner.executeCommand(request)
+
+            assertFalse(response.success)
+            assertTrue(response.message?.contains("does not support") == true)
+            verify(adminApiClient, never()).toggleCapability("session-1", "search", true)
+        }
+
+        @Test
         fun `executeCommand ENABLE thinking proceeds when model validation fails with exception`() {
             // Fail-open: admin API throws during model validation, toggle should still proceed
             `when`(adminApiClient.getAgentSpec("session-1")).thenThrow(RuntimeException("Connection timeout"))
@@ -946,20 +980,19 @@ class DefaultAgentRunnerTest {
         private val orchestrator = mock(TeamOrchestrator::class.java)
 
         /**
-         * Puts a team session in front of the runner: admin stamps `teamId` on the agent spec of a team
-         * session, and the lead wrapper carries the orchestrator that build produced.
+         * Puts a team session in front of the runner: admin reports the session as a team before any spec
+         * is resolved (its `/agent-spec` refuses team sessions), and the lead wrapper carries the
+         * orchestrator that build produced.
          */
         private fun stubTeamSession(sessionId: String) {
             val specInfo = AgentSpecInfoResponse(
-                agentId = 1L,
-                agentName = "Lead",
-                description = "the lead",
+                agentId = 0L,
+                agentName = "Research",
+                description = "the team",
                 systemPrompt = "coordinate",
                 modelId = 100L,
-                teamId = 7L,
             )
-            stubAgentSpec()
-            `when`(specContextHolder.get()).thenReturn(specInfo)
+            `when`(agentSpecResolver.isTeamSession(sessionId)).thenReturn(true)
             `when`(
                 agentSpecResolver.resolveTeam(sessionId),
             ).thenReturn(
@@ -967,9 +1000,8 @@ class DefaultAgentRunnerTest {
                     teamId = 7L,
                     tenantId = 1L,
                     teamName = "Research",
-                    instructions = "",
                     rootSessionId = sessionId,
-                    leadAgentSpec = AgentSpec.builder().id(1L).name("Lead").chatModelId(100L).build(),
+                    leadAgentSpec = AgentSpec.builder().id(0L).name("Research").chatModelId(100L).build(),
                     leadChatSpec = ChatSpecBuilder().build(),
                     leadSpecInfo = specInfo,
                     members = emptyList(),
@@ -997,6 +1029,8 @@ class DefaultAgentRunnerTest {
 
             verify(launcher).createTeamLead(any(), any(), any(), any(), any())
             verify(launcher, never()).createSingleAgent(any(), any(), any<Boolean>(), any(), any())
+            // Admin refuses the agent-spec call for a team session, so making it would fail the chat.
+            verify(agentSpecResolver, never()).resolve(any())
         }
 
         @Test

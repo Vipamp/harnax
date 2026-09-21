@@ -108,6 +108,8 @@ Skill（技能）是按 `SKILL.md` 规范组织的能力包：一份 Markdown �
 
 即旧版同步是「fetch 预览 → 人工勾选 → batch 落库」的两步式。
 
+手动建/改技能（`create` 与 `/update/{id}`）过 `SkillSourcePolicy` 的内容闸门：`skillmd` 与 `description` 必须非空、`resources` 非空时必须是一个「文件名 → 内容」的 JSON 对象，三项校验都排在任何写库之前。原因在消费端——agentscope 的 `AgentSkill` 对空名字、空描述、空正文直接抛异常，一条缺内容的行能建、能下发、能在列表里看见，只有等到装配那一刻才变成「Skill not found」。`update` 刻意只校验调用方本次提交的字段（`SkillUpdateRequest` 的可空字段为 null 表示不改），否则一条早就坏了的行连「停用」这个动作都会被内容校验挡住。
+
 ### 4.2 新版：SkillSource（创建即安装，全量）
 
 `SkillSourceController`（`/api/admin/skill-sources`）+ `SkillSourceServiceImpl`：
@@ -156,21 +158,24 @@ AgentSpecResolver.resolve(sessionId)
     │     与 spec 技能同名的内置技能让位（同名两份会让 harness 两层的判断相反，见 R5-3）
     │     → effectiveSpecInfo（copy(skillDetails = merged)）
     ├─ specContextHolder.set(effectiveSpecInfo)        ← 供 SkillAdaptor 读取
-    └─ builder.addSkill(SkillSpec(skillId, skillName))  // skipIfMissing 默认 true
+    └─ builder.addSkill(SkillSpec(skillId, skillName))
         ▼
 HarnessAgentLauncher.createAgentBase()  遍历 agentSpec.skills：
+    ├─ 团队主管（lead）整段跳过并 log.info 点名：它没有沙箱，技能无处可执行（见 R9-7）
     ├─ skillAdaptor.getSkill(skillId)
-    │     优先：context 中的 skillDetails（DTO → AgentSkill，含 resources 反序列化为 Map）
-    │     回退：SkillMapper.selectById 直查数据库（该语句只过滤 active，停用标记在这里认，见 R5-2）
-    ├─ 命中 → agentBuilder.addSkill(AgentSkill)
-    └─ 缺失 → skipIfMissing=false 抛 AGENT_SKILL_NOT_FOUND；true（默认）仅告警跳过
+    │     唯一来源：context 中的 skillDetails（DTO → AgentSkill，含 resources 反序列化为 Map）
+    │     未命中 → warn「不在下发的 spec 里」；已下发但建不出来 → error 点名技能与原因（见 R9-3）
+    └─ 命中 → agentBuilder.addSkill(AgentSkill)；缺失 → 一律告警跳过，不再抛错（见 R9-6）
         ▼
 HarnessAgentBuilder.build()
-    └─ skills 包装为私有 InMemorySkillRepository（只读：save/delete 返回 false，isWriteable=false）
-       → HarnessAgent.Builder.skillRepository(...)
+    ├─ skills 按 name 去重后（同名留最后一个）包装为私有 InMemorySkillRepository
+    │     （只读：save/delete 返回 false，isWriteable=false）
+    │     → HarnessAgent.Builder.skillRepository(...)
+    └─ builder.disableDefaultWorkspaceSkills()：关掉 harness 默认的 workspace 技能仓库，
+       admin 成为唯一技能来源（见 R9-1）
         ▼
 agentscope 消费端（HarnessAgent 内部）
-    ├─ HarnessSkillMiddleware 编排多个 skill repository（可叠加 workspace 技能）
+    ├─ HarnessSkillMiddleware 编排多个 skill repository（低优先级先合并、高优先级按 name 覆盖）
     ├─ SkillBox.getSkillPrompt()：系统提示词只注入「技能目录」
     │     （name + description + skill-id），渐进式披露，不注入 SKILL.md 全文
     ├─ SkillToolFactory：注册 load_skill_through_path 工具，
@@ -188,7 +193,7 @@ agentscope 消费端（HarnessAgent 内部）
 | 智能体直绑 | `agent_skill_binding` | 禁止内置仓库技能 | Admin 下发 `skillDetails` |
 | CLI 关联 | `cli_skill_binding` | 仅内置仓库技能 | agent-service `AgentSpecResolver` 按 `cliDetails[].skillIds` 过滤当次 `/builtin-skills` 的返回结果注入 |
 
-两条路径最终都汇入 `skillDetails` → `SkillSpec` → `AgentSkill`。闸门各守一段：被停用的 CLI 由 admin 整条跳过（连 `skillIds` 一起消失），被停用的技能由 `/builtin-skills` 过滤，两条路径共用同一份 `status` 语义（这一致性由 R5-1 提出、R7-1 收拢）。同名归属仍由两处一致的规则裁决：注入处让位给运维显式绑定的那一份（见 R5-3），绑定写入处直接拒绝同名。
+两条路径最终都汇入 `skillDetails` → `SkillSpec` → `AgentSkill`。闸门各守一段：被停用的 CLI 由 admin 整条跳过（连 `skillIds` 一起消失），被停用的技能由 `/builtin-skills` 过滤，两条路径共用同一份 `status` 语义（这一致性由 R5-1 提出、R7-1 收拢）。同名归属由三处一致的规则裁决：注入处让位给运维显式绑定的那一份（见 R5-3），绑定写入处直接拒绝同名，装载处（`HarnessAgentBuilder.addSkill`）按 name 去重、保留最后一个，与 harness 的合并顺序和绑定表的 `ORDER BY id` 同向（见 R9-2）。团队主管两条路径都不走：它只编排、不执行，收到技能会 log.info 点名后丢掉（见 R9-7）。
 
 ## 9. 问题与修复记录
 
@@ -201,6 +206,10 @@ agentscope 消费端（HarnessAgent 内部）
 > 第五轮换了切法：不再按「写入路径」横切，而是把 skill 的**前后端管理路径**与**agent 加载路径**逐条纵向对齐——前端调用 ↔ Controller 映射、Mapper 方法 ↔ XML 语句 ↔ 实体字段 ↔ Flyway 列、下发 ↔ 解析 ↔ 装配。新发现 5 项（R5-1 至 R5-5）、结案 1 项待办（原 TODO-3，现 R5-6），9.4 节因此合计 26 项。
 >
 > 第六轮补上「技能来源为空」的归因与 ZIP 的目录发现（R6-1、R6-2）；第七轮只盯一个切口：内置技能的注入判定权该落在 admin 还是 agent-service（R7-1）。9.4 节因此合计 29 项。
+>
+> 第八轮顺着 CLI 查环境参数的下发口径（R8-1）。第九轮换了目标：不再新起一轮走读，而是把上一轮记在待办里的八条**静态推断**逐条复现——七条成立、当轮修掉（R9-1 至 R9-7），一条（`/refresh` 后技能文件路径）未能复现，仍留在 9.5 节。9.4 节因此合计 37 项。
+>
+> 第十轮只做一件事：把第九轮复现不出来的那条拿去真跑（docker-new，见 §9.6）。结论是它**成立，且比原假设更宽**——与 `/refresh` 无关，技能附带的资源文件**从来没有进过沙箱容器**，提示词里给出的却是容器内路径。已定位到唯一一处传参（`HarnessAgentWrapper.kt:999-1005`），修法要牵动 keep-alive 与快照的先后关系，本轮**未动代码**，仍记在 9.5 节，严重度由中改高。
 
 ### 9.1 P0：会造成数据错误或安全后果（已全部修复）
 
@@ -241,7 +250,7 @@ agentscope 消费端（HarnessAgent 内部）
 | 死代码与残留：`harnax-webui/src/services/ant-design-pro/skillRepository.ts` 无任何引用；`SkillMapper.xml` 的 `updateSkillFields` 无调用方；两个 Controller 注释仍写「Available only for public edition」 | 全部清理。`SkillRepositoryController` **未删**，harnax-cli 与两个集成测试仍在用 |
 | 前端重复 toast 与不可达分支：`errorThrower` 已对 `code !== 200` 抛 `BizError`、`errorHandler` 已全局弹 toast，组件自己的 `message.error` 与 `response.code === 200` 的 `else` 分支都是死代码 | webui 三个组件的重复提示与不可达分支删除；表单校验失败与请求失败分离（校验失败静默 return）；新增 `src/utils/skillInstall.ts` 作为提示级别的唯一裁决点。小程序侧另修掉一个真实功能性 bug：`fetchRemoteSkills` 原声明 `request<string[]>`，但后端返回对象数组，页面直接把对象 POST 给只收 `List<String>` 的 `/skills/batch`，同步功能实际不可用；现改为 `API.SkillSyncItem[]` 并在页面取 `name` 再提交 |
 
-### 9.4 第二至八轮复查：新发现并已修复（30 项）
+### 9.4 第二至九轮复查：新发现并已修复（37 项）
 
 #### 第二轮：写入路径与来源配置的边界
 
@@ -283,8 +292,8 @@ agentscope 消费端（HarnessAgent 内部）
 | 编号 | 问题 | 修复方式 |
 |------|------|---------|
 | R5-1 | **CLI 合并分支不看技能 `status`**：R3-6 给直绑技能补了停用闸门，同一个函数里的 CLI 合并却只按 skillId 去重，而同一次下发里 `/builtin-skills` 与直绑分支都已拦了停用技能 → 三条路径的闸门不一致。**不是当下可复现的数据损坏**：`CliServiceImpl.saveSkillBindings` 保证 CLI 只能引用内置仓库技能，`toggleSkillStatus` 又经 `requireWritableRepo` 拒绝内置仓库，所以现有的写入接口确实停不掉一个 CLI 关联的技能 | 仍补上 `status == 0` 的跳过分支（记 info 日志、与直绑分支同一写法），理由有三：V12 / V14 由 Flyway 直接写的 seed 不受服务层约束，一行 `status = 0` 就能把技能推进内置仓库；历史绑定可能因直接改库而变悬；只要某一条路径不拦，下一次放宽 CLI 约束时就会悄悄地打开缺口。同时推翻 R3-6 的「加了是死代码」判断：三条路径共用一份规则比三条路径各自推导能不能省下一行代码更值钱。**去向**：该合并分支已由 R7-1 从 admin 删除，内置技能的 `status` 闸门现在只剩 `/builtin-skills` 一处，且由 agent-service 每次 `resolve` 现取 |
-| R5-2 | **`SkillAdaptorImpl` 的 DB 回退不看 `status`**：`getSkill(skillId)` 在 spec 上下文未命中时回退 `SkillMapper.selectById`，而该语句只过滤 `active`（隔离契约见 R5-6）→ admin 三条下发路径都拦住的停用技能，只要 harness 拿着一个上下文里没有的 skillId 来取，就又被装进了 `InMemorySkillRepository` | 回退分支补 `status == 0` 判定并返回 null（走 `skipIfMissing` 默认的跳过语义）。单测同时覆盖「上下文为空回退」与「上下文非空但未命中再回退」两种进入方式，后者是常见情形（CLI 合并阶段刚丢掉的技能） |
-| R5-3 | **同名技能在 harness 里的归属是未定义的**：`skill.name` 的唯一约束只到仓库级（`uk_skill_repo_active_name (repository_id, active_name)`），内置仓库与租户自己的仓库放一个同名技能完全合法；而 agentscope 的 `SkillRegistry` 按 `AgentSkill.getSkillId()` 存放，该值等于 `getName() + "_" + source`，`source` 默认 `"custom"` 且 harnax 从不设置 → 同名两份的 key 完全相同、后注册者替换前者；harnax 自己的 `InMemorySkillRepository.getSkill(name)` 又用 `skills.first { it.name == name }` 取第一个，两层的判断正好相反 | 三层各自裁决，规则一致：**admin 合并处**（`InternalApiController`）agent 自己绑定的技能优先，CLI 带来的同名技能跳过并记日志；**resolver 注入处**（`AgentSpecResolver`）spec 已定义的名字优先、内置技能让位并记日志，且合并后的结果同时写 `specContextHolder` 与 `buildAgentSpec`，否则 adaptor 回退到 DB 会把刚让位的那个又捞回来；**绑定写入处**（`AgentServiceImpl.saveSkillBindings`）同名直接 `BizException` 拒绝并在消息里点名，因为运维在配置面板上看得见这两行、当场就能改 |
+| R5-2 | **`SkillAdaptorImpl` 的 DB 回退不看 `status`**：`getSkill(skillId)` 在 spec 上下文未命中时回退 `SkillMapper.selectById`，而该语句只过滤 `active`（隔离契约见 R5-6）→ admin 三条下发路径都拦住的停用技能，只要 harness 拿着一个上下文里没有的 skillId 来取，就又被装进了 `InMemorySkillRepository` | 回退分支补 `status == 0` 判定并返回 null（走 `skipIfMissing` 默认的跳过语义）。单测同时覆盖「上下文为空回退」与「上下文非空但未命中再回退」两种进入方式，后者是常见情形（CLI 合并阶段刚丢掉的技能）。**去向**：补判定只是将错就错——这条回退本身既不可达又越权，第九轮已连同 `SkillMapper` 依赖一并删除，见 R9-5 |
+| R5-3 | **同名技能在 harness 里的归属是未定义的**：`skill.name` 的唯一约束只到仓库级（`uk_skill_repo_active_name (repository_id, active_name)`），内置仓库与租户自己的仓库放一个同名技能完全合法；而 agentscope 的 `SkillRegistry` 按 `AgentSkill.getSkillId()` 存放，该值等于 `getName() + "_" + source`，`source` 默认 `"custom"` 且 harnax 从不设置 → 同名两份的 key 完全相同、后注册者替换前者；harnax 自己的 `InMemorySkillRepository.getSkill(name)` 又用 `skills.first { it.name == name }` 取第一个，两层的判断正好相反 | 三层各自裁决，规则一致：**admin 合并处**（`InternalApiController`）agent 自己绑定的技能优先，CLI 带来的同名技能跳过并记日志；**resolver 注入处**（`AgentSpecResolver`）spec 已定义的名字优先、内置技能让位并记日志，且合并后的结果同时写 `specContextHolder` 与 `buildAgentSpec`，否则 adaptor 回退到 DB 会把刚让位的那个又捞回来；**绑定写入处**（`AgentServiceImpl.saveSkillBindings`）同名直接 `BizException` 拒绝并在消息里点名，因为运维在配置面板上看得见这两行、当场就能改。**去向**：这三处只覆盖了「内置技能与 spec 技能同名」这一条路径——spec 自己带两份同名（跨仓库同名合法）仍然原样下发，两层判断照旧相反，第九轮把规则收口到所有构建路径必经的装载处，见 R9-2 |
 | R5-4 | **两个 update 端点接受 `status` 但从不读它**：`SkillUpdateRequest` 与 `SkillRepositoryUpdateRequest` 都声明了 `status`、Swagger 标注「0:disabled 1:enabled」，而 `SkillServiceImpl.updateSkill` 与 `SkillRepositoryServiceImpl.updateSkillRepository` 没有任何一处引用该字段，`updateById` 语句本来也不含 `status` 列（启停走专用的 `updateStatus`，为的是不让一次普通编辑把扫描器降级为待审核的技能又打开）→ 接口回 200，`harnax skill update <id> --status 0` 打印「Skill updated successfully」，库里纹丝不动 | 两处都对齐 `updateSkillSource` 已有的正确范式：请求带 `status` 且与当前值不同时走 `updateStatus` 专用语句，不带时绝不动它（保留扫描器降级的效果）。**webui 不受影响**（页面只调 `toggleSkillStatus`、不发 update），受害的是 `harnax skill update` / `harnax skill-repo update` 两个命令与直接调 API 的集成方 |
 | R5-5 | **三个 create 不校验 `status` 取值**：`createSkill` / `createSkillRepository` / `createSkillSource` 都写 `request.status ?: 1`，任何整数照收；`status` 是 TINYINT，存 7 不报错，但全链路都用 `status == 1` 判断（`/builtin-skills` 过滤、agent 直绑、CLI 合并、`SkillAdaptorImpl` 回退），于是造出一条既切不动也永不加载的记录。而三个 toggle 已经统一走 `SkillSourcePolicy.requireStatus` —— 同一个字段两套口径 | 三个 create 与两个 update（R5-4 新增的分支）全部补 `requireStatus`，且校验排在任何库访问与远端拉取之前：`createSkillSource` 尤其要紧，克隆是整个请求里最贵的一步，顺带也避免非法请求探测「仓库 / 名字是否存在」。`uploadAndInstall` 硬编码 `status = 1`、分页查询的 `status` 是读过滤，都无需改动 |
 | R5-6 | **TODO-3（Mapper 层按 ID 查询缺 `tenant_id`）结案：不下推 SQL**。原建议是给按 ID 的查询加可选 `tenantId` 参数并在 XML 里条件下推。逐个核对调用方后否决：内部调用（`InternalApiController` 下发、`SkillAdaptorImpl` 装配）本就没有租户上下文，跨租户可见的内置仓库技能也要靠这些裸查；更关键的是服务层的检查会**抛**「Skill belongs to another tenant」，而 SQL 过滤会把同一请求变成空结果、把答复降级成「not found」，抹掉「不是你的」与「不存在」的区别 | 改为把契约写清：`SkillMapper` 的类级 KDoc 说明隔离不在这一层、判定归 `requireReadable` / `requireSameTenant` 所有、新调用方必须经服务层或复用既有检查（否则重新打开跨租户读取全文）；`SkillRepositoryMapper` 同步 |
@@ -308,9 +317,23 @@ agentscope 消费端（HarnessAgent 内部）
 |------|------|---------|
 | R8-1 | **`cli.env_params` 里登记的环境参数从未到达沙箱，装了 CLI 的 agent 一敲命令就报未登录**：CLI 登记页采集的声明（含默认值，`secret=true` 的条目密文存列）由 `CliServiceImpl.createCli` 正常写库，但下发路径 `InternalApiController` 的 `cliDetails[].envBindings` 只读 `agent_cli_binding.env_bindings` 一份，而 agent 表单的 `cliList` 每项只发 `{id}`——两份写入都不产生值，下发于是恒为空数组。症状完全静默：install 脚本照跑、`check_command` 照过、定制镜像照建，模型按内置技能教出的用法去敲命令时才失败，且失败原因在沙箱里而非在链路上。docker-new 端到端实测确认为真（见 §9.6），非静态推断 | 新增 `mergeCliEnvBindings(storedJson, declaredEnvJson)` 取代单份读取：按 **key** 合并，agent 侧显式值优先、CLI 声明的默认值兜底（整份互斥的话，表单今后采集其中一个参数就会丢掉其余参数的默认值）。`secret` 条目经 `decryptToolEnvParamsToMap` 在本服务内解密后明文下发，口径与 `plainToolEnvJson` 一致——AES 密钥不出 admin。**声明了却没有值的参数整条跳过**：容器里 `GH_TOKEN=` 与「未设这个变量」对 CLI 是两种状态（`gh` 按变量存在与否判断是否已配置），下发空值等于把它配坏。`AgentSpecResolver` → `CliSpec.envBindings` → `HarnessAgentLauncher` 的 `cliEnv` 两段（`DockerFilesystemSpec.environment` 与保活容器的 `getOrCreate(env=)`）原样透传，无需改动。**agent 表单仍不采集 per-agent 值**，这是这条链未做完的一半，记在 TODO-8。**验证**：`InternalApiControllerTest$CliEnvDeliveryTests` 3 条用例先红（`expected: <{GH_TOKEN=ghp_plain, GH_HOST=github.com}> but was: <{}>`、`expected: <{GH_HOST=ghes.internal, GH_TOKEN=ghp_plain}> but was: <{GH_HOST=ghes.internal}>`），实现后该类 42 项全绿；docker-new 实跑（admin 重建镜像 + 真实沙箱容器）见 §9.6 |
 
+#### 第九轮：把记账的八条静态推断逐条复现（7 项）
+
+上一轮收尾时把技能装载域「看到但没修」的八条记进了待办清单，并标注「都还只是静态推断，动手前先复现」。本轮逐条复现：七条成立、当轮修掉；一条（R9 未列的第 8 条，当时写作「`/refresh` 后技能文件路径」）本轮复现不出来，原样留作 TODO-10——第十轮拿它去真跑才成立，且比原假设更宽，见 9.5 与 9.6。
+
+| 编号 | 问题 | 修复方式 |
+|------|------|---------|
+| R9-1 | **agent 自己写一份同名 `SKILL.md` 就能顶掉管理端配置的技能**：`HarnessAgentBuilder.build()` 把 admin 下发的技能作为 Layer 2 交给他，而 agentscope 2.0.2 的 `HarnessAgentBuilderSupport.composeSkillRepositories` 定的优先级是「项目全局目录 → 用户仓库 → workspace `skills/` 目录 → `WorkspaceSkillRepository`（经 `AbstractFilesystem` 读写，即沙箱内那份）」，`HarnessSkillMiddleware.mergeRepositories` 由低到高 `merged.put(skill.getName(), …)`——**同名时高优先级层覆盖**，`disableDefaultWorkspaceSkills()` 在 harnax 从未调用。Layer 3 读的是宿主机 `workspace/skills`，不在 agent 的写入路径上；Layer 4 正是它能写进去的那一份，而 harnax 既不预置技能目录也不调 `enableSkillManageTool`，这层纯属攻击面 | `build()` 里调用 `builder.disableDefaultWorkspaceSkills()`——放在一处而不是各个调用方，任何新构建路径都漏不掉。测试 `HarnessAgentBuilderSkillTest` 先红，RED 输出直接把 compose 后的仓库列表打印出来：`{type='filesystem', location='skills'}` 排在 `{type='in-memory'}` 之后（即优先级更高），修复后该仓库不再出现在列表里 |
+| R9-2 | **spec 自带的两个同名技能谁生效仍不一致**：R5-3 的同名守卫只做在内置技能注入那一步（`AgentSpecResolver.withBuiltinSkills`），而 `skill.name` 的唯一约束只到仓库级，跨仓库同名合法，所以 agent 直绑两个同名技能会原样下发两份 `SkillSpec`。结果正是 R5-3 注释声称防住的那个分裂：harness 按 name 合并留最后一个（绑定表 `ORDER BY id`），`InMemorySkillRepository.getSkill(name)` 取第一个——提示词列的是一个、按需加载取到的是另一个 | 在装载处收口：`HarnessAgentBuilder.addSkill` 按 name 去重、**保留最后一个**并 `log.warn` 点名。选这里而不是再给 resolver 加一道守卫，理由是这里是所有构建路径唯一必经的点（普通 agent、团队成员、主管，以及将来新增的入口），且「最后一个」与 harness 的合并顺序和 `ORDER BY id` 同向，两层从此没有分歧的空间。同一测试类钉住：两份同名时最终仓库里只剩一个 `report`，且 `getSkill("report")` 返回后写入的那份 |
+| R9-3 | **一条内容损坏的技能表现为「找不到」**：`AgentSkill` 对空名字、空描述、空正文直接抛 `IllegalArgumentException`，`SkillAdaptorImpl` 把它吞成 null，调用侧日志写「Skill with id X not found」→ 运维去查谁删了技能，实际是一行内容坏了的技能；而这种行从 admin 手工建/改技能那条路能建出来（`SkillInstaller` 只拦 Loader 那条路的空正文，`createSkill` / `updateSkill` 两项都不校验） | 两端各修：写入口加闸门 `SkillSourcePolicy.requireContentOnCreate` / `requireContentOnUpdate`（正文与描述非空），排在任何写库之前；读侧把两种失败分开记账——「不在下发列表」是 warn，「下发了但建不出来」是 error 并带上技能名、ID 与原始异常消息 |
+| R9-4 | **`resources` 坏了就静默变成零文件**：这一列落库前毫无校验，而 `SkillAdaptorImpl.parseResources` 解析失败只 `log.warn("Failed to parse resources JSON")`（连是哪个技能都不说），技能照常装载 → 模型按说明书去跑 `resources/x.sh`，报文件不存在，日志里对不上号 | `SkillSourcePolicy.requireValidResources`：非空时必须能读成 `Map<String, String>`，否则拒绝写入，消息直接写明要求的是「文件名 → 内容」的 JSON 对象；空串仍算合法（无附属资源是常态）。运行侧的 warn 补上技能名与 ID，为的是存量坏行也能定位 |
+| R9-5 | **`SkillAdaptorImpl` 的 DB 回退既不可达又越权**：每条构建路径都在同一请求线程上先 `specContextHolder.set(...)`（`AgentSpecResolver.resolve`、`DefaultAgentRunner` 的成员与主管构建三处），回退分支在生产里根本没有触发路径；而它一旦可达就是跨租户读取——`SkillMapper.selectById` 只过滤 `active`、不带租户，返回的恰是 admin 已经 withhold 的那份内容（他人 `skillmd` 全文）。R5-2 当时给它补了 `status` 判定，方向对但没认出这一层 | 删除回退分支与 `SkillMapper` 依赖，adaptor 只读下发上下文，与 `McpConfigAdaptorImpl` 同形；未命中记 warn 而非 debug（配置在两个服务之间不一致，否则症状是「能力静默消失」）。RED 证据就是一条真实的越权读：stub 一个上下文里没有的 ID，`expected: <null> but was: <AgentSkill{name='test-skill'…}>` |
+| R9-6 | **`AGENT_SKILL_NOT_FOUND` 是死代码**：`SkillSpec.skipIfMissing` 从 `AgentSpecResolver` 出来恒为 true，所以 `HarnessAgentLauncher` 里抛 `6003` 的那一段永远走不到 | 删字段、删抛错分支、删错误码，缺失一律「告警 + 跳过」。与工具、MCP 两侧同一结论（V17 删 `ToolSpec.skipIfMissing`、V20 删 `McpSpec.skipIfMissing` 与 `AGENT_MCP_NOT_FOUND`）：一个用不上的技能不该废掉整个 agent，而「缺失即失败」这个选项从来没人能打开 |
+| R9-7 | **团队主管的技能被无声丢掉**：主管没有沙箱也没有业务工作区，技能无处执行，装配处一句 `if (isLead) emptyList()` 既不注释也不记日志；而 `resolveTeam` 照旧对主管跑内置技能注入并打「Injected N built-in skills」，admin 下发时又不认识角色，所以直绑的技能也照样进 `skillDetails` → 日志说装了，运行期一条都没有 | 两处对齐：`resolveTeam` 不再对主管做内置技能注入（注入只是让那行日志说谎）；装配处改为显式 `log.info` 点名「Agent 'x' is a team lead, its N skill(s) [...] are not loaded」，把这条边界从静默变成可观测。**未改**的部分：admin 仍按角色无关的口径下发，因为「主管不执行」是运行时的装配决定，改到下发侧会让 admin 认识团队角色，正是这个域一直要避免的耦合 |
+
 ### 9.5 仍待办
 
-> 以下 5 项不属于上述 30 项：TODO-1 与 TODO-5 是本文早先版本就记下的遗留项，TODO-6 由第六轮记录、TODO-7 由第七轮记录、TODO-8 由第八轮记录。原 TODO-2（Loader 层静默丢技能）已在第四轮修复，见 R4-1；原 TODO-4（`getSkillRepository(id)` 无租户校验）已在第三轮修复，见 R3-5；原 TODO-3（Mapper 层缺 `tenant_id`）已在第五轮结案，见 R5-6。编号保留原样，便于与历史讨论对照。
+> 以下 7 项不属于上述 37 项：TODO-1 与 TODO-5 是本文早先版本就记下的遗留项，TODO-6 由第六轮记录、TODO-7 由第七轮记录、TODO-8 由第八轮记录、TODO-9 由 CLI 功能梳理记录、TODO-10 由第九轮记录并在第十轮实跑复现（那一轮八条里唯一没能在单测里造出红灯的，最终靠运行期证据成立）。原 TODO-2（Loader 层静默丢技能）已在第四轮修复，见 R4-1；原 TODO-4（`getSkillRepository(id)` 无租户校验）已在第三轮修复，见 R3-5；原 TODO-3（Mapper 层缺 `tenant_id`）已在第五轮结案，见 R5-6。编号保留原样，便于与历史讨论对照。
 
 #### TODO-1（低）：预留字段未落地
 
@@ -351,6 +374,15 @@ agentscope 消费端（HarnessAgent 内部）
 - **`agent_cli_plugin_binding` 是死表**：Kotlin 里只有实体与 mapper 自身（`AgentCliPluginBinding.kt`、`AgentCliPluginBindingMapper.xml`），没有任何服务或接口读取它；
 - **`cli_plugin` 页面的启停不驱动运行时**：真正的开关是环境变量——`HarnessAgentLauncher` 只看 `harness.sandbox.cliPluginsEnabled`（即 `SANDBOX_CLI_PLUGINS_ENABLED`）决定是否挂 `HarnaxCliPluginInitializer`，admin 侧 `CliPluginServiceImpl` 与 `CliPluginAutoRegistrar` 管的是登记数据。也就是说页面上关掉一个插件，沙箱里它照装；
 - **`AgentServiceImpl.saveCliBindings` 可写入重复行**：校验用 `distinct()` 后的 ID 集合，写库却遍历原始 `cliList`，所以前端重复提交同一个 CLI 会插进两条 `agent_cli_binding`。下发侧 `selectByAgentId` 不去重，`cliDetails` 于是出现重复条目（技能 ID 并集不受影响，镜像指纹会因脚本重复拼入而变化）。
+
+#### TODO-10（高，已复现）：技能附带的文件永远进不了沙箱
+
+- **现象**：提示词里给的是容器内绝对路径 `/workspace/.skills-cache/<来源命名空间>/<技能名>`，模型照它去 `read_file` 或 `execute` 必然「文件不存在」；而这份文件确实在**宿主**上，只是从没被送进容器。**与 `/refresh` 无关**——第九轮的假设只对了后半句（容器里没有那份文件），前半句（refresh 才导致）不成立：全新容器同样没有。
+- **复现观察**（docker-new，2026-09-20，见 §9.6）：宿主 `<workspace>/.skills-cache/in-memory/idea-refine/` 里 `examples.md`、`frameworks.md`、`refinement-criteria.md`、`scripts/` 齐全；`docker exec ... ls -a /workspace` 只有运行期自建的 `agents/`、`output/`，**没有 `.skills-cache`**；`docker inspect` 的 `Mounts` 为空。把该容器 `docker rm -f` 后重新 chat，keep-alive 现建的新容器结果相同。
+- **为什么提示词会指向一个容器内路径**：`HarnessAgent` 在 `filesystem` 是 `SandboxBackedFilesystem` 时选 `ShellPathPolicy.sandbox(wsPrefix)`（`HarnessAgent.java:2560-2569`），`joinCache` 于是把 `<files-root>` 拼成 `<沙箱工作区根>/.skills-cache/<ns>/<skill>`（`ShellPathPolicy.java:127-148`）；`SkillPromptBuilder` 把它写进 `<available_skills>`，`SkillLoadTool` 也在响应里回一行 `Files root: ...`（`:239`、`:264`）。harnax 的普通 agent 与团队成员都不设 `disableShellTool()`（只有主管设，`HarnessAgentLauncher.kt:574-580`），所以这条路径**照常被写进提示词**。
+- **断点在哪**：`HarnessAgentWrapper.buildRuntimeContext()` 调 `keepAliveSandboxManager.getOrCreate(sessionId, **WorkspaceSpec()**, ...)` 传的是空 spec（`HarnessAgentWrapper.kt:999-1005`），随后又用 `SandboxContext.builder().externalSandbox(sandbox)` 顶掉框架自己那份带投影的 context。agentscope 里唯一会写入 `__workspace_projection__` 条目的 `SandboxFilesystemSpec.buildWorkspaceSpecWithProjection(hostWorkspaceRoot)` 是 **private**，只能经 `toSandboxContext(resolvedWorkspace)` 间接得到。于是 `AbstractBaseSandbox.start()` 末尾的 `applyWorkspaceProjectionIfChanged(spec)` 在 `WorkspaceProjectionApplier.build(spec)` 处命中 `spec.getEntries().isEmpty() → return null`（`:51-53`），**一个 tar 都不会解进容器**。keep-alive 五处 `sandbox.start()`（`KeepAliveSandboxManager.kt:140/260/312/432/579`）用的 state，其 workspaceSpec 全是裸 `WorkspaceSpec()`（`:133/252/427/572`）。
+- **影响边界**：只坏「把技能资源当文件路径用」这一条。`load_skill_through_path` 读的是内存资源表（`SkillLoadTool.java:203` 起，先查 `AgentSkill.getResources()`），所以技能正文与资源的**文本内容仍然拿得到**——这正是它长期没被判为故障的原因：对话看起来正常，只有技能说明书让模型跑脚本时才露。凡技能写了「运行 `resources/x.py`」「参考 `references/y.md`」的，模型看到的都是空目录。
+- **修法与代价（本轮未做）**：正解是让 `getOrCreate` 拿到带投影的 spec，即 `sandboxFilesystemSpec.toSandboxContext(hostWorkspaceRoot).getWorkspaceSpec()`。三处代价必须先决定：① 投影发生在**快照恢复之后**（`AbstractBaseSandbox.start():116`），宿主版本会覆盖容器里的同名文件，用户在沙箱内改过的东西会被悄悄冲掉；② tar 只覆盖同名、**不删多余**，而宿主的 `.skills-cache` 每次调用都由 `MarketplaceStager` 重建白名单并做孤儿 GC——keep-alive 容器会一直留着已删技能的文件；③ `toSandboxContext` 会顺带造一个新的 `SandboxClient` 并塞进它自己的 clientOptions / snapshotSpec / isolationScope，harnax 只想要那个 spec，误采其余字段就等于绕过了保活的镜像覆盖与 env 注入。外加一次跨主容器的 tar 传输。真要动手，第一步是回答「容器里的技能文件以谁为准」。
 
 ### 9.6 验证记录
 
@@ -488,6 +520,37 @@ agentscope 消费端（HarnessAgent 内部）
 
 验收后环境已还原：探针 CLI 与其绑定行、探针会话及其在 `agentscope.agent_state` / `plan_note` / `token_stats` / `tool_call_log` / `api_call_log` 的记录、沙箱容器与 `harnax-sandbox:cli-*` 镜像全部删除，`skill` 表 id=1 恢复 `status=1`。注意栈上此刻跑的是**未提交工作区**构建的镜像。
 
+#### 第九轮（R9-1 至 R9-7）修复后的验证
+
+| 范围 | 结果 |
+|------|------|
+| 根 `spotless:apply` + `test-compile` | 通过 |
+| `harnax-harness-core` 全量 | 248 项全绿（含本轮新增的 `HarnessAgentBuilderSkillTest` 2 项） |
+| `harnax-agent-service` 全量 | 162 项全绿（`SkillAdaptorImplTest` 随 R9-5 重写为 9 项） |
+| `harnax-admin` 全量 | 1885 项全绿（含新增的 `SkillServiceImplTest$LoadableContentTests` 6 项） |
+
+新增与改动的测试，以及它们先红时的证据：
+
+- `HarnessAgentBuilderSkillTest`（新增，真起一个 `HarnessAgent`，`ChatModelBase` 用 mock、workspace 用 `@TempDir`）：一条断言最终仓库列表里没有 `WorkspaceSkillRepository`，另一条断言两份同名技能最终只剩一个且 `getSkill(name)` 返回后写入的那份。第一条的 RED 输出直接把 agentscope compose 后的仓库列表打印出来，`{type='filesystem', location='skills'}` 明确排在 `{type='in-memory'}` 之后——R9-1 由此从静态推断升级为可复现的事实，R9-2 的同一条测试同时钉住「留最后一个」这个方向；
+- `SkillServiceImplTest$LoadableContentTests`（新增 6 项）：空正文、缺正文、空描述、`resources` 不是 JSON 对象四种 create 拒绝，加 update 把内容清空、update 带坏 `resources` 两种拒绝，每条都断言 `insert` / `updateById` **一次都没被调用**——即校验确实排在写库之前。顺带改了一条既有测试：`createSkill should use default values for optional fields` 原先断言空 `skillmd` 与空 `description` 能存进去，编码的正是本轮要修的缺陷；另有五处 create 夹具补上正文与描述；
+- `SkillAdaptorImplTest`（重写）：删掉全部 DB 回退用例（那两条「回退时认停用标记」的测试连同被测代码一起没了），新增按 ID 命中、`resources` 解析、空 `resources`、坏 `resources` 仍装载且零文件、下发了但建不出来返回 null、ID 不在下发列表返回 null、上下文为 null 返回 null、非法 ID 完全不碰上下文。R9-5 的红灯是一条真实的跨租户读取：`expected: <null> but was: <AgentSkill{name='test-skill'…}>`。
+
+本轮**未做**的验证：没有再跑 docker-new 端到端。七条改动全部落在装配（`HarnessAgentBuilder` / `HarnessAgentLauncher` / `SkillAdaptorImpl`）与 admin 写入校验两处，且最关键的两条（谁的技能生效）已由真起 `HarnessAgent` 的测试直接观测，不依赖部署形态；TODO-10 需要的那次实跑本轮也未做，这正是它在这一轮收尾时仍留在待办的原因。
+
+#### 第十轮：TODO-10 的实跑复现（2026-09-20）
+
+探针夹具：一个专用 agent（`toolList` 为空、只绑 `idea-refine`——库里唯一 `resources` 非空的技能）、一个新 web 会话、一轮 chat。全部数据只落在探针自己的行与容器上，未改任何存量配置。
+
+三条观测证据：
+
+1. **宿主侧已落盘**：`<workspace>/.skills-cache/in-memory/idea-refine/` 下 `examples.md`、`frameworks.md`、`refinement-criteria.md`、`scripts/` 齐全 → `MarketplaceStager.stage` 走的是 `StageResult.Cached`，命名空间为 `in-memory`。这里的「宿主」指 **agent-service 进程自己的文件系统**，docker-new 下即 `harnax-agent-service` 容器里的 `/tmp/harnax-agent/<agent 名>/`，不在物理机上；
+2. **容器侧不存在**：`docker exec agentscope-sandbox-<sid> ls -a /workspace` 只有 `agents/probe-skill-refresh/tasks` 与 `output`；`docker inspect -f '{{json .Mounts}}'` 为 `[]`，即没有任何 bind mount 兜住这条路；
+3. **不是复用旧容器的锅**：`docker rm -f` 掉那个容器，再 chat 一轮（3 秒返回），keep-alive 现建的新容器同样没有 `.skills-cache`——所以「投影只在首次 start 发生」「`/refresh` 沿用了老容器」两个假设都不成立，缺的是投影本身。
+
+源码侧对照用的是 `agentscope-java 2.0.2` 的 sources jar（解到 `/tmp/asrc` 逐行读），三处构成完整因果链：`HarnessAgent.java:2560-2569` 选中 sandbox 模式 → `ShellPathPolicy.java:127-148` 把 `<files-root>` 拼成容器内路径 → `WorkspaceProjectionApplier.java:51-53` 在 entries 为空时返回 null 使 `applyWorkspaceProjectionIfChanged` 整体空转。harnax 侧的断点因此唯一落在 `HarnessAgentWrapper.kt:999-1005`。
+
+顺带确认可观测性：这一条无法用单测造红灯，因为它的成立跨越两个进程（agent-service 的宿主工作区 与 Docker 容器内部），断言只能落在容器里。探针 agent、会话及其 trace 行、沙箱容器与宿主工作区已在复现完成后全部删除。本轮**未动代码**——修法牵动 keep-alive 与快照恢复的先后（见 TODO-10），需要一个单独的产品决定。
+
 ## 10. 关键文件索引
 
 | 环节 | 文件 |
@@ -499,7 +562,7 @@ agentscope 消费端（HarnessAgent 内部）
 | Loader | `harnax-admin/.../skill/loader/`：`SkillLoader.kt`、`SkillLoadResult.kt`、`SkillLoaderRegistry.kt`、`SkillFileParser.kt`、`GitSkillLoader.kt`、`NpmSkillLoader.kt`、`ZipSkillLoader.kt` |
 | 安装与内容安全 | `harnax-admin/.../skill/SkillInstaller.kt`（短事务落库 + 失败清单）、`SkillContentScanner.kt`（高危命令扫描） |
 | 安装结果 DTO | `harnax-admin/.../dto/SkillInstallResponse.kt`、`SkillSourceInstallResponse.kt` |
-| 来源配置与策略 | `harnax-admin/.../skill/SkillSourceConfigs.kt`（`parse` 给 Loader、`forApi` 给 DTO、`normalized` 给写入路径）、`SkillSourcePolicy.kt`（保留名、status 二态、不可刷新来源的统一裁决点）、`harnax-admin/.../constant/BuiltinRepository.kt` |
+| 来源配置与策略 | `harnax-admin/.../skill/SkillSourceConfigs.kt`（`parse` 给 Loader、`forApi` 给 DTO、`normalized` 给写入路径）、`SkillSourcePolicy.kt`（保留名、status 二态、内容非空与 `resources` 结构、不可刷新来源的统一裁决点）、`harnax-admin/.../constant/BuiltinRepository.kt` |
 | 内置技能种子 | `harnax-admin/src/main/resources/db/migration/V12__seed_builtin_cli_skills.sql`、`V14__*.sql` |
 | 完整性迁移 | `harnax-admin/src/main/resources/db/migration/V15__skill_source_integrity.sql`（内置仓库语义修正 + `is_public` 继承 + 重复名重命名 + 三个唯一索引）、`V9__skill_content_in_mysql.sql`（`MEDIUMTEXT`） |
 | 绑定保存 / 下发 | `harnax-admin/.../service/impl/AgentServiceImpl.kt`、`CliServiceImpl.kt`、`controller/InternalApiController.kt` |

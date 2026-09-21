@@ -91,7 +91,6 @@ class TeamOrchestratorTest {
             teamId = 7L,
             tenantId = 1L,
             teamName = "Research",
-            instructions = "",
             rootSessionId = rootSession,
             leadAgentSpec = AgentSpec.builder().id(1L).name("Lead").chatModelId(100L).build(),
             leadChatSpec = ChatSpecBuilder().build(),

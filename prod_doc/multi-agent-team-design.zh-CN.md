@@ -5,6 +5,8 @@
 > 决策日期：2026-09-18。本文整理本轮讨论确认的产品边界、目标设计、备选方案与取舍，不代表功能已经实现。
 > 当前交付仅为设计文档：没有新增 Team 表、管理页面、团队运行接口或团队文件工具；没有完成运行原型验证。
 > 用户最终选择为：**独立 Team、复用现有 Agent、主管只编排、成员执行、成员独立沙箱、MinIO 产物交接、过程可见与人工确认**。早期共享沙箱和主管开关方案不再作为实施依据。
+>
+> **2026-09-20 修订（D1/D2 变更）**：主管不再引用一个现有 Agent，改由 Team 自带主管配置——原智能体向导「基本信息」一项（名称、说明、系统提示词、模型）即团队配置，`team.instructions` 并入系统提示词；主管只可再配 Skill，Tool、MCP、CLI 一律不要。成员侧口径不变。本文相关章节已按此改写，落地细节见 [团队主管配置内聚设计规格](../docs/superpowers/specs/2026-09-20-team-own-lead-config-design.md)。
 
 ## 1. 目标与设计原则
 
@@ -13,7 +15,7 @@
 “少改代码”有明确边界：
 
 - 复用现有 Agent 定义、配置下发、模型与工具装配、会话路由、沙箱管理和 MinIO 基础设施。
-- 不为团队重新维护一套模型、Tool、MCP、Skill、CLI 配置，不引入新的工作流引擎或远端 Agent 服务发现系统。
+- 团队只自带主管这一份配置（模型、提示词、Skill）；成员的能力仍完全保存在它自己的 Agent 上，不为组队复制第二套 Tool、MCP、CLI 或凭证，也不引入新的工作流引擎或远端 Agent 服务发现系统。
 - 不以成员能力缩水、主管权限扩大、跳过人工确认为代价减少代码。
 - 原有 Agent 的配置和独立使用方式不变，不等于所有原有代码完全不用修改。
 
@@ -21,8 +23,8 @@
 
 | 编号 | 结论 | 状态 |
 |------|------|------|
-| D1 | Team 是独立的组队配置，不是新的 Agent 类型，也不是主管 Agent 上的一个开关 | 已确认 |
-| D2 | 主管与成员均引用现有 Agent；同一 Agent 可以在不同 Team 中复用 | 已确认 |
+| D1 | Team 是独立的组队配置，不是新的 Agent 类型，也不是主管 Agent 上的一个开关；它同时是**主管配置的宿主**（模型、提示词、Skill 存在 Team 上） | 已确认（2026-09-20 修订） |
+| D2 | **成员**引用现有 Agent，同一 Agent 可在多个 Team 复用；**主管不引用任何 Agent**——`agent` 表里只有「可独立对话的 Agent」和「作为团队成员的 Agent」两种身份 | 已确认（2026-09-20 修订） |
 | D3 | 主管只负责拆解、委派、协调、验收、重派和最终汇总；成员负责具体执行 | 已确认 |
 | D4 | 团队角色限制只作用于本次运行实例，不修改原 Agent 的持久化配置 | 已确认 |
 | D5 | 主管与成员在同一 agent-service 实例内运行；成员使用独立会话状态和按需创建的独立沙箱，主管不创建执行沙箱 | 已确认；独立沙箱替代早期共享方案 |
@@ -33,38 +35,39 @@
 
 D9 旨在控制工程范围。后续若增加并行或新的入口，需要单独验收并发关联、确认、取消与身份传播，不能因为 UI 能选 Team 就宣称所有渠道都已支持。
 
-## 3. 产品模型：Agent 不变，Team 负责组队
+## 3. 产品模型：Agent 是可对话单元与成员，Team 自带主管
 
 ### 3.1 三类对象
 
 | 对象 | 存什么 | 不存什么 |
 |------|--------|----------|
-| Agent | 原有模型、提示词、Tool、MCP、Skill、CLI 配置 | 不因加入团队复制另一份能力配置 |
-| Team | 名称、说明、主管引用、团队指令、启停及归属信息 | 不拥有第二套模型或工具绑定 |
+| Agent | 模型、提示词、Tool、MCP、Skill、CLI 配置 | 不再存在「代表团队主管」的 agent 行；不因加入团队复制另一份能力配置 |
+| Team | 名称、说明、**主管配置（系统提示词、模型）与主管技能绑定**、启停及归属信息 | 不持有 Tool、MCP、CLI；不引用任何 agent 作为主管 |
 | Team Member | 团队引用、成员 Agent 引用、在该团队中的分工说明 | 不复制成员模型、工具、凭证与技能 |
 
-“主管”和“成员”是运行角色，而不是两种新的 Agent 实体。一个 Agent 可以在 Team A 担任主管，在 Team B 担任成员，也可以单独使用。
+“成员”仍是引用一个已有 Agent，“主管”已经是 Team 自身的一行配置，不再对应任何 agent 行。同一个 Agent 可以被多个 Team 用作成员，也可以单独对话使用。
 
-### 3.2 建议的数据落点
+### 3.2 数据落点
 
-以下是逻辑字段，不是已经存在的 DDL、迁移版本或最终 API 契约：
+`team`/`team_member`/`team_artifact` 与 `session.team_id` 已随 V32 落地；下列为 2026-09-20 修订后的最终形状（Flyway V34）：
 
 | 落点 | 必要信息 |
 |------|----------|
-| `team` | `id`、`tenant_id`、名称、说明、`lead_agent_id`、团队指令、状态、创建者及时间 |
+| `team` | `id`、`tenant_id`、名称、说明、**`system_prompt`、`model_id`**、状态、创建者及时间；不再有 `lead_agent_id` 与 `instructions` |
+| `team_skill_binding` | `team_id`、`skill_id`，组合唯一；不设 `env_bindings`（技能级环境变量本就没有消费者） |
 | `team_member` | `team_id`、`member_agent_id`、`delegation_description`；团队与成员组合唯一 |
-| 会话 | 增加可空的 `teamId`；为空时维持普通 Agent 会话，否则明确绑定 Team |
+| 会话 | `agent_id` 与 `team_id` 二选一：团队会话 `agent_id` 为 NULL、`team_id` 非空，名称/提示词/模型等快照取自 Team 行 |
 | 成员运行记录 | 根会话、本次根运行、成员引用、子运行与子会话标识、状态、关联文件引用 |
 | 文件产物元数据 | 文件 ID、归属租户和根会话、生产者子运行、原始文件名、类型、大小及内部存储定位 |
 
 成员运行记录与文件元数据可优先适配现有存储扩展点，本文不要求每个逻辑对象都新建独立数据库表。
 
-会话中的 `teamId` 是团队入口的依据。普通入口不能因为某个 Agent 恰好担任主管而自动启动团队；团队会话也不能仅按旧 `agentId` 下发一份主管配置。主管引用由服务端从 Team 解析，不能信任客户端另填的主管 ID。
+会话中的 `teamId` 是团队入口的依据，`agent_id` 为空即「这不是一个 Agent 的会话」：普通入口不会自动启动团队，团队会话也不能按某个 `agentId` 下发主管配置。主管配置一律由服务端从 Team 行解析，客户端不提交主管身份。
 
 ### 3.3 权限与有效性
 
-- 创建、编辑和启动 Team 时，校验 Team、主管和成员的租户、可使用权限、状态及存在性。
-- 至少选择一个成员；成员不重复，主管不能同时作为该 Team 的成员。
+- 创建、编辑和启动 Team 时，校验 Team 自身状态与归属、成员的租户、可使用权限、状态及存在性；主管的模型在保存时校验存在、按模型下拉同一口径可见（`is_public` 或本人创建）、已启用、类型为 chat——不按租户判，共享的公开模型照旧可用。运行时不再有一次「换用别的模型」的机会。模型保存之后被停用不会有任何提示，也不会挡住对话：下发只看模型行是否存在，运行侧对「停用」没有第二道闸门（普通智能体同此口径），团队仍会照它跑；只有模型被删除才会在下发时因取不到配置而失败。
+- 至少选择一个成员；成员不重复。主管不再是 Agent 引用，因此不存在「主管同时是成员」这种校验。
 - 能看见 Team 不等于可以使用其中任意私有 Agent；团队配置不能绕过成员自身的访问控制。
 - 首期单层建议下，成员作为执行者时不加载其自己的团队关系，不允许继续派生子团队；不需要为此自建任意 DAG 执行器。
 - Team 或 Agent 失效时，在启动或下一次委派前给出明确错误，不静默遗漏成员或换用主管模型。
@@ -72,31 +75,31 @@ D9 旨在控制工程范围。后续若增加并行或新的入口，需要单�
 
 ## 4. 页面如何组建和使用团队
 
-管理台新增独立的「团队管理」入口，采用表单组队，不做拖拽连线。
+管理台新增独立的「团队管理」入口，采用两步向导组队，不做拖拽连线。第一步就是原智能体向导的「基本信息」，第二步是成员。
 
 ```text
+第 1 步 · 基本信息与技能                        [下一步]
 团队名称    [研究报告团队]
 团队说明    [负责资料收集、分析与报告生成]
+系统提示词  [你是本次协作的负责人……]            ← 主管的全部提示词，含原团队指令
+模型        [qwen3-max]
+技能        [资料检索规范] [报告撰写规范]         ← 只可配 Skill，无 Tool/MCP/CLI
 
-主管 Agent  [选择现有 Agent]
-            仅负责拆解、委派、验收和汇总
-
-团队成员                                      [添加成员]
+第 2 步 · 团队成员                              [添加成员]
 资料研究员    分工：搜集资料并提供来源
 数据分析员    分工：分析数据、提炼结论
 报告撰写员    分工：根据资料和结论撰写报告
-
-团队指令    [可选：最终报告必须标注来源]
-                                      [取消] [保存]
+                                              [上一步] [取消] [保存]
 ```
 
 ### 4.1 配置交互
 
-1. 填写团队名称，按需填写说明与团队指令。
-2. 从可使用的现有 Agent 中选择主管。
-3. 添加成员，分工说明默认带入 Agent 描述，允许按团队需要修改，不回写原描述。
-4. 模型、Tool、MCP、Skill、CLI 仍在 Agent 页面配置；Team 页面只提供查看或跳转，不重复编辑。
+1. 第一步填写团队名称、说明、系统提示词与模型，按需挑选技能。说明与系统提示词必填，与智能体向导第一步一致。
+2. 技能的可选范围与写时校验与 Agent 侧同一套规则：缺失、停用、内置 CLI 仓库来源、同名冲突都在保存时拒绝。
+3. 第二步添加成员，分工说明默认带入 Agent 描述，允许按团队需要修改，不回写原描述。
+4. Tool、MCP、CLI 只能在成员自己的 Agent 页面配置；Team 不收这三类字段，运行侧另有主管守卫。
 5. 保存时执行成员与权限校验；独立沙箱模式不要求成员 CLI 版本或环境变量彼此一致。
+6. 编辑团队复用同一个向导，回填当前配置。
 
 团队成员使用稳定的服务端标识，显示名称和分工说明用于阅读与委派决策，不把可重名的显示名称作为运行唯一键。
 
@@ -113,16 +116,16 @@ D9 旨在控制工程范围。后续若增加并行或新的入口，需要单�
 
 | 能力 | 团队主管 | 团队成员 | 原 Agent 单独使用 |
 |------|----------|----------|------------------|
-| 模型与提示词 | 自己的模型，叠加主管角色与团队指令 | 自己的模型，叠加本次分工和任务说明 | 保持原有行为 |
-| 业务 Tool、MCP | 不装载、不连接 | 按各自 Agent 配置装载 | 保持原有行为 |
-| 执行类 Skill、CLI、Shell | 不装载或暴露执行入口 | 保留自身配置与权限约束 | 保持原有行为 |
+| 模型与提示词 | **配置来自 Team 自身**，叠加主管角色与成员名册块 | 自己的模型，叠加本次分工和任务说明 | 保持原有行为 |
+| Skill | 装载：SKILL.md 文本与其资源内容进入主管上下文/技能读取工具；**带脚本或需落盘执行的部分不可执行**，装载时点名降级 | 按各自 Agent 配置装载 | 保持原有行为 |
+| 业务 Tool、MCP | 不装载、不连接（Team 也不收这两类配置） | 按各自 Agent 配置装载 | 保持原有行为 |
+| CLI、Shell、执行沙箱 | 不提供，主管无 shell 也就无工作区 | 保留自身配置与权限约束 | 保持原有行为 |
 | 委派、进度与任务协调 | 允许使用本 Team 的编排能力 | 首期单层建议下不开放继续委派 | 保持原有行为 |
 | 文件产物 | 接收和传递引用，选择最终交付文件 | 发布、获取并在自己沙箱中处理 | 保持原有行为 |
-| 执行沙箱 | 不创建 | 按需独立创建 | 保持原有行为 |
 
 主管权限限制应由装配与运行时校验保证，不依赖“请勿亲自执行”这一句提示词。现有必须工具、框架默认 Shell、动态子代理及技能加载也要经过团队角色策略，不能从默认注册路径重新泄漏能力。
 
-这不改变普通 Agent 的“必须工具”规则：团队主管是专门的运行装配角色，而不是从数据库删除绑定或修改全局工具定义。
+这不改变普通 Agent 的“必须工具”规则：主管没有 agent 行，也就没有可被收紧或删除的绑定；它的 Tool/MCP/CLI 为空是 Team 不收这类配置的结果，运行时守卫只是第二道线。
 
 主管仍需理解成员报告、判断是否满足目标和汇总回复；“只编排”不是只能机械转发消息。必要的资料处理、数据库查询、文件生成等具体工作交给成员。
 
@@ -134,7 +137,7 @@ D9 旨在控制工程范围。后续若增加并行或新的入口，需要单�
 Web UI 创建 Team 会话
     ↓ 根 sessionId 沿现有 router 路由
 agent-service 获取团队运行配置
-    ↓ admin 校验 Team 与成员，返回主管和成员的完整配置
+    ↓ admin 校验 Team 与成员：主管配置取自 Team 行与 team_skill_binding，成员配置取自各自 agent
 装配主管 + 成员工厂（尚未创建成员运行实例）
     ↓ 主管按分工委派
 创建子运行标识 → 按成员配置懒创建运行实例
@@ -146,7 +149,7 @@ agent-service 获取团队运行配置
 
 ### 6.2 配置与实例分离
 
-- 复用 Agent 的配置定义，不复用另一个普通会话的运行实例、聊天历史或沙箱。
+- 成员复用 Agent 的配置定义，不复用另一个普通会话的运行实例、聊天历史或沙箱；主管的配置只存在于 Team 行与 `team_skill_binding`，运行侧拿到的是一份与 Agent 同形状的主管 spec（`agentId` 固定为 0，`agentName` 为团队名）。
 - admin 下发成员完整配置，不能只给 `modelId`、`toolId` 后假设主管适配器能解析所有成员。
 - 工厂捕获对应成员配置和受信任的运行作用域。现有 `AgentSpecContextHolder` 是同步创建阶段的 `ThreadLocal`，不能假设懒创建时它仍存在，更不能让成员读到主管的配置。
 - 不把任意派生子会话 ID 直接交给现有按 `web-`、`mp-`、`chn-`、`task-` 前缀解析的 admin 入口；子运行由根会话已授权的团队配置派生。
@@ -322,8 +325,10 @@ MinIO 团队会话产物集合
 |------|------|------|------|
 | Agent 上增加团队开关和成员绑定 | 数据和页面较少 | 团队不是独立对象，普通使用与带队使用耦合 | 已撤回 |
 | Team 一对一挂主管，访问主管即访问团队 | 可以复用原入口 | 同一个主管的普通会话与不同组队不易区分 | 已撤回 |
-| 独立 Team + 成员引用 + 明确团队会话 | 可独立组队，主管和成员都可复用 | 新增 Team 管理和会话目标解析 | 选定 |
-| Team 另存模型、提示词、工具等完整 Agent 配置 | 团队配置完全自包含 | 重复维护 Agent 能力，易漂移 | 不选 |
+| 独立 Team + 主管引用现有 Agent + 明确团队会话 | 主管能力零重复维护 | 团队无法脱离一个现成 Agent 存在，「配团队」变成「先配 Agent 再挑它」 | 2026-09-18 选定，2026-09-20 被下一条替代 |
+| **Team 自带主管配置（模型、提示词、Skill）** | 团队是自包含对象，向导一步配完主管；`agent` 表只剩「可对话」与「成员」两种身份 | 下发侧要为主管合成一份 spec；会话的 `agent_id` 必须允许为空 | **选定**（2026-09-20） |
+| Team 持有一条隐藏的 `agent` 行做主管 | 运行侧完全不动，`session.agent_id` 也不用改 | 引入幽灵 agent：列表与选择器每处查询都要记得过滤，命名与 workspace 键要防撞，直连改删要另加守卫 | 评估后否决——把一次性成本换成永久陷阱 |
+| Team 另存 Tool、MCP、CLI 绑定 | 团队配置完全自包含 | 与成员 Agent 的能力定义重复维护、易漂移，且主管本就不该执行 | 不选；Team 只带来主管这一份模型、提示词与 Skill |
 
 父子绑定表本身也能表示多对多复用；选择独立 Team 是产品边界，而不是因为“绑定表只能归属一个团队”。
 
@@ -361,7 +366,7 @@ MinIO 团队会话产物集合
 
 | 模块 | 拟新增或调整 | 保留边界 |
 |------|--------------|----------|
-| `harnax-entity` / admin | Team、成员关系、会话 Team 关联、权限校验和团队配置下发 | 现有 Agent 与各能力绑定仍是唯一配置来源 |
+| `harnax-entity` / admin | Team（含主管的模型、提示词与技能绑定）、成员关系、会话 Team 关联、权限校验和团队配置下发 | 成员仍由现有 Agent 与其能力绑定唯一持有；主管由 Team 唯一持有，`agent` 表不再有代表主管的行 |
 | `harnax-agent-service` | 根团队运行与子运行关联，成员配置作用域、确认和停止分派 | 普通 Agent 入口与行为保留 |
 | `harnax-harness-core` | 主管/成员角色装配、原生委派接缝、独立沙箱生命周期、产物动作 | 尽量复用模型、Tool、MCP、Skill、CLI 与沙箱组件 |
 | `harnax-protocol` / 消费端 | 团队事件来源、子运行确认关联、文件引用 | 继续使用根 SSE 通道，不混淆原事件含义 |
@@ -378,8 +383,8 @@ MinIO 团队会话产物集合
 
 | 编号 | 验证点 | 通过标准 |
 |------|--------|----------|
-| V1 | 独立 Team 与普通会话 | 同一个 Agent 可单独使用并被多个 Team 引用，普通会话不误启动团队 |
-| V2 | 主管能力约束 | 最终工具集合中没有业务 Tool、MCP、Shell 或默认路径泄漏；不创建执行沙箱 |
+| V1 | 独立 Team 与普通会话 | 同一个 Agent 可单独使用并被多个 Team 作为成员引用，普通会话不误启动团队；Team 不需要先建一个主管 Agent 才能成立 |
+| V2 | 主管能力约束 | 最终工具集合中没有业务 Tool、MCP、Shell 或默认路径泄漏；不创建执行沙箱；Team 为主管配置的技能文本可见，其脚本与资源文件不可执行且在装载时点名 |
 | V3 | 成员完整装配 | 不同模型、Tool、MCP、Skill、CLI 和环境分别生效，主管没有成员能力也可委派 |
 | V4 | 懒创建与配置上下文 | 不依赖失效的 ThreadLocal，不复用主管 ToolBox、日志身份或秘密参数 |
 | V5 | 独立容器与快照 | 两成员环境互不影响；跨租户、跨会话和重复任务不串容器，续跑恢复正确 |
@@ -400,8 +405,8 @@ MinIO 团队会话产物集合
 | 位置 | 现有事实与本设计的接缝 |
 |------|------------------------|
 | [根 pom.xml](../pom.xml) 的 `agent-scope.version` | 当前使用 AgentScope 2.0.2 |
-| [Agent](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt) 与 [Session](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt) | 已有 Agent 定义；当前 Session 只有单 Agent 关联，没有 `teamId` |
-| [AgentServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt) 的 `createAgent/updateAgent` | 现有能力绑定保存可复用，不应复制一套 Team 能力配置 |
+| [Agent](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt) 与 [Session](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt) | Session 已有 `teamId`（V32）；V34 起团队会话的 `agent_id` 为空，DDL 本就允许 NULL，要改的是实体类型 |
+| [AgentServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt) 的 `saveSkillBindings` | 技能的四条写时校验（缺失、停用、内置 CLI 仓库、同名）是主管技能复用的对象，抽成共享校验而不是在 Team 侧另写一份 |
 | [InternalApiController](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt) 的 `getAgentSpec/buildAgentSpecResponse` | 按外部 session 前缀解析，并下发单个 Agent 的完整能力 |
 | [AgentSpecResolver](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt) 与 [AgentSpecContextHolder](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AgentSpecContextHolder.kt) | 配置解析与同步 ThreadLocal 创建上下文，成员懒创建需要单独作用域 |
 | [HarnessAgentLauncher](../harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt) 的 `createAgentBase` | 已有模型、MCP、Tool、Skill、CLI、权限与沙箱装配，不等于可直接安全复制给成员 |
@@ -411,4 +416,4 @@ MinIO 团队会话产物集合
 
 SDK 判断依据为本机已存在的 `agentscope-2.0.2-sources.jar` 与 `agentscope-harness-2.0.2-sources.jar`，重点符号包括 `HarnessAgentBuilderSupport.buildStaticSubagentEntries/allowlistedInheritedToolkit`、`SubagentsMiddleware`、`AgentSpawnTool`、`AgentEvent` 和 `SubAgentTool`。这些是源码审阅证据，不是运行测试记录。
 
-相关文档：[工具集成设计](./tool-integration-design.zh-CN.md)、[工具能力](./tool-capability.zh-CN.md)、[Skill 管理](./skill-management.zh-CN.md)、[会话路由](./session-routing.zh-CN.md)。
+相关文档：[主管与子代理架构取舍](./multi-agent-leader-subagent-design.zh-CN.md)、[工具集成设计](./tool-integration-design.zh-CN.md)、[工具能力](./tool-capability.zh-CN.md)、[Skill 管理](./skill-management.zh-CN.md)、[会话路由](./session-routing.zh-CN.md)。

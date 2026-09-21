@@ -8,24 +8,31 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
 /**
- * Team creation request DTO
+ * Team creation request DTO — step 1 of the team wizard is the agent wizard's "Basic information"
+ * screen: the lead's name, description, prompt and model are team fields, and [skillIds] is the only
+ * capability a team may carry. Tool, MCP and CLI belong to members, on their own agent pages.
  */
 @Schema(description = "Team creation request object")
 data class TeamCreateRequest(
-    @Schema(description = "Team name", example = "Research report team", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Team name, which is also the lead's name", example = "Research report team", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotBlank(message = "Team name cannot be empty")
     @Size(min = 1, max = 100, message = "Team name length must be between 1-100")
     val name: String? = null,
 
-    @Schema(description = "Team description")
+    @Schema(description = "Team description", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotBlank(message = "Team description cannot be empty")
     val description: String? = null,
 
-    @Schema(description = "Lead agent ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "Lead agent ID cannot be empty")
-    val leadAgentId: Long? = null,
+    @Schema(description = "System prompt of the lead (Markdown supported)", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotBlank(message = "System prompt cannot be empty")
+    val systemPrompt: String? = null,
 
-    @Schema(description = "Team instructions appended to the lead prompt")
-    val instructions: String? = null,
+    @Schema(description = "Chat model ID of the lead", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
+    @NotNull(message = "Model ID cannot be empty")
+    val modelId: Long? = null,
+
+    @Schema(description = "Skill ID list for the lead")
+    val skillIds: List<Long>? = null,
 
     @Schema(description = "Member list", requiredMode = Schema.RequiredMode.REQUIRED)
     @NotEmpty(message = "A team needs at least one member")

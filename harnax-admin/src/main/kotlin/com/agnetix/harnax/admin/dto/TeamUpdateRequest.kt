@@ -7,9 +7,10 @@ import jakarta.validation.constraints.Size
 /**
  * Team update request DTO.
  *
- * Null fields keep their current value, like every other update DTO here. [members] is an exception:
- * a non-null list replaces the whole membership, because a partial member diff has no honest meaning
- * when the caller sends display-level edits and removals in one form.
+ * Null fields keep their current value, like every other update DTO here. [members] and [skillIds] are
+ * exceptions: a non-null list replaces the whole set, because a partial diff has no honest meaning when
+ * the caller sends display-level edits and removals in one form. An empty [skillIds] therefore means
+ * "give the lead no skill", which null does not.
  */
 @Schema(description = "Team update request object")
 data class TeamUpdateRequest(
@@ -20,11 +21,14 @@ data class TeamUpdateRequest(
     @Schema(description = "Team description")
     val description: String? = null,
 
-    @Schema(description = "Lead agent ID", example = "1")
-    val leadAgentId: Long? = null,
+    @Schema(description = "System prompt of the lead (Markdown supported)")
+    val systemPrompt: String? = null,
 
-    @Schema(description = "Team instructions appended to the lead prompt")
-    val instructions: String? = null,
+    @Schema(description = "Chat model ID of the lead", example = "1")
+    val modelId: Long? = null,
+
+    @Schema(description = "Skill ID list for the lead; replaces the current set when present")
+    val skillIds: List<Long>? = null,
 
     @Schema(description = "Member list; replaces the current membership when present")
     @Valid

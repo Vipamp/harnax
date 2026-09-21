@@ -164,6 +164,7 @@ class SkillSourceServiceImplTest {
             skillRepositoryMapper = skillRepositoryMapper,
             agentSkillBindingMapper = this@SkillSourceServiceImplTest.agentSkillBindingMapper,
             cliSkillBindingMapper = org.mockito.kotlin.mock(),
+            teamSkillBindingMapper = org.mockito.kotlin.mock(),
         ),
         // Real recorder over the same mocked mapper, so the stored result is what the assertions see
         skillSyncRecorder = SkillSyncRecorder(skillRepositoryMapper),

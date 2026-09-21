@@ -35,7 +35,6 @@ data class TeamRuntimeSpec(
     val teamId: Long,
     val tenantId: Long,
     val teamName: String,
-    val instructions: String,
     val rootSessionId: String,
     val leadAgentSpec: AgentSpec,
     val leadChatSpec: ChatSpec,
@@ -67,29 +66,25 @@ internal object TeamSessions {
  * Framing injected into the lead's prompt on top of its own system prompt.
  *
  * This is the *description* of the boundary, not the boundary itself: [com.agnetix.harnax.harness.HarnessAgentLauncher]
- * builds the lead without business tools, MCP, skills or a sandbox, so a lead that ignores this text
- * still has nothing to execute with (design section 5).
+ * builds the lead without business tools, MCP or a sandbox (its skills do load), so a lead that ignores
+ * this text still has nothing to execute with (design section 5).
  */
 internal fun leadOrchestrationPrompt(spec: TeamRuntimeSpec): String {
     val roster = spec.members.joinToString("\n") { member ->
         "- agentId=${member.memberAgentId} ${member.agentName}：" +
             member.delegationDescription.ifBlank { member.description.ifBlank { "（未填写分工）" } }
     }
-    val instructions = spec.instructions.takeIf { it.isNotBlank() }
-        ?.let { "\n\n## 团队指令\n$it" }
-        .orEmpty()
     return """
         ## 团队模式
         你现在是团队「${spec.teamName}」的主管，负责拆解目标、委派成员、验收结果并向用户汇总。
 
         ## 你的成员
         $roster
-        $instructions
 
         ## 工作方式
         1. 需要具体执行（查资料、跑代码、处理文件、生成报告）时，调用 team_delegate 把任务交给对应成员，
            一次一件，等成员返回后再决定下一步。
-        2. 你自己不执行这些工作：你没有业务工具、MCP、技能，也没有执行沙箱。不要因为做不到就自己硬试，
+        2. 你自己不执行这些工作：你没有业务工具、MCP，也没有执行沙箱。不要因为做不到就自己硬试，
            应该把这件事委派出去。
         3. 委派时写清目标、交付标准和必要上下文；成员拿不到本会话的历史，也不知道用户是谁。
         4. 成员产出的文件以 fileId 引用形式交回给你。需要下游成员继续处理时，把 fileId 写进下一次委派

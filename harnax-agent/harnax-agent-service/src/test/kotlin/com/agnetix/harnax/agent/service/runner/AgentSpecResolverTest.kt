@@ -113,6 +113,26 @@ class AgentSpecResolverTest {
     }
 
     @Nested
+    @DisplayName("Team session probe")
+    inner class IsTeamSession {
+
+        @Test
+        fun `isTeamSession answers from admin without resolving an agent spec`() {
+            `when`(adminApiClient.isTeamSession("web-123")).thenReturn(true)
+
+            assertTrue(resolver.isTeamSession("web-123"))
+            verify(adminApiClient, never()).getAgentSpec("web-123")
+        }
+
+        @Test
+        fun `an ordinary session is not a team session`() {
+            `when`(adminApiClient.isTeamSession("web-123")).thenReturn(false)
+
+            assertFalse(resolver.isTeamSession("web-123"))
+        }
+    }
+
+    @Nested
     @DisplayName("ChatSpec capability masking")
     inner class ChatSpecMasking {
 

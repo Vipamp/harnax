@@ -20,6 +20,7 @@ import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.agentscope.core.skill.AgentSkill
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -73,6 +74,9 @@ class SkillServiceImplTest {
 
     @Mock
     private lateinit var cliSkillBindingMapper: CliSkillBindingMapper
+
+    @Mock
+    private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
     @Mock
     private lateinit var skillLoaderRegistry: SkillLoaderRegistry
@@ -159,17 +163,21 @@ class SkillServiceImplTest {
         skillRepositoryService = skillRepositoryService,
         agentSkillBindingMapper = agentSkillBindingMapper,
         cliSkillBindingMapper = cliSkillBindingMapper,
+        teamSkillBindingMapper = teamSkillBindingMapper,
         skillLoaderRegistry = skillLoaderRegistry,
         // A real installer over the same mocked mappers, so the persistence assertions below still
         // describe what actually gets written
-        skillInstaller = SkillInstaller(
-            skillMapper = skillMapper,
-            skillRepositoryMapper = syncRepositoryMapper,
-            agentSkillBindingMapper = agentSkillBindingMapper,
-            cliSkillBindingMapper = cliSkillBindingMapper,
-        ),
+        skillInstaller = createInstaller(),
         skillSyncRecorder = SkillSyncRecorder(syncRepositoryMapper),
         localTmpDir = "/tmp/harnax-skill-test",
+    )
+
+    private fun createInstaller(): SkillInstaller = SkillInstaller(
+        skillMapper = skillMapper,
+        skillRepositoryMapper = syncRepositoryMapper,
+        agentSkillBindingMapper = agentSkillBindingMapper,
+        cliSkillBindingMapper = cliSkillBindingMapper,
+        teamSkillBindingMapper = teamSkillBindingMapper,
     )
 
     @Nested
@@ -332,10 +340,13 @@ class SkillServiceImplTest {
         @Test
         @DisplayName("createSkill - Use default values for optional fields")
         fun `createSkill should use default values for optional fields`() {
-            // Given
+            // Given - content and description are not optional any more: without them the runtime
+            // cannot build the skill at all
             val request = SkillCreateRequest(
                 name = "minimal-skill",
                 repositoryId = 5L,
+                description = "Minimal",
+                skillmd = "# Minimal",
             )
 
             `when`(skillMapper.selectByNameAndRepo("minimal-skill", 5L)).thenReturn(null)
@@ -350,8 +361,8 @@ class SkillServiceImplTest {
             val captor = argumentCaptor<Skill>()
             verify(skillMapper).insert(captor.capture())
             val saved = captor.firstValue
-            assertEquals("", saved.description)
-            assertEquals("", saved.skillmd)
+            assertEquals("Minimal", saved.description)
+            assertEquals("# Minimal", saved.skillmd)
             assertEquals("", saved.resources)
             assertEquals(1, saved.status)
         }
@@ -397,6 +408,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "code-review",
                 repositoryId = 5L,
+                description = "Anything",
+                skillmd = "# Anything",
             )
 
             `when`(skillMapper.selectByNameAndRepo("code-review", 5L)).thenReturn(testSkill)
@@ -417,6 +430,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "orphan-skill",
                 repositoryId = 999L,
+                description = "Anything",
+                skillmd = "# Anything",
             )
 
             `when`(skillRepositoryService.getSkillRepository(999L)).thenReturn(null)
@@ -445,6 +460,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "public-skill",
                 repositoryId = 6L,
+                description = "Anything",
+                skillmd = "# Anything",
             )
 
             `when`(skillRepositoryService.getSkillRepository(6L)).thenReturn(publicRepo)
@@ -468,6 +485,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "builtin-skill",
                 repositoryId = 10L,
+                description = "Anything",
+                skillmd = "# Anything",
             )
 
             `when`(skillMapper.selectByNameAndRepo("builtin-skill", 10L)).thenReturn(null)
@@ -489,6 +508,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "cross-tenant-skill",
                 repositoryId = 5L,
+                description = "Anything",
+                skillmd = "# Anything",
             )
 
             `when`(skillMapper.selectByNameAndRepo("cross-tenant-skill", 5L)).thenReturn(null)
@@ -527,6 +548,8 @@ class SkillServiceImplTest {
             val request = SkillCreateRequest(
                 name = "disabled-on-arrival",
                 repositoryId = 5L,
+                description = "Anything",
+                skillmd = "# Anything",
                 status = 0,
             )
 
@@ -872,6 +895,22 @@ class SkillServiceImplTest {
         }
 
         @Test
+        @DisplayName("toggleSkillStatus - Refuse to disable a skill a team lead binds")
+        fun `toggleSkillStatus should refuse to disable a skill a team lead binds`() {
+            // 主管技能直接挂在 team 上（V34），停用守卫只看 agent 绑定就会让团队侧静默少一份技能
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(teamSkillBindingMapper.selectBoundSkillIds(listOf(1L))).thenReturn(listOf(1L))
+
+            val exception = assertThrows<BizException> {
+                createService().toggleSkillStatus(1L, 0)
+            }
+
+            assertTrue(exception.message!!.contains("team"), exception.message)
+            verify(skillMapper, never()).updateStatus(anyLong(), anyInt())
+        }
+
+        @Test
         @DisplayName("toggleSkillStatus - Keep enabling a bound skill")
         fun `toggleSkillStatus should keep enabling a bound skill`() {
             val disabled = testSkill.apply { status = 0 }
@@ -984,6 +1023,22 @@ class SkillServiceImplTest {
             }
             assertTrue(exception.message!!.contains("is bound to 2 agents, so it cannot be deleted"), exception.message)
             verify(agentSkillBindingMapper, never()).deleteBySkillIds(any())
+            verify(skillMapper, never()).deleteById(anyLong())
+        }
+
+        @Test
+        @DisplayName("deleteSkill - Refuse to delete a skill a team lead binds")
+        fun `deleteSkill should refuse to delete a skill a team lead binds`() {
+            // 团队的主管技能直接挂在 team 上（V34），删掉这一行就等于把那个团队的负责人换掉了，
+            // 而运维此刻看的是技能页，不是团队页
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(teamSkillBindingMapper.selectBoundSkillIds(listOf(1L))).thenReturn(listOf(1L))
+
+            val exception = assertThrows<BizException> { createService().deleteSkill(1L) }
+
+            assertTrue(exception.message!!.contains("team"), exception.message)
+            assertTrue(exception.message!!.contains("cannot be deleted"), exception.message)
             verify(skillMapper, never()).deleteById(anyLong())
         }
 
@@ -1547,6 +1602,138 @@ class SkillServiceImplTest {
 
             // Then
             assertTrue(result.isEmpty())
+        }
+    }
+
+    /**
+     * The runtime builds an `AgentSkill` out of these three columns and throws when any of them is
+     * blank or unparseable, so a row saved that way is a skill that exists in the list, can be bound
+     * to an agent, and never loads. `SkillInstaller` cannot produce such a row (its loader parses into
+     * an `AgentSkill` first); the manual create/update API was the only way in.
+     */
+    @Nested
+    @DisplayName("Save-time loadability gates")
+    inner class LoadableContentTests {
+
+        @Test
+        @DisplayName("createSkill - Refuse a skill with no SKILL.md content")
+        fun `createSkill should refuse a skill without content`() {
+            val request = SkillCreateRequest(
+                name = "empty-skill",
+                repositoryId = 5L,
+                description = "Has a description but nothing to read",
+            )
+
+            val exception = assertThrows<BizException> {
+                createService().createSkill(request)
+            }
+            assertEquals("Skill content cannot be empty", exception.message)
+            verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - Refuse a skill with no description")
+        fun `createSkill should refuse a skill without description`() {
+            val request = SkillCreateRequest(
+                name = "no-description",
+                repositoryId = 5L,
+                skillmd = "# Usable content",
+                description = "   ",
+            )
+
+            val exception = assertThrows<BizException> {
+                createService().createSkill(request)
+            }
+            assertEquals("Skill description cannot be empty", exception.message)
+            verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - Refuse resources that are not a file-name to content map")
+        fun `createSkill should refuse resources that are not a string map`() {
+            val request = SkillCreateRequest(
+                name = "bad-resources",
+                repositoryId = 5L,
+                description = "Fine",
+                skillmd = "# Fine",
+                resources = "not valid json{{{",
+            )
+
+            val exception = assertThrows<BizException> {
+                createService().createSkill(request)
+            }
+            assertTrue(
+                exception.message!!.startsWith("Skill resources"),
+                "expected a resources-specific message, got: ${exception.message}",
+            )
+            verify(skillMapper, never()).insert(any())
+        }
+
+        @Test
+        @DisplayName("createSkill - An empty resources value still means no bundled files")
+        fun `createSkill should accept an empty resources value`() {
+            val request = SkillCreateRequest(
+                name = "no-files",
+                repositoryId = 5L,
+                description = "Fine",
+                skillmd = "# Fine",
+                resources = "",
+            )
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+            `when`(skillMapper.selectByNameAndRepo("no-files", 5L)).thenReturn(null)
+            `when`(skillMapper.insert(any())).thenReturn(1)
+
+            assertTrue(createService().createSkill(request))
+        }
+
+        @Test
+        @DisplayName("updateSkill - Refuse blanking out the SKILL.md content")
+        fun `updateSkill should refuse blanking the content`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, SkillUpdateRequest(skillmd = "  "))
+            }
+            assertEquals("Skill content cannot be empty", exception.message)
+            verify(skillMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSkill - Refuse malformed resources")
+        fun `updateSkill should refuse malformed resources`() {
+            `when`(skillMapper.selectById(1L)).thenReturn(testSkill)
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(normalRepo)
+
+            val exception = assertThrows<BizException> {
+                createService().updateSkill(1L, SkillUpdateRequest(resources = """{"a": """"))
+            }
+            assertTrue(
+                exception.message!!.startsWith("Skill resources"),
+                "expected a resources-specific message, got: ${exception.message}",
+            )
+            verify(skillMapper, never()).updateById(any())
+        }
+    }
+
+    @Nested
+    @DisplayName("Repository cascade")
+    inner class RepositoryCascade {
+
+        @Test
+        @DisplayName("deleteWithSkills - Refuse while a team lead binds one of its skills")
+        fun `deleteWithSkills should refuse while a team lead binds one of its skills`() {
+            // 停用守卫之外还有一条会漏：内容扫描会把绑定中的技能强行停用，所以级联要自己数绑定，
+            // 不能看状态推断。团队侧的绑定同样要数，否则整源删除会顺手把主管的技能抽走
+            val disabled = testSkill.apply { status = 0 }
+            `when`(skillMapper.selectByRepositoryId(5L)).thenReturn(listOf(disabled))
+            `when`(teamSkillBindingMapper.selectBoundSkillIds(listOf(1L))).thenReturn(listOf(1L))
+
+            val exception = assertThrows<BizException> { createInstaller().deleteWithSkills(normalRepo) }
+
+            assertTrue(exception.message!!.contains("team"), exception.message)
+            verify(skillMapper, never()).deleteById(anyLong())
+            verify(syncRepositoryMapper, never()).deleteById(anyLong())
         }
     }
 }

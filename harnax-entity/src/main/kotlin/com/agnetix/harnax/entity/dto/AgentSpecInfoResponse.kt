@@ -86,16 +86,4 @@ data class AgentSpecInfoResponse(
 
     @Schema(description = "Full CLI configurations (with binding env overrides)")
     val cliDetails: List<CliDetailDto> = emptyList(),
-
-    /**
-     * Set when this session was opened from a team, so agent-service knows to fetch the member
-     * configurations from `/team-spec/{sessionId}` instead of running this one agent alone.
-     *
-     * The config carried here is the team lead's own. It is deliberately not stripped down to an
-     * orchestrator on the admin side: which capabilities the lead may keep is a runtime assembly
-     * decision (design section 5), and answering it here would leave the standalone use of the very
-     * same agent wrong.
-     */
-    @Schema(description = "Team ID when this is a team session, null for an ordinary agent session")
-    val teamId: Long? = null,
 )

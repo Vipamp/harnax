@@ -18,11 +18,15 @@ import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.Team
+import com.agnetix.harnax.entity.TeamMember
+import com.agnetix.harnax.entity.TeamSkillBinding
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.BeforeEach
@@ -93,6 +97,9 @@ class SessionServiceImplTest {
     @Mock
     private lateinit var teamMemberMapper: TeamMemberMapper
 
+    @Mock
+    private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
+
     private lateinit var testSession: Session
     private lateinit var testAgent: Agent
 
@@ -160,6 +167,7 @@ class SessionServiceImplTest {
         skillBindingMapper = skillBindingMapper,
         teamMapper = teamMapper,
         teamMemberMapper = teamMemberMapper,
+        teamSkillBindingMapper = teamSkillBindingMapper,
     )
 
     private fun mcpBinding(
@@ -346,6 +354,66 @@ class SessionServiceImplTest {
         }
 
         @Test
+        @DisplayName("createSession - 团队会话快照来自 team 行且不写 agent_id")
+        fun `createSession should snapshot a team session from the team row`() {
+            // Given - 团队的主管就是 team 行，没有 agent 行可指
+            val request = SessionCreateRequest(title = "Team Chat", teamId = 42L)
+            `when`(sessionMapper.countByTitle("Team Chat")).thenReturn(0)
+            `when`(teamMapper.selectById(42L)).thenReturn(
+                Team().apply {
+                    id = 42L
+                    tenantId = 1L
+                    name = "Research"
+                    description = "Investigates"
+                    systemPrompt = "你是本次协作的负责人"
+                    modelId = 11L
+                    status = 1
+                    creator = "boss"
+                },
+            )
+            `when`(teamMemberMapper.selectByTeamId(42L)).thenReturn(
+                listOf(
+                    TeamMember().apply {
+                        teamId = 42L
+                        memberAgentId = 3L
+                    },
+                ),
+            )
+            `when`(sessionMapper.insert(any())).thenReturn(1)
+
+            // When
+            assertTrue(createService().createSession(request))
+
+            // Then
+            val captor = argumentCaptor<Session>()
+            verify(sessionMapper).insert(captor.capture())
+            val saved = captor.firstValue
+            assertNull(saved.agentId)
+            assertEquals(42L, saved.teamId)
+            assertEquals("Research", saved.name)
+            assertEquals("Investigates", saved.description)
+            assertEquals("你是本次协作的负责人", saved.systemPrompt)
+            assertEquals(11L, saved.modelId)
+            assertEquals("boss", saved.owner)
+            verify(agentService, never()).getAgent(anyLong())
+        }
+
+        @Test
+        @DisplayName("createSession - 没有团队又没有 agentId 被拒")
+        fun `createSession should require an agent when no team is asked for`() {
+            // Given - agentId 现在可空，但只有团队会话可以不带它
+            val request = SessionCreateRequest(title = "Homeless")
+            `when`(sessionMapper.countByTitle("Homeless")).thenReturn(0)
+
+            // When & Then
+            val exception = assertThrows<RuntimeException> {
+                createService().createSession(request)
+            }
+            assertTrue(exception.message?.contains("Agent ID cannot be empty") == true)
+            verify(sessionMapper, never()).insert(any())
+        }
+
+        @Test
         @DisplayName("createSession - Throw RuntimeException when title already exists")
         fun `createSession should throw RuntimeException when title already exists`() {
             // Given
@@ -454,6 +522,41 @@ class SessionServiceImplTest {
             assertEquals("Updated Session", updated.title)
             assertEquals("Updated description", updated.description)
             assertEquals(200L, updated.agentId)
+        }
+
+        @Test
+        @DisplayName("updateSession - 团队会话不接受 agentId")
+        fun `updateSession should refuse an agent on a team session`() {
+            // Given - 团队会话根本没有 agent 可绑
+            testSession.teamId = 42L
+            val request = SessionCreateRequest(title = "Updated", agentId = 7L)
+
+            `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+
+            // When & Then
+            val exception = assertThrows<BizException> {
+                createService().updateSession(1L, request)
+            }
+            assertTrue(exception.message?.contains("follows its team") == true)
+            verify(sessionMapper, never()).updateById(any())
+        }
+
+        @Test
+        @DisplayName("updateSession - 不带 agentId 的更新保留原有 agent")
+        fun `updateSession should keep the agent when the request names none`() {
+            // Given - agentId 可空之后，缺省值不能再当成「改成空」
+            val request = SessionCreateRequest(title = "Renamed")
+
+            `when`(sessionMapper.selectById(1L)).thenReturn(testSession)
+            `when`(sessionMapper.updateById(any())).thenReturn(1)
+
+            // When
+            assertTrue(createService().updateSession(1L, request))
+
+            // Then
+            val captor = argumentCaptor<Session>()
+            verify(sessionMapper).updateById(captor.capture())
+            assertEquals(100L, captor.firstValue.agentId)
         }
 
         @Test
@@ -918,6 +1021,49 @@ class SessionServiceImplTest {
             assertEquals(1, result.skillList.size)
             assertEquals("code-review", result.skillList[0].skillName)
             assertNull(result.skillList[0].repositoryName)
+        }
+
+        @Test
+        @DisplayName("convertToResponse - 团队会话的技能来自 team_skill_binding")
+        fun `convertToResponse should read a team session from the team side`() {
+            // Given - 团队会话没有 agent_id，按 agent 读会直接查不到或查错人
+            val session = Session().apply {
+                id = 6L
+                title = "Team Session"
+                agentId = null
+                teamId = 42L
+                modelId = 11L
+            }
+            `when`(teamSkillBindingMapper.selectByTeamId(42L)).thenReturn(
+                listOf(
+                    TeamSkillBinding().apply {
+                        teamId = 42L
+                        skillId = 10L
+                    },
+                ),
+            )
+            `when`(skillService.getSkill(10L)).thenReturn(
+                Skill().apply {
+                    id = 10L
+                    name = "pdf-report"
+                    repositoryId = 5L
+                },
+            )
+            `when`(skillRepositoryService.getSkillRepository(5L)).thenReturn(
+                SkillRepository().apply {
+                    id = 5L
+                    name = "qoder-skills"
+                },
+            )
+
+            // When
+            val result = createService().convertToResponse(session)
+
+            // Then
+            assertEquals(listOf("pdf-report"), result.skillList.map { it.skillName })
+            assertTrue(result.mcpList.isEmpty())
+            verify(skillBindingMapper, never()).selectByAgentId(anyLong())
+            verify(mcpBindingMapper, never()).selectByAgentId(anyLong())
         }
     }
 }

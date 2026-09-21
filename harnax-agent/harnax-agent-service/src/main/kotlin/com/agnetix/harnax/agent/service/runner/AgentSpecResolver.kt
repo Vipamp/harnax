@@ -71,6 +71,16 @@ class AgentSpecResolver(
     }
 
     /**
+     * Whether this session runs as a team, so the caller knows which spec endpoint resolves it.
+     *
+     * Admin answers `/agent-spec` for an agent session and refuses it for a team one: since design D1 the
+     * lead is the `team` row and the session carries no `agent_id`, so there is no agent to resolve.
+     * Nothing local can tell the two apart instead — a team chat opened from the web has an ordinary
+     * `web-` id — hence this one question before either spec call.
+     */
+    fun isTeamSession(sessionId: String): Boolean = adminApiClient.isTeamSession(sessionId)
+
+    /**
      * Resolve the team of one team session: the lead's spec plus every member's, all built the same way
      * an ordinary agent's is (design D5).
      *
@@ -83,7 +93,11 @@ class AgentSpecResolver(
         // One repository fetch for the whole roster: every agent's CLI bindings filter this same list.
         val builtinSkills by lazy { adminApiClient.getBuiltinSkills() }
 
-        val leadSpecInfo = withBuiltinSkills(teamSpec.lead, sessionId) { builtinSkills }
+        // Built-in skills come only from the CLIs an agent selected, and a team's lead config has no CLI
+        // section (design D8), so there is nothing to merge here: `lead.spec.cliDetails` arrives empty and
+        // `withBuiltinSkills` returns it untouched. The lead's own skills are a different matter — they
+        // load like any agent's, see `HarnessAgentLauncher`.
+        val leadSpecInfo = teamSpec.lead
         val (leadAgentSpec, leadChatSpec) = buildSpecs(leadSpecInfo, sessionId)
         // Plan mode writes its plan into the agent's workspace, and a lead has none.
         val leadSpec = ChatSpec.builder()
@@ -117,7 +131,6 @@ class AgentSpecResolver(
             teamId = teamSpec.teamId,
             tenantId = teamSpec.tenantId,
             teamName = teamSpec.teamName,
-            instructions = teamSpec.instructions,
             rootSessionId = sessionId,
             leadAgentSpec = leadAgentSpec,
             leadChatSpec = leadSpec,

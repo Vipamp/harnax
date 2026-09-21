@@ -2,7 +2,6 @@ package com.agnetix.harnax.admin.dto
 
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
-import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 
 /**
@@ -18,12 +17,14 @@ data class SessionCreateRequest(
     @Schema(description = "Session description", example = "This is a session description")
     val sessionDescription: String = "",
 
-    @Schema(description = "Associated agent ID", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull(message = "Agent ID cannot be empty")
-    val agentId: Long = 0,
+    @Schema(
+        description = "Associated agent ID; omit for a team conversation, which runs on the team itself",
+        example = "1",
+    )
+    val agentId: Long? = null,
 
     @Schema(
-        description = "Team ID for a team conversation; the lead agent is then taken from the team, not from agentId",
+        description = "Team ID for a team conversation: the conversation then runs on that team's lead",
         example = "1",
     )
     val teamId: Long? = null,

@@ -76,7 +76,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
     }
   };
 
-  /** 团队会话由主管智能体编排成员，所以这里只是一个执行者选项的来源 */
+  /** 团队会话由团队自带的主管编排成员，这里只是执行者选项的另一组来源 */
   const loadTeams = async () => {
     try {
       const res = await getTeamPage({ current: 1, size: 100, status: 1 });
@@ -91,13 +91,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
       const formValues = await form.validateFields(['title', 'executor', 'sessionDescription']);
       const [kind, rawId] = String(formValues.executor).split(':');
       const id = Number(rawId);
-      const team = kind === 'team' ? teams.find((item) => item.id === id) : undefined;
+      const isTeam = kind === 'team';
       const createData: API.SessionCreateRequest = {
         title: formValues.title,
         sessionDescription: formValues.sessionDescription,
-        // agentId 仍是必填：团队会话带上主管智能体，运行时以 admin 解析出的团队为准
-        agentId: team ? team.leadAgentId ?? 0 : id,
-        teamId: team?.id,
+        // 团队会话不挂任何 agent 行：主管配置就在团队上，运行时按 teamId 解析
+        agentId: isTeam ? undefined : id,
+        teamId: isTeam ? id : undefined,
       };
       setLoading(true);
       const res = await createSession(createData);
@@ -202,7 +202,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onCancel, onSucc
                     {
                       label: intl.formatMessage({ id: 'pages.session.executorGroupTeams', defaultMessage: 'Teams' }),
                       options: teams.map((team) => ({
-                        label: `${team.name}${team.leadAgentName ? ` - ${team.leadAgentName}` : ''}`,
+                        label: `${team.name}${team.description ? ` - ${team.description}` : ''}`,
                         value: `team:${team.id}`,
                       })),
                     },

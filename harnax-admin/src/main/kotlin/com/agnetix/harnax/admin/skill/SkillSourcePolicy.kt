@@ -3,6 +3,8 @@ package com.agnetix.harnax.admin.skill
 import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.entity.SkillRepository
+import tools.jackson.core.type.TypeReference
+import tools.jackson.databind.ObjectMapper
 
 /**
  * Rules that hold for a skill source no matter which API entry point reached it.
@@ -86,6 +88,57 @@ object SkillSourcePolicy {
      * every repository list read parses and ships to the browser.
      */
     const val MAX_SKILLS_PER_REQUEST = 1000
+
+    /**
+     * A skill has to be loadable the moment it is written. `AgentSkill` refuses a blank description
+     * or SKILL.md body, so such a row lists fine, binds fine, and then loads as nothing — and the
+     * loader's only report is that the id could not be found.
+     *
+     * Validation never trims: the body is stored as the operator wrote it.
+     */
+    fun requireContentOnCreate(skillmd: String?, description: String?) {
+        requireContent(skillmd, description, absentIsFailure = true)
+    }
+
+    /**
+     * As [requireContentOnCreate], except that a field the caller left out keeps whatever the row
+     * already holds. So an update touching only the status of a legacy-broken skill stays possible —
+     * disabling it is usually that very edit.
+     */
+    fun requireContentOnUpdate(skillmd: String?, description: String?) {
+        requireContent(skillmd, description, absentIsFailure = false)
+    }
+
+    private fun requireContent(skillmd: String?, description: String?, absentIsFailure: Boolean) {
+        if (skillmd == null) {
+            if (absentIsFailure) throw BizException("Skill content cannot be empty")
+        } else if (skillmd.isBlank()) {
+            throw BizException("Skill content cannot be empty")
+        }
+        if (description == null) {
+            if (absentIsFailure) throw BizException("Skill description cannot be empty")
+        } else if (description.isBlank()) {
+            throw BizException("Skill description cannot be empty")
+        }
+    }
+
+    /**
+     * A blank `resources` means "no bundled files" and is fine. Anything else has to be the object the
+     * runtime reads back as `Map<String, String>`: a truncated paste parses into nothing, the loader
+     * only warns about it, and the agent is left holding a skill whose files were never delivered.
+     */
+    fun requireValidResources(resources: String?) {
+        if (resources.isNullOrBlank()) return
+        try {
+            objectMapper.readValue(resources, object : TypeReference<Map<String, String>>() {})
+        } catch (e: Exception) {
+            throw BizException(
+                "Skill resources must be a JSON object mapping file name to file content: ${e.message}",
+            )
+        }
+    }
+
+    private val objectMapper = ObjectMapper()
 
     /**
      * Normalises a name selection: padded entries are matched against the source by the trimmed name

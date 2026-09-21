@@ -8,6 +8,7 @@ import com.agnetix.harnax.admin.dto.ToolConfig
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.entity.Agent
@@ -23,6 +24,8 @@ import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.Team
+import com.agnetix.harnax.entity.TeamMember
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
 import com.agnetix.harnax.mapper.AgentMcpBindingMapper
@@ -139,6 +142,9 @@ class AgentServiceImplTest {
     @Mock
     private lateinit var secretFieldEncryptor: SecretFieldEncryptor
 
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
+
     @Captor
     private lateinit var agentCaptor: ArgumentCaptor<Agent>
 
@@ -212,6 +218,14 @@ class AgentServiceImplTest {
                     status = 1
                 }
             }
+        }
+
+        // The skill guards now live in the shared SkillBindingResolver (a team's lead goes through the
+        // same rules). Delegating keeps the guard assertions below honest about the real rules instead
+        // of the stub's return value.
+        val realResolver = SkillBindingResolver(skillMapper, skillRepositoryService)
+        `when`(skillBindingResolver.resolveBindable(any())).thenAnswer { invocation ->
+            realResolver.resolveBindable(invocation.getArgument<List<Long>>(0))
         }
     }
 
@@ -1032,6 +1046,35 @@ class AgentServiceImplTest {
             verify(agentMapper, never()).deleteById(any())
             verify(toolBindingMapper, never()).deleteByAgentId(any())
             verify(mcpBindingMapper, never()).deleteByAgentId(any())
+        }
+
+        @Test
+        @DisplayName("deleteAgent - Reject an agent a team still delegates to")
+        fun `deleteAgent should reject an agent that is a member of a team`() {
+            // 团队是真实挂在这个 agent 行上的，删掉之后主管每次委派都会解析失败；成员关系是
+            // team 侧剩下的唯一引用（主管不再是 agent），所以这条守卫要留住
+            `when`(agentMapper.selectById(1L)).thenReturn(testAgent)
+            `when`(teamMemberMapper.selectByMemberAgentId(1L)).thenReturn(
+                listOf(
+                    TeamMember().apply {
+                        teamId = 42L
+                        memberAgentId = 1L
+                    },
+                ),
+            )
+            `when`(teamMapper.selectById(42L)).thenReturn(
+                Team().apply {
+                    id = 42L
+                    name = "Research"
+                    tenantId = 1L
+                },
+            )
+
+            val exception = assertThrows<BizException> { agentService.deleteAgent(1L) }
+
+            assertTrue(exception.message!!.contains("Research"))
+            verify(agentMapper, never()).deleteById(any())
+            verify(skillBindingMapper, never()).deleteByAgentId(any())
         }
     }
 

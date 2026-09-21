@@ -4,15 +4,24 @@ import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.TeamCreateRequest
 import com.agnetix.harnax.admin.dto.TeamUpdateRequest
 import com.agnetix.harnax.admin.exception.BizException
+import com.agnetix.harnax.admin.service.SkillRepositoryService
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.Model
 import com.agnetix.harnax.entity.Session
+import com.agnetix.harnax.entity.Skill
+import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.TeamMember
+import com.agnetix.harnax.entity.TeamSkillBinding
 import com.agnetix.harnax.mapper.AgentMapper
+import com.agnetix.harnax.mapper.ModelMapper
 import com.agnetix.harnax.mapper.SessionMapper
+import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -45,7 +54,8 @@ import org.springframework.web.context.request.ServletRequestAttributes
  * TeamServiceImpl Unit Tests.
  *
  * The service is the only place a team can be made unresolvable, so most of the value here is in the
- * save-time refusals: a team that saved cleanly is a team the runtime does not have to guess about.
+ * save-time refusals. Since V34 the lead's own configuration — prompt, model, skills — is saved here too,
+ * which adds a second thing that can be written badly: none of it has a fallback at runtime.
  */
 @ExtendWith(MockitoExtension::class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -61,14 +71,32 @@ class TeamServiceImplTest {
     private lateinit var teamMemberMapper: TeamMemberMapper
 
     @Mock
+    private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
+
+    @Mock
     private lateinit var agentMapper: AgentMapper
+
+    @Mock
+    private lateinit var modelMapper: ModelMapper
 
     @Mock
     private lateinit var sessionMapper: SessionMapper
 
+    @Mock
+    private lateinit var skillMapper: SkillMapper
+
+    @Mock
+    private lateinit var skillRepositoryService: SkillRepositoryService
+
+    @Mock
+    private lateinit var skillBindingResolver: SkillBindingResolver
+
     private val agents = mutableMapOf<Long, Agent>()
+    private val models = mutableMapOf<Long, Model>()
+    private val skills = mutableMapOf<Long, Skill>()
     private val insertedTeams = mutableListOf<Team>()
     private val insertedMembers = mutableListOf<TeamMember>()
+    private val insertedBindings = mutableListOf<TeamSkillBinding>()
     private lateinit var service: TeamServiceImpl
 
     @BeforeEach
@@ -80,13 +108,29 @@ class TeamServiceImplTest {
         `when`(jwtUtil.getUsernameFromToken(anyString())).thenReturn(CURRENT_USER)
         TenantContext.setTenantId(TENANT)
 
-        agent(LEAD, "Coordinator")
         agent(MEMBER_A, "Researcher")
         agent(MEMBER_B, "Writer")
+        model(MODEL, "qwen3-max")
+        skill(100L, "资料检索规范")
+        skill(101L, "报告撰写规范")
 
         `when`(agentMapper.selectById(anyLong())).thenAnswer { agents[it.getArgument<Long>(0)] }
         `when`(agentMapper.selectByIds(any())).thenAnswer { invocation ->
             invocation.getArgument<List<Long>>(0).mapNotNull { agents[it] }
+        }
+        `when`(modelMapper.selectById(anyLong())).thenAnswer { models[it.getArgument<Long>(0)] }
+        `when`(skillMapper.selectByIds(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).mapNotNull { skills[it] }
+        }
+        `when`(skillRepositoryService.getSkillRepository(anyLong())).thenAnswer { invocation ->
+            val id = invocation.getArgument<Long>(0)
+            SkillRepository().apply {
+                this.id = id
+                name = "repo-$id"
+            }
+        }
+        `when`(skillBindingResolver.resolveBindable(any())).thenAnswer { invocation ->
+            invocation.getArgument<List<Long>>(0).mapNotNull { skills[it] }
         }
         `when`(teamMapper.insert(any())).thenAnswer { invocation ->
             invocation.getArgument<Team>(0).let { team ->
@@ -103,13 +147,23 @@ class TeamServiceImplTest {
             insertedMembers.addAll(invocation.getArgument<List<TeamMember>>(0))
             1
         }
+        `when`(teamSkillBindingMapper.deleteByTeamId(anyLong())).thenReturn(1)
+        `when`(teamSkillBindingMapper.batchInsert(any())).thenAnswer { invocation ->
+            insertedBindings.addAll(invocation.getArgument<List<TeamSkillBinding>>(0))
+            1
+        }
 
         service = TeamServiceImpl(
             jwtUtil = jwtUtil,
             teamMapper = teamMapper,
             teamMemberMapper = teamMemberMapper,
+            teamSkillBindingMapper = teamSkillBindingMapper,
             agentMapper = agentMapper,
+            modelMapper = modelMapper,
             sessionMapper = sessionMapper,
+            skillMapper = skillMapper,
+            skillRepositoryService = skillRepositoryService,
+            skillBindingResolver = skillBindingResolver,
         )
     }
 
@@ -142,43 +196,51 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `a lead agent that does not exist names the id it could not resolve`() {
-            agents.remove(LEAD)
+        fun `a model that does not exist names the id it could not resolve`() {
+            val error = assertThrows<BizException> { service.createTeam(createRequest(modelId = GONE)) }
 
-            val error = assertThrows<BizException> { service.createTeam(createRequest()) }
-
-            assertEquals("Lead agent not found: $LEAD", error.message)
+            assertEquals("Lead model not found: $GONE", error.message)
+            verify(teamMapper, never()).insert(any())
         }
 
         @Test
-        fun `a lead agent owned by another tenant is refused`() {
-            agents[LEAD] = agent(LEAD, "Coordinator", tenantId = TENANT + 1)
+        fun `a private model of another user is refused`() {
+            models[MODEL] = model(MODEL, "qwen3-max", isPublic = 0, creator = "other-user")
 
             val error = assertThrows<BizException> { service.createTeam(createRequest()) }
 
-            assertEquals("Lead agent belongs to another tenant: $LEAD", error.message)
+            assertEquals("Lead model is not available to the current user: $MODEL", error.message)
         }
 
         @Test
-        fun `a disabled lead agent is refused`() {
-            agents[LEAD] = agent(LEAD, "Coordinator", status = 0)
+        fun `a public model of another tenant may lead`() {
+            models[MODEL] = model(MODEL, "qwen3-max", tenantId = TENANT + 1)
+
+            assertTrue(service.createTeam(createRequest()))
+        }
+
+        @Test
+        fun `a disabled model is refused as the lead model`() {
+            models[MODEL] = model(MODEL, "qwen3-max", status = 0)
 
             val error = assertThrows<BizException> { service.createTeam(createRequest()) }
 
-            assertEquals("Lead agent is disabled: Coordinator", error.message)
+            assertEquals("Lead model is disabled: qwen3-max-2026-07-15", error.message)
+            verify(teamMapper, never()).insert(any())
         }
 
         @Test
-        fun `a private lead agent owned by someone else is refused`() {
-            agents[LEAD] = agent(LEAD, "Coordinator", isPublic = 0, creator = "other-user")
+        fun `a non-chat model is refused as the lead model`() {
+            models[MODEL] = model(MODEL, "qwen3-max", modelType = "embedding")
 
             val error = assertThrows<BizException> { service.createTeam(createRequest()) }
 
-            assertEquals("Lead agent is not available to the current user: Coordinator", error.message)
+            assertEquals("Lead model is not a chat model: qwen3-max-2026-07-15", error.message)
+            verify(teamMapper, never()).insert(any())
         }
 
         @Test
-        fun `a private member agent of another user is refused even though the lead is usable`() {
+        fun `a private member agent of another user is refused`() {
             agents[MEMBER_B] = agent(MEMBER_B, "Writer", isPublic = 0, creator = "other-user")
 
             val error = assertThrows<BizException> { service.createTeam(createRequest()) }
@@ -229,12 +291,20 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `the lead cannot also be a member`() {
-            val request = createRequest(members = listOf(member(LEAD), member(MEMBER_A)))
+        fun `a lead agent and a member can be the same agent because the lead is no longer an agent`() {
+            // The rule this replaces refused a lead that also appeared as a member. Members are still
+            // plain agents, so an agent a team leads with is delegatable to like any other.
+            assertTrue(service.createTeam(createRequest(members = listOf(member(MEMBER_A)))))
+        }
 
-            val error = assertThrows<BizException> { service.createTeam(request) }
+        @Test
+        fun `bad skills are refused by the same guard the agent page uses`() {
+            `when`(skillBindingResolver.resolveBindable(any())).thenThrow(BizException("Skill is disabled, enable it before binding: 检索规范"))
 
-            assertEquals("The lead agent cannot also be a member of the same team", error.message)
+            val error = assertThrows<BizException> { service.createTeam(createRequest(skillIds = listOf(100L))) }
+
+            assertEquals("Skill is disabled, enable it before binding: 检索规范", error.message)
+            verify(teamMapper, never()).insert(any())
         }
     }
 
@@ -243,30 +313,26 @@ class TeamServiceImplTest {
     inner class CreatePersistence {
 
         @Test
-        fun `the saved row carries the caller's tenant and creator plus the documented defaults`() {
+        fun `the saved row carries the lead's prompt and model plus the caller's tenant and creator`() {
             assertTrue(service.createTeam(createRequest(name = "Research")))
 
             val team = insertedTeams.single()
             assertEquals("Research", team.name)
-            assertEquals(LEAD, team.leadAgentId)
+            assertEquals(LEAD_PROMPT, team.systemPrompt)
+            assertEquals(MODEL, team.modelId)
             assertEquals(TENANT, team.tenantId)
             assertEquals(CURRENT_USER, team.creator)
-            assertEquals("", team.description)
-            assertEquals("", team.instructions)
             assertEquals(1, team.status)
             assertEquals(0, team.isPublic)
             assertEquals(1, team.active)
         }
 
         @Test
-        fun `explicit status instructions and description are kept`() {
-            val request = createRequest(description = "reads sources", instructions = "always cite", status = 0, isPublic = 1)
-
-            assertTrue(service.createTeam(request))
+        fun `explicit status and visibility are kept`() {
+            assertTrue(service.createTeam(createRequest(description = "reads sources", status = 0, isPublic = 1)))
 
             val team = insertedTeams.single()
             assertEquals("reads sources", team.description)
-            assertEquals("always cite", team.instructions)
             assertEquals(0, team.status)
             assertEquals(1, team.isPublic)
         }
@@ -290,12 +356,30 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `members are not written when the team row itself failed to insert`() {
+        fun `the lead's skills are bound to the team and no agent row is created for them`() {
+            assertTrue(service.createTeam(createRequest(skillIds = listOf(100L, 101L))))
+
+            assertEquals(listOf(100L, 101L), insertedBindings.map { it.skillId })
+            assertTrue(insertedBindings.all { it.teamId == TEAM_ID })
+            verify(agentMapper, never()).insert(any())
+        }
+
+        @Test
+        fun `no skill list writes no binding rows`() {
+            assertTrue(service.createTeam(createRequest(skillIds = null)))
+
+            assertTrue(insertedBindings.isEmpty())
+            verify(teamSkillBindingMapper, never()).batchInsert(any())
+        }
+
+        @Test
+        fun `members and skills are not written when the team row itself failed to insert`() {
             `when`(teamMapper.insert(any())).thenReturn(0)
 
-            assertFalse(service.createTeam(createRequest()))
+            assertFalse(service.createTeam(createRequest(skillIds = listOf(100L))))
 
             assertTrue(insertedMembers.isEmpty())
+            assertTrue(insertedBindings.isEmpty())
         }
     }
 
@@ -346,6 +430,50 @@ class TeamServiceImplTest {
         }
 
         @Test
+        fun `a new prompt and model replace the lead's configuration`() {
+            val team = team()
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team)
+            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
+            model(222L, "gpt-5")
+
+            assertTrue(service.updateTeam(TEAM_ID, TeamUpdateRequest(systemPrompt = "新提示词", modelId = 222L)))
+
+            assertEquals("新提示词", team.systemPrompt)
+            assertEquals(222L, team.modelId)
+        }
+
+        @Test
+        fun `a model that went missing stops the update before anything is written`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
+            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
+
+            val error = assertThrows<BizException> { service.updateTeam(TEAM_ID, TeamUpdateRequest(modelId = GONE)) }
+
+            assertEquals("Lead model not found: $GONE", error.message)
+            verify(teamMapper, never()).updateById(any())
+        }
+
+        @Test
+        fun `null fields leave the stored values alone`() {
+            val team = team(name = "Research", tenantId = TENANT).apply {
+                description = "old description"
+                systemPrompt = "old prompt"
+                modelId = MODEL
+                isPublic = 1
+            }
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team)
+            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
+
+            service.updateTeam(TEAM_ID, TeamUpdateRequest())
+
+            assertEquals("Research", team.name)
+            assertEquals("old description", team.description)
+            assertEquals("old prompt", team.systemPrompt)
+            assertEquals(MODEL, team.modelId)
+            assertEquals(1, team.isPublic)
+        }
+
+        @Test
         fun `an absent member payload keeps the stored membership and does not rewrite rows`() {
             val team = team()
             `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team)
@@ -371,54 +499,37 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `the stored membership is revalidated against a new lead`() {
+        fun `the stored membership is revalidated on every save`() {
             `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
-            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(LEAD)))
+            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(GONE)))
 
             val error = assertThrows<BizException> { service.updateTeam(TEAM_ID, TeamUpdateRequest(description = "note")) }
 
-            assertEquals("The lead agent cannot also be a member of the same team", error.message)
+            assertEquals("Member agent not found: $GONE", error.message)
             verify(teamMapper, never()).updateById(any())
         }
 
         @Test
-        fun `a lead that went unusable stops the update`() {
+        fun `an absent skill payload keeps the stored skills`() {
             `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
             `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
 
-            val error = assertThrows<BizException> { service.updateTeam(TEAM_ID, TeamUpdateRequest(leadAgentId = GONE)) }
+            assertTrue(service.updateTeam(TEAM_ID, TeamUpdateRequest(skillIds = null)))
 
-            assertEquals("Lead agent not found: $GONE", error.message)
-            verify(teamMapper, never()).updateById(any())
+            verify(teamSkillBindingMapper, never()).deleteByTeamId(anyLong())
+            verify(teamSkillBindingMapper, never()).batchInsert(any())
         }
 
         @Test
-        fun `a new lead is stored`() {
-            val team = team()
-            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team)
+        fun `a skill payload replaces the whole set and an empty one clears it`() {
+            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
             `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
 
-            assertTrue(service.updateTeam(TEAM_ID, TeamUpdateRequest(leadAgentId = MEMBER_B)))
+            assertTrue(service.updateTeam(TEAM_ID, TeamUpdateRequest(skillIds = listOf(101L, 100L))))
+            assertEquals(listOf(101L, 100L), insertedBindings.map { it.skillId })
 
-            assertEquals(MEMBER_B, team.leadAgentId)
-        }
-
-        @Test
-        fun `null fields leave the stored values alone`() {
-            val team = team(name = "Research", tenantId = TENANT).apply {
-                description = "old description"
-                instructions = "old instructions"
-                isPublic = 1
-            }
-            `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team)
-            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
-
-            service.updateTeam(TEAM_ID, TeamUpdateRequest())
-
-            assertEquals("Research", team.name)
-            assertEquals("old description", team.description)
-            assertEquals("old instructions", team.instructions)
-            assertEquals(1, team.isPublic)
+            assertTrue(service.updateTeam(TEAM_ID, TeamUpdateRequest(skillIds = emptyList())))
+            verify(teamSkillBindingMapper, org.mockito.Mockito.times(2)).deleteByTeamId(TEAM_ID)
         }
     }
 
@@ -455,13 +566,14 @@ class TeamServiceImplTest {
         }
 
         @Test
-        fun `delete removes the bindings before the team`() {
+        fun `delete removes the member and skill bindings before the team`() {
             `when`(teamMapper.selectById(TEAM_ID)).thenReturn(team())
 
             assertTrue(service.deleteTeam(TEAM_ID))
 
-            val order = inOrder(teamMemberMapper, teamMapper)
+            val order = inOrder(teamMemberMapper, teamSkillBindingMapper, teamMapper)
             order.verify(teamMemberMapper).deleteByTeamId(TEAM_ID)
+            order.verify(teamSkillBindingMapper).deleteByTeamId(TEAM_ID)
             order.verify(teamMapper).deleteById(TEAM_ID)
         }
 
@@ -474,6 +586,7 @@ class TeamServiceImplTest {
             assertEquals("Team belongs to another tenant", error.message)
             verify(teamMapper, never()).deleteById(anyLong())
             verify(teamMemberMapper, never()).deleteByTeamId(anyLong())
+            verify(teamSkillBindingMapper, never()).deleteByTeamId(anyLong())
         }
 
         @Test
@@ -548,18 +661,24 @@ class TeamServiceImplTest {
     inner class ResponseAssembly {
 
         @Test
-        fun `lead and members are named in assembly order from one agent read`() {
+        fun `the lead's own configuration and its skills come back with the members in order`() {
             `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(
                 listOf(binding(MEMBER_A, "gathers"), binding(MEMBER_B, "drafts")),
+            )
+            `when`(teamSkillBindingMapper.selectByTeamId(TEAM_ID)).thenReturn(
+                listOf(skillBinding(100L), skillBinding(101L)),
             )
 
             val response = service.convertToResponse(team())
 
-            assertEquals("Coordinator", response.leadAgentName)
-            assertEquals("Coordinator description", response.leadAgentDescription)
+            assertEquals(LEAD_PROMPT, response.systemPrompt)
+            assertEquals(MODEL, response.modelId)
+            // The agent listing shows `modelName`; so must this one, or the same model reads as two
+            // different strings on the two pages.
+            assertEquals("qwen3-max-2026-07-15", response.modelName)
+            assertEquals(listOf(100L to "资料检索规范", 101L to "报告撰写规范"), response.skillList.map { it.skillId to it.skillName })
             assertEquals(listOf("Researcher" to "gathers", "Writer" to "drafts"), response.memberList.map { it.agentName to it.delegationDescription })
             assertTrue(response.memberList.all { it.agentAvailable && it.agentStatus == 1 })
-            verify(agentMapper).selectByIds(listOf(MEMBER_A, MEMBER_B, LEAD))
         }
 
         @Test
@@ -574,18 +693,27 @@ class TeamServiceImplTest {
             assertEquals("#$MEMBER_B", gone.agentName)
             assertFalse(gone.agentAvailable)
             assertNull(gone.agentStatus)
-            assertEquals("gathering", response.memberList.first().delegationDescription)
         }
 
         @Test
-        fun `a lead whose agent is gone still names the id it cannot resolve`() {
-            agents.remove(LEAD)
-            `when`(teamMemberMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(binding(MEMBER_A)))
+        fun `a bound skill whose row is gone stays listed by id instead of vanishing`() {
+            skills.remove(101L)
+            `when`(teamSkillBindingMapper.selectByTeamId(TEAM_ID)).thenReturn(listOf(skillBinding(100L), skillBinding(101L)))
 
             val response = service.convertToResponse(team())
 
-            assertEquals("#$LEAD", response.leadAgentName)
-            assertNull(response.leadAgentDescription)
+            assertEquals(listOf(100L, 101L), response.skillList.map { it.skillId })
+            assertEquals("#101", response.skillList[1].skillName)
+        }
+
+        @Test
+        fun `a model whose row is gone still names the id the operator saved`() {
+            models.remove(MODEL)
+
+            val response = service.convertToResponse(team())
+
+            assertEquals(MODEL, response.modelId)
+            assertNull(response.modelName)
         }
     }
 
@@ -606,16 +734,46 @@ class TeamServiceImplTest {
         this.tenantId = tenantId
     }.also { agents[id] = it }
 
+    private fun model(
+        id: Long,
+        name: String,
+        tenantId: Long = TENANT,
+        modelName: String = "$name-2026-07-15",
+        status: Int = 1,
+        isPublic: Int = 1,
+        modelType: String = "chat",
+        creator: String = CURRENT_USER,
+    ): Model = Model().apply {
+        this.id = id
+        this.name = name
+        this.modelName = modelName
+        this.tenantId = tenantId
+        this.status = status
+        this.isPublic = isPublic
+        this.modelType = modelType
+        this.creator = creator
+    }.also { models[id] = it }
+
+    private fun skill(
+        id: Long,
+        name: String,
+    ): Skill = Skill().apply {
+        this.id = id
+        this.name = name
+        this.description = "$name description"
+        this.repositoryId = 10L
+    }.also { skills[id] = it }
+
     private fun team(
         id: Long = TEAM_ID,
         name: String = "Research",
         tenantId: Long = TENANT,
-        leadAgentId: Long = LEAD,
     ): Team = Team().apply {
         this.id = id
         this.name = name
         this.tenantId = tenantId
-        this.leadAgentId = leadAgentId
+        this.systemPrompt = LEAD_PROMPT
+        this.modelId = MODEL
         this.creator = CURRENT_USER
     }
 
@@ -623,6 +781,11 @@ class TeamServiceImplTest {
         teamId = TEAM_ID
         memberAgentId = agentId
         delegationDescription = delegation
+    }
+
+    private fun skillBinding(skillId: Long): TeamSkillBinding = TeamSkillBinding().apply {
+        teamId = TEAM_ID
+        this.skillId = skillId
     }
 
     private fun session(sessionId: String, title: String): Session = Session().apply {
@@ -636,16 +799,18 @@ class TeamServiceImplTest {
     private fun createRequest(
         name: String = "Research",
         description: String? = null,
-        leadAgentId: Long = LEAD,
-        instructions: String? = null,
+        systemPrompt: String = LEAD_PROMPT,
+        modelId: Long = MODEL,
+        skillIds: List<Long>? = null,
         members: List<TeamCreateRequest.MemberItem>? = listOf(member(MEMBER_A), member(MEMBER_B)),
         status: Int? = null,
         isPublic: Int? = null,
     ): TeamCreateRequest = TeamCreateRequest(
         name = name,
         description = description,
-        leadAgentId = leadAgentId,
-        instructions = instructions,
+        systemPrompt = systemPrompt,
+        modelId = modelId,
+        skillIds = skillIds,
         members = members,
         status = status,
         isPublic = isPublic,
@@ -655,7 +820,8 @@ class TeamServiceImplTest {
         private const val CURRENT_USER = "admin"
         private const val TENANT = 7L
         private const val TEAM_ID = 42L
-        private const val LEAD = 1L
+        private const val MODEL = 11L
+        private const val LEAD_PROMPT = "你是本次协作的负责人，只拆解、委派与验收"
         private const val MEMBER_A = 2L
         private const val MEMBER_B = 3L
         private const val GONE = 99L

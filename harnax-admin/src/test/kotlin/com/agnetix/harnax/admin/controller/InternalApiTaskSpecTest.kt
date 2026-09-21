@@ -24,6 +24,7 @@ import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -122,6 +123,9 @@ class InternalApiTaskSpecTest {
 
     @Mock
     private lateinit var teamMemberMapper: TeamMemberMapper
+
+    @Mock
+    private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
     @InjectMocks
     private lateinit var controller: InternalApiController

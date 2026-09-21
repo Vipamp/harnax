@@ -7,8 +7,8 @@
         <result column="tenant_id" property="tenantId"/>
         <result column="name" property="name"/>
         <result column="description" property="description"/>
-        <result column="lead_agent_id" property="leadAgentId"/>
-        <result column="instructions" property="instructions"/>
+        <result column="system_prompt" property="systemPrompt"/>
+        <result column="model_id" property="modelId"/>
         <result column="status" property="status"/>
         <result column="is_public" property="isPublic"/>
         <result column="creator" property="creator"/>
@@ -41,16 +41,12 @@
         ORDER BY update_time DESC
     </select>
 
-    <select id="selectByLeadAgentId" resultMap="TeamResultMap">
-        SELECT * FROM team WHERE lead_agent_id = #{agentId} AND active = 1 ORDER BY id
-    </select>
-
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO team (
-        tenant_id, name, description, lead_agent_id, instructions,
+        tenant_id, name, description, system_prompt, model_id,
         status, is_public, creator, active, create_time, update_time
         ) VALUES (
-        #{tenantId}, #{name}, #{description}, #{leadAgentId}, #{instructions},
+        #{tenantId}, #{name}, #{description}, #{systemPrompt}, #{modelId},
         #{status}, #{isPublic}, #{creator}, #{active}, #{createTime}, #{updateTime}
         )
     </insert>
@@ -59,8 +55,8 @@
         UPDATE team SET
         name = #{name},
         description = #{description},
-        lead_agent_id = #{leadAgentId},
-        instructions = #{instructions},
+        system_prompt = #{systemPrompt},
+        model_id = #{modelId},
         status = #{status},
         is_public = #{isPublic},
         update_time = NOW()

@@ -17,6 +17,7 @@ import io.agentscope.harness.agent.DistributedStore
 import io.agentscope.harness.agent.HarnessAgent
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec
 import io.agentscope.harness.agent.filesystem.spec.SandboxFilesystemSpec
+import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -39,6 +40,8 @@ class HarnessAgentBuilder {
     private val builder: HarnessAgent.Builder = HarnessAgent.builder()
     private var toolkit: Toolkit = Toolkit()
     private val skills: MutableList<AgentSkill> = mutableListOf()
+
+    private val log = LoggerFactory.getLogger(HarnessAgentBuilder::class.java)
 
     // ===== Basic API (mirrors AscopeAgentBuilder) =====
 
@@ -89,8 +92,21 @@ class HarnessAgentBuilder {
     /**
      * Stores skills to be registered via an in-memory [AgentSkillRepository] at build time.
      * HarnessAgent internally creates a SkillBox from the repository.
+     *
+     * One entry per name, the last one winning: the harness merges repositories low-to-high by
+     * `AgentSkill.name` and the binding table is read `ORDER BY id`, so "the binding registered last"
+     * is what the registry offers the model. Keeping both copies here instead would let the prompt
+     * list one skill and the repository resolve another.
      */
     fun addSkill(agentSkill: AgentSkill): HarnessAgentBuilder = apply {
+        val shadowed = skills.indexOfLast { it.name == agentSkill.name }
+        if (shadowed >= 0) {
+            log.warn(
+                "Skill '{}' is bound more than once, keeping the last binding and dropping the earlier one",
+                agentSkill.name,
+            )
+            skills.removeAt(shadowed)
+        }
         this.skills.add(agentSkill)
     }
 
@@ -145,6 +161,11 @@ class HarnessAgentBuilder {
 
     fun build(): HarnessAgent {
         builder.toolkit(toolkit)
+        // The default workspace repository is merged on top of the ones installed below and wins on a
+        // name clash, so an agent could override a skill the operator configured by writing a
+        // SKILL.md with the same name into its own sandbox. Admin is the only skill source here —
+        // `enableSkillManageTool` is never called and no skill directory is provisioned.
+        builder.disableDefaultWorkspaceSkills()
         if (skills.isNotEmpty()) {
             builder.skillRepository(InMemorySkillRepository(skills.toList()))
         }

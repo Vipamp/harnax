@@ -8,8 +8,6 @@ const { Text } = Typography;
 interface MembersFieldProps {
   /** 当前用户可用的智能体（已启用、同租户） */
   agents: API.AgentItem[];
-  /** 主管 ID：后端拒绝主管兼任成员，这里同步把它从成员候选里去掉 */
-  leadAgentId?: number;
   /** 编辑时已有的成员，用于给失效引用留出可读的名字 */
   currentMembers?: API.TeamMemberItem[];
 }
@@ -17,7 +15,7 @@ interface MembersFieldProps {
 /**
  * 成员编排区：一行一个成员（选智能体 + 写分工），顺序即主管看到的顺序。
  */
-const MembersField: React.FC<MembersFieldProps> = ({ agents, leadAgentId, currentMembers }) => {
+const MembersField: React.FC<MembersFieldProps> = ({ agents, currentMembers }) => {
   const intl = useIntl();
   const form = Form.useFormInstance();
 
@@ -26,7 +24,7 @@ const MembersField: React.FC<MembersFieldProps> = ({ agents, leadAgentId, curren
     value: agent.id,
   });
 
-  const options = agents.filter((agent) => agent.id !== leadAgentId).map(optionOf);
+  const options = agents.map(optionOf);
 
   // 团队里引用了已删除或已停用的智能体时，保留一行带名字的禁用项，
   // 否则下拉框只剩一个裸 ID，用户不知道该换掉谁。
@@ -76,16 +74,6 @@ const MembersField: React.FC<MembersFieldProps> = ({ agents, leadAgentId, curren
                     {
                       validator: async (_: any, value: number) => {
                         if (!value) return Promise.resolve();
-                        if (value === leadAgentId) {
-                          return Promise.reject(
-                            new Error(
-                              intl.formatMessage({
-                                id: 'pages.team.leadCannotBeMember',
-                                defaultMessage: 'The lead agent cannot also be a member',
-                              }),
-                            ),
-                          );
-                        }
                         const ids: any[] = (form.getFieldValue('members') || []).map((m: any) => m?.agentId);
                         if (ids.filter((id) => id === value).length > 1) {
                           return Promise.reject(

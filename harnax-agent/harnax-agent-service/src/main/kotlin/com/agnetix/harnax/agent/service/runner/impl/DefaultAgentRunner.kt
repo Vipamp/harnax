@@ -797,12 +797,12 @@ class DefaultAgentRunner(
         sessionId: String,
         userIdentifier: UserIdentifier,
     ): CachedAgent {
+        // Ownership comes first: a team session has no agent for `/agent-spec` to resolve (design D1), so
+        // asking that endpoint about it is a refusal rather than an answer. Once per session build, and the
+        // answer is stable — a session's team never changes under it.
+        if (agentSpecResolver.isTeamSession(sessionId)) return buildTeamAgent(sessionId, userIdentifier)
         log.info("Resolving agent spec for sessionId=$sessionId")
         val (agentSpec, chatSpec) = agentSpecResolver.resolve(sessionId)
-        // Admin stamps the session's team id on the agent spec it returns, so this is also the signal
-        // that the session runs as a team. Building the lead from `agentSpec` alone would silently turn
-        // such a session into an ordinary chat that never delegates.
-        if (specContextHolder.get()?.teamId != null) return buildTeamAgent(sessionId, userIdentifier)
         val agent = launcher.createSingleAgent(
             agentSpec = agentSpec,
             sessionId = sessionId,
@@ -960,7 +960,12 @@ class DefaultAgentRunner(
         // - disabling thinking is blocked when model requires thinking (thinkingMode=2)
         if (enable || capability == "thinking") {
             try {
-                val specInfo = adminApiClient.getAgentSpec(sessionId)
+                // 团队会话没有主管 agent 行，admin 会拒 /agent-spec：能力位只能读 team-spec 的 lead
+                val specInfo = if (agentSpecResolver.isTeamSession(sessionId)) {
+                    adminApiClient.getTeamSpec(sessionId).lead
+                } else {
+                    adminApiClient.getAgentSpec(sessionId)
+                }
                 if (!enable && capability == "thinking" && specInfo.modelThinkingMode == 2) {
                     return CommandResponse.failure(
                         sessionId,

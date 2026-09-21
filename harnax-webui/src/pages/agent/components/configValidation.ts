@@ -119,7 +119,8 @@ function findMcpIssue(configs: McpConfigState[]): ConfigIssue | null {
   return null;
 }
 
-function findSkillIssue(configs: SkillConfigState[]): ConfigIssue | null {
+/** 团队向导的技能校验走同一条规则，但它不借用 agent 向导的步骤号 */
+export function findSkillIssue(configs: SkillConfigState[]): ConfigIssue | null {
   const seen = new Set<number>();
   for (const c of configs) {
     if (!c.repositoryId && !c.skillId) continue;

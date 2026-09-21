@@ -22,6 +22,7 @@ import com.agnetix.harnax.entity.SkillRepository
 import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -40,6 +41,7 @@ class SkillServiceImpl(
     private val skillRepositoryService: SkillRepositoryService,
     private val agentSkillBindingMapper: AgentSkillBindingMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
+    private val teamSkillBindingMapper: TeamSkillBindingMapper,
     private val skillLoaderRegistry: SkillLoaderRegistry,
     private val skillInstaller: SkillInstaller,
     private val skillSyncRecorder: SkillSyncRecorder,
@@ -97,6 +99,11 @@ class SkillServiceImpl(
         // so `status = 7` would store a skill that is neither switchable in the UI nor ever loaded
         val initialStatus = request.status ?: 1 // Default enabled
         SkillSourcePolicy.requireStatus(initialStatus)
+
+        // The runtime builds an AgentSkill out of exactly these columns and throws on a blank one, so
+        // without this gate the API stores a skill that lists fine, binds fine and never loads
+        SkillSourcePolicy.requireContentOnCreate(request.skillmd, request.description)
+        SkillSourcePolicy.requireValidResources(request.resources)
 
         // Authorisation first: probing whether a name is taken must not be possible for a
         // repository the caller may not write to
@@ -160,6 +167,8 @@ class SkillServiceImpl(
         targetRepository?.let { skill.isPublic = it.isPublic }
 
         // Selectively update fields
+        SkillSourcePolicy.requireContentOnUpdate(request.skillmd, request.description)
+        SkillSourcePolicy.requireValidResources(request.resources)
         request.description?.let { skill.description = it }
         request.skillmd?.let { skill.skillmd = it }
         request.resources?.let { skill.resources = it }
@@ -216,11 +225,12 @@ class SkillServiceImpl(
     }
 
     /**
-     * Refuses to take a skill out of circulation while an agent binds it.
+     * Refuses to take a skill out of circulation while something binds it.
      *
-     * A binding means the skill is part of what that agent does on its next run. Switching it off or
-     * deleting it from the skill page rewrites that agent without anyone looking at the agent, so
-     * the change has to start where it is visible: on the agent's own configuration.
+     * A binding means the skill is part of what that holder does on its next run. Switching it off or
+     * deleting it from the skill page rewrites that holder without anyone looking at it, so the change
+     * has to start where it is visible: on the agent's or the team's own configuration. A team's lead
+     * binds skills on the team row itself since V34, so its table is counted too.
      */
     private fun requireUnbound(
         skill: Skill,
@@ -230,6 +240,9 @@ class SkillServiceImpl(
         if (bound > 0) {
             val agents = if (bound == 1) "1 agent" else "$bound agents"
             throw BizException("Skill '${skill.name}' is bound to $agents, so it cannot be $action")
+        }
+        if (teamSkillBindingMapper.selectBoundSkillIds(listOf(skill.id)).isNotEmpty()) {
+            throw BizException("Skill '${skill.name}' is bound to a team lead, so it cannot be $action")
         }
     }
 

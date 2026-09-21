@@ -195,7 +195,6 @@ class TeamHistoryReplayTest {
         teamId = 7L,
         tenantId = 1L,
         teamName = "数据分析团队",
-        instructions = "",
         lead = specInfo(3L, "主管"),
         members = listOf(
             TeamMemberSpecDto(

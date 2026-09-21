@@ -18,7 +18,6 @@ import com.agnetix.harnax.agent.provider.MIDDLEWARE_SET
 import com.agnetix.harnax.agent.provider.middleware.ProcessLogMiddleware
 import com.agnetix.harnax.agent.session.SessionConfig
 import com.agnetix.harnax.agent.session.SessionLoader
-import com.agnetix.harnax.common.error.HarnaxErrorCode
 import com.agnetix.harnax.common.mcp.McpConfigDecryptor
 import com.agnetix.harnax.entity.McpAuthTypes
 import com.agnetix.harnax.harness.config.HarnessConfig
@@ -429,16 +428,31 @@ class HarnessAgentLauncher(
         }
 
         // ----- Skills -----
-        val skills = if (isLead) emptyList() else agentSpec.skills
-        skills.forEach {
+        // A lead loads its skills the same way a member does: they are part of the team's own
+        // configuration (design D5), and their text is what a skill mostly is. What a lead cannot do is
+        // carry a skill's files — it has no sandbox to project them into — so a skill that ships any is
+        // loaded for its instructions and reported for the rest, rather than dropped. The absent files
+        // cannot strand the model on a `<files-root>` path the way a member's can: `disableShellTool()`
+        // above makes the harness resolve to ShellPathPolicy.noShell(), which never renders that prefix.
+        agentSpec.skills.forEach {
+            // A miss means the row was deleted between delivery and build, or it holds something
+            // `AgentSkill` refuses (see SkillAdaptorImpl). Either way the loader has already logged
+            // which, and one unusable skill must not cost the agent every other capability it has.
             val skill = skillAdaptor.getSkill(it.skillId)
             if (skill != null) {
                 agentBuilder.addSkill(skill)
-            } else if (!it.skipIfMissing) {
-                log.error("Skill with id `${it.skillId}` not found.")
-                throw HarnaxErrorCode.AGENT_SKILL_NOT_FOUND.format(it.skillId)
+                if (isLead && skill.resources.isNotEmpty()) {
+                    log.warn(
+                        "Skill '{}' (id={}) is loaded for lead '{}' without its {} file(s) {}: a lead has no filesystem or shell tool to reach them",
+                        it.skillName,
+                        it.skillId,
+                        agentSpec.name,
+                        skill.resources.size,
+                        skill.resources.keys,
+                    )
+                }
             } else {
-                log.warn("Skill with id `${it.skillId}` not found.")
+                log.warn("Skill '{}' (id={}) is not loaded.", it.skillName, it.skillId)
             }
         }
 

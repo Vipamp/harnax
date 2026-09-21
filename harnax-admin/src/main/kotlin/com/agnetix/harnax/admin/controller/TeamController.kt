@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*
 
 /**
  * Team management controller.
- * A team only references existing agents; capabilities stay on the Agent pages.
+ * A team carries its own lead — prompt, model and skills — and references existing agents only as members.
  */
 @RestController
 @RequestMapping("/api/admin/teams")
@@ -62,7 +62,7 @@ class TeamController(
     }
 
     @PostMapping
-    @Operation(summary = "Create team", description = "Add a new team from an existing lead agent and member agents")
+    @Operation(summary = "Create team", description = "Add a new team with its own lead configuration and member agents")
     fun createTeam(
         @Valid @RequestBody request: TeamCreateRequest,
     ): ResultVo<Void> = try {

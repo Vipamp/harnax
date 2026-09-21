@@ -10,8 +10,11 @@ import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.common.dto.ResultVo
 import com.agnetix.harnax.common.session.TaskSessionId
 import com.agnetix.harnax.entity.Agent
+import com.agnetix.harnax.entity.AgentCliBinding
 import com.agnetix.harnax.entity.AgentMcpBinding
+import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.Model
+import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.entity.dto.AgentSpecInfoResponse
 import com.agnetix.harnax.entity.dto.CliDetailDto
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
@@ -39,6 +42,7 @@ import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.*
 import tools.jackson.core.type.TypeReference
@@ -70,6 +74,7 @@ class InternalApiController(
     private val mcpStdioPolicy: McpStdioPolicy,
     private val teamMapper: TeamMapper,
     private val teamMemberMapper: TeamMemberMapper,
+    private val teamSkillBindingMapper: TeamSkillBindingMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(InternalApiController::class.java)
@@ -320,12 +325,29 @@ class InternalApiController(
     }
 
     /**
+     * Which team a session runs on, null when it runs on an agent.
+     *
+     * agent-service has to ask this before it can pick an endpoint: `/agent-spec` refuses a team
+     * session and `/team-spec` refuses every other one, and guessing from the sessionId prefix is not
+     * possible — a team conversation is an ordinary `web-` id. Deliberately its own read rather than a
+     * field on [getSessionInfo]: that one serves the router's call-log enrichment and costs a model
+     * lookup this caller has no use for.
+     *
+     * Only a web/mp session can be a team one, so a `chn-` or `task-` id has no session row and
+     * answers null, and so does an id this admin never issued.
+     */
+    @GetMapping("/sessions/{sessionId}/team")
+    fun getSessionTeam(@PathVariable sessionId: String): ResultVo<Long?> = ResultVo.success(
+        sessionMapper.selectBySessionIdAndStatus(sessionId, 1)?.teamId,
+    )
+
+    /**
      * Team runtime configuration for one team session.
      *
-     * The lead is resolved from `team.lead_agent_id` rather than `session.agent_id`: the session column
-     * is only a copy taken at creation time, so a team that changed lead mid-life would otherwise run
-     * with the previous lead. Child session ids are never accepted here — they carry no row of their
-     * own, and resolving one by prefix would hand agent-service an unrelated agent's configuration.
+     * A team's lead is the `team` row itself (design D1), so the lead's prompt, model and skills are read
+     * from there — and a team session has no `agent_id` to fall back on, which makes this the only
+     * endpoint that can resolve one. Child session ids are never accepted here — they carry no row of
+     * their own, and resolving one by prefix would hand agent-service an unrelated agent's configuration.
      */
     @GetMapping("/team-spec/{sessionId}")
     fun getTeamSpec(@PathVariable sessionId: String): ResultVo<TeamSpecInfoResponse> = try {
@@ -339,12 +361,18 @@ class InternalApiController(
     private fun resolveFromSession(sessionId: String): AgentSpecInfoResponse {
         val session = sessionMapper.selectBySessionIdAndStatus(sessionId, 1)
             ?: throw IllegalArgumentException("Session not found: $sessionId")
-        val agent = agentMapper.selectById(session.agentId)
-            ?: throw IllegalArgumentException("Agent not found: ${session.agentId}")
+        if (session.teamId != null) {
+            // There is no agent to resolve: since V34 a team's lead is the `team` row and the session
+            // carries no agent_id. Answering here would either say "Agent not found: 0" or, if a lead
+            // agent row were ever reintroduced, hand back a configuration nobody configured.
+            throw IllegalArgumentException("Session $sessionId runs as a team, resolve it with /team-spec/{sessionId}")
+        }
+        val agentId = session.agentId
+            ?: throw IllegalArgumentException("Session $sessionId has no agent and no team")
+        val agent = agentMapper.selectById(agentId)
+            ?: throw IllegalArgumentException("Agent not found: $agentId")
         log.info("[Admin] Resolved agent spec from session: sessionId={}, agentId={}", sessionId, agent.id)
         val model = modelMapper.selectById(agent.modelId)
-        // Only a web/mp session can open a team, so `teamId` is set on this path alone: a channel or a
-        // scheduled task resolves to one agent and must not start a team behind the operator's back.
         return buildAgentSpecResponse(
             agentId = agent.id,
             agentName = agent.name,
@@ -357,7 +385,7 @@ class InternalApiController(
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
             permissionMode = session.permissionMode,
-        ).copy(teamId = session.teamId)
+        )
     }
 
     /** chn: channel table → agent. */
@@ -437,9 +465,8 @@ class InternalApiController(
             throw IllegalArgumentException("Team $teamId and session $sessionId belong to different tenants")
         }
 
-        val lead = agentOrThrow(team.leadAgentId, "Lead")
-        val leadSpec = specForAgent(
-            agent = lead,
+        val leadSpec = specForTeam(
+            team = team,
             enableThink = session.enableThink,
             enableSearch = session.enableSearch,
             enablePlan = session.enablePlan,
@@ -466,17 +493,15 @@ class InternalApiController(
         }
 
         log.info(
-            "[Admin] Resolved team spec: sessionId={}, teamId={}, leadAgentId={}, members={}",
+            "[Admin] Resolved team spec: sessionId={}, teamId={}, members={}",
             sessionId,
             teamId,
-            lead.id,
             members.map { it.memberAgentId },
         )
         return TeamSpecInfoResponse(
             teamId = teamId,
             tenantId = team.tenantId,
             teamName = team.name,
-            instructions = team.instructions,
             lead = leadSpec,
             members = members,
         )
@@ -518,6 +543,43 @@ class InternalApiController(
         )
     }
 
+    /**
+     * The lead's configuration, read from the team row: there is no agent row standing in for it, so
+     * its prompt, model and tenant are the team's own and its skills hang off `team_skill_binding`.
+     *
+     * The three empty lists are the product decision, not a shortcut (design D5): a team is given no
+     * tool, MCP or CLI configuration to resolve, and [requiredToolIds] stays empty for the same reason
+     * — a platform-required tool exists to be attached to an agent, and the lead has no shell or
+     * sandbox to run one in anyway.
+     */
+    private fun specForTeam(
+        team: Team,
+        enableThink: Int? = null,
+        enableSearch: Int = 0,
+        enablePlan: Int = 0,
+        permissionMode: String = "DEFAULT",
+    ): AgentSpecInfoResponse {
+        val model = modelMapper.selectById(team.modelId)
+        return buildAgentSpecResponse(
+            agentId = 0,
+            agentName = team.name,
+            description = team.description,
+            systemPrompt = team.systemPrompt,
+            modelId = team.modelId,
+            model = model,
+            agentTenantId = team.tenantId,
+            enableThink = enableThink ?: if ((model?.thinkingMode ?: 0) >= 1) 1 else 0,
+            enableSearch = enableSearch,
+            enablePlan = enablePlan,
+            permissionMode = permissionMode,
+            toolBindings = emptyList(),
+            mcpBindings = emptyList(),
+            skillIds = teamSkillBindingMapper.selectByTeamId(team.id).map { it.skillId },
+            cliBindings = emptyList(),
+            requiredToolIds = emptyList(),
+        )
+    }
+
     // ========================================
     // Binding table helpers
     // ========================================
@@ -526,6 +588,11 @@ class InternalApiController(
      * Build AgentSpecInfoResponse with binding table data serialized as JSON,
      * and full detail DTOs for model/tools/MCPs/skills.
      * Env bindings are resolved: envVarId → latest value, fallback to snapshot.
+     *
+     * The four binding reads are parameters rather than lookups (design D4) because a team's lead has
+     * the same delivery needs with a different holder: its skills hang off the team row and it has no
+     * tool, MCP or CLI configuration at all. The defaults keep every agent call site reading the agent
+     * tables as before.
      */
     private fun buildAgentSpecResponse(
         agentId: Long,
@@ -539,9 +606,13 @@ class InternalApiController(
         enableSearch: Int = 0,
         enablePlan: Int = 0,
         permissionMode: String = "DEFAULT",
+        toolBindings: List<AgentToolBinding> = toolBindingMapper.selectByAgentId(agentId),
+        mcpBindings: List<AgentMcpBinding> = mcpBindingMapper.selectByAgentId(agentId),
+        skillIds: List<Long> = skillBindingMapper.selectByAgentId(agentId).map { it.skillId },
+        cliBindings: List<AgentCliBinding> = cliBindingMapper.selectByAgentId(agentId),
+        requiredToolIds: List<Long> = agentToolMapper.selectRequiredTools().map { it.id },
     ): AgentSpecInfoResponse {
         // ── Tool bindings (JSON for backward compat + full detail DTOs) ──
-        val toolBindings = toolBindingMapper.selectByAgentId(agentId)
         val toolListJson = if (toolBindings.isEmpty()) {
             "[]"
         } else {
@@ -557,11 +628,12 @@ class InternalApiController(
 
         // Required builtin tools carry no binding row: they are appended at delivery time so that
         // no agent configuration can omit them. A stale binding on such a tool is still honoured.
+        // A holder that takes no tool configuration at all passes none in, so nothing is appended.
         val bindingByToolId = toolBindings.associateBy { it.toolId }
         val boundToolIds = bindingByToolId.keys
         val toolIdsToDeliver = (
             toolBindings.map { it.toolId } +
-                agentToolMapper.selectRequiredTools().map { it.id }.filter { it !in boundToolIds }
+                requiredToolIds.filter { it !in boundToolIds }
             ).distinct()
         val toolById = if (toolIdsToDeliver.isEmpty()) {
             emptyMap()
@@ -597,8 +669,6 @@ class InternalApiController(
         }
 
         // ── MCP bindings (JSON for backward compat + full detail DTOs) ──
-        val mcpBindings = mcpBindingMapper.selectByAgentId(agentId)
-
         val mcpIdsToDeliver = mcpBindings.map { it.mcpId }.distinct()
         val resolvedMcp = if (mcpIdsToDeliver.isEmpty()) {
             emptyMap()
@@ -667,8 +737,7 @@ class InternalApiController(
         }
 
         // ── Skill bindings (comma-separated IDs + full detail DTOs) ──
-        val skillBindings = skillBindingMapper.selectByAgentId(agentId)
-        val skillIdsToDeliver = skillBindings.map { it.skillId }.distinct()
+        val skillIdsToDeliver = skillIds.distinct()
         val skillById = if (skillIdsToDeliver.isEmpty()) {
             emptyMap()
         } else {
@@ -703,7 +772,6 @@ class InternalApiController(
         val skillListStr = skillDetails.joinToString(",") { it.id.toString() }
 
         // ── CLI bindings (full detail DTOs; skillIds resolve at the runtime) ──
-        val cliBindings = cliBindingMapper.selectByAgentId(agentId)
         val cliDetails = if (cliBindings.isEmpty()) {
             emptyList()
         } else {

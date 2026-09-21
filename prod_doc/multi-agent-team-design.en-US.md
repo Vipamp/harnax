@@ -5,6 +5,8 @@
 > Decision date: 2026-09-18. This document consolidates the product boundaries, target design, alternatives, and trade-offs confirmed in this round of discussion. It does not mean the feature has been implemented.
 > The current deliverable is a design document only: no Team tables, management pages, team runtime endpoints, or team file tools have been added; runtime prototype validation has not been completed.
 > The user's final choice is: **an independent Team, reuse of existing Agents, an orchestration-only lead, execution by members, independent member sandboxes, MinIO artifact handoff, process visibility, and human confirmation**. The earlier shared-sandbox and lead-toggle proposals are no longer the basis for implementation.
+>
+> **Amendment 2026-09-20 (D1/D2 changed)**: the lead no longer references an existing Agent. The Team carries the lead's own configuration — the fields of the agent wizard's "Basic information" step (name, description, system prompt, model) are now team configuration, and `team.instructions` has been merged into that system prompt. The lead may additionally configure Skills only; Tool, MCP, and CLI are gone. Member semantics are unchanged. The affected sections below have been rewritten accordingly; implementation details live in [Team-owned lead configuration design](../docs/superpowers/specs/2026-09-20-team-own-lead-config-design.md).
 
 ## 1. Goals and Design Principles
 
@@ -13,7 +15,7 @@ The goal is to support configurable multi-agent collaboration with as few change
 “Minimal code changes” has explicit boundaries:
 
 - Reuse existing Agent definitions, configuration delivery, model and tool assembly, session routing, sandbox management, and MinIO infrastructure.
-- Do not maintain a second set of model, Tool, MCP, Skill, or CLI configurations for teams, or introduce a new workflow engine or remote Agent service-discovery system.
+- The team carries exactly one set of its own configuration — the lead's model, prompt, and Skills. Members' capabilities stay entirely on their own Agents: assembling a team never duplicates a second set of Tool, MCP, CLI, or credentials, and introduces no new workflow engine or remote Agent service-discovery system.
 - Do not reduce code at the expense of member capabilities, by expanding the lead's permissions, or by bypassing human confirmation.
 - Existing Agent configurations and standalone usage remain unchanged. This does not mean that all existing code can remain untouched.
 
@@ -21,8 +23,8 @@ The goal is to support configurable multi-agent collaboration with as few change
 
 | ID | Conclusion | Status |
 |------|------|------|
-| D1 | Team is an independent team configuration, not a new Agent type or a toggle on the lead Agent | Confirmed |
-| D2 | Both the lead and members reference existing Agents; the same Agent can be reused in different Teams | Confirmed |
+| D1 | Team is an independent team configuration, not a new Agent type or a toggle on the lead Agent; it is also **the host of the lead's configuration** (model, prompt, and Skills live on the Team) | Confirmed (amended 2026-09-20) |
+| D2 | **Members** reference existing Agents, and the same Agent can be reused in several Teams; **the lead references no Agent at all** — the `agent` table holds only "Agents you can converse with" and "Agents acting as team members" | Confirmed (amended 2026-09-20) |
 | D3 | The lead only decomposes tasks, delegates, coordinates, reviews results, reassigns work, and produces the final summary; members perform concrete execution | Confirmed |
 | D4 | Team-role restrictions apply only to the current runtime instance and do not modify the original Agent's persisted configuration | Confirmed |
 | D5 | The lead and members run within the same agent-service instance; members use independent session state and independent sandboxes created on demand, while the lead creates no execution sandbox | Confirmed; independent sandboxes replace the earlier shared approach |
@@ -33,38 +35,39 @@ The goal is to support configurable multi-agent collaboration with as few change
 
 D9 is intended to control engineering scope. Any later addition of parallelism or new entry points requires separate acceptance checks for concurrency correlation, confirmation, cancellation, and identity propagation. A UI that allows Team selection does not justify claiming support across all channels.
 
-## 3. Product Model: Agents Stay Unchanged; Teams Define the Group
+## 3. Product Model: Agents Are Conversable Units and Members; the Team Owns Its Lead
 
 ### 3.1 Three Types of Objects
 
 | Object | What it stores | What it does not store |
 |------|--------|----------|
-| Agent | Existing model, prompt, Tool, MCP, Skill, and CLI configurations | No duplicate capability configuration just because it joins a team |
-| Team | Name, description, lead reference, team instructions, enabled/disabled state, and ownership information | No second set of model or tool bindings |
+| Agent | Model, prompt, Tool, MCP, Skill, and CLI configurations | No agent row ever stands in for a team lead; no duplicate capability configuration just because it joins a team |
+| Team | Name, description, **the lead's configuration (system prompt, model) and the lead's Skill bindings**, enabled/disabled state, and ownership information | No Tool, MCP, or CLI; no reference to any agent as its lead |
 | Team Member | Team reference, member Agent reference, and description of its responsibilities in that team | No copies of the member's model, tools, credentials, or skills |
 
-“Lead” and “member” are runtime roles, not two new kinds of Agent entities. An Agent can lead Team A, be a member of Team B, and also be used independently.
+A "member" still references an existing Agent, while a "lead" is now a set of columns on the Team itself and maps to no agent row. The same Agent can serve as a member of several Teams and still be used on its own.
 
-### 3.2 Suggested Data Placement
+### 3.2 Data Placement
 
-The following are logical fields, not existing DDL, migration versions, or final API contracts:
+`team`, `team_member`, `team_artifact`, and `session.team_id` shipped with V32. The final shape after the 2026-09-20 amendment is Flyway V34:
 
 | Data location | Required information |
 |------|----------|
-| `team` | `id`, `tenant_id`, name, description, `lead_agent_id`, team instructions, status, creator, and timestamps |
+| `team` | `id`, `tenant_id`, name, description, **`system_prompt`, `model_id`**, status, creator, and timestamps; no longer `lead_agent_id` or `instructions` |
+| `team_skill_binding` | `team_id`, `skill_id`, combination unique; no `env_bindings` column (per-skill environment variables have no consumer) |
 | `team_member` | `team_id`, `member_agent_id`, `delegation_description`; the team/member combination is unique |
-| Session | Add a nullable `teamId`; null retains an ordinary Agent session, otherwise the session is explicitly bound to a Team |
+| Session | `agent_id` and `team_id` are mutually exclusive: a team session stores NULL `agent_id`, a non-null `team_id`, and takes its name/prompt/model snapshots from the Team row |
 | Member run record | Root session, current root run, member reference, child-run and child-session identifiers, status, and associated file references |
 | File artifact metadata | File ID, owning tenant and root session, producing child run, original filename, type, size, and internal storage location |
 
 Member run records and file metadata should preferably fit existing storage extension points. This document does not require a separate new database table for every logical object.
 
-The session's `teamId` determines entry into team mode. An ordinary entry point must not automatically start a team merely because an Agent happens to be a lead; a team session must not receive only the lead's configuration through the old `agentId` path either. The server resolves the lead reference from the Team and must not trust a separate lead ID supplied by the client.
+The session's `teamId` determines entry into team mode, and a NULL `agent_id` states plainly that this is not an Agent's session: an ordinary entry point never starts a team automatically, and a team session is never resolved through some `agentId`. The server resolves the lead's configuration from the Team row; clients never submit a lead identity.
 
 ### 3.3 Permissions and Validity
 
-- When creating, editing, or starting a Team, validate the tenant, usage permissions, status, and existence of the Team, lead, and members.
-- Select at least one member; members must be unique, and the lead cannot also be a member of the same Team.
+- When creating, editing, or starting a Team, validate the status and ownership of the Team itself, plus the tenant, usage permission, status, and existence of each member. The model of the lead is checked at save time for existence, picker-equivalent visibility (`is_public` or created by the current user), enabled status, and a chat type — tenancy is not the rule, so a shared public model stays usable. Runtime gets no second chance to “switch to another model”. A model disabled after the team was saved raises no alarm and does not block the conversation: delivery only looks up whether the model row exists, and no second enabled check runs anywhere (an ordinary agent behaves the same), so the team keeps running on it. Only a deleted model fails, and it fails at delivery when its configuration can no longer be resolved.
+- Select at least one member; members must be unique. The lead is no longer an Agent reference, so there is no "lead cannot also be a member" check to make.
 - Visibility of a Team does not grant the right to use any private Agent within it. Team configuration must not bypass members' own access controls.
 - Under the recommended single-level scope for the first release, members acting as executors do not load their own team relationships and cannot spawn further subteams. There is no need to build an arbitrary DAG executor for this.
 - If a Team or Agent becomes invalid, return an explicit error at startup or before the next delegation. Do not silently omit members or switch to the lead's model.
@@ -72,31 +75,31 @@ The session's `teamId` determines entry into team mode. An ordinary entry point 
 
 ## 4. Assembling and Using Teams in the UI
 
-Add an independent “Team Management” entry to the admin console. Use a form to assemble teams, not a drag-and-drop graph.
+Add an independent “Team Management” entry to the admin console. Assemble teams with a two-step wizard, not a drag-and-drop graph. Step 1 is exactly the “Basic Information” screen of the existing Agent wizard; step 2 is the member roster.
 
 ```text
-Team name       [Research Report Team]
-Description     [Collects sources, analyzes data, and generates reports]
+Step 1 · Basic information and skills                          [Next]
+Team name     [Research Report Team]
+Description   [Collects sources, analyzes data, and generates reports]
+System prompt [You are the lead of this collaboration…]        ← the lead's entire prompt, old team instructions folded in
+Model         [qwen3-max]
+Skills        [Source research spec] [Report writing spec]      ← Skills only; no Tool, MCP, or CLI
 
-Lead Agent      [Select an existing Agent]
-                Only decomposes tasks, delegates, reviews results, and summarizes
-
-Team members                                           [Add member]
+Step 2 · Team members                                          [Add member]
 Researcher      Responsibilities: Gather material and provide sources
 Data analyst    Responsibilities: Analyze data and extract conclusions
 Report writer   Responsibilities: Write reports from material and conclusions
-
-Team instructions [Optional: The final report must cite sources]
-                                                   [Cancel] [Save]
+                                          [Back] [Cancel] [Save]
 ```
 
 ### 4.1 Configuration Interaction
 
-1. Enter the team name, and optionally a description and team instructions.
-2. Select the lead from existing Agents the user is permitted to use.
-3. Add members. Responsibility descriptions default to the Agent description and can be adjusted for the team without writing back to the original description.
-4. Models, Tool, MCP, Skill, and CLI remain configured on the Agent page; the Team page only provides a view or navigation link, not duplicate editors.
+1. Step 1 collects the team name, description, system prompt, and model, plus any skills. Description and system prompt are required, matching step 1 of the Agent wizard.
+2. Skill eligibility and write-time validation follow the same rules as the Agent side: missing, disabled, builtin-CLI-repository origin, and name conflicts are all rejected on save.
+3. Step 2 adds members. Responsibility descriptions default to the Agent description and can be adjusted for the team without writing back to the original description.
+4. Tool, MCP, and CLI are configured only on each member's own Agent page; the Team accepts none of those three fields, and the runtime keeps a separate lead guard.
 5. Validate members and permissions on save. Independent sandboxes do not require members to have matching CLI versions or environment variables.
+6. Editing a team reuses the same wizard and pre-fills the current configuration.
 
 Team members use stable server-side identifiers. Display names and responsibility descriptions support reading and delegation decisions; potentially duplicate display names must not serve as unique runtime keys.
 
@@ -113,16 +116,16 @@ Team members use stable server-side identifiers. Display names and responsibilit
 
 | Capability | Team lead | Team member | Original Agent used independently |
 |------|----------|----------|------------------|
-| Model and prompt | Its own model, augmented with the lead role and team instructions | Its own model, augmented with the current responsibilities and task instructions | Existing behavior preserved |
-| Business Tool and MCP | Not loaded or connected | Loaded according to its own Agent configuration | Existing behavior preserved |
-| Execution-oriented Skill, CLI, and Shell | Not loaded, and no execution entry points exposed | Its own configuration and permission constraints retained | Existing behavior preserved |
+| Model and prompt | **Configured on the Team itself**, augmented with the lead role and member roster block | Its own model, augmented with the current responsibilities and task instructions | Existing behavior preserved |
+| Skill | Loaded: SKILL.md text and its resource content reach the lead's context and skill-reading tool; **anything script-backed or requiring on-disk execution is not executable**, and each degradation is named at load time | Loaded according to its own Agent configuration | Existing behavior preserved |
+| Business Tool and MCP | Not loaded or connected (the Team accepts neither field either) | Loaded according to its own Agent configuration | Existing behavior preserved |
+| CLI, Shell, and execution sandbox | Not provided; with no shell the lead has no workspace | Its own configuration and permission constraints retained | Existing behavior preserved |
 | Delegation, progress, and task coordination | May use this Team's orchestration capabilities | Further delegation is not exposed under the recommended single-level first-release scope | Existing behavior preserved |
 | File artifacts | Receives and passes references; selects files for final delivery | Publishes, retrieves, and processes files in its own sandbox | Existing behavior preserved |
-| Execution sandbox | Not created | Created independently on demand | Existing behavior preserved |
 
 Lead permission restrictions must be enforced through assembly and runtime validation, not a prompt that says “do not execute tasks yourself.” Existing mandatory tools, framework-default Shell, dynamic subagents, and skill loading must also pass through the team-role policy so that default registration paths cannot reintroduce capabilities.
 
-This does not change the “mandatory tools” rule for ordinary Agents: a team lead is a specialized runtime assembly role, not a deletion of database bindings or a modification of global tool definitions.
+This does not change the “mandatory tools” rule for ordinary Agents: a team lead has no agent row, so there is no binding to narrow or delete. Its empty Tool/MCP/CLI set is the consequence of the Team not accepting those fields; the runtime guard is only the second line.
 
 The lead still needs to understand member reports, judge whether the goal has been met, and summarize the response. “Orchestration only” does not mean merely forwarding messages mechanically. Concrete work such as processing material, querying databases, and generating files is delegated to members.
 
@@ -134,7 +137,7 @@ The lead still needs to understand member reports, judge whether the goal has be
 Web UI creates a Team session
     ↓ Root sessionId follows the existing router
 agent-service obtains the team runtime configuration
-    ↓ admin validates the Team and members, returning full lead and member configurations
+    ↓ admin validates the Team and members: the lead's configuration comes from the Team row and team_skill_binding, each member's from its own agent row
 Assemble the lead + member factories (no member runtime instances created yet)
     ↓ The lead delegates according to responsibilities
 Create a child-run identifier → lazily create a runtime instance from the member configuration
@@ -146,7 +149,7 @@ The lead reviews results, delegates further, or summarizes → return to the use
 
 ### 6.2 Separate Configuration from Instances
 
-- Reuse Agent configuration definitions, not another ordinary session's runtime instance, chat history, or sandbox.
+- Members reuse Agent configuration definitions, not another ordinary session's runtime instance, chat history, or sandbox. The lead's configuration exists only on the Team row and `team_skill_binding`; what the runtime receives is a lead spec shaped exactly like an Agent's, with `agentId` fixed at 0 and `agentName` set to the team name.
 - admin delivers full member configurations. It must not supply only `modelId` and `toolId` and assume that the lead's adapter can resolve every member.
 - A factory captures the corresponding member configuration and trusted runtime scope. The existing `AgentSpecContextHolder` is a `ThreadLocal` used during synchronous creation; do not assume it still exists during lazy creation, and never allow members to read the lead's configuration.
 - Do not pass arbitrary derived child-session IDs directly to the existing admin entry point that resolves `web-`, `mp-`, `chn-`, and `task-` prefixes. Child runs derive from the team configuration already authorized for the root session.
@@ -322,8 +325,10 @@ Presentation only answers "who said this". It does not change the provenance con
 |------|------|------|------|
 | Add a team toggle and member bindings to Agent | Less data modeling and fewer pages | Team is not an independent object; ordinary and team-leading usage are coupled | Withdrawn |
 | Bind Team one-to-one to a lead; accessing the lead accesses the team | Reuses the existing entry point | Difficult to distinguish the same lead's ordinary sessions and different team compositions | Withdrawn |
-| Independent Team + member references + explicit team sessions | Independent team assembly; both leads and members reusable | New Team management and session-target resolution | Selected |
-| Store full Agent configuration, including model, prompt, and tools, separately in Team | Fully self-contained team configuration | Duplicate maintenance of Agent capabilities; prone to drift | Not selected |
+| Independent Team + lead references an existing Agent + explicit team sessions | Zero duplicate maintenance of the lead's capabilities | A team cannot exist without a ready-made Agent; "configure a team" becomes "configure an Agent first, then pick it" | Selected 2026-09-18, superseded 2026-09-20 by the next row |
+| **Team carries its own lead configuration (model, prompt, Skills)** | The team is a self-contained object and step 1 of the wizard configures the lead outright; `agent` keeps exactly two identities, conversable and member | The delivery side must synthesize a spec for the lead; a session's `agent_id` must become nullable | **Selected** (2026-09-20) |
+| Team owns one hidden `agent` row as its lead | Runtime stays completely unchanged, and `session.agent_id` needs no change either | Introduces a phantom agent: every list and selector query must remember to filter it, names and workspace keys need collision care, and direct edit/delete need extra guards | Rejected after evaluation — trades a one-time cost for a permanent trap |
+| Team additionally stores Tool, MCP, and CLI bindings | Fully self-contained team configuration | Duplicate, drift-prone maintenance alongside member Agent capabilities, and the lead should not execute anyway | Not selected; the team carries only the lead's model, prompt, and Skills |
 
 A parent-child binding table can itself represent many-to-many reuse. Choosing an independent Team is a product boundary, not a consequence of a supposed rule that “a binding table can belong to only one team.”
 
@@ -361,7 +366,7 @@ A parent-child binding table can itself represent many-to-many reuse. Choosing a
 
 | Module | Proposed additions or adjustments | Preserved boundary |
 |------|--------------|----------|
-| `harnax-entity` / admin | Team, membership relationships, session-Team association, permission checks, and team configuration delivery | Existing Agent and capability bindings remain the sole configuration source |
+| `harnax-entity` / admin | Team (including the lead's model, prompt, and skill bindings), membership relationships, session-Team association, permission checks, and team configuration delivery | Members remain owned solely by their existing Agent and capability bindings; the lead is owned solely by the Team, and no agent row represents a lead any more |
 | `harnax-agent-service` | Correlation between root team runs and child runs, member configuration scopes, and routing of confirmation and stop actions | Preserve ordinary Agent entry points and behavior |
 | `harnax-harness-core` | Lead/member role assembly, native delegation integration point, independent sandbox lifecycle, and artifact actions | Reuse model, Tool, MCP, Skill, CLI, and sandbox components wherever practical |
 | `harnax-protocol` / consumers | Team event provenance, child-run confirmation correlation, and file references | Continue using the root SSE channel without confusing existing event meanings |
@@ -378,8 +383,8 @@ All items below are pending engineering validation, not test results from this d
 
 | ID | Validation point | Acceptance criteria |
 |------|--------|----------|
-| V1 | Independent Teams and ordinary sessions | The same Agent can be used independently and referenced by multiple Teams; ordinary sessions do not accidentally start teams |
-| V2 | Lead capability restrictions | The final tool set contains no business Tool, MCP, or Shell capabilities and no capabilities leaked through default paths; no execution sandbox is created |
+| V1 | Independent Teams and ordinary sessions | The same Agent can be used independently and referenced by multiple Teams as a member; ordinary sessions do not accidentally start teams; a Team no longer has to create a lead Agent first in order to exist |
+| V2 | Lead capability restrictions | The final tool set contains no business Tool, MCP, or Shell capabilities and none leaked through default paths; no execution sandbox is created; the Skills the Team configures for the lead are visible as text, while their scripts and resource files are not executable and each degradation is named at load time |
 | V3 | Full member assembly | Different models, Tool, MCP, Skill, CLI, and environments take effect independently; the lead can delegate without possessing member capabilities |
 | V4 | Lazy creation and configuration context | No reliance on expired ThreadLocal context; no reuse of the lead's ToolBox, logging identity, or secret parameters |
 | V5 | Independent containers and snapshots | Two members' environments do not interfere; containers are not mixed across tenants, sessions, or repeated tasks, and continuation restores correctly |
@@ -400,8 +405,8 @@ The following source locations were checked in this round; they do not mean Team
 | Location | Existing fact and integration point for this design |
 |------|------------------------|
 | `agent-scope.version` in the [root pom.xml](../pom.xml) | Currently uses AgentScope 2.0.2 |
-| [Agent](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt) and [Session](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt) | Agent definitions already exist; Session currently has only a single-Agent association and no `teamId` |
-| `createAgent/updateAgent` in [AgentServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt) | Existing capability-binding persistence can be reused; do not duplicate capability configuration for Team |
+| [Agent](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Agent.kt) and [Session](../harnax-entity/src/main/kotlin/com/agnetix/harnax/entity/Session.kt) | Session already carries `teamId` (V32); from V34 a team session leaves `agent_id` NULL. The DDL already permits NULL — what has to change is the entity's property type |
+| `saveSkillBindings` in [AgentServiceImpl](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/service/impl/AgentServiceImpl.kt) | The four write-time skill guards (missing, disabled, builtin-CLI-repository origin, name conflict) are exactly what the lead's skills should reuse: extract shared validation instead of writing a second copy on the Team side |
 | `getAgentSpec/buildAgentSpecResponse` in [InternalApiController](../harnax-admin/src/main/kotlin/com/agnetix/harnax/admin/controller/InternalApiController.kt) | Resolves by external session prefix and delivers the full capabilities of a single Agent |
 | [AgentSpecResolver](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/runner/AgentSpecResolver.kt) and [AgentSpecContextHolder](../harnax-agent/harnax-agent-service/src/main/kotlin/com/agnetix/harnax/agent/service/client/AgentSpecContextHolder.kt) | Configuration resolution and synchronous ThreadLocal creation context; lazy member creation needs its own scope |
 | `createAgentBase` in [HarnessAgentLauncher](../harnax-agent/harnax-harness-core/src/main/kotlin/com/agnetix/harnax/harness/HarnessAgentLauncher.kt) | Existing model, MCP, Tool, Skill, CLI, permission, and sandbox assembly does not mean it can be copied directly and safely for members |
@@ -411,4 +416,4 @@ The following source locations were checked in this round; they do not mean Team
 
 SDK assessments are based on the locally available `agentscope-2.0.2-sources.jar` and `agentscope-harness-2.0.2-sources.jar`. Key symbols include `HarnessAgentBuilderSupport.buildStaticSubagentEntries/allowlistedInheritedToolkit`, `SubagentsMiddleware`, `AgentSpawnTool`, `AgentEvent`, and `SubAgentTool`. These are source-review evidence, not runtime test records.
 
-Related documents: [Tool Integration Design](./tool-integration-design.en-US.md), [Tool Capabilities](./tool-capability.en-US.md), [Skill Management](./skill-management.en-US.md), and [Session Routing](./session-routing.en-US.md).
+Related documents: [Lead vs. Sub-agent Architecture Trade-offs](./multi-agent-leader-subagent-design.en-US.md), [Tool Integration Design](./tool-integration-design.en-US.md), [Tool Capabilities](./tool-capability.en-US.md), [Skill Management](./skill-management.en-US.md), and [Session Routing](./session-routing.en-US.md).

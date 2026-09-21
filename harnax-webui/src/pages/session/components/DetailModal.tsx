@@ -100,7 +100,8 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
     } else {
       setToolList([]);
       setMcpList([]);
-      setSkillList([]);
+      // 团队会话没有 agent 行可查：主管的技能本来就在会话快照里，工具与 MCP 则确实为空
+      setSkillList(session?.skillList || []);
     }
   }, [visible, session?.agentId]);
 
@@ -177,9 +178,9 @@ const DetailModal: React.FC<DetailModalProps> = ({ visible, session, onCancel })
           </Descriptions>
         </Panel>
 
-        {/* 关联智能体信息 */}
+        {/* 关联智能体信息；团队会话这一栏是团队自带的主管 */}
         <Panel 
-          header={<span style={{ color: 'var(--vip-text-primary)' }}><ThunderboltOutlined style={{ marginRight: 8 }} />{intl.formatMessage({ id: 'pages.session.associatedAgent', defaultMessage: 'Associated Agent' })}</span>} 
+          header={<span style={{ color: 'var(--vip-text-primary)' }}><ThunderboltOutlined style={{ marginRight: 8 }} />{intl.formatMessage({ id: session.teamId ? 'pages.session.associatedTeamLead' : 'pages.session.associatedAgent', defaultMessage: session.teamId ? 'Team Lead (from the team)' : 'Associated Agent' })}</span>}
           key="agent"
         >
           <Descriptions column={2} size="small">

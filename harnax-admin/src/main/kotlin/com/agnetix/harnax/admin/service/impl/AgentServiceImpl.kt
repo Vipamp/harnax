@@ -1,6 +1,5 @@
 package com.agnetix.harnax.admin.service.impl
 
-import com.agnetix.harnax.admin.constant.BuiltinRepository
 import com.agnetix.harnax.admin.context.TenantContext
 import com.agnetix.harnax.admin.dto.AgentCreateRequest
 import com.agnetix.harnax.admin.dto.AgentResponse
@@ -11,6 +10,7 @@ import com.agnetix.harnax.admin.dto.ToolConfig
 import com.agnetix.harnax.admin.dto.ToolEnvParamEntry
 import com.agnetix.harnax.admin.exception.BizException
 import com.agnetix.harnax.admin.service.*
+import com.agnetix.harnax.admin.skill.SkillBindingResolver
 import com.agnetix.harnax.admin.util.JwtUtil
 import com.agnetix.harnax.admin.util.SecretFieldEncryptor
 import com.agnetix.harnax.admin.util.UserContextUtil
@@ -21,7 +21,6 @@ import com.agnetix.harnax.entity.AgentSkillBinding
 import com.agnetix.harnax.entity.AgentTool
 import com.agnetix.harnax.entity.AgentToolBinding
 import com.agnetix.harnax.entity.McpServer
-import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.Team
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
 import com.agnetix.harnax.mapper.AgentMapper
@@ -34,7 +33,6 @@ import com.agnetix.harnax.mapper.CliMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.McpServerMapper
 import com.agnetix.harnax.mapper.SessionMapper
-import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
 import com.github.pagehelper.PageHelper
@@ -67,13 +65,13 @@ class AgentServiceImpl(
     private val cliBindingMapper: AgentCliBindingMapper,
     private val cliMapper: CliMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
-    private val skillMapper: SkillMapper,
     private val mcpServerMapper: McpServerMapper,
     private val agentToolMapper: AgentToolMapper,
     private val agentToolEnvParamMapper: AgentToolEnvParamMapper,
     private val secretFieldEncryptor: SecretFieldEncryptor,
     private val teamMapper: TeamMapper,
     private val teamMemberMapper: TeamMemberMapper,
+    private val skillBindingResolver: SkillBindingResolver,
 ) : AgentService {
 
     private val log = LoggerFactory.getLogger(AgentServiceImpl::class.java)
@@ -181,16 +179,10 @@ class AgentServiceImpl(
         if (agent != null && agent.tenantId != currentTenantId()) {
             throw RuntimeException("Agent not found")
         }
-        // A team left pointing at a deleted agent refuses every later run, so the reference has to be
-        // released here rather than discovered by whoever starts the conversation next.
+        // A team that delegates to a deleted agent refuses every later run, so the reference has to be
+        // released here rather than discovered by whoever starts the conversation next. Membership is
+        // the only team reference an agent can have: a team's lead is the team row itself.
         fun liveTeams(teams: List<Team>) = teams.filter { it.tenantId == currentTenantId() }
-        val led = liveTeams(teamMapper.selectByLeadAgentId(id))
-        if (led.isNotEmpty()) {
-            throw BizException(
-                "This agent leads team(s): ${led.joinToString(", ") { it.name }}. " +
-                    "Pick another lead before deleting it.",
-            )
-        }
         val memberOf = liveTeams(
             teamMemberMapper.selectByMemberAgentId(id).mapNotNull { teamMapper.selectById(it.teamId) },
         )
@@ -471,8 +463,6 @@ class AgentServiceImpl(
 
     /**
      * Save skill bindings: delete old + insert new.
-     * Skills from the builtin CLI repository cannot be bound directly —
-     * they are loaded automatically via the agent's CLI bindings.
      *
      * No `env_bindings` is written: per-skill environment variables have no consumer, unlike
      * [saveToolBindings] / [saveMcpBindings] whose bindings are resolved on delivery. See the note
@@ -482,36 +472,11 @@ class AgentServiceImpl(
         skillBindingMapper.deleteByAgentId(agentId)
         if (skillList.isNullOrBlank()) return
 
-        // Two ids in one request would otherwise write two binding rows for the same skill, which
-        // the (agent_id, skill_id) unique key refuses
-        val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }.distinct()
+        val skillIds = skillList.split(",").mapNotNull { it.trim().toLongOrNull() }
         if (skillIds.isEmpty()) return
 
-        // Resolved without a tenant filter: the builtin repository is a single platform-wide row,
-        // so a tenant-scoped lookup missed it and silently dropped the constraint below
-        val builtinRepo = skillRepositoryService.getBuiltinRepository()
-        val boundSkills = resolveBindableSkills(skillIds, builtinRepo?.id)
-        if (builtinRepo == null) {
-            // No builtin repository means no builtin skills exist, so there is nothing to reject
-            log.warn("Builtin repository '{}' not found, skipping agent skill constraint", BuiltinRepository.CLI_SKILLS)
-        } else {
-            val invalid = boundSkills.filter { it.repositoryId == builtinRepo.id }
-            if (invalid.isNotEmpty()) {
-                throw BizException(
-                    "Skills from '${BuiltinRepository.CLI_SKILLS}' cannot be bound directly (auto-loaded via CLI): ${invalid.joinToString(",") { it.name }}",
-                )
-            }
-        }
-
-        // Skill names are unique per repository only, and the harness keys skills by name, so binding
-        // two skills that share a name leaves one silently replacing the other when the agent loads.
-        // Rejected here because the operator can still see both rows in the config panel and fix it
-        val duplicatedNames = boundSkills.groupBy { it.name }.filter { it.value.size > 1 }.keys
-        if (duplicatedNames.isNotEmpty()) {
-            throw BizException(
-                "Skills bound to one agent must have distinct names, duplicated: ${duplicatedNames.joinToString(",")}",
-            )
-        }
+        val boundSkills = skillBindingResolver.resolveBindable(skillIds)
+        if (boundSkills.isEmpty()) return
 
         val now = LocalDateTime.now()
         val bindings = boundSkills.map { skill ->
@@ -522,40 +487,7 @@ class AgentServiceImpl(
                 this.updateTime = now
             }
         }
-        if (bindings.isNotEmpty()) {
-            skillBindingMapper.batchInsert(bindings)
-        }
-    }
-
-    /**
-     * Skill rows the agent may be bound to, out of [skillIds].
-     *
-     * The same rule [resolveBindableTools] and [resolveBindableMcpServers] enforce: a binding that
-     * resolves to nothing is not an error at write time, but delivery drops it with a log line, so
-     * the operator loses a skill without a signal. `selectByIds` already excludes `active = 0`, the
-     * tenant comparison mirrors `SkillServiceImpl.requireReadable` (builtin repository included),
-     * and a disabled skill is one the operator took out of circulation — binding it from here would
-     * bypass the disable guard, which only runs while the skill still has no agents.
-     */
-    private fun resolveBindableSkills(
-        skillIds: List<Long>,
-        builtinRepositoryId: Long?,
-    ): List<Skill> {
-        val tenantId = currentTenantId()
-        val resolvable = skillMapper.selectByIds(skillIds).filter {
-            it.tenantId == tenantId || it.repositoryId == builtinRepositoryId
-        }
-        val missing = skillIds - resolvable.map { it.id }.toSet()
-        if (missing.isNotEmpty()) {
-            throw BizException(
-                "Skill is missing, deleted, or outside your tenant: ${missing.joinToString(",")}",
-            )
-        }
-        val disabled = resolvable.filter { it.status != 1 }
-        if (disabled.isNotEmpty()) {
-            throw BizException("Skill is disabled, enable it before binding: ${disabled.joinToString(",") { it.name }}")
-        }
-        return resolvable
+        skillBindingMapper.batchInsert(bindings)
     }
 
     /**

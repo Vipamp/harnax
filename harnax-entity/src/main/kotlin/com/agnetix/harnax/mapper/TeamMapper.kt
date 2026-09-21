@@ -25,7 +25,4 @@ interface TeamMapper {
     ): List<Team>
 
     fun selectByName(@Param("name") name: String, @Param("tenantId") tenantId: Long): Team?
-
-    /** Teams an agent leads — used to refuse deleting an agent a live team still references. */
-    fun selectByLeadAgentId(@Param("agentId") agentId: Long): List<Team>
 }

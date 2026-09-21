@@ -58,6 +58,14 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
     setSkillConfigs(newConfigs);
   };
 
+  // 整行归零而不是只清技能：留下「有仓库没技能」的半行会被校验判成未选技能，
+  // 用户想撤掉一条技能反而撤不动。
+  const clearSkillRow = (index: number) => {
+    const newConfigs = [...skillConfigs];
+    newConfigs[index] = {};
+    setSkillConfigs(newConfigs);
+  };
+
   const addSkillConfig = () => setSkillConfigs([...skillConfigs, {}]);
 
   // 别的行已经选过的技能不再列出：一次请求里同一条技能加两遍没有意义，
@@ -66,7 +74,12 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
     skills.filter((skill) => !skillConfigs.some((other, otherIndex) => otherIndex !== index && other.skillId === skill.id));
 
   const removeSkillConfig = (index: number) => {
-    if (skillConfigs.length === 1) return;
+    // 只剩一行时清空而不是删掉：一行不剩的话界面上就没有「这条技能没了」的落点，
+    // 而「添加技能」是往列表尾部追加，用户会以为删不动。
+    if (skillConfigs.length === 1) {
+      clearSkillRow(0);
+      return;
+    }
     setSkillConfigs(skillConfigs.filter((_, i) => i !== index));
   };
 
@@ -87,17 +100,15 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
             <span style={{ fontWeight: 500, color: 'var(--vip-text-primary)', fontSize: '14px' }}>
               {intl.formatMessage({ id: 'pages.agent.skill', defaultMessage: 'Skill' })} #{index + 1}
             </span>
-            {skillConfigs.length > 1 && (
-              <Button type="link" danger icon={<MinusOutlined />} onClick={() => removeSkillConfig(index)} size="small">
-                {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
-              </Button>
-            )}
+            <Button type="link" danger icon={<MinusOutlined />} onClick={() => removeSkillConfig(index)} size="small">
+              {intl.formatMessage({ id: 'pages.common.delete', defaultMessage: 'Delete' })}
+            </Button>
           </div>
           <div style={{ display: 'flex', gap: 16, width: '100%' }}>
             <Select
               placeholder={intl.formatMessage({ id: 'pages.agent.repositoryPlaceholder', defaultMessage: 'Select skill repository' })}
               value={config.repositoryId}
-              onChange={(value) => handleSkillConfigChange(index, 'repositoryId', value)}
+              onChange={(value) => (value ? handleSkillConfigChange(index, 'repositoryId', value) : clearSkillRow(index))}
               style={{ flex: 1 }}
               allowClear
               options={repositories.map(repo => ({ label: repo.name, value: repo.id }))}
@@ -106,9 +117,11 @@ const SkillConfigPanel: React.FC<SkillConfigPanelProps> = ({
               placeholder={intl.formatMessage({ id: 'pages.agent.skillPlaceholder', defaultMessage: 'Select skill' })}
               value={config.value ? { value: config.value, label: config.label } : undefined}
               onChange={(value) => {
-                if (value && typeof value === 'object') {
+                if (!value) {
+                  clearSkillRow(index);
+                } else if (typeof value === 'object') {
                   handleSkillConfigChange(index, 'skillId', value.value);
-                } else if (value) {
+                } else {
                   handleSkillConfigChange(index, 'skillId', value);
                 }
               }}

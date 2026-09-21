@@ -22,6 +22,9 @@ import com.agnetix.harnax.entity.McpServer
 import com.agnetix.harnax.entity.Session
 import com.agnetix.harnax.entity.Skill
 import com.agnetix.harnax.entity.SkillRepository
+import com.agnetix.harnax.entity.Team
+import com.agnetix.harnax.entity.TeamMember
+import com.agnetix.harnax.entity.TeamSkillBinding
 import com.agnetix.harnax.entity.dto.ChannelSessionOwner
 import com.agnetix.harnax.entity.dto.McpAccessTokenResponse
 import com.agnetix.harnax.mapper.AgentCliBindingMapper
@@ -42,6 +45,7 @@ import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -143,6 +147,9 @@ class InternalApiControllerTest {
 
     @Mock
     private lateinit var teamMemberMapper: TeamMemberMapper
+
+    @Mock
+    private lateinit var teamSkillBindingMapper: TeamSkillBindingMapper
 
     @InjectMocks
     private lateinit var controller: InternalApiController
@@ -450,6 +457,38 @@ class InternalApiControllerTest {
     }
 
     @Nested
+    @DisplayName("会话所属团队")
+    inner class GetSessionTeamTests {
+
+        @Test
+        @DisplayName("getSessionTeam - 团队会话给出 teamId")
+        fun `getSessionTeam should return the team of a team session`() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-team", 1)).thenReturn(
+                Session().apply {
+                    sessionId = "web-team"
+                    teamId = 42L
+                },
+            )
+
+            assertEquals(42L, controller.getSessionTeam("web-team").data)
+        }
+
+        @Test
+        @DisplayName("getSessionTeam - 普通会话与未知会话都是 null")
+        fun `getSessionTeam should return null without a team`() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-plain", 1)).thenReturn(
+                Session().apply {
+                    sessionId = "web-plain"
+                    agentId = 3L
+                },
+            )
+
+            assertNull(controller.getSessionTeam("web-plain").data)
+            assertNull(controller.getSessionTeam("web-gone").data)
+        }
+    }
+
+    @Nested
     @DisplayName("统一 Agent Spec 接口")
     inner class GetAgentSpecTests {
 
@@ -533,6 +572,140 @@ class InternalApiControllerTest {
 
             assertFalse(result.isSuccess())
             assertTrue(result.message.contains("Session not found"))
+        }
+
+        @Test
+        @DisplayName("getAgentSpec - 团队会话被明确拒绝而不是去查 agent 0")
+        fun `getAgentSpec should refuse a team session`() {
+            // 团队会话不再有 agent_id（V34 起主管就是 team 行）。落到通用解析上就会去查
+            // agent 0，报错也指不到真正该走的那条路
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-team", 1)).thenReturn(
+                Session().apply {
+                    sessionId = "web-team"
+                    teamId = 42L
+                    tenantId = 7L
+                },
+            )
+
+            val result = controller.getAgentSpec("web-team")
+
+            assertFalse(result.isSuccess())
+            assertTrue(result.message.contains("team-spec"), result.message)
+            verify(agentMapper, never()).selectById(anyLong())
+        }
+    }
+
+    @Nested
+    @DisplayName("团队 spec 下发")
+    inner class GetTeamSpecTests {
+
+        private fun team(): Team = Team().apply {
+            id = 42L
+            name = "Research"
+            tenantId = 7L
+            status = 1
+            systemPrompt = "你是本次协作的负责人，只拆解、委派与验收"
+            modelId = 11L
+        }
+
+        private fun stubTeamSession() {
+            `when`(sessionMapper.selectBySessionIdAndStatus("web-team", 1)).thenReturn(
+                Session().apply {
+                    sessionId = "web-team"
+                    teamId = 42L
+                    tenantId = 7L
+                },
+            )
+        }
+
+        private fun stubMember() {
+            `when`(teamMemberMapper.selectByTeamId(42L)).thenReturn(
+                listOf(
+                    TeamMember().apply {
+                        teamId = 42L
+                        memberAgentId = 3L
+                        delegationDescription = "gathers"
+                    },
+                ),
+            )
+            `when`(agentMapper.selectById(3L)).thenReturn(
+                Agent().apply {
+                    id = 3L
+                    name = "Researcher"
+                    description = "Researcher desc"
+                    systemPrompt = "You research"
+                    modelId = 12L
+                    tenantId = 7L
+                    status = 1
+                },
+            )
+        }
+
+        @Test
+        @DisplayName("getTeamSpec - 主管配置取自 team 行")
+        fun `getTeamSpec should build the lead spec from the team row`() {
+            stubTeamSession()
+            `when`(teamMapper.selectById(42L)).thenReturn(team())
+            stubMember()
+            `when`(teamSkillBindingMapper.selectByTeamId(42L)).thenReturn(
+                listOf(
+                    TeamSkillBinding().apply {
+                        teamId = 42L
+                        skillId = 100L
+                    },
+                ),
+            )
+            `when`(skillMapper.selectByIds(listOf(100L))).thenReturn(
+                listOf(
+                    Skill().apply {
+                        id = 100L
+                        name = "pdf-report"
+                        description = "Reads pdf"
+                        skillmd = "# PDF"
+                        tenantId = 7L
+                        status = 1
+                    },
+                ),
+            )
+
+            val data = requireNotNull(controller.getTeamSpec("web-team").data)
+
+            assertEquals(42L, data.teamId)
+            assertEquals(7L, data.tenantId)
+            assertEquals(0L, data.lead.agentId)
+            assertEquals("Research", data.lead.agentName)
+            assertEquals("你是本次协作的负责人，只拆解、委派与验收", data.lead.systemPrompt)
+            assertEquals(11L, data.lead.modelId)
+            assertEquals(listOf("pdf-report"), data.lead.skillDetails.map { it.name })
+            assertEquals("100", data.lead.skillList)
+            assertEquals(listOf(3L), data.members.map { it.memberAgentId })
+            assertEquals("Researcher", data.members.first().spec.agentName)
+        }
+
+        @Test
+        @DisplayName("getTeamSpec - 主管不下发 tool、MCP、CLI 与必须工具")
+        fun `getTeamSpec should deliver no tool mcp or cli for the lead`() {
+            // 主管无 shell 无沙箱（设计 D5）。必须工具在 agent 侧是「任何配置都删不掉」，团队侧
+            // 根本没有这类配置可删，所以它也不该被追加进来
+            stubTeamSession()
+            `when`(teamMapper.selectById(42L)).thenReturn(team())
+            stubMember()
+            `when`(agentToolMapper.selectRequiredTools()).thenReturn(
+                listOf(
+                    AgentTool().apply {
+                        id = 88L
+                        name = "mandatory"
+                        status = 1
+                    },
+                ),
+            )
+
+            val lead = requireNotNull(controller.getTeamSpec("web-team").data).lead
+
+            assertTrue(lead.toolDetails.isEmpty())
+            assertEquals("[]", lead.toolList)
+            assertTrue(lead.mcpDetails.isEmpty())
+            assertTrue(lead.cliDetails.isEmpty())
         }
     }
 

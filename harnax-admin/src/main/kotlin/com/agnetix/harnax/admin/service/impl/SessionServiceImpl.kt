@@ -15,6 +15,7 @@ import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.SessionMapper
 import com.agnetix.harnax.mapper.TeamMapper
 import com.agnetix.harnax.mapper.TeamMemberMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import com.github.pagehelper.PageHelper
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -38,6 +39,7 @@ class SessionServiceImpl(
     private val skillBindingMapper: AgentSkillBindingMapper,
     private val teamMapper: TeamMapper,
     private val teamMemberMapper: TeamMemberMapper,
+    private val teamSkillBindingMapper: TeamSkillBindingMapper,
 ) : SessionService {
 
     private val log = LoggerFactory.getLogger(SessionServiceImpl::class.java)
@@ -111,9 +113,12 @@ class SessionServiceImpl(
         response.createTime = session.createTime
         response.updateTime = session.updateTime
 
-        // A session has no capability bindings of its own: both lists follow the bound agent
+        // A session has no capability bindings of its own: both lists follow whoever it runs on. For a
+        // team that is the team row — and a team takes no MCP configuration, so an empty list there is
+        // the right answer rather than a missing one.
+        val agentId = session.agentId
         val mcpItems = mutableListOf<SessionResponse.McpItem>()
-        for (binding in mcpBindingMapper.selectByAgentId(session.agentId)) {
+        for (binding in agentId?.let(mcpBindingMapper::selectByAgentId).orEmpty()) {
             val mcp = mcpServerService.getMcpServer(binding.mcpId) ?: continue
             val item = SessionResponse.McpItem()
             item.mcpId = mcp.id
@@ -123,9 +128,12 @@ class SessionServiceImpl(
         }
         response.mcpList = mcpItems
 
+        val skillIds = session.teamId?.let { teamSkillBindingMapper.selectByTeamId(it).map { binding -> binding.skillId } }
+            ?: agentId?.let { skillBindingMapper.selectByAgentId(it).map { binding -> binding.skillId } }
+            ?: emptyList()
         val skillItems = mutableListOf<SessionResponse.SkillItem>()
-        for (binding in skillBindingMapper.selectByAgentId(session.agentId)) {
-            val skill = skillService.getSkill(binding.skillId) ?: continue
+        for (skillId in skillIds) {
+            val skill = skillService.getSkill(skillId) ?: continue
             val item = SessionResponse.SkillItem()
             item.skillId = skill.id
             item.skillName = skill.name
@@ -165,30 +173,40 @@ class SessionServiceImpl(
             loaded
         }
 
-        // Get agent information by agent ID
-        val agentId = team?.leadAgentId ?: request.agentId
-        val agent = agentService.getAgent(agentId)
-            ?: throw BizException("Agent not found")
-
         val session = Session()
         session.title = request.title
         session.sessionDescription = request.sessionDescription
         session.sessionId = "web-${UUID.randomUUID()}"
-        session.agentId = agentId
-        // The copy of the lead on `agent_id` is what listings show; `team_id` is what makes this a
-        // team conversation, and only ever set here — updateById never writes it.
+        // The conversation keeps its own copy of who it runs on, so a later edit to the team or the
+        // agent does not change a chat already started. `team_id` is what makes this a team
+        // conversation, and only ever set here — updateById never writes it.
         session.teamId = team?.id
-
-        // Copy information from agent
-        session.name = agent.name
-        session.description = agent.description
-        session.systemPrompt = agent.systemPrompt
-        session.modelId = agent.modelId
-        session.owner = agent.owner
+        val modelId: Long
+        if (team != null) {
+            // A team has no lead agent row to point at (design D1): agent_id stays NULL, and what used
+            // to be copied off the lead comes off the team.
+            session.name = team.name
+            session.description = team.description
+            session.systemPrompt = team.systemPrompt
+            session.owner = team.creator
+            modelId = team.modelId
+        } else {
+            val requestedAgentId = request.agentId
+                ?: throw BizException("Agent ID cannot be empty")
+            val agent = agentService.getAgent(requestedAgentId)
+                ?: throw BizException("Agent not found")
+            session.agentId = agent.id
+            session.name = agent.name
+            session.description = agent.description
+            session.systemPrompt = agent.systemPrompt
+            session.owner = agent.owner
+            modelId = agent.modelId
+        }
         session.status = 1
 
         // Default enable_think based on model thinking mode (optional/required -> on)
-        val model = modelService.getModel(agent.modelId)
+        val model = modelService.getModel(modelId)
+        session.modelId = modelId
         session.enableThink = if ((model?.thinkingMode ?: 0) >= 1) 1 else 0
 
         // Set creator
@@ -212,14 +230,14 @@ class SessionServiceImpl(
     override fun updateSession(id: Long, request: SessionCreateRequest): Boolean {
         val session = ownedSession(id)
             ?: throw BizException("Session not found")
-        // On a team session agent_id mirrors the team's lead, which the runtime re-reads from the team
-        // row. Editing it here would only make the listing disagree with what actually runs.
-        if (session.teamId != null && request.agentId != session.agentId) {
-            throw BizException("A team session follows its team lead; change the team instead")
+        // A team session has no agent to bind: its lead is the team row and agent_id stays NULL. Naming
+        // one here would only make the listing disagree with what actually runs.
+        if (session.teamId != null && request.agentId != null) {
+            throw BizException("A team session follows its team, not an agent; change the team instead")
         }
         session.title = request.title
         session.description = request.sessionDescription
-        request.agentId.let { session.agentId = it }
+        request.agentId?.let { session.agentId = it }
         session.updateTime = LocalDateTime.now()
         return sessionMapper.updateById(session) > 0
     }

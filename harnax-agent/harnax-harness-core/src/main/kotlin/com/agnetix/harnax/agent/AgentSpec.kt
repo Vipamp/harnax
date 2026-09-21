@@ -67,7 +67,9 @@ class AgentSpecBuilder {
     fun planSpec(planSpec: PlanSpec) = apply { this.planSpec = planSpec }
 
     fun build(): AgentSpec {
-        require(id > 0) { "Agent id must be greater than 0" }
+        // 0 is a team's lead: its configuration is the `team` row and no agent record stands behind it
+        // (design D1). An unset builder still reports -1.
+        require(id >= 0) { "Agent id must be set (0 for a team lead)" }
         require(chatModelId > 0) { "Chat model id must be greater than 0" }
 
         return AgentSpec(
@@ -96,7 +98,6 @@ data class McpSpec(
 data class SkillSpec(
     val skillId: Long,
     val skillName: String,
-    val skipIfMissing: Boolean = true,
 )
 
 data class CliSpec(

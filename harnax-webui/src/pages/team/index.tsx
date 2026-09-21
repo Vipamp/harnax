@@ -25,8 +25,7 @@ import {
 } from '@/services/ant-design-pro/team';
 import StatusSwitch from '@/components/StatusSwitch';
 import AgentRefreshModal from '@/pages/agent/components/AgentRefreshModal';
-import CreateForm from './components/CreateForm';
-import UpdateForm from './components/UpdateForm';
+import TeamWizard from './components/TeamWizard';
 
 const { Text } = Typography;
 
@@ -72,7 +71,7 @@ const TeamManagement: React.FC = () => {
     }
   };
 
-  // 主管与成员都从可用智能体里选，一次拉够供两个下拉框使用
+  // 成员下拉框一次拉够，团队内不分页
   const loadAgents = async () => {
     try {
       const res = await getAgentPage({ pageNum: 1, pageSize: 200, status: 1 });
@@ -136,7 +135,7 @@ const TeamManagement: React.FC = () => {
       }),
       content: intl.formatMessage({
         id: 'pages.team.deleteConfirmContent',
-        defaultMessage: 'This cannot be undone. Team sessions already bound to it stop working instead of falling back to the lead agent.',
+        defaultMessage: 'This cannot be undone. Team sessions already bound to it stop working instead of falling back to a single agent.',
       }),
       okText: intl.formatMessage({ id: 'pages.common.confirm', defaultMessage: 'Confirm' }),
       cancelText: intl.formatMessage({ id: 'pages.common.cancel', defaultMessage: 'Cancel' }),
@@ -171,15 +170,13 @@ const TeamManagement: React.FC = () => {
       ),
     },
     {
-      title: intl.formatMessage({ id: 'pages.team.leadAgent', defaultMessage: 'Lead Agent' }),
-      dataIndex: 'leadAgentName',
-      key: 'leadAgentName',
+      title: intl.formatMessage({ id: 'pages.team.model', defaultMessage: 'Lead Model' }),
+      dataIndex: 'modelName',
+      key: 'modelName',
       width: 150,
       ellipsis: true,
       render: (text: string, record) => (
-        <Tooltip title={record.leadAgentDescription}>
-          <Tag color="blue">{text || `#${record.leadAgentId}`}</Tag>
-        </Tooltip>
+        <Tag color="blue">{text || `#${record.modelId}`}</Tag>
       ),
     },
     {
@@ -324,13 +321,13 @@ const TeamManagement: React.FC = () => {
         }}
       />
 
-      <CreateForm
+      <TeamWizard
         visible={createModalVisible}
         agents={agents}
         onCancel={() => setCreateModalVisible(false)}
-        onSubmit={async (values) => {
+        onSubmit={async (payload) => {
           try {
-            const response = await createTeam(values);
+            const response = await createTeam({ ...payload, status: 1 });
             if (response.code === 200) {
               messageApi.success(intl.formatMessage({ id: 'pages.message.createSuccess', defaultMessage: 'Created successfully' }));
               setCreateModalVisible(false);
@@ -345,7 +342,7 @@ const TeamManagement: React.FC = () => {
       />
 
       {currentRow && (
-        <UpdateForm
+        <TeamWizard
           visible={updateModalVisible}
           values={currentRow}
           agents={agents}
@@ -353,9 +350,9 @@ const TeamManagement: React.FC = () => {
             setUpdateModalVisible(false);
             setCurrentRow(undefined);
           }}
-          onSubmit={async (values) => {
+          onSubmit={async (payload) => {
             try {
-              const response = await updateTeam(currentRow.id, values);
+              const response = await updateTeam(currentRow.id, payload);
               if (response.code === 200) {
                 messageApi.success(intl.formatMessage({ id: 'pages.message.updateSuccess', defaultMessage: 'Updated successfully' }));
                 setUpdateModalVisible(false);

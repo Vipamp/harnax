@@ -603,15 +603,15 @@ CREATE TABLE IF NOT EXISTS `agent_skill_binding` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体-技能绑定表';
 
 -- ============================================
--- 26. Team (V32)
+-- 26. Team (V32, lead config moved onto the team by V34)
 -- ============================================
 CREATE TABLE IF NOT EXISTS `team` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'Team ID',
     `tenant_id` BIGINT NOT NULL DEFAULT 1 COMMENT 'Tenant ID',
     `name` VARCHAR(100) NOT NULL COMMENT 'Team name',
     `description` TEXT DEFAULT NULL COMMENT 'Team description',
-    `lead_agent_id` BIGINT NOT NULL COMMENT 'FK to agent.id',
-    `instructions` TEXT DEFAULT NULL COMMENT 'Team instructions appended to the lead role prompt',
+    `system_prompt` TEXT NOT NULL COMMENT 'The lead''s whole system prompt, orchestration rules included',
+    `model_id` BIGINT NOT NULL COMMENT 'FK to model.id, the model the lead runs on',
     `status` TINYINT(1) DEFAULT 1 COMMENT 'Status (0: Disabled, 1: Enabled)',
     `is_public` TINYINT(1) DEFAULT 0 COMMENT 'Public visibility (0: Private, 1: Public)',
     `creator` VARCHAR(100) DEFAULT NULL COMMENT 'Creator',
@@ -619,9 +619,22 @@ CREATE TABLE IF NOT EXISTS `team` (
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),
-    KEY `idx_team_tenant_id` (`tenant_id`),
-    KEY `idx_team_lead_agent_id` (`lead_agent_id`)
+    KEY `idx_team_tenant_id` (`tenant_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='多智能体团队表';
+
+-- ============================================
+-- 26b. Lead skill binding (V34)
+-- ============================================
+CREATE TABLE IF NOT EXISTS `team_skill_binding` (
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'ID',
+    `team_id` BIGINT(20) NOT NULL COMMENT 'team.id',
+    `skill_id` BIGINT(20) NOT NULL COMMENT 'skill.id',
+    `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_team_skill_binding_team_id_skill_id` (`team_id`, `skill_id`),
+    KEY `idx_team_skill_binding_skill_id` (`skill_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队-技能绑定表';
 
 -- ============================================
 -- 27. Team member binding (V32)

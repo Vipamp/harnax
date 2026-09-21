@@ -24,10 +24,7 @@ data class TeamSpecInfoResponse(
     @Schema(description = "Team name")
     val teamName: String,
 
-    @Schema(description = "Team instructions appended to the lead prompt")
-    val instructions: String = "",
-
-    @Schema(description = "Lead agent configuration, resolved from the team rather than session.agentId")
+    @Schema(description = "Lead configuration, resolved from the team row: its prompt is the team's own system prompt")
     val lead: AgentSpecInfoResponse,
 
     @Schema(description = "Member configurations in assembly order")

@@ -85,6 +85,35 @@ class AdminApiClient(
     }
 
     /**
+     * Ask admin whether this session runs as a team, so the caller knows which spec endpoint can resolve it.
+     *
+     * `/agent-spec` answers an agent session and refuses a team one, `/team-spec` the other way round, and
+     * the session id does not say which is which. Only the presence of the returned team id is used: an
+     * unknown session and a plain agent session both answer false, and the caller's own `/agent-spec` call
+     * is what reports a genuinely missing session. Throwing when admin does not answer at all is the point
+     * — an unanswered question would otherwise let a team session fall back to a single-agent chat.
+     */
+    fun isTeamSession(sessionId: String): Boolean {
+        val url = "$adminUrl/api/admin/internal/sessions/$sessionId/team"
+        log.info("[Agent→Admin] GET {} - asking whether the session runs as a team", url)
+
+        val responseType = object : ParameterizedTypeReference<ResultVo<Long?>>() {}
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.GET, null, responseType).body
+        } catch (e: Exception) {
+            log.error("[Agent←Admin] Failed to resolve session ownership for sessionId={}: {}", sessionId, e.message, e)
+            throw RuntimeException("Failed to resolve session ownership from admin: ${e.message}", e)
+        }
+
+        if (response == null || response.code != 200) {
+            val errorMsg = response?.message ?: "No response from admin"
+            log.error("[Agent←Admin] Error resolving session ownership for sessionId={}: {}", sessionId, errorMsg)
+            throw RuntimeException("Admin returned error: $errorMsg")
+        }
+        return response.data != null
+    }
+
+    /**
      * Fetch the team configuration of one team session: the lead's spec plus every member's full spec.
      *
      * Only the root session id is accepted. Throwing on an error is deliberate — a team session that
@@ -110,10 +139,11 @@ class AdminApiClient(
         }
 
         log.info(
-            "[Agent←Admin] Got team spec: sessionId={}, teamId={}, leadAgentId={}, members={}",
+            "[Agent←Admin] Got team spec: sessionId={}, teamId={}, lead={} (skills={}), members={}",
             sessionId,
             response.data!!.teamId,
-            response.data!!.lead.agentId,
+            response.data!!.lead.agentName,
+            response.data!!.lead.skillDetails.size,
             response.data!!.members.map { it.memberAgentId },
         )
         return response.data!!

@@ -399,8 +399,8 @@ declare namespace API {
   type SessionCreateRequest = {
     title: string;
     sessionDescription?: string;
-    agentId: number;
-    /** 团队会话：主管由团队决定，agentId 仍要带上主管 agent 以通过后端校验 */
+    /** 团队会话留空：主管由团队决定，session 不再挂任何 agent 行 */
+    agentId?: number;
     teamId?: number;
   };
 
@@ -415,14 +415,25 @@ declare namespace API {
     agentAvailable?: boolean;
   };
 
+  type TeamSkillItem = {
+    skillId: number;
+    skillName?: string;
+    skillDescription?: string;
+    repositoryId?: number;
+    repositoryName?: string;
+    /** 引用已失效（技能被删或停用）时为 false，运行侧会跳过它 */
+    skillAvailable?: boolean;
+  };
+
   type TeamItem = {
     id: number;
+    /** 团队名同时就是主管名，不再有独立的主管智能体 */
     name: string;
     description?: string;
-    leadAgentId?: number;
-    leadAgentName?: string;
-    leadAgentDescription?: string;
-    instructions?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    modelName?: string;
+    skillList?: TeamSkillItem[];
     memberList?: TeamMemberItem[];
     status?: number;
     isPublic?: number;
@@ -439,9 +450,11 @@ declare namespace API {
 
   type TeamCreateRequest = {
     name: string;
-    description?: string;
-    leadAgentId: number;
-    instructions?: string;
+    description: string;
+    systemPrompt: string;
+    modelId: number;
+    /** 主管只挂技能：工具、MCP、CLI 属于成员的 agent 配置 */
+    skillIds?: number[];
     members: TeamMemberRequest[];
     status?: number;
     isPublic?: number;
@@ -450,8 +463,10 @@ declare namespace API {
   type TeamUpdateRequest = {
     name?: string;
     description?: string;
-    leadAgentId?: number;
-    instructions?: string;
+    systemPrompt?: string;
+    modelId?: number;
+    /** 非空即整体替换主管技能，空数组表示「不给主管挂技能」 */
+    skillIds?: number[];
     /** 非空即整体替换现有成员 */
     members?: TeamMemberRequest[];
     isPublic?: number;

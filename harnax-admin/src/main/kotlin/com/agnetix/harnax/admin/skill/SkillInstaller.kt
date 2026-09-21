@@ -10,6 +10,7 @@ import com.agnetix.harnax.mapper.AgentSkillBindingMapper
 import com.agnetix.harnax.mapper.CliSkillBindingMapper
 import com.agnetix.harnax.mapper.SkillMapper
 import com.agnetix.harnax.mapper.SkillRepositoryMapper
+import com.agnetix.harnax.mapper.TeamSkillBindingMapper
 import io.agentscope.core.skill.AgentSkill
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -30,6 +31,7 @@ class SkillInstaller(
     private val skillRepositoryMapper: SkillRepositoryMapper,
     private val agentSkillBindingMapper: AgentSkillBindingMapper,
     private val cliSkillBindingMapper: CliSkillBindingMapper,
+    private val teamSkillBindingMapper: TeamSkillBindingMapper,
 ) {
 
     private val log = LoggerFactory.getLogger(SkillInstaller::class.java)
@@ -313,6 +315,11 @@ class SkillInstaller(
             if (bound > 0) {
                 val noun = if (bound == 1) "1 skill is" else "$bound skills are"
                 throw BizException("$noun still bound to an agent, so this source cannot be deleted")
+            }
+            val teamBound = teamSkillBindingMapper.selectBoundSkillIds(skillIds).size
+            if (teamBound > 0) {
+                val noun = if (teamBound == 1) "1 skill is" else "$teamBound skills are"
+                throw BizException("$noun still bound to a team lead, so this source cannot be deleted")
             }
             agentSkillBindingMapper.deleteBySkillIds(skillIds)
             cliSkillBindingMapper.deleteBySkillIds(skillIds)
